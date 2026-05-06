@@ -4,7 +4,7 @@ import {
   query, where, orderBy, limit, startAfter, onSnapshot, serverTimestamp,
   increment, arrayUnion, arrayRemove, writeBatch, runTransaction,
 } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { uploadToR2 } from '../utils/r2Storage';
 import { compressMedia } from '../utils/mediaCompression';
 import { ADS_CONFIG } from '../config/ads';
 
@@ -2236,38 +2236,33 @@ export const getLeaderboard = async (boardId = 'players', limitCount = 50) => {
 // This keeps Storage costs nearly flat as the user base grows.
 // ═══════════════════════════════════════════
 
-export const uploadFile = async (path, file, { preset = 'post', compress = true } = {}) => {
+export const uploadFile = async (path, file, { preset = 'post', compress = true, kind = 'post' } = {}) => {
   const blob = compress && file?.type?.startsWith('image/')
     ? await compressMedia(file, 'free', preset)
     : file;
-  // Use the (possibly renamed) compressed file's name in the storage path so
-  // we don't accidentally upload `photo.HEIC` after compressing to JPEG.
-  const finalPath = path.includes('${name}') ? path.replace('${name}', blob.name) : path;
-  const storageRef = ref(storage, finalPath);
-  await uploadBytes(storageRef, blob);
-  return getDownloadURL(storageRef);
+  const { url } = await uploadToR2(blob, kind);
+  return url;
 };
 
 export const uploadAvatar = async (uid, file) => {
-  // Compress to a 512×512 JPEG before upload — phone cameras typically
-  // produce 12 MP HEIC files which would otherwise burn ~4 MB per avatar.
   const compressed = file?.type?.startsWith('image/')
     ? await compressMedia(file, 'free', 'avatar')
     : file;
-  return uploadFile(`users/${uid}/avatar/${Date.now()}_${compressed.name}`, compressed, { compress: false });
+  const { url } = await uploadToR2(compressed, 'avatar');
+  return url;
 };
 
 export const uploadBanner = async (uid, file) => {
   const compressed = file?.type?.startsWith('image/')
     ? await compressMedia(file, 'free', 'background')
     : file;
-  return uploadFile(`users/${uid}/banner/${Date.now()}_${compressed.name}`, compressed, { compress: false });
+  const { url } = await uploadToR2(compressed, 'banner');
+  return url;
 };
 
 export const uploadPostMedia = async (postId, file) => {
-  // Post photos are compressed via the `post` preset (1600 px max, q=0.82).
-  // Videos are passed through with the tier size cap enforced by compressMedia.
-  return uploadFile(`posts/${postId}/${Date.now()}_${file.name}`, file, { preset: 'post' });
+  const { url } = await uploadToR2(file, 'post');
+  return url;
 };
 
 // ═══════════════════════════════════════════

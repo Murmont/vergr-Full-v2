@@ -365,13 +365,10 @@ function CreateStatusModal({ onClose, currentUser, profile, onCreated }) {
       let mediaUrl = null;
       let mediaType = null;
 
-      // Upload media to Firebase Storage if selected
+      // Upload media to R2 if selected
       if (mediaFile) {
-        const { ref, uploadBytes, getDownloadURL } = await import('firebase/storage');
-        const { storage } = await import('../../firebase/config');
+        const { uploadToR2 } = await import('../../utils/r2Storage');
 
-        // Compress images + videos before upload to slash storage / egress.
-        // Videos use the MediaRecorder-based Shorts compressor (real-time, small output).
         let uploadFile = mediaFile;
         const tier = profile?.tier || 'free';
         if (mediaFile.type.startsWith('image/')) {
@@ -386,11 +383,8 @@ function CreateStatusModal({ onClose, currentUser, profile, onCreated }) {
           } catch { /* fall through with original */ }
         }
 
-        const ext = (uploadFile.name || mediaFile.name).split('.').pop();
-        const path = `statuses/${currentUser.uid}/${Date.now()}.${ext}`;
-        const storageRef = ref(storage, path);
-        await uploadBytes(storageRef, uploadFile);
-        mediaUrl = await getDownloadURL(storageRef);
+        const { url } = await uploadToR2(uploadFile, 'post');
+        mediaUrl = url;
         mediaType = mediaFile.type.startsWith('video') ? 'video' : 'image';
       }
 

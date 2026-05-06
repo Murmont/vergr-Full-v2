@@ -19,6 +19,11 @@ exports.scheduledKycRetention = kyc.scheduledKycRetention;
 const economy = require('./economy');
 exports.convertCoinsToGems = economy.convertCoinsToGems;
 
+// R2 media storage — presigned upload URLs + cold storage demotion.
+const r2 = require('./r2');
+exports.getR2UploadUrl     = r2.getR2UploadUrl;
+exports.coldStorageDemotion = r2.coldStorageDemotion;
+
 // NOWPayments — coin purchases (invoices) + gem withdrawals (payouts).
 const np = require('./nowpayments');
 exports.createPurchaseInvoice  = np.createPurchaseInvoice;

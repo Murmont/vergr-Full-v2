@@ -1,21 +1,8 @@
 // src/utils/mediaHelpers.js
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { storage } from '../firebase/config';
 import { compressMedia } from './mediaCompression';
+import { uploadToR2 } from './r2Storage';
 
-/** Default TTL: 7 days from now (in ms) */
-const DEFAULT_TTL_DAYS = 7;
-
-function getTtlMetadata(ttlDays = DEFAULT_TTL_DAYS) {
-  const expiry = new Date();
-  expiry.setDate(expiry.getDate() + ttlDays);
-  return {
-    customMetadata: {
-      ttlExpiry: expiry.toISOString(),
-      uploadedAt: new Date().toISOString(),
-    },
-  };
-}
+// R2 handles object lifecycle via bucket rules — no TTL metadata needed.
 
 /**
  * Starts audio recording. Returns a MediaRecorder instance.
@@ -63,28 +50,20 @@ export const stopVoiceRecording = (recorder) => {
  * @param {string} preset - Compression preset: 'chat' | 'post' | 'avatar' | 'background'
  * @returns {Promise<string>} Download URL
  */
-export const uploadMediaFile = async (file, folder = 'chat_media', tier = 'free', ttlDays = DEFAULT_TTL_DAYS, preset = 'chat') => {
-  // Compress before upload (free CPU on user's device)
+export const uploadMediaFile = async (file, folder = 'chat_media', tier = 'free', ttlDays = 7, preset = 'chat') => {
   const compressed = await compressMedia(file, tier, preset);
-
-  const fileName = `${Date.now()}_${compressed.name || 'media_file'}`;
-  const storageRef = ref(storage, `${folder}/${fileName}`);
-  const metadata = getTtlMetadata(ttlDays);
-
-  const snapshot = await uploadBytes(storageRef, compressed, metadata);
-  return await getDownloadURL(snapshot.ref);
+  const kind = folder.startsWith('post') ? 'post' : 'post';
+  const { url } = await uploadToR2(compressed, kind);
+  return url;
 };
 
 /**
- * Uploads a blob (like voice recording) to Firebase Storage with TTL metadata.
+ * Uploads a blob (like voice recording) to R2.
  */
-export const uploadBlob = async (blob, folder = 'voice_notes', ext = 'webm', ttlDays = DEFAULT_TTL_DAYS) => {
-  const fileName = `${Date.now()}_recording.${ext}`;
-  const storageRef = ref(storage, `${folder}/${fileName}`);
-  const metadata = getTtlMetadata(ttlDays);
-
-  const snapshot = await uploadBytes(storageRef, blob, metadata);
-  return await getDownloadURL(snapshot.ref);
+export const uploadBlob = async (blob, folder = 'voice_notes', ext = 'webm') => {
+  const file = new File([blob], `recording.${ext}`, { type: blob.type || `audio/${ext}` });
+  const { url } = await uploadToR2(file, 'post');
+  return url;
 };
 
 /**

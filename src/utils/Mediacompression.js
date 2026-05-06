@@ -4,10 +4,13 @@
 
 // Tier-based hard size caps (BEFORE compression). If the *original* file
 // is larger than this we reject before doing any work.
+// Sized for gaming content: free users can post 5-min 720p clips, Pro can
+// upload 1080p game footage up to ~30 min. Server enforces the same cap
+// in `functions/r2.js` (SIZE_CAPS) — keep the two in sync.
 const TIER_MAX_BYTES = {
-  free: 25 * 1024 * 1024,    // 25 MB
-  lite: 100 * 1024 * 1024,   // 100 MB
-  pro:  500 * 1024 * 1024,   // 500 MB
+  free: 200 * 1024 * 1024,    // 200 MB  — ~5 min 720p gaming clip
+  lite: 1024 * 1024 * 1024,   //   1 GB  — ~15 min 1080p clip
+  pro:  5 * 1024 * 1024 * 1024, // 5 GB  — full match VOD / extended highlight
 };
 
 // Image quality presets — every preset writes JPEG, which is 5–10× smaller
@@ -70,11 +73,20 @@ export const compressImage = async (file, preset = 'post') => {
 
 // ── Shorts tier limits ──
 // Shorts are vertical short-form — capped at 60s regardless of tier to keep
-// them snackable. Long-form clips go through the clip creator + ffmpeg.wasm.
+// them snackable.
 export const SHORTS_LIMITS = {
   free: { maxDuration: 60, maxShortSide: 720,  videoBitrate: 1_500_000 },
   lite: { maxDuration: 60, maxShortSide: 1080, videoBitrate: 2_500_000 },
   pro:  { maxDuration: 60, maxShortSide: 1080, videoBitrate: 3_500_000 },
+};
+
+// ── Clip / feed-video tier limits ──
+// Long-form gaming content (highlights, plays of the game, full-match recaps).
+// Free users get 5-min 720p; Pro gets 60-min 1080p.
+export const CLIP_LIMITS = {
+  free: { maxDuration: 5  * 60, maxShortSide: 720,  videoBitrate: 1_500_000 },
+  lite: { maxDuration: 15 * 60, maxShortSide: 1080, videoBitrate: 2_500_000 },
+  pro:  { maxDuration: 60 * 60, maxShortSide: 1080, videoBitrate: 3_500_000 },
 };
 
 /**
@@ -87,8 +99,9 @@ export const SHORTS_LIMITS = {
  * @param {Function} [onProgress] - Called with 0-1 progress value
  * @returns {Promise<File>}       - Compressed WebM file
  */
-export const compressVideo = async (file, tier = 'free', onProgress) => {
-  const limits = SHORTS_LIMITS[tier] || SHORTS_LIMITS.free;
+export const compressVideo = async (file, tier = 'free', onProgress, kind = 'short') => {
+  const table = kind === 'clip' ? CLIP_LIMITS : SHORTS_LIMITS;
+  const limits = table[tier] || table.free;
 
   return new Promise((resolve, reject) => {
     const video = document.createElement('video');

@@ -86,6 +86,91 @@ firebase deploy --only functions   # europe-west1
 - **Currency display**: coins use `compactNum` + `"c"` suffix (e.g. `1.2Kc`). USD shown as `$X.XX` next to coins, NOT instead of.
 - **Never create new files unless necessary.** Prefer editing existing. No unsolicited README/docs.
 
+## Media storage on Cloudflare R2 (May 2026)
+
+**Status: LIVE.** All user-generated images/videos go to R2, served via
+`https://cdn.vergr.app`. Firebase Storage egress costs are now $0 for new
+uploads. KYC docs (`KycWizard.jsx`) intentionally stay on Firebase Storage
+because they need Firebase Auth scoping.
+
+**Architecture:**
+- `functions/r2.js` → `getR2UploadUrl` callable: validates plan + size +
+  content type, issues a presigned PUT URL (expires 5 min). Returns
+  `{ uploadUrl, publicUrl, key }`. Bucket: `vergr-media`. Public base:
+  `https://cdn.vergr.app`. Account ID, access key, secret stored as Firebase
+  secrets (`R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`,
+  `R2_BUCKET`, `R2_PUBLIC_BASE`).
+- `src/utils/r2Storage.js` → `uploadToR2(file, kind)` — frontend helper that
+  fetches the URL, PUTs the blob, returns `{ url, key }`. Save the `key` on
+  the post doc as `mediaKey` if you want the auto-tiering function to be
+  able to demote it later.
+- All previous `firebase/storage` callers in `src/firebase/firestore.js`
+  (`uploadAvatar`, `uploadBanner`, `uploadPostMedia`, `uploadFile`),
+  `src/utils/mediaHelpers.js` (`uploadMediaFile`, `uploadBlob`),
+  `AdCenterScreen`, `ChatSettingsScreen`, `ProfileSetupScreen`,
+  `StatusScreen`, `VergrMeEditorScreen` are migrated.
+
+**Cost model (why this is cheap):**
+- Storage: $0.015/GB/month (R2 Standard), $0.010/GB/month after 90 days
+  (R2 Infrequent Access — bucket lifecycle rule auto-applies).
+- Egress: **$0** when served via `cdn.vergr.app` (Cloudflare CDN).
+  First view per region pulls from R2 (free Class B op until 1M/month);
+  every subsequent view in that region is served from cache.
+- Free 10 GB storage + 10M Class A ops + 1M Class B ops/month forever.
+
+**Plan-based size caps** (mirrored in `functions/r2.js` SIZE_CAPS and
+`src/utils/mediaCompression.js` TIER_MAX_BYTES — keep in sync):
+
+| Tier | Per-upload cap | Approx content |
+|---|---|---|
+| Free | 200 MB | ~5-min 720p gaming clip |
+| Lite | 1 GB | ~15-min 1080p clip |
+| Pro | 5 GB | Full-match VOD / extended highlight |
+
+**Video duration caps** (in `src/utils/mediaCompression.js`):
+- `SHORTS_LIMITS` — Shorts (vertical short-form): 60s for everyone.
+- `CLIP_LIMITS` — Clips (feed video): free=5min, lite=15min, pro=60min.
+- Pass `kind: 'clip'` to `compressVideo()` to use clip limits;
+  defaults to `'short'` for backward compat.
+
+**Video format:** WebM (VP9, falls back to VP8). VP9 is ~50% smaller than
+H.264 MP4 at equal quality. **Don't switch to MP4** — that's why our
+storage stays cheap. The CLAUDE.md note about "H.264 720p MP4" was a
+planning artifact, not the implementation.
+
+**Emergency kill switch** (free tier only):
+- Flip `app_config/general.freeUploadsPaused = true` in Firestore →
+  free uploads halt within 5 seconds (no redeploy needed). Paid users
+  always pass. Use this if R2 costs spike unexpectedly.
+
+**Engagement-driven storage tiering (DORMANT until 5,000 posts):**
+- `coldStorageDemotion` in `functions/r2.js` runs Sundays 03:00 UTC.
+- Activates only when `app_config/general.totalPosts >= 5000` OR when
+  `tieringEnabled === true`. Below threshold, R2's bucket lifecycle rule
+  handles cold-tiering by itself, and running this function would cost
+  more in Firestore reads than it saves.
+- When active: scans posts where `lastViewedAt > 90 days ago` AND
+  `storageTier !== 'cold'`, runs `CopyObject` with
+  `StorageClass: STANDARD_IA` against R2, sets `storageTier: 'cold'` on
+  the post doc. ~33% storage cost saving on those bytes.
+- **Never punishes paid users.** Tier moves are invisible — same URL,
+  same quality, ~200ms slower first byte on the cold-cache miss.
+
+**Why we never block paid uploads:** the tier system is designed so that
+hot storage cost grows with engagement (which generates revenue via tips,
+memberships, tournament fees). Inactive content auto-tiers to near-free
+cold storage. Single users can't break the system because of per-upload
+caps, and a global revenue dashboard + cost alerts catch macro problems.
+**There is no "delete old stuff to upload new" gating** — that's not a
+solution we'll ever ship.
+
+**Cost alerts (TODO, manual):** set up Cloudflare Notifications →
+Billing → R2 spend > €10/month threshold. Independent of code.
+
+**Twelve-month re-encode-to-480p (rejected):** considered, then dropped.
+The visible quality drop on old content is not worth the marginal saving
+once content is already in IA tier. Leave old content alone.
+
 ## Things NOT done yet (backlog — only touch if asked)
 
 - Scheduled posts backend (`CreatorScheduleScreen` uses mock `buildMockSchedule`)
@@ -93,6 +178,7 @@ firebase deploy --only functions   # europe-west1
 - `claimQuestReward` still credits coins server-side — needs VP field migration
 - Chat messaging rewrite (Dexie + `relayMessage` relay) — plan file exists but not executed
 - Thanos dissolve delete effect for messages — plan file exists
+- **Live stream clip button is fake** — `makeClip` in `BroadcasterScreen.jsx` only increments a counter + shows a toast. No capture, no upload, nothing saved. Wire after Gcore is set up. Plan: capture last N seconds from HLS buffer client-side → upload MP4 to R2 via presigned URL. Plan-based limits: Free=30s/3 clips per stream, Lite=60s/5 clips per stream, Pro=90s/unlimited.
 
 ## What wastes tokens (do not do)
 

@@ -14,8 +14,8 @@ import {
   collection, query, where, getDocs, addDoc, updateDoc, deleteDoc, doc,
   serverTimestamp, getDoc,
 } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { db, auth, storage } from '../../firebase/config';
+import { uploadToR2 } from '../../utils/r2Storage';
+import { db, auth } from '../../firebase/config';
 
 const AGE_BUCKETS   = ['13-17','18-24','25-34','35-44','45-54','55+'];
 const GENDERS       = [{v:'male',l:'Male'},{v:'female',l:'Female'},{v:'nyb',l:'Non-binary / other'}];
@@ -87,9 +87,7 @@ export default function AdCenterScreen({ embedded = false }) {
     if (file.size > 4 * 1024 * 1024) { showToast('Image too large (max 4MB)', 'error'); return; }
     setUploading(true);
     try {
-      const r = ref(storage, `ads/${auth.currentUser.uid}/${Date.now()}_${file.name}`);
-      await uploadBytes(r, file, { contentType: file.type });
-      const url = await getDownloadURL(r);
+      const { url } = await uploadToR2(file, 'post');
       setForm(f => ({ ...f, imageUrl: url }));
     } catch { showToast('Upload failed', 'error'); }
     setUploading(false);

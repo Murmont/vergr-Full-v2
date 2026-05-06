@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { doc, onSnapshot, updateDoc, arrayRemove } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { db, auth, storage } from '../../firebase/config';
+import { uploadToR2 } from '../../utils/r2Storage';
+import { db, auth } from '../../firebase/config';
 import Icon from '../../components/Icon';
 import UserAvatar from '../../components/UserAvatar';
 import { useLayout } from '../../context/LayoutContext';
@@ -72,10 +72,7 @@ export default function ChatSettingsScreen() {
 
     setUploading(true);
     try {
-      const fileName = `chat_bg_${chatId}_${Date.now()}.${file.name.split('.').pop()}`;
-      const storageRef = ref(storage, `chat_backgrounds/${fileName}`);
-      const snap = await uploadBytes(storageRef, file);
-      const url = await getDownloadURL(snap.ref);
+      const { url } = await uploadToR2(file, 'post');
       setCustomImageUrl(url);
       setSelectedBg('custom_image');
       await updateDoc(doc(db, 'conversations', chatId), { chatBackground: 'custom_image', chatBackgroundImage: url });

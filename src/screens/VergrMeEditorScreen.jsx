@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { auth, db, storage } from '../firebase/config';
-import { ref as sRef, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { auth, db } from '../firebase/config';
+import { uploadToR2 } from '../utils/r2Storage';
 import { doc, getDoc } from 'firebase/firestore';
 import {
   useMyVergrMe,
@@ -64,17 +64,13 @@ export default function VergrMeEditorScreen() {
   };
 
   const handleAvatarUpload = async (file) => {
-    const r = sRef(storage, `vergrMe/avatars/${auth.currentUser.uid}`);
-    await uploadBytes(r, file);
-    const url = await getDownloadURL(r);
+    const { url } = await uploadToR2(file, 'avatar');
     up('customAvatarUrl', url);
     up('useProfileAvatar', false);
   };
 
   const handleBannerUpload = async (file) => {
-    const r = sRef(storage, `vergrMe/banners/${auth.currentUser.uid}`);
-    await uploadBytes(r, file);
-    const url = await getDownloadURL(r);
+    const { url } = await uploadToR2(file, 'banner');
     up('bannerUrl', url);
     up('bannerStyle', 'image');
   };

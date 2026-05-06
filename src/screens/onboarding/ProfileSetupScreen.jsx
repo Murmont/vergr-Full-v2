@@ -1,8 +1,8 @@
 import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { doc, updateDoc } from 'firebase/firestore';
-import { auth, storage, db } from '../../firebase/config';
+import { auth, db } from '../../firebase/config';
+import { uploadToR2 } from '../../utils/r2Storage';
 import { compressMedia } from '../../utils/mediaCompression';
 import { SiTwitch, SiDiscord, SiYoutube, SiSteam } from 'react-icons/si'; // Professional brand logos
 import TopBar from '../../components/TopBar';
@@ -33,12 +33,7 @@ export default function ProfileSetupScreen() {
       // 512×512 JPEGs, which keeps Storage costs flat as users grow.
       const compressed = await compressMedia(file, 'free', 'avatar');
 
-      // Path matches your strict storage rules: users/{userId}/avatar/{fileName}
-      const storagePath = `users/${auth.currentUser.uid}/avatar/${Date.now()}_${compressed.name}`;
-      const storageRef = ref(storage, storagePath);
-
-      const snapshot = await uploadBytes(storageRef, compressed);
-      const downloadURL = await getDownloadURL(snapshot.ref);
+      const { url: downloadURL } = await uploadToR2(compressed, 'avatar');
 
       // Update Firestore in the 'vgrdb' database
       const userRef = doc(db, 'users', auth.currentUser.uid);
