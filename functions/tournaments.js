@@ -308,7 +308,7 @@ exports.createTournamentSecure = functions.https.onCall(async (request) => {
 exports.joinTournamentSecure = functions.https.onCall(async (request) => {
   const uid = requireAuth(request);
 
-  const { tournamentId, squadId = null } = request.data || {};
+  const { tournamentId, squadId = null, displayCaptureSupported = null } = request.data || {};
   if (!tournamentId) throw new HttpsError('invalid-argument', 'tournamentId required');
 
   const tRef = db.collection('tournaments').doc(tournamentId);
@@ -317,11 +317,26 @@ exports.joinTournamentSecure = functions.https.onCall(async (request) => {
   // region check, so friend-tests + casual free events work without identity
   // verification. (Pre-read the fee here; the tx below re-reads t atomically.)
   const preSnap = await tRef.get();
-  if (preSnap.exists && Math.floor(preSnap.data().entryFee || 0) > 0) {
+  const preFee = preSnap.exists ? Math.floor(preSnap.data().entryFee || 0) : 0;
+  if (preFee > 0) {
     const { assertRegionAllowed } = require('./geo');
     const { assertKycVerified }   = require('./didit');
     await assertRegionAllowed(request);
     await assertKycVerified(uid);
+  }
+
+  // AC9 — high-stakes screen-capture gate (defense in depth). The client
+  // feature-detects getDisplayMedia (the macOS 13+ / Safari 16 requirement for
+  // the two-camera proof feed) and reports it. If it explicitly cannot capture,
+  // reject the join up front so the player doesn't escrow coins then fail to
+  // claim. NOTE: the hard enforcement remains the proof-feed wall in
+  // recordMatchResultInternal — a spoofed `true` just hits that wall later.
+  const { WEBCAM_PRIZE_THRESHOLD } = require('./tournamentRules');
+  if (preFee > WEBCAM_PRIZE_THRESHOLD && displayCaptureSupported === false) {
+    throw new HttpsError('failed-precondition',
+      'This high-stakes tournament requires screen capture to claim a win. ' +
+      'Your device/OS does not support it (macOS 13+ or a current browser is needed). ' +
+      'You can still spectate.');
   }
 
   return db.runTransaction(async (tx) => {

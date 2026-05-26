@@ -2617,8 +2617,8 @@ const callTournamentFn = async (name, payload) => {
 export const createTournamentSecure = (payload) =>
   callTournamentFn('createTournamentSecure', payload);
 
-export const joinTournamentSecure = (tournamentId) =>
-  callTournamentFn('joinTournamentSecure', { tournamentId });
+export const joinTournamentSecure = (tournamentId, opts = {}) =>
+  callTournamentFn('joinTournamentSecure', { tournamentId, ...opts });
 
 export const leaveTournamentSecure = (tournamentId) =>
   callTournamentFn('leaveTournamentSecure', { tournamentId });

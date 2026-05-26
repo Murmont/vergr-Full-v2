@@ -27,6 +27,29 @@ import {
 import TrophyCeremony from '../../components/tournament/TrophyCeremony';
 import { buildRoundsFromMatches, buildBrResults } from '../../utils/tournamentBracketShape';
 
+// AC9 high-stakes gate. WEBCAM_PRIZE_THRESHOLD mirrors functions/tournamentRules.js
+// + TournamentMatchScreen.jsx — keep in sync.
+const WEBCAM_PRIZE_THRESHOLD = 5000;
+
+// The real requirement for claiming a high-stakes win is the two-camera proof
+// feed, which needs getDisplayMedia (macOS 13+ / Safari 16). macOS version is no
+// longer reliably readable from a browser (Apple freezes the UA string), so we
+// feature-detect the capture API and best-effort confirm macOS>=13 via UA-CH.
+async function highStakesCaptureSupported() {
+  if (!navigator.mediaDevices?.getDisplayMedia) return false;
+  try {
+    const uaData = navigator.userAgentData;
+    if (uaData?.getHighEntropyValues) {
+      const hv = await uaData.getHighEntropyValues(['platform', 'platformVersion']);
+      if (hv.platform === 'macOS' && hv.platformVersion) {
+        const major = parseInt(String(hv.platformVersion).split('.')[0], 10);
+        if (!Number.isNaN(major) && major < 13) return false;
+      }
+    }
+  } catch { /* UA-CH unavailable (Safari/Firefox) — fall back to the API check */ }
+  return true;
+}
+
 export default function MatchDetailsScreen() {
   const { matchId } = useParams();
   const { currentUser } = useAuth();
@@ -57,6 +80,7 @@ export default function MatchDetailsScreen() {
   const [loading, setLoading] = useState(true);
   const [joining, setJoining] = useState(false);
   const [showJoinConfirm, setShowJoinConfirm] = useState(false);
+  const [macBlock, setMacBlock] = useState(false); // AC9 high-stakes capture gate
   const [activeTab, setActiveTab] = useState('overview');
   // Phase 2 — which stage the user is currently viewing on the Bracket tab.
   // Null falls through to tournament.currentStageId in render.
@@ -205,7 +229,21 @@ export default function MatchDetailsScreen() {
     if (joining) return;
     setJoining(true);
     try {
-      await joinTournamentSecure(matchId);
+      // AC9 — high-stakes capture gate. Block up front (and tell the server)
+      // when this device cannot screen-capture, so the player never escrows
+      // coins into a win they could not claim.
+      let captureOk = null;
+      if ((tournament?.entryFee || 0) > WEBCAM_PRIZE_THRESHOLD) {
+        captureOk = await highStakesCaptureSupported();
+        if (!captureOk) {
+          setShowJoinConfirm(false);
+          setMacBlock(true);
+          setJoining(false);
+          return;
+        }
+      }
+      await joinTournamentSecure(matchId,
+        captureOk === null ? {} : { displayCaptureSupported: captureOk });
       showToast('Registered!', 'success');
       setShowJoinConfirm(false);
       await refresh();
@@ -293,6 +331,26 @@ export default function MatchDetailsScreen() {
         onCancel={() => setShowJoinConfirm(false)}
         onConfirm={handleJoin}
       />
+    )}
+    {macBlock && (
+      <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/85">
+        <div className="w-full max-w-md rounded-2xl bg-surface-1 border border-white/10 p-5 text-text-primary">
+          <div className="flex items-center gap-2 mb-3">
+            <Icon name="desktop_access_disabled" className="text-brand-ember" />
+            <div className="font-bold text-base">Screen capture required</div>
+          </div>
+          <p className="text-sm text-text-secondary leading-relaxed mb-4">
+            This high-stakes tournament needs screen capture (the two-camera proof feed)
+            to claim a win. Your device or browser does not support it. On Mac you need
+            macOS 13 (Ventura) or newer, or use a current browser. You can still
+            spectate this tournament.
+          </p>
+          <button
+            onClick={() => setMacBlock(false)}
+            className="w-full py-3 rounded-xl bg-surface-2 border border-white/10 font-bold text-sm"
+          >Got it</button>
+        </div>
+      </div>
     )}
     <VanguardPresence parentPath={`tournaments/${matchId}`} />
     <div className="min-h-screen pb-24 lg:pb-8">

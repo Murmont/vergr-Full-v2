@@ -332,6 +332,9 @@ exports.uploadDisputeEvidence       = matchVerification.uploadDisputeEvidence;
 exports.setMatchFollow              = matchVerification.setMatchFollow;
 exports.thankMatchMod               = matchVerification.thankMatchMod;
 
+// AC7 — cheat-signature staleness cadence (monthly health check + admin nudge).
+exports.cheatSignaturesHealthCron = require('./cheatSignaturesRefresh').cheatSignaturesHealthCron;
+
 // Trust / reputation / rivalry / sportsmanship / AI summarizer.
 const tournamentTrust = require('./tournamentTrust');
 exports.getTournamentTrust          = tournamentTrust.getTournamentTrust;
@@ -1484,6 +1487,7 @@ const PUSHABLE_NOTIFICATION_TYPES = new Set([
   'tournament_match_starting',
   'tournament_player_advanced',
   'tournament_mod_thanks',
+  'cheat_signatures_stale',
   'admin_test_notification',
 ]);
 
