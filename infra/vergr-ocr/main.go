@@ -211,12 +211,23 @@ func scanLiveScores(ctx context.Context) {
 	}
 	for _, sd := range docs {
 		data := sd.Data()
-		tid, _ := data["tournamentId"].(string)
 		streamKey, _ := data["streamKey"].(string)
-		if tid == "" || streamKey == "" {
+		if streamKey == "" {
 			continue
 		}
-		processTournamentLiveScore(cctx, tid, streamKey)
+		tid, _ := data["tournamentId"].(string)
+		matchID, _ := data["tournamentMatchId"].(string)
+		hostUid, _ := data["hostUid"].(string)
+
+		// Pass 1 — live score (AC1): the tournament broadcast scoreboard.
+		if tid != "" {
+			processTournamentLiveScore(cctx, tid, streamKey)
+		}
+		// Pass 2 — lobby-code auto-verification (AC2): this player's OWN
+		// gameplay stream. Flips verifyState when the VERGR-XXXX code is seen.
+		if tid != "" && matchID != "" && hostUid != "" {
+			tryVerifyLobbyCode(cctx, tid, matchID, hostUid, streamKey)
+		}
 	}
 }
 
@@ -271,6 +282,176 @@ func processTournamentLiveScore(ctx context.Context, tid, streamKey string) {
 	}, firestore.MergeAll)
 	if err != nil {
 		log.Printf("live-score: write %s/%s: %v", tid, m.Ref.ID, err)
+	}
+}
+
+// ───────────────────────────────────────────────────────────
+// Lobby-code auto-verification (AC2)
+// ───────────────────────────────────────────────────────────
+
+// lobbyCropRegions — OPTIONAL per "<game>:<verifyMethod>" crop region for the
+// lobby-code search, keyed e.g. "cs2:chat". When absent, the full frame is
+// OCR'd (robust default that covers all four verifyMethods). Populate entries
+// here to tighten accuracy per method×game — that is the AC2 "calibration"
+// refinement. Empty = full-frame search.
+var lobbyCropRegions = map[string]CropRegion{}
+
+// nonAlnum strips everything but A-Z0-9 for tolerant code matching.
+var nonAlnum = regexp.MustCompile(`[^A-Z0-9]`)
+
+func normCode(s string) string {
+	return nonAlnum.ReplaceAllString(strings.ToUpper(s), "")
+}
+
+// confuse maps glyphs Tesseract commonly swaps so a near-miss still matches.
+var confuser = strings.NewReplacer(
+	"O", "0", "Q", "0", "D", "0",
+	"I", "1", "L", "1",
+	"S", "5", "B", "8", "Z", "2", "G", "6",
+)
+
+func textContainsCode(text, code string) bool {
+	nc := normCode(code)
+	if len(nc) < 5 {
+		return false
+	}
+	nt := normCode(text)
+	if strings.Contains(nt, nc) {
+		return true
+	}
+	return strings.Contains(confuser.Replace(nt), confuser.Replace(nc))
+}
+
+func sideVerified(verifyState map[string]any, uid string) bool {
+	side, _ := verifyState[uid].(map[string]any)
+	if side == nil {
+		return false
+	}
+	st, _ := side["status"].(string)
+	return st == "verified"
+}
+
+// tryVerifyLobbyCode OCRs a player's own gameplay stream and, if the match's
+// VERGR lobby code is visible, flips verifyState.{uid}='verified' (source ocr)
+// and fires the same notifications the ocrVerifyMatchPlayer callable would.
+func tryVerifyLobbyCode(ctx context.Context, tid, matchID, hostUid, streamKey string) {
+	mRef := fsClient.Collection("tournaments").Doc(tid).Collection("matches").Doc(matchID)
+	mSnap, err := mRef.Get(ctx)
+	if err != nil {
+		return
+	}
+	md := mSnap.Data()
+
+	switch s, _ := md["status"].(string); s {
+	case "completed", "cancelled", "forfeited":
+		return // nothing left to verify
+	}
+	lobbyCode, _ := md["lobbyCode"].(string)
+	if lobbyCode == "" {
+		return
+	}
+	verifyState, _ := md["verifyState"].(map[string]any)
+	if verifyState == nil {
+		verifyState = map[string]any{}
+	}
+	if sideVerified(verifyState, hostUid) {
+		return // already verified — don't re-write/re-notify
+	}
+
+	game, _ := md["game"].(string)
+	method, _ := md["verifyMethod"].(string)
+	cropExpr := ""
+	if region, ok := lobbyCropRegions[game+":"+method]; ok && region.valid() {
+		cropExpr = region.ffmpegExpr()
+	}
+
+	segment, err := newestSegment(filepath.Join(*streamsDir, streamKey))
+	if err != nil {
+		return
+	}
+	png, err := extractLastFrame(segment, cropExpr)
+	if err != nil {
+		return
+	}
+	defer os.Remove(png)
+
+	text, err := runTesseract(png, false) // full text — need letters, not just digits
+	if err != nil {
+		return
+	}
+	if !textContainsCode(text, lobbyCode) {
+		return
+	}
+
+	// Flip this side to verified (precise field paths — never clobbers the
+	// opponent's verifyState entry).
+	_, err = mRef.Update(ctx, []firestore.Update{
+		{Path: "verifyState." + hostUid + ".status", Value: "verified"},
+		{Path: "verifyState." + hostUid + ".source", Value: "ocr"},
+		{Path: "verifyState." + hostUid + ".at", Value: firestore.ServerTimestamp},
+	})
+	if err != nil {
+		log.Printf("verify: write %s/%s/%s: %v", tid, matchID, hostUid, err)
+		return
+	}
+	log.Printf("verify: OCR confirmed lobby code for %s in %s/%s", hostUid, tid, matchID)
+
+	p1, _ := md["player1"].(string)
+	p2, _ := md["player2"].(string)
+	other := p1
+	if hostUid == p1 {
+		other = p2
+	}
+	if other != "" {
+		addMatchNotification(ctx, other, "tournament_match_verified",
+			"Opponent verified — ready to play", tid, matchID)
+	}
+
+	// Both sides verified now? Fire the "match ready" ping once.
+	pingBothIfReady(ctx, mRef, hostUid, p1, p2, verifyState, md)
+}
+
+// pingBothIfReady mirrors the Cloud Function helper: when both sides are
+// verified and we haven't pinged yet, stamp bothVerifiedAt + notify both.
+// `justVerified` is the uid we flipped this pass (its in-memory verifyState
+// is stale, so treat it as verified).
+func pingBothIfReady(ctx context.Context, mRef *firestore.DocumentRef, justVerified, p1, p2 string, verifyState, md map[string]any) {
+	if p1 == "" || p2 == "" {
+		return
+	}
+	ok1 := p1 == justVerified || sideVerified(verifyState, p1)
+	ok2 := p2 == justVerified || sideVerified(verifyState, p2)
+	if !ok1 || !ok2 {
+		return
+	}
+	if md["bothVerifiedAt"] != nil {
+		return // idempotent
+	}
+	if _, err := mRef.Update(ctx, []firestore.Update{
+		{Path: "bothVerifiedAt", Value: firestore.ServerTimestamp},
+	}); err != nil {
+		return
+	}
+	tid := mRef.Parent.Parent.ID
+	for _, uid := range []string{p1, p2} {
+		addMatchNotification(ctx, uid, "tournament_match_ready",
+			"Both sides verified — play your match", tid, mRef.ID)
+	}
+}
+
+func addMatchNotification(ctx context.Context, recipientID, ntype, title, tid, matchID string) {
+	_, _, err := fsClient.Collection("notifications").Add(ctx, map[string]any{
+		"recipientId": recipientID,
+		"type":        ntype,
+		"title":       title,
+		"body":        "Tap to view.",
+		"data":        map[string]any{"tournamentId": tid, "matchId": matchID},
+		"actionUrl":   fmt.Sprintf("/tournaments/%s/match/%s", tid, matchID),
+		"read":        false,
+		"createdAt":   firestore.ServerTimestamp,
+	})
+	if err != nil {
+		log.Printf("verify: notify %s: %v", recipientID, err)
 	}
 }
 
