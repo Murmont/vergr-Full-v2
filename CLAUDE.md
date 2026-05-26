@@ -29,6 +29,22 @@ Comprehensive audit 2026-05-25. Tournaments are functional but have real gaps be
 | AC8 | **Detection of suspended/uninstalled launchers mid-match** — Tauri scan catches running cheat tools, not absent legit ones. Steam closed mid-match = silent. | ❌ |
 | AC9 | **macOS minimum doc + enforcement** — `getDisplayMedia` needs macOS 13+. Mac players on older OS can't claim high-stakes wins. Need explicit version-gate at tournament join for Mac users. | ❌ |
 
+#### AC3-AC9 implementation plan (infra block — drafted 2026-05-26, NOT yet greenlit)
+Honest grouping by effort class. AC3/AC4/AC6 are NOT screen edits — they extend the `vergr-ocr` Hetzner box's existing 10s loop with Gemini Vision sampling (recurring API cost). AC5/AC7 are backend heuristics/crons (≈€0). AC8 is a native Tauri scan extension. AC9 is a small join-time gate (codeable now, ≈€0).
+
+- **Group A — live stream-time Vision sampling (on `vergr-ocr`, recurring Gemini cost).** The box already runs Firebase Admin + a 10s loop + grabs stream frames (AC1/AC2). Extend it, do NOT add Cloud Functions.
+  - **AC3 real-time cheat-flag:** every ~30s per in-progress match, send the latest gameplay frame to Gemini Vision with the same cheat-tell prompt `aiCheatFlagVod` uses post-VOD; on a non-clean verdict write `tournament_review_queue` doc + `tournament_flagged_for_review` notif (already an allowlisted push type) so mods can intervene LIVE instead of minutes later. Cost driver = frames/min × live matches. Gate behind `app_config/general.liveCheatSampling` so it can be throttled/killed.
+  - **AC4 webcam face-presence:** sample the proof-feed webcam PiP (high-stakes matches only, `entryFee > WEBCAM_PRIZE_THRESHOLD`) 1 frame / 60s through Gemini Vision face-detect; if no face for N consecutive samples, write a soft flag to the match + nudge the mod. Cheap (only high-stakes, 1/min).
+  - **AC6 stream-source spoof:** perceptual-hash consecutive frames; a feed that is too static / loops / matches a known VOD fingerprint = flag. Heuristic first (frame-diff entropy), Vision only on suspicion. Lowest confidence of the three — frame it as a mod hint, never an auto-DQ.
+- **Group B — backend heuristics / crons (≈€0).**
+  - **AC5 two-devices-one-account:** cross-reference `tournamentFingerprint` enrollments + login/session activity; flag when the same account has an active Vergr session on device X but the game-account telemetry (GSI/wrapper) originates elsewhere, or two distinct fingerprints touch one match slot. Backend trigger + mod flag, no native.
+  - **AC7 cheat-signatures refresh cadence:** monthly cron that pulls a public BYOVD/cheat-tool list into `cheat_signatures/` as `pending` for founder review at `/admin/cheat-signatures` (don't auto-activate). Plus a staleness banner when the seed is >90d old.
+- **Group C — native (Tauri) + gate.**
+  - **AC8 absent-launcher detection:** extend `scan_processes` to also report whether the tournament's required game launcher (Steam/EA/Battle.net per `tournamentGames.js`) is RUNNING; `submitAntiCheatScan` flags a mid-match disappearance (was present at match start, gone now). Native scan already exists — this is an additive check, not v2 overlay work.
+  - **AC9 macOS version gate (smallest, codeable now, ≈€0):** at join of a high-stakes tournament (`entryFee > WEBCAM_PRIZE_THRESHOLD`), parse `navigator.userAgent`/`navigator.userAgentData` for macOS <13 and block with a clear "macOS 13+ required to claim high-stakes wins — you can still spectate" modal (mirror the existing two-camera explainer copy). Server mirror in `joinTournamentSecure` so it can't be bypassed.
+
+**Recommendation:** ship AC9 + AC7 first (self-contained, €0, no infra risk). Group A needs a founder cost decision on Gemini Vision sampling cadence before building (it is the only recurring-cost item). AC5/AC6/AC8 are medium backend/native work with diminishing confidence — schedule after Group A's value is proven.
+
 ### Operational tournament flow (P0 — blocks "users can actually run real tournaments")
 | # | Item | Status |
 |---|---|---|
