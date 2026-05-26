@@ -99,7 +99,7 @@ Honest grouping by effort class. AC3/AC4/AC6 are NOT screen edits — they exten
 ### Auto-generated content (P2)
 | # | Item | Status |
 |---|---|---|
-| AG1 | **VOD highlights playlist per user** — `autoCutVodHighlights` runs, output not exposed in any UI. Add a tab on user profile. | ❌ |
+| AG1 | **VOD highlights playlist per user** — `autoCutVodHighlights` runs, output not exposed in any UI. Add a tab on user profile. | ✅ DEPLOYED 2026-05-26. New "Highlights" Section on TournamentStatsScreen (`/tournaments/me/stats`) flattens the Gemini-cut clips (`match.highlights[]` = `{startSec,endSec,title,reason}` written by `autoCutVodHighlights`) across every match the user played that has an `archiveVodUrl`, newest first, capped at 12. `<HighlightCard>` is click-to-load: plays the archived VOD seeked to the clip range via a media fragment (`#t=start,end`), keeping the page light until played. Reuses the screen's existing collectionGroup matches query (player1/player2 == uid, status completed) — no new index. Surfaced on the tournament-stats screen (the per-user tournament profile), not the social profile; AG3 covers the public-profile pin. |
 | AG2 | **Weekly auto-curated reels** — "best clutch" / "biggest upset" of the week assembled from highlights cron, surfaced on home feed. | ❌ |
 | AG3 | **Tournament VODs pinned to placer profile** — players who placed top-3 get the highlight reel auto-pinned to their profile. | ❌ |
 
