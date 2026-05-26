@@ -1466,6 +1466,7 @@ async function sendPushToAll(userIds, title, body, data = {}) {
 // ──────────────────────────────────────────────────────────────
 const PUSHABLE_NOTIFICATION_TYPES = new Set([
   'tournament_starting_soon',
+  'tournament_won',
   'tournament_cancelled',
   'tournament_match_disqualified',
   'tournament_match_forfeit',

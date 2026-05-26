@@ -2224,6 +2224,32 @@ async function finalizeInternal(tournamentId, { uid = null } = {}) {
       }
     }
 
+    // ─── MP1 — winner notification + prize-receipt deep-link ───────────
+    // Payouts were silent before; tell the winner they won and link to the
+    // receipt screen. Pushes via the FCM allowlist (type tournament_won).
+    const winnerPlace1 = placeMap[1];
+    if (winnerPlace1) {
+      const p1 = breakdown.payouts.find((p) => p.place === 1) || {};
+      const winnerCoins = (p1.player || 0) + (isSquadMode ? (p1.treasury || 0) : 0);
+      const recipients = isSquadMode
+        ? ((t.squadChampions || {})[winnerPlace1] || [])
+        : [winnerPlace1];
+      for (const rid of recipients) {
+        if (!rid) continue;
+        tx.set(db.collection('notifications').doc(), {
+          recipientId: rid,
+          type: 'tournament_won',
+          title: `You won ${t.name || 'the tournament'}!`,
+          body: isSquadMode
+            ? `Your squad took 1st — ${winnerCoins.toLocaleString()} coins to the treasury. Tap for your prize receipt.`
+            : `${winnerCoins.toLocaleString()} coins added to your wallet. Tap for your prize receipt.`,
+          data: { tournamentId, amount: String(winnerCoins) },
+          actionUrl: `/prize-receipt/${tournamentId}`,
+          read: false, createdAt: FieldValue.serverTimestamp(),
+        });
+      }
+    }
+
     // ─── PLACEMENT REWARDS (XP/VP for 1st/2nd/3rd, independent of coins) ─
     // Coins are winner-only, but XP/VP/squad-leaderboard-points still
     // distribute to top 3 — these are "leaderboard rewards", not money.
