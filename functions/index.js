@@ -380,6 +380,9 @@ const vodArchive = require('./vodArchive');
 exports.dispatchTournamentVodArchive = vodArchive.dispatchTournamentVodArchive;
 exports.markVodArchived              = vodArchive.markVodArchived;
 
+// Engine-independent server-side stream clipping (works on Apple webviews).
+exports.requestStreamClip            = require('./streamClips').requestStreamClip;
+
 // Two-camera proof feed for high-stakes tournament matches.
 const tournamentProof = require('./tournamentProof');
 exports.appendProofChunk             = tournamentProof.appendProofChunk;

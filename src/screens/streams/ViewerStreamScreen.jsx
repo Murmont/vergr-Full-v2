@@ -31,6 +31,7 @@ import Icon from '../../components/Icon';
 import UserAvatar from '../../components/UserAvatar';
 import VanguardPresence from '../../components/VanguardPresence';
 import { getPlaybackUrl } from '../../utils/streamConfig';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { followUser, unfollowUser, isFollowing, sendCoins, createPost } from '../../firebase/firestore';
 import { uploadToR2 } from '../../utils/r2Storage';
 import useStreamClipBuffer from '../../hooks/useStreamClipBuffer';
@@ -393,23 +394,35 @@ export default function ViewerStreamScreen() {
   const [clipsUsed, setClipsUsed] = useState(0);
   const [clipping, setClipping] = useState(false);
 
+  const publishClip = async (url) => {
+    await createPost(currentUser.uid, {
+      content: streamDoc?.title ? `Clip · ${streamDoc.title}` : 'Live clip',
+      type: 'clip',
+      mediaUrls: [url],
+      hashtags: streamDoc?.game ? [String(streamDoc.game).toLowerCase()] : [],
+      visibility: 'public',
+    });
+  };
+
   const handleClip = async () => {
     if (clipping || !currentUser?.uid) return;
-    if (!clipSupported()) { showToast('Clipping is not supported in this browser', 'info'); return; }
     if (clipsUsed >= clipCfg.max) { showToast(`Clip limit reached (${clipCfg.max} per stream on ${viewerTier})`, 'info'); return; }
-    const blob = grabClip(clipCfg.sec);
-    if (!blob || blob.size < 50_000) { showToast('Need a few more seconds of footage — try again shortly', 'info'); return; }
     setClipping(true);
     try {
-      const file = new File([blob], `clip-${Date.now()}.webm`, { type: 'video/webm' });
-      const url = await uploadToR2(file, 'clip');
-      await createPost(currentUser.uid, {
-        content: streamDoc?.title ? `Clip · ${streamDoc.title}` : 'Live clip',
-        type: 'clip',
-        mediaUrls: [url],
-        hashtags: streamDoc?.game ? [String(streamDoc.game).toLowerCase()] : [],
-        visibility: 'public',
-      });
+      if (clipSupported()) {
+        // Chromium-class path: assemble locally from the rolling buffer.
+        const blob = grabClip(clipCfg.sec);
+        if (!blob || blob.size < 50_000) { showToast('Need a few more seconds of footage — try again shortly', 'info'); return; }
+        const file = new File([blob], `clip-${Date.now()}.webm`, { type: 'video/webm' });
+        const url = await uploadToR2(file, 'clip');
+        await publishClip(url);
+      } else {
+        // Apple-webview / unsupported path: server-side ffmpeg cut on the box.
+        const fn = httpsCallable(getFunctions(undefined, 'europe-west1'), 'requestStreamClip');
+        const { data } = await fn({ streamId: streamDoc?.id, durationSec: clipCfg.sec });
+        if (!data?.clipUrl) throw new Error('Clip failed');
+        await publishClip(data.clipUrl);
+      }
       setClipsUsed((n) => n + 1);
       showToast('Clip saved to your profile', 'success');
     } catch (err) {
