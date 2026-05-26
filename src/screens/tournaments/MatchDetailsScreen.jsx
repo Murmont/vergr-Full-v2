@@ -4,6 +4,8 @@ import { useAuth } from '../../context/AuthContext';
 import { useUser } from '../../context/UserContext';
 import { useUI } from '../../context/UIContext';
 import { getTournament, subscribeTournament, joinTournamentSecure, leaveTournamentSecure, startTournamentSecure, reportMatchResultSecure, finalizeTournamentSecure, applyToTournamentSecure, getTournamentMatches, getUser, getSquad, getFollowing } from '../../firebase/firestore';
+import { gameById } from '../../utils/tournamentGames';
+import LaunchGameDropdown from '../../components/tournament/LaunchGameDropdown';
 import { useLayout } from '../../context/LayoutContext';
 import useResponsive from '../../hooks/useResponsive';
 import TopBar from '../../components/TopBar';
@@ -54,6 +56,7 @@ export default function MatchDetailsScreen() {
   const [participants, setParticipants] = useState([]);
   const [loading, setLoading] = useState(true);
   const [joining, setJoining] = useState(false);
+  const [showJoinConfirm, setShowJoinConfirm] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
   // Phase 2 — which stage the user is currently viewing on the Bracket tab.
   // Null falls through to tournament.currentStageId in render.
@@ -204,6 +207,7 @@ export default function MatchDetailsScreen() {
     try {
       await joinTournamentSecure(matchId);
       showToast('Registered!', 'success');
+      setShowJoinConfirm(false);
       await refresh();
     } catch (err) {
       showToast(err.message || 'Failed to join', 'error');
@@ -279,6 +283,14 @@ export default function MatchDetailsScreen() {
         standings={ceremonyStandings}
         prizes={ceremonyPrizes}
         onClose={() => { localStorage.setItem(ceremonyKey, '1'); setShowCeremony(false); }}
+      />
+    )}
+    {showJoinConfirm && (
+      <GameOwnershipModal
+        tournament={tournament}
+        joining={joining}
+        onCancel={() => setShowJoinConfirm(false)}
+        onConfirm={handleJoin}
       />
     )}
     <VanguardPresence parentPath={`tournaments/${matchId}`} />
@@ -402,7 +414,7 @@ export default function MatchDetailsScreen() {
                 </button>
               )
             ) : (
-              <button onClick={handleJoin} disabled={joining}
+              <button onClick={() => setShowJoinConfirm(true)} disabled={joining}
                 className="w-full py-3.5 rounded-xl bg-brand-cyan text-bg-dark font-bold text-sm hover:brightness-110 active:scale-[0.98] transition-all  disabled:opacity-50">
                 {joining ? 'Joining...' : tournament.entryFee > 0 ? `Join — ${tournament.entryFee} coins` : 'Join Tournament'}
               </button>
@@ -657,6 +669,47 @@ export default function MatchDetailsScreen() {
       </div>
     </div>
     </>
+  );
+}
+
+// OP5 — pre-join "do you own the game?" confirm. A player can otherwise join
+// (and pay the entry fee) for a game they don't own, then fail at the lobby
+// and forfeit. This gives a one-click launcher test before committing, and a
+// clear confirm. Resolves the tournament's game to a registry object so the
+// LaunchGameDropdown can offer the right launcher / .exe.
+function GameOwnershipModal({ tournament, joining, onCancel, onConfirm }) {
+  const game = gameById(tournament.game);
+  const gameName = game?.label || tournament.game || 'this game';
+  const paid = (tournament.entryFee || 0) > 0;
+  return (
+    <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={onCancel}>
+      <div className="w-full max-w-sm rounded-2xl bg-surface-1 border border-white/[0.08] p-5" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-2 mb-3">
+          <Icon name="sports_esports" size={22} className="text-brand-cyan" />
+          <h3 className="font-syne text-lg font-bold">Before you register</h3>
+        </div>
+        <p className="text-text-secondary text-sm leading-relaxed">
+          This tournament is played on <strong className="text-text-primary">{gameName}</strong>.
+          Make sure you own it and can launch it{paid ? `. The ${tournament.entryFee}-coin entry fee is escrowed on join` : ''}.
+          If you can't get into the lobby when your match starts you may forfeit.
+        </p>
+        {game && (
+          <div className="mt-4">
+            <p className="text-text-muted text-[11px] uppercase tracking-wide mb-2">Test launch now</p>
+            <LaunchGameDropdown game={game} />
+          </div>
+        )}
+        <div className="flex gap-2 mt-5">
+          <button onClick={onCancel} className="flex-1 py-3 rounded-xl bg-surface-2 text-text-secondary font-bold text-sm">
+            Cancel
+          </button>
+          <button onClick={onConfirm} disabled={joining}
+            className="flex-1 py-3 rounded-xl bg-brand-cyan text-bg-dark font-bold text-sm disabled:opacity-50">
+            {joining ? 'Joining…' : paid ? `Register — ${tournament.entryFee}c` : 'Register'}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 

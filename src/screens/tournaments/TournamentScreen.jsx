@@ -24,6 +24,18 @@ export default function TournamentScreen() {
   const { isDesktop } = useResponsive();
   const { setRightPanel, setContentAlign } = useLayout();
 
+  // OP3 — first-time tournament explainer (entry → escrow → lobby code →
+  // verify → payout). Shown once per device, localStorage-gated.
+  const [showOnboard, setShowOnboard] = useState(false);
+  useEffect(() => {
+    try { if (!localStorage.getItem('vergr.tourney.onboarded')) setShowOnboard(true); } catch { /* ignore */ }
+  }, []);
+  const dismissOnboard = () => {
+    try { localStorage.setItem('vergr.tourney.onboarded', '1'); } catch { /* ignore */ }
+    setShowOnboard(false);
+  };
+  const onboardOverlay = showOnboard ? <TournamentOnboarding onClose={dismissOnboard} /> : null;
+
   useEffect(() => {
     setRightPanel(null);
     setContentAlign('left');
@@ -68,6 +80,7 @@ export default function TournamentScreen() {
   if (!isDesktop) {
     return (
       <div className="screen-container min-h-screen pb-8">
+        {onboardOverlay}
         <TopBar
           title="Tournaments"
           showBack
@@ -122,6 +135,7 @@ export default function TournamentScreen() {
   // Desktop: 3-column with contextual right rail
   return (
     <div className="flex min-h-screen">
+      {onboardOverlay}
       <div className="flex-1 min-w-0 flex flex-col">
         <AppHeader
           title="Tournaments"
@@ -229,5 +243,72 @@ function TournamentRow({ t, onClick, formatDate }) {
         )}
       </div>
     </button>
+  );
+}
+
+// OP3 — first-run explainer of how a VERGR tournament works end to end.
+// Three steps so a new player understands escrow + verification + payout
+// before they commit coins. Shown once per device (localStorage-gated).
+const ONBOARD_STEPS = [
+  {
+    icon: 'login',
+    color: 'text-brand-cyan',
+    title: 'Join & escrow',
+    body: 'Pick a tournament and register, solo or with your squad. Any entry fee is held safely in escrow, never paid to anyone until the event resolves. Free tournaments need no fee.',
+  },
+  {
+    icon: 'verified',
+    color: 'text-brand-violet-light',
+    title: 'Play & verify',
+    body: "You get a unique lobby code to enter in-game. Results are checked automatically (score OCR) and confirmed by a neutral Vanguard moderator, so nobody can fake a win.",
+  },
+  {
+    icon: 'emoji_events',
+    color: 'text-brand-gold',
+    title: 'Win & get paid',
+    body: 'The winner takes the prize pool, paid straight to your wallet. A 24-hour hold applies before cashing out tournament winnings. Placements also earn Tournament Points on the leaderboard.',
+  },
+];
+
+function TournamentOnboarding({ onClose }) {
+  const [step, setStep] = useState(0);
+  const s = ONBOARD_STEPS[step];
+  const last = step === ONBOARD_STEPS.length - 1;
+  return (
+    <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
+      <div className="w-full max-w-sm rounded-2xl bg-surface-1 border border-white/[0.08] p-6">
+        <div className="flex justify-between items-center mb-5">
+          <span className="text-[11px] font-dmmono uppercase tracking-[0.14em] text-text-muted">
+            How tournaments work · {step + 1}/{ONBOARD_STEPS.length}
+          </span>
+          <button onClick={onClose} className="text-text-muted hover:text-text-primary" aria-label="Skip">
+            <Icon name="close" size={20} />
+          </button>
+        </div>
+        <div className="w-16 h-16 rounded-2xl bg-white/[0.04] flex items-center justify-center mb-4">
+          <Icon name={s.icon} size={34} className={s.color} />
+        </div>
+        <h2 className="font-syne text-xl font-bold mb-2">{s.title}</h2>
+        <p className="text-text-secondary text-sm leading-relaxed min-h-[88px]">{s.body}</p>
+
+        <div className="flex items-center gap-1.5 mt-4 mb-5">
+          {ONBOARD_STEPS.map((_, i) => (
+            <span key={i} className={`h-1.5 rounded-full transition-all ${i === step ? 'w-6 bg-brand-cyan' : 'w-1.5 bg-white/15'}`} />
+          ))}
+        </div>
+
+        <div className="flex gap-2">
+          <button onClick={onClose} className="flex-1 py-3 rounded-xl bg-surface-2 text-text-secondary font-bold text-sm">
+            Skip
+          </button>
+          <button
+            onClick={() => (last ? onClose() : setStep(step + 1))}
+            className="flex-1 py-3 rounded-xl bg-brand-cyan text-bg-dark font-bold text-sm"
+          >
+            {last ? "Let's go" : 'Next'}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
