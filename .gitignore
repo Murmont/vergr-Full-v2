@@ -11,6 +11,10 @@ serviceAccountKey.json
 src-tauri/target
 src-tauri/gen
 src-tauri/Cargo.lock
+# Updater signing key (NEVER commit - losing it breaks all future auto-updates)
+src-tauri/.tauri/
+*.key
+*.key.pub
 
 # Built installer binary (generated; do not commit — ~10MB)
 public/downloads/VERGR-Setup.exe
@@ -20,3 +24,9 @@ public/downloads/VERGR-Setup.msi
 kyc-keys.tmp
 kyc-priv*.pem
 *.pem
+
+# Design handoff workspaces (extract zips here for reference)
+_wallet3_tmp/
+_wallet_*_tmp/
+*.bak
+_*_tmp/

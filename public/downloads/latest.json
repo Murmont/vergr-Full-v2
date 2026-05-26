@@ -1,0 +1,11 @@
+{
+  "version": "1.0.1",
+  "notes": "Latest VERGR desktop build.",
+  "pub_date": "2026-05-26T17:44:59.348Z",
+  "platforms": {
+    "windows-x86_64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUYTAxN3VraExMM2VEdFRnRTR6SS84YkdzQkJPL2k1MDNvUVZUZlBkV0tBVUxxRWRNSVN1cER5TzR3M1JNWXZFcUZqSm81NDEzUm01MTRvNll4VDhSbVc3ZWppT2UvQ3djPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc5ODEzNTE1CWZpbGU6VkVSR1JfMS4wLjFfeDY0LXNldHVwLmV4ZQozSVRTNVM4d3U4bStrQWVOV3BMYldOZ1l6V2xFQXdUSHFFcE5qWFBsakx4S3p3TDBlOEJ3NXk3c28rS3dmSFoyMzFkczVIaXQxSGZjaFZVMEF1bnVCUT09Cg==",
+      "url": "https://vergr.app/downloads/VERGR-Setup.exe"
+    }
+  }
+}

@@ -1,7 +1,102 @@
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 use tiny_http::{Method, Response, Server};
+use sysinfo::{System, ProcessesToUpdate};
+use sha2::{Digest, Sha256};
+
+// ─── Anti-cheat scan ───────────────────────────────────────────────────
+// Enumerates running processes + hashes their executable paths.
+// Returns to JS; JS-side calls the antiCheatIngest callable which matches
+// the hashes against the `cheat_signatures/` Firestore collection.
+//
+// Why hash and not just list names? Names are easily faked (rename
+// cheatengine.exe → notepad.exe). Path hashes are stable per-install and
+// our signature DB stores expected hashes.
+
+#[derive(Clone, Serialize, Deserialize)]
+struct ProcEntry {
+    name: String,
+    pid: u32,
+    exe_hash: Option<String>,
+    cmd_join: String,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+struct ScanResult {
+    processes: Vec<ProcEntry>,
+    scanned_at_ms: u64,
+    process_count: usize,
+}
+
+#[tauri::command]
+async fn scan_processes() -> Result<ScanResult, String> {
+    let mut sys = System::new();
+    sys.refresh_processes(ProcessesToUpdate::All);
+    let mut entries = Vec::new();
+    for (pid, process) in sys.processes() {
+        let name = process.name().to_string_lossy().to_string();
+        let exe_hash = process.exe().and_then(|p| {
+            std::fs::metadata(p).ok().map(|_| {
+                let mut h = Sha256::new();
+                h.update(p.to_string_lossy().as_bytes());
+                hex::encode(h.finalize())
+            })
+        });
+        let cmd_join = process.cmd().iter().take(3)
+            .map(|c| c.to_string_lossy().to_string())
+            .collect::<Vec<_>>().join(" ");
+        entries.push(ProcEntry {
+            name, pid: pid.as_u32(),
+            exe_hash, cmd_join: cmd_join.chars().take(200).collect(),
+        });
+    }
+    let scanned_at_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
+    Ok(ScanResult {
+        process_count: entries.len(),
+        processes: entries,
+        scanned_at_ms,
+    })
+}
+
+// ─── HUD window control ─────────────────────────────────────────────────
+#[tauri::command]
+async fn open_hud(app: AppHandle) -> Result<(), String> {
+    if let Some(win) = app.get_webview_window("hud") {
+        let _ = win.show();
+        let _ = win.set_always_on_top(true);
+        let _ = win.set_skip_taskbar(true);
+        // Default to click-through; the renderer can toggle when user mouses over.
+        #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+        let _ = win.set_ignore_cursor_events(true);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn close_hud(app: AppHandle) -> Result<(), String> {
+    if let Some(win) = app.get_webview_window("hud") {
+        let _ = win.hide();
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn set_hud_click_through(app: AppHandle, click_through: bool) -> Result<(), String> {
+    if let Some(win) = app.get_webview_window("hud") {
+        let _ = win.set_ignore_cursor_events(click_through);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn set_hud_position(app: AppHandle, x: i32, y: i32) -> Result<(), String> {
+    if let Some(win) = app.get_webview_window("hud") {
+        let _ = win.set_position(tauri::Position::Physical(tauri::PhysicalPosition { x, y }));
+    }
+    Ok(())
+}
 
 /// Payload emitted when OAuth callback is received
 #[derive(Clone, Serialize, Deserialize)]
@@ -206,7 +301,16 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
-        .invoke_handler(tauri::generate_handler![start_oauth_listener])
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
+        .invoke_handler(tauri::generate_handler![
+            start_oauth_listener,
+            scan_processes,
+            open_hud,
+            close_hud,
+            set_hud_click_through,
+            set_hud_position,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running VERGR desktop");
 }

@@ -10,6 +10,49 @@
 //   7. Invitational / Custom
 
 // ---------------------------------------------------------------------------
+// PLATFORM TOURNAMENT LIMITS (Riot tournament-policy compliance)
+// ---------------------------------------------------------------------------
+// These caps mirror the answers given to Riot Games' Production API tournament
+// questionnaire. They MUST stay aligned with what was submitted to Riot —
+// changing either limit upward requires a follow-up notification to Riot.
+//
+//   - MAX_ENTRY_FEE_COINS: per-player entry fee ceiling (~€99 retail).
+//   - MAX_PRIZE_POOL_COINS: per-tournament gross pool ceiling
+//     (~€5,000 / ~$5,400 USD — well under Riot's Community Competition
+//     Guidelines threshold for unlicensed organizers).
+
+export const MAX_ENTRY_FEE_COINS = 10_000;
+export const MAX_PRIZE_POOL_COINS = 500_000;
+export const MOD_CUT_PCT = 5; // platform/moderation fee taken from gross pool
+
+/**
+ * Validate that a tournament's entry fee × max participants doesn't exceed
+ * the platform-enforced caps disclosed to Riot.
+ * @param {{ entryFee:number, maxParticipants:number }} cfg
+ * @returns {{ ok:true } | { ok:false, error:string, field:'entryFee'|'pool' }}
+ */
+export function validateTournamentLimits({ entryFee = 0, maxParticipants = 0 }) {
+  const fee = Math.max(0, Math.floor(entryFee));
+  const cap = Math.max(0, Math.floor(maxParticipants));
+  if (fee > MAX_ENTRY_FEE_COINS) {
+    return {
+      ok: false,
+      field: 'entryFee',
+      error: `Entry fee can't exceed ${MAX_ENTRY_FEE_COINS.toLocaleString()} coins per player.`,
+    };
+  }
+  const grossPool = fee * cap;
+  if (grossPool > MAX_PRIZE_POOL_COINS) {
+    return {
+      ok: false,
+      field: 'pool',
+      error: `Prize pool would be ${grossPool.toLocaleString()} coins — platform cap is ${MAX_PRIZE_POOL_COINS.toLocaleString()} coins. Lower the entry fee or player count.`,
+    };
+  }
+  return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
 // BRACKET TYPE CONFIGURATION
 // ---------------------------------------------------------------------------
 

@@ -1,4 +1,4 @@
-import { Fragment, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
 import { useNavigate } from 'react-router-dom';
 import { useNotifications } from '../context/NotificationContext';
@@ -6,28 +6,69 @@ import { useUI } from '../context/UIContext';
 import Icon from './Icon';
 import { timeAgo } from '../utils/helpers';
 
+// Custom .webp icons live in /public/notif-icons/ (sourced from design upload).
+// Falls back to Material Symbols for types without a custom icon.
 const NOTIF_ICONS = {
-  follow: { icon: 'person_add', color: 'text-brand-cyan', bg: 'bg-brand-cyan/15' },
-  like: { icon: 'favorite', color: 'text-brand-ember', bg: 'bg-brand-ember/15' },
-  comment: { icon: 'chat_bubble', color: 'text-brand-violet', bg: 'bg-brand-violet/15' },
-  tip: { icon: 'monetization_on', color: 'text-brand-gold', bg: 'bg-brand-gold/15' },
-  coins: { icon: 'paid', color: 'text-brand-gold', bg: 'bg-brand-gold/15' },
-  system: { icon: 'info', color: 'text-brand-cyan', bg: 'bg-brand-cyan/15' },
-  membership: { icon: 'card_membership', color: 'text-brand-pink', bg: 'bg-brand-pink/15' },
-  order: { icon: 'shopping_bag', color: 'text-brand-violet', bg: 'bg-brand-violet/15' },
-  tournament: { icon: 'emoji_events', color: 'text-brand-gold', bg: 'bg-brand-gold/15' },
-  squad: { icon: 'shield', color: 'text-brand-cyan', bg: 'bg-brand-cyan/15' },
-  message: { icon: 'chat', color: 'text-brand-violet', bg: 'bg-brand-violet/15' },
+  follow:     { icon: 'person_add',       color: 'text-brand-cyan',   bg: 'bg-brand-cyan/15' },
+  like:       { icon: 'favorite',         color: 'text-brand-ember',  bg: 'bg-brand-ember/15',  webp: '/notif-icons/like.webp' },
+  comment:    { icon: 'chat_bubble',      color: 'text-brand-violet', bg: 'bg-brand-violet/15', webp: '/notif-icons/comment.webp' },
+  tip:        { icon: 'monetization_on',  color: 'text-brand-gold',   bg: 'bg-brand-gold/15',   webp: '/notif-icons/coins.webp' },
+  coins:      { icon: 'paid',             color: 'text-brand-gold',   bg: 'bg-brand-gold/15',   webp: '/notif-icons/coins.webp' },
+  vp:         { icon: 'auto_awesome',     color: 'text-brand-violet', bg: 'bg-brand-violet/15', webp: '/notif-icons/vp.webp' },
+  security:   { icon: 'security',         color: 'text-brand-ember',  bg: 'bg-brand-ember/15',  webp: '/notif-icons/security.webp' },
+  system:     { icon: 'info',             color: 'text-brand-cyan',   bg: 'bg-brand-cyan/15',   webp: '/notif-icons/system.webp' },
+  update:     { icon: 'campaign',         color: 'text-brand-violet', bg: 'bg-brand-violet/15', webp: '/notif-icons/system.webp' },
+  membership: { icon: 'card_membership',  color: 'text-brand-pink',   bg: 'bg-brand-pink/15' },
+  order:      { icon: 'shopping_bag',     color: 'text-brand-violet', bg: 'bg-brand-violet/15' },
+  tournament: { icon: 'emoji_events',     color: 'text-brand-gold',   bg: 'bg-brand-gold/15' },
+  squad:      { icon: 'shield',           color: 'text-brand-cyan',   bg: 'bg-brand-cyan/15' },
+  message:    { icon: 'chat',             color: 'text-brand-violet', bg: 'bg-brand-violet/15' },
 };
+
+const FILTERS = [
+  { id: 'all',     label: 'All',     match: () => true },
+  { id: 'tips',    label: 'Tips',    match: n => ['tip','coins','vp'].includes(n.type) },
+  { id: 'social',  label: 'Social',  match: n => ['follow','like','comment','message','squad'].includes(n.type) },
+  { id: 'system',  label: 'System',  match: n => ['system','update','security'].includes(n.type) },
+];
+
+function bucketLabel(ts) {
+  if (!ts) return 'Earlier';
+  const d = ts?.toDate ? ts.toDate() : new Date(ts);
+  if (isNaN(d.getTime())) return 'Earlier';
+  const now = new Date();
+  const sameDay = d.toDateString() === now.toDateString();
+  if (sameDay) return 'Today';
+  const yesterday = new Date(now); yesterday.setDate(now.getDate() - 1);
+  if (d.toDateString() === yesterday.toDateString()) return 'Yesterday';
+  if ((now - d) / (1000 * 60 * 60 * 24) < 7) return 'This Week';
+  return 'Earlier';
+}
 
 export default function NotificationsDrawer() {
   const { notificationsDrawerOpen, setNotificationsDrawerOpen } = useUI();
   const { notifications, markRead, markAllRead, unreadNotifCount } = useNotifications();
   const navigate = useNavigate();
   const [expandedId, setExpandedId] = useState(null);
+  const [filterId, setFilterId] = useState('all');
 
-  const closeDrawer = () => { setNotificationsDrawerOpen(false); setExpandedId(null); };
+  const closeDrawer = () => { setNotificationsDrawerOpen(false); setExpandedId(null); setFilterId('all'); };
   const getStyle = (type) => NOTIF_ICONS[type] || NOTIF_ICONS.system;
+
+  const activeFilter = FILTERS.find(f => f.id === filterId) || FILTERS[0];
+  const filtered = useMemo(() => notifications.filter(activeFilter.match), [notifications, activeFilter]);
+
+  // Group by bucket while preserving order
+  const grouped = useMemo(() => {
+    const out = [];
+    let lastBucket = null;
+    for (const n of filtered) {
+      const b = bucketLabel(n.createdAt);
+      if (b !== lastBucket) { out.push({ bucket: b, items: [] }); lastBucket = b; }
+      out[out.length - 1].items.push(n);
+    }
+    return out;
+  }, [filtered]);
 
   const formatDate = (ts) => {
     if (!ts) return '';
@@ -97,17 +138,42 @@ export default function NotificationsDrawer() {
                       </div>
                     </div>
 
+                    {/* Filter pills */}
+                    <div className="px-4 pt-2 pb-2.5 border-b border-white/[0.04] flex items-center gap-1.5 overflow-x-auto">
+                      {FILTERS.map(f => {
+                        const active = filterId === f.id;
+                        return (
+                          <button
+                            key={f.id}
+                            onClick={() => setFilterId(f.id)}
+                            className={`px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition-colors ${
+                              active
+                                ? 'bg-brand-violet/20 text-brand-violet border border-brand-violet/30'
+                                : 'bg-surface-1/40 text-text-muted border border-white/[0.04] hover:text-text-secondary'
+                            }`}
+                          >
+                            {f.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+
                     {/* List */}
                     <div className="flex-1 overflow-y-auto">
-                      {notifications.length === 0 ? (
+                      {filtered.length === 0 ? (
                         <div className="flex flex-col items-center justify-center h-64 text-text-muted">
                           <Icon name="notifications_none" size={48} className="mb-4 opacity-20" />
-                          <p className="text-sm">No notifications yet</p>
+                          <p className="text-sm">{notifications.length === 0 ? 'No notifications yet' : `No ${activeFilter.label.toLowerCase()} notifications`}</p>
                           <p className="text-xs text-text-muted/50 mt-1">You'll see updates here</p>
                         </div>
                       ) : (
                         <div>
-                          {notifications.map((notif) => {
+                          {grouped.map(group => (
+                            <div key={group.bucket}>
+                              <div className="px-4 pt-3 pb-1 text-[10px] uppercase tracking-widest font-bold text-text-muted/70">
+                                {group.bucket}
+                              </div>
+                              {group.items.map((notif) => {
                             const style = getStyle(notif.type);
                             const title = notif.title || notif.content || 'Notification';
                             const body = notif.body || '';
@@ -119,9 +185,13 @@ export default function NotificationsDrawer() {
                                   className={`w-full px-4 py-3 text-left transition-colors flex items-start gap-3 ${
                                     !notif.read ? 'bg-brand-cyan/5 hover:bg-brand-cyan/8' : 'hover:bg-surface-1/50'
                                   }`}>
-                                  <div className={`w-9 h-9 rounded-xl ${style.bg} flex items-center justify-center shrink-0 mt-0.5`}>
-                                    <Icon name={style.icon} size={18} className={style.color} />
-                                  </div>
+                                  {style.webp ? (
+                                    <img src={style.webp} alt="" className="w-9 h-9 object-contain shrink-0 mt-0.5" />
+                                  ) : (
+                                    <div className={`w-9 h-9 rounded-xl ${style.bg} flex items-center justify-center shrink-0 mt-0.5`}>
+                                      <Icon name={style.icon} size={18} className={style.color} />
+                                    </div>
+                                  )}
                                   <div className="flex-1 min-w-0">
                                     <p className={`text-sm leading-snug ${!notif.read ? 'text-white font-semibold' : 'text-text-primary'}`}>
                                       {title}
@@ -161,6 +231,8 @@ export default function NotificationsDrawer() {
                               </div>
                             );
                           })}
+                            </div>
+                          ))}
                         </div>
                       )}
                     </div>

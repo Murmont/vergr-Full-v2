@@ -1,75 +1,32 @@
 // src/screens/settings/SettingsScreen.jsx
+// Redesigned settings hub. Card grid + danger row. Wallet & Payouts is a
+// link-only entry to /wallet — its UI is intentionally untouched.
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useUser } from '../../context/UserContext';
-import TopBar from '../../components/TopBar';
-import UserAvatar from '../../components/UserAvatar';
-import Icon from '../../components/Icon';
-import useResponsive from '../../hooks/useResponsive';
 import { useLayout } from '../../context/LayoutContext';
+import TopBar from '../../components/TopBar';
+import useResponsive from '../../hooks/useResponsive';
+import { C, PageShell } from './_settingsUI';
 
-const SETTINGS_SECTIONS = [
-  {
-    title: 'Account',
-    items: [
-      { icon: 'person', label: 'Edit Profile', route: '/edit-profile' },
-      { icon: 'lock', label: 'Privacy & Security', route: '/settings/privacy' },
-      { icon: 'notifications', label: 'Notifications', route: '/settings/notifications' },
-      { icon: 'link', label: 'Linked Accounts', route: '/settings/linked-accounts' },
-    ],
-  },
-  {
-    title: 'Earnings & Payments',
-    items: [
-      { icon: 'workspace_premium', label: 'Subscription', route: '/settings/subscription' },
-      { icon: 'star', label: 'VP Levels & Ranks', route: '/settings/ranks' },
-      { icon: 'account_balance_wallet', label: 'Wallet', route: '/wallet' },
-      { icon: 'paid', label: 'Earn Coins', route: '/earn' },
-      { icon: 'savings', label: 'Cash Out', route: '/request-payout' },
-    ],
-  },
-  {
-    title: 'Creator Tools',
-    items: [
-      { icon: 'analytics', label: 'Creator Dashboard', route: '/creator/dashboard' },
-      { icon: 'live_tv', label: 'Stream Settings', route: '/go-live' },
-      { icon: 'card_membership', label: 'Membership Tiers', route: '/creator/membership' },
-    ],
-  },
-  {
-    title: 'Data & Storage',
-    items: [
-      { icon: 'cloud_sync', label: 'Backup & Storage', route: '/settings/backup' },
-      { icon: 'storage', label: 'Manage Local Data', route: '/settings/backup' },
-    ],
-  },
-  {
-    title: 'App',
-    items: [
-      { icon: 'language', label: 'Language', route: '/settings/language' },
-      { icon: 'palette', label: 'Display', route: '/settings/display' },
-      { icon: 'school', label: 'How VERGR Works', route: '/settings/how-it-works' },
-      { icon: 'help', label: 'Help & Support', route: '/settings/help' },
-      { icon: 'info', label: 'About VERGR', route: '/settings/about' },
-    ],
-  },
-];
+const Chevron = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3a3a5a" strokeWidth="2" style={{ flexShrink: 0 }}>
+    <path d="M9 18l6-6-6-6"/>
+  </svg>
+);
 
 export default function SettingsScreen() {
   const { logout } = useAuth();
   const { profile, wallet } = useUser();
   const navigate = useNavigate();
-  const { isMobile, isDesktop } = useResponsive();
+  const { isMobile } = useResponsive();
   const { setRightPanel, setContentAlign } = useLayout();
 
   useEffect(() => {
     setRightPanel(null);
     setContentAlign('left');
-    return () => {
-      setRightPanel(null);
-      setContentAlign('center');
-    };
+    return () => { setRightPanel(null); setContentAlign('center'); };
   }, [setRightPanel, setContentAlign]);
 
   const handleLogout = async () => {
@@ -77,100 +34,350 @@ export default function SettingsScreen() {
     navigate('/login', { replace: true });
   };
 
-  const leftColumnSections = SETTINGS_SECTIONS.slice(0, 3);
-  const rightColumnSections = SETTINGS_SECTIONS.slice(3, 5);
+  const displayName = profile?.username || profile?.displayName || 'You';
+  const handle = profile?.username ? `@${profile.username}` : '';
+  const email = profile?.email || '';
+  const subTier = (profile?.subscription?.tier || 'free').toLowerCase();
+  const tierLabel = subTier === 'pro' ? 'PRO' : subTier === 'lite' ? 'LITE' : 'FREE';
+  const verifyStatus = profile?.creatorVerification?.status || profile?.verifiedAt ? 'approved' : (profile?.kycSubmittedAt ? 'pending' : null);
 
-  return (
-    <div className="pb-8">
-      {isMobile && <TopBar title="Settings" showBack />}
-      {!isMobile && (
-        <div className="flex justify-start px-4 pt-4">
-          <button onClick={() => navigate(-1)} className="text-white/80 hover:text-white transition-colors" aria-label="Go back">
-            <Icon name="arrow_back" size={24} />
-          </button>
-        </div>
-      )}
-
-      <button onClick={() => navigate('/profile')} className="mx-4 mt-2 flex items-center gap-3 p-4 rounded-2xl border border-white/[0.06] bg-surface-1 hover:bg-surface-2/50 transition-colors">
-        <UserAvatar src={profile?.avatar} size={52} tier={wallet?.totalSpent || 0} isVerified={profile?.isVerified} />
-        <div className="flex-1 min-w-0 text-left">
-          <p className="font-semibold text-text-primary truncate">{profile?.displayName}</p>
-          <p className="text-text-muted text-sm">@{profile?.username}</p>
-        </div>
-        <Icon name="chevron_right" size={20} className="text-text-muted" />
-      </button>
-
-      {isDesktop ? (
-        <div className="grid grid-cols-2 gap-6 px-4 mt-6">
-          <div className="space-y-6">
-            {leftColumnSections.map(section => (
-              <div key={section.title}>
-                <h3 className="text-text-muted text-xs font-semibold uppercase tracking-wider mb-2 px-1">{section.title}</h3>
-                <div className="rounded-2xl border border-white/[0.06] bg-surface-1 overflow-hidden">
-                  {section.items.map((item, i) => (
-                    <button key={item.label} onClick={() => navigate(item.route)}
-                      className={`w-full flex items-center gap-3 px-4 py-3.5 hover:bg-surface-2 transition-colors text-left ${
-                        i > 0 ? 'border-t border-white/[0.04]' : ''
-                      }`}>
-                      <Icon name={item.icon} size={22} className="text-text-secondary" />
-                      <span className="flex-1 text-sm text-text-primary">{item.label}</span>
-                      <Icon name="chevron_right" size={18} className="text-text-muted" />
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-          <div className="space-y-6">
-            {rightColumnSections.map(section => (
-              <div key={section.title}>
-                <h3 className="text-text-muted text-xs font-semibold uppercase tracking-wider mb-2 px-1">{section.title}</h3>
-                <div className="rounded-2xl border border-white/[0.06] bg-surface-1 overflow-hidden">
-                  {section.items.map((item, i) => (
-                    <button key={item.label} onClick={() => navigate(item.route)}
-                      className={`w-full flex items-center gap-3 px-4 py-3.5 hover:bg-surface-2 transition-colors text-left ${
-                        i > 0 ? 'border-t border-white/[0.04]' : ''
-                      }`}>
-                      <Icon name={item.icon} size={22} className="text-text-secondary" />
-                      <span className="flex-1 text-sm text-text-primary">{item.label}</span>
-                      <Icon name="chevron_right" size={18} className="text-text-muted" />
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ))}
+  const cards = [
+    {
+      id: 'account', icon: 'person', color: C.purple, title: 'Account',
+      desc: 'Update your profile, handle, email, and profile picture.',
+      onClick: () => navigate('/edit-profile'),
+      right: (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{
+            width: 36, height: 36, borderRadius: '50%',
+            background: profile?.avatar ? `url(${profile.avatar}) center/cover` : 'linear-gradient(135deg,#3d1f7a,#7c3aed)',
+            border: '2px solid #4a2a8a',
+          }}/>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{displayName}</div>
+            {handle && <div style={{ fontSize: 11, color: C.textVeryDim }}>{handle}</div>}
+            {email && <div style={{ fontSize: 11, color: C.textVeryDim }}>{email}</div>}
           </div>
         </div>
-      ) : (
-        <div className="px-4 mt-6 space-y-6">
-          {SETTINGS_SECTIONS.map(section => (
-            <div key={section.title}>
-              <h3 className="text-text-muted text-xs font-semibold uppercase tracking-wider mb-2 px-1">{section.title}</h3>
-              <div className="rounded-2xl border border-white/[0.06] bg-surface-1 overflow-hidden">
-                {section.items.map((item, i) => (
-                  <button key={item.label} onClick={() => navigate(item.route)}
-                    className={`w-full flex items-center gap-3 px-4 py-3.5 hover:bg-surface-2 transition-colors text-left ${
-                      i > 0 ? 'border-t border-white/[0.04]' : ''
-                    }`}>
-                    <Icon name={item.icon} size={22} className="text-text-secondary" />
-                    <span className="flex-1 text-sm text-text-primary">{item.label}</span>
-                    <Icon name="chevron_right" size={18} className="text-text-muted" />
-                  </button>
-                ))}
+      ),
+    },
+    {
+      id: 'privacy', icon: 'lock', color: C.purple, title: 'Privacy',
+      desc: 'Control who can message you, tag you, and see your activity.',
+      onClick: () => navigate('/settings/privacy'),
+      right: <ManageBtn>Manage</ManageBtn>,
+    },
+    {
+      id: 'notifications', icon: 'notifications', color: C.purple, title: 'Notifications',
+      desc: 'Choose what you want to be notified about and how.',
+      onClick: () => navigate('/settings/notifications'),
+      right: (
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <MaterialIconStroke name="phone_iphone" />
+          <MaterialIconStroke name="mail_outline" />
+          <MaterialIconStroke name="chat_bubble_outline" stroke={C.green} />
+        </div>
+      ),
+    },
+    {
+      id: 'security', icon: 'shield', color: C.purple, title: 'Security',
+      desc: 'Password, 2FA, active sessions, and trusted devices.',
+      onClick: () => navigate('/settings/security'),
+      right: (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: C.green, fontSize: 13, fontWeight: 600 }}>
+          <Dot color={C.green}/> Secure
+        </div>
+      ),
+    },
+    {
+      id: 'subscription', icon: 'workspace_premium', color: C.amber, title: 'Subscription',
+      desc: 'Manage your plan, billing, and subscription settings.',
+      onClick: () => navigate('/settings/subscription'),
+      extra: (
+        <div style={{
+          background: C.cardSoft, borderRadius: 10, padding: 14,
+          marginTop: 12, border: `1px solid ${C.border}`,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+            <div style={{
+              width: 36, height: 36, background: 'linear-gradient(135deg,#3d1f7a,#7c3aed)',
+              borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <VLogo size={18}/>
+            </div>
+            <div>
+              <span style={{
+                background: C.purple, color: '#fff', fontSize: 10, fontWeight: 700,
+                padding: '2px 6px', borderRadius: 4, marginRight: 6,
+              }}>{tierLabel}</span>
+              <div style={{ fontSize: 16, fontWeight: 700, color: C.text, display: 'inline' }}>VERGR {tierLabel === 'FREE' ? 'Free' : tierLabel.charAt(0) + tierLabel.slice(1).toLowerCase()}</div>
+              <div style={{ fontSize: 11, color: C.textVeryDim, marginTop: 2 }}>
+                {subTier === 'free' ? 'Upgrade for monthly perks' : `Renews ${profile?.subscription?.renewsAt ? new Date(profile.subscription.renewsAt).toLocaleDateString() : 'monthly'}`}
               </div>
             </div>
-          ))}
+          </div>
+          <div style={{ display: 'flex', gap: 12, marginBottom: 10, flexWrap: 'wrap' }}>
+            {(subTier === 'pro'
+              ? ['Pro badge', '+1,000 VP/mo', '5 active giveaways', 'Priority support']
+              : subTier === 'lite'
+              ? ['Lite badge', '+500 VP/mo', '3 active giveaways', 'Priority support']
+              : ['Free tier', '+100 VP/mo', '1 active giveaway', 'Community support']
+            ).map(b => (
+              <div key={b} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: C.textMuted }}>
+                <CheckCircle/>{b}
+              </div>
+            ))}
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); navigate('/settings/subscription'); }}
+              style={{
+                background: `linear-gradient(135deg,${C.purple},${C.purpleDeep})`,
+                color: '#fff', border: 'none',
+                borderRadius: 8, padding: '7px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+              }}
+            >Manage Plan</button>
+            {subTier !== 'free' && (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); navigate('/settings/subscription'); }}
+                style={{
+                  background: 'transparent', color: C.textMuted, border: `1px solid ${C.borderHard}`,
+                  borderRadius: 8, padding: '7px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                }}
+              >Cancel Subscription</button>
+            )}
+          </div>
         </div>
-      )}
+      ),
+    },
+    {
+      id: 'wallet', icon: 'account_balance_wallet', color: C.green, title: 'Wallet & Payouts',
+      desc: 'Manage your balances, payout method, and view payout history.',
+      onClick: () => navigate('/wallet'),
+      right: (
+        <div style={{ textAlign: 'right' }}>
+          <div style={{ fontSize: 10, color: C.textVeryDim, marginBottom: 4 }}>Balance</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: C.text, fontSize: 13, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
+            <span style={{ color: C.amber }}>◆</span>
+            {(wallet?.gems ?? 0).toLocaleString()} gems
+          </div>
+        </div>
+      ),
+    },
+    {
+      id: 'connected', icon: 'link', color: C.purple, title: 'Connected Accounts',
+      desc: 'Connect your gaming and social accounts to unlock more features.',
+      onClick: () => navigate('/settings/linked-accounts'),
+      right: (
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          {[['#1b2838','S'],['#c6362f','R'],['#107c10','X'],['#5865f2','D']].map(([c, l], i) => (
+            <div key={i} style={{
+              width: 24, height: 24, borderRadius: 6, background: c,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 10, color: '#fff', fontWeight: 700,
+            }}>{l}</div>
+          ))}
+          <div style={{
+            width: 24, height: 24, borderRadius: 6, background: C.borderHard,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 10, color: C.textDim,
+          }}>+1</div>
+        </div>
+      ),
+    },
+    {
+      id: 'verification', icon: 'verified', color: C.purple, title: 'Creator Verification',
+      desc: 'Verify your identity to unlock creator features.',
+      onClick: () => navigate('/creator/verify'),
+      right: verifyStatus === 'approved' ? (
+        <span style={{
+          background: 'rgba(34,197,94,0.15)', color: C.green,
+          border: '1px solid rgba(34,197,94,0.3)', borderRadius: 6,
+          padding: '3px 10px', fontSize: 11, fontWeight: 700,
+        }}>APPROVED</span>
+      ) : verifyStatus === 'pending' ? (
+        <span style={{
+          background: 'rgba(245,158,11,0.15)', color: C.amber,
+          border: '1px solid rgba(245,158,11,0.3)', borderRadius: 6,
+          padding: '3px 10px', fontSize: 11, fontWeight: 700,
+        }}>PENDING</span>
+      ) : (
+        <ManageBtn>Get Verified</ManageBtn>
+      ),
+    },
+    {
+      id: 'help', icon: 'help', color: '#3b82f6', title: 'Help & Support',
+      desc: 'Browse FAQs or contact our support team.',
+      onClick: () => navigate('/settings/help'),
+      right: <LinkBtn>Visit Help Center</LinkBtn>,
+    },
+    {
+      id: 'legal', icon: 'description', color: C.textDim, title: 'Legal',
+      desc: 'View our Terms of Service, Privacy Policy, and Refund Policy.',
+      onClick: () => navigate('/settings/privacy-policy'),
+      right: <LinkBtn>View Documents</LinkBtn>,
+    },
+    {
+      id: 'about', icon: 'info', color: C.textDim, title: 'About',
+      desc: 'View app version, build details, and attributions.',
+      onClick: () => navigate('/settings/about'),
+      right: (
+        <div style={{ textAlign: 'right' }}>
+          <div style={{ fontSize: 13, color: C.text, fontWeight: 600 }}>VERGR v1.2.4</div>
+          <div style={{ fontSize: 11, color: C.textVeryDim }}>Build 240521.1847</div>
+        </div>
+      ),
+    },
+  ];
 
-      <div className="px-4 mt-8 mb-6">
-        <button onClick={handleLogout}
-          className="w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl border border-brand-ember/30 text-brand-ember hover:bg-brand-ember/5 transition-colors">
-          <Icon name="logout" size={20} />
-          <span className="font-semibold text-sm">Log Out</span>
-        </button>
-        <p className="text-text-muted text-xs text-center mt-4">VERGR v1.0.0</p>
+  // Pull Subscription out as a full-width hero so the remaining 10 cards make a clean
+  // 5-row × 2-col grid (no awkward empty trailing slot from an odd-numbered card list).
+  const heroCard = cards.find(c => c.id === 'subscription');
+  const gridCards = cards.filter(c => c.id !== 'subscription');
+
+  const renderCard = (card) => (
+    <div
+      key={card.id}
+      onClick={card.onClick}
+      style={{
+        background: C.card, border: `1px solid ${C.border}`,
+        borderRadius: 12, padding: 16, cursor: 'pointer',
+        transition: 'border-color 0.15s',
+      }}
+      onMouseEnter={e => e.currentTarget.style.borderColor = '#2a2a3e'}
+      onMouseLeave={e => e.currentTarget.style.borderColor = C.border}
+    >
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+        <div style={{
+          width: 38, height: 38, borderRadius: 10,
+          background: `${card.color}18`, border: `1px solid ${card.color}30`,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+          color: card.color,
+        }}>
+          <span className="material-symbols-outlined" style={{ fontSize: 18 }}>{card.icon}</span>
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 3 }}>{card.title}</div>
+          <div style={{ fontSize: 12, color: C.textVeryDim, lineHeight: 1.4 }}>{card.desc}</div>
+        </div>
+        {card.right && <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>{card.right}</div>}
+        <Chevron/>
       </div>
+      {card.extra}
+    </div>
+  );
+
+  return (
+    <div style={{ background: C.bg, minHeight: '100%' }}>
+      {isMobile && <TopBar title="Settings" showBack />}
+      <PageShell>
+        {/* Subscription hero (full width — keeps grid below tidy) */}
+        {heroCard && <div style={{ marginBottom: 12 }}>{renderCard(heroCard)}</div>}
+
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',
+          gap: 12, marginBottom: 12,
+        }}>
+          {gridCards.map(renderCard)}
+        </div>
+
+        {/* Danger row */}
+        <div style={{
+          display: 'grid', gap: 12,
+          gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',
+        }}>
+          <DangerCard
+            icon="logout"
+            title="Sign out"
+            desc="Sign out of your VERGR account."
+            onClick={handleLogout}
+          />
+          <DangerCard
+            icon="delete"
+            title="Delete account"
+            desc="Permanently delete your account."
+            onClick={() => navigate('/settings/delete-account')}
+          />
+        </div>
+      </PageShell>
+    </div>
+  );
+}
+
+function ManageBtn({ children }) {
+  return (
+    <span style={{
+      background: 'transparent', border: `1px solid ${C.borderHard}`, borderRadius: 8,
+      color: C.textMuted, fontSize: 12, padding: '5px 12px', whiteSpace: 'nowrap',
+    }}>{children}</span>
+  );
+}
+
+function LinkBtn({ children }) {
+  return (
+    <span style={{
+      background: 'transparent', border: '1px solid #3d1f7a', borderRadius: 8,
+      color: C.purple, fontSize: 12, padding: '5px 12px', whiteSpace: 'nowrap',
+    }}>{children}</span>
+  );
+}
+
+function MaterialIconStroke({ name, stroke = C.textVeryDim }) {
+  return (
+    <span className="material-symbols-outlined" style={{ fontSize: 16, color: stroke }}>
+      {name}
+    </span>
+  );
+}
+
+function Dot({ color }) {
+  return <div style={{ width: 8, height: 8, borderRadius: '50%', background: color }}/>;
+}
+
+function CheckCircle() {
+  return (
+    <div style={{
+      width: 14, height: 14, borderRadius: '50%',
+      border: `1.5px solid ${C.purple}`,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+    }}>
+      <svg width="8" height="8" viewBox="0 0 10 10" fill="none">
+        <path d="M2 5l2 2 4-4" stroke={C.purple} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+      </svg>
+    </div>
+  );
+}
+
+function VLogo({ size = 18 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <polygon points="12,2 22,20 2,20" fill="#7c3aed"/>
+      <text x="12" y="17" textAnchor="middle" fill="white" fontSize="9" fontWeight="bold" fontFamily="sans-serif">V</text>
+    </svg>
+  );
+}
+
+function DangerCard({ icon, title, desc, onClick }) {
+  return (
+    <div
+      onClick={onClick}
+      style={{
+        background: C.card, border: '1px solid rgba(239,68,68,0.2)',
+        borderRadius: 12, padding: 16,
+        display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer',
+      }}
+    >
+      <span className="material-symbols-outlined" style={{ fontSize: 18, color: C.red }}>{icon}</span>
+      <div>
+        <div style={{ fontSize: 14, fontWeight: 700, color: C.red }}>{title}</div>
+        <div style={{ fontSize: 11, color: C.textDim }}>{desc}</div>
+      </div>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3a3a5a" strokeWidth="2" style={{ marginLeft: 'auto' }}>
+        <path d="M9 18l6-6-6-6"/>
+      </svg>
     </div>
   );
 }

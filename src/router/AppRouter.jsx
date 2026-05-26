@@ -9,6 +9,8 @@ import Toast from '../components/Toast';
 import PushToast from '../components/PushToast';
 import IncomingCallOverlay from '../components/IncomingCallOverlay';
 import AdminAnnounceScreen from '../screens/admin/AdminAnnounceScreen';
+import SuperAdminDashboardScreen from '../screens/admin/SuperAdminDashboardScreen';
+import AdminBotsScreen from '../screens/admin/AdminBotsScreen';
 import DesktopNotificationManager from '../components/DesktopNotificationManager';
 import NotificationsDrawer from '../components/NotificationsDrawer';
 import ConsentSheet from '../components/ConsentSheet';
@@ -168,6 +170,7 @@ import TransactionFiltersScreen from '../screens/wallet/TransactionFiltersScreen
 import RequestPayoutScreen from '../screens/wallet/RequestPayoutScreen';
 import PayoutSuccessScreen from '../screens/wallet/PayoutSuccessScreen';
 import WalletSecurityScreen from '../screens/wallet/WalletSecurityScreen';
+import { PayoutStatusScreen, PayoutHistoryScreen, SavedAddressesScreen } from '../screens/wallet/PayoutScreens';
 
 // Creator
 import CreatorDashboardScreen from '../screens/creator/CreatorDashboardScreen';
@@ -410,6 +413,10 @@ export default function AppRouter() {
                       <Route path="/transactions/filter" element={<TransactionFiltersScreen />} />
                       <Route path="/request-payout" element={<RequestPayoutScreen />} />
                       <Route path="/payout-success" element={<PayoutSuccessScreen />} />
+                      <Route path="/wallet/payout"           element={<RequestPayoutScreen />} />
+                      <Route path="/wallet/payout/history"   element={<PayoutHistoryScreen />} />
+                      <Route path="/wallet/payout/:payoutId" element={<PayoutStatusScreen />} />
+                      <Route path="/wallet/addresses"        element={<SavedAddressesScreen />} />
 
                       <Route path="/verification-pending" element={<VerificationPendingScreen />} />
 
@@ -475,6 +482,8 @@ export default function AppRouter() {
                       <Route path="/settings/privacy-policy" element={<PrivacyPolicyScreen />} />
 
                       {/* Admin */}
+                      <Route path="/admin" element={<SuperAdminDashboardScreen />} />
+                      <Route path="/admin/bots" element={<AdminBotsScreen />} />
                       <Route path="/admin/announce" element={<AdminAnnounceScreen />} />
 
                       {/* Search */}

@@ -169,10 +169,20 @@ service firebase.storage {
 
     // ═══════════════════════════════════════════
     // TOURNAMENT MEDIA
+    //
+    // Two paths:
+    //   tournaments/<tourneyId>/<file>       — banner attached to a saved tournament
+    //   tournaments/_drafts/<uid>/<file>     — banner uploaded by the host before
+    //                                          the tournament doc exists (Create wizard)
     // ═══════════════════════════════════════════
     match /tournaments/{tourneyId}/{fileName} {
       allow read: if true;
       allow write: if isAuth() && isImage() && isUnder(10);
+    }
+
+    match /tournaments/_drafts/{userId}/{fileName} {
+      allow read: if true;
+      allow write: if isOwner(userId) && isImage() && isUnder(10);
     }
 
     // ═══════════════════════════════════════════

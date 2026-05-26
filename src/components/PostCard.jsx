@@ -128,14 +128,15 @@ function ArticleContent({ data }) {
 }
 
 function TierListContent({ data }) {
-  if (!data?.tiers) return null;
+  const tiers = Array.isArray(data?.tiers) ? data.tiers : [];
+  if (tiers.length === 0) return null;
   return (
     <div className="mt-3 rounded-2xl border border-white/[0.06] overflow-hidden">
       <div className="px-3 py-2 bg-surface-1/50 border-b border-white/[0.04] flex items-center gap-2">
         <Icon name="format_list_numbered" size={14} className="text-brand-violet" />
         <span className="text-brand-violet text-[10px] font-bold uppercase tracking-widest">Tier List</span>
       </div>
-      {data.tiers.filter(t => t.items?.length > 0).map(tier => (
+      {tiers.filter(t => t.items?.length > 0).map(tier => (
         <div key={tier.label} className="flex items-stretch border-b border-white/[0.04] last:border-b-0">
           <div className="w-10 shrink-0 flex items-center justify-center font-syne font-black text-sm text-white" style={{ background: `${tier.color}25`, borderRight: `2px solid ${tier.color}` }}>{tier.label}</div>
           <div className="flex flex-wrap gap-1 p-1.5 flex-1">

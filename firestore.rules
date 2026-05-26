@@ -87,6 +87,20 @@ service cloud.firestore {
       match /bookmarks/{postId} {
         allow read, write: if isOwner(userId);
       }
+
+      // Privacy/consent docs (consent banners, captureSignals telemetry).
+      // Owner read/write; admins can read for support. Server (Cloud Functions)
+      // bypasses these rules anyway via the admin SDK.
+      match /meta/{docId} {
+        allow read:  if isOwner(userId) || isAdmin();
+        allow write: if isOwner(userId);
+      }
+
+      // Saved crypto wallet addresses for fast payouts.
+      match /savedAddresses/{addrId} {
+        allow read:  if isOwner(userId);
+        allow write: if isOwner(userId);
+      }
     }
 
     // ============================================================

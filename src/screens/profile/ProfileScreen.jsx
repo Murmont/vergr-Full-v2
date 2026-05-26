@@ -18,6 +18,8 @@ import { useLayout } from '../../context/LayoutContext';
 import useResponsive from '../../hooks/useResponsive';
 import { getUserPosts, getBookmarks, getFollowers, getFollowing } from '../../firebase/firestore';
 import { getVPLevel, getVPProgress, getNextVPLevel } from '../../utils/vpSystem';
+import BadgesShowcase from '../../components/BadgesShowcase';
+import TwitchMirrorPlayer from '../../components/streams/TwitchMirrorPlayer';
 import UserAvatar from '../../components/UserAvatar';
 import Icon from '../../components/Icon';
 import PostCard from '../../components/PostCard';
@@ -45,14 +47,14 @@ export default function ProfileScreen() {
   const vpLevel = getVPLevel?.(vp);
   const vpProgress = getVPProgress?.(vp) ?? 0;
   const vpNext = getNextVPLevel?.(vp);
-  const vpToNext = vpNext ? Math.max(0, vpNext.minVP - vp) : 0;
+  const vpToNext = vpNext ? Math.max(0, vpNext.vpRequired - vp) : 0;
 
   // Right panel
   useEffect(() => {
-    setRightPanel(<OwnerRightPanel posts={posts} navigate={navigate} />);
+    setRightPanel(<OwnerRightPanel posts={posts} navigate={navigate} profile={profile} />);
     setContentAlign('left');
     return () => { setRightPanel(null); setContentAlign('center'); };
-  }, [setRightPanel, setContentAlign, posts, navigate]);
+  }, [setRightPanel, setContentAlign, posts, navigate, profile]);
 
   useEffect(() => {
     if (!currentUser?.uid) return;
@@ -186,7 +188,7 @@ export default function ProfileScreen() {
               </p>
             )}
             <div className="flex items-center gap-2.5">
-              {(profile?.socials || []).filter(s => s?.url).slice(0, 5).map((s, i) => (
+              {socialsToList(profile?.socials, profile?.socialEnabled).slice(0, 5).map((s, i) => (
                 <a key={i} href={s.url} target="_blank" rel="noreferrer"
                    className="w-7 h-7 rounded-md flex items-center justify-center text-text-muted hover:text-white hover:bg-purple-700/20 transition-colors"
                    style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)' }}>
@@ -214,7 +216,7 @@ export default function ProfileScreen() {
           className="flex-1 flex items-center gap-3 p-3 rounded-xl text-left hover:brightness-110 transition-all"
           style={{ background: 'rgba(123,31,255,0.08)', border: '1px solid rgba(180,79,255,0.20)' }}
         >
-          <div className="flex-1">
+          <div className="flex-1 min-w-0">
             <p className="text-[9px] font-bold tracking-widest uppercase" style={{ color: '#B44FFF' }}>Vergr Points</p>
             <p className="text-[18px] font-black text-text-primary leading-none mt-0.5">
               {vp.toLocaleString()} <span className="text-[13px]" style={{ color: '#B44FFF' }}>VP</span>
@@ -223,10 +225,17 @@ export default function ProfileScreen() {
               <div className="h-full rounded" style={{ width: `${Math.min(100, vpProgress * 100)}%`, background: 'linear-gradient(90deg,#7B1FFF,#B44FFF)' }} />
             </div>
             <p className="text-[10px] text-text-muted mt-1">
-              {vpNext ? `${vpToNext.toLocaleString()} VP to ${vpNext.name}` : 'Max level reached'}
+              {vpNext ? `${vpToNext.toLocaleString()} VP to Lvl ${vpNext.level}` : 'Max level reached'}
             </p>
           </div>
-          <VPIcon size={44} className="drop-shadow-[0_0_12px_rgba(180,79,255,0.5)]" />
+          {/* VP icon + inline badge trio — same container as VP bar */}
+          <div className="flex items-center gap-3 shrink-0">
+            <VPIcon size={36} className="drop-shadow-[0_0_12px_rgba(180,79,255,0.5)]" />
+            <div className="flex flex-col items-end gap-1">
+              <BadgesShowcase level={vpLevel?.level || 1} size={32} />
+              <p className="text-[9px] text-text-muted leading-none">{vpLevel?.name || 'Rookie'}</p>
+            </div>
+          </div>
         </button>
       </div>
 
@@ -304,6 +313,22 @@ function Stat({ icon, label, value, onClick }) {
   );
 }
 
+// EditProfileScreen stores socials as a map ({ twitter: 'url', ... }) but
+// older accounts may have an array. Normalise here so the renderer can
+// just .map() across the result without runtime checks.
+function socialsToList(socials, enabled = {}) {
+  if (!socials) return [];
+  if (Array.isArray(socials)) {
+    return socials.filter(s => s && s.url);
+  }
+  if (typeof socials === 'object') {
+    return Object.entries(socials)
+      .filter(([platform, url]) => url && enabled?.[platform] !== false)
+      .map(([platform, url]) => ({ platform, url }));
+  }
+  return [];
+}
+
 function socialIcon(platform) {
   const map = { twitter: 'public', x: 'public', youtube: 'play_circle', instagram: 'photo_camera',
                 tiktok: 'music_note', discord: 'chat', twitch: 'live_tv', website: 'language' };
@@ -312,14 +337,27 @@ function socialIcon(platform) {
 
 // ─── Right rail ────────────────────────────────────────────────────
 
-function OwnerRightPanel({ posts, navigate }) {
+function OwnerRightPanel({ posts, navigate, profile }) {
   const totalLikes  = posts.reduce((s, p) => s + (p.likeCount || 0), 0);
   const totalClips  = posts.filter(p => p.type === 'clip').length;
   const topClips    = [...posts].filter(p => p.type === 'clip')
                         .sort((a, b) => (b.likeCount || 0) - (a.likeCount || 0))
                         .slice(0, 3);
+  const twitchRaw = profile?.linkedAccounts?.twitch;
+  const twitchUser = typeof twitchRaw === 'string' ? twitchRaw : twitchRaw?.username;
   return (
     <div className="w-full px-3 py-4 space-y-4">
+      {twitchUser && (
+        <div className="rounded-xl p-3" style={{ background: '#14141F', border: '1px solid #1E1E2E' }}>
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-[13px] font-bold text-text-primary">Your Twitch</p>
+            <a href={`https://twitch.tv/${twitchUser}`} target="_blank" rel="noreferrer"
+               className="text-[10px] font-bold" style={{ color: '#9146FF' }}>Open ↗</a>
+          </div>
+          <TwitchMirrorPlayer username={twitchUser} />
+        </div>
+      )}
+
       {/* Profile Overview */}
       <div className="rounded-xl p-3" style={{ background: '#14141F', border: '1px solid #1E1E2E' }}>
         <div className="flex items-center justify-between mb-2.5">

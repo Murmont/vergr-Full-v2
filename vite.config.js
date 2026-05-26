@@ -15,7 +15,16 @@ export default defineConfig({
     strictPort: isTauriDev,
   },
   clearScreen: false,
-  build: { outDir: 'dist', sourcemap: false },
+  build: {
+    outDir: 'dist',
+    sourcemap: false,
+    rollupOptions: {
+      // Tauri APIs are only present when the app runs inside the Tauri
+      // shell. In the regular web build we don't ship them — the runtime
+      // import in src/utils/gsiInstaller.js is wrapped in a try/catch.
+      external: [/^@tauri-apps\//],
+    },
+  },
   resolve: { alias: { '@': '/src' } },
   envPrefix: ['VITE_', 'TAURI_'],
 });

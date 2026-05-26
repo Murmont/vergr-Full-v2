@@ -1,20 +1,52 @@
+// Redesigned Notifications settings — push/email matrix grouped by category.
+// Persists to profile.settings.notifications via updateUserSettings.
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useUser } from '../../context/UserContext';
 import { useUI } from '../../context/UIContext';
+import { useLayout } from '../../context/LayoutContext';
 import { updateUserSettings } from '../../firebase/firestore';
 import TopBar from '../../components/TopBar';
-import Icon from '../../components/Icon';
-import RightSidebarPanel from '../../components/RightSidebarPanel';
 import useResponsive from '../../hooks/useResponsive';
-import { useLayout } from '../../context/LayoutContext';
+import { C, Toggle, PageShell } from './_settingsUI';
 
-const DEFAULT_NOTIF_SETTINGS = {
-  pushEnabled: true, likes: true, comments: true, follows: true,
-  mentions: true, squadActivity: true, streamAlerts: true,
-  tournamentUpdates: true, coinRewards: true, systemUpdates: true,
-  emailDigest: false, quietHours: false,
-};
+const SECTIONS = [
+  { title: 'ENGAGEMENT', desc: 'Interactions with your content and followers.', icon: 'favorite', color: '#ec4899', items: [
+    { label: 'Likes on my content', key: 'likes' },
+    { label: 'Comments on my content', key: 'comments' },
+    { label: 'Mentions', key: 'mentions' },
+    { label: 'New followers', key: 'followers' },
+  ]},
+  { title: 'MESSAGES', desc: 'Direct messages and message requests.', icon: 'chat', color: '#3b82f6', items: [
+    { label: 'Direct messages', key: 'dm' },
+    { label: 'Message requests', key: 'msgreq' },
+  ]},
+  { title: 'TIPS & REWARDS', desc: 'Tips, payouts, and earnings activity.', icon: 'monetization_on', color: C.purple, items: [
+    { label: 'Tips received', key: 'tips' },
+    { label: 'Payout status updates', key: 'payout' },
+    { label: 'Monthly summary', key: 'summary' },
+  ]},
+  { title: 'SQUADS', desc: 'Updates and activity from your squads.', icon: 'shield', color: C.purple, items: [
+    { label: 'Invites & requests', key: 'squads_inv' },
+    { label: 'Squad activity', key: 'squads_act' },
+  ]},
+  { title: 'TOURNAMENTS', desc: 'Notifications about tournaments you follow or join.', icon: 'emoji_events', color: C.amber, items: [
+    { label: 'Tournament starts', key: 'tourney_start' },
+    { label: 'Match reminders', key: 'tourney_remind' },
+    { label: 'Results & rewards', key: 'tourney_results' },
+  ]},
+  { title: 'SYSTEM', desc: 'Important system updates and account security.', icon: 'settings', color: '#6366f1', items: [
+    { label: 'Security alerts', key: 'security' },
+    { label: 'Product updates', key: 'updates' },
+    { label: 'Surveys & feedback', key: 'surveys' },
+  ]},
+];
+
+const DEFAULTS = SECTIONS.flatMap(s => s.items).reduce((acc, item) => {
+  acc[`${item.key}_push`] = true;
+  acc[`${item.key}_email`] = item.key !== 'surveys' && item.key !== 'followers' && item.key !== 'msgreq' && item.key !== 'squads_act' && item.key !== 'tourney_remind' && item.key !== 'tourney_results' && item.key !== 'updates' && item.key !== 'summary';
+  return acc;
+}, {});
 
 export default function NotificationSettingsScreen() {
   const { currentUser } = useAuth();
@@ -22,24 +54,18 @@ export default function NotificationSettingsScreen() {
   const { showToast } = useUI();
   const { isMobile } = useResponsive();
   const { setRightPanel, setContentAlign } = useLayout();
-
-  const [settings, setSettings] = useState(DEFAULT_NOTIF_SETTINGS);
+  const [settings, setSettings] = useState(DEFAULTS);
   const saveTimer = useRef(null);
 
-  // Set right panel and left alignment exactly like HomeFeedScreen
   useEffect(() => {
-    setRightPanel(<RightSidebarPanel />);
+    setRightPanel(null);
     setContentAlign('left');
-    return () => {
-      setRightPanel(null);
-      setContentAlign('center');
-    };
+    return () => { setRightPanel(null); setContentAlign('center'); };
   }, [setRightPanel, setContentAlign]);
 
-  // Load from profile on mount
   useEffect(() => {
-    if (profile?.settings) {
-      setSettings(prev => ({ ...prev, ...profile.settings }));
+    if (profile?.settings?.notifications) {
+      setSettings(prev => ({ ...prev, ...profile.settings.notifications }));
     }
   }, [profile]);
 
@@ -49,9 +75,9 @@ export default function NotificationSettingsScreen() {
       clearTimeout(saveTimer.current);
       saveTimer.current = setTimeout(async () => {
         try {
-          await updateUserSettings(currentUser.uid, updated);
+          await updateUserSettings(currentUser.uid, { notifications: updated });
         } catch (err) {
-          console.error('Failed to save settings:', err);
+          console.error('Failed to save notif settings:', err);
           showToast('Failed to save', 'error');
         }
       }, 800);
@@ -59,56 +85,70 @@ export default function NotificationSettingsScreen() {
     });
   };
 
-  const sections = [
-    { title: 'Push Notifications', items: [
-      { key: 'pushEnabled', label: 'Enable Push Notifications', desc: 'Master toggle for all push notifications', icon: 'notifications_active' },
-    ]},
-    { title: 'Social', items: [
-      { key: 'likes', label: 'Likes', desc: 'When someone likes your post', icon: 'favorite' },
-      { key: 'comments', label: 'Comments', desc: 'When someone comments on your post', icon: 'chat_bubble' },
-      { key: 'follows', label: 'New Followers', desc: 'When someone follows you', icon: 'person_add' },
-      { key: 'mentions', label: 'Mentions & Tags', desc: 'When someone mentions you', icon: 'alternate_email' },
-    ]},
-    { title: 'Gaming', items: [
-      { key: 'squadActivity', label: 'Squad Activity', desc: 'Messages, events, and challenges', icon: 'groups' },
-      { key: 'streamAlerts', label: 'Stream Alerts', desc: 'When followed creators go live', icon: 'live_tv' },
-      { key: 'tournamentUpdates', label: 'Tournaments', desc: 'Match updates and results', icon: 'emoji_events' },
-    ]},
-    { title: 'Other', items: [
-      { key: 'coinRewards', label: 'Coin Rewards', desc: 'Quest completions and earnings', icon: 'paid' },
-      { key: 'systemUpdates', label: 'System Updates', desc: 'App updates and announcements', icon: 'info' },
-      { key: 'emailDigest', label: 'Weekly Email Digest', desc: 'Summary of activity via email', icon: 'email' },
-      { key: 'quietHours', label: 'Quiet Hours (10PM - 8AM)', desc: 'Mute notifications overnight', icon: 'do_not_disturb_on' },
-    ]},
-  ];
-
   return (
-    <div className="pb-8">
+    <div style={{ background: C.bg, minHeight: '100%' }}>
       {isMobile && <TopBar title="Notifications" showBack />}
-      <div className="px-4 py-2">
-        {sections.map(section => (
-          <div key={section.title} className="mb-6">
-            <h3 className="text-text-muted text-xs font-semibold uppercase tracking-wider mb-3 px-1">{section.title}</h3>
-            <div className="space-y-2">
-              {section.items.map(item => (
-                <div key={item.key} className="flex items-center justify-between p-4 rounded-2xl bg-surface-1 border border-white/[0.06]">
-                  <div className="flex items-center gap-3 flex-1 min-w-0">
-                    <Icon name={item.icon} size={20} className="text-text-secondary shrink-0" />
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold">{item.label}</p>
-                      <p className="text-xs text-text-muted truncate">{item.desc}</p>
-                    </div>
+      <PageShell>
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',
+          gap: 12, marginBottom: 12,
+        }}>
+          {SECTIONS.map(section => (
+            <div key={section.title} style={{
+              background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16,
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                <div style={{
+                  width: 32, height: 32, borderRadius: 8,
+                  background: `${section.color}18`, border: `1px solid ${section.color}30`,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                }}>
+                  <span className="material-symbols-outlined" style={{ fontSize: 16, color: section.color }}>{section.icon}</span>
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', color: C.purple, textTransform: 'uppercase' }}>
+                    {section.title}
                   </div>
-                  <button onClick={() => toggle(item.key)}
-                    className={`w-12 h-7 rounded-full transition-colors shrink-0 ml-3 ${settings[item.key] ? 'bg-brand-cyan' : 'bg-surface-3'}`}>
-                    <div className={`w-5 h-5 rounded-full bg-white shadow transition-transform ${settings[item.key] ? 'translate-x-6' : 'translate-x-1'}`} />
-                  </button>
+                  <div style={{ fontSize: 11, color: C.textVeryDim, marginTop: 2 }}>{section.desc}</div>
+                </div>
+                <ColHead label="Push" icon="phone_iphone" />
+                <ColHead label="Email" icon="mail_outline" />
+              </div>
+              <div style={{ height: 1, background: C.border, marginBottom: 8 }}/>
+              {section.items.map(item => (
+                <div key={item.key} style={{ display: 'flex', alignItems: 'center', padding: '6px 0' }}>
+                  <span style={{ flex: 1, fontSize: 13, color: C.textSoft }}>{item.label}</span>
+                  <div style={{ width: 60, display: 'flex', justifyContent: 'center' }}>
+                    <Toggle small checked={!!settings[`${item.key}_push`]} onChange={() => toggle(`${item.key}_push`)} />
+                  </div>
+                  <div style={{ width: 60, display: 'flex', justifyContent: 'center' }}>
+                    <Toggle small checked={!!settings[`${item.key}_email`]} onChange={() => toggle(`${item.key}_email`)} />
+                  </div>
                 </div>
               ))}
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 8,
+          background: C.card, border: `1px solid ${C.border}`, borderRadius: 10,
+          padding: '10px 16px', fontSize: 12, color: C.textVeryDim,
+        }}>
+          <span className="material-symbols-outlined" style={{ fontSize: 14 }}>info</span>
+          Changes are saved automatically.
+        </div>
+      </PageShell>
+    </div>
+  );
+}
+
+function ColHead({ label, icon }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, width: 60 }}>
+      <span className="material-symbols-outlined" style={{ fontSize: 14, color: C.textVeryDim }}>{icon}</span>
+      <span style={{ fontSize: 10, color: C.textVeryDim }}>{label}</span>
     </div>
   );
 }

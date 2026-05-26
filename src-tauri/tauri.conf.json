@@ -52,8 +52,15 @@
       "csp": "default-src 'self' asset: https://asset.localhost; script-src 'self' 'unsafe-inline' 'unsafe-eval' asset: https://asset.localhost https://pagead2.googlesyndication.com https://*.googlesyndication.com https://*.google.com https://*.doubleclick.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://api.klipy.com https://*.klipy.com https: wss: http://localhost:* http://127.0.0.1:*; img-src 'self' https://*.klipy.com https://media.klipy.com data: blob: https: asset: https://asset.localhost; frame-src 'self' https:;"
     }
   },
+  "plugins": {
+    "updater": {
+      "endpoints": ["https://vergr.app/downloads/latest.json"],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEREQ0IxMjkyRUU1RUQzREEKUldUYTAxN3VraExMM2NMVVpPd1VKRi85dGRoa3RXU2k5L3gxQWNlbm85ZDRXcSs4ckNqM0lLazgK"
+    }
+  },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": ["nsis", "msi"],
     "icon": [
       "icons/32x32.png",

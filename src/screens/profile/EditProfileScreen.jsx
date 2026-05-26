@@ -39,13 +39,45 @@ const STREAM_PLATFORMS = [
   { id: 'facebook',   name: 'Facebook Live', icon: 'facebook' },
 ];
 
+// Frames are rank rewards — gated by VP level. Users below the required level
+// can preview but not select. `requiredLevel` aligns with RANK_TIERS in vpSystem.js.
 const FRAMES = [
-  { id: 'none',    label: 'None',    color: '#6B7280', glow: 'none' },
-  { id: 'rookie',  label: 'Rookie',  color: '#B44FFF', glow: 'rgba(180,79,255,0.5)' },
-  { id: 'veteran', label: 'Veteran', color: '#3D7FFF', glow: 'rgba(61,127,255,0.5)' },
-  { id: 'elite',   label: 'Elite',   color: '#F0A500', glow: 'rgba(240,165,0,0.5)' },
-  { id: 'legend',  label: 'Legend',  color: '#F04060', glow: 'rgba(240,60,96,0.5)' },
+  { id: 'none',    label: 'None',    color: '#6B7280', glow: 'none',                       requiredLevel: 1  },
+  { id: 'rookie',  label: 'Rookie',  color: '#B44FFF', glow: 'rgba(180,79,255,0.5)',       requiredLevel: 1  },
+  { id: 'elite',   label: 'Elite',   color: '#F0A500', glow: 'rgba(240,165,0,0.5)',        requiredLevel: 41 },
+  { id: 'veteran', label: 'Veteran', color: '#3D7FFF', glow: 'rgba(61,127,255,0.5)',       requiredLevel: 61 },
+  { id: 'legend',  label: 'Legend',  color: '#F04060', glow: 'rgba(240,60,96,0.5)',        requiredLevel: 71 },
 ];
+
+// Resize an image to a target canvas (cover fit) before upload.
+// Banners crop to 1500×500 (3:1) which matches the profile page banner area.
+async function resizeImageToBanner(file, targetW = 1500, targetH = 500) {
+  const dataUrl = await new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result);
+    r.onerror = reject;
+    r.readAsDataURL(file);
+  });
+  const img = await new Promise((resolve, reject) => {
+    const i = new Image();
+    i.onload = () => resolve(i);
+    i.onerror = reject;
+    i.src = dataUrl;
+  });
+  const canvas = document.createElement('canvas');
+  canvas.width = targetW;
+  canvas.height = targetH;
+  const ctx = canvas.getContext('2d');
+  // Cover fit — fill the canvas and crop overflow.
+  const scale = Math.max(targetW / img.width, targetH / img.height);
+  const drawW = img.width * scale;
+  const drawH = img.height * scale;
+  const dx = (targetW - drawW) / 2;
+  const dy = (targetH - drawH) / 2;
+  ctx.drawImage(img, dx, dy, drawW, drawH);
+  const blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', 0.88));
+  return new File([blob], file.name.replace(/\.\w+$/, '') + '.jpg', { type: 'image/jpeg' });
+}
 
 const POPULAR_GAMES = [
   'Call of Duty', 'Apex Legends', 'Fortnite', 'Valorant',
@@ -323,23 +355,57 @@ function ProfileImagesTab({ profile, form, setField, showToast }) {
         </div>
       </FormSection>
 
-      <FormSection title="Avatar Frame" sub="Choose a frame that matches your rank.">
+      <FormSection
+        title="Avatar Frame"
+        sub={`Frames are rank rewards — earn them by ranking up. You're currently Level ${profile?.vpLevel || 1}.`}
+      >
         <div className="grid grid-cols-5 gap-3">
-          {FRAMES.map(f => (
-            <button key={f.id}
-              onClick={() => setField('avatarFrame', f.id)}
-              className="flex flex-col items-center gap-1.5 transition-transform hover:-translate-y-0.5">
-              <div className="w-[60px] h-[60px] rounded-full flex items-center justify-center text-lg font-extrabold"
-                   style={{
-                     background: 'linear-gradient(135deg,#7b1fff,#3b82f6)',
-                     border: `3px solid ${form.avatarFrame === f.id ? f.color : 'rgba(255,255,255,0.10)'}`,
-                     boxShadow: form.avatarFrame === f.id ? `0 0 16px ${f.glow}` : 'none',
-                   }}>
-                {f.id === 'none' ? <Icon name="close" size={18} /> : (form.displayName?.[0] || 'V').toUpperCase()}
-              </div>
-              <span className="text-[10px] font-bold" style={{ color: form.avatarFrame === f.id ? f.color : '#9CA3AF' }}>{f.label}</span>
-            </button>
-          ))}
+          {FRAMES.map(f => {
+            const userLevel = profile?.vpLevel || 1;
+            const locked = userLevel < f.requiredLevel;
+            const selected = form.avatarFrame === f.id;
+            return (
+              <button
+                key={f.id}
+                onClick={() => {
+                  if (locked) {
+                    showToast(`Reach Level ${f.requiredLevel} to unlock the ${f.label} frame`, 'info');
+                    return;
+                  }
+                  setField('avatarFrame', f.id);
+                }}
+                className="flex flex-col items-center gap-1.5 transition-transform hover:-translate-y-0.5"
+                style={{ cursor: locked ? 'not-allowed' : 'pointer' }}
+                title={locked ? `Unlocks at Level ${f.requiredLevel}` : f.label}
+              >
+                <div className="relative w-[60px] h-[60px] rounded-full flex items-center justify-center text-lg font-extrabold"
+                     style={{
+                       background: 'linear-gradient(135deg,#7b1fff,#3b82f6)',
+                       border: `3px solid ${selected ? f.color : 'rgba(255,255,255,0.10)'}`,
+                       boxShadow: selected ? `0 0 16px ${f.glow}` : 'none',
+                       opacity: locked ? 0.35 : 1,
+                       filter: locked ? 'grayscale(0.6)' : 'none',
+                     }}>
+                  {f.id === 'none'
+                    ? <Icon name="close" size={18} />
+                    : (form.displayName?.[0] || 'V').toUpperCase()}
+                  {locked && (
+                    <div className="absolute inset-0 rounded-full flex items-center justify-center"
+                         style={{ background: 'rgba(0,0,0,0.55)' }}>
+                      <Icon name="lock" size={20} className="text-white" />
+                    </div>
+                  )}
+                </div>
+                <span className="text-[10px] font-bold"
+                      style={{ color: locked ? '#6B7280' : (selected ? f.color : '#9CA3AF') }}>
+                  {f.label}
+                </span>
+                {locked && (
+                  <span className="text-[9px] text-text-muted leading-none">Lvl {f.requiredLevel}</span>
+                )}
+              </button>
+            );
+          })}
         </div>
       </FormSection>
     </>
@@ -348,16 +414,28 @@ function ProfileImagesTab({ profile, form, setField, showToast }) {
 
 // 3. Cover Banner ───────────────────────────────────────────────
 function CoverBannerTab({ profile, showToast }) {
+  const { updateProfile } = useUser();
   const fileRef = useRef(null);
   const [uploading, setUploading] = useState(false);
+
   const handleFile = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      showToast('Banner must be under 10MB', 'error');
+      e.target.value = '';
+      return;
+    }
     setUploading(true);
     try {
-      await uploadBanner(profile.uid, file);
+      // Auto-resize to 1500×500 (3:1) so it fits the profile page banner area.
+      const resized = await resizeImageToBanner(file);
+      const url = await uploadBanner(profile.uid, resized);
+      // Persist URL on the user doc — without this the new banner never shows.
+      await updateProfile({ banner: url });
       showToast('Banner updated', 'success');
     } catch (err) {
+      console.error('Banner upload failed:', err);
       showToast(err?.message || 'Upload failed', 'error');
     } finally {
       setUploading(false);
@@ -365,13 +443,27 @@ function CoverBannerTab({ profile, showToast }) {
     }
   };
 
+  const handleRemove = async () => {
+    if (!profile?.banner || uploading) return;
+    setUploading(true);
+    try {
+      await updateProfile({ banner: null });
+      showToast('Banner removed', 'success');
+    } catch (err) {
+      showToast(err?.message || 'Could not remove', 'error');
+    } finally {
+      setUploading(false);
+    }
+  };
+
   return (
     <>
       <PanelHeader title="Cover Banner" sub="Upload a custom banner to personalise your profile." />
       <FormSection>
-        <div className="relative h-[180px] rounded-xl overflow-hidden mb-3 cursor-pointer"
-             onClick={() => fileRef.current?.click()}
+        <div className="relative rounded-xl overflow-hidden mb-3 cursor-pointer"
+             onClick={() => !uploading && fileRef.current?.click()}
              style={{
+               aspectRatio: '3 / 1',
                background: 'linear-gradient(135deg,#0d0820 0%,#1a0a3a 30%,#2d0a5a 60%,#1a0a30 100%)',
                border: '1px solid #1E1E2E',
              }}>
@@ -381,20 +473,25 @@ function CoverBannerTab({ profile, showToast }) {
             {(profile?.username || 'VERGR').toUpperCase()}
           </span>
           <div className="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 hover:opacity-100 transition-opacity">
-            <Icon name="edit" size={32} className="text-white" />
+            <Icon name={uploading ? 'progress_activity' : 'edit'} size={32} className="text-white" />
           </div>
         </div>
-        <p className="text-[10.5px] text-text-muted mb-3">Recommended: 2560×1440px. Max 10MB.</p>
+        <p className="text-[10.5px] text-text-muted mb-3">
+          Auto-cropped to 1500×500 (3:1) for the profile page. Max 10MB.
+        </p>
         <div className="flex gap-2">
-          <button onClick={() => fileRef.current?.click()} disabled={uploading}
+          <button onClick={() => !uploading && fileRef.current?.click()} disabled={uploading}
             className="px-4 py-2 rounded-lg text-[12px] font-bold"
-            style={{ background: 'rgba(180,79,255,0.15)', border: '1px solid rgba(180,79,255,0.45)', color: '#B44FFF' }}>
+            style={{ background: 'rgba(180,79,255,0.15)', border: '1px solid rgba(180,79,255,0.45)', color: '#B44FFF', opacity: uploading ? 0.6 : 1 }}>
             {uploading ? 'Uploading…' : 'Change Banner'}
           </button>
-          <button className="px-4 py-2 rounded-lg text-[12px] font-bold"
-            style={{ background: 'rgba(240,60,96,0.10)', border: '1px solid rgba(240,60,96,0.40)', color: '#F04060' }}>
-            Remove
-          </button>
+          {profile?.banner && (
+            <button onClick={handleRemove} disabled={uploading}
+              className="px-4 py-2 rounded-lg text-[12px] font-bold"
+              style={{ background: 'rgba(240,60,96,0.10)', border: '1px solid rgba(240,60,96,0.40)', color: '#F04060', opacity: uploading ? 0.6 : 1 }}>
+              Remove
+            </button>
+          )}
         </div>
         <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={handleFile} />
       </FormSection>

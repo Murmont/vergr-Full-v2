@@ -11,7 +11,11 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useUser } from '../../context/UserContext';
 import { useUI } from '../../context/UIContext';
-import { createTournament, getUserSquads } from '../../firebase/firestore';
+import {
+  createTournament, getUserSquads,
+  updateLinkedAccount, linkSteam,
+  getUsersWithLinkedAccount, uploadTournamentBanner,
+} from '../../firebase/firestore';
 import { useLayout } from '../../context/LayoutContext';
 import useResponsive from '../../hooks/useResponsive';
 import TopBar from '../../components/TopBar';
@@ -25,9 +29,86 @@ import {
   isBracketTypeAllowed,
   computePrizeBreakdown,
   recommendedSwissRounds,
+  validateTournamentLimits,
+  MAX_ENTRY_FEE_COINS,
+  MAX_PRIZE_POOL_COINS,
 } from '../../utils/tournamentTypes';
 
-const GAMES = ['Valorant', 'Fortnite', 'Apex Legends', 'League of Legends', 'CS2', 'Overwatch 2', 'Rocket League', 'Call of Duty', 'FIFA', 'Other'];
+// All games listed here are valid for tournaments. Auto-result detection
+// is added per-game over time via official publisher APIs (Riot, Valve GSI,
+// Epic EOS, Wargaming, Hi-Rez, Blizzard, PUBG, etc.); games without an
+// integration yet fall back to manual reporting via reportMatchResultSecure.
+// See `Full Game List_ Specific APIs & Packages.docx` for the integration
+// status of each game.
+const GAMES = [
+  // Riot — official APIs (server-side, no player client needed)
+  'League of Legends', 'VALORANT', 'Teamfight Tactics', 'Legends of Runeterra',
+  // Valve — Game State Integration (player drops a small config file)
+  'CS2', 'Dota 2',
+  // Epic
+  'Fortnite',
+  // PUBG Corp
+  'PUBG',
+  // Hi-Rez
+  'Smite', 'Paladins',
+  // Wargaming
+  'World of Tanks', 'World of Warships', 'War Thunder',
+  // Blizzard
+  'StarCraft II', 'World of Warcraft', 'Hearthstone',
+  // Other publishers with official APIs
+  'Brawlhalla', 'CrossFire',
+  // Manual-reporting only (unofficial APIs or no public API)
+  'Apex Legends', 'Rocket League', 'Overwatch 2',
+  'Rainbow Six Siege', 'Call of Duty', 'FIFA',
+  'Other',
+];
+
+// Riot's Production API key application is in review (May 2026). Until they
+// approve us, hosts cannot pick LoL or Valorant — the pills render with a red
+// border + "Coming Soon" badge and clicking shows a toast. Remove the entries
+// from this set once Riot approves.
+const COMING_SOON_GAMES = new Set(['League of Legends', 'VALORANT']);
+
+// Maps a game → the linked-account platform a host must have connected to use
+// auto-result detection. Games not in this map fall back to manual reporting
+// and have no required link.
+const GAME_REQUIRED_ACCOUNT = {
+  'League of Legends':     'riotgames',
+  'VALORANT':              'riotgames',
+  'Teamfight Tactics':     'riotgames',
+  'Legends of Runeterra':  'riotgames',
+  'CS2':                   'steam',
+  'Dota 2':                'steam',
+  'StarCraft II':          'battlenet',
+  'World of Warcraft':     'battlenet',
+  'Hearthstone':           'battlenet',
+  'Overwatch 2':           'battlenet',
+  'Apex Legends':          'origin',
+  'Fortnite':              'epicgames',
+  'Brawlhalla':            'epicgames',
+};
+
+// Display metadata for the per-platform connect modal that pops up when the
+// host picks a game whose required account isn't linked yet.
+const PLATFORM_META = {
+  riotgames: { name: 'Riot Games',  color: '#c6362f', letter: 'R', placeholder: 'Name#TAG' },
+  steam:     { name: 'Steam',       color: '#1b2838', letter: 'S', placeholder: '7656119xxxxxxxxxx (17-digit Steam64 ID)' },
+  battlenet: { name: 'Battle.net',  color: '#00aeff', letter: 'B', placeholder: 'YourTag#1234' },
+  origin:    { name: 'EA / Origin', color: '#ff5252', letter: 'O', placeholder: 'Your Origin or EA handle' },
+  epicgames: { name: 'Epic Games',  color: '#2a2a2a', letter: 'E', placeholder: 'Your Epic display name' },
+};
+
+// Preset banner art per game lives in public/brand/tournament-banners/.
+// File-naming convention: <slug>-1.png ... <slug>-3.png, where slug is the
+// game name lowercased with non-alphanumerics → '-'. Missing files render as
+// gradient fallbacks via the BannerPicker's onError handler.
+const GAME_BANNER_BASE = '/brand/tournament-banners';
+const slugifyGame = (g) => (g || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+const presetBannersForGame = (g) => {
+  if (!g) return [];
+  const s = slugifyGame(g);
+  return [1, 2, 3].map(i => `${GAME_BANNER_BASE}/${s}-${i}.png`);
+};
 
 const STEPS = [
   { id: 1, label: 'Basic Info',      icon: 'edit_note' },
@@ -42,6 +123,8 @@ const RULES_CHECKLIST = [
   'Entry fees are non-refundable once play begins',
   'Disputes go to the tournament host',
   'Mod cut (5%) is taken from the gross prize pool',
+  `Entry fee capped at ${MAX_ENTRY_FEE_COINS.toLocaleString()} coins per player`,
+  `Prize pool capped at ${MAX_PRIZE_POOL_COINS.toLocaleString()} coins per tournament`,
 ];
 
 export default function CreateTournamentScreen() {
@@ -58,6 +141,12 @@ export default function CreateTournamentScreen() {
   const [loading, setLoading] = useState(false);
   const [brGameCount, setBrGameCount] = useState(3);
   const [streamRequired, setStreamRequired] = useState(false);
+  const [visibility, setVisibility] = useState('public'); // 'public' | 'private'
+  const [bannerUrl, setBannerUrl] = useState('');
+  const [bannerUploading, setBannerUploading] = useState(false);
+  const [connectPlatform, setConnectPlatform] = useState(null); // platform id or null
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [invitedUsers, setInvitedUsers] = useState([]);    // [{id, username, avatar, vpLevel}]
 
   const { currentUser } = useAuth();
   const { wallet, profile } = useUser();
@@ -89,6 +178,45 @@ export default function CreateTournamentScreen() {
   }, [type, bracketCfg]); // eslint-disable-line
 
   const finalGame = game === 'Other' ? customGame.trim() : game;
+  const requiredAccount = GAME_REQUIRED_ACCOUNT[game] || null;
+  const linkedAccounts = profile?.linkedAccounts || {};
+  const hasRequiredAccount = (() => {
+    if (!requiredAccount) return true;
+    const linked = linkedAccounts[requiredAccount];
+    if (!linked) return false;
+    if (requiredAccount === 'steam') return !!linked.steamId64;
+    return typeof linked === 'string' ? !!linked : !!linked.username;
+  })();
+
+  // Picking a game that requires a linked account the user doesn't have yet
+  // pops the inline Connect modal instead of jumping the user to settings.
+  const pickGame = (g) => {
+    if (COMING_SOON_GAMES.has(g)) {
+      showToast(`${g} is coming soon — Riot API approval pending`, 'info');
+      return;
+    }
+    setGame(g);
+    const reqAcct = GAME_REQUIRED_ACCOUNT[g];
+    if (!reqAcct) return;
+    const linked = linkedAccounts[reqAcct];
+    const has = reqAcct === 'steam'
+      ? !!linked?.steamId64
+      : (typeof linked === 'string' ? !!linked : !!linked?.username);
+    if (!has) setConnectPlatform(reqAcct);
+  };
+
+  const handleBannerFile = async (file) => {
+    if (!file || !currentUser) return;
+    setBannerUploading(true);
+    try {
+      const url = await uploadTournamentBanner(currentUser.uid, file);
+      setBannerUrl(url);
+    } catch (err) {
+      showToast(err?.message || 'Banner upload failed', 'error');
+    } finally {
+      setBannerUploading(false);
+    }
+  };
   const fee = parseInt(entryFee) || 0;
   const estimatedPrize = fee * maxParticipants;
   const needsSquad = bracketCfg?.mode === 'squad';
@@ -98,14 +226,20 @@ export default function CreateTournamentScreen() {
   );
   const swissRounds = type === 'swiss' ? recommendedSwissRounds(maxParticipants) : 0;
 
+  const limitCheck = useMemo(
+    () => validateTournamentLimits({ entryFee: fee, maxParticipants }),
+    [fee, maxParticipants]
+  );
+
   const step1Valid = name.trim().length >= 3 && finalGame;
   const step2Valid = !!bracketCfg && isBracketTypeAllowed(type, plan);
-  const step3Valid = !needsSquad || !!squadId;
+  const step3Valid = (!needsSquad || !!squadId) && limitCheck.ok;
   const canSubmit = step1Valid && step2Valid && step3Valid;
 
   const handleNext = () => {
     if (step === 1 && !step1Valid) { showToast('Add a name and pick a game', 'error'); return; }
     if (step === 2 && !step2Valid) { showToast('Your plan cannot use this format', 'error'); return; }
+    if (step === 3 && !limitCheck.ok) { showToast(limitCheck.error, 'error'); return; }
     if (step === 3 && !step3Valid) { showToast('Pick a host squad for squad tournaments', 'error'); return; }
     setStep(s => Math.min(4, s + 1));
   };
@@ -130,6 +264,9 @@ export default function CreateTournamentScreen() {
         streamRequired,
         brGameCount: type === 'battle_royale' ? brGameCount : null,
         swissRounds: type === 'swiss' ? swissRounds : null,
+        visibility,
+        bannerUrl: bannerUrl || null,
+        invitedUserIds: visibility === 'private' ? invitedUsers.map(u => u.id) : [],
       });
       showToast('Tournament created!', 'success');
       navigate(`/match/${tournamentId}`);
@@ -150,7 +287,7 @@ export default function CreateTournamentScreen() {
             step={step} setStep={setStep}
             name={name} setName={setName}
             description={description} setDescription={setDescription}
-            game={game} setGame={setGame}
+            game={game} setGame={setGame} pickGame={pickGame}
             customGame={customGame} setCustomGame={setCustomGame}
             type={type} setType={setType} plan={plan}
             bracketCfg={bracketCfg}
@@ -160,10 +297,34 @@ export default function CreateTournamentScreen() {
             brGameCount={brGameCount} setBrGameCount={setBrGameCount}
             streamRequired={streamRequired} setStreamRequired={setStreamRequired}
             swissRounds={swissRounds} prizeBreakdown={prizeBreakdown} fee={fee}
+            limitCheck={limitCheck}
             finalGame={finalGame}
+            visibility={visibility} setVisibility={setVisibility}
+            bannerUrl={bannerUrl} setBannerUrl={setBannerUrl}
+            bannerUploading={bannerUploading} handleBannerFile={handleBannerFile}
+            requiredAccount={requiredAccount} hasRequiredAccount={hasRequiredAccount}
+            setConnectPlatform={setConnectPlatform}
+            invitedUsers={invitedUsers} setShowInviteModal={setShowInviteModal}
             onBack={handleBack} onNext={handleNext} onCreate={handleCreate}
             canSubmit={canSubmit} loading={loading}
           />
+          {connectPlatform && (
+            <ConnectAccountModal
+              platform={connectPlatform}
+              onClose={() => setConnectPlatform(null)}
+              uid={currentUser?.uid}
+              showToast={showToast}
+            />
+          )}
+          {showInviteModal && (
+            <InvitePlayersModal
+              platform={requiredAccount}
+              gameName={finalGame}
+              invitedUsers={invitedUsers}
+              setInvitedUsers={setInvitedUsers}
+              onClose={() => setShowInviteModal(false)}
+            />
+          )}
         </div>
       </div>
     );
@@ -224,18 +385,83 @@ export default function CreateTournamentScreen() {
                 </Field>
                 <Field label="Game *">
                   <div className="flex flex-wrap gap-2">
-                    {GAMES.map(g => (
-                      <button key={g} onClick={() => setGame(g)}
-                        className={`px-3.5 py-2 rounded-lg text-xs font-semibold transition-all ${
-                          game === g
-                            ? 'bg-brand-cyan/15 border border-brand-cyan/40 text-brand-cyan'
-                            : 'bg-white/[0.04] border border-white/[0.06] text-text-muted hover:text-text-secondary'
-                        }`}>{g}</button>
-                    ))}
+                    {GAMES.map(g => {
+                      const soon = COMING_SOON_GAMES.has(g);
+                      const selected = game === g;
+                      return (
+                        <button key={g} onClick={() => pickGame(g)}
+                          className={`px-3.5 py-2 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
+                            soon
+                              ? 'bg-brand-ember/5 border border-brand-ember/50 text-brand-ember/80 cursor-not-allowed'
+                              : selected
+                                ? 'bg-brand-cyan/15 border border-brand-cyan/40 text-brand-cyan'
+                                : 'bg-white/[0.04] border border-white/[0.06] text-text-muted hover:text-text-secondary'
+                          }`}>
+                          <span>{g}</span>
+                          {soon && <span className="text-[8px] font-bold uppercase tracking-wider px-1 py-0.5 rounded bg-brand-ember/20 text-brand-ember">Soon</span>}
+                        </button>
+                      );
+                    })}
                   </div>
                   {game === 'Other' && (
                     <input type="text" value={customGame} onChange={e => setCustomGame(e.target.value)}
                       placeholder="Enter game name…" className="input mt-3" />
+                  )}
+                  {requiredAccount && !hasRequiredAccount && (
+                    <button onClick={() => setConnectPlatform(requiredAccount)}
+                      className="mt-3 w-full p-3 rounded-xl border border-brand-gold/40 bg-brand-gold/5 text-left flex items-center gap-3">
+                      <Icon name="link_off" size={18} className="text-brand-gold" />
+                      <div className="flex-1">
+                        <p className="text-text-primary text-sm font-bold">Connect your {PLATFORM_META[requiredAccount].name} account</p>
+                        <p className="text-text-muted text-[11px]">Required to host {finalGame || 'this game'} tournaments.</p>
+                      </div>
+                      <span className="text-brand-gold text-xs font-bold">Connect</span>
+                    </button>
+                  )}
+                </Field>
+
+                <Field label="Banner Image">
+                  <BannerPicker
+                    game={finalGame}
+                    bannerUrl={bannerUrl}
+                    setBannerUrl={setBannerUrl}
+                    uploading={bannerUploading}
+                    onFile={handleBannerFile}
+                  />
+                </Field>
+
+                <Field label="Visibility *">
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      { id: 'public',  label: 'Public',  icon: 'public',     desc: 'Anyone can find and join' },
+                      { id: 'private', label: 'Private', icon: 'lock',       desc: 'Invite-only, hidden from browse' },
+                    ].map(v => (
+                      <button key={v.id} onClick={() => setVisibility(v.id)}
+                        className={`p-3 rounded-xl border text-left transition-all ${
+                          visibility === v.id
+                            ? 'border-brand-violet bg-brand-violet/5'
+                            : 'border-white/[0.06] bg-white/[0.03] hover:border-white/10'
+                        }`}>
+                        <div className="flex items-center gap-2">
+                          <Icon name={v.icon} size={16} className={visibility === v.id ? 'text-brand-violet' : 'text-text-muted'} />
+                          <p className="text-text-primary text-sm font-bold">{v.label}</p>
+                        </div>
+                        <p className="text-text-muted text-[11px] mt-1">{v.desc}</p>
+                      </button>
+                    ))}
+                  </div>
+                  {visibility === 'private' && (
+                    <button onClick={() => setShowInviteModal(true)}
+                      className="mt-3 w-full p-3 rounded-xl border border-brand-cyan/30 bg-brand-cyan/5 flex items-center gap-3">
+                      <Icon name="group_add" size={18} className="text-brand-cyan" />
+                      <div className="flex-1 text-left">
+                        <p className="text-text-primary text-sm font-bold">Invite Players</p>
+                        <p className="text-text-muted text-[11px]">
+                          {invitedUsers.length === 0 ? 'No invites yet — open to add' : `${invitedUsers.length} invited`}
+                        </p>
+                      </div>
+                      <span className="text-brand-cyan text-xs font-bold">{invitedUsers.length === 0 ? 'Open' : 'Edit'}</span>
+                    </button>
                   )}
                 </Field>
               </div>
@@ -332,10 +558,19 @@ export default function CreateTournamentScreen() {
           {step === 3 && (
             <SectionCard title="Prizes & Entry">
               <div className="space-y-5">
-                <Field label="Entry Fee (coins) — 0 for free">
-                  <input type="number" min="0" value={entryFee} onChange={e => setEntryFee(e.target.value)}
+                <Field label={`Entry Fee (coins) — 0 for free, max ${MAX_ENTRY_FEE_COINS.toLocaleString()}`}>
+                  <input type="number" min="0" max={MAX_ENTRY_FEE_COINS} value={entryFee} onChange={e => setEntryFee(e.target.value)}
                     placeholder="0" className="input font-dmmono" />
+                  <p className="text-text-muted text-[11px] mt-1.5">
+                    Pool cap: {MAX_PRIZE_POOL_COINS.toLocaleString()} coins per tournament.
+                  </p>
                 </Field>
+
+                {!limitCheck.ok && (
+                  <div className="p-3 rounded-xl bg-brand-ember/10 border border-brand-ember/30 text-brand-ember text-xs">
+                    {limitCheck.error}
+                  </div>
+                )}
 
                 {fee > 0 && (
                   <div className="p-3 rounded-xl bg-brand-gold/5 border border-brand-gold/20 space-y-2">
@@ -485,6 +720,24 @@ export default function CreateTournamentScreen() {
         </AppRightRail>
       </div>
 
+      {connectPlatform && (
+        <ConnectAccountModal
+          platform={connectPlatform}
+          onClose={() => setConnectPlatform(null)}
+          uid={currentUser?.uid}
+          showToast={showToast}
+        />
+      )}
+      {showInviteModal && (
+        <InvitePlayersModal
+          platform={requiredAccount}
+          gameName={finalGame}
+          invitedUsers={invitedUsers}
+          setInvitedUsers={setInvitedUsers}
+          onClose={() => setShowInviteModal(false)}
+        />
+      )}
+
       {/* shared input style */}
       <style>{`
         .input {
@@ -500,6 +753,187 @@ export default function CreateTournamentScreen() {
         .input:focus { border-color: rgba(77,255,212,0.4); }
         .input::placeholder { color: rgba(255,255,255,0.35); }
       `}</style>
+    </div>
+  );
+}
+
+// ───────────── Banner picker (preset + upload) ─────────────
+function BannerPicker({ game, bannerUrl, setBannerUrl, uploading, onFile }) {
+  const presets = presetBannersForGame(game);
+  return (
+    <div className="space-y-3">
+      {bannerUrl && (
+        <div className="relative rounded-xl overflow-hidden border border-white/[0.08]" style={{ aspectRatio: '3 / 1' }}>
+          <img src={bannerUrl} alt="" className="w-full h-full object-cover" />
+          <button onClick={() => setBannerUrl('')}
+            className="absolute top-2 right-2 px-2 py-1 rounded-md bg-black/60 text-white text-[11px] font-bold">
+            Clear
+          </button>
+        </div>
+      )}
+      {game && presets.length > 0 && (
+        <div>
+          <p className="text-text-muted text-[10px] font-dmmono uppercase tracking-[0.14em] mb-2">Suggested for {game}</p>
+          <div className="grid grid-cols-3 gap-2">
+            {presets.map((src, i) => (
+              <button key={i} onClick={() => setBannerUrl(src)}
+                className={`rounded-lg overflow-hidden border ${bannerUrl === src ? 'border-brand-cyan ring-2 ring-brand-cyan/40' : 'border-white/[0.08]'}`}
+                style={{ aspectRatio: '3 / 1' }}>
+                <img src={src} alt="" className="w-full h-full object-cover"
+                  onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.parentElement.style.background = 'linear-gradient(135deg,#7B6FFF22,#C87FFF22)'; }} />
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      <label className="block">
+        <input type="file" accept="image/*" hidden
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f); e.target.value = ''; }} />
+        <div className={`w-full p-3 rounded-xl border-2 border-dashed text-center cursor-pointer transition-colors ${
+          uploading ? 'border-brand-violet/40 bg-brand-violet/5' : 'border-white/[0.1] bg-white/[0.02] hover:border-white/[0.2]'
+        }`}>
+          <p className="text-text-secondary text-xs font-semibold">
+            {uploading ? 'Uploading…' : bannerUrl ? 'Replace with custom image' : 'Upload custom banner (3:1)'}
+          </p>
+          <p className="text-text-muted text-[10px] mt-0.5">PNG / JPG, recommended 1500×500</p>
+        </div>
+      </label>
+    </div>
+  );
+}
+
+// ───────────── Inline Connect-account modal ─────────────
+function ConnectAccountModal({ platform, onClose, uid, showToast }) {
+  const meta = PLATFORM_META[platform];
+  const [val, setVal] = useState('');
+  const [saving, setSaving] = useState(false);
+  if (!meta) return null;
+
+  const submit = async () => {
+    const v = val.trim();
+    if (!v || saving) return;
+    setSaving(true);
+    try {
+      if (platform === 'steam') {
+        if (!/^7656119\d{10}$/.test(v)) {
+          showToast('Steam ID must be a 17-digit Steam64 (starts with 7656119)', 'error');
+          setSaving(false); return;
+        }
+        await linkSteam({ steamId64: v });
+      } else {
+        await updateLinkedAccount(uid, platform, v);
+      }
+      showToast(`${meta.name} connected!`, 'success');
+      onClose();
+    } catch (err) {
+      showToast(err?.message || 'Failed to connect', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div onClick={onClose}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div onClick={e => e.stopPropagation()}
+        style={{ background: '#12121e', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 16, padding: 24, width: 440, maxWidth: '95vw' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
+          <div style={{ width: 44, height: 44, borderRadius: 12, background: meta.color, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800 }}>{meta.letter}</div>
+          <div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: '#fff' }}>Connect {meta.name}</div>
+            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.55)', marginTop: 2 }}>Required to host this game's tournaments.</div>
+          </div>
+        </div>
+        <input type="text" value={val} onChange={e => setVal(e.target.value)} placeholder={meta.placeholder} autoFocus
+          style={{ width: '100%', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, padding: '11px 14px', fontSize: 14, color: '#fff', outline: 'none', boxSizing: 'border-box', marginBottom: 16 }} />
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <button onClick={onClose} style={{ background: 'transparent', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, color: 'rgba(255,255,255,0.7)', fontSize: 13, padding: '8px 16px', cursor: 'pointer' }}>Cancel</button>
+          <button onClick={submit} disabled={saving || !val.trim()}
+            style={{ background: 'linear-gradient(135deg,#7c3aed,#5b21b6)', border: 'none', borderRadius: 8, color: '#fff', fontSize: 13, padding: '8px 20px', fontWeight: 600, cursor: saving ? 'wait' : 'pointer', opacity: saving || !val.trim() ? 0.6 : 1 }}>
+            {saving ? 'Connecting…' : 'Connect'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ───────────── Invite-players modal ─────────────
+// Default list = users who have the game's required platform linked. Search
+// box narrows by username prefix. Toggle a user's chip to add/remove from the
+// invite list.
+function InvitePlayersModal({ platform, gameName, invitedUsers, setInvitedUsers, onClose }) {
+  const [term, setTerm] = useState('');
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!platform) { setUsers([]); return; }
+    setLoading(true);
+    const t = setTimeout(() => {
+      getUsersWithLinkedAccount(platform, { term, limitCount: 60 })
+        .then(setUsers)
+        .catch(() => setUsers([]))
+        .finally(() => setLoading(false));
+    }, 220);
+    return () => clearTimeout(t);
+  }, [platform, term]);
+
+  const isInvited = (id) => invitedUsers.some(u => u.id === id);
+  const toggle = (u) => {
+    setInvitedUsers(isInvited(u.id)
+      ? invitedUsers.filter(x => x.id !== u.id)
+      : [...invitedUsers, { id: u.id, username: u.username, avatar: u.avatar, vpLevel: u.vpLevel }]);
+  };
+
+  return (
+    <div onClick={onClose}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div onClick={e => e.stopPropagation()}
+        style={{ background: '#12121e', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 16, padding: 0, width: 520, maxWidth: '95vw', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ padding: 18, borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+          <div style={{ fontSize: 16, fontWeight: 700, color: '#fff' }}>Invite Players</div>
+          <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.55)', marginTop: 2 }}>
+            {platform
+              ? `Showing players with ${PLATFORM_META[platform]?.name || platform} linked${gameName ? ` for ${gameName}` : ''}.`
+              : 'Search players by username.'}
+          </div>
+          <input type="text" value={term} onChange={e => setTerm(e.target.value)} placeholder="Search by username…" autoFocus
+            style={{ width: '100%', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, padding: '10px 14px', fontSize: 14, color: '#fff', outline: 'none', boxSizing: 'border-box', marginTop: 12 }} />
+        </div>
+        <div style={{ flex: 1, overflowY: 'auto', padding: 8 }}>
+          {loading && <div style={{ padding: 16, color: 'rgba(255,255,255,0.5)', fontSize: 13 }}>Loading…</div>}
+          {!loading && users.length === 0 && (
+            <div style={{ padding: 24, textAlign: 'center', color: 'rgba(255,255,255,0.5)', fontSize: 13 }}>
+              No players found{platform ? ` with ${PLATFORM_META[platform]?.name} linked` : ''}.
+            </div>
+          )}
+          {!loading && users.map(u => {
+            const invited = isInvited(u.id);
+            return (
+              <div key={u.id}
+                style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', borderRadius: 10, marginBottom: 4, background: invited ? 'rgba(124,58,237,0.08)' : 'transparent' }}>
+                <img src={u.avatar || '/brand/logo.png'} alt="" style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover', background: '#222' }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: '#fff' }}>{u.username || 'Unknown'}</div>
+                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>VP Lvl {u.vpLevel || 1}</div>
+                </div>
+                <button onClick={() => toggle(u)}
+                  style={{ background: invited ? 'transparent' : 'linear-gradient(135deg,#7c3aed,#5b21b6)', border: invited ? '1px solid rgba(255,255,255,0.15)' : 'none', color: invited ? 'rgba(255,255,255,0.8)' : '#fff', borderRadius: 8, padding: '6px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                  {invited ? 'Invited' : 'Invite'}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+        <div style={{ padding: 14, borderTop: '1px solid rgba(255,255,255,0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.55)' }}>{invitedUsers.length} invited</span>
+          <button onClick={onClose}
+            style={{ background: 'linear-gradient(135deg,#7c3aed,#5b21b6)', border: 'none', borderRadius: 8, color: '#fff', fontSize: 13, padding: '8px 20px', fontWeight: 600, cursor: 'pointer' }}>
+            Done
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -538,7 +972,7 @@ function MobileWizard(props) {
     step, name, setName, description, setDescription, game, setGame, customGame, setCustomGame,
     type, setType, plan, bracketCfg, maxParticipants, setMaxParticipants, entryFee, setEntryFee,
     squadId, setSquadId, squads, needsSquad, brGameCount, setBrGameCount,
-    streamRequired, setStreamRequired, swissRounds, prizeBreakdown, fee, finalGame,
+    streamRequired, setStreamRequired, swissRounds, prizeBreakdown, fee, limitCheck, finalGame,
     onBack, onNext, onCreate, canSubmit, loading,
   } = props;
 
@@ -565,14 +999,65 @@ function MobileWizard(props) {
           </Field>
           <Field label="Game *">
             <div className="flex flex-wrap gap-2">
-              {GAMES.map(g => (
-                <button key={g} onClick={() => setGame(g)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold ${
-                    game === g ? 'bg-brand-cyan/15 border border-brand-cyan/40 text-brand-cyan' : 'bg-white/[0.04] border border-white/[0.06] text-text-muted'
-                  }`}>{g}</button>
-              ))}
+              {GAMES.map(g => {
+                const soon = COMING_SOON_GAMES.has(g);
+                const selected = game === g;
+                return (
+                  <button key={g} onClick={() => props.pickGame(g)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 ${
+                      soon ? 'bg-brand-ember/5 border border-brand-ember/50 text-brand-ember/80'
+                      : selected ? 'bg-brand-cyan/15 border border-brand-cyan/40 text-brand-cyan'
+                      : 'bg-white/[0.04] border border-white/[0.06] text-text-muted'
+                    }`}>
+                    <span>{g}</span>
+                    {soon && <span className="text-[8px] font-bold uppercase px-1 py-0.5 rounded bg-brand-ember/20 text-brand-ember">Soon</span>}
+                  </button>
+                );
+              })}
             </div>
             {game === 'Other' && <input className="input mt-3" value={customGame} onChange={e=>setCustomGame(e.target.value)} placeholder="Enter game name…" />}
+            {props.requiredAccount && !props.hasRequiredAccount && (
+              <button onClick={() => props.setConnectPlatform(props.requiredAccount)}
+                className="mt-3 w-full p-3 rounded-xl border border-brand-gold/40 bg-brand-gold/5 text-left flex items-center gap-2">
+                <Icon name="link_off" size={16} className="text-brand-gold" />
+                <span className="flex-1 text-text-primary text-xs font-bold">Connect {PLATFORM_META[props.requiredAccount].name}</span>
+                <span className="text-brand-gold text-[11px] font-bold">Connect</span>
+              </button>
+            )}
+          </Field>
+          <Field label="Banner Image">
+            <BannerPicker
+              game={props.finalGame}
+              bannerUrl={props.bannerUrl}
+              setBannerUrl={props.setBannerUrl}
+              uploading={props.bannerUploading}
+              onFile={props.handleBannerFile}
+            />
+          </Field>
+          <Field label="Visibility *">
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { id: 'public',  label: 'Public',  icon: 'public', desc: 'Anyone can join' },
+                { id: 'private', label: 'Private', icon: 'lock',   desc: 'Invite-only' },
+              ].map(v => (
+                <button key={v.id} onClick={() => props.setVisibility(v.id)}
+                  className={`p-3 rounded-xl border text-left ${
+                    props.visibility === v.id ? 'border-brand-violet bg-brand-violet/5' : 'border-white/[0.06] bg-white/[0.03]'
+                  }`}>
+                  <div className="flex items-center gap-2"><Icon name={v.icon} size={14} /><p className="text-text-primary text-xs font-bold">{v.label}</p></div>
+                  <p className="text-text-muted text-[10px] mt-1">{v.desc}</p>
+                </button>
+              ))}
+            </div>
+            {props.visibility === 'private' && (
+              <button onClick={() => props.setShowInviteModal(true)}
+                className="mt-3 w-full p-3 rounded-xl border border-brand-cyan/30 bg-brand-cyan/5 flex items-center gap-2">
+                <Icon name="group_add" size={16} className="text-brand-cyan" />
+                <span className="flex-1 text-left text-text-primary text-xs font-bold">
+                  {props.invitedUsers.length === 0 ? 'Invite Players' : `${props.invitedUsers.length} invited — edit`}
+                </span>
+              </button>
+            )}
           </Field>
         </>
       )}
@@ -641,9 +1126,17 @@ function MobileWizard(props) {
 
       {step === 3 && (
         <>
-          <Field label="Entry Fee (coins)">
-            <input type="number" min="0" className="input font-dmmono" value={entryFee} onChange={e=>setEntryFee(e.target.value)} placeholder="0" />
+          <Field label={`Entry Fee (coins) — max ${MAX_ENTRY_FEE_COINS.toLocaleString()}`}>
+            <input type="number" min="0" max={MAX_ENTRY_FEE_COINS} className="input font-dmmono" value={entryFee} onChange={e=>setEntryFee(e.target.value)} placeholder="0" />
+            <p className="text-text-muted text-[11px] mt-1.5">
+              Pool cap: {MAX_PRIZE_POOL_COINS.toLocaleString()} coins.
+            </p>
           </Field>
+          {limitCheck && !limitCheck.ok && (
+            <div className="p-3 rounded-xl bg-brand-ember/10 border border-brand-ember/30 text-brand-ember text-xs">
+              {limitCheck.error}
+            </div>
+          )}
           {fee > 0 && (
             <div className="p-3 rounded-xl bg-brand-gold/5 border border-brand-gold/20 space-y-2">
               <div className="flex justify-between text-sm"><span className="text-text-secondary">Gross pool</span><span className="text-brand-gold font-dmmono font-bold">{prizeBreakdown.gross.toLocaleString()}c</span></div>
