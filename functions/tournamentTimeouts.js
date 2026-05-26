@@ -46,6 +46,9 @@ exports.detectMatchTimeouts = onSchedule(
         .where('status', '==', 'pending').get();
       for (const md of matchesSnap.docs) {
         const m = md.data();
+        // NT2 — both players agreed to delay this match; don't auto-forfeit
+        // until the agreed time passes.
+        if (m.rescheduledUntil && m.rescheduledUntil > now) continue;
         const openedAtMs = m.bothVerifiedAt?.toMillis?.() || m.createdAt?.toMillis?.() || 0;
         if (!openedAtMs) continue;
         if (now - openedAtMs < timeoutMs) continue;

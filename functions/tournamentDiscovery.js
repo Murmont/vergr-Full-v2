@@ -177,6 +177,22 @@ exports.aiCheatFlagVod = onDocumentWritten(
           severity: parsed.overall, flags: parsed.flags || [],
           status: 'pending', createdAt: FieldValue.serverTimestamp(),
         });
+        // NT5 — pre-emptively tell the participants their match is under
+        // review, with a path to appeal. A mod may still clear it.
+        const subjects = [after.player1 || after.player1Id, after.player2 || after.player2Id].filter(Boolean);
+        let tName = 'Tournament';
+        try { tName = (await db.collection('tournaments').doc(event.params.tId).get()).data()?.name || tName; } catch { /* ignore */ }
+        for (const uid of subjects) {
+          await db.collection('notifications').add({
+            recipientId: uid,
+            type: 'tournament_flagged_for_review',
+            title: 'Your match is under review',
+            body: `An automated check flagged your ${tName} match for review. A moderator will take a look. If you think this is a mistake, you can appeal from the match page.`,
+            data: { tournamentId: event.params.tId, matchId: event.params.mId, canAppeal: 'true' },
+            actionUrl: `/tournaments/${event.params.tId}/match/${event.params.mId}`,
+            read: false, createdAt: FieldValue.serverTimestamp(),
+          });
+        }
       }
     } catch (err) {
       console.warn('aiCheatFlagVod failed', err);
