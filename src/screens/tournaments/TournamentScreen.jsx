@@ -68,7 +68,22 @@ export default function TournamentScreen() {
   if (!isDesktop) {
     return (
       <div className="screen-container min-h-screen pb-8">
-        <TopBar title="Tournaments" showBack actions={<CoinDisplay amount={wallet?.balance || 0} size="sm" />} />
+        <TopBar
+          title="Tournaments"
+          showBack
+          actions={
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => navigate('/tournaments/me/stats')}
+                className="w-9 h-9 rounded-full bg-surface-2 flex items-center justify-center"
+                aria-label="My tournament stats"
+              >
+                <Icon name="leaderboard" size={18} className="text-brand-cyan" />
+              </button>
+              <CoinDisplay amount={wallet?.balance || 0} size="sm" />
+            </div>
+          }
+        />
         <div className="px-4 pt-3">
           {spotlight && (
             <HeroBanner

@@ -2792,6 +2792,16 @@ export const getTournament = async (tournamentId) => {
   return snap.exists() ? { id: snap.id, ...snap.data() } : null;
 };
 
+// Live subscription to a single tournament doc. Used so the prize pool +
+// entrant count update in real time as players join (MP2) without a reload.
+// Returns an unsubscribe fn.
+export const subscribeTournament = (tournamentId, cb) => {
+  if (!tournamentId) return () => {};
+  return onSnapshot(doc(db, 'tournaments', tournamentId), (snap) => {
+    cb(snap.exists() ? { id: snap.id, ...snap.data() } : null);
+  }, (err) => console.warn('subscribeTournament', err.message));
+};
+
 export const joinTournament = async (tournamentId, userId) => {
   const tournamentRef = doc(db, 'tournaments', tournamentId);
   const walletRef = doc(db, 'wallets', userId);
