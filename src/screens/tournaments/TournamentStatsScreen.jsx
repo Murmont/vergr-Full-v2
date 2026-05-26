@@ -15,7 +15,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { collectionGroup, query, where, getDocs, limit } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { db } from '../../firebase/config';
+import { createPost } from '../../firebase/firestore';
 import { useAuth } from '../../context/AuthContext';
+import { useUI } from '../../context/UIContext';
 import TopBar from '../../components/TopBar';
 import Icon from '../../components/Icon';
 import UserAvatar from '../../components/UserAvatar';
@@ -30,6 +32,7 @@ const C = {
 
 export default function TournamentStatsScreen() {
   const { currentUser } = useAuth();
+  const { showToast } = useUI();
   const uid = currentUser?.uid;
   const [matches, setMatches] = useState([]);
   const [rivals, setRivals] = useState([]);
@@ -138,14 +141,18 @@ export default function TournamentStatsScreen() {
           </div>
         </Section>
 
-        <Section title={`Highlights (${highlights.length})`}>
+        <Section title={`Suggested moments (${highlights.length})`}>
+          <div style={{ fontSize: 11, color: C.mute, marginBottom: 10, lineHeight: 1.5 }}>
+            AI-suggested moments from your tournament VODs. Only you can see these.
+            Save the ones you like as a clip on your profile — nothing is published until you choose to.
+          </div>
           {highlights.length === 0 ? (
             <div style={{ color: C.mute, fontSize: 12 }}>
-              No highlights yet — they're auto-cut from your tournament VODs after each match.
+              No suggestions yet — they appear here after your matches are archived.
             </div>
           ) : (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12 }}>
-              {highlights.map((h) => <HighlightCard key={h.key} clip={h} />)}
+              {highlights.map((h) => <HighlightCard key={h.key} clip={h} uid={uid} showToast={showToast} />)}
             </div>
           )}
         </Section>
@@ -173,11 +180,34 @@ export default function TournamentStatsScreen() {
   );
 }
 
-// AG1 — single highlight clip. Click-to-load video seeked to the clip range
-// via a media fragment (#t=start,end). Keeps the page light until played.
-function HighlightCard({ clip }) {
+// AG1 — a single AI-suggested moment (private to the owner). Click-to-load
+// video seeked to the clip range via a media fragment (#t=start,end). The
+// owner can "Save as clip" to publish a user-chosen clip post — nothing is
+// surfaced publicly until they do.
+function HighlightCard({ clip, uid, showToast }) {
   const [play, setPlay] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
   const dur = Math.max(1, clip.endSec - clip.startSec);
+
+  const saveAsClip = async () => {
+    if (saving || saved || !uid) return;
+    setSaving(true);
+    try {
+      await createPost(uid, {
+        content: clip.title || 'Tournament highlight',
+        type: 'clip',
+        mediaUrls: [`${clip.vodUrl}#t=${clip.startSec},${clip.endSec}`],
+        hashtags: clip.game ? [String(clip.game).toLowerCase()] : [],
+        visibility: 'public',
+      });
+      setSaved(true);
+      showToast?.('Saved as a clip on your profile', 'success');
+    } catch (err) {
+      showToast?.(err?.message || 'Could not save clip', 'error');
+    } finally { setSaving(false); }
+  };
+
   return (
     <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 10, overflow: 'hidden' }}>
       <div style={{ position: 'relative', aspectRatio: '16 / 9', background: '#000' }}>
@@ -209,6 +239,13 @@ function HighlightCard({ clip }) {
         <div style={{ fontSize: 12, fontWeight: 700, color: C.text,
           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{clip.title}</div>
         {clip.game && <div style={{ fontSize: 10, color: C.mute, marginTop: 2 }}>{clip.game}</div>}
+        <button onClick={saveAsClip} disabled={saving || saved} style={{
+          marginTop: 8, width: '100%', padding: '6px 0', borderRadius: 8,
+          border: `1px solid ${saved ? C.border : C.cyan + '66'}`,
+          background: saved ? 'transparent' : `${C.cyan}1a`,
+          color: saved ? C.mute : C.cyan, fontSize: 11, fontWeight: 800,
+          cursor: saved ? 'default' : 'pointer', opacity: saving ? 0.6 : 1,
+        }}>{saved ? '✓ Saved as clip' : saving ? 'Saving…' : 'Save as clip'}</button>
       </div>
     </div>
   );

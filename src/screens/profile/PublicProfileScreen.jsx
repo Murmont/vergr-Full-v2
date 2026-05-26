@@ -22,11 +22,10 @@ import { trackEvent } from '../../utils/trackEvent';
 import BadgesShowcase from '../../components/BadgesShowcase';
 import TwitchMirrorPlayer from '../../components/streams/TwitchMirrorPlayer';
 import PostCard from '../../components/PostCard';
-import UserHighlightsReel from '../../components/tournament/UserHighlightsReel';
 import Icon from '../../components/Icon';
 import { CoinIcon, VPIcon } from '../../components/CoinIcon';
 
-const PROFILE_TABS = ['Posts', 'Media', 'Clips', 'Highlights', 'Likes'];
+const PROFILE_TABS = ['Posts', 'Media', 'Clips', 'Likes'];
 
 export default function PublicProfileScreen() {
   const { id } = useParams();
@@ -443,9 +442,7 @@ export default function PublicProfileScreen() {
         </div>
       ) : (
       <div className="px-5 py-4">
-        {activeTab === 'Highlights' ? (
-          <UserHighlightsReel uid={user?.id || id} />
-        ) : activeTab === 'Likes' ? (
+        {activeTab === 'Likes' ? (
           <div className="text-center py-16">
             <Icon name="favorite_border" size={48} className="text-text-muted/20 mx-auto mb-3" />
             <p className="text-text-muted text-sm">Liked posts are private</p>
