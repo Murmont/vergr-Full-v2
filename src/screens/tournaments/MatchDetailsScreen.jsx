@@ -246,9 +246,10 @@ export default function MatchDetailsScreen() {
     const top3 = [placements.first, placements.second,
       Array.isArray(placements.third) ? placements.third[0] : placements.third].filter(Boolean);
     if (top3.length === 0 && tournament.winnerId) top3.push(tournament.winnerId);
-    const isWinner = top3.includes(currentUser?.uid);
-    const isHost = tournament.adminId === currentUser?.uid;
-    if ((isWinner || isHost) && top3.length > 0) setShowCeremony(true);
+    // DS9 — show the trophy ceremony to EVERYONE who opens a completed
+    // tournament (winner, host, and spectators who watched the final), once
+    // per user via the localStorage gate above.
+    if (top3.length > 0) setShowCeremony(true);
     // eslint-disable-next-line
   }, [tournament?.status, currentUser?.uid]);
 

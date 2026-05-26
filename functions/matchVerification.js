@@ -399,3 +399,46 @@ exports.setMatchFollow = functions.https.onCall({ region: REGION }, async (req) 
   });
   return { ok: true, following: !!follow };
 });
+
+// ─── thankMatchMod (IM4) ─────────────────────────────────────────────────
+// A player thanks the moderator who decided their match. Writes a
+// notification to the mod. Caller must be a participant in the match.
+exports.thankMatchMod = functions.https.onCall({ region: REGION }, async (req) => {
+  if (!req.auth) throw new functions.https.HttpsError('unauthenticated', 'Sign in required.');
+  const { tournamentId, matchId } = req.data || {};
+  if (!tournamentId || !matchId) {
+    throw new functions.https.HttpsError('invalid-argument', 'tournamentId + matchId required.');
+  }
+  const uid = req.auth.uid;
+  const mRef = db.collection('tournaments').doc(tournamentId).collection('matches').doc(matchId);
+  const mSnap = await mRef.get();
+  if (!mSnap.exists) throw new functions.https.HttpsError('not-found', 'Match not found.');
+  const m = mSnap.data();
+  if (m.player1 !== uid && m.player2 !== uid) {
+    throw new functions.https.HttpsError('permission-denied', 'Only a player in this match can thank the mod.');
+  }
+  const modUid = m.claimedModeratorId || m.winnerCalledBy || m.calledBy || null;
+  if (!modUid) throw new functions.https.HttpsError('failed-precondition', 'No moderator on record for this match.');
+  // One thank-you per player per match.
+  const flagKey = `modThanks.${uid}`;
+  if (m[flagKey]) return { ok: true, alreadyThanked: true };
+
+  let name = 'A player';
+  try {
+    const u = await db.collection('users').doc(uid).get();
+    name = u.data()?.username || u.data()?.displayName || name;
+  } catch { /* ignore */ }
+
+  const batch = db.batch();
+  batch.set(db.collection('notifications').doc(), {
+    recipientId: modUid, type: 'tournament_mod_thanks',
+    title: 'A player thanked you',
+    body: `${name} thanked you for calling their match. Nice work.`,
+    data: { tournamentId, matchId },
+    actionUrl: `/tournaments/${tournamentId}/match/${matchId}`,
+    read: false, createdAt: FieldValue.serverTimestamp(),
+  });
+  batch.update(mRef, { [flagKey]: FieldValue.serverTimestamp() });
+  await batch.commit();
+  return { ok: true };
+});

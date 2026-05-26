@@ -330,6 +330,7 @@ exports.proposeMatchReschedule      = matchVerification.proposeMatchReschedule;
 exports.respondMatchReschedule      = matchVerification.respondMatchReschedule;
 exports.uploadDisputeEvidence       = matchVerification.uploadDisputeEvidence;
 exports.setMatchFollow              = matchVerification.setMatchFollow;
+exports.thankMatchMod               = matchVerification.thankMatchMod;
 
 // Trust / reputation / rivalry / sportsmanship / AI summarizer.
 const tournamentTrust = require('./tournamentTrust');
@@ -1482,6 +1483,7 @@ const PUSHABLE_NOTIFICATION_TYPES = new Set([
   'tournament_dispute_evidence',
   'tournament_match_starting',
   'tournament_player_advanced',
+  'tournament_mod_thanks',
   'admin_test_notification',
 ]);
 

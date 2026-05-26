@@ -333,6 +333,121 @@ export function FollowMatchButton({ tournamentId, matchId, match, myUid }) {
   );
 }
 
+// IM3 — report your opponent directly from the match screen (previously only
+// reachable via the long DMs flow). Files a 'user' report via submitReport,
+// tagging the match in details so mods have context.
+const REPORT_REASONS = [
+  { key: 'cheating', label: 'Cheating / hacking' },
+  { key: 'no_show', label: 'No-show / stalling' },
+  { key: 'abuse', label: 'Harassment / abuse' },
+  { key: 'wrong_result', label: 'Falsified result' },
+  { key: 'other', label: 'Something else' },
+];
+export function ReportOpponentButton({ opponentUid, tournamentId, matchId, opponentName }) {
+  const { showToast } = useUI();
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState('cheating');
+  const [details, setDetails] = useState('');
+  const [busy, setBusy] = useState(false);
+  if (!opponentUid) return null;
+  const send = async () => {
+    setBusy(true);
+    try {
+      await httpsCallable(fns(), 'submitReport')({
+        targetType: 'user', targetId: opponentUid, reason,
+        details: `[tournament ${tournamentId} / match ${matchId}] ${details}`.slice(0, 1000),
+      });
+      showToast('Report sent to moderators.', 'success');
+      setOpen(false); setDetails('');
+    } catch (err) {
+      showToast(err?.message === 'You already reported this' ? 'You already reported this player.' : (err?.message || 'Failed'), 'error');
+    } finally { setBusy(false); }
+  };
+  return (
+    <>
+      <button onClick={() => setOpen(true)} style={{
+        padding: '7px 12px', borderRadius: 8, background: 'transparent',
+        border: `1px solid ${C.red}55`, color: C.red, fontWeight: 800, fontSize: 11, cursor: 'pointer',
+        display: 'inline-flex', alignItems: 'center', gap: 6,
+      }}>⚑ Report opponent</button>
+      {open && (
+        <div onClick={() => setOpen(false)} style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 9999,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+        }}>
+          <div onClick={(e) => e.stopPropagation()} style={{
+            background: C.surface, borderRadius: 14, padding: 16, width: '100%', maxWidth: 420,
+          }}>
+            <div style={{ fontSize: 14, fontWeight: 800, color: C.text }}>
+              Report {opponentName || 'opponent'}
+            </div>
+            <div style={{ fontSize: 11, color: C.dim, marginTop: 4 }}>
+              Moderators review every report. False reports can affect your own trust score.
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
+              {REPORT_REASONS.map((r) => (
+                <button key={r.key} onClick={() => setReason(r.key)} style={{
+                  padding: '6px 10px', borderRadius: 999, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                  background: reason === r.key ? `${C.cyan}1f` : C.soft,
+                  border: `1px solid ${reason === r.key ? C.cyan + '88' : C.border}`,
+                  color: reason === r.key ? C.cyan : C.dim,
+                }}>{r.label}</button>
+              ))}
+            </div>
+            <textarea value={details} onChange={(e) => setDetails(e.target.value)}
+              placeholder="Add any detail that helps the mod (optional)…" maxLength={800} rows={3}
+              style={{
+                width: '100%', marginTop: 10, padding: 10, borderRadius: 8,
+                background: C.soft, border: `1px solid ${C.border}`, color: C.text, resize: 'none',
+              }} />
+            <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+              <button onClick={() => setOpen(false)} style={{ ...chipBtn, flex: 1 }}>Cancel</button>
+              <button onClick={send} disabled={busy} style={{ ...primaryBtn, flex: 1 }}>
+                {busy ? 'Sending…' : 'Send report'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+// IM4 — thank the moderator who called your match. Shows who decided it +
+// a one-tap thank-you that pings the mod (thankMatchMod callable).
+export function ModThankYou({ tournamentId, matchId, modUid, modName }) {
+  const { showToast } = useUI();
+  const [sent, setSent] = useState(false);
+  const [busy, setBusy] = useState(false);
+  if (!modUid) return null;
+  const thank = async () => {
+    if (sent || busy) return;
+    setBusy(true);
+    try {
+      await httpsCallable(fns(), 'thankMatchMod')({ tournamentId, matchId });
+      setSent(true);
+      showToast('Thanks sent to the moderator.', 'success');
+    } catch (err) { showToast(err?.message || 'Failed', 'error'); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+      padding: '10px 14px', borderRadius: 12, background: C.surface, border: `1px solid ${C.border}`,
+    }}>
+      <div style={{ fontSize: 12, color: C.dim }}>
+        Decided by <span style={{ color: C.cyan, fontWeight: 800 }}>{modName || 'a Vanguard mod'}</span>
+      </div>
+      <button onClick={thank} disabled={sent || busy} style={{
+        padding: '6px 12px', borderRadius: 8, fontWeight: 800, fontSize: 11, cursor: sent ? 'default' : 'pointer',
+        background: sent ? C.soft : `${C.gold}1f`,
+        border: `1px solid ${sent ? C.border : C.gold + '88'}`,
+        color: sent ? C.dim : C.goldLight,
+      }}>{sent ? '✓ Thanked' : 'Thanks for the call'}</button>
+    </div>
+  );
+}
+
 const chipBtn = {
   padding: '6px 10px', borderRadius: 999, border: `1px solid ${C.border}`,
   background: C.soft, color: C.text, fontWeight: 700, fontSize: 11, cursor: 'pointer',

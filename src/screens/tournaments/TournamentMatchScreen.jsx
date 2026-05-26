@@ -35,6 +35,7 @@ import {
   WarmupLobby, DoubleOrNothingButton, DoubleOrNothingPrompt,
   ReplayOnDemandButton, SchedulingDmButton,
   RescheduleControls, DisputeEvidenceUpload, AppealReviewButton, FollowMatchButton,
+  ReportOpponentButton, ModThankYou,
 } from '../../components/tournament/MatchFlowExtras';
 import { SpectatorBetPanel, TipUnderdogButton } from '../../components/tournament/SpectatorPanels';
 import { isTauri, openHud, closeHud, scanProcesses, emitHudMatch, emitHudClear } from '../../utils/tauriHud';
@@ -518,6 +519,24 @@ export default function TournamentMatchScreen() {
                 background: 'transparent', color: C.dim, fontSize: 12, fontWeight: 700, cursor: 'pointer',
               }}>Integrity report</button>
             </div>
+            {/* IM4 — thank the mod who decided this match. */}
+            {iAmPlayer && (match.claimedModeratorId || match.winnerCalledBy) && (
+              <div style={{ marginTop: 12 }}>
+                <ModThankYou
+                  tournamentId={tournamentId} matchId={matchId}
+                  modUid={match.claimedModeratorId || match.winnerCalledBy}
+                />
+              </div>
+            )}
+            {/* IM3 — report the opponent from the result screen. */}
+            {iAmPlayer && opponentUid && (
+              <div style={{ marginTop: 10 }}>
+                <ReportOpponentButton
+                  opponentUid={opponentUid} tournamentId={tournamentId} matchId={matchId}
+                  opponentName={opponentUid === match.player1 ? p1?.username : p2?.username}
+                />
+              </div>
+            )}
           </div>
         )}
 
