@@ -1,0 +1,24 @@
+[Unit]
+Description=VERGR OCR microservice — Tesseract frame OCR + AC1 live-score loop
+After=network.target
+
+[Service]
+Type=simple
+# Live-score loop needs Firebase Admin creds at -creds (project service-account
+# JSON, same one vergr-rtmp-auth uses). Place it at /etc/vergr-ocr/firebase-admin.json.
+ExecStart=/opt/vergr-ocr/vergr-ocr -listen 127.0.0.1:8092 -streams /var/www/streams -live-scores -creds /etc/vergr-ocr/firebase-admin.json -db vgrdb
+EnvironmentFile=/etc/vergr-ocr/env
+Restart=on-failure
+RestartSec=5s
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadOnlyPaths=/var/www/streams
+PrivateTmp=true
+MemoryMax=512M
+CPUQuota=80%
+
+[Install]
+WantedBy=multi-user.target
