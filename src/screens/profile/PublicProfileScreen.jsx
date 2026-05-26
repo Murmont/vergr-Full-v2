@@ -13,19 +13,25 @@ import {
   followUser, unfollowUser, isFollowing as checkFollowing,
   createConversation, getWallet, getFollowers, getFollowing,
 } from '../../firebase/firestore';
+import { isUserOnline, presenceVisible } from '../../utils/presence';
+import { isVanguard, applyVanguardMask, rankMeta } from '../../utils/vanguard';
+import VanguardBadge from '../../components/VanguardBadge';
+import { useUser } from '../../context/UserContext';
 import { getVPLevel, getVPProgress, getNextVPLevel } from '../../utils/vpSystem';
 import { trackEvent } from '../../utils/trackEvent';
 import BadgesShowcase from '../../components/BadgesShowcase';
 import TwitchMirrorPlayer from '../../components/streams/TwitchMirrorPlayer';
 import PostCard from '../../components/PostCard';
+import UserHighlightsReel from '../../components/tournament/UserHighlightsReel';
 import Icon from '../../components/Icon';
 import { CoinIcon, VPIcon } from '../../components/CoinIcon';
 
-const PROFILE_TABS = ['Posts', 'Media', 'Clips', 'Likes'];
+const PROFILE_TABS = ['Posts', 'Media', 'Clips', 'Highlights', 'Likes'];
 
 export default function PublicProfileScreen() {
   const { id } = useParams();
   const { currentUser } = useAuth();
+  const { profile: viewer } = useUser();
   const { showToast } = useUI();
   const navigate = useNavigate();
   const { setRightPanel, setContentAlign } = useLayout();
@@ -160,9 +166,14 @@ export default function PublicProfileScreen() {
     );
   }
 
-  const displayName = user.displayName || user.username || 'User';
-  const handle = user.username ? `@${user.username}` : '';
+  // Vanguard identity mask. If `user` is an active Vanguard and `viewer`
+  // is a normal user, swap to the persona before reading display fields.
+  // Founder + other Vanguard see the real identity (with rank badge).
+  const masked = applyVanguardMask(user, viewer);
+  const displayName = masked.displayName || masked.username || 'User';
+  const handle = masked.username ? `@${masked.username}` : '';
   const initial = (displayName[0] || 'V').toUpperCase();
+  const vanguardRank = user.vanguard?.rank;
   const joined = user.createdAt
     ? new Date(user.createdAt.toDate ? user.createdAt.toDate() : user.createdAt)
         .toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })
@@ -177,14 +188,16 @@ export default function PublicProfileScreen() {
           <div className="absolute inset-0"
                style={{ background: 'radial-gradient(ellipse at 70% 50%,rgba(123,31,255,0.4) 0%,transparent 65%), radial-gradient(ellipse at 90% 30%,rgba(61,127,255,0.2) 0%,transparent 50%)' }} />
         </div>
-        {user.banner && (
+        {/* Banner: only show the real user's banner if NOT masked. A masked
+            Vanguard persona reveals no personal banner art. */}
+        {!masked.isVanguardPersona && user.banner && (
           <img src={user.banner} alt="" className="absolute inset-0 w-full h-full object-cover" />
         )}
         <span
           className="absolute right-5 bottom-4 font-syne font-black tracking-widest uppercase select-none pointer-events-none leading-none"
           style={{ fontSize: 64, color: 'rgba(255,255,255,0.05)' }}
         >
-          {(user.username || 'VERGR').toUpperCase()}
+          {(masked.username || 'VERGR').toUpperCase()}
         </span>
 
         {/* Back button (top-left) */}
@@ -232,16 +245,34 @@ export default function PublicProfileScreen() {
       <div className="px-5">
         <div className="flex items-end gap-4 -mt-11 mb-3">
           <div
-            className="w-[88px] h-[88px] rounded-full flex items-center justify-center font-syne font-black text-[30px] relative shrink-0 overflow-hidden"
+            className="w-[88px] h-[88px] rounded-full flex items-center justify-center font-syne font-black text-[30px] relative shrink-0"
             style={{
               background: 'linear-gradient(135deg,#7b1fff,#3b82f6)',
               border: `3px solid ${vpLevel?.ringColor || '#B44FFF'}`,
               boxShadow: `0 0 0 3px #0B0B14, 0 0 20px ${(vpLevel?.ringColor || '#B44FFF')}55`,
             }}
           >
-            {user.avatar
-              ? <img src={user.avatar} alt={displayName} className="w-full h-full object-cover" />
-              : initial}
+            {/* overflow-hidden on inner image wrapper so the presence dot
+                below isn't clipped at the avatar edge. */}
+            <div className="w-full h-full rounded-full overflow-hidden flex items-center justify-center">
+              {masked.avatar
+                ? <img src={masked.avatar} alt={displayName} className="w-full h-full object-cover" />
+                : initial}
+            </div>
+            {/* Presence dot. Respects the viewed user's privacy setting:
+                if they've turned off "Show online status", no dot renders
+                at all (not even a grey "offline" one). */}
+            {presenceVisible(user) && (
+              <span
+                className="absolute bottom-1 right-1 w-4 h-4 rounded-full"
+                style={{
+                  background: isUserOnline(user) ? '#22D17E' : '#555',
+                  border: '3px solid #0B0B14',
+                  boxShadow: isUserOnline(user) ? '0 0 8px rgba(34,209,126,0.55)' : 'none',
+                }}
+                title={isUserOnline(user) ? 'Online' : 'Offline'}
+              />
+            )}
           </div>
           <div className="flex-1 pb-1 min-w-0">
             <div className="flex items-center justify-between gap-3 mb-0.5 flex-wrap">
@@ -299,21 +330,40 @@ export default function PublicProfileScreen() {
                 </button>
               )}
             </div>
-            <div className="text-[12px] text-text-muted mb-1.5">{handle}</div>
-            {user.bio && (
-              <p className="text-[13px] text-text-secondary leading-relaxed mb-2 max-w-[500px] whitespace-pre-line">
-                {user.bio}
+            <div className="flex items-center gap-2 mb-1.5">
+              <div className="text-[12px] text-text-muted">{handle}</div>
+              {/* Rank badge sits next to the handle. Visible to all viewers
+                  including non-Vanguard — that's the WHOLE POINT of the
+                  persona: users can identify which rank they're talking
+                  to. The real identity stays hidden. */}
+              {vanguardRank && (
+                <VanguardBadge rank={vanguardRank} size={16} title={`${rankMeta(vanguardRank).label} — Vergr Vanguard`} />
+              )}
+            </div>
+            {/* Personal bio: hide entirely when masked — the persona has no
+                bio. For Vanguard show the rank's standard blurb instead. */}
+            {masked.isVanguardPersona ? (
+              <p className="text-[13px] text-text-secondary leading-relaxed mb-2 max-w-[500px]">
+                {rankMeta(vanguardRank).blurb}
               </p>
+            ) : (
+              user.bio && (
+                <p className="text-[13px] text-text-secondary leading-relaxed mb-2 max-w-[500px] whitespace-pre-line">
+                  {user.bio}
+                </p>
+              )
             )}
+            {/* Linked socials + join date — both leak identity, so hide when
+                masked. */}
             <div className="flex items-center gap-2.5 flex-wrap">
-              {socialsToList(user.socials, user.socialEnabled).slice(0, 5).map((s, i) => (
+              {!masked.isVanguardPersona && socialsToList(user.socials, user.socialEnabled).slice(0, 5).map((s, i) => (
                 <a key={i} href={s.url} target="_blank" rel="noreferrer"
                    className="w-7 h-7 rounded-md flex items-center justify-center text-text-muted hover:text-white hover:bg-purple-700/20 transition-colors"
                    style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)' }}>
                   <Icon name={socialIcon(s.platform)} size={13} />
                 </a>
               ))}
-              {joined && (
+              {!masked.isVanguardPersona && joined && (
                 <span className="flex items-center gap-1 text-[11px] text-text-muted">
                   <Icon name="event" size={12} /> Joined {joined}
                 </span>
@@ -328,6 +378,8 @@ export default function PublicProfileScreen() {
         <Stat icon="person" label="Followers" value={formatCount(followerCount)} onClick={() => navigate(`/profile/followers/${user.id}`)} />
         <div className="border-r mr-6 self-stretch" style={{ borderColor: '#1E1E2E' }} />
         <Stat icon="group" label="Following" value={formatCount(followingCount)} onClick={() => navigate(`/profile/following/${user.id}`)} />
+        <div className="border-r mr-6 self-stretch" style={{ borderColor: '#1E1E2E' }} />
+        <Stat icon="favorite" label="Likes" value={formatCount(user?.totalLikes || 0)} />
         <div className="border-r mr-6 self-stretch" style={{ borderColor: '#1E1E2E' }} />
 
         {!isBot && (
@@ -360,25 +412,40 @@ export default function PublicProfileScreen() {
         )}
       </div>
 
-      {/* TABS */}
-      <div className="flex items-center justify-between px-5 border-b" style={{ borderColor: '#1E1E2E' }}>
-        <div className="flex">
-          {PROFILE_TABS.map(t => (
-            <button key={t}
-              onClick={() => setActiveTab(t)}
-              className="px-4 py-3 text-[13px] font-semibold transition-colors"
-              style={activeTab === t
-                ? { color: '#fff', borderBottom: '2px solid #B44FFF' }
-                : { color: '#6B7280', borderBottom: '2px solid transparent' }}>
-              {t}
-            </button>
-          ))}
+      {/* TABS — hidden when the profile is masked. A Vanguard persona
+          doesn't show personal post history; their actions are attributed
+          to "@Vanguard" wherever those posts/comments live in feeds. */}
+      {!masked.isVanguardPersona && (
+        <div className="flex items-center justify-between px-5 border-b" style={{ borderColor: '#1E1E2E' }}>
+          <div className="flex">
+            {PROFILE_TABS.map(t => (
+              <button key={t}
+                onClick={() => setActiveTab(t)}
+                className="px-4 py-3 text-[13px] font-semibold transition-colors"
+                style={activeTab === t
+                  ? { color: '#fff', borderBottom: '2px solid #B44FFF' }
+                  : { color: '#6B7280', borderBottom: '2px solid transparent' }}>
+                {t}
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* POSTS GRID */}
+      {/* POSTS GRID — empty when masked. Show a Vanguard explainer instead. */}
+      {masked.isVanguardPersona ? (
+        <div className="px-5 py-12 text-center text-text-muted">
+          <img src={rankMeta(vanguardRank).avatar} alt="" className="w-20 h-20 mx-auto rounded-2xl mb-4" style={{ objectFit: 'cover' }} />
+          <p className="text-[14px] font-semibold text-text-secondary mb-1">Vergr Vanguard · {rankMeta(vanguardRank).label}</p>
+          <p className="text-[12px] max-w-md mx-auto leading-relaxed">
+            Vanguard members are anonymous moderators. Their identity is private to protect them from retaliation. If you have a question or report, you can message them via the Vanguard squad or the report flow.
+          </p>
+        </div>
+      ) : (
       <div className="px-5 py-4">
-        {activeTab === 'Likes' ? (
+        {activeTab === 'Highlights' ? (
+          <UserHighlightsReel uid={user?.id || id} />
+        ) : activeTab === 'Likes' ? (
           <div className="text-center py-16">
             <Icon name="favorite_border" size={48} className="text-text-muted/20 mx-auto mb-3" />
             <p className="text-text-muted text-sm">Liked posts are private</p>
@@ -394,6 +461,7 @@ export default function PublicProfileScreen() {
           </div>
         )}
       </div>
+      )}
     </div>
   );
 }
