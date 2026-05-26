@@ -118,6 +118,11 @@ exports.createTournamentSecure = functions.https.onCall(async (request) => {
     visibility = 'public',
     bannerUrl = null,
     invitedUserIds = [],
+    // DS2 — optional "hosted by squad" attribution. The host can mark one of
+    // their own squads as the organiser so it surfaces in that squad's
+    // members' "My squads' events" filter. Distinct from squadId (which is
+    // the competing squad in squad-mode tournaments).
+    hostSquadId = null,
     // Phase 1 — series + seeding.
     seriesFormat = 'bo1',           // 'bo1' | 'bo3' | 'bo5'
     seriesFormatByRound = null,     // optional { 1:'bo1', 2:'bo3', 3:'bo5' }
@@ -232,6 +237,20 @@ exports.createTournamentSecure = functions.https.onCall(async (request) => {
     }
   }
 
+  // DS2 — validate the host-squad attribution: the caller must be a member of
+  // the squad they're claiming hosts this event. Invalid/foreign → drop it.
+  let validHostSquadId = null;
+  if (hostSquadId) {
+    try {
+      const sqSnap = await db.collection('squads').doc(hostSquadId).get();
+      const sq = sqSnap.data();
+      const members = sq?.memberIds || [];
+      if (sqSnap.exists && (members.includes(uid) || sq.ownerId === uid)) {
+        validHostSquadId = hostSquadId;
+      }
+    } catch { /* drop silently */ }
+  }
+
   // Mint an OBS overlay token — used by the streamer's overlay browser source
   // to POST AI-moderation signals (winner hotkey) back to our backend without
   // requiring Firebase Auth. Token is opaque, 32 bytes hex.
@@ -258,6 +277,7 @@ exports.createTournamentSecure = functions.https.onCall(async (request) => {
     brResults: [],
     visibility: visibility === 'private' ? 'private' : 'public',
     bannerUrl: bannerUrl || null,
+    hostSquadId: validHostSquadId,
     invitedUserIds: Array.isArray(invitedUserIds) ? invitedUserIds : [],
     scheduledStart: scheduledStart ? new Date(scheduledStart) : null,
     requiresManualMod: needsManualMod,

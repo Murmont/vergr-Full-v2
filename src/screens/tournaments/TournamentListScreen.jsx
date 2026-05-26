@@ -17,6 +17,7 @@ import {
   getTournaments,
   getUserTournaments,
   getFollowingTournaments,
+  getUserSquads,
 } from '../../firebase/firestore';
 import {
   TournamentCard,
@@ -74,6 +75,17 @@ export default function TournamentListScreen({ variant = 'all' }) {
     n.has(k) ? n.delete(k) : n.add(k);
     return n;
   });
+  // DS2 — the viewer's squad ids, so "My squads' events" can filter by
+  // tournament.hostSquadId. Empty until loaded; the chip hides if none.
+  const [mySquadIds, setMySquadIds] = useState(() => new Set());
+  useEffect(() => {
+    if (!profile?.uid) return;
+    let cancelled = false;
+    getUserSquads(profile.uid)
+      .then((sqs) => { if (!cancelled) setMySquadIds(new Set((sqs || []).map(s => s.id))); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [profile?.uid]);
 
   // Upcoming-weekend window (Sat 00:00 → Sun 23:59 local). If today is the
   // weekend, it's the current one; otherwise the next one.
@@ -140,15 +152,17 @@ export default function TournamentListScreen({ variant = 'all' }) {
       if (quick.has('small') && !(t.cap > 0 && t.cap <= 100)) return false;
       if (quick.has('br') && t.type !== 'battle_royale') return false;
       if (quick.has('weekend') && !(t.startMs && t.startMs >= wkStart && t.startMs <= wkEnd)) return false;
+      if (quick.has('mySquads') && !(t.hostSquadId && mySquadIds.has(t.hostSquadId))) return false;
       return true;
     });
-  }, [tournaments, status, game, region, isTypeVariant, typeConfig, variant, quick, wkStart, wkEnd]);
+  }, [tournaments, status, game, region, isTypeVariant, typeConfig, variant, quick, wkStart, wkEnd, mySquadIds]);
 
   const QUICK_FILTERS = [
     { key: 'lowEntry', label: 'Entry ≤ 50c', icon: 'savings' },
     { key: 'small',    label: '≤ 100 players', icon: 'groups' },
     { key: 'weekend',  label: 'This weekend', icon: 'event' },
     { key: 'br',       label: 'Battle Royale', icon: 'whatshot' },
+    ...(mySquadIds.size > 0 ? [{ key: 'mySquads', label: "My squads' events", icon: 'shield' }] : []),
   ];
 
   const games = useMemo(() => {

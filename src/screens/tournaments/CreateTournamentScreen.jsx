@@ -12,7 +12,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useUser } from '../../context/UserContext';
 import { useUI } from '../../context/UIContext';
 import {
-  createTournament, getUserSquads,
+  createTournamentSecure, getUserSquads, getEligibleSquadCount,
   updateLinkedAccount, linkSteam,
   getUsersWithLinkedAccount, uploadTournamentBanner,
 } from '../../firebase/firestore';
@@ -33,60 +33,39 @@ import {
   MAX_ENTRY_FEE_COINS,
   MAX_PRIZE_POOL_COINS,
 } from '../../utils/tournamentTypes';
+import { TOURNAMENT_GAMES } from '../../utils/tournamentGames';
 
-// All games listed here are valid for tournaments. Auto-result detection
-// is added per-game over time via official publisher APIs (Riot, Valve GSI,
-// Epic EOS, Wargaming, Hi-Rez, Blizzard, PUBG, etc.); games without an
-// integration yet fall back to manual reporting via reportMatchResultSecure.
-// See `Full Game List_ Specific APIs & Packages.docx` for the integration
-// status of each game.
-const GAMES = [
-  // Riot — official APIs (server-side, no player client needed)
-  'League of Legends', 'VALORANT', 'Teamfight Tactics', 'Legends of Runeterra',
-  // Valve — Game State Integration (player drops a small config file)
-  'CS2', 'Dota 2',
-  // Epic
-  'Fortnite',
-  // PUBG Corp
-  'PUBG',
-  // Hi-Rez
-  'Smite', 'Paladins',
-  // Wargaming
-  'World of Tanks', 'World of Warships', 'War Thunder',
-  // Blizzard
-  'StarCraft II', 'World of Warcraft', 'Hearthstone',
-  // Other publishers with official APIs
-  'Brawlhalla', 'CrossFire',
-  // Manual-reporting only (unofficial APIs or no public API)
-  'Apex Legends', 'Rocket League', 'Overwatch 2',
-  'Rainbow Six Siege', 'Call of Duty', 'FIFA',
-  'Other',
-];
+// Tournament games registry is the single source of truth — see
+// src/utils/tournamentGames.js. Non-mobile competitive games only (mobile
+// devices view tournaments but cannot participate, per founder mandate).
+const GAMES = TOURNAMENT_GAMES.map(g => g.label);
 
-// Riot's Production API key application is in review (May 2026). Until they
-// approve us, hosts cannot pick LoL or Valorant — the pills render with a red
-// border + "Coming Soon" badge and clicking shows a toast. Remove the entries
-// from this set once Riot approves.
-const COMING_SOON_GAMES = new Set(['League of Legends', 'VALORANT']);
-
-// Maps a game → the linked-account platform a host must have connected to use
-// auto-result detection. Games not in this map fall back to manual reporting
-// and have no required link.
-const GAME_REQUIRED_ACCOUNT = {
-  'League of Legends':     'riotgames',
-  'VALORANT':              'riotgames',
-  'Teamfight Tactics':     'riotgames',
-  'Legends of Runeterra':  'riotgames',
-  'CS2':                   'steam',
-  'Dota 2':                'steam',
-  'StarCraft II':          'battlenet',
-  'World of Warcraft':     'battlenet',
-  'Hearthstone':           'battlenet',
-  'Overwatch 2':           'battlenet',
-  'Apex Legends':          'origin',
-  'Fortnite':              'epicgames',
-  'Brawlhalla':            'epicgames',
+// Maps registry platform IDs → linkedAccount keys used in the user profile.
+const PLATFORM_TO_LINKED_KEY = {
+  riot: 'riotgames',
+  steam: 'steam',
+  battlenet: 'battlenet',
+  origin: 'origin',
+  ea: 'origin',
+  epic: 'epicgames',
+  ubisoft: 'ubisoft',
+  xbox: 'xbox',
+  psn: 'psn',
+  nintendo: 'nintendo',
+  wizards: 'wizards',
 };
+
+// Coming-soon set: games whose required integration isn't approved yet.
+// Currently none — Riot prod-key review tracked separately; remove a game
+// from here once its detection path is live.
+const COMING_SOON_GAMES = new Set();
+
+// Derived from registry: label → linkedAccount key (or null = manual / no link).
+const GAME_REQUIRED_ACCOUNT = TOURNAMENT_GAMES.reduce((acc, g) => {
+  const key = PLATFORM_TO_LINKED_KEY[g.linkedPlatform];
+  if (key) acc[g.label] = key;
+  return acc;
+}, {});
 
 // Display metadata for the per-platform connect modal that pops up when the
 // host picks a game whose required account isn't linked yet.
@@ -96,6 +75,11 @@ const PLATFORM_META = {
   battlenet: { name: 'Battle.net',  color: '#00aeff', letter: 'B', placeholder: 'YourTag#1234' },
   origin:    { name: 'EA / Origin', color: '#ff5252', letter: 'O', placeholder: 'Your Origin or EA handle' },
   epicgames: { name: 'Epic Games',  color: '#2a2a2a', letter: 'E', placeholder: 'Your Epic display name' },
+  ubisoft:   { name: 'Ubisoft',     color: '#0083be', letter: 'U', placeholder: 'Your Ubisoft Connect handle' },
+  xbox:      { name: 'Xbox',        color: '#107c10', letter: 'X', placeholder: 'Your Xbox gamertag' },
+  psn:       { name: 'PlayStation', color: '#003791', letter: 'P', placeholder: 'Your PSN ID' },
+  nintendo:  { name: 'Nintendo',    color: '#e60012', letter: 'N', placeholder: 'Your Nintendo friend code' },
+  wizards:   { name: 'Wizards',     color: '#d3273e', letter: 'W', placeholder: 'Your Wizards Account ID' },
 };
 
 // Preset banner art per game lives in public/brand/tournament-banners/.
@@ -116,6 +100,51 @@ const STEPS = [
   { id: 3, label: 'Prizes & Entry',  icon: 'payments' },
   { id: 4, label: 'Review & Create', icon: 'check_circle' },
 ];
+
+// Phase 2 — stage presets. Mirror of functions/tournamentStages.js
+// STAGE_PRESETS. If you change one side, change both.
+const STAGE_PRESETS = [
+  { id: 'single_stage', label: 'Single Stage', sub: 'One format, traditional bracket (legacy).', stages: null,
+    forcesType: null, forcesSeriesFormat: null },
+  { id: 'swiss_to_se', label: 'Swiss → SE Playoffs', sub: 'Swiss qualifier, top 8 → single-elim Bo3.',
+    forcesType: 'swiss', forcesSeriesFormat: 'bo1',
+    stages: [
+      { id: 'stage_1', name: 'Swiss Qualifier', type: 'swiss',       seriesFormat: 'bo1', seedingMode: 'random',  advanceCount: 8, swissRounds: 5 },
+      { id: 'stage_2', name: 'Playoffs',        type: 'single_elim', seriesFormat: 'bo3', seedingMode: 'inherit' },
+    ],
+  },
+  { id: 'swiss_to_de', label: 'Swiss → DE Playoffs', sub: 'Swiss qualifier, top 8 → double-elim Bo3.',
+    forcesType: 'swiss', forcesSeriesFormat: 'bo1',
+    stages: [
+      { id: 'stage_1', name: 'Swiss Qualifier', type: 'swiss',        seriesFormat: 'bo1', seedingMode: 'random',  advanceCount: 8, swissRounds: 5 },
+      { id: 'stage_2', name: 'Double-Elim',     type: 'double_elim',  seriesFormat: 'bo3', seedingMode: 'inherit' },
+    ],
+  },
+  { id: 'groups_to_se', label: 'RR Groups → SE Playoffs', sub: 'Round-robin pool, top 8 → single-elim Bo3.',
+    forcesType: 'round_robin', forcesSeriesFormat: 'bo1',
+    stages: [
+      { id: 'stage_1', name: 'Group Stage', type: 'round_robin', seriesFormat: 'bo1', seedingMode: 'random',  advanceCount: 8 },
+      { id: 'stage_2', name: 'Playoffs',    type: 'single_elim', seriesFormat: 'bo3', seedingMode: 'inherit' },
+    ],
+  },
+  { id: 'de_only', label: 'Double-Elim (Bo3 / Bo5 GF)', sub: 'Pure double-elim with proper Bo3 series.',
+    forcesType: 'double_elim', forcesSeriesFormat: 'bo3',
+    stages: [
+      { id: 'stage_1', name: 'Double-Elim', type: 'double_elim', seriesFormat: 'bo3', seedingMode: 'random' },
+    ],
+  },
+];
+function stagesForPreset(presetId, fallback) {
+  const p = STAGE_PRESETS.find((x) => x.id === presetId);
+  if (!p) return null;
+  if (!p.stages) return null;
+  // Override stage 1's format/seedingMode to match top-level fallback so
+  // backend validation passes (stages[0] must equal top-level type/sf).
+  const stages = p.stages.map((s, i) => i === 0 ? {
+    ...s, type: fallback.type, seriesFormat: fallback.seriesFormat, seedingMode: fallback.seedingMode,
+  } : s);
+  return stages;
+}
 
 const RULES_CHECKLIST = [
   'All participants must register before start time',
@@ -140,13 +169,29 @@ export default function CreateTournamentScreen() {
   const [squads, setSquads] = useState([]);
   const [loading, setLoading] = useState(false);
   const [brGameCount, setBrGameCount] = useState(3);
+  // Phase 1 — series + seeding. Defaults keep behaviour identical to pre-Phase-1.
+  const [seriesFormat, setSeriesFormat] = useState('bo1');   // 'bo1' | 'bo3' | 'bo5'
+  const [seedingMode, setSeedingMode] = useState('random');  // 'random' | 'manual' | 'rating'
+  // Phase 2 — multi-stage preset. 'single_stage' = legacy single-format tournament.
+  // Any other id maps to a STAGE_PRESETS entry with a stages[] array.
+  const [structurePreset, setStructurePreset] = useState('single_stage');
+  // Phase 3 — supply gating. eligibleSquadCount = how many squads have
+  // enough members to fit the squad sizes most formats want (≥4).
+  // Fetched once on mount; ungated if the query fails (optimistic).
+  const [eligibleSquadCount, setEligibleSquadCount] = useState(null);
   const [streamRequired, setStreamRequired] = useState(false);
   const [visibility, setVisibility] = useState('public'); // 'public' | 'private'
   const [bannerUrl, setBannerUrl] = useState('');
   const [bannerUploading, setBannerUploading] = useState(false);
+  // DS2 — optional "hosted by squad" attribution. '' = host as yourself.
+  const [hostSquadId, setHostSquadId] = useState('');
   const [connectPlatform, setConnectPlatform] = useState(null); // platform id or null
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [invitedUsers, setInvitedUsers] = useState([]);    // [{id, username, avatar, vpLevel}]
+  // Compliance: host must affirm skill-based, no-chance classification.
+  // Stored on the tournament doc + audit trail. See CLAUDE.md compliance
+  // section and /learn/tournament-rules.
+  const [agreedToSkillTerms, setAgreedToSkillTerms] = useState(false);
 
   const { currentUser } = useAuth();
   const { wallet, profile } = useUser();
@@ -167,6 +212,9 @@ export default function CreateTournamentScreen() {
   useEffect(() => {
     if (!currentUser) return;
     getUserSquads(currentUser.uid).then(setSquads).catch(() => {});
+    // Phase 3 — supply check. Count squads with ≥4 members (smallest squad
+    // tournament size) so we know which formats to gate.
+    getEligibleSquadCount(4).then(setEligibleSquadCount).catch(() => setEligibleSquadCount(null));
   }, [currentUser]);
 
   useEffect(() => {
@@ -234,7 +282,7 @@ export default function CreateTournamentScreen() {
   const step1Valid = name.trim().length >= 3 && finalGame;
   const step2Valid = !!bracketCfg && isBracketTypeAllowed(type, plan);
   const step3Valid = (!needsSquad || !!squadId) && limitCheck.ok;
-  const canSubmit = step1Valid && step2Valid && step3Valid;
+  const canSubmit = step1Valid && step2Valid && step3Valid && agreedToSkillTerms;
 
   const handleNext = () => {
     if (step === 1 && !step1Valid) { showToast('Add a name and pick a game', 'error'); return; }
@@ -253,7 +301,10 @@ export default function CreateTournamentScreen() {
     }
     setLoading(true);
     try {
-      const tournamentId = await createTournament(currentUser.uid, squadId || null, {
+      // Server callable — validates Riot caps, plan tier, escrow setup, and
+      // re-stamps the compliance classification so the client can't tamper with it.
+      const result = await createTournamentSecure({
+        squadId: squadId || null,
         name: name.trim(),
         description: description.trim(),
         game: finalGame,
@@ -266,8 +317,15 @@ export default function CreateTournamentScreen() {
         swissRounds: type === 'swiss' ? swissRounds : null,
         visibility,
         bannerUrl: bannerUrl || null,
+        hostSquadId: hostSquadId || null,
         invitedUserIds: visibility === 'private' ? invitedUsers.map(u => u.id) : [],
+        // Phase 1 — series + seeding.
+        seriesFormat,
+        seedingMode,
+        // Phase 2 — multi-stage (null for single_stage preset).
+        stages: stagesForPreset(structurePreset, { type, seriesFormat, seedingMode }),
       });
+      const tournamentId = result?.tournamentId || result?.id;
       showToast('Tournament created!', 'success');
       navigate(`/match/${tournamentId}`);
     } catch (err) {
@@ -302,9 +360,14 @@ export default function CreateTournamentScreen() {
             visibility={visibility} setVisibility={setVisibility}
             bannerUrl={bannerUrl} setBannerUrl={setBannerUrl}
             bannerUploading={bannerUploading} handleBannerFile={handleBannerFile}
+            squads={squads} hostSquadId={hostSquadId} setHostSquadId={setHostSquadId}
             requiredAccount={requiredAccount} hasRequiredAccount={hasRequiredAccount}
             setConnectPlatform={setConnectPlatform}
             invitedUsers={invitedUsers} setShowInviteModal={setShowInviteModal}
+            seriesFormat={seriesFormat} setSeriesFormat={setSeriesFormat}
+            seedingMode={seedingMode} setSeedingMode={setSeedingMode}
+            structurePreset={structurePreset} setStructurePreset={setStructurePreset}
+            eligibleSquadCount={eligibleSquadCount}
             onBack={handleBack} onNext={handleNext} onCreate={handleCreate}
             canSubmit={canSubmit} loading={loading}
           />
@@ -430,6 +493,24 @@ export default function CreateTournamentScreen() {
                   />
                 </Field>
 
+                {squads.length > 0 && (
+                  <Field label="Hosted By (optional)">
+                    <select
+                      value={hostSquadId}
+                      onChange={(e) => setHostSquadId(e.target.value)}
+                      className="w-full px-3 py-2.5 rounded-lg bg-white/[0.04] border border-white/[0.08] text-sm text-text-primary"
+                    >
+                      <option value="">Myself</option>
+                      {squads.map((s) => (
+                        <option key={s.id} value={s.id}>{s.name || s.tag || 'My squad'}</option>
+                      ))}
+                    </select>
+                    <p className="text-text-muted text-[11px] mt-1">
+                      Attribute this event to one of your squads so it shows in that squad's "My squads' events" filter.
+                    </p>
+                  </Field>
+                )}
+
                 <Field label="Visibility *">
                   <div className="grid grid-cols-2 gap-2">
                     {[
@@ -476,12 +557,23 @@ export default function CreateTournamentScreen() {
                     {BRACKET_TYPE_LIST.map(t => {
                       const allowed = isBracketTypeAllowed(t.id, plan);
                       const selected = type === t.id;
+                      // Phase 3 — supply gate. Squad formats need at least
+                      // 4 eligible squads platform-wide. Open until the
+                      // count query resolves; null = unknown.
+                      const isSquadFormat = t.mode === 'squad';
+                      const minSquadsNeeded = (t.allowedPlayers?.[0]) || 4;
+                      const supplyOk = !isSquadFormat || eligibleSquadCount === null
+                        || eligibleSquadCount >= minSquadsNeeded;
+                      const locked = !allowed || !supplyOk;
                       return (
                         <button key={t.id}
-                          onClick={() => allowed ? setType(t.id) : navigate('/settings/subscription')}
+                          onClick={() => {
+                            if (!supplyOk) return;
+                            allowed ? setType(t.id) : navigate('/settings/subscription');
+                          }}
                           className={`w-full p-3.5 rounded-xl border text-left transition-all flex items-center gap-3 ${
                             selected ? 'border-brand-violet bg-brand-violet/5'
-                            : allowed ? 'border-white/[0.06] bg-white/[0.03] hover:border-white/10'
+                            : !locked ? 'border-white/[0.06] bg-white/[0.03] hover:border-white/10'
                                       : 'border-white/[0.04] bg-white/[0.02] opacity-60'
                           }`}>
                           <Icon name={t.icon} size={22} className={selected ? 'text-brand-violet' : 'text-text-muted'} />
@@ -491,17 +583,71 @@ export default function CreateTournamentScreen() {
                               {!allowed && (
                                 <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-brand-gold/15 text-brand-gold">{t.minPlan}</span>
                               )}
+                              {!supplyOk && (
+                                <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-brand-cyan/15 text-brand-cyan">
+                                  Unlocks at {minSquadsNeeded} squads
+                                </span>
+                              )}
                               {t.streamRequired && (
                                 <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-brand-ember/15 text-brand-ember">Stream</span>
                               )}
                             </div>
-                            <p className="text-text-muted text-[11px] mt-0.5">{t.description}</p>
+                            <p className="text-text-muted text-[11px] mt-0.5">
+                              {t.description}
+                              {!supplyOk && (
+                                <span className="block mt-1 text-brand-cyan/80">
+                                  Only {eligibleSquadCount ?? 0} eligible squads on the platform — needs {minSquadsNeeded}+.
+                                </span>
+                              )}
+                            </p>
                           </div>
                           {selected && <Icon name="check_circle" size={18} className="text-brand-violet" />}
                         </button>
                       );
                     })}
                   </div>
+                </Field>
+
+                <Field label="Tournament Structure">
+                  <div className="flex flex-col gap-2">
+                    {STAGE_PRESETS.map((p) => {
+                      const selected = structurePreset === p.id;
+                      // Greyed out if preset wants a type that doesn't match
+                      // current selection (we don't auto-rewrite to avoid
+                      // wiping the user's other choices).
+                      const mismatch = p.forcesType && p.forcesType !== type;
+                      return (
+                        <button key={p.id}
+                          onClick={() => {
+                            if (mismatch) {
+                              setType(p.forcesType);
+                              setSeriesFormat(p.forcesSeriesFormat || 'bo1');
+                            }
+                            setStructurePreset(p.id);
+                          }}
+                          className={`text-left p-3 rounded-lg border transition-all ${
+                            selected
+                              ? 'bg-brand-violet/15 border-brand-violet/40'
+                              : 'bg-white/[0.04] border-white/[0.06]'
+                          }`}>
+                          <div className="flex items-center gap-2">
+                            <Icon name={p.id === 'single_stage' ? 'view_module' : 'route'}
+                              size={16} className={selected ? 'text-brand-violet-light' : 'text-text-muted'} />
+                            <div className={`text-sm font-bold ${selected ? 'text-brand-violet-light' : 'text-text-primary'}`}>{p.label}</div>
+                            {mismatch && (
+                              <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-brand-gold/15 text-brand-gold ml-auto">
+                                Tap to switch type
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[11px] text-text-muted mt-1">{p.sub}</div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="text-text-muted text-[11px] mt-2">
+                    Single Stage = legacy bracket (one format). Multi-stage = real esports shape (qualifier + playoffs). Phase 2 ships with 4 presets; custom stage builders come later.
+                  </p>
                 </Field>
 
                 <Field label={needsSquad ? 'Max Squads' : 'Max Players'}>
@@ -533,6 +679,61 @@ export default function CreateTournamentScreen() {
                       ))}
                     </div>
                     <p className="text-text-muted text-[11px] mt-2">Placement points aggregate across games. 1st = 15, 2nd = 12, …, 10th = 1.</p>
+                  </Field>
+                )}
+
+                {/* Phase 3 — Series Format. Hidden only for BR (Bo1 by definition). */}
+                {!['battle_royale'].includes(type) && (
+                  <Field label="Series Format">
+                    <div className="flex gap-2">
+                      {[
+                        { id: 'bo1', label: 'Bo1', desc: '1 game' },
+                        { id: 'bo3', label: 'Bo3', desc: 'first to 2' },
+                        { id: 'bo5', label: 'Bo5', desc: 'first to 3' },
+                      ].map(opt => (
+                        <button key={opt.id} onClick={() => setSeriesFormat(opt.id)}
+                          className={`flex-1 py-2.5 px-2 rounded-lg text-left transition-all ${
+                            seriesFormat === opt.id
+                              ? 'bg-brand-violet/15 border border-brand-violet/40 text-brand-violet-light'
+                              : 'bg-white/[0.04] border border-white/[0.06] text-text-muted'
+                          }`}>
+                          <div className="text-sm font-bold">{opt.label}</div>
+                          <div className="text-[10px] opacity-80">{opt.desc}</div>
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-text-muted text-[11px] mt-2">
+                      Every match in the bracket is a {seriesFormat === 'bo1' ? 'single game' : seriesFormat === 'bo3' ? 'best-of-3 (first to 2 wins)' : 'best-of-5 (first to 3 wins)'}.
+                      Phase 2 multi-stage will let you set different formats per round.
+                    </p>
+                  </Field>
+                )}
+
+                {/* Phase 1 — Seeding mode. Hidden for BR/FFA (no bracket pairing). */}
+                {!['battle_royale'].includes(type) && (
+                  <Field label="Seeding">
+                    <div className="flex gap-2">
+                      {[
+                        { id: 'random', label: 'Random', desc: 'shuffle on start' },
+                        { id: 'manual', label: 'Manual', desc: 'join-order = seed' },
+                        { id: 'rating', label: 'Rating', desc: 'by TP desc' },
+                      ].map(opt => (
+                        <button key={opt.id} onClick={() => setSeedingMode(opt.id)}
+                          className={`flex-1 py-2.5 px-2 rounded-lg text-left transition-all ${
+                            seedingMode === opt.id
+                              ? 'bg-brand-cyan/15 border border-brand-cyan/40 text-brand-cyan'
+                              : 'bg-white/[0.04] border border-white/[0.06] text-text-muted'
+                          }`}>
+                          <div className="text-sm font-bold">{opt.label}</div>
+                          <div className="text-[10px] opacity-80">{opt.desc}</div>
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-text-muted text-[11px] mt-2">
+                      {seedingMode === 'random' && 'Bracket pairings randomised on start. Standard 1v16/8v9 spacing still applies.'}
+                      {seedingMode === 'manual' && 'First to join = seed 1, second = seed 2, etc. Top seeds protected from early meetings.'}
+                      {seedingMode === 'rating' && 'Highest Tournament Points = seed 1. New players join near the bottom.'}
+                    </p>
                   </Field>
                 )}
 
@@ -644,6 +845,36 @@ export default function CreateTournamentScreen() {
                   <p className="text-text-primary text-sm">{description}</p>
                 </div>
               )}
+
+              {/* Skill-based competition affirmation — required before create */}
+              <div className="mt-4 pt-4 border-t border-white/[0.06]">
+                <p className="text-[10px] font-dmmono uppercase tracking-[0.14em] text-text-muted mb-2">
+                  Competition Classification
+                </p>
+                <p className="text-text-secondary text-xs leading-relaxed mb-3">
+                  VERGR tournaments are <strong>skill-based competitions</strong>.
+                  Outcomes must be determined by player skill — no randomized
+                  prize draws, no betting on third-party outcomes, no
+                  chance-based mechanics. Entry fees are pooled into a prize
+                  fund and paid to winners; VERGR retains a 5% organizing fee.{' '}
+                  <a href="#/learn/tournament-rules" target="_blank" rel="noopener noreferrer"
+                     className="text-brand-cyan hover:underline">Read the Tournament Rules</a>.
+                </p>
+                <button type="button"
+                  onClick={() => setAgreedToSkillTerms(v => !v)}
+                  className="flex items-start gap-2.5 text-left">
+                  <span className={`mt-0.5 w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
+                    agreedToSkillTerms ? 'bg-brand-cyan border-brand-cyan' : 'border-white/[0.15] bg-surface-2'
+                  }`}>
+                    {agreedToSkillTerms && <Icon name="check" size={14} className="text-bg-dark" />}
+                  </span>
+                  <span className="text-text-primary text-xs leading-snug">
+                    I confirm this tournament is a skill-based competition with
+                    no chance-based mechanics, and I agree to the VERGR
+                    Tournament Rules.
+                  </span>
+                </button>
+              </div>
             </SectionCard>
           )}
 
@@ -973,6 +1204,9 @@ function MobileWizard(props) {
     type, setType, plan, bracketCfg, maxParticipants, setMaxParticipants, entryFee, setEntryFee,
     squadId, setSquadId, squads, needsSquad, brGameCount, setBrGameCount,
     streamRequired, setStreamRequired, swissRounds, prizeBreakdown, fee, limitCheck, finalGame,
+    // Phase 1–3 additions
+    seriesFormat, setSeriesFormat, seedingMode, setSeedingMode,
+    structurePreset, setStructurePreset, eligibleSquadCount,
     onBack, onNext, onCreate, canSubmit, loading,
   } = props;
 
@@ -1034,6 +1268,20 @@ function MobileWizard(props) {
               onFile={props.handleBannerFile}
             />
           </Field>
+          {(props.squads || []).length > 0 && (
+            <Field label="Hosted By (optional)">
+              <select
+                value={props.hostSquadId || ''}
+                onChange={(e) => props.setHostSquadId(e.target.value)}
+                className="w-full px-3 py-2.5 rounded-lg bg-white/[0.04] border border-white/[0.08] text-sm text-text-primary"
+              >
+                <option value="">Myself</option>
+                {(props.squads || []).map((s) => (
+                  <option key={s.id} value={s.id}>{s.name || s.tag || 'My squad'}</option>
+                ))}
+              </select>
+            </Field>
+          )}
           <Field label="Visibility *">
             <div className="grid grid-cols-2 gap-2">
               {[
@@ -1069,18 +1317,61 @@ function MobileWizard(props) {
               {BRACKET_TYPE_LIST.map(t => {
                 const allowed = isBracketTypeAllowed(t.id, plan);
                 const selected = type === t.id;
+                const isSquadFormat = t.mode === 'squad';
+                const minSquadsNeeded = (t.allowedPlayers?.[0]) || 4;
+                const supplyOk = !isSquadFormat || eligibleSquadCount === null
+                  || eligibleSquadCount >= minSquadsNeeded;
+                const locked = !allowed || !supplyOk;
                 return (
-                  <button key={t.id} onClick={() => allowed && setType(t.id)}
+                  <button key={t.id} onClick={() => supplyOk && allowed && setType(t.id)}
                     className={`w-full p-3 rounded-xl border text-left flex items-center gap-3 ${
                       selected ? 'border-brand-violet bg-brand-violet/5' :
-                      allowed ? 'border-white/[0.06] bg-white/[0.03]' :
+                      !locked ? 'border-white/[0.06] bg-white/[0.03]' :
                       'border-white/[0.04] opacity-60'
                     }`}>
                     <Icon name={t.icon} size={18} className={selected ? 'text-brand-violet' : 'text-text-muted'} />
                     <div className="flex-1">
-                      <p className="text-text-primary text-sm font-bold">{t.label}</p>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <p className="text-text-primary text-sm font-bold">{t.label}</p>
+                        {!supplyOk && (
+                          <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-brand-cyan/15 text-brand-cyan">
+                            Unlocks at {minSquadsNeeded} squads
+                          </span>
+                        )}
+                      </div>
                       <p className="text-text-muted text-[11px]">{t.description}</p>
                     </div>
+                  </button>
+                );
+              })}
+            </div>
+          </Field>
+
+          {/* Phase 2 — Tournament Structure (mobile) */}
+          <Field label="Tournament Structure">
+            <div className="flex flex-col gap-2">
+              {STAGE_PRESETS.map((p) => {
+                const selected = structurePreset === p.id;
+                const mismatch = p.forcesType && p.forcesType !== type;
+                return (
+                  <button key={p.id}
+                    onClick={() => {
+                      if (mismatch) {
+                        setType(p.forcesType);
+                        setSeriesFormat(p.forcesSeriesFormat || 'bo1');
+                      }
+                      setStructurePreset(p.id);
+                    }}
+                    className={`text-left p-3 rounded-lg border ${
+                      selected ? 'bg-brand-violet/15 border-brand-violet/40'
+                               : 'bg-white/[0.04] border-white/[0.06]'
+                    }`}>
+                    <div className="flex items-center gap-2">
+                      <Icon name={p.id === 'single_stage' ? 'view_module' : 'route'}
+                        size={14} className={selected ? 'text-brand-violet-light' : 'text-text-muted'} />
+                      <div className={`text-sm font-bold ${selected ? 'text-brand-violet-light' : 'text-text-primary'}`}>{p.label}</div>
+                    </div>
+                    <div className="text-[11px] text-text-muted mt-1">{p.sub}</div>
                   </button>
                 );
               })}
@@ -1104,6 +1395,49 @@ function MobileWizard(props) {
                     className={`flex-1 py-2.5 rounded-lg text-sm font-bold ${
                       brGameCount === n ? 'bg-brand-ember/15 border border-brand-ember/40 text-brand-ember' : 'bg-white/[0.04] border border-white/[0.06] text-text-muted'
                     }`}>{n}</button>
+                ))}
+              </div>
+            </Field>
+          )}
+
+          {/* Phase 3 — Series Format (mobile). Hidden only for BR. */}
+          {type !== 'battle_royale' && (
+            <Field label="Series Format">
+              <div className="flex gap-2">
+                {[
+                  { id: 'bo1', label: 'Bo1', desc: '1 game' },
+                  { id: 'bo3', label: 'Bo3', desc: 'first to 2' },
+                  { id: 'bo5', label: 'Bo5', desc: 'first to 3' },
+                ].map(opt => (
+                  <button key={opt.id} onClick={() => setSeriesFormat(opt.id)}
+                    className={`flex-1 py-2.5 px-2 rounded-lg text-left ${
+                      seriesFormat === opt.id
+                        ? 'bg-brand-violet/15 border border-brand-violet/40 text-brand-violet-light'
+                        : 'bg-white/[0.04] border border-white/[0.06] text-text-muted'
+                    }`}>
+                    <div className="text-sm font-bold">{opt.label}</div>
+                    <div className="text-[10px] opacity-80">{opt.desc}</div>
+                  </button>
+                ))}
+              </div>
+            </Field>
+          )}
+
+          {/* Phase 3 — Seeding mode (mobile). */}
+          {type !== 'battle_royale' && (
+            <Field label="Seeding">
+              <div className="flex gap-2">
+                {[
+                  { id: 'random', label: 'Random' },
+                  { id: 'manual', label: 'Manual' },
+                  { id: 'rating', label: 'Rating' },
+                ].map(opt => (
+                  <button key={opt.id} onClick={() => setSeedingMode(opt.id)}
+                    className={`flex-1 py-2.5 rounded-lg text-sm font-bold ${
+                      seedingMode === opt.id
+                        ? 'bg-brand-cyan/15 border border-brand-cyan/40 text-brand-cyan'
+                        : 'bg-white/[0.04] border border-white/[0.06] text-text-muted'
+                    }`}>{opt.label}</button>
                 ))}
               </div>
             </Field>
