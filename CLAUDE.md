@@ -68,8 +68,8 @@ Comprehensive audit 2026-05-25. Tournaments are functional but have real gaps be
 | DS4 | **No tournament banner upload UI** on CreateTournamentScreen — `bannerUrl` exists on schema, no input field. Lists look bland without banners. | ❌ |
 | DS5 | **Skill-matched recommendations** — list is chronological. Recommend tournaments matching the viewer's TP (Tournament Points) bracket. Existing `users.tournamentPoints` already powers leaderboard. | ❌ |
 | DS6 | **Champion Picks (predictions) discoverability** — viewer must already know to look in SpectatorPanels. Surface "Predict the winner, earn coins" prompt on the discovery feed for live matches. | ❌ |
-| DS7 | **"Follow this match" toggle** for spectators — push notif when this specific match starts. | ❌ |
-| DS8 | **Followed-player advance push** — bracket pulse exists (shipped). Push notif to follower when their player advances is missing. | ❌ |
+| DS7 | **"Follow this match" toggle** for spectators — push notif when this specific match starts. | ✅ DEPLOYED 2026-05-26. `setMatchFollow` callable (arrayUnion/Remove on `match.spectatorFollowers`) + `<FollowMatchButton>` in MatchFlowExtras, rendered on TournamentMatchScreen for non-participants. New `tournamentMatchFollowerPush` trigger pings followers when the match flips to `in_progress` (type `tournament_match_starting`, on FCM allowlist). |
+| DS8 | **Followed-player advance push** — bracket pulse exists (shipped). Push notif to follower when their player advances is missing. | ✅ DEPLOYED 2026-05-26. Same `tournamentMatchFollowerPush` trigger: on a match completing with a winner who did NOT win the whole tournament (solo mode; the eventual champion gets `tournament_won` instead), pings that player's `users/{uid}/followers` with type `tournament_player_advanced` (FCM allowlisted). |
 | DS9 | **Trophy ceremony for spectators** — only winners + host see it. Spectators who watched the final get nothing. | ❌ |
 
 ### In-match (P1/P2)
