@@ -227,6 +227,10 @@ export default function CreateTournamentScreen() {
 
   const finalGame = game === 'Other' ? customGame.trim() : game;
   const requiredAccount = GAME_REQUIRED_ACCOUNT[game] || null;
+  // OP6 — Tier B wrapper games (Apex, OW2) detect results via community APIs
+  // that break when the upstream changes. Surface that here so hosts know the
+  // match is mod-verified (primary) and auto-detection is only a bonus.
+  const isWrapperGame = (TOURNAMENT_GAMES.find(x => x.label === game)?.detection) === 'wrapper';
   const linkedAccounts = profile?.linkedAccounts || {};
   const hasRequiredAccount = (() => {
     if (!requiredAccount) return true;
@@ -362,6 +366,7 @@ export default function CreateTournamentScreen() {
             bannerUploading={bannerUploading} handleBannerFile={handleBannerFile}
             squads={squads} hostSquadId={hostSquadId} setHostSquadId={setHostSquadId}
             requiredAccount={requiredAccount} hasRequiredAccount={hasRequiredAccount}
+            isWrapperGame={isWrapperGame}
             setConnectPlatform={setConnectPlatform}
             invitedUsers={invitedUsers} setShowInviteModal={setShowInviteModal}
             seriesFormat={seriesFormat} setSeriesFormat={setSeriesFormat}
@@ -481,6 +486,7 @@ export default function CreateTournamentScreen() {
                       <span className="text-brand-gold text-xs font-bold">Connect</span>
                     </button>
                   )}
+                  {isWrapperGame && <WrapperReliabilityNote />}
                 </Field>
 
                 <Field label="Banner Image">
@@ -1178,6 +1184,21 @@ function Field({ label, children }) {
   );
 }
 
+// OP6 — shown when the chosen game uses a community-API wrapper for result
+// detection (Apex, OW2). Sets host expectations: mods decide, auto is a bonus.
+function WrapperReliabilityNote() {
+  return (
+    <div className="mt-3 p-3 rounded-xl border border-brand-gold/30 bg-brand-gold/5 flex items-start gap-2.5">
+      <Icon name="info" size={16} className="text-brand-gold mt-0.5" />
+      <p className="text-text-secondary text-[11px] leading-relaxed">
+        Auto result detection for this game relies on a community API that can break without notice.
+        Matches are <span className="text-text-primary font-bold">mod-verified as the primary result</span>;
+        automatic detection is a bonus when it's available. Plan for a moderator on these matches.
+      </p>
+    </div>
+  );
+}
+
 function ReviewRow({ label, value }) {
   return (
     <div className="flex items-center justify-between py-2 border-b border-white/[0.04] last:border-0">
@@ -1258,6 +1279,7 @@ function MobileWizard(props) {
                 <span className="text-brand-gold text-[11px] font-bold">Connect</span>
               </button>
             )}
+            {props.isWrapperGame && <WrapperReliabilityNote />}
           </Field>
           <Field label="Banner Image">
             <BannerPicker
