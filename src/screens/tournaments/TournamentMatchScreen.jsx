@@ -85,7 +85,15 @@ export default function TournamentMatchScreen() {
   const [p1, setP1] = useState(null);
   const [p2, setP2] = useState(null);
   const [busy, setBusy] = useState(false);
-  const [revealShown, setRevealShown] = useState(false);
+  // IM2 crash-recovery: per-device cache keys. Survive an alt-F4 + reload so we
+  // don't re-prompt consent or replay the lobby-code reveal. Server stays the
+  // source of truth (verifyState on the match doc + tournamentScanConsent on the
+  // user doc) — these caches only suppress the UI flash during the reload window.
+  const verifyCacheKey = `vergr.matchVerified.${matchId}.${currentUser?.uid}`;
+  const consentCacheKey = currentUser?.uid ? `vergr.scanConsent.${currentUser.uid}` : null;
+  const [revealShown, setRevealShown] = useState(() => {
+    try { return localStorage.getItem(verifyCacheKey) === '1'; } catch { return false; }
+  });
   const [introShown, setIntroShown] = useState(false);
   const [showShare, setShowShare] = useState(false);
   const [webcamStream, setWebcamStream] = useState(null);
@@ -139,6 +147,18 @@ export default function TournamentMatchScreen() {
   }, [tournament, match]);
   useEffect(() => () => webcamStream?.getTracks().forEach((t) => t.stop()), [webcamStream]);
 
+  // IM2 crash-recovery: once this player is verified server-side, stamp the
+  // per-device cache so a reload restores "already verified" instantly (the
+  // match doc subscription re-hydrates verifyState anyway; this just suppresses
+  // the lobby-code reveal replay and any verify-prompt flash during load).
+  useEffect(() => {
+    if (!match || !currentUser?.uid) return;
+    const st = match.verifyState?.[currentUser.uid]?.status;
+    if (st === 'verified' || st === 'self_attested' || match.bothVerifiedAt) {
+      try { localStorage.setItem(verifyCacheKey, '1'); } catch { /* ignore */ }
+    }
+  }, [match?.verifyState, match?.bothVerifiedAt, currentUser?.uid, verifyCacheKey]);
+
   // ─── HUD overlay + anti-cheat scan (Tauri desktop only) ──────────────
   // Player consents at tournament entry; this effect honours that flag
   // (users/{uid}.tournamentScanConsent.acceptedAt). Scans run pre-match
@@ -153,23 +173,36 @@ export default function TournamentMatchScreen() {
     (async () => {
       // P0 #10 — consent gate. Scan only runs if user accepted the
       // tournament-scan ToS clause (set by the consent modal).
-      const { getDoc, doc: docRef } = await import('firebase/firestore');
-      const uSnap = await getDoc(docRef(db, 'users', currentUser.uid));
-      const consent = uSnap.data()?.tournamentScanConsent;
-      setConsentChecked(true);
-      // Re-prompt if: no consent, OR the consented scope version is stale
-      // (we expanded what we scan since they last accepted — they must
-      // re-consent to the new scope before scans resume).
-      const scopeMismatch = consent?.scopeVersion && consent.scopeVersion !== SCAN_SCOPE_VERSION;
-      if (!consent?.acceptedAt || scopeMismatch) {
-        // No consent yet (or stale scope) — open HUD with informational
-        // state, show the consent modal, skip scans until the player accepts.
-        emitHudMatch(tournamentId, matchId);
-        openHud();
-        setNeedsConsent(true);
-        return;
+      // IM2 fast-path: if THIS device already consented at the current scope on
+      // a prior visit, skip the network read + the modal entirely. Avoids an
+      // alt-F4 + reload re-prompting (the async getDoc window would otherwise
+      // flash the modal, and a flaky read would block scanning).
+      let cachedScope = null;
+      try { cachedScope = consentCacheKey && localStorage.getItem(consentCacheKey); } catch { /* ignore */ }
+      if (cachedScope === SCAN_SCOPE_VERSION) {
+        setConsentChecked(true);
+        setNeedsConsent(false);
+      } else {
+        const { getDoc, doc: docRef } = await import('firebase/firestore');
+        const uSnap = await getDoc(docRef(db, 'users', currentUser.uid));
+        const consent = uSnap.data()?.tournamentScanConsent;
+        setConsentChecked(true);
+        // Re-prompt if: no consent, OR the consented scope version is stale
+        // (we expanded what we scan since they last accepted — they must
+        // re-consent to the new scope before scans resume).
+        const scopeMismatch = consent?.scopeVersion && consent.scopeVersion !== SCAN_SCOPE_VERSION;
+        if (!consent?.acceptedAt || scopeMismatch) {
+          // No consent yet (or stale scope) — open HUD with informational
+          // state, show the consent modal, skip scans until the player accepts.
+          emitHudMatch(tournamentId, matchId);
+          openHud();
+          setNeedsConsent(true);
+          return;
+        }
+        // Server confirms consent at the current scope — cache for this device.
+        try { if (consentCacheKey) localStorage.setItem(consentCacheKey, SCAN_SCOPE_VERSION); } catch { /* ignore */ }
+        setNeedsConsent(false);
       }
-      setNeedsConsent(false);
       if (cancelled) return;
       localStorage.setItem('vergr.hud.matchPath', `${tournamentId}|${matchId}`);
       openHud();
@@ -253,6 +286,7 @@ export default function TournamentMatchScreen() {
         <AntiCheatConsentModal
           tournamentId={tournamentId}
           onAccept={() => {
+            try { if (consentCacheKey) localStorage.setItem(consentCacheKey, SCAN_SCOPE_VERSION); } catch { /* ignore */ }
             setNeedsConsent(false);
             setConsentEpoch((e) => e + 1); // re-runs the scan effect
           }}
