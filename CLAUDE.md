@@ -54,7 +54,7 @@ Comprehensive audit 2026-05-25. Tournaments are functional but have real gaps be
 ### Money / payouts (P1)
 | # | Item | Status |
 |---|---|---|
-| MP1 | **PrizeReceiptScreen** ([src/screens/tournaments/PrizeReceiptScreen.jsx](src/screens/tournaments/PrizeReceiptScreen.jsx)) exists but is never auto-routed. Winners get coins silently. Auto-show on first load after finalize + shareable. | ❌ |
+| MP1 | **PrizeReceiptScreen** ([src/screens/tournaments/PrizeReceiptScreen.jsx](src/screens/tournaments/PrizeReceiptScreen.jsx)) exists but is never auto-routed. Winners get coins silently. Auto-show on first load after finalize + shareable. | ✅ DEPLOYED 2026-05-26. `finalizeInternal` now sends the winner (solo) / champions (squad) a `tournament_won` notification (added to FCM allowlist → real push) deep-linking to the existing `/prize-receipt/:prizeId` route (prizeId = tournamentId). PrizeReceiptScreen self-loads the prize from `tournament.payoutBreakdown` when opened via the link/share (no longer needs nav state) and gained a Share button (navigator.share / clipboard). Note: the in-match TrophyCeremony already handles the live winner celebration; this closes the "silent payout + not shareable" gap. True auto-popup not added (the push + deep-link is the route-in). |
 | MP2 | **Mid-tournament prize-pool live update** — `prizePool` grows as players join, but UI shows the value at page load only. No live counter. | ❌ |
 | MP3 | **Squad treasury inflow line-items** — squad members see treasury grow with no breakdown of "which tournament added what". | ❌ |
 | MP4 | **"Tip the moderator" surface for players** — players who got a fair decision can't thank/tip the mod. Mods are unpaid until treasury distribution. | ❌ |
