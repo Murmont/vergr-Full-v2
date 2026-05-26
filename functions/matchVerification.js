@@ -376,3 +376,26 @@ exports.uploadDisputeEvidence = functions.https.onCall({ region: REGION }, async
   }
   return { ok: true };
 });
+
+// ─── setMatchFollow (DS7) ────────────────────────────────────────────────
+// A spectator follows/unfollows a specific match. When the match flips to
+// in_progress, tournamentMatchFollowerPush notifies everyone in
+// `match.spectatorFollowers`. Stored as an array (spectator counts per match
+// are small). Idempotent via arrayUnion/arrayRemove.
+exports.setMatchFollow = functions.https.onCall({ region: REGION }, async (req) => {
+  if (!req.auth) throw new functions.https.HttpsError('unauthenticated', 'Sign in required.');
+  const { tournamentId, matchId, follow } = req.data || {};
+  if (!tournamentId || !matchId) {
+    throw new functions.https.HttpsError('invalid-argument', 'tournamentId + matchId required.');
+  }
+  const uid = req.auth.uid;
+  const mRef = db.collection('tournaments').doc(tournamentId).collection('matches').doc(matchId);
+  const mSnap = await mRef.get();
+  if (!mSnap.exists) throw new functions.https.HttpsError('not-found', 'Match not found.');
+  await mRef.update({
+    spectatorFollowers: follow
+      ? FieldValue.arrayUnion(uid)
+      : FieldValue.arrayRemove(uid),
+  });
+  return { ok: true, following: !!follow };
+});

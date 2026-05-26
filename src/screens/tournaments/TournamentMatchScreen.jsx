@@ -34,7 +34,7 @@ import MatchCardShare from '../../components/tournament/MatchCardShare';
 import {
   WarmupLobby, DoubleOrNothingButton, DoubleOrNothingPrompt,
   ReplayOnDemandButton, SchedulingDmButton,
-  RescheduleControls, DisputeEvidenceUpload, AppealReviewButton,
+  RescheduleControls, DisputeEvidenceUpload, AppealReviewButton, FollowMatchButton,
 } from '../../components/tournament/MatchFlowExtras';
 import { SpectatorBetPanel, TipUnderdogButton } from '../../components/tournament/SpectatorPanels';
 import { isTauri, openHud, closeHud, scanProcesses, emitHudMatch, emitHudClear } from '../../utils/tauriHud';
@@ -561,9 +561,15 @@ export default function TournamentMatchScreen() {
           <DoubleOrNothingButton tournamentId={tournamentId} matchId={matchId} />
         )}
 
-        {/* Spectator view — non-player sees betting + tip-underdog */}
+        {/* Spectator view — non-player sees follow + betting + tip-underdog */}
         {!iAmPlayer && match.status !== 'completed' && (
           <>
+            <div style={{ display: 'flex', justifyContent: 'center' }}>
+              <FollowMatchButton
+                tournamentId={tournamentId} matchId={matchId}
+                match={match} myUid={myUid}
+              />
+            </div>
             <SpectatorBetPanel tournamentId={tournamentId} matchId={matchId} />
             <div style={{ display: 'flex', justifyContent: 'center' }}>
               <TipUnderdogButton

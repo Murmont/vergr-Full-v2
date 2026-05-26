@@ -329,6 +329,7 @@ exports.vanguardHeartbeat           = matchVerification.vanguardHeartbeat;
 exports.proposeMatchReschedule      = matchVerification.proposeMatchReschedule;
 exports.respondMatchReschedule      = matchVerification.respondMatchReschedule;
 exports.uploadDisputeEvidence       = matchVerification.uploadDisputeEvidence;
+exports.setMatchFollow              = matchVerification.setMatchFollow;
 
 // Trust / reputation / rivalry / sportsmanship / AI summarizer.
 const tournamentTrust = require('./tournamentTrust');
@@ -358,6 +359,7 @@ exports.tournamentOfTheDayCron      = tournamentDiscovery.tournamentOfTheDayCron
 exports.startingSoonPushCron        = tournamentDiscovery.startingSoonPushCron;
 exports.aiCheatFlagVod              = tournamentDiscovery.aiCheatFlagVod;
 exports.autoCutVodHighlights        = tournamentDiscovery.autoCutVodHighlights;
+exports.tournamentMatchFollowerPush = tournamentDiscovery.tournamentMatchFollowerPush;
 
 // Anti-cheat scan ingest + signature CRUD (desktop app posts here).
 const antiCheat = require('./antiCheat');
@@ -1478,6 +1480,8 @@ const PUSHABLE_NOTIFICATION_TYPES = new Set([
   'tournament_flagged_for_review',
   'tournament_match_reschedule',
   'tournament_dispute_evidence',
+  'tournament_match_starting',
+  'tournament_player_advanced',
   'admin_test_notification',
 ]);
 

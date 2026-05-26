@@ -243,3 +243,71 @@ exports.autoCutVodHighlights = onSchedule(
     }
   },
 );
+
+// ─── tournamentMatchFollowerPush (DS7 + DS8) ─────────────────────────────
+// One match-write trigger covering two spectator pushes:
+//   DS7 — match flips to in_progress: ping everyone in match.spectatorFollowers
+//         ("a match you follow is live").
+//   DS8 — match completes with a winner who ADVANCED (did not win the whole
+//         tournament): ping that player's account-followers.
+// Notification docs are written with pushable types (see index.js allowlist);
+// onNotificationCreated fans out the FCM push.
+exports.tournamentMatchFollowerPush = onDocumentWritten(
+  { region: REGION, document: 'tournaments/{tId}/matches/{mId}' },
+  async (event) => {
+    const before = event.data?.before?.data();
+    const after = event.data?.after?.data();
+    if (!after) return;
+    const { tId, mId } = event.params;
+
+    // DS7 — match just went live.
+    const startedNow = after.status === 'in_progress' && before?.status !== 'in_progress';
+    if (startedNow && Array.isArray(after.spectatorFollowers) && after.spectatorFollowers.length) {
+      try {
+        const tSnap = await db.collection('tournaments').doc(tId).get();
+        const tName = tSnap.data()?.name || 'A tournament';
+        const batch = db.batch();
+        for (const uid of after.spectatorFollowers) {
+          batch.set(db.collection('notifications').doc(), {
+            recipientId: uid, type: 'tournament_match_starting',
+            title: 'A match you follow is live',
+            body: `${tName}: tap to watch now.`,
+            data: { tournamentId: tId, matchId: mId },
+            actionUrl: `/tournaments/${tId}/match/${mId}`,
+            read: false, createdAt: FieldValue.serverTimestamp(),
+          });
+        }
+        await batch.commit();
+      } catch (e) { console.warn('DS7 match-start push', e.message); }
+    }
+
+    // DS8 — match just completed with a winner.
+    const completedNow = after.status === 'completed' && after.winner && before?.winner !== after.winner;
+    if (completedNow) {
+      try {
+        const tSnap = await db.collection('tournaments').doc(tId).get();
+        const t = tSnap.data() || {};
+        if (t.mode === 'squad') return; // per-user followers only
+        // The eventual tournament winner gets tournament_won instead.
+        if (t.status === 'completed' && t.winnerId === after.winner) return;
+        const winnerSnap = await db.collection('users').doc(after.winner).get();
+        const name = winnerSnap.data()?.username || winnerSnap.data()?.displayName || 'Your player';
+        const followers = await db.collection('users').doc(after.winner)
+          .collection('followers').limit(500).get();
+        if (followers.empty) return;
+        const batch = db.batch();
+        followers.forEach((f) => {
+          batch.set(db.collection('notifications').doc(), {
+            recipientId: f.id, type: 'tournament_player_advanced',
+            title: `${name} advanced`,
+            body: `${name} won their match in ${t.name || 'a tournament'}. Tap to follow their run.`,
+            data: { tournamentId: tId, matchId: mId, playerId: after.winner },
+            actionUrl: `/match/${tId}`,
+            read: false, createdAt: FieldValue.serverTimestamp(),
+          });
+        });
+        await batch.commit();
+      } catch (e) { console.warn('DS8 advance push', e.message); }
+    }
+  },
+);

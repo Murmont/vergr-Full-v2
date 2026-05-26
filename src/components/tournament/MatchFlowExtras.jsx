@@ -302,6 +302,37 @@ export function AppealReviewButton({ matchId }) {
   );
 }
 
+// DS7 — spectator "Follow this match" toggle. On follow, the viewer gets a
+// push when the match goes live (tournamentMatchFollowerPush). Shown only to
+// non-participants.
+export function FollowMatchButton({ tournamentId, matchId, match, myUid }) {
+  const { showToast } = useUI();
+  const [following, setFollowing] = useState(() => !!match?.spectatorFollowers?.includes(myUid));
+  const [busy, setBusy] = useState(false);
+  const toggle = async () => {
+    if (busy) return;
+    setBusy(true);
+    const next = !following;
+    try {
+      await httpsCallable(fns(), 'setMatchFollow')({ tournamentId, matchId, follow: next });
+      setFollowing(next);
+      showToast(next ? 'Following — we\'ll ping you when it starts' : 'Unfollowed match', next ? 'success' : 'info');
+    } catch (err) { showToast(err?.message || 'Failed', 'error'); }
+    finally { setBusy(false); }
+  };
+  return (
+    <button onClick={toggle} disabled={busy} style={{
+      padding: '8px 14px', borderRadius: 10, cursor: 'pointer', fontWeight: 800, fontSize: 12,
+      display: 'inline-flex', alignItems: 'center', gap: 6,
+      background: following ? `${C.cyan}1f` : 'transparent',
+      border: `1px solid ${following ? C.cyan + '88' : C.border}`,
+      color: following ? C.cyan : C.dim,
+    }}>
+      {following ? '★ Following match' : '☆ Follow this match'}
+    </button>
+  );
+}
+
 const chipBtn = {
   padding: '6px 10px', borderRadius: 999, border: `1px solid ${C.border}`,
   background: C.soft, color: C.text, fontWeight: 700, fontSize: 11, cursor: 'pointer',
