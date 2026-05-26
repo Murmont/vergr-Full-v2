@@ -7,7 +7,7 @@
 // this file clean protects the AdSense account.
 // ─────────────────────────────────────────────────────────
 
-const CACHE_NAME = 'vergr-v4';
+const CACHE_NAME = 'vergr-v6';
 
 // Skip waiting immediately to replace old broken SW
 self.addEventListener('install', () => self.skipWaiting());
