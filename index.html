@@ -7,24 +7,65 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="VERGR" />
-    <link rel="icon" type="image/png" href="/favicon.png" />
-    <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+    <link rel="icon" type="image/png" href="/favicon-v2.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon-v2.png" />
+    <link rel="apple-touch-icon" sizes="192x192" href="/icons/icon-192-v2.png" />
     <meta name="theme-color" content="#07080D" />
-    <meta name="description" content="VERGR — Where Gamers Converge. Compete, Create, Earn, Shop." />
-    <title>VERGR</title>
+    <meta name="description" content="VERGR — Where gamers converge. Compete in skill-based tournaments for real prizes, stream gameplay and earn tips, build a squad with shared treasury. The gaming social platform built for monetisation." />
+    <!-- Cryptomus merchant domain ownership verification. Keep until
+         Cryptomus confirms verification, after which it can be removed. -->
+    <meta name="cryptomus" content="a3067f24" />
+    <title>VERGR — Where Gamers Converge | Tournaments, Streaming, Squads</title>
+
+    <!-- Structured data for search engines: Organization + WebSite. Helps
+         Google understand VERGR is a software product / community, not a
+         random gambling site, and improves rich-snippet eligibility. -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "Organization",
+          "name": "VERGR",
+          "url": "https://vergr.app",
+          "logo": "https://vergr.app/brand/logo.png",
+          "description": "VERGR is a skill-based competitive gaming social platform with live streaming, organised tournaments, squad communities, and a creator economy.",
+          "sameAs": [],
+          "contactPoint": {
+            "@type": "ContactPoint",
+            "email": "support@vergr.app",
+            "contactType": "customer support",
+            "availableLanguage": ["English"]
+          }
+        },
+        {
+          "@type": "WebSite",
+          "name": "VERGR",
+          "url": "https://vergr.app",
+          "description": "Compete in skill-based gaming tournaments, stream gameplay, build squads, and earn real money. Crypto and card payments supported.",
+          "potentialAction": {
+            "@type": "SearchAction",
+            "target": "https://vergr.app/#/help?q={search_term_string}",
+            "query-input": "required name=search_term_string"
+          }
+        }
+      ]
+    }
+    </script>
     <!-- Open Graph / link preview defaults. Per-post variants are served by
          the shareLink Cloud Function so messengers (WhatsApp, Discord, etc.)
          get the right title + image + description for shared URLs. -->
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="VERGR" />
-    <meta property="og:title" content="VERGR — Where Gamers Converge" />
-    <meta property="og:description" content="Compete, create, earn and shop with the gaming community." />
-    <meta property="og:image" content="https://vergr-44494.web.app/icons/icon-512.png" />
-    <meta property="og:url" content="https://vergr-44494.web.app" />
+    <meta property="og:title" content="VERGR — Where Gamers Make Money | Tournaments, Streaming, Squads" />
+    <meta property="og:description" content="Turn your gaming skill into real money. Skill-based tournaments with cash prizes, live streaming with tips, squad communities with shared treasuries. Crypto and card supported." />
+    <meta property="og:image" content="https://vergr.app/icons/icon-512.png" />
+    <meta property="og:url" content="https://vergr.app" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="VERGR — Where Gamers Converge" />
-    <meta name="twitter:description" content="Compete, create, earn and shop with the gaming community." />
-    <meta name="twitter:image" content="https://vergr-44494.web.app/icons/icon-512.png" />
+    <meta name="twitter:title" content="VERGR — Where Gamers Make Money" />
+    <meta name="twitter:description" content="Skill-based tournaments, live streaming, squads. Turn your gaming into earnings — no ads, flat 10% tip fee, crypto cash-out." />
+    <meta name="twitter:image" content="https://vergr.app/icons/icon-512.png" />
+    <link rel="canonical" href="https://vergr.app/" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
@@ -71,6 +112,9 @@
       .gold-text { background: linear-gradient(135deg, #F5C542 0%, #D4A017 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
       input:-webkit-autofill { -webkit-box-shadow: 0 0 0 30px #161922 inset !important; -webkit-text-fill-color: #ECEFFE !important; }
     </style>
+    <!-- Tebex.js — inline checkout modal for the Headless API integration.
+         Loaded async; src/utils/tebexCheckout.js calls window.Tebex once available. -->
+    <script src="https://js.tebex.io/v/1.js" async></script>
   </head>
   <body>
     <script>
