@@ -1400,6 +1400,26 @@ async function recordMatchResultInternal({ tournamentId, matchId, winnerId, repo
       throw new HttpsError('permission-denied', 'Only players, host, or trusted sources can report');
     }
 
+    // Finding #2 — a player/host-reported result requires both sides to have
+    // engaged lobby verification first (status 'verified' OR 'self_attested',
+    // not 'pending'/'rejected'). Stops the same-lobby check being skipped.
+    // Trusted automated/mod sources bypass (authoritative + can unstick a
+    // match where a player refuses to verify). Only enforced when the match
+    // actually carries a verification scaffold (byes/legacy docs have none).
+    if (!trustedSource && m.verifyState && m.player1 && m.player2) {
+      const engaged = (pid) => {
+        const st = m.verifyState[pid]?.status;
+        return st === 'verified' || st === 'self_attested';
+      };
+      if (!engaged(m.player1) || !engaged(m.player2)) {
+        throw new HttpsError(
+          'failed-precondition',
+          'Both players must verify (or self-attest) the lobby code before a result can be reported. ' +
+          'If your opponent will not verify, ask a Vanguard moderator to call the match.'
+        );
+      }
+    }
+
     if (rSnap.exists && rSnap.data().winnerId === winnerId) {
       return { ok: true, status: m.status, alreadyReported: true };
     }
