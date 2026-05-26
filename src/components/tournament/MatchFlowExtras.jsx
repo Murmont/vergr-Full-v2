@@ -5,9 +5,13 @@
 //   <ReplayOnDemandButton />  request mod review of a specific moment
 //   <SchedulingDmButton />    open voice DM tagged to this match
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getFunctions, httpsCallable } from 'firebase/functions';
+import {
+  collection, query, orderBy, limit, onSnapshot, addDoc, serverTimestamp,
+} from 'firebase/firestore';
+import { db } from '../../firebase/config';
 import { useUI } from '../../context/UIContext';
 import { uploadToR2 } from '../../utils/r2Storage';
 import { compressMedia } from '../../utils/mediaCompression';
@@ -444,6 +448,105 @@ export function ModThankYou({ tournamentId, matchId, modUid, modName }) {
         border: `1px solid ${sent ? C.border : C.gold + '88'}`,
         color: sent ? C.dim : C.goldLight,
       }}>{sent ? '✓ Thanked' : 'Thanks for the call'}</button>
+    </div>
+  );
+}
+
+// IM1 — lightweight per-match opponent chat. Firestore subcollection
+// `tournaments/{tId}/matches/{mId}/chat` (NOT the WS relay — that is for the
+// high-volume stream-chat firehose; this is a 2-player, low-volume thread that
+// also serves as a dispute trail, so persistence + zero new infra wins). Auto-
+// closes the input when the match is over; history stays readable for mods.
+const CHAT_CLOSED_STATUSES = ['completed', 'cancelled', 'disputed'];
+export function MatchChat({ tournamentId, matchId, myUid, myName, opponentName, matchStatus }) {
+  const { showToast } = useUI();
+  const [msgs, setMsgs] = useState([]);
+  const [text, setText] = useState('');
+  const [sending, setSending] = useState(false);
+  const endRef = useRef(null);
+  const closed = CHAT_CLOSED_STATUSES.includes(matchStatus);
+
+  useEffect(() => {
+    if (!tournamentId || !matchId) return;
+    const q = query(
+      collection(db, 'tournaments', tournamentId, 'matches', matchId, 'chat'),
+      orderBy('createdAt', 'asc'), limit(200),
+    );
+    const unsub = onSnapshot(q, (snap) => {
+      setMsgs(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    });
+    return () => unsub();
+  }, [tournamentId, matchId]);
+
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [msgs.length]);
+
+  const send = async () => {
+    const body = text.trim();
+    if (!body || sending || closed) return;
+    setSending(true);
+    try {
+      await addDoc(
+        collection(db, 'tournaments', tournamentId, 'matches', matchId, 'chat'),
+        { senderUid: myUid, senderName: myName || 'Player', text: body.slice(0, 500), createdAt: serverTimestamp() },
+      );
+      setText('');
+    } catch (err) { showToast(err?.message || 'Could not send', 'error'); }
+    finally { setSending(false); }
+  };
+
+  return (
+    <div style={{ borderRadius: 12, background: C.surface, border: `1px solid ${C.border}`, overflow: 'hidden' }}>
+      <div style={{
+        padding: '8px 12px', borderBottom: `1px solid ${C.border}`,
+        fontSize: 11, fontWeight: 800, color: C.dim, textTransform: 'uppercase', letterSpacing: '0.08em',
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+      }}>
+        <span>Match chat{opponentName ? ` · vs ${opponentName}` : ''}</span>
+        {closed && <span style={{ color: C.dim, fontWeight: 700, textTransform: 'none', letterSpacing: 0 }}>closed</span>}
+      </div>
+      <div style={{ maxHeight: 220, overflowY: 'auto', padding: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {msgs.length === 0 && (
+          <div style={{ fontSize: 12, color: C.dim, textAlign: 'center', padding: '14px 0' }}>
+            Coordinate the lobby with your opponent here. Messages are kept as a dispute record.
+          </div>
+        )}
+        {msgs.map((m) => {
+          const mine = m.senderUid === myUid;
+          return (
+            <div key={m.id} style={{ alignSelf: mine ? 'flex-end' : 'flex-start', maxWidth: '80%' }}>
+              <div style={{
+                padding: '6px 10px', borderRadius: 10, fontSize: 13, lineHeight: 1.35,
+                background: mine ? `${C.cyan}1f` : C.soft,
+                border: `1px solid ${mine ? C.cyan + '55' : C.border}`, color: C.text,
+                wordBreak: 'break-word',
+              }}>{m.text}</div>
+            </div>
+          );
+        })}
+        <div ref={endRef} />
+      </div>
+      {!closed ? (
+        <div style={{ display: 'flex', gap: 6, padding: 8, borderTop: `1px solid ${C.border}` }}>
+          <input
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') send(); }}
+            maxLength={500}
+            placeholder="Message your opponent…"
+            style={{
+              flex: 1, padding: '8px 10px', borderRadius: 8, fontSize: 13,
+              background: C.soft, border: `1px solid ${C.border}`, color: C.text, outline: 'none',
+            }}
+          />
+          <button onClick={send} disabled={sending || !text.trim()} style={{
+            ...primaryBtn, opacity: sending || !text.trim() ? 0.5 : 1,
+          }}>Send</button>
+        </div>
+      ) : (
+        <div style={{ padding: '10px 12px', borderTop: `1px solid ${C.border}`, fontSize: 12, color: C.dim, textAlign: 'center' }}>
+          Match ended — chat is closed. History is kept for moderators.
+        </div>
+      )}
     </div>
   );
 }

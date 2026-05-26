@@ -10,8 +10,28 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // Anonymous Firebase Auth users (guest mode). They ARE authenticated
+    // — request.auth.uid is set — but the sign-in provider is "anonymous"
+    // and they must not be allowed to write user-generated content,
+    // posts, comments, squad data, etc. Read access is fine. Use
+    // isRegistered() instead of isAuth() to require a real account.
+    function isAnonymousAuth() {
+      return isAuth() && request.auth.token.firebase.sign_in_provider == 'anonymous';
+    }
+
+    function isRegistered() {
+      return isAuth() && !isAnonymousAuth();
+    }
+
     function isOwner(userId) {
       return isAuth() && request.auth.uid == userId;
+    }
+
+    // Registered + owner — the typical write requirement. Guests can
+    // never satisfy this even with their own uid because they're not
+    // registered.
+    function isRegisteredOwner(userId) {
+      return isRegistered() && request.auth.uid == userId;
     }
 
     function isAdmin() {
@@ -109,8 +129,9 @@ service cloud.firestore {
 
     match /follows/{followId} {
       allow read: if true;
-      allow create: if isAuth() && request.resource.data.followerId == request.auth.uid;
-      allow delete: if isAuth() && resource.data.followerId == request.auth.uid;
+      // Guests (anonymous auth) cannot follow — must be a registered user.
+      allow create: if isRegistered() && request.resource.data.followerId == request.auth.uid;
+      allow delete: if isRegistered() && resource.data.followerId == request.auth.uid;
       allow update: if false;
     }
 
@@ -120,32 +141,33 @@ service cloud.firestore {
 
     match /posts/{postId} {
       allow read: if true;
-      allow create: if isAuth()
+      // Posting requires a registered account, never a guest.
+      allow create: if isRegistered()
         && request.resource.data.authorId == request.auth.uid
         && validString('content', 5000);
-      allow update: if isOwner(resource.data.authorId) || isModerator();
-      allow delete: if isOwner(resource.data.authorId) || isModerator();
+      allow update: if isRegisteredOwner(resource.data.authorId) || isModerator();
+      allow delete: if isRegisteredOwner(resource.data.authorId) || isModerator();
 
       match /comments/{commentId} {
         allow read: if true;
-        allow create: if isAuth()
+        allow create: if isRegistered()
           && request.resource.data.authorId == request.auth.uid
           && validString('content', 2000);
-        allow update: if isOwner(resource.data.authorId) || isModerator();
-        allow delete: if isOwner(resource.data.authorId) || isModerator();
+        allow update: if isRegisteredOwner(resource.data.authorId) || isModerator();
+        allow delete: if isRegisteredOwner(resource.data.authorId) || isModerator();
       }
 
       match /likes/{userId} {
         allow read: if true;
-        allow create: if isOwner(userId);
-        allow delete: if isOwner(userId);
+        allow create: if isRegisteredOwner(userId);
+        allow delete: if isRegisteredOwner(userId);
         allow update: if false;
       }
 
       match /saves/{userId} {
         allow read: if isOwner(userId);
-        allow create: if isOwner(userId);
-        allow delete: if isOwner(userId);
+        allow create: if isRegisteredOwner(userId);
+        allow delete: if isRegisteredOwner(userId);
       }
     }
 
@@ -155,11 +177,11 @@ service cloud.firestore {
 
     match /polls/{pollId} {
       allow read: if true;
-      allow create: if isAuth();
+      allow create: if isRegistered();
 
       match /votes/{userId} {
         allow read: if true;
-        allow create: if isOwner(userId);
+        allow create: if isRegisteredOwner(userId);
       }
     }
 
@@ -169,7 +191,7 @@ service cloud.firestore {
 
     match /stories/{storyId} {
       allow read: if true;
-      allow create: if isAuth() && request.resource.data.authorId == request.auth.uid;
+      allow create: if isRegistered() && request.resource.data.authorId == request.auth.uid;
       allow update: if isOwner(resource.data.authorId);
       allow delete: if isOwner(resource.data.authorId) || isModerator();
 
@@ -185,7 +207,7 @@ service cloud.firestore {
 
     match /squads/{squadId} {
       allow read: if true;
-      allow create: if isAuth();
+      allow create: if isRegistered();
 
       allow update: if isSquadAdmin(squadId) || isModerator() || (
         get(/databases/$(database)/documents/squads/$(squadId)).data.isPublic == true &&
@@ -211,12 +233,24 @@ service cloud.firestore {
 
       match /events/{eventId} {
         allow read: if true;
-        allow write: if isSquadAdmin(squadId);
+        allow create, delete: if isSquadAdmin(squadId);
+        // Squad members can update ONLY the attendees array (their own RSVP).
+        // Admins can update everything.
+        allow update: if isSquadAdmin(squadId) || (
+          isSquadMember(squadId) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['attendees'])
+        );
       }
 
       match /challenges/{challengeId} {
         allow read: if isSquadMember(squadId);
-        allow write: if isSquadAdmin(squadId);
+        allow create, delete: if isSquadAdmin(squadId);
+        // Squad members can update ONLY their own progress entry. Admins can
+        // update everything (mark complete, edit goal, etc.).
+        allow update: if isSquadAdmin(squadId) || (
+          isSquadMember(squadId) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['progress'])
+        );
       }
 
       match /media/{mediaId} {
@@ -271,6 +305,256 @@ service cloud.firestore {
         allow update: if isSquadAdmin(squadId);
         allow delete: if isSquadAdmin(squadId);
       }
+    }
+
+    // ============================================================
+    // VANGUARD  (moderator program)
+    // Spec: CLAUDE.md → "Vanguard moderator program — LOCKED SPEC".
+    // The rank itself lives on `users/{uid}.vanguard.rank` — those rules
+    // are inherited from the existing /users/{uid} match. Only server-side
+    // Cloud Functions can set/change the vanguard field (callables run
+    // with admin SDK). Below are the rules for the dedicated collections.
+    // ============================================================
+
+    function isVanguardMember() {
+      return isAuth() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.vanguard.rank in ['recruit', 'vanguard', 'senior', 'commander', 'overseer'];
+    }
+    function vanguardRankAtLeast(orderLevel) {
+      // orderLevel: 1=recruit, 2=vanguard, 3=senior, 4=commander, 5=overseer
+      let rank = get(/databases/$(database)/documents/users/$(request.auth.uid)).data.vanguard.rank;
+      return isAuth() && (
+        (rank == 'recruit'   && orderLevel <= 1) ||
+        (rank == 'vanguard'  && orderLevel <= 2) ||
+        (rank == 'senior'    && orderLevel <= 3) ||
+        (rank == 'commander' && orderLevel <= 4) ||
+        (rank == 'overseer'  && orderLevel <= 5)
+      );
+    }
+
+    match /vanguard_invitations/{invitationId} {
+      // Invitee sees their own; admin (founder) sees all; Commander+ sees all.
+      allow read: if isAuth() && (
+        resource.data.inviteeId == request.auth.uid ||
+        isAdmin() ||
+        vanguardRankAtLeast(4)
+      );
+      // Only server-side callables create / update / delete these.
+      // (Cloud Functions use admin SDK and bypass these rules.)
+      allow create, update, delete: if false;
+    }
+
+    match /vanguard_actions/{actionId} {
+      // The moderator who took the action can read their own.
+      // Commander+ can read all (audit log).
+      // Founder can read all.
+      allow read: if isAuth() && (
+        resource.data.moderatorId == request.auth.uid ||
+        isAdmin() ||
+        vanguardRankAtLeast(4)
+      );
+      // Only server-side callables write actions. Client cannot fabricate
+      // audit entries.
+      allow create, update, delete: if false;
+    }
+
+    match /vanguard_payouts/{payoutId} {
+      // All Vanguard members can read payout records.
+      allow read: if isAuth() && (isVanguardMember() || isAdmin());
+      allow create, update, delete: if false;
+    }
+
+    // Cheat signature registry — admin manages via /admin/cheat-signatures
+    // (`upsertCheatSignature` / `deleteCheatSignature` / `adminSeedCheatSignatures`
+    // callables). Read needed so the admin screen can render the list.
+    // Active signatures are also read by `submitAntiCheatScan` server-side
+    // via admin SDK, which bypasses these rules.
+    match /cheat_signatures/{sigId} {
+      allow read: if isAdmin();
+      // Writes go through Cloud Functions only — the callables enforce
+      // admin auth + schema validation. Client cannot edit directly.
+      allow create, update, delete: if false;
+    }
+
+    // Anti-cheat alerts + scans — Vanguard mods read via the queue screen,
+    // founder reads all. Created by `submitAntiCheatScan` server-side.
+    match /anti_cheat_alerts/{alertId} {
+      allow read: if isAuth() && (isVanguardMember() || isAdmin());
+      allow create, update, delete: if false;
+    }
+    match /anti_cheat_scans/{scanId} {
+      // A player can read their own scan (transparency). Mods read all.
+      allow read: if isAuth() && (
+        resource.data.uid == request.auth.uid ||
+        isVanguardMember() ||
+        isAdmin()
+      );
+      allow create, update, delete: if false;
+    }
+
+    // ============================================================
+    // ADMIN AUDIT LOG  (append-only, server-written)
+    // ============================================================
+    // Every privileged admin callable writes a row here. Used for forensics
+    // and to drive the real-time alert pipeline (Firestore trigger fans out
+    // push notifications to every admin on create).
+    match /admin_actions/{actionId} {
+      // Only admins see the log. Cross-checked by Cloud Functions for
+      // anomaly detection too (server-side reads bypass these rules).
+      allow read: if isAdmin();
+      // Append-only from clients. All writes go through Cloud Functions
+      // with the admin SDK, which bypasses these rules.
+      allow create, update, delete: if false;
+    }
+
+    // ============================================================
+    // ADMIN SECURITY  (TOTP secrets — server-only)
+    // ============================================================
+    // Holds the confirmed TOTP secret + backup codes + enrolled-at timestamp
+    // for every admin user. NEVER readable from the client; only the
+    // verifyAdminTotp callable reads this doc. The lightweight public flag
+    // showing "is enrolled?" + "last step-up time" lives on users/{uid}
+    // (fields: mfaEnrolledAt, adminStepUpAt) — those propagate to the client.
+    match /admin_security/{uid} {
+      allow read, write: if false;
+    }
+
+    // Pending TOTP enrollments (intermediate state between enroll + confirm).
+    // Server-only. Auto-expires after 10 min via a scheduled cleanup.
+    match /admin_totp_enrollment/{uid} {
+      allow read, write: if false;
+    }
+
+    // ============================================================
+    // ADMIN ACCESS  (founder-invited sub-admins, per-screen scopes)
+    // ============================================================
+    // admin_users/{uid} — active sub-admin record. The user is allowed to
+    // READ their own record so the client can decide which sidebar screens
+    // to render. The founder reads everyone's record (via the listAdmins
+    // callable, which uses the admin SDK and bypasses these rules).
+    match /admin_users/{uid} {
+      allow read: if isAuth() && (request.auth.uid == uid || isAdmin());
+      allow create, update, delete: if false;
+    }
+
+    // admin_invites/{id} — pending/accepted/revoked invitations. Founder
+    // reads through listAdmins. An invitee can read their own invite by id
+    // to look up the email match. Writes are server-only.
+    match /admin_invites/{inviteId} {
+      allow read: if isAdmin() ||
+                     (isAuth() && resource.data.email == request.auth.token.email);
+      allow create, update, delete: if false;
+    }
+
+    // ============================================================
+    // TOURNAMENT ASSIGNMENTS  (claim-based mod scheduling)
+    // ============================================================
+    match /tournament_assignments/{assignmentId} {
+      // All Vanguard members + admins can read every assignment (browse open
+      // slots, see what others claimed, audit). Anyone can read the doc for
+      // the tournament they're hosting too — but enforcing that requires a
+      // get() on the tournament doc, which costs reads. Skip for now;
+      // assignment data is non-sensitive (no PII).
+      allow read: if isAuth() && (isVanguardMember() || isAdmin());
+      // Writes are server-only (callables + triggers + crons).
+      allow create, update, delete: if false;
+    }
+
+    // ============================================================
+    // DAILY METRICS ROLLUP  (admin dashboard charts)
+    // ============================================================
+    // daily_metrics/{YYYY-MM-DD} — nightly rollup of signups + new
+    // subs + platform revenue. Read only via the admin chart callable
+    // (which uses the Admin SDK and bypasses rules). Clients shouldn't
+    // need direct read — admin-only fallback so a curious admin in the
+    // Firestore console isn't blocked.
+    match /daily_metrics/{day} {
+      allow read: if isAdmin();
+      allow create, update, delete: if false;
+    }
+
+    // ============================================================
+    // APPEALS  (user-submitted appeals on moderation actions)
+    // ============================================================
+    // appeals/{auto} — user creates via the submitAppeal callable (which
+    // enforces dedupe + min-length + admin-set-fields). User can READ
+    // their own appeals so the UI can show status. Updates + deletes are
+    // server-only (admins resolve via adminResolveAppeal).
+    match /appeals/{appealId} {
+      allow read: if isAuth() && (
+        request.auth.uid == resource.data.userId || isAdmin()
+      );
+      allow create, update, delete: if false;
+    }
+
+    // ============================================================
+    // TOURNAMENT ANNOUNCEMENTS  (admin-broadcast messages)
+    // ============================================================
+    // Public read — broadcast announcements are visible to anyone who
+    // can see the tournament. Server-only writes (via the admin callable).
+    match /tournament_announcements/{annId} {
+      allow read: if true;
+      allow create, update, delete: if false;
+    }
+
+    // ============================================================
+    // SUBSCRIPTION PLANS  (admin-managed catalog)
+    // ============================================================
+    // plans/{planId} — readable by anyone (powers the subscription
+    // screen + future public pricing pages). All writes are server-only
+    // via the adminSubscriptions callables.
+    match /plans/{planId} {
+      allow read: if true;
+      allow create, update, delete: if false;
+    }
+
+    // ============================================================
+    // SUBSCRIPTION OVERRIDES  (comps + per-user discounts)
+    // ============================================================
+    // subscription_overrides/{id} — readable by the affected user OR
+    // an admin. Writes are server-only (the adminCompUser /
+    // adminApplyOverride / adminRevokeOverride callables).
+    match /subscription_overrides/{overrideId} {
+      allow read: if isAuth() && (
+        request.auth.uid == resource.data.userId || isAdmin()
+      );
+      allow create, update, delete: if false;
+    }
+
+    // ============================================================
+    // SQUAD INVITATIONS  (root collection — leader-initiated)
+    // ============================================================
+    match /squad_invitations/{invitationId} {
+      // Invitee or inviter can read their own. (Squad admins can read all
+      // pending invites for their squad — needed for "outstanding invites"
+      // admin view; not yet wired but cheap to allow.)
+      allow read: if isAuth() && (
+        request.auth.uid == resource.data.inviteeId ||
+        request.auth.uid == resource.data.inviterId ||
+        isSquadAdmin(resource.data.squadId)
+      );
+      // Only a squad admin can create an invitation, and inviterId must be
+      // the caller. Validates the existence/shape of the basics.
+      allow create: if isAuth()
+        && request.auth.uid == request.resource.data.inviterId
+        && isSquadAdmin(request.resource.data.squadId)
+        && request.resource.data.status == 'pending'
+        && request.resource.data.inviteeId is string
+        && request.resource.data.inviteeId.size() > 0;
+      // Invitee can update status to 'accepted' or 'declined'.
+      // Inviter can update status to 'cancelled'.
+      // Nobody can change the squadId / inviteeId / inviterId after creation.
+      allow update: if isAuth() && (
+        (
+          request.auth.uid == resource.data.inviteeId &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'respondedAt']) &&
+          request.resource.data.status in ['accepted', 'declined']
+        ) || (
+          request.auth.uid == resource.data.inviterId &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'respondedAt']) &&
+          request.resource.data.status == 'cancelled'
+        )
+      );
+      allow delete: if isAuth() && request.auth.uid == resource.data.inviterId;
     }
 
     // ============================================================
@@ -398,13 +682,80 @@ service cloud.firestore {
     match /wallets/{userId} {
       allow read: if isOwner(userId);
       allow create: if isOwner(userId);
-      allow update: if isOwner(userId);
+      // Server-only fields cannot be written from the client. The full list
+      // is documented in CLAUDE.md → Option 1 / Wallet UX. They include the
+      // Circle USDC ledger, KYC level, TOTP state, withdrawal limits, and
+      // PIN lockout tracking. Owner-writable fields (balance, vp, gems,
+      // chatBackground, etc) keep the legacy free-write behaviour.
+      allow update: if isOwner(userId)
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+          'usdcBalance', 'usdcPending',
+          'kycLevel', 'kycStatus',
+          'onboardingCompleted',
+          'totpEnrolled',
+          'walletFrozen', 'walletFrozenAt', 'walletFrozenReason',
+          'whitelistedAddresses',
+          'withdrawalLimits',
+          'pinFailedAttempts', 'pinLockedUntil', 'pinLastFailedAt'
+        ]);
       allow delete: if false;
 
       match /daily_caps/{day} {
         allow read: if isOwner(userId);
         allow write: if false;
       }
+
+      // Sensitive wallet credentials. Server-only read AND write. Never
+      // exposed to clients. Holds: pinHash, pinSalt, totpSecret (encrypted),
+      // totpRecoveryCodesHashed. Anything that a malicious client could
+      // grind offline goes here, not on the parent doc.
+      match /security/{docId} {
+        allow read, write: if false;
+      }
+    }
+
+    // User-facing withdrawal requests. Owner can READ their own (to see
+    // status timeline). All writes go through server callables which
+    // enforce limits + KYC + lockout + audit.
+    match /payout_requests/{requestId} {
+      allow read: if isAuth() && resource.data.userId == request.auth.uid;
+      allow create, update, delete: if false;
+    }
+
+    // Deposits that arrived without a valid PayRam refId or `vergr:{uid}` memo.
+    // Admin queue for manual reconciliation. Owner of the deposit can't see
+    // this — they file a support ticket and admin matches it up.
+    match /unattributed_deposits/{depositId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    // Idempotency table for Circle Wallets inbound deposits. One doc per
+    // Circle transaction id. Server-only (written by circleWalletsWebhook
+    // and pollCircleDeposits in functions/circleWallets.js). Admin-readable
+    // for reconciliation; users never need to see these directly.
+    match /circle_deposits/{txId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    // PayRam onramp orders — created by the PayRam handler (separate session)
+    // when a user starts a coin-pack purchase. circleWalletsWebhook reads this
+    // to map an inbound Circle deposit back to the buying user. The user can
+    // see their own pending orders; only the server writes.
+    match /payram_orders/{orderId} {
+      allow read: if isAuth() && (
+        request.auth.uid == resource.data.uid || isAdmin()
+      );
+      allow write: if false;
+    }
+
+    // Daily wallet operations log. Tracks outflow totals for rate-limit
+    // enforcement in processReadyWithdrawals + reconciliation drift
+    // detection. Admin-readable, server-only writes.
+    match /wallet_op_log/{day} {
+      allow read: if isAdmin();
+      allow write: if false;
     }
 
     match /quest_claims/{claimId} {
@@ -570,6 +921,23 @@ service cloud.firestore {
         allow read: if true;
         allow write: if isOwner(resource.data.streamerId);
       }
+
+      // Vanguard presence — written when a Vanguard viewer mounts the
+      // stream screen, so other viewers can see a "Vanguard has joined"
+      // banner + persistent badge. Anyone can read (so the banner fires
+      // for all viewers). The Vanguard themselves write their OWN doc.
+      // Commander+ can delete ANY doc in the same stream (remove a mod).
+      match /vanguardPresence/{vanguardUid} {
+        allow read: if true;
+        allow create, update: if isAuth()
+          && request.auth.uid == vanguardUid
+          && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.vanguard.rank in ['recruit', 'vanguard', 'senior', 'commander', 'overseer'];
+        allow delete: if isAuth() && (
+          request.auth.uid == vanguardUid ||
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.vanguard.rank in ['commander', 'overseer'] ||
+          isAdmin()
+        );
+      }
     }
 
     match /tournaments/{tourneyId} {
@@ -601,6 +969,34 @@ service cloud.firestore {
           get(/databases/$(database)/documents/tournaments/$(tourneyId)).data.adminId == request.auth.uid || isAdmin()
         );
         allow delete: if isAdmin();
+
+        // IM1 — per-match opponent chat. Only the two match participants may
+        // post (their own senderUid); anyone may read (mods/dispute trail).
+        // History is immutable to participants; mods/admin can prune.
+        match /chat/{msgId} {
+          allow read: if true;
+          allow create: if isAuth()
+            && request.resource.data.senderUid == request.auth.uid
+            && (
+              request.auth.uid == get(/databases/$(database)/documents/tournaments/$(tourneyId)/matches/$(matchId)).data.player1 ||
+              request.auth.uid == get(/databases/$(database)/documents/tournaments/$(tourneyId)/matches/$(matchId)).data.player2 ||
+              isAdmin()
+            );
+          allow update, delete: if isAdmin();
+        }
+      }
+
+      // Vanguard presence in tournaments — same shape as stream presence.
+      match /vanguardPresence/{vanguardUid} {
+        allow read: if true;
+        allow create, update: if isAuth()
+          && request.auth.uid == vanguardUid
+          && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.vanguard.rank in ['recruit', 'vanguard', 'senior', 'commander', 'overseer'];
+        allow delete: if isAuth() && (
+          request.auth.uid == vanguardUid ||
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.vanguard.rank in ['commander', 'overseer'] ||
+          isAdmin()
+        );
       }
     }
 

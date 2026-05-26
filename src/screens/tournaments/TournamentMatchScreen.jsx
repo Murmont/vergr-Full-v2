@@ -35,7 +35,7 @@ import {
   WarmupLobby, DoubleOrNothingButton, DoubleOrNothingPrompt,
   ReplayOnDemandButton, SchedulingDmButton,
   RescheduleControls, DisputeEvidenceUpload, AppealReviewButton, FollowMatchButton,
-  ReportOpponentButton, ModThankYou,
+  ReportOpponentButton, ModThankYou, MatchChat,
 } from '../../components/tournament/MatchFlowExtras';
 import { SpectatorBetPanel, TipUnderdogButton } from '../../components/tournament/SpectatorPanels';
 import { isTauri, openHud, closeHud, scanProcesses, emitHudMatch, emitHudClear } from '../../utils/tauriHud';
@@ -598,6 +598,16 @@ export default function TournamentMatchScreen() {
         {/* NT2 — mutual reschedule (pauses the auto-forfeit timer when agreed) */}
         {iAmPlayer && match.status !== 'completed' && match.status !== 'cancelled' && (
           <RescheduleControls tournamentId={tournamentId} matchId={matchId} match={match} myUid={myUid} />
+        )}
+
+        {/* IM1 — per-match opponent chat (auto-closes input when the match ends) */}
+        {iAmPlayer && opponentUid && (
+          <MatchChat
+            tournamentId={tournamentId} matchId={matchId} myUid={myUid}
+            myName={profile?.username}
+            opponentName={opponentUid === match.player1 ? p1?.username : p2?.username}
+            matchStatus={match.status}
+          />
         )}
 
         {/* Double-or-nothing: prompt to winner, button for loser */}
