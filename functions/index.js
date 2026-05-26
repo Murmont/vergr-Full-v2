@@ -9,28 +9,510 @@ if (admin.apps.length === 0) admin.initializeApp();
 functions.setGlobalOptions({ region: 'europe-west1' });
 const db = getFirestore('vgrdb');
 
+// Scheduled-post publisher (releases scheduled posts/polls + honours options).
+const scheduledPosts = require('./scheduledPosts');
+exports.publishScheduledPosts = scheduledPosts.publishScheduledPosts;
+
 // KYC module — exports its own callables and a purge helper.
 const kyc = require('./kyc');
 exports.reviewKyc = kyc.reviewKyc;
 exports.decideKyc = kyc.decideKyc;
 exports.scheduledKycRetention = kyc.scheduledKycRetention;
 
+// Geo-blocking — country + US-state blocklist for compliance with
+// skill-gaming-for-cash regulations. See functions/geo.js.
+const geo = require('./geo');
+exports.getRegionStatus = geo.getRegionStatus;
+exports.checkRegion     = geo.checkRegion;
+
+// Didit.me KYC — government-ID age + identity verification (free tier).
+// Webhook writes verified result onto `users/{uid}.kyc`. Replaces Persona.
+// See functions/didit.js.
+const didit = require('./didit');
+exports.startKycVerification = didit.startKycVerification;
+exports.diditWebhook         = didit.diditWebhook;
+
+// Marketing forms — Contact, Careers, Partner application. See
+// functions/marketingForms.js. Submissions land in Firestore inboxes.
+const marketingForms = require('./marketingForms');
+exports.submitContactForm = marketingForms.submitContactForm;
+
 // Economy — server-side coin→gem conversion + shared rate-limit helpers.
 const economy = require('./economy');
 exports.convertCoinsToGems = economy.convertCoinsToGems;
 
-// R2 media storage — presigned upload URLs + cold storage demotion.
-const r2 = require('./r2');
-exports.getR2UploadUrl     = r2.getR2UploadUrl;
-exports.coldStorageDemotion = r2.coldStorageDemotion;
+// Admin security — TOTP step-up, audit log, rate-limit, alert pipeline.
+// Every privileged callable wraps through these helpers.
+// See CLAUDE.md "🚨 Security hardening" for full spec.
+const adminSecurity = require('./adminSecurity');
+exports.enrollAdminTotp              = adminSecurity.enrollAdminTotp;
+exports.confirmAdminTotpEnrollment   = adminSecurity.confirmAdminTotpEnrollment;
+exports.verifyAdminTotp              = adminSecurity.verifyAdminTotp;
+exports.disableAdminTotp             = adminSecurity.disableAdminTotp;
+exports.getMyAdminSecurityStatus     = adminSecurity.getMyAdminSecurityStatus;
+exports.cleanupExpiredTotpEnrollments = adminSecurity.cleanupExpiredTotpEnrollments;
 
-// NOWPayments — coin purchases (invoices) + gem withdrawals (payouts).
-const np = require('./nowpayments');
-exports.createPurchaseInvoice  = np.createPurchaseInvoice;
-exports.nowpaymentsIpn         = np.nowpaymentsIpn;
-exports.getPayoutQuote         = np.getPayoutQuote;
-exports.confirmPayout          = np.confirmPayout;
-exports.listPayoutCurrencies   = np.listPayoutCurrencies;
+// Admin access — founder-invited sub-admins with per-screen scopes.
+// See functions/adminAccess.js.
+const adminAccess = require('./adminAccess');
+exports.inviteAdmin         = adminAccess.inviteAdmin;
+exports.revokeAdminInvite   = adminAccess.revokeAdminInvite;
+exports.acceptAdminInvite   = adminAccess.acceptAdminInvite;
+exports.setAdminScreens     = adminAccess.setAdminScreens;
+exports.revokeAdminAccess   = adminAccess.revokeAdminAccess;
+exports.listAdmins          = adminAccess.listAdmins;
+exports.getMyAdminAccess    = adminAccess.getMyAdminAccess;
+
+// Admin → Users screen. See functions/adminUsers.js.
+const adminUsers = require('./adminUsers');
+exports.adminListUsers         = adminUsers.adminListUsers;
+exports.adminGetUserDetail     = adminUsers.adminGetUserDetail;
+exports.adminGetUserStats      = adminUsers.adminGetUserStats;
+exports.adminBanUser           = adminUsers.adminBanUser;
+exports.adminUnbanUser         = adminUsers.adminUnbanUser;
+exports.adminMuteUser          = adminUsers.adminMuteUser;
+exports.adminUnmuteUser        = adminUsers.adminUnmuteUser;
+exports.adminSetUserRole       = adminUsers.adminSetUserRole;
+exports.adminForceLogoutUser   = adminUsers.adminForceLogoutUser;
+exports.adminSendPasswordReset = adminUsers.adminSendPasswordReset;
+
+// Admin → Economy screen. See functions/adminEconomy.js.
+const adminEconomy = require('./adminEconomy');
+exports.adminGetEconomyStats     = adminEconomy.adminGetEconomyStats;
+exports.adminListTopWallets      = adminEconomy.adminListTopWallets;
+exports.adminListTransactions    = adminEconomy.adminListTransactions;
+exports.adminListPayoutRequests  = adminEconomy.adminListPayoutRequests;
+exports.adminGrantCoins          = adminEconomy.adminGrantCoins;
+exports.adminGrantVp             = adminEconomy.adminGrantVp;
+exports.adminGrantGems           = adminEconomy.adminGrantGems;
+exports.adminDeductCoins         = adminEconomy.adminDeductCoins;
+exports.adminUpdatePayoutStatus  = adminEconomy.adminUpdatePayoutStatus;
+exports.adminGetEconomyConfig    = adminEconomy.adminGetEconomyConfig;
+exports.adminSetEconomyConfig    = adminEconomy.adminSetEconomyConfig;
+
+// Admin → Moderation Queue. See functions/adminModeration.js.
+const adminModeration = require('./adminModeration');
+exports.adminGetModerationStats  = adminModeration.adminGetModerationStats;
+exports.adminListReports         = adminModeration.adminListReports;
+exports.adminGetReportDetail     = adminModeration.adminGetReportDetail;
+exports.adminResolveReport       = adminModeration.adminResolveReport;
+exports.adminBulkResolveReports  = adminModeration.adminBulkResolveReports;
+// Audit sub-screen (/admin/reports/audit).
+exports.adminListResolvedReports          = adminModeration.adminListResolvedReports;
+exports.adminGetModeratorStats            = adminModeration.adminGetModeratorStats;
+exports.adminListAppeals                  = adminModeration.adminListAppeals;
+exports.adminGetAppealDetail              = adminModeration.adminGetAppealDetail;
+exports.adminResolveAppeal                = adminModeration.adminResolveAppeal;
+exports.submitAppeal                      = adminModeration.submitAppeal;
+exports.adminGetModerationPolicySettings  = adminModeration.adminGetModerationPolicySettings;
+exports.adminSetModerationPolicySettings  = adminModeration.adminSetModerationPolicySettings;
+
+// Admin → App Config screen. See functions/adminConfig.js.
+const adminConfig = require('./adminConfig');
+exports.adminGetConfig          = adminConfig.adminGetConfig;
+exports.adminSetConfigField     = adminConfig.adminSetConfigField;
+exports.adminBulkSetConfig      = adminConfig.adminBulkSetConfig;
+exports.adminListConfigHistory  = adminConfig.adminListConfigHistory;
+exports.adminGetSystemHealth    = adminConfig.adminGetSystemHealth;
+
+// Admin → Live Stats screen. See functions/adminStats.js.
+const adminStats = require('./adminStats');
+exports.adminGetLiveStatsOverview = adminStats.adminGetLiveStatsOverview;
+exports.adminGetSystemMetrics     = adminStats.adminGetSystemMetrics;
+exports.adminGetGeographyStats    = adminStats.adminGetGeographyStats;
+exports.adminGetLiveActivityFeed  = adminStats.adminGetLiveActivityFeed;
+exports.writePresenceSnapshot     = adminStats.writePresenceSnapshot;
+
+// Admin → Dashboard landing page. See functions/adminDashboard.js.
+const adminDashboard = require('./adminDashboard');
+exports.adminGetDashboardSummary = adminDashboard.adminGetDashboardSummary;
+
+// Dashboard charts — daily rollup cron + chart-data callable. See functions/dailyMetricsRollup.js
+const dailyMetricsRollup = require('./dailyMetricsRollup');
+exports.rollupDailyMetrics        = dailyMetricsRollup.rollupDailyMetrics;
+exports.adminGetDashboardCharts   = dailyMetricsRollup.adminGetDashboardCharts;
+exports.adminBackfillDailyMetrics = dailyMetricsRollup.adminBackfillDailyMetrics;
+
+// Admin → Tournaments screen. See functions/adminTournaments.js.
+const adminTournaments = require('./adminTournaments');
+exports.adminGetTournamentStats           = adminTournaments.adminGetTournamentStats;
+exports.adminListTournaments              = adminTournaments.adminListTournaments;
+exports.adminListDisputedMatches          = adminTournaments.adminListDisputedMatches;
+exports.adminListCancelledTournaments     = adminTournaments.adminListCancelledTournaments;
+exports.adminResolveTournamentDispute     = adminTournaments.adminResolveTournamentDispute;
+exports.adminCancelTournament             = adminTournaments.adminCancelTournament;
+exports.adminPurgeMatchEvidence           = adminTournaments.adminPurgeMatchEvidence;
+exports.adminListMatchesWithEvidence      = adminTournaments.adminListMatchesWithEvidence;
+// Pass 2 — VGT / Announcements / Overrides / Settings / Logs.
+exports.adminCreateVgtTournament             = adminTournaments.adminCreateVgtTournament;
+exports.adminListVgtTournaments              = adminTournaments.adminListVgtTournaments;
+exports.adminSendTournamentAnnouncement      = adminTournaments.adminSendTournamentAnnouncement;
+exports.adminListTournamentAnnouncements     = adminTournaments.adminListTournamentAnnouncements;
+exports.adminAddParticipant                  = adminTournaments.adminAddParticipant;
+exports.adminRemoveParticipant               = adminTournaments.adminRemoveParticipant;
+exports.adminReseedBracket                   = adminTournaments.adminReseedBracket;
+exports.adminGetTournamentSettings           = adminTournaments.adminGetTournamentSettings;
+exports.adminSetTournamentSettings           = adminTournaments.adminSetTournamentSettings;
+exports.adminListTournamentLogs              = adminTournaments.adminListTournamentLogs;
+
+// Admin → Subscriptions screen. See functions/adminSubscriptions.js.
+const adminSubscriptions = require('./adminSubscriptions');
+exports.adminGetSubscriptionStats         = adminSubscriptions.adminGetSubscriptionStats;
+exports.adminGetSubscriptionTrend         = adminSubscriptions.adminGetSubscriptionTrend;
+exports.adminGetRecentSubscriptionEvents  = adminSubscriptions.adminGetRecentSubscriptionEvents;
+exports.adminGetUpcomingRenewals          = adminSubscriptions.adminGetUpcomingRenewals;
+exports.adminListSubscriptions            = adminSubscriptions.adminListSubscriptions;
+exports.adminGetBillingStats              = adminSubscriptions.adminGetBillingStats;
+exports.adminListInvoices                 = adminSubscriptions.adminListInvoices;
+// Pass 2 — Plans & Pricing, Comp & Overrides, Settings, Logs, Bulk actions.
+exports.adminListPlans                       = adminSubscriptions.adminListPlans;
+exports.adminUpsertPlan                      = adminSubscriptions.adminUpsertPlan;
+exports.adminDeletePlan                      = adminSubscriptions.adminDeletePlan;
+exports.adminSchedulePriceChange             = adminSubscriptions.adminSchedulePriceChange;
+exports.adminCancelScheduledPriceChange      = adminSubscriptions.adminCancelScheduledPriceChange;
+exports.applyScheduledPriceChanges           = adminSubscriptions.applyScheduledPriceChanges;
+exports.adminListOverrides                   = adminSubscriptions.adminListOverrides;
+exports.adminCompUser                        = adminSubscriptions.adminCompUser;
+exports.adminApplyOverride                   = adminSubscriptions.adminApplyOverride;
+exports.adminRevokeOverride                  = adminSubscriptions.adminRevokeOverride;
+exports.adminGetSubscriptionSettings         = adminSubscriptions.adminGetSubscriptionSettings;
+exports.adminSetSubscriptionSettings         = adminSubscriptions.adminSetSubscriptionSettings;
+exports.adminListSubscriptionLogs            = adminSubscriptions.adminListSubscriptionLogs;
+exports.adminBulkCancelSubscriptions         = adminSubscriptions.adminBulkCancelSubscriptions;
+exports.adminBulkCompSubscriptions           = adminSubscriptions.adminBulkCompSubscriptions;
+
+// Admin → Audit Log screen. See functions/adminAudit.js.
+const adminAudit = require('./adminAudit');
+exports.adminListAuditActions = adminAudit.adminListAuditActions;
+exports.adminGetAuditDetail   = adminAudit.adminGetAuditDetail;
+exports.adminGetAuditFacets   = adminAudit.adminGetAuditFacets;
+exports.adminExportAuditCsv   = adminAudit.adminExportAuditCsv;
+
+const adminAlerts = require('./adminAlerts');
+exports.onAdminActionCreated        = adminAlerts.onAdminActionCreated;
+exports.adminTotpBruteForceMonitor  = adminAlerts.adminTotpBruteForceMonitor;
+
+// R2 media storage — presigned upload URLs + engagement-driven cold-tiering.
+const r2 = require('./r2');
+exports.getR2UploadUrl      = r2.getR2UploadUrl;
+exports.coldStorageDemotion = r2.coldStorageDemotion;
+exports.setR2CorsPolicy     = r2.setR2CorsPolicy;
+
+// Per-view tracker that powers the cold-tiering decision.
+const coldStorage = require('./coldStorage');
+exports.markMediaViewed = coldStorage.markMediaViewed;
+
+// User wallet — PIN + TOTP + whitelist + security status (Phase 0-2 of the
+// self-custody USDC plan). Circle Wallets integration + deposit detection +
+// withdrawal pipeline land in Phase 3-4 (separate session).
+const wallet = require('./wallet');
+exports.setupWalletPin               = wallet.setupWalletPin;
+exports.verifyWalletPin              = wallet.verifyWalletPin;
+exports.changeWalletPin              = wallet.changeWalletPin;
+exports.enrollWalletTotp             = wallet.enrollWalletTotp;
+exports.confirmWalletTotpEnrollment  = wallet.confirmWalletTotpEnrollment;
+exports.verifyWalletTotp             = wallet.verifyWalletTotp;
+exports.useTotpRecoveryCode          = wallet.useTotpRecoveryCode;
+exports.disableWalletTotp            = wallet.disableWalletTotp;
+exports.addWhitelistedAddress        = wallet.addWhitelistedAddress;
+exports.removeWhitelistedAddress     = wallet.removeWhitelistedAddress;
+exports.getMyWalletSecurityStatus    = wallet.getMyWalletSecurityStatus;
+exports.adminMintWalletUnlockToken   = wallet.adminMintWalletUnlockToken;
+
+// Phase 4 — withdrawal pipeline. See functions/withdrawals.js for the state
+// machine + Circle Wallets API integration.
+const withdrawals = require('./withdrawals');
+exports.requestWithdrawal            = withdrawals.requestWithdrawal;
+exports.cancelWithdrawal             = withdrawals.cancelWithdrawal;
+exports.getMyWithdrawals             = withdrawals.getMyWithdrawals;
+exports.processReadyWithdrawals      = withdrawals.processReadyWithdrawals;
+exports.adminReleaseWithdrawalNow    = withdrawals.adminReleaseWithdrawalNow;
+exports.adminGetWithdrawalContext    = withdrawals.adminGetWithdrawalContext;
+exports.adminGetNavBadges            = withdrawals.adminGetNavBadges;
+
+// Circle Wallets — Phase 3 deposit detection. circleWalletsWebhook (HTTPS,
+// HMAC-verified) handles Circle Notifications; pollCircleDeposits (every 5min)
+// is the belt-and-suspenders polling fallback. Both share processInboundDeposit
+// with idempotency via circle_deposits/{txId}. See functions/circleWallets.js
+// for the locked attribution flow (PayRam refId match → coin credit; else
+// unattributed_deposits/ for manual review).
+const circleWallets = require('./circleWallets');
+exports.circleWalletsWebhook = circleWallets.circleWalletsWebhook;
+exports.pollCircleDeposits   = circleWallets.pollCircleDeposits;
+
+// Squad challenges — auto-distribute VP/coin rewards on completion.
+// Also handles squad invitation notifications.
+const squadChallenges = require('./squadChallenges');
+exports.onSquadChallengeCompleted = squadChallenges.onSquadChallengeCompleted;
+exports.onSquadInvitationCreated = squadChallenges.onSquadInvitationCreated;
+
+// Vanguard moderator program — founder + Commander/Overseer callables for
+// invitations, rank changes, and status flips. Treasury distribution +
+// stream join announcements land in later build steps.
+const vanguard = require('./vanguard');
+exports.inviteToVanguard           = vanguard.inviteToVanguard;
+exports.acceptVanguardInvitation   = vanguard.acceptVanguardInvitation;
+exports.declineVanguardInvitation  = vanguard.declineVanguardInvitation;
+exports.changeVanguardRank         = vanguard.changeVanguardRank;
+exports.setVanguardStatus          = vanguard.setVanguardStatus;
+exports.setVanguardSquadConfig     = vanguard.setVanguardSquadConfig;
+exports.distributeVanguardTreasury       = vanguard.distributeVanguardTreasury;
+exports.adminTriggerVanguardDistribution = vanguard.adminTriggerVanguardDistribution;
+exports.vanguardCallTournamentWinner     = vanguard.vanguardCallTournamentWinner;
+exports.vanguardResolveReport            = vanguard.vanguardResolveReport;
+exports.vanguardMuteUser                 = vanguard.vanguardMuteUser;
+exports.vanguardTempBanUser              = vanguard.vanguardTempBanUser;
+exports.vanguardPermaBanUser             = vanguard.vanguardPermaBanUser;
+exports.vanguardResolveQueueItem         = vanguard.vanguardResolveQueueItem;
+
+// Pay-per-minute stream quality boost (1 coin/min for 720p, 2 coin/min for 1080p).
+const streamingBoost = require('./streamingBoost');
+exports.requestStreamQualityBoost = streamingBoost.requestStreamQualityBoost;
+exports.cancelStreamQualityBoost  = streamingBoost.cancelStreamQualityBoost;
+exports.chargeStreamBoosts        = streamingBoost.chargeStreamBoosts;
+
+// Co-stream invitations (host invites publishers; SFU room is `ingest_<streamId>`).
+const coStream = require('./coStream');
+exports.inviteToCoStream     = coStream.inviteToCoStream;
+exports.acceptCoHostInvite   = coStream.acceptCoHostInvite;
+exports.declineCoHostInvite  = coStream.declineCoHostInvite;
+exports.cancelCoHostInvite   = coStream.cancelCoHostInvite;
+exports.removeCoHost         = coStream.removeCoHost;
+
+// Tip catalog (host-configured tier messages; Gemini-moderated on save).
+const tipCatalog = require('./tipCatalog');
+exports.setTipCatalog   = tipCatalog.setTipCatalog;
+exports.clearTipCatalog = tipCatalog.clearTipCatalog;
+
+// Phase 8: cohost auto-trigger + R2 segment cleanup cron.
+const streamingCleanup = require('./streamingCleanup');
+exports.triggerCohostComposite      = streamingCleanup.triggerCohostComposite;
+exports.cleanupExpiredStreamSegments = streamingCleanup.cleanupExpiredStreamSegments;
+exports.cleanupExpiredProofChunks    = streamingCleanup.cleanupExpiredProofChunks;
+
+// Per-stream chat moderation (host: mute/ban/banned-words).
+const streamChatMod = require('./streamChatMod');
+exports.muteViewer            = streamChatMod.muteViewer;
+exports.unmuteViewer          = streamChatMod.unmuteViewer;
+exports.banViewer             = streamChatMod.banViewer;
+exports.unbanViewer           = streamChatMod.unbanViewer;
+exports.setStreamBannedWords  = streamChatMod.setStreamBannedWords;
+
+// Music: Last.fm "now playing" + Pretzel Rocks recommendation are the
+// agreed approach (see project_music_integration memory). Implementation
+// deferred to its own task; NowPlayingCard.jsx is already in place and
+// data-agnostic.
+
+// Tournament participant Summons — 15/5/1 min push reminders + pre-flight
+// checklist + check-in callable + no-show detection.
+const tournamentSummons = require('./tournamentSummons');
+exports.getTournamentPreflight       = tournamentSummons.getTournamentPreflight;
+exports.tournamentParticipantCheckIn = tournamentSummons.tournamentParticipantCheckIn;
+exports.summonsParticipants          = tournamentSummons.summonsParticipants;
+exports.detectParticipantNoShows     = tournamentSummons.detectParticipantNoShows;
+
+// Lobby-screenshot verification — Gemini Vision OCR cross-checks each
+// player's expected in-game handle appears in the opponent's lobby
+// screenshot. Anti-impersonation safeguard for non-Tier-A games.
+const lobbyVerification = require('./lobbyVerification');
+exports.submitLobbyScreenshot         = lobbyVerification.submitLobbyScreenshot;
+exports.detectLobbyVerificationTimeouts = lobbyVerification.detectLobbyVerificationTimeouts;
+
+// Same-lobby verification — per-match unique lobbyCode displayed in-game,
+// confirmed by OCR / mod / self attestation.
+const matchVerification = require('./matchVerification');
+exports.getMatchVerification        = matchVerification.getMatchVerification;
+exports.selfAttestMatchVerification = matchVerification.selfAttestMatchVerification;
+exports.modVerifyMatchPlayer        = matchVerification.modVerifyMatchPlayer;
+exports.ocrVerifyMatchPlayer        = matchVerification.ocrVerifyMatchPlayer;
+exports.vanguardHeartbeat           = matchVerification.vanguardHeartbeat;
+exports.proposeMatchReschedule      = matchVerification.proposeMatchReschedule;
+exports.respondMatchReschedule      = matchVerification.respondMatchReschedule;
+exports.uploadDisputeEvidence       = matchVerification.uploadDisputeEvidence;
+
+// Trust / reputation / rivalry / sportsmanship / AI summarizer.
+const tournamentTrust = require('./tournamentTrust');
+exports.getTournamentTrust          = tournamentTrust.getTournamentTrust;
+exports.enrollOrCheckFingerprint    = tournamentTrust.enrollOrCheckFingerprint;
+exports.getRivalry                  = tournamentTrust.getRivalry;
+exports.aiSummarizeMatch            = tournamentTrust.aiSummarizeMatch;
+exports.routeSportsmanshipBonus     = tournamentTrust.routeSportsmanshipBonus;
+exports.recordRivalryOnMatchComplete = tournamentTrust.recordRivalryOnMatchComplete;
+
+// Tournament esports batch 2: betting, voice DM, warmup, double-or-nothing,
+// squad-funded, sponsor, hype, tip-underdog, replay-on-demand.
+const tournamentExtras = require('./tournamentExtras');
+exports.placeMatchBet               = tournamentExtras.placeMatchBet;
+exports.tipUnderdog                 = tournamentExtras.tipUnderdog;
+exports.aggregateStreamHype         = tournamentExtras.aggregateStreamHype;
+exports.requestDoubleOrNothing      = tournamentExtras.requestDoubleOrNothing;
+exports.respondDoubleOrNothing      = tournamentExtras.respondDoubleOrNothing;
+exports.contributeToSquadTournament = tournamentExtras.contributeToSquadTournament;
+exports.attachTournamentSponsor     = tournamentExtras.attachTournamentSponsor;
+exports.openMatchSchedulingDm       = tournamentExtras.openMatchSchedulingDm;
+exports.requestReplayReview         = tournamentExtras.requestReplayReview;
+
+// Tournament discovery + VOD AI.
+const tournamentDiscovery = require('./tournamentDiscovery');
+exports.tournamentOfTheDayCron      = tournamentDiscovery.tournamentOfTheDayCron;
+exports.startingSoonPushCron        = tournamentDiscovery.startingSoonPushCron;
+exports.aiCheatFlagVod              = tournamentDiscovery.aiCheatFlagVod;
+exports.autoCutVodHighlights        = tournamentDiscovery.autoCutVodHighlights;
+
+// Anti-cheat scan ingest + signature CRUD (desktop app posts here).
+const antiCheat = require('./antiCheat');
+exports.submitAntiCheatScan         = antiCheat.submitAntiCheatScan;
+exports.getMyLatestAntiCheatScan    = antiCheat.getMyLatestAntiCheatScan;
+exports.upsertCheatSignature        = antiCheat.upsertCheatSignature;
+exports.deleteCheatSignature        = antiCheat.deleteCheatSignature;
+
+const seedCheatSignatures = require('./seedCheatSignatures');
+exports.adminSeedCheatSignatures    = seedCheatSignatures.adminSeedCheatSignatures;
+
+// VOD archive transcode pipeline (Hetzner ffmpeg job → R2 → match.archiveVodUrl).
+const vodArchive = require('./vodArchive');
+exports.dispatchTournamentVodArchive = vodArchive.dispatchTournamentVodArchive;
+exports.markVodArchived              = vodArchive.markVodArchived;
+
+// Two-camera proof feed for high-stakes tournament matches.
+const tournamentProof = require('./tournamentProof');
+exports.appendProofChunk             = tournamentProof.appendProofChunk;
+
+// Viewer-reactions-per-5s aggregator that drives HypeMeter on broadcaster HUD.
+const streamHype = require('./streamHype');
+exports.recordStreamReaction         = streamHype.recordStreamReaction;
+
+// Short-lived HMAC creds for self-hosted coturn (Hetzner). Fetched by the
+// WebRTC client before opening any P2P call so symmetric-NAT pairs fall
+// back through our TURN relay instead of failing outright.
+const turnCredentials = require('./turnCredentials');
+exports.getTurnCredentials           = turnCredentials.getTurnCredentials;
+
+// 48h per-match timeout enforcer (Tournament System doc rule).
+const tournamentTimeouts = require('./tournamentTimeouts');
+exports.detectMatchTimeouts          = tournamentTimeouts.detectMatchTimeouts;
+
+// Tournament AI moderation Phase 1 — OBS overlay signal capture + consensus.
+// Tesseract + Vision OCR signals come in Phase 1B (requires Hetzner ops).
+const tournamentAi = require('./tournamentAi');
+exports.submitTournamentOverlay = tournamentAi.submitTournamentOverlay;
+exports.getOverlayConfig        = tournamentAi.getOverlayConfig;
+exports.analyzeTournamentMatch  = tournamentAi.analyzeTournamentMatch;
+
+// Content moderation Phase 2 — Gemini-powered chat + post + image + video.
+// Scope: CSAM (mandatory), nudity (platform policy), doxxing, scam links.
+// General rudeness/harassment handled by reports + Vanguard mods, not AI.
+const contentAi = require('./contentAi');
+exports.moderateChatMessage = contentAi.moderateChatMessage;
+exports.moderateNewPost     = contentAi.moderateNewPost;
+exports.rescanPost          = contentAi.rescanPost;
+
+// Vanguard tournament-assignment system (claim-based).
+// See src/utils/tournamentModeration.js for game durations + tier multipliers.
+const vanguardAssignments = require('./vanguardAssignments');
+exports.onTournamentCreated                  = vanguardAssignments.onTournamentCreated;
+exports.vanguardClaimTournament              = vanguardAssignments.vanguardClaimTournament;
+exports.vanguardReleaseTournamentAssignment  = vanguardAssignments.vanguardReleaseTournamentAssignment;
+exports.vanguardCheckIn                      = vanguardAssignments.vanguardCheckIn;
+exports.vanguardCompleteAssignment           = vanguardAssignments.vanguardCompleteAssignment;
+exports.detectTournamentNoShows              = vanguardAssignments.detectTournamentNoShows;
+exports.notifyUpcomingAssignments            = vanguardAssignments.notifyUpcomingAssignments;
+
+// Per-match Vanguard claiming + auto-OCR suggestion cron + Commander review.
+const tournamentMatchClaims = require('./tournamentMatchClaims');
+exports.vanguardClaimMatch           = tournamentMatchClaims.vanguardClaimMatch;
+exports.vanguardReleaseMatchClaim    = tournamentMatchClaims.vanguardReleaseMatchClaim;
+exports.autoSuggestMatchWinners      = tournamentMatchClaims.autoSuggestMatchWinners;
+exports.commanderResolveMatchReview  = tournamentMatchClaims.commanderResolveMatchReview;
+exports.detectTournamentStreamDrops  = tournamentMatchClaims.detectTournamentStreamDrops;
+
+// Live streaming — Oracle nginx-rtmp + R2 + Cloudflare CDN architecture.
+// Provisions stream keys, charges/refunds Stream Boost, ranks discovery feed.
+// See CLAUDE.md "Live streaming architecture" for design rationale.
+const streaming = require('./streaming');
+exports.createStreamSession      = streaming.createStreamSession;
+exports.endStreamSession         = streaming.endStreamSession;
+exports.getLikelyTipperScore     = streaming.getLikelyTipperScore;
+exports.getLiveDiscoveryFeed     = streaming.getLiveDiscoveryFeed;
+exports.recordStreamTip          = streaming.recordStreamTip;
+exports.setLiveStreamingPaused   = streaming.setLiveStreamingPaused;
+
+// PayRam — the only inbound rail (card/Apple Pay/bank → USDC on Base → Circle
+// omnibus). createPayramPayment opens a hosted PayRam payment (shown in an
+// in-app popup), getPayramOrderStatus is polled to confirm, payramWebhook
+// settles on FILLED/OVER_FILLED, pollPayramOrders reconciles missed webhooks.
+// See functions/payram.js header. Short-circuits until PAYRAM_API_KEY +
+// PAYRAM_NODE_URL are set with real values.
+const payram = require('./payram');
+exports.createPayramPayment   = payram.createPayramPayment;
+exports.getPayramOrderStatus  = payram.getPayramOrderStatus;
+exports.payramWebhook         = payram.payramWebhook;
+exports.pollPayramOrders      = payram.pollPayramOrders;
+
+// Subscriptions — Tier A (card via NOWPayments invoice → activated by IPN)
+// and Tier B (coins debited from VERGR wallet, instant). Daily cron handles
+// auto-renewal + reminders + downgrade.
+const subs = require('./subscriptions');
+exports.subscribeWithCoins         = subs.subscribeWithCoins;
+exports.cancelSubscription         = subs.cancelSubscription;
+exports.renewExpiringSubscriptions = subs.renewExpiringSubscriptions;
+
+// Tournaments — server-authoritative escrow + bracket advance + payouts.
+// These supersede the client-side helpers in src/firebase/firestore.js;
+// the frontend should migrate to call these instead of writing tournament
+// docs directly. See functions/tournaments.js for the full contract.
+const tournaments = require('./tournaments');
+exports.createTournamentSecure   = tournaments.createTournamentSecure;
+exports.joinTournamentSecure     = tournaments.joinTournamentSecure;
+exports.leaveTournamentSecure    = tournaments.leaveTournamentSecure;
+exports.startTournamentSecure    = tournaments.startTournamentSecure;
+exports.reportMatchResultSecure  = tournaments.reportMatchResultSecure;
+// Phase 1 — multi-game series (Bo3/Bo5) report path.
+const tournamentSeries = require('./tournamentSeries');
+exports.reportGameResultSecure   = tournamentSeries.reportGameResultSecure;
+exports.finalizeTournamentSecure = tournaments.finalizeTournamentSecure;
+exports.selectSquadChampionsSecure = tournaments.selectSquadChampionsSecure;
+exports.startSquadChampionVote     = tournaments.startSquadChampionVote;
+exports.castSquadChampionVote      = tournaments.castSquadChampionVote;
+exports.finalizeSquadChampionVote  = tournaments.finalizeSquadChampionVote;
+exports.resolveTournamentDispute = tournaments.resolveTournamentDispute;
+exports.applyToTournamentSecure       = tournaments.applyToTournamentSecure;
+exports.approveTournamentApplication  = tournaments.approveTournamentApplication;
+exports.declineTournamentApplication  = tournaments.declineTournamentApplication;
+
+// Steam GSI — auto-result detection for CS2 and Dota 2 via Valve's
+// official Game State Integration. See functions/gsi.js for the contract.
+const gsi = require('./gsi');
+exports.linkSteamAccount   = gsi.linkSteamAccount;
+exports.unlinkSteamAccount = gsi.unlinkSteamAccount;
+exports.getSteamGsiConfig  = gsi.getSteamGsiConfig;
+exports.cs2GsiHook         = gsi.cs2GsiHook;
+exports.dota2GsiHook       = gsi.dota2GsiHook;
+
+// Tier B wrappers — community/unofficial integrations behind a health
+// monitor that alerts admins when one breaks. See functions/wrappers/.
+const wrapperMonitor = require('./wrapperMonitor');
+exports.wrapperHealthCheck       = wrapperMonitor.wrapperHealthCheck;
+exports.runWrapperHealthCheckNow = wrapperMonitor.runWrapperHealthCheckNow;
+
+// Per-match wrapper polling — snapshots stats at match creation and polls
+// for deltas to auto-detect winners. See functions/matchPoller.js.
+const matchPoller = require('./matchPoller');
+exports.onMatchCreated            = matchPoller.onMatchCreated;
+exports.pollActiveWrapperMatches  = matchPoller.pollActiveWrapperMatches;
+
+// OAuth — generic OAuth2 flow for Twitch, YouTube, Discord, Battle.net, Epic.
+// Steam (OpenID 2.0) and Xbox (OpenXBL) have bespoke flows and are not
+// routed through this module. Secrets are declared via defineSecret in
+// functions/oauth.js — set them via `firebase functions:secrets:set <NAME>`.
+const oauth = require('./oauth');
+exports.getOAuthStartUrl = oauth.getOAuthStartUrl;
+exports.oauthCallback    = oauth.oauthCallback;
+
+// Steam OpenID 2.0 sign-in — replaces the manual Steam64 paste flow.
+const steamAuth = require('./steamAuth');
+exports.getSteamSignInUrl   = steamAuth.getSteamSignInUrl;
+exports.steamOpenIdCallback = steamAuth.steamOpenIdCallback;
 
 // ── PLAN ECONOMY (mirrors src/utils/tierSystem.js + vpSystem.js) ──
 const PLAN_VP_MULT = { free: 1, lite: 1.5, pro: 2 };
@@ -420,6 +902,51 @@ exports.claimQuestReward = functions.https.onCall(async (request) => {
           'Friend needs to join a squad or subscribe to Lite/Pro');
       }
 
+      // Per-week referral cap. Vanguard members bypass (they're incentivised
+      // to grow the platform — more users = more tournament fees = more
+      // for the treasury). Otherwise free=5/week, lite/pro=20/week.
+      // The counter lives at users/{uid}.referrals.thisWeek + weekStart.
+      // Week boundary: Monday 00:00 UTC.
+      const userSnap = await tx.get(db.collection('users').doc(uid));
+      const userData = userSnap.exists ? userSnap.data() : {};
+      const isVanguardActive =
+        userData.vanguard?.rank &&
+        userData.vanguard?.status !== 'suspended' &&
+        userData.vanguard?.status !== 'retired';
+      if (!isVanguardActive) {
+        const callerWalletSnap = await tx.get(db.collection('wallets').doc(uid));
+        const callerTier = callerWalletSnap.exists ? (callerWalletSnap.data().tier || 'free') : 'free';
+        const isPaid = callerTier === 'lite' || callerTier === 'pro';
+        const weeklyCap = isPaid ? 20 : 5;
+        // Compute Monday-00:00-UTC of this week.
+        const now = new Date();
+        const dayUtc = now.getUTCDay(); // 0 = Sun, 1 = Mon, ...
+        const daysSinceMon = (dayUtc + 6) % 7;
+        const weekStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - daysSinceMon, 0, 0, 0));
+        const storedWeekStart = userData.referrals?.weekStart?.toMillis?.()
+          || (userData.referrals?.weekStart?.seconds ? userData.referrals.weekStart.seconds * 1000 : 0);
+        const sameWeek = storedWeekStart === weekStart.getTime();
+        const thisWeekCount = sameWeek ? (userData.referrals?.thisWeek || 0) : 0;
+        if (thisWeekCount >= weeklyCap) {
+          throw new functions.https.HttpsError('resource-exhausted',
+            `Weekly referral cap reached (${weeklyCap}/${weeklyCap}). Resets Monday 00:00 UTC. Become Vanguard for unlimited.`);
+        }
+        // Reserve a slot — write the incremented counter as part of the same
+        // transaction so two concurrent claims can't both squeak past the cap.
+        tx.update(db.collection('users').doc(uid), {
+          'referrals.weekStart': weekStart,
+          'referrals.thisWeek': sameWeek ? admin.firestore.FieldValue.increment(1) : 1,
+          'referrals.allTime': admin.firestore.FieldValue.increment(1),
+          'referrals.lastReferralAt': admin.firestore.FieldValue.serverTimestamp(),
+        });
+      } else {
+        // Vanguard — still log all-time for stats, no cap.
+        tx.update(db.collection('users').doc(uid), {
+          'referrals.allTime': admin.firestore.FieldValue.increment(1),
+          'referrals.lastReferralAt': admin.firestore.FieldValue.serverTimestamp(),
+        });
+      }
+
       // Override the reward sent by the client — server is the source of truth.
       reward = 5000;
     }
@@ -723,14 +1250,17 @@ exports.onPostLiked = functions.firestore
 // ──────────────────────────────────────────────────────────────
 exports.sendAnnouncement = functions.https.onCall(async (request) => {
   const uid = request.auth?.uid;
-  if (!uid) throw new functions.https.HttpsError('unauthenticated', 'Must be logged in');
-  const userDoc = await db.collection('users').doc(uid).get();
-  if (!userDoc.exists || userDoc.data().role !== 'admin') {
-    throw new functions.https.HttpsError('permission-denied', 'Admin access required');
-  }
+  await requireAdmin(uid);
+  // Mass-reach + can grant coins → require fresh TOTP step-up.
+  // (If founder hasn't enrolled TOTP yet, requireFreshStepUp is a no-op.)
+  const stepUp = await adminSecurity.requireFreshStepUp(uid);
+  await adminRateLimit(uid, 'send_announcement', { perHour: 5, perDay: 20, perMonth: 100 });
+  const meta = extractRequestMeta(request);
 
   const { title, body, audience, type, coinReward, actionUrl } = request.data || {};
   if (!title) throw new functions.https.HttpsError('invalid-argument', 'Title required');
+  // Cap reward per-send to limit blast radius if TOTP secret is stolen.
+  const safeReward = Math.max(0, Math.min(1000, Number(coinReward || 0)));
 
   let usersQuery;
   if (audience === 'lite') usersQuery = db.collection('wallets').where('tier', '==', 'lite');
@@ -748,15 +1278,15 @@ exports.sendAnnouncement = functions.https.onCall(async (request) => {
     batch.set(db.collection('notifications').doc(), {
       recipientId, type: type || 'system', title, body: body || '',
       read: false, actionUrl: actionUrl || null,
-      data: coinReward > 0 ? { amount: coinReward, type: 'admin_reward' } : null, createdAt: now,
+      data: safeReward > 0 ? { amount: safeReward, type: 'admin_reward' } : null, createdAt: now,
     });
-    if (coinReward > 0 && type === 'coins') {
+    if (safeReward > 0 && type === 'coins') {
       batch.update(db.collection('wallets').doc(recipientId), {
-        balance: admin.firestore.FieldValue.increment(coinReward),
-        totalEarned: admin.firestore.FieldValue.increment(coinReward),
+        balance: admin.firestore.FieldValue.increment(safeReward),
+        totalEarned: admin.firestore.FieldValue.increment(safeReward),
       });
       batch.set(db.collection('transactions').doc(), {
-        userId: recipientId, type: 'admin_reward', amount: coinReward, description: title, createdAt: now,
+        userId: recipientId, type: 'admin_reward', amount: safeReward, description: title, createdAt: now,
       });
     }
     count++;
@@ -764,6 +1294,16 @@ exports.sendAnnouncement = functions.https.onCall(async (request) => {
   }
   if (count % 200 !== 0) await batch.commit();
   sendPushToAll(snap.docs.map(d => d.id), title, body || '', { type: type || 'system' }).catch(() => {});
+  await auditAdminAction({
+    actor: uid,
+    action: 'send_announcement',
+    target: { type: 'audience', id: audience || 'all' },
+    meta: { recipients: count, title, type: type || 'system', coinReward: safeReward },
+    ip: meta.ip,
+    userAgent: meta.userAgent,
+    stepUpEnforced: true,
+    stepUpFresh: !!stepUp.stepUpEnforced,
+  }).catch(() => {});
   return { count, title };
 });
 
@@ -917,6 +1457,46 @@ async function sendPushToAll(userIds, title, body, data = {}) {
 }
 
 // ──────────────────────────────────────────────────────────────
+// FCM fan-out for server-written notifications.
+// Crons + server events write notifications/{id} docs for the in-app drawer
+// but most don't fire a system push. This trigger sends a real FCM push for
+// the allowlisted types below. Inline-pushed types (follow/comment/like/dm)
+// are deliberately EXCLUDED so they don't double-push — add a new server
+// type here to make it push.
+// ──────────────────────────────────────────────────────────────
+const PUSHABLE_NOTIFICATION_TYPES = new Set([
+  'tournament_starting_soon',
+  'tournament_cancelled',
+  'tournament_match_disqualified',
+  'tournament_match_forfeit',
+  'tournament_match_disputed',
+  'tournament_match_double_no_show',
+  'tournament_match_verified',
+  'tournament_match_ready',
+  'tournament_assignment_reminder',
+  'tournament_flagged_for_review',
+  'tournament_match_reschedule',
+  'tournament_dispute_evidence',
+  'admin_test_notification',
+]);
+
+exports.onNotificationCreated = functions.firestore
+  .onDocumentCreated({ document: 'notifications/{notifId}', database: 'vgrdb' }, async (event) => {
+    const n = event.data?.data();
+    if (!n || !n.recipientId || !n.title) return;
+    if (!PUSHABLE_NOTIFICATION_TYPES.has(n.type)) return;
+    const data = { type: n.type || '' };
+    if (n.data && typeof n.data === 'object') {
+      for (const [k, v] of Object.entries(n.data)) data[k] = v;
+    }
+    if (n.actionUrl) data.actionUrl = n.actionUrl;
+    else if (n.link) data.actionUrl = n.link;
+    try {
+      await sendPushToUser(n.recipientId, n.title, n.body || '', data);
+    } catch (err) { console.error('onNotificationCreated push error:', err); }
+  });
+
+// ──────────────────────────────────────────────────────────────
 // NEWS BOT ACCOUNTS — RSS SYNC (runs once per day, max 2 posts/bot)
 // ──────────────────────────────────────────────────────────────
 // Cost note: each bot is capped at 2 new posts per 24h. Images are
@@ -976,6 +1556,12 @@ function hashString(str) {
 
 exports.syncNewsBotFeeds = functions.scheduler
   .onSchedule('0 6 * * *', async () => {
+    // KILL SWITCH — flip app_config/general.botsPaused = true in Firestore to halt all bot posting.
+    const cfg = await db.collection('app_config').doc('general').get();
+    if (cfg.exists && cfg.data()?.botsPaused === true) {
+      console.log('[syncNewsBotFeeds] PAUSED via app_config.botsPaused — skipping run');
+      return;
+    }
     // STEP 1: Create ALL bot accounts (ignores RSS failures)
     for (const bot of NEWS_BOT_ACCOUNTS) {
       const userRef = db.collection('users').doc(bot.id);
@@ -1005,11 +1591,20 @@ exports.syncNewsBotFeeds = functions.scheduler
       }
     }
 
-    // STEP 2: Fetch RSS and sync posts (hard cap: 2 NEW posts per bot per day)
-    const PER_BOT_DAILY_LIMIT = 2;
+    // STEP 2: Fetch RSS and sync posts. Limit is admin-configurable via
+    // app_config/general.maxPostsPerBotPerRun (defaults to 2). Per-bot pause
+    // is checked from each user doc's `botPaused` field.
+    const cfgData = (cfg.exists && cfg.data()) || {};
+    const PER_BOT_DAILY_LIMIT = Math.max(0, Number(cfgData.maxPostsPerBotPerRun ?? 2));
     let totalCreated = 0;
     for (const bot of NEWS_BOT_ACCOUNTS) {
       try {
+        // Per-bot pause check
+        const botSnap = await db.collection('users').doc(bot.id).get();
+        if (botSnap.exists && botSnap.data()?.botPaused === true) {
+          console.log(`[syncNewsBotFeeds] ${bot.id} paused — skipping`);
+          continue;
+        }
         const response = await axios.get(bot.rssUrl, { timeout: 10000 });
         // Pull a small candidate window — we only need enough headroom to
         // skip already-ingested items and still find ~2 fresh ones.
@@ -1233,6 +1828,12 @@ async function extractFirstParagraphOrVideo(url) {
 // ──────────────────────────────────────────────────────────────
 exports.enrichNewsPosts = functions.scheduler
   .onSchedule('30 6 * * *', async () => {
+    // KILL SWITCH — same flag as syncNewsBotFeeds.
+    const cfg = await db.collection('app_config').doc('general').get();
+    if (cfg.exists && cfg.data()?.botsPaused === true) {
+      console.log('[enrichNewsPosts] PAUSED via app_config.botsPaused — skipping run');
+      return;
+    }
     const postsRef = db.collection('posts');
     const batchSize = 25;
     let processed = 0;
@@ -1693,6 +2294,31 @@ exports.deleteMessage = functions.https.onCall(async (request) => {
     await msgRef.delete();
   }
 
+  // Recount each recipient's actual unread messages and overwrite the
+  // counter. More reliable than incremental ±1 because it self-heals from
+  // any drift (failed earlier increments, stale data, etc.).
+  try {
+    const others = participants.filter(p => p !== uid);
+    if (others.length > 0) {
+      const all = await convoRef.collection('messages').get();
+      const counts = {};
+      for (const m of all.docs) {
+        const d = m.data();
+        if (d.read === true) continue;
+        if (d.deleted === true) continue;
+        if (!d.senderId) continue;
+        for (const pid of others) {
+          if (pid !== d.senderId) counts[pid] = (counts[pid] || 0) + 1;
+        }
+      }
+      const updates = {};
+      for (const pid of others) updates[`unreadCount.${pid}`] = counts[pid] || 0;
+      await convoRef.update(updates);
+    }
+  } catch (err) {
+    console.warn('deleteMessage unread recount failed:', err.message);
+  }
+
   // Fan out a silent FCM to every other participant's devices so they can
   // scrub the message from their local cache.
   try {
@@ -1740,6 +2366,99 @@ exports.deleteMessage = functions.https.onCall(async (request) => {
 
   return { ok: true };
 });
+
+// Tournament stats aggregator. When a tournament's payout completes, bump
+// the cumulative `tournamentStats` on every participant's user doc:
+//   - tournamentStats.played    += 1   (everyone who took part)
+//   - tournamentStats.won       += 1   (the 1st-place finisher)
+//   - tournamentStats.earnedCoins += prize  (each placed winner's payout)
+// The "active" count shown in the UI is computed live client-side (it
+// changes as tournaments open/close), so we deliberately don't store it.
+exports.aggregateTournamentStats = functions.firestore
+  .onDocumentUpdated({ document: 'tournaments/{tournamentId}', database: 'vgrdb' }, async (event) => {
+    const before = event.data?.before?.data();
+    const after = event.data?.after?.data();
+    if (!before || !after) return;
+    // Only act on the transition into a paid-out state.
+    if (before.payoutStatus === 'paid' || after.payoutStatus !== 'paid') return;
+
+    const participants = after.participants || [];
+    if (participants.length === 0) return;
+
+    // Map place → uid from the placements field written by advanceBracket.
+    const placements = after.placements || {};
+    const winnerId = placements.first || after.winnerId || null;
+    // Per-uid prize from the payout breakdown, if present.
+    const prizeByUid = {};
+    const breakdown = after.payoutBreakdown;
+    if (breakdown?.payouts) {
+      const placeMap = {
+        1: placements.first || null,
+        2: placements.second || null,
+        3: Array.isArray(placements.third) ? placements.third[0] : (placements.third || null),
+        4: Array.isArray(placements.third) ? (placements.third[1] || null) : null,
+      };
+      for (const p of breakdown.payouts) {
+        const uid = placeMap[p.place];
+        if (uid && p.player > 0) prizeByUid[uid] = (prizeByUid[uid] || 0) + p.player;
+      }
+    }
+
+    const batch = db.batch();
+    for (const uid of participants) {
+      const ref = db.collection('users').doc(uid);
+      const update = {
+        'tournamentStats.played': admin.firestore.FieldValue.increment(1),
+      };
+      if (uid === winnerId) {
+        update['tournamentStats.won'] = admin.firestore.FieldValue.increment(1);
+      }
+      if (prizeByUid[uid]) {
+        update['tournamentStats.earnedCoins'] = admin.firestore.FieldValue.increment(prizeByUid[uid]);
+      }
+      batch.set(ref, {}, { merge: true }); // ensure doc exists
+      batch.update(ref, update);
+    }
+    try {
+      await batch.commit();
+    } catch (err) {
+      console.warn('aggregateTournamentStats commit failed', event.params.tournamentId, err.message);
+    }
+  });
+
+// Recount conversation.unreadCount whenever a message is deleted (regardless
+// of which path deleted it — the callable, a direct deleteDoc fallback, or
+// an admin-side scrub). This is the self-healing source-of-truth: the
+// callable's inline recount above is a fast path, but this trigger is what
+// makes "deletes always update the badge" guaranteed.
+exports.recountUnreadOnMessageDelete = functions.firestore
+  .onDocumentDeleted({ document: 'conversations/{chatId}/messages/{messageId}', database: 'vgrdb' }, async (event) => {
+    const chatId = event.params.chatId;
+    const convoRef = db.collection('conversations').doc(chatId);
+    try {
+      const convo = await convoRef.get();
+      if (!convo.exists) return;
+      const participants = convo.data().participants || [];
+      if (participants.length === 0) return;
+
+      const all = await convoRef.collection('messages').get();
+      const counts = {};
+      for (const m of all.docs) {
+        const d = m.data();
+        if (d.read === true) continue;
+        if (d.deleted === true) continue;
+        if (!d.senderId) continue;
+        for (const pid of participants) {
+          if (pid !== d.senderId) counts[pid] = (counts[pid] || 0) + 1;
+        }
+      }
+      const updates = {};
+      for (const pid of participants) updates[`unreadCount.${pid}`] = counts[pid] || 0;
+      await convoRef.update(updates);
+    } catch (err) {
+      console.warn('recountUnreadOnMessageDelete failed', chatId, err.message);
+    }
+  });
 
 exports.autoModCheck = functions.firestore
   .onDocumentCreated({ document: 'posts/{postId}', database: 'vgrdb' }, async (event) => {
@@ -2926,3 +3645,147 @@ exports.scheduledPruneEvents = functions.scheduler
     }
     console.log(`prunedEvents: deleted ${deleted}`);
   });
+
+// ──────────────────────────────────────────────────────────────
+// SUPER ADMIN — bot management callables.
+// All require profile.role === 'admin' on the caller's user doc.
+// ──────────────────────────────────────────────────────────────
+// Reuse the shared admin gate so we get audit + rate-limit + step-up
+// helpers consistent across every privileged callable. The local
+// requireAdmin alias is kept for backward-compat with existing call
+// sites in this file.
+const { requireAdmin, adminRateLimit, auditAdminAction, extractRequestMeta } = adminSecurity;
+
+// Manually trigger the daily bot sync. Honors the same paused flags as the cron.
+exports.runBotSyncNow = functions.https.onCall(async (request) => {
+  await requireAdmin(request.auth?.uid);
+  await adminRateLimit(request.auth.uid, 'run_bot_sync_now', { perHour: 10, perDay: 30 });
+  const meta = extractRequestMeta(request);
+  const cfg = await db.collection('app_config').doc('general').get();
+  if (cfg.exists && cfg.data()?.botsPaused === true) {
+    return { ok: false, reason: 'Bots are globally paused. Resume first.' };
+  }
+  const PER_BOT_LIMIT = Math.max(0, Number(cfg.data()?.maxPostsPerBotPerRun ?? 2));
+  let totalCreated = 0;
+  for (const bot of NEWS_BOT_ACCOUNTS) {
+    try {
+      const botSnap = await db.collection('users').doc(bot.id).get();
+      if (botSnap.exists && botSnap.data()?.botPaused === true) continue;
+      const response = await axios.get(bot.rssUrl, { timeout: 10000 });
+      const items = (response.data?.items || []).slice(0, 6);
+      let createdForThisBot = 0;
+      for (const item of items) {
+        if (createdForThisBot >= PER_BOT_LIMIT) break;
+        if (!item.link) continue;
+        const postId = `${bot.id}-${hashString(item.link)}`;
+        const postRef = db.collection('posts').doc(postId);
+        const postSnap = await postRef.get();
+        if (postSnap.exists) continue;
+        let imageUrl = null;
+        if (item.enclosure?.url && item.enclosure.type?.startsWith('image/')) imageUrl = item.enclosure.url;
+        else if (item.description) {
+          const m = item.description.match(/<img[^>]+src="([^">]+)"/);
+          if (m) imageUrl = m[1];
+        } else if (item.thumbnail) imageUrl = item.thumbnail;
+        if (imageUrl && !imageUrl.startsWith('http')) imageUrl = null;
+        let cleanPreview = (item.description || '').replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim().slice(0, 300);
+        if (!cleanPreview) cleanPreview = item.title || '';
+        await postRef.set({
+          authorId: bot.id, content: item.title || '', type: 'text',
+          mediaUrls: imageUrl ? [imageUrl] : [], hashtags: [],
+          likeCount: 0, commentCount: 0, shareCount: 0, saveCount: 0, viewCount: 0,
+          status: 'published', rankScore: 0, sourceUrl: item.link, isNewsPost: true,
+          previewText: cleanPreview, needsEnrichment: true,
+          linkPreview: { url: item.link, title: item.title || '', description: cleanPreview, image: imageUrl },
+          createdAt: item.pubDate ? new Date(item.pubDate) : new Date(),
+          updatedAt: new Date(),
+        });
+        await db.collection('users').doc(bot.id).update({ postCount: admin.firestore.FieldValue.increment(1) });
+        totalCreated++; createdForThisBot++;
+      }
+    } catch (err) {
+      console.error(`runBotSyncNow ${bot.id} failed:`, err.message);
+    }
+  }
+  await auditAdminAction({
+    actor: request.auth.uid,
+    action: 'run_bot_sync_now',
+    ip: meta.ip,
+    userAgent: meta.userAgent,
+    meta: { totalCreated },
+  }).catch(() => {});
+  return { ok: true, totalCreated };
+});
+
+// Delete the most recent N posts from a specific bot (cleanup helper).
+exports.deleteBotPosts = functions.https.onCall(async (request) => {
+  await requireAdmin(request.auth?.uid);
+  await adminRateLimit(request.auth.uid, 'delete_bot_posts', { perHour: 20, perDay: 100 });
+  const meta = extractRequestMeta(request);
+  const { botId, count = 10 } = request.data || {};
+  if (!botId) throw new functions.https.HttpsError('invalid-argument', 'botId required');
+  const snap = await db.collection('posts')
+    .where('authorId', '==', botId)
+    .orderBy('createdAt', 'desc')
+    .limit(Math.min(500, Number(count) || 10))
+    .get();
+  let deleted = 0;
+  const batch = db.batch();
+  snap.forEach(doc => { batch.delete(doc.ref); deleted++; });
+  await batch.commit();
+  await db.collection('users').doc(botId).update({
+    postCount: admin.firestore.FieldValue.increment(-deleted),
+  }).catch(() => {});
+  await auditAdminAction({
+    actor: request.auth.uid,
+    action: 'delete_bot_posts',
+    target: { type: 'bot', id: botId },
+    meta: { requested: count, deleted },
+    ip: meta.ip,
+    userAgent: meta.userAgent,
+  }).catch(() => {});
+  return { ok: true, deleted };
+});
+
+// Pause / resume globally — single source of truth for the kill switch.
+exports.setBotsPaused = functions.https.onCall(async (request) => {
+  await requireAdmin(request.auth?.uid);
+  await adminRateLimit(request.auth.uid, 'set_bots_paused', { perHour: 20, perDay: 60 });
+  const meta = extractRequestMeta(request);
+  const { paused } = request.data || {};
+  const cfgRef = db.collection('app_config').doc('general');
+  const before = (await cfgRef.get()).data()?.botsPaused ?? null;
+  await cfgRef.set({ botsPaused: !!paused }, { merge: true });
+  await auditAdminAction({
+    actor: request.auth.uid,
+    action: 'set_bots_paused',
+    target: { type: 'app_config', id: 'general' },
+    before: { botsPaused: before },
+    after:  { botsPaused: !!paused },
+    ip: meta.ip,
+    userAgent: meta.userAgent,
+  }).catch(() => {});
+  return { ok: true, paused: !!paused };
+});
+
+// Update per-run cap (max posts per bot per run).
+exports.setBotPostLimit = functions.https.onCall(async (request) => {
+  await requireAdmin(request.auth?.uid);
+  await adminRateLimit(request.auth.uid, 'set_bot_post_limit', { perHour: 20, perDay: 60 });
+  const meta = extractRequestMeta(request);
+  const { limit } = request.data || {};
+  const n = Math.max(0, Math.min(20, Number(limit)));
+  const cfgRef = db.collection('app_config').doc('general');
+  const before = (await cfgRef.get()).data()?.maxPostsPerBotPerRun ?? null;
+  await cfgRef.set({ maxPostsPerBotPerRun: n }, { merge: true });
+  await auditAdminAction({
+    actor: request.auth.uid,
+    action: 'set_bot_post_limit',
+    target: { type: 'app_config', id: 'general' },
+    before: { maxPostsPerBotPerRun: before },
+    after:  { maxPostsPerBotPerRun: n },
+    ip: meta.ip,
+    userAgent: meta.userAgent,
+  }).catch(() => {});
+  return { ok: true, limit: n };
+});
