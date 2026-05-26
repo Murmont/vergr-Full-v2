@@ -1258,6 +1258,25 @@ export const getSquad = async (squadId) => {
   return snap.exists() ? { id: snap.id, ...snap.data() } : null;
 };
 
+// MP3 — squad treasury inflow line-items. finalizeInternal writes a
+// `transactions` doc per squad win (type 'squad_tournament_prize' /
+// 'squad_treasury_credit') with tournamentId + description. This surfaces
+// the breakdown of "which tournament added what" to squad members.
+// Single-field equality query (no composite index needed); sorted client-side.
+export const getSquadTreasuryInflows = async (squadId, n = 10) => {
+  if (!squadId) return [];
+  const snap = await getDocs(query(
+    collection(db, 'transactions'),
+    where('squadId', '==', squadId),
+    limit(50),
+  ));
+  return snap.docs
+    .map((d) => ({ id: d.id, ...d.data() }))
+    .filter((t) => t.amount > 0) // inflows only
+    .sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0))
+    .slice(0, n);
+};
+
 // Names normal users cannot register a squad under. Soft match — strips
 // whitespace + lowercases + removes punctuation before comparing.
 // Editable at runtime via `app_config/reservedSquadNames.names`.

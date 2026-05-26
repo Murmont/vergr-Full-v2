@@ -87,6 +87,13 @@ export default function TournamentListScreen({ variant = 'all' }) {
     return () => { cancelled = true; };
   }, [profile?.uid]);
 
+  // DS5 — entry-fee comfort ceiling derived from the viewer's Tournament
+  // Points. TP 0 → 100c, scales up, capped at the 10,000c entry-fee max.
+  const levelComfortMax = useMemo(() => {
+    const tp = profile?.tournamentPoints || 0;
+    return Math.min(10000, Math.max(100, Math.round(50 + tp / 5)));
+  }, [profile?.tournamentPoints]);
+
   // Upcoming-weekend window (Sat 00:00 → Sun 23:59 local). If today is the
   // weekend, it's the current one; otherwise the next one.
   const [wkStart, wkEnd] = useMemo(() => {
@@ -153,11 +160,16 @@ export default function TournamentListScreen({ variant = 'all' }) {
       if (quick.has('br') && t.type !== 'battle_royale') return false;
       if (quick.has('weekend') && !(t.startMs && t.startMs >= wkStart && t.startMs <= wkEnd)) return false;
       if (quick.has('mySquads') && !(t.hostSquadId && mySquadIds.has(t.hostSquadId))) return false;
+      // DS5 — skill-matched: keep tournaments whose entry stake sits within
+      // the viewer's comfort band (scales with their Tournament Points), so
+      // newcomers aren't shown whale-stakes events and vets still see all.
+      if (quick.has('myLevel') && !(t.entry <= levelComfortMax)) return false;
       return true;
     });
-  }, [tournaments, status, game, region, isTypeVariant, typeConfig, variant, quick, wkStart, wkEnd, mySquadIds]);
+  }, [tournaments, status, game, region, isTypeVariant, typeConfig, variant, quick, wkStart, wkEnd, mySquadIds, levelComfortMax]);
 
   const QUICK_FILTERS = [
+    { key: 'myLevel',  label: 'For my level', icon: 'adjust' },
     { key: 'lowEntry', label: 'Entry ≤ 50c', icon: 'savings' },
     { key: 'small',    label: '≤ 100 players', icon: 'groups' },
     { key: 'weekend',  label: 'This weekend', icon: 'event' },
