@@ -70,15 +70,15 @@ Comprehensive audit 2026-05-25. Tournaments are functional but have real gaps be
 | DS6 | **Champion Picks (predictions) discoverability** — viewer must already know to look in SpectatorPanels. Surface "Predict the winner, earn coins" prompt on the discovery feed for live matches. | ❌ |
 | DS7 | **"Follow this match" toggle** for spectators — push notif when this specific match starts. | ✅ DEPLOYED 2026-05-26. `setMatchFollow` callable (arrayUnion/Remove on `match.spectatorFollowers`) + `<FollowMatchButton>` in MatchFlowExtras, rendered on TournamentMatchScreen for non-participants. New `tournamentMatchFollowerPush` trigger pings followers when the match flips to `in_progress` (type `tournament_match_starting`, on FCM allowlist). |
 | DS8 | **Followed-player advance push** — bracket pulse exists (shipped). Push notif to follower when their player advances is missing. | ✅ DEPLOYED 2026-05-26. Same `tournamentMatchFollowerPush` trigger: on a match completing with a winner who did NOT win the whole tournament (solo mode; the eventual champion gets `tournament_won` instead), pings that player's `users/{uid}/followers` with type `tournament_player_advanced` (FCM allowlisted). |
-| DS9 | **Trophy ceremony for spectators** — only winners + host see it. Spectators who watched the final get nothing. | ❌ |
+| DS9 | **Trophy ceremony for spectators** — only winners + host see it. Spectators who watched the final get nothing. | ✅ DEPLOYED 2026-05-26. MatchDetailsScreen ceremony gate relaxed: now shows to ANY viewer of a completed tournament (winner/host/spectator), still once per user via the existing `ceremonyKey` localStorage gate. |
 
 ### In-match (P1/P2)
 | # | Item | Status |
 |---|---|---|
 | IM1 | **No per-match opponent chat** — players in a match can't text each other unless they already follow + can DM. Add lightweight per-match chat that auto-closes on match end. | ❌ |
 | IM2 | **No crash-recovery re-entry flow** — alt-F4 + reload = re-do lobby verification + scan consent re-prompt. Friction. Cache verified-state per device. | ❌ |
-| IM3 | **"Report this opponent" surface on match screen** — only available via long DMs flow currently. | ❌ |
-| IM4 | **Mod thank-you after match** — players never see who decided their match. Show mod's rank badge + handle + "Thanks for the call" optional button. | ❌ |
+| IM3 | **"Report this opponent" surface on match screen** — only available via long DMs flow currently. | ✅ DEPLOYED 2026-05-26. `<ReportOpponentButton>` on TournamentMatchScreen result screen (reason chips + detail box) files a `user` report via the existing `submitReport` callable, tagged with tournament/match id in details. |
+| IM4 | **Mod thank-you after match** — players never see who decided their match. Show mod's rank badge + handle + "Thanks for the call" optional button. | ✅ DEPLOYED 2026-05-26. `<ModThankYou>` on the completed-match screen shows who decided it (identity-masked "a Vanguard mod") + one-tap thanks; new `thankMatchMod` callable notifies the mod (`tournament_mod_thanks`, FCM allowlisted, one per player per match). |
 
 ### Auto-generated content (P2)
 | # | Item | Status |
