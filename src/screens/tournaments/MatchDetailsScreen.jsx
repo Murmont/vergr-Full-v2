@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useUser } from '../../context/UserContext';
 import { useUI } from '../../context/UIContext';
-import { getTournament, subscribeTournament, joinTournamentSecure, leaveTournamentSecure, startTournamentSecure, reportMatchResultSecure, finalizeTournamentSecure, applyToTournamentSecure, getTournamentMatches, getUser, getSquad, getFollowing } from '../../firebase/firestore';
+import { getTournament, subscribeTournament, joinTournamentSecure, leaveTournamentSecure, startTournamentSecure, reportMatchResultSecure, finalizeTournamentSecure, applyToTournamentSecure, getTournamentMatches, getUser, getSquad, getFollowing, getHostStats } from '../../firebase/firestore';
 import { gameById } from '../../utils/tournamentGames';
 import LaunchGameDropdown from '../../components/tournament/LaunchGameDropdown';
 import { useLayout } from '../../context/LayoutContext';
@@ -550,6 +550,7 @@ export default function MatchDetailsScreen() {
         {/* Tab content */}
         {activeTab === 'overview' && (
           <div className="space-y-3">
+            {tournament.adminId && <HostLegitCard hostUid={tournament.adminId} />}
             <button onClick={() => navigate(`/tournaments/${matchId}/standings`)}
               className="w-full p-4 rounded-2xl bg-surface-1 border border-white/[0.06] flex items-center gap-3 hover:border-white/[0.12] transition-colors">
               <Icon name="leaderboard" size={20} className="text-brand-gold" />
@@ -736,6 +737,47 @@ export default function MatchDetailsScreen() {
 // and forfeit. This gives a one-click launcher test before committing, and a
 // clear confirm. Resolves the tournament's game to a registry object so the
 // LaunchGameDropdown can offer the right launcher / .exe.
+// GR1 — public host reputation card. Answers "is this host legit?" inline on
+// the tournament page: how many events they've run, completion rate, players
+// served, prizes paid, and how often they bring in Vanguard moderation.
+function HostLegitCard({ hostUid }) {
+  const [stats, setStats] = useState(null);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    let cancelled = false;
+    getHostStats(hostUid)
+      .then((s) => { if (!cancelled) setStats(s); })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [hostUid]);
+  if (loading || !stats || stats.hosted === 0) return null;
+  const Stat = ({ label, value }) => (
+    <div className="flex-1 text-center">
+      <p className="text-brand-cyan font-dmmono font-bold text-base">{value}</p>
+      <p className="text-text-muted text-[9px] uppercase tracking-wider">{label}</p>
+    </div>
+  );
+  return (
+    <div className="p-4 rounded-2xl bg-surface-1 border border-white/[0.06]">
+      <div className="flex items-center gap-2 mb-3">
+        <Icon name="verified_user" size={16} className="text-brand-cyan" />
+        <p className="text-text-secondary text-xs font-bold uppercase tracking-wider">Host track record</p>
+      </div>
+      <div className="flex items-center gap-2">
+        <Stat label="Hosted" value={stats.hosted} />
+        <Stat label="Completed" value={stats.completed} />
+        {stats.completionRate != null && <Stat label="Finish %" value={`${stats.completionRate}%`} />}
+        <Stat label="Players" value={stats.totalPlayers} />
+        <Stat label="Mod %" value={`${stats.moderatedRate}%`} />
+      </div>
+      {stats.cancelled > 0 && (
+        <p className="text-text-muted text-[10px] mt-2">{stats.cancelled} event{stats.cancelled === 1 ? '' : 's'} cancelled (entries refunded).</p>
+      )}
+    </div>
+  );
+}
+
 function GameOwnershipModal({ tournament, joining, onCancel, onConfirm }) {
   const game = gameById(tournament.game);
   const gameName = game?.label || tournament.game || 'this game';

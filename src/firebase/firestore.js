@@ -2537,6 +2537,31 @@ export const deleteVoiceChannel = async (channelId) => {
 // Tournaments the user is registered in OR hosting (used by My Tournaments).
 // Performs two filtered queries client-side and dedupes — Firestore can't
 // OR-query across two array fields.
+// GR1 — public host reputation. Computes "is this host legit?" stats from the
+// tournaments they have run. Cheap (one indexed query on adminId, cap 200).
+export const getHostStats = async (uid) => {
+  if (!uid) return null;
+  const snap = await getDocs(query(collection(db, 'tournaments'), where('adminId', '==', uid), limit(200)));
+  const ts = snap.docs.map((d) => d.data());
+  const hosted = ts.length;
+  const completed = ts.filter((t) => t.status === 'completed').length;
+  const cancelled = ts.filter((t) => t.status === 'cancelled').length;
+  const moderated = ts.filter((t) => t.vanguardModerated).length;
+  const totalPrize = ts.reduce((s, t) => s + (t.prizePool || 0), 0);
+  const totalPlayers = ts.reduce((s, t) => s + (t.participants?.length || 0), 0);
+  const settled = completed + cancelled;
+  return {
+    hosted,
+    completed,
+    cancelled,
+    moderated,
+    totalPrize,
+    totalPlayers,
+    completionRate: settled ? Math.round((completed / settled) * 100) : null,
+    moderatedRate: hosted ? Math.round((moderated / hosted) * 100) : 0,
+  };
+};
+
 export const getUserTournaments = async (uid, limitCount = 50) => {
   if (!uid) return [];
   const [hostedSnap, joinedSnap] = await Promise.all([
