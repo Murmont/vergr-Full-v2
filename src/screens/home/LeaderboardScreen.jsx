@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { collection, query, orderBy, limit, getDocs } from 'firebase/firestore';
 import { db } from '../../firebase/config';
+import { getGameWeeklyLeaderboard } from '../../firebase/firestore';
+import { TOURNAMENT_GAMES } from '../../utils/tournamentGames';
 import { useAuth } from '../../context/AuthContext';
 import TopBar from '../../components/TopBar';
 import UserAvatar from '../../components/UserAvatar';
@@ -13,13 +15,29 @@ import { useLayout } from '../../context/LayoutContext';
 const CATEGORIES = [
   { key: 'vp', label: 'Top VP', field: 'vp', icon: 'star', suffix: 'VP' },
   { key: 'vpLevel', label: 'Highest Level', field: 'vpLevel', icon: 'trending_up', suffix: 'LVL' },
-  { key: 'tournamentWins', label: 'Tournament Wins', field: 'tournamentWins', icon: 'emoji_events' },
+  // Tournament Points (TP) — separate from VP, awarded to every participant
+  // on tournament completion, scaled by placement + tournament size + entry fee.
+  { key: 'tournamentPoints', label: 'Top Players', field: 'tournamentPoints', icon: 'leaderboard', suffix: 'TP' },
+  // Read from the actual aggregateTournamentStats rollup fields.
+  { key: 'tournamentWins', label: 'Tournament Wins', field: 'tournamentStats.won', icon: 'emoji_events' },
+  // Tournament esports additions (see CLAUDE.md: trust score visible >=5 verified matches)
+  { key: 'tournamentTrust', label: 'Most Trusted', field: 'tournamentTrust.score', icon: 'verified', suffix: 'TRUST' },
+  { key: 'tournamentPrize', label: 'Top Prize', field: 'tournamentStats.earnedCoins', icon: 'paid', suffix: 'c' },
+  { key: 'tournamentMatches', label: 'Most Matches', field: 'tournamentTrust.verifiedMatches', icon: 'sports_esports' },
+  { key: 'topPredictor', label: 'Top Predictor', field: 'predictor.totalCorrect', icon: 'psychology' },
+  { key: 'predictorStreak', label: 'Hottest Streak', field: 'predictor.currentStreak', icon: 'local_fire_department' },
   { key: 'earnings', label: 'Top Earners', field: 'totalEarned', icon: 'paid' },
   { key: 'xp', label: 'Top XP', field: 'totalXP', icon: 'military_tech' },
   { key: 'posts', label: 'Top Posters', field: 'postCount', icon: 'edit_note' },
   { key: 'followers', label: 'Most Followed', field: 'followerCount', icon: 'group' },
   { key: 'streamers', label: 'Top Streamers', field: 'streamHours', icon: 'live_tv', suffix: 'hrs' },
+  // GR2 — per-game weekly board. Computed from recent tournaments, not a user field.
+  { key: 'gameWeekly', label: 'By Game (week)', field: null, icon: 'sports_esports', suffix: 'W', perGame: true },
 ];
+
+// A short popular-games shortlist for the GR2 game picker.
+const GAME_PICKS = ['Counter-Strike 2', 'VALORANT', 'League of Legends', 'EA Sports FC 25 (FIFA)', 'NBA 2K', 'Apex Legends', 'Rocket League', 'Fortnite']
+  .filter((g) => TOURNAMENT_GAMES.some((tg) => tg.label === g));
 
 const PERIODS = ['All Time', 'This Month', 'This Week'];
 const PODIUM_COLORS = { 0: '#F5C542', 1: '#C0C0C0', 2: '#CD7F32' };
@@ -27,6 +45,7 @@ const PODIUM_COLORS = { 0: '#F5C542', 1: '#C0C0C0', 2: '#CD7F32' };
 export default function LeaderboardScreen() {
   const [category, setCategory] = useState(CATEGORIES[0]);
   const [period, setPeriod] = useState('All Time');
+  const [selectedGame, setSelectedGame] = useState(GAME_PICKS[0] || 'Counter-Strike 2');
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const { currentUser } = useAuth();
@@ -44,19 +63,35 @@ export default function LeaderboardScreen() {
     const load = async () => {
       setLoading(true);
       try {
-        const q = query(collection(db, 'users'), orderBy(category.field, 'desc'), limit(50));
-        const snap = await getDocs(q);
-        const users = snap.docs
-          .map((d, i) => ({ id: d.id, rank: i + 1, ...d.data(), isYou: d.id === currentUser?.uid }))
-          .filter(u => (u[category.field] || 0) > 0);
-        setEntries(users);
+        if (category.perGame) {
+          // GR2 — per-game weekly board, computed from recent tournaments.
+          const rows = await getGameWeeklyLeaderboard(selectedGame);
+          setEntries(rows.map((u, i) => ({ ...u, rank: i + 1, isYou: u.id === currentUser?.uid })));
+        } else {
+          // Nested field paths (e.g. 'tournamentTrust.score') work with Firestore
+          // orderBy when passed as a dotted string. Filter zero-value rows client-side
+          // since orderBy can't combine with a !=0 inequality on the same field cheaply.
+          const q = query(collection(db, 'users'), orderBy(category.field, 'desc'), limit(50));
+          const snap = await getDocs(q);
+          const getVal = (u, path) => path.split('.').reduce((o, k) => (o == null ? null : o[k]), u);
+          const users = snap.docs
+            .map((d, i) => ({ id: d.id, rank: i + 1, ...d.data(), isYou: d.id === currentUser?.uid }))
+            .filter(u => (getVal(u, category.field) || 0) > 0);
+          setEntries(users);
+        }
       } catch (err) {
         console.error('Leaderboard error:', err);
+        setEntries([]);
       }
       setLoading(false);
     };
     load();
-  }, [category, currentUser]);
+  }, [category, selectedGame, currentUser]);
+
+  // GR2 — value accessor: per-game board shows wins, others read the field.
+  const valOf = (u) => category.perGame
+    ? (u.wins || 0)
+    : (category.field ? category.field.split('.').reduce((o, k) => (o == null ? null : o[k]), u) : 0);
 
   const top3 = entries.slice(0, 3);
   const rest = entries.slice(3);
@@ -88,7 +123,24 @@ export default function LeaderboardScreen() {
         ))}
       </div>
 
+      {/* GR2 — game picker, only for the per-game weekly board */}
+      {category.perGame && (
+        <div className="flex gap-2 px-4 pb-3 overflow-x-auto no-scrollbar">
+          {GAME_PICKS.map((g) => (
+            <button key={g} onClick={() => setSelectedGame(g)}
+              className={`px-3 py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap transition-all ${
+                selectedGame === g ? 'bg-brand-violet text-white' : 'bg-surface-2 text-text-secondary hover:text-white'
+              }`}>
+              {g}
+            </button>
+          ))}
+        </div>
+      )}
+
       <div className="px-4">
+        {category.perGame && (
+          <p className="text-text-muted text-[11px] mb-3">Top players in {selectedGame} this week (by tournament wins + activity).</p>
+        )}
         {loading ? (
           <div className="flex justify-center py-16"><div className="w-8 h-8 border-3 border-brand-cyan border-t-transparent rounded-full animate-spin" /></div>
         ) : entries.length === 0 ? (
@@ -121,7 +173,7 @@ export default function LeaderboardScreen() {
                       <p className={`font-bold truncate max-w-[80px] ${isFirst ? 'text-sm' : 'text-xs'} ${user.isYou ? 'text-brand-cyan' : 'text-text-primary'}`}>
                         {user.displayName || user.username}
                       </p>
-                      <p className="text-text-muted text-[10px] font-dmmono">{formatVal(user[category.field])}</p>
+                      <p className="text-text-muted text-[10px] font-dmmono">{formatVal(valOf(user))}</p>
                     </button>
                   );
                 })}
@@ -142,7 +194,7 @@ export default function LeaderboardScreen() {
                     <p className="text-text-muted text-xs font-dmmono">@{user.username}</p>
                   </div>
                   <span className="text-sm font-dmmono font-bold text-brand-gold">
-                    {formatVal(user[category.field])}
+                    {formatVal(valOf(user))}
                     {category.suffix && <span className="text-[10px] text-text-muted ml-1">{category.suffix}</span>}
                   </span>
                   {user.isYou && <span className="px-2 py-0.5 rounded-full bg-brand-cyan/15 text-brand-cyan text-[9px] font-bold">YOU</span>}

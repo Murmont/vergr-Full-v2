@@ -2537,6 +2537,52 @@ export const deleteVoiceChannel = async (channelId) => {
 // Tournaments the user is registered in OR hosting (used by My Tournaments).
 // Performs two filtered queries client-side and dedupes — Firestore can't
 // OR-query across two array fields.
+// GR2 — per-game weekly player leaderboard. Match docs don't store `game`, but
+// tournaments do, so we tally from completed tournaments of that game in the
+// window (one indexed query). Score = wins*3 + participations; solo only.
+export const getGameWeeklyLeaderboard = async (gameLabel, days = 7) => {
+  if (!gameLabel) return [];
+  const cutoff = Date.now() - days * 86400000;
+  const ms = (t) => {
+    if (!t) return 0;
+    if (typeof t.toMillis === 'function') return t.toMillis();
+    if (typeof t.seconds === 'number') return t.seconds * 1000;
+    return 0;
+  };
+  const snap = await getDocs(query(
+    collection(db, 'tournaments'),
+    where('game', '==', gameLabel),
+    where('status', '==', 'completed'),
+    limit(150),
+  ));
+  const tally = {};
+  snap.forEach((d) => {
+    const t = d.data();
+    if (t.mode === 'squad') return; // player board, not squad
+    const when = ms(t.completedAt) || ms(t.endedAt) || ms(t.updatedAt);
+    if (when && when < cutoff) return;
+    const winner = t.winnerId || t.placements?.first || null;
+    for (const uid of (t.participants || [])) {
+      if (!uid) continue;
+      tally[uid] = tally[uid] || { wins: 0, played: 0 };
+      tally[uid].played++;
+    }
+    if (winner) {
+      tally[winner] = tally[winner] || { wins: 0, played: 0 };
+      tally[winner].wins++;
+    }
+  });
+  const rows = Object.entries(tally)
+    .map(([uid, v]) => ({ uid, ...v, score: v.wins * 3 + v.played }))
+    .sort((a, b) => b.score - a.score || b.wins - a.wins)
+    .slice(0, 50);
+  const out = await Promise.all(rows.map(async (r) => {
+    const u = await getUser(r.uid).catch(() => null);
+    return u && u.username ? { id: r.uid, ...u, wins: r.wins, played: r.played } : null;
+  }));
+  return out.filter(Boolean);
+};
+
 // GR3 — squad-vs-squad rivalries. In squad-mode tournaments the match docs'
 // player1/player2 hold squad IDs, so the `recordRivalryOnMatchComplete` trigger
 // already accumulates rivalries/{a_b} keyed by squad ID. This reads them for a
