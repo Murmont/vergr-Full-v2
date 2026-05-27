@@ -514,6 +514,9 @@ export default function AppRouter() {
                     <Route element={<ProtectedRoute><MainLayout /></ProtectedRoute>}>
                       {/* Main tabs */}
                       <Route path="/explore" element={<ExploreScreen />} />
+                      {/* "Social Media" nav — opens the feed on the Gaming News
+                          (RSS/social) tab so it's distinct from Home. */}
+                      <Route path="/feed" element={<HomeFeedScreen initialTab="Gaming News" />} />
                       <Route path="/profile" element={<ProfileScreen />} />
 
                       {/* Home */}

@@ -132,8 +132,11 @@ export default function PublicProfileScreen() {
   };
 
   const handleShare = () => {
-    const url = window.location.href;
-    if (navigator.share) navigator.share({ title: user?.displayName || user?.username, url });
+    // Always share the public web profile (vergr.me), never the in-app
+    // tauri.localhost / hash URL. Prefer username, fall back to uid.
+    const handle = user?.username || user?.id;
+    const url = `https://vergr.app/u/${handle}`;
+    if (navigator.share) navigator.share({ title: user?.displayName || user?.username, url }).catch(() => {});
     else {
       navigator.clipboard?.writeText(url).then(() => showToast?.('Profile link copied', 'success'));
     }

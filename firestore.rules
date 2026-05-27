@@ -108,6 +108,14 @@ service cloud.firestore {
         allow read, write: if isOwner(userId);
       }
 
+      // Client analytics events (trackEvent). Owner-only create/read; never
+      // updated or deleted from the client.
+      match /events/{eventId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create: if isOwner(userId);
+        allow update, delete: if false;
+      }
+
       // Privacy/consent docs (consent banners, captureSignals telemetry).
       // Owner read/write; admins can read for support. Server (Cloud Functions)
       // bypasses these rules anyway via the admin SDK.

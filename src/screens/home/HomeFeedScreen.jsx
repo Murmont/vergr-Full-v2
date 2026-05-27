@@ -16,13 +16,14 @@ import AdCard from '../../components/AdCard';
 import VergrAd from '../../components/VergrAd';
 import { ADS_CONFIG } from '../../config/ads';
 import NewsPostCard from '../../components/NewsPostCard';
-import CreatePostModal from '../../components/CreatePostModal';
+import CreateComposer from '../../components/composer/CreateComposer';
 import useResponsive from '../../hooks/useResponsive';
 import { useLayout } from '../../context/LayoutContext';
 import { injectAdsRandomly } from '../../utils/feedInjections';
 import { orderAdsByAffinity } from '../../utils/adMatcher';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, orderBy, limit as fbLimit, Timestamp, getDocs } from 'firebase/firestore';
 import { db } from '../../firebase/config';
+import { getUser } from '../../firebase/firestore';
 
 const FEED_TABS = ['For You', 'Following', 'Gaming News', 'Trending'];
 
@@ -61,9 +62,13 @@ const NEWS_SOURCES = [
   { name: 'itch.io News', url: 'https://itch.io/games/feed', botId: 'news-itchio' },
 ];
 
-export default function HomeFeedScreen() {
-  const [activeTab, setActiveTab] = useState('For You');
+export default function HomeFeedScreen({ initialTab }) {
+  const [activeTab, setActiveTab] = useState(
+    FEED_TABS.includes(initialTab) ? initialTab : 'For You',
+  );
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [createOrigin, setCreateOrigin] = useState(null);
+  const openCreate = (e) => { try { setCreateOrigin(e.currentTarget.getBoundingClientRect()); } catch { setCreateOrigin(null); } setShowCreateModal(true); };
   const [ads, setAds] = useState([]);
   const [adsLoading, setAdsLoading] = useState(false);
   const { profile, wallet } = useUser();
@@ -562,34 +567,21 @@ export default function HomeFeedScreen() {
           <div className="flex items-center gap-3"><CoinDisplay amount={wallet?.balance || 0} size="sm" /><button onClick={() => navigate('/notifications')} className="relative"><Icon name="notifications" size={22} className="text-text-secondary" />{unreadNotifCount > 0 && <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-brand-ember text-[10px] flex items-center justify-center font-bold text-white border-2 border-bg-dark">{unreadNotifCount > 9 ? '9+' : unreadNotifCount}</span>}</button></div>
         </header>
       )}
-      {/* Desktop header strip */}
+      {/* Desktop composer row — narrower composer + New Post + bell, no
+          page title or subtitle (the left sidebar already labels the
+          section, and the feed itself is self-evident). */}
       {isDesktop && (
-        <div className="px-6 pt-6 pb-4 flex items-center justify-between">
-          <div>
-            <h1 className="font-syne text-2xl font-extrabold tracking-tight text-text-primary">Home</h1>
-            <p className="text-text-muted text-xs mt-0.5">Your feed · the whole VERGR world in one scroll</p>
-          </div>
+        <div className="px-6 pt-6 pb-4 flex items-center gap-3">
           <button
-            onClick={() => setShowCreateModal(true)}
-            className="hidden md:inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-brand-violet to-brand-pink text-white text-xs font-bold shadow-lg shadow-brand-violet/30 hover:brightness-110">
-            <Icon name="add" size={15} /> New Post
-          </button>
-        </div>
-      )}
-
-      {/* Composer card (desktop) */}
-      {isDesktop && (
-        <div className="px-6 pb-4">
-          <button
-            onClick={() => setShowCreateModal(true)}
-            className="w-full flex items-center gap-3 p-3.5 rounded-2xl bg-white/[0.03] border border-white/[0.06] hover:bg-white/[0.05] text-left">
+            onClick={openCreate}
+            className="flex-1 max-w-[640px] flex items-center gap-3 p-3 rounded-2xl bg-white/[0.03] border border-white/[0.06] hover:bg-white/[0.05] text-left">
             <img
               src={profile?.avatar || '/brand/logo.png'}
               alt=""
               className="w-9 h-9 rounded-full object-cover border border-white/[0.08] shrink-0"
             />
             <span className="flex-1 text-[13px] text-text-muted">Share something with the squad…</span>
-            <span className="hidden md:flex items-center gap-2">
+            <span className="flex items-center gap-1.5">
               <span className="w-8 h-8 rounded-lg bg-white/[0.04] flex items-center justify-center text-brand-cyan">
                 <Icon name="photo_camera" size={15} />
               </span>
@@ -600,6 +592,22 @@ export default function HomeFeedScreen() {
                 <Icon name="podcasts" size={15} />
               </span>
             </span>
+          </button>
+          <button
+            onClick={openCreate}
+            className="inline-flex items-center gap-1.5 px-4 py-3 rounded-2xl bg-gradient-to-r from-brand-violet to-brand-pink text-white text-xs font-bold shadow-lg shadow-brand-violet/30 hover:brightness-110">
+            <Icon name="add" size={15} /> New Post
+          </button>
+          <button
+            onClick={() => navigate('/notifications')}
+            className="relative w-11 h-11 rounded-2xl bg-white/[0.04] border border-white/[0.06] hover:bg-white/[0.07] flex items-center justify-center text-text-secondary"
+            title="Notifications">
+            <Icon name="notifications" size={18} />
+            {unreadNotifCount > 0 && (
+              <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] rounded-full bg-brand-ember text-[10px] font-bold text-white flex items-center justify-center px-1">
+                {unreadNotifCount > 9 ? '9+' : unreadNotifCount}
+              </span>
+            )}
           </button>
         </div>
       )}
@@ -653,7 +661,7 @@ export default function HomeFeedScreen() {
         </div>
       )}
       {isMobile && <button onClick={() => setShowCreateModal(true)} className="fixed bottom-20 right-4 w-13 h-13 rounded-full bg-brand-cyan flex items-center justify-center z-30 hover:brightness-110 active:scale-95 transition-all shadow-black/30"><Icon name="add" size={26} className="text-bg-dark" /></button>}
-      {showCreateModal && <CreatePostModal onClose={() => setShowCreateModal(false)} />}
+      {showCreateModal && <CreateComposer onClose={() => setShowCreateModal(false)} originRect={createOrigin} />}
       {newsVideoViewer && (
         <NewsVideoViewer
           items={newsVideoViewer.items}
@@ -713,45 +721,143 @@ function DesktopHomeShell({ children }) {
 }
 
 // Stories / Live strip — horizontal row of circular avatars with optional LIVE badge.
+// Stories strip — real data only. Loads active statuses (last 24h) grouped
+// by author from Firestore. Tap "Your Story" → if you have a status, opens
+// the viewer at your status; if not, drops into the status create flow. Tap
+// anyone else's avatar → opens the viewer at theirs.
 function HomeStoriesStrip({ onNavigate }) {
-  const items = [
-    { id: 'me',  name: 'Your Story', isSelf: true,  color: 'from-brand-violet to-brand-pink' },
-    { id: 'u1',  name: 'Volt',     live: true,  color: 'from-brand-ember to-brand-pink' },
-    { id: 'u2',  name: 'Raze',     live: false, color: 'from-brand-violet to-brand-cyan' },
-    { id: 'u3',  name: 'Nova',     live: false, color: 'from-brand-pink to-brand-violet' },
-    { id: 'u4',  name: 'ThunderX', live: false, color: 'from-brand-cyan to-brand-violet' },
-    { id: 'u5',  name: 'Frost',    live: false, color: 'from-brand-cyan to-brand-pink' },
-    { id: 'u6',  name: 'Storm',    live: false, color: 'from-brand-gold to-brand-ember' },
-    { id: 'u7',  name: 'VERGR',    live: false, color: 'from-brand-violet to-brand-pink' },
-  ];
+  const { currentUser } = useAuth();
+  const { profile } = useUser();
+  const [groups, setGroups] = useState([]); // [{ uid, author, items[] }]
+  const [myStatusCount, setMyStatusCount] = useState(0);
+  const [liveHostIds, setLiveHostIds] = useState(new Set());
+
+  // Pull the set of uids currently live-streaming so the stories strip can
+  // flip those avatars to the red LIVE ring.
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const q = query(collection(db, 'streams'), where('status', '==', 'live'), fbLimit(50));
+        const snap = await getDocs(q);
+        if (!alive) return;
+        const ids = new Set();
+        for (const d of snap.docs) {
+          const data = d.data();
+          if (data.hostId) ids.add(data.hostId);
+          else if (data.hostUid) ids.add(data.hostUid);
+        }
+        setLiveHostIds(ids);
+      } catch {}
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const cutoff = Timestamp.fromDate(new Date(Date.now() - 24 * 60 * 60 * 1000));
+        const q = query(
+          collection(db, 'statuses'),
+          where('createdAt', '>=', cutoff),
+          orderBy('createdAt', 'desc'),
+          fbLimit(50),
+        );
+        const snap = await getDocs(q);
+        const grouped = new Map();
+        for (const d of snap.docs) {
+          const data = { id: d.id, ...d.data() };
+          if (!data.authorId) continue;
+          if (!grouped.has(data.authorId)) grouped.set(data.authorId, { uid: data.authorId, items: [], author: null });
+          grouped.get(data.authorId).items.push(data);
+        }
+        // Resolve authors in parallel (skip self — we use profile).
+        await Promise.all(
+          Array.from(grouped.keys())
+            .filter(uid => uid !== currentUser.uid)
+            .map(async uid => {
+              const u = await getUser(uid).catch(() => null);
+              if (u) grouped.get(uid).author = u;
+            }),
+        );
+        if (cancelled) return;
+        // Pull my statuses out and surface count separately.
+        const mineGroup = grouped.get(currentUser.uid);
+        setMyStatusCount(mineGroup ? mineGroup.items.length : 0);
+        grouped.delete(currentUser.uid);
+        // Sort other groups by their newest status (already desc within each).
+        const sorted = Array.from(grouped.values()).sort((a, b) => {
+          const at = a.items[0]?.createdAt?.toMillis?.() || 0;
+          const bt = b.items[0]?.createdAt?.toMillis?.() || 0;
+          return bt - at;
+        });
+        setGroups(sorted);
+      } catch (err) {
+        console.error('Stories strip load failed', err);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [currentUser]);
+
+  const handleSelf = () => {
+    if (myStatusCount > 0) {
+      onNavigate('/status?viewing=me');
+    } else {
+      // First-time post: open the status screen with the composer flag so it
+      // auto-opens the create UI (same behavior as Instagram / WhatsApp).
+      onNavigate('/status?compose=1');
+    }
+  };
+
   return (
     <div className="px-4 py-3 border-b border-white/[0.04]">
       <div className="flex items-start gap-3 overflow-x-auto no-scrollbar">
-        {items.map(i => (
-          <button
-            key={i.id}
-            onClick={() => i.isSelf ? onNavigate('/create-post') : onNavigate('/go-live')}
-            className="flex flex-col items-center gap-1.5 shrink-0 w-[64px]"
-          >
-            <div className="relative">
-              <div className={`w-[56px] h-[56px] rounded-full bg-gradient-to-br ${i.color} p-[2px]`}>
-                <div className="w-full h-full rounded-full bg-bg-dark flex items-center justify-center overflow-hidden">
-                  {i.isSelf ? (
-                    <div className="w-full h-full rounded-full bg-surface-2 flex items-center justify-center">
-                      <Icon name="add" size={22} className="text-text-primary" />
-                    </div>
-                  ) : (
-                    <span className="text-[14px] font-syne font-extrabold text-white/90">{i.name[0]}</span>
-                  )}
-                </div>
+        {/* Your Story — always first */}
+        <button onClick={handleSelf} className="flex flex-col items-center gap-1.5 shrink-0 w-[64px]">
+          <div className="relative">
+            {myStatusCount > 0 ? (
+              // You have a story — VP rank ring + live override if streaming.
+              <UserAvatar
+                src={profile?.avatar || profile?.photoURL}
+                size={56}
+                vpLevel={profile?.vpLevel || 1}
+                isVerified={profile?.isVerified}
+                isLive={liveHostIds.has(currentUser?.uid)}
+              />
+            ) : (
+              <div className="w-[56px] h-[56px] rounded-full bg-surface-2 border-2 border-dashed border-white/[0.15] flex items-center justify-center hover:border-brand-cyan/40 transition-colors">
+                <Icon name="add" size={22} className="text-text-primary" />
               </div>
-              {i.live && (
-                <span className="absolute -top-1 left-1/2 -translate-x-1/2 px-1.5 py-[1px] rounded-sm bg-brand-ember text-[8px] font-dmmono font-bold text-white uppercase tracking-wider">LIVE</span>
-              )}
-            </div>
-            <span className="text-[10px] font-dmmono text-text-secondary truncate w-full text-center">{i.name}</span>
-          </button>
-        ))}
+            )}
+          </div>
+          <span className="text-[10px] font-dmmono text-text-secondary truncate w-full text-center">
+            {myStatusCount > 0 ? 'Your Story' : 'Add Story'}
+          </span>
+        </button>
+
+        {/* Other users' stories */}
+        {groups.map(g => {
+          const a = g.author;
+          const name = a?.displayName || a?.username || 'User';
+          return (
+            <button
+              key={g.uid}
+              onClick={() => onNavigate(`/status?viewing=${g.uid}`)}
+              className="flex flex-col items-center gap-1.5 shrink-0 w-[64px]"
+            >
+              <UserAvatar
+                src={a?.avatar || a?.photoURL}
+                size={56}
+                vpLevel={a?.vpLevel || 1}
+                isVerified={a?.isVerified}
+                isLive={liveHostIds.has(g.uid)}
+              />
+              <span className="text-[10px] font-dmmono text-text-secondary truncate w-full text-center">{name}</span>
+            </button>
+          );
+        })}
       </div>
     </div>
   );
