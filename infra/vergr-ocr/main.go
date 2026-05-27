@@ -36,7 +36,10 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"image/png"
+	"io"
 	"log"
+	"math/bits"
 	"net/http"
 	"os"
 	"os/exec"
@@ -523,12 +526,29 @@ func firstString(vals ...any) string {
 
 var (
 	cheatMu          sync.Mutex
-	lastCheatOverall = map[string]string{} // matchID -> last overall written
+	lastCheatOverall = map[string]string{} // matchID -> last AC3 overall written
+	lastFrameHash    = map[string]uint64{} // streamKey -> last AC6 perceptual hash
+	staticCount      = map[string]int{}    // streamKey -> consecutive near-identical frames
+	spoofFlagged     = map[string]bool{}   // matchID -> spoof hint already raised this episode
+	noFaceCount      = map[string]int{}    // matchID+uid -> consecutive AC4 no-face samples
+	lastFaceAt       = map[string]int64{}  // matchID+uid -> last AC4 check unix ms (60s throttle)
 	visionDay        string
 	visionCount      int
 )
 
+const webcamPrizeThreshold = 5000 // mirror WEBCAM_PRIZE_THRESHOLD
+
+// AC6: ~3 min of frozen frames during an in_progress match = spoof/looped-feed hint.
+const spoofStaticThreshold = 6
+
+// AC4: 3 consecutive no-face samples (~3 min at the 60s throttle) = face-absent hint.
+const faceMissThreshold = 3
+
 const cheatPrompt = `You are reviewing ONE still frame from a live competitive tournament match for visible signs of cheating. Look only for things visible in a single frame: wallhack/ESP overlays (enemy outlines or boxes drawn through walls), injected cheat menus or config windows, radar/map-reveal overlays, and third-party HUD overlays that are not part of the game UI. A single still is weak evidence — respond "clean" unless an overlay/menu is clearly visible; do NOT guess aimbot from a still. Respond with STRICT JSON only, no prose: {"overall":"clean"|"suspicious"|"likely_cheat","flags":[{"type":string,"note":string}]}.`
+
+// AC4 — the proof feed is a composite: game capture + the player's webcam as a
+// picture-in-picture inset. We ask only whether a live face is visible in it.
+const facePrompt = `This frame is a tournament "proof feed": a game capture with the player's WEBCAM composited as a small picture-in-picture inset. Question: is a live human face visible in the webcam inset? If the webcam shows a wall, ceiling, empty chair, is black, or is absent, the answer is false. STRICT JSON only, no prose: {"face": true|false}.`
 
 func runCheatScanLoop(ctx context.Context) {
 	t := time.NewTicker(*cheatEvery)
@@ -646,13 +666,21 @@ func processCheatFrame(ctx context.Context, tid, matchID, hostUid, streamKey str
 	if err != nil {
 		return
 	}
-	png, err := extractLastFrame(segment, "")
+	frame, err := extractLastFrame(segment, "")
 	if err != nil {
 		return
 	}
-	defer os.Remove(png)
+	defer os.Remove(frame)
 
-	overall, flags, err := geminiCheatCheck(ctx, png)
+	// AC6 — free perceptual-hash spoof/frozen-feed heuristic (no Vision call).
+	checkSpoof(ctx, mRef, tid, matchID, hostUid, streamKey, frame, md)
+
+	// AC4 — high-stakes webcam face-presence (Vision, throttled 60s/player).
+	if tournamentEntryFee(ctx, tid) > webcamPrizeThreshold {
+		checkFacePresence(ctx, mRef, tid, matchID, md)
+	}
+
+	overall, flags, err := geminiCheatCheck(ctx, frame)
 	if err != nil {
 		log.Printf("cheat-scan: gemini %s: %v", streamKey, err)
 		return
@@ -697,20 +725,19 @@ func processCheatFrame(ctx context.Context, tid, matchID, hostUid, streamKey str
 	log.Printf("cheat-scan: %s/%s flagged %s", tid, matchID, overall)
 }
 
-// geminiCheatCheck sends one PNG frame to Gemini 1.5 Flash and parses the
-// strict-JSON verdict. Unparseable / empty responses are treated as "clean" so
-// a model hiccup never produces a false cheat flag.
-func geminiCheatCheck(ctx context.Context, pngPath string) (string, []any, error) {
+// geminiVision sends one PNG frame + prompt to Gemini 1.5 Flash and returns the
+// trimmed text response (fenced-code markers stripped).
+func geminiVision(ctx context.Context, pngPath, prompt string) (string, error) {
 	b, err := os.ReadFile(pngPath)
 	if err != nil {
-		return "", nil, err
+		return "", err
 	}
 	if len(b) > 4*1024*1024 {
-		return "clean", nil, nil // unexpectedly large frame — skip rather than spend
+		return "", fmt.Errorf("frame too large")
 	}
 	payload := map[string]any{
 		"contents": []any{map[string]any{"parts": []any{
-			map[string]any{"text": cheatPrompt},
+			map[string]any{"text": prompt},
 			map[string]any{"inline_data": map[string]any{
 				"mime_type": "image/png",
 				"data":      base64.StdEncoding.EncodeToString(b),
@@ -722,16 +749,16 @@ func geminiCheatCheck(ctx context.Context, pngPath string) (string, []any, error
 	url := "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" + geminiKey
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
-		return "", nil, err
+		return "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return "", nil, err
+		return "", err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return "", nil, fmt.Errorf("gemini status %d", resp.StatusCode)
+		return "", fmt.Errorf("gemini status %d", resp.StatusCode)
 	}
 	var out struct {
 		Candidates []struct {
@@ -743,13 +770,25 @@ func geminiCheatCheck(ctx context.Context, pngPath string) (string, []any, error
 		} `json:"candidates"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return "", nil, err
+		return "", err
 	}
 	if len(out.Candidates) == 0 || len(out.Candidates[0].Content.Parts) == 0 {
-		return "clean", nil, nil
+		return "", nil
 	}
 	text := out.Candidates[0].Content.Parts[0].Text
-	text = strings.TrimSpace(strings.ReplaceAll(strings.ReplaceAll(text, "```json", ""), "```", ""))
+	return strings.TrimSpace(strings.ReplaceAll(strings.ReplaceAll(text, "```json", ""), "```", "")), nil
+}
+
+// geminiCheatCheck (AC3). Unparseable / empty responses are treated as "clean"
+// so a model hiccup never produces a false cheat flag.
+func geminiCheatCheck(ctx context.Context, pngPath string) (string, []any, error) {
+	text, err := geminiVision(ctx, pngPath, cheatPrompt)
+	if err != nil {
+		return "", nil, err
+	}
+	if text == "" {
+		return "clean", nil, nil
+	}
 	var parsed struct {
 		Overall string `json:"overall"`
 		Flags   []any  `json:"flags"`
@@ -761,6 +800,245 @@ func geminiCheatCheck(ctx context.Context, pngPath string) (string, []any, error
 		parsed.Overall = "clean"
 	}
 	return parsed.Overall, parsed.Flags, nil
+}
+
+// ───────────────────────────────────────────────────────────
+// AC6 — stream-source spoof / frozen-feed heuristic (free, no Vision)
+// ───────────────────────────────────────────────────────────
+
+// aHash computes a 64-bit average-hash of a PNG by sampling an 8x8 grid of
+// cell-centre luminance against the grid mean. Resolution-independent.
+func aHash(pngPath string) (uint64, error) {
+	f, err := os.Open(pngPath)
+	if err != nil {
+		return 0, err
+	}
+	defer f.Close()
+	img, err := png.Decode(f)
+	if err != nil {
+		return 0, err
+	}
+	b := img.Bounds()
+	w, h := b.Dx(), b.Dy()
+	if w < 8 || h < 8 {
+		return 0, fmt.Errorf("image too small")
+	}
+	var cells [64]float64
+	var sum float64
+	for i := 0; i < 8; i++ {
+		for j := 0; j < 8; j++ {
+			x := b.Min.X + (j*w)/8 + w/16
+			y := b.Min.Y + (i*h)/8 + h/16
+			r, g, bb, _ := img.At(x, y).RGBA()
+			gray := 0.299*float64(r) + 0.587*float64(g) + 0.114*float64(bb)
+			cells[i*8+j] = gray
+			sum += gray
+		}
+	}
+	mean := sum / 64
+	var hash uint64
+	for i := 0; i < 64; i++ {
+		if cells[i] > mean {
+			hash |= 1 << uint(i)
+		}
+	}
+	return hash, nil
+}
+
+func hamming(a, b uint64) int { return bits.OnesCount64(a ^ b) }
+
+// checkSpoof tracks consecutive near-identical frames. A genuinely live match
+// is never frozen for minutes; a paused/looped fake feed is. Low-confidence
+// mod HINT only — never an auto-action.
+func checkSpoof(ctx context.Context, mRef *firestore.DocumentRef, tid, matchID, hostUid, streamKey, framePath string, md map[string]any) {
+	hash, err := aHash(framePath)
+	if err != nil {
+		return
+	}
+	cheatMu.Lock()
+	prev, had := lastFrameHash[streamKey]
+	lastFrameHash[streamKey] = hash
+	if had && hamming(prev, hash) < 4 {
+		staticCount[streamKey]++
+	} else {
+		staticCount[streamKey] = 0
+		spoofFlagged[matchID] = false // movement resumed — re-arm
+	}
+	count := staticCount[streamKey]
+	already := spoofFlagged[matchID]
+	if count >= spoofStaticThreshold && !already {
+		spoofFlagged[matchID] = true
+	}
+	cheatMu.Unlock()
+
+	if count < spoofStaticThreshold || already {
+		return
+	}
+	_, _ = mRef.Set(ctx, map[string]any{
+		"liveCheatFlag": map[string]any{
+			"spoofSuspected": true, "spoofHostUid": hostUid, "spoofAt": firestore.ServerTimestamp,
+		},
+	}, firestore.MergeAll)
+	_, _, _ = fsClient.Collection("tournament_review_queue").Add(ctx, map[string]any{
+		"tournamentId": tid, "matchId": matchID, "hostUid": hostUid,
+		"source": "spoof_static", "overall": "suspicious",
+		"flags":  []any{map[string]any{"type": "stream_static", "note": "Feed appears frozen/looped for several minutes mid-match."}},
+		"status": "pending", "createdAt": firestore.ServerTimestamp,
+	})
+	log.Printf("cheat-scan: spoof hint (static feed) %s/%s", tid, matchID)
+}
+
+// ───────────────────────────────────────────────────────────
+// AC4 — high-stakes webcam face-presence (Vision)
+// ───────────────────────────────────────────────────────────
+
+func tournamentEntryFee(ctx context.Context, tid string) float64 {
+	snap, err := fsClient.Collection("tournaments").Doc(tid).Get(ctx)
+	if err != nil {
+		return 0
+	}
+	switch v := snap.Data()["entryFee"].(type) {
+	case int64:
+		return float64(v)
+	case float64:
+		return v
+	}
+	return 0
+}
+
+// latestProofChunkURL returns the newest proof-feed chunk URL for a player.
+func latestProofChunkURL(md map[string]any, uid string) string {
+	pf, _ := md["proofFeed"].(map[string]any)
+	if pf == nil {
+		return ""
+	}
+	side, _ := pf[uid].(map[string]any)
+	if side == nil {
+		return ""
+	}
+	chunks, _ := side["chunks"].([]any)
+	bestIdx := -1.0
+	bestURL := ""
+	for _, c := range chunks {
+		cm, _ := c.(map[string]any)
+		if cm == nil {
+			continue
+		}
+		idx, _ := toFloat(cm["idx"])
+		url, _ := cm["url"].(string)
+		if url != "" && idx >= bestIdx {
+			bestIdx = idx
+			bestURL = url
+		}
+	}
+	return bestURL
+}
+
+func toFloat(v any) (float64, bool) {
+	switch n := v.(type) {
+	case int64:
+		return float64(n), true
+	case float64:
+		return n, true
+	}
+	return 0, false
+}
+
+func checkFacePresence(ctx context.Context, mRef *firestore.DocumentRef, tid, matchID string, md map[string]any) {
+	for _, uid := range []string{firstString(md["player1"]), firstString(md["player2"])} {
+		if uid == "" {
+			continue
+		}
+		key := matchID + "|" + uid
+		now := time.Now().UnixMilli()
+		cheatMu.Lock()
+		if now-lastFaceAt[key] < 55_000 { // ~60s throttle per player
+			cheatMu.Unlock()
+			continue
+		}
+		lastFaceAt[key] = now
+		cheatMu.Unlock()
+
+		url := latestProofChunkURL(md, uid)
+		if url == "" {
+			continue // player not recording the proof feed yet
+		}
+		if !budgetOK(3000) {
+			return
+		}
+		webm, err := fetchToTemp(ctx, url, ".webm")
+		if err != nil {
+			continue
+		}
+		frame, err := extractLastFrame(webm, "")
+		os.Remove(webm)
+		if err != nil {
+			continue
+		}
+		text, err := geminiVision(ctx, frame, facePrompt)
+		os.Remove(frame)
+		bumpBudget()
+		// On error/unparseable, assume a face is present so a hiccup never flags.
+		face := true
+		if err == nil && text != "" {
+			var p struct {
+				Face bool `json:"face"`
+			}
+			if json.Unmarshal([]byte(text), &p) == nil {
+				face = p.Face
+			}
+		}
+
+		cheatMu.Lock()
+		if face {
+			noFaceCount[key] = 0
+			cheatMu.Unlock()
+			continue
+		}
+		noFaceCount[key]++
+		n := noFaceCount[key]
+		flag := n == faceMissThreshold // fire exactly once at the threshold
+		cheatMu.Unlock()
+		if !flag {
+			continue
+		}
+		_, _, _ = fsClient.Collection("tournament_review_queue").Add(ctx, map[string]any{
+			"tournamentId": tid, "matchId": matchID, "hostUid": uid,
+			"source": "face_absent", "overall": "suspicious",
+			"flags":  []any{map[string]any{"type": "webcam_no_face", "note": "No face detected in the proof-feed webcam for several minutes."}},
+			"status": "pending", "createdAt": firestore.ServerTimestamp,
+		})
+		addMatchNotification(ctx, uid, "tournament_flagged_for_review",
+			"Keep your face in the webcam", tid, matchID)
+		log.Printf("cheat-scan: face-absent hint %s in %s/%s", uid, tid, matchID)
+	}
+}
+
+// fetchToTemp downloads url to a temp file with the given extension.
+func fetchToTemp(ctx context.Context, url, ext string) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return "", err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("fetch status %d", resp.StatusCode)
+	}
+	f, err := os.CreateTemp("", "vergr-proof-*"+ext)
+	if err != nil {
+		return "", err
+	}
+	if _, err := io.Copy(f, resp.Body); err != nil {
+		f.Close()
+		os.Remove(f.Name())
+		return "", err
+	}
+	f.Close()
+	return f.Name(), nil
 }
 
 // ───────────────────────────────────────────────────────────
