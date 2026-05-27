@@ -5,7 +5,7 @@ import { db } from '../../firebase/config';
 import { SquadChampionVoteEntry } from '../../components/tournament/SquadChampionVote';
 import { useAuth } from '../../context/AuthContext';
 import { useUI } from '../../context/UIContext';
-import { getSquadMembers, getSquadWallet, getSquadAnnouncements, leaveSquad, joinSquad, submitJoinRequest, getSquadTreasuryInflows } from '../../firebase/firestore';
+import { getSquadMembers, getSquadWallet, getSquadAnnouncements, leaveSquad, joinSquad, submitJoinRequest, getSquadTreasuryInflows, getSquadRivalries, getSquad } from '../../firebase/firestore';
 import { SQUAD_ROLES } from '../../utils/constants';
 import TopBar from '../../components/TopBar';
 import UserAvatar from '../../components/UserAvatar';
@@ -25,6 +25,7 @@ export default function SquadDetailScreen() {
   const [myRole, setMyRole] = useState(null);
   const [wallet, setWallet] = useState({ balance: 0 });
   const [inflows, setInflows] = useState([]); // MP3 treasury line-items
+  const [rivals, setRivals] = useState([]); // GR3 squad-vs-squad rivalries
   const [announcements, setAnnouncements] = useState([]);
   const [pendingTournaments, setPendingTournaments] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -78,6 +79,14 @@ export default function SquadDetailScreen() {
         setInflows(flows);
         const me = mems.find(m => m.id === currentUser.uid);
         setMyRole(me?.role || null);
+        // GR3 — resolve squad rivalries (opponent name/tag) in the background.
+        getSquadRivalries(squadId).then(async (rs) => {
+          const resolved = await Promise.all(rs.slice(0, 8).map(async (r) => {
+            const sq = await getSquad(r.squadId).catch(() => null);
+            return { ...r, name: sq?.name || 'Unknown squad', tag: sq?.tag || null, banner: sq?.banner || null };
+          }));
+          setRivals(resolved);
+        }).catch(() => {});
       } catch (err) { console.error(err); }
       setLoading(false);
     };
@@ -212,6 +221,32 @@ export default function SquadDetailScreen() {
                   </div>
                   <span className="font-dmmono text-xs font-bold text-brand-gold shrink-0">+{(tx.amount || 0).toLocaleString()}</span>
                 </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* GR3 — squad-vs-squad rivalries (faced 3+ times). Head-to-head. */}
+        {rivals.length > 0 && (
+          <div className="mt-3 pt-3 border-t border-white/[0.06]">
+            <p className="text-[10px] text-text-muted uppercase tracking-wider mb-2">Rivalries</p>
+            <div className="space-y-1.5">
+              {rivals.map((r) => (
+                <button key={r.squadId}
+                  onClick={() => navigate(`/squads/${r.squadId}`)}
+                  className="w-full flex items-center justify-between gap-2 hover:opacity-80 transition-opacity">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Icon name="compare_arrows" size={14} className="text-brand-ember shrink-0" />
+                    <span className="text-xs text-text-secondary truncate">
+                      {r.tag ? `${r.tag} · ` : ''}{r.name}
+                    </span>
+                  </div>
+                  <span className="font-dmmono text-xs font-bold shrink-0">
+                    <span className={r.myWins >= r.theirWins ? 'text-brand-cyan' : 'text-text-muted'}>{r.myWins}</span>
+                    <span className="text-text-muted">–</span>
+                    <span className={r.theirWins > r.myWins ? 'text-brand-ember' : 'text-text-muted'}>{r.theirWins}</span>
+                  </span>
+                </button>
               ))}
             </div>
           </div>

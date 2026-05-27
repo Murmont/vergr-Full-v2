@@ -2537,6 +2537,32 @@ export const deleteVoiceChannel = async (channelId) => {
 // Tournaments the user is registered in OR hosting (used by My Tournaments).
 // Performs two filtered queries client-side and dedupes — Firestore can't
 // OR-query across two array fields.
+// GR3 — squad-vs-squad rivalries. In squad-mode tournaments the match docs'
+// player1/player2 hold squad IDs, so the `recordRivalryOnMatchComplete` trigger
+// already accumulates rivalries/{a_b} keyed by squad ID. This reads them for a
+// squad, keeps pairs met 3+ times, and returns head-to-head records.
+export const getSquadRivalries = async (squadId) => {
+  if (!squadId) return [];
+  const [aSnap, bSnap] = await Promise.all([
+    getDocs(query(collection(db, 'rivalries'), where('uidA', '==', squadId), limit(50))),
+    getDocs(query(collection(db, 'rivalries'), where('uidB', '==', squadId), limit(50))),
+  ]);
+  const out = [];
+  for (const d of [...aSnap.docs, ...bSnap.docs]) {
+    const r = d.data();
+    if ((r.matches || 0) < 3) continue;
+    const other = r.uidA === squadId ? r.uidB : r.uidA;
+    out.push({
+      squadId: other,
+      matches: r.matches || 0,
+      myWins: r.wins?.[squadId] || 0,
+      theirWins: r.wins?.[other] || 0,
+      lastMetAt: r.lastMetAt || null,
+    });
+  }
+  return out.sort((a, b) => b.matches - a.matches);
+};
+
 // GR1 — public host reputation. Computes "is this host legit?" stats from the
 // tournaments they have run. Cheap (one indexed query on adminId, cap 200).
 export const getHostStats = async (uid) => {
