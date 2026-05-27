@@ -44,6 +44,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	firebase "firebase.google.com/go/v4"
@@ -59,7 +60,10 @@ var (
 	credsPath    = flag.String("creds", "/etc/vergr-ocr/firebase-admin.json", "Firebase service-account JSON")
 	databaseID   = flag.String("db", "vgrdb", "Firestore database ID")
 	liveInterval = flag.Duration("live-interval", 10*time.Second, "Live-score scan interval")
+	cheatScan    = flag.Bool("cheat-scan", true, "Enable the AC3 live cheat-flag sampling loop")
+	cheatEvery   = flag.Duration("cheat-interval", 30*time.Second, "Cheat-scan interval per match")
 	sharedSecret = os.Getenv("VERGR_OCR_SHARED_SECRET")
+	geminiKey    = os.Getenv("GEMINI_API_KEY")
 
 	fsClient *firestore.Client
 )
@@ -125,15 +129,25 @@ func main() {
 	})
 	http.HandleFunc("/ocr", handleOCR)
 
-	// Start the live-score self-loop (AC1). Non-fatal if Firebase init fails —
-	// the HTTP OCR endpoint stays up either way.
-	if *liveScores {
+	// Start the Firebase-backed self-loops (AC1 live-score + AC3 cheat-flag).
+	// Non-fatal if Firebase init fails — the HTTP OCR endpoint stays up either way.
+	if *liveScores || *cheatScan {
 		ctx := context.Background()
 		if err := initFirebase(ctx); err != nil {
-			log.Printf("live-score loop DISABLED: firebase init: %v", err)
+			log.Printf("firebase loops DISABLED: firebase init: %v", err)
 		} else {
-			log.Printf("live-score loop enabled, interval=%s", *liveInterval)
-			go runLiveScoreLoop(ctx)
+			if *liveScores {
+				log.Printf("live-score loop enabled, interval=%s", *liveInterval)
+				go runLiveScoreLoop(ctx)
+			}
+			if *cheatScan {
+				if geminiKey == "" {
+					log.Printf("cheat-scan loop idle: GEMINI_API_KEY not set (no Vision calls until configured)")
+				} else {
+					log.Printf("cheat-scan loop enabled, interval=%s", *cheatEvery)
+				}
+				go runCheatScanLoop(ctx)
+			}
 		}
 	}
 
@@ -489,6 +503,264 @@ func firstString(vals ...any) string {
 		}
 	}
 	return ""
+}
+
+// ───────────────────────────────────────────────────────────
+// Live cheat-flag sampling (AC3) — Gemini Flash on gameplay frames
+// ───────────────────────────────────────────────────────────
+//
+// COST CONTROLS (this is for TOURNAMENTS, runs only on in_progress matches):
+//   - Only samples live streams that carry tournamentId+matchId+hostUid AND
+//     whose match is in_progress.
+//   - Sparse cadence (default 30s/match, vs the 10s OCR loop).
+//   - Gemini 1.5 FLASH (cheap), not Pro.
+//   - app_config/general.liveCheatSampling=false kills it instantly (no deploy).
+//   - app_config/general.liveCheatDailyCap (default 3000) hard-caps Vision
+//     calls per UTC day; the loop stops calling Gemini once reached.
+//   - Review-queue docs are only written when the verdict WORSENS (clean →
+//     suspicious → likely_cheat), never every tick — this is a mod hint, the
+//     mod still confirms. No auto-DQ.
+
+var (
+	cheatMu          sync.Mutex
+	lastCheatOverall = map[string]string{} // matchID -> last overall written
+	visionDay        string
+	visionCount      int
+)
+
+const cheatPrompt = `You are reviewing ONE still frame from a live competitive tournament match for visible signs of cheating. Look only for things visible in a single frame: wallhack/ESP overlays (enemy outlines or boxes drawn through walls), injected cheat menus or config windows, radar/map-reveal overlays, and third-party HUD overlays that are not part of the game UI. A single still is weak evidence — respond "clean" unless an overlay/menu is clearly visible; do NOT guess aimbot from a still. Respond with STRICT JSON only, no prose: {"overall":"clean"|"suspicious"|"likely_cheat","flags":[{"type":string,"note":string}]}.`
+
+func runCheatScanLoop(ctx context.Context) {
+	t := time.NewTicker(*cheatEvery)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						log.Printf("cheat-scan panic: %v", r)
+					}
+				}()
+				scanCheatFrames(ctx)
+			}()
+		}
+	}
+}
+
+func scanCheatFrames(ctx context.Context) {
+	if geminiKey == "" {
+		return // no Vision key configured — loop stays idle
+	}
+	cctx, cancel := context.WithTimeout(ctx, 25*time.Second)
+	defer cancel()
+
+	enabled, dailyCap := cheatConfig(cctx)
+	if !enabled {
+		return
+	}
+
+	docs, err := fsClient.Collection("streams").Where("status", "==", "live").Documents(cctx).GetAll()
+	if err != nil {
+		log.Printf("cheat-scan: streams query: %v", err)
+		return
+	}
+	for _, sd := range docs {
+		data := sd.Data()
+		streamKey, _ := data["streamKey"].(string)
+		tid, _ := data["tournamentId"].(string)
+		matchID, _ := data["tournamentMatchId"].(string)
+		hostUid, _ := data["hostUid"].(string)
+		if streamKey == "" || tid == "" || matchID == "" || hostUid == "" {
+			continue
+		}
+		if !budgetOK(dailyCap) {
+			log.Printf("cheat-scan: daily Vision cap (%d) reached — pausing until UTC rollover", dailyCap)
+			return
+		}
+		processCheatFrame(cctx, tid, matchID, hostUid, streamKey)
+	}
+}
+
+// cheatConfig reads the kill-switch + daily cap from app_config/general.
+// Default ON with a 3000/day cap when the doc/fields are absent.
+func cheatConfig(ctx context.Context) (bool, int) {
+	cap := 3000
+	snap, err := fsClient.Collection("app_config").Doc("general").Get(ctx)
+	if err != nil {
+		return true, cap
+	}
+	d := snap.Data()
+	if v, ok := d["liveCheatSampling"].(bool); ok && !v {
+		return false, cap
+	}
+	if v, ok := d["liveCheatDailyCap"].(int64); ok && v > 0 {
+		cap = int(v)
+	}
+	return true, cap
+}
+
+func budgetOK(cap int) bool {
+	cheatMu.Lock()
+	defer cheatMu.Unlock()
+	day := time.Now().UTC().Format("2006-01-02")
+	if day != visionDay {
+		visionDay = day
+		visionCount = 0
+	}
+	return visionCount < cap
+}
+
+func bumpBudget() {
+	cheatMu.Lock()
+	visionCount++
+	cheatMu.Unlock()
+}
+
+func cheatRank(overall string) int {
+	switch overall {
+	case "likely_cheat":
+		return 3
+	case "suspicious":
+		return 2
+	case "clean":
+		return 1
+	}
+	return 0
+}
+
+func processCheatFrame(ctx context.Context, tid, matchID, hostUid, streamKey string) {
+	mRef := fsClient.Collection("tournaments").Doc(tid).Collection("matches").Doc(matchID)
+	mSnap, err := mRef.Get(ctx)
+	if err != nil {
+		return
+	}
+	md := mSnap.Data()
+	if s, _ := md["status"].(string); s != "in_progress" {
+		return // only sample matches that are actually being played
+	}
+
+	segment, err := newestSegment(filepath.Join(*streamsDir, streamKey))
+	if err != nil {
+		return
+	}
+	png, err := extractLastFrame(segment, "")
+	if err != nil {
+		return
+	}
+	defer os.Remove(png)
+
+	overall, flags, err := geminiCheatCheck(ctx, png)
+	if err != nil {
+		log.Printf("cheat-scan: gemini %s: %v", streamKey, err)
+		return
+	}
+	bumpBudget()
+
+	// Always stamp the latest read on the match (cheap overwrite, overlay/mods read it).
+	_, _ = mRef.Set(ctx, map[string]any{
+		"liveCheatFlag": map[string]any{
+			"overall": overall, "hostUid": hostUid, "at": firestore.ServerTimestamp,
+		},
+	}, firestore.MergeAll)
+
+	cheatMu.Lock()
+	prev := lastCheatOverall[matchID]
+	worsened := cheatRank(overall) > cheatRank(prev)
+	lastCheatOverall[matchID] = overall
+	cheatMu.Unlock()
+
+	if overall == "clean" || !worsened {
+		return // only escalate when the verdict first turns / gets worse
+	}
+
+	// Queue for a mod (the Vanguard Review Queue consumes tournament_review_queue).
+	_, _, err = fsClient.Collection("tournament_review_queue").Add(ctx, map[string]any{
+		"tournamentId": tid, "matchId": matchID, "hostUid": hostUid,
+		"source": "live_sampling", "overall": overall, "flags": flags,
+		"status": "pending", "createdAt": firestore.ServerTimestamp,
+	})
+	if err != nil {
+		log.Printf("cheat-scan: review-queue write: %v", err)
+	}
+	// Pre-emptive notice to both participants (mirrors aiCheatFlagVod).
+	p1, _ := md["player1"].(string)
+	p2, _ := md["player2"].(string)
+	for _, uid := range []string{p1, p2} {
+		if uid != "" {
+			addMatchNotification(ctx, uid, "tournament_flagged_for_review",
+				"Match flagged for live review", tid, matchID)
+		}
+	}
+	log.Printf("cheat-scan: %s/%s flagged %s", tid, matchID, overall)
+}
+
+// geminiCheatCheck sends one PNG frame to Gemini 1.5 Flash and parses the
+// strict-JSON verdict. Unparseable / empty responses are treated as "clean" so
+// a model hiccup never produces a false cheat flag.
+func geminiCheatCheck(ctx context.Context, pngPath string) (string, []any, error) {
+	b, err := os.ReadFile(pngPath)
+	if err != nil {
+		return "", nil, err
+	}
+	if len(b) > 4*1024*1024 {
+		return "clean", nil, nil // unexpectedly large frame — skip rather than spend
+	}
+	payload := map[string]any{
+		"contents": []any{map[string]any{"parts": []any{
+			map[string]any{"text": cheatPrompt},
+			map[string]any{"inline_data": map[string]any{
+				"mime_type": "image/png",
+				"data":      base64.StdEncoding.EncodeToString(b),
+			}},
+		}}},
+		"generationConfig": map[string]any{"temperature": 0, "maxOutputTokens": 256},
+	}
+	body, _ := json.Marshal(payload)
+	url := "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" + geminiKey
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return "", nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", nil, fmt.Errorf("gemini status %d", resp.StatusCode)
+	}
+	var out struct {
+		Candidates []struct {
+			Content struct {
+				Parts []struct {
+					Text string `json:"text"`
+				} `json:"parts"`
+			} `json:"content"`
+		} `json:"candidates"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return "", nil, err
+	}
+	if len(out.Candidates) == 0 || len(out.Candidates[0].Content.Parts) == 0 {
+		return "clean", nil, nil
+	}
+	text := out.Candidates[0].Content.Parts[0].Text
+	text = strings.TrimSpace(strings.ReplaceAll(strings.ReplaceAll(text, "```json", ""), "```", ""))
+	var parsed struct {
+		Overall string `json:"overall"`
+		Flags   []any  `json:"flags"`
+	}
+	if err := json.Unmarshal([]byte(text), &parsed); err != nil {
+		return "clean", nil, nil // don't false-flag on unparseable output
+	}
+	if parsed.Overall == "" {
+		parsed.Overall = "clean"
+	}
+	return parsed.Overall, parsed.Flags, nil
 }
 
 // ───────────────────────────────────────────────────────────
