@@ -354,6 +354,7 @@ exports.requestDoubleOrNothing      = tournamentExtras.requestDoubleOrNothing;
 exports.respondDoubleOrNothing      = tournamentExtras.respondDoubleOrNothing;
 exports.contributeToSquadTournament = tournamentExtras.contributeToSquadTournament;
 exports.attachTournamentSponsor     = tournamentExtras.attachTournamentSponsor;
+exports.sponsorTournamentFromTreasury = tournamentExtras.sponsorTournamentFromTreasury;
 exports.openMatchSchedulingDm       = tournamentExtras.openMatchSchedulingDm;
 exports.requestReplayReview         = tournamentExtras.requestReplayReview;
 

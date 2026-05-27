@@ -25,6 +25,7 @@ import {
   computeSwissStandings,
 } from '../../utils/tournamentTypes';
 import TrophyCeremony from '../../components/tournament/TrophyCeremony';
+import { SquadSponsorModal } from '../../components/tournament/HostingExtras';
 import { buildRoundsFromMatches, buildBrResults } from '../../utils/tournamentBracketShape';
 
 // AC9 high-stakes gate. WEBCAM_PRIZE_THRESHOLD mirrors functions/tournamentRules.js
@@ -81,6 +82,7 @@ export default function MatchDetailsScreen() {
   const [joining, setJoining] = useState(false);
   const [showJoinConfirm, setShowJoinConfirm] = useState(false);
   const [macBlock, setMacBlock] = useState(false); // AC9 high-stakes capture gate
+  const [showSponsor, setShowSponsor] = useState(false); // GR7 squad treasury sponsor
   const [activeTab, setActiveTab] = useState('overview');
   // Phase 2 — which stage the user is currently viewing on the Bracket tab.
   // Null falls through to tournament.currentStageId in render.
@@ -332,6 +334,13 @@ export default function MatchDetailsScreen() {
         onConfirm={handleJoin}
       />
     )}
+    {showSponsor && (
+      <SquadSponsorModal
+        tournamentId={matchId}
+        onClose={() => setShowSponsor(false)}
+        onSponsored={refresh}
+      />
+    )}
     {macBlock && (
       <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/85">
         <div className="w-full max-w-md rounded-2xl bg-surface-1 border border-white/10 p-5 text-text-primary">
@@ -551,6 +560,16 @@ export default function MatchDetailsScreen() {
         {activeTab === 'overview' && (
           <div className="space-y-3">
             {tournament.adminId && <HostLegitCard hostUid={tournament.adminId} />}
+            {/* GR7 — squad treasuries can sponsor public tournaments. */}
+            {tournament.visibility !== 'private'
+              && ['open', 'registration', 'active', 'live'].includes(tournament.status) && (
+              <button onClick={() => setShowSponsor(true)}
+                className="w-full p-4 rounded-2xl bg-surface-1 border border-brand-cyan/20 flex items-center gap-3 hover:border-brand-cyan/40 transition-colors">
+                <Icon name="volunteer_activism" size={20} className="text-brand-cyan" />
+                <span className="flex-1 text-sm font-semibold text-left">Sponsor from squad treasury</span>
+                <Icon name="chevron_right" size={18} className="text-text-muted" />
+              </button>
+            )}
             <button onClick={() => navigate(`/tournaments/${matchId}/standings`)}
               className="w-full p-4 rounded-2xl bg-surface-1 border border-white/[0.06] flex items-center gap-3 hover:border-white/[0.12] transition-colors">
               <Icon name="leaderboard" size={20} className="text-brand-gold" />
