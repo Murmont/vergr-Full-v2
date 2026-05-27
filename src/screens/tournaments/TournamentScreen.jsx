@@ -11,6 +11,7 @@ import { SectionCard } from '../../components/brand/SectionCard';
 import TopBar from '../../components/TopBar';
 import CoinDisplay from '../../components/CoinDisplay';
 import TournamentRightRail from '../../components/tournament/TournamentRightRail';
+import BrawlQuickplay from '../../components/tournament/BrawlQuickplay';
 
 export default function TournamentScreen() {
   const [filter, setFilter] = useState('all');
@@ -27,6 +28,7 @@ export default function TournamentScreen() {
   // OP3 — first-time tournament explainer (entry → escrow → lobby code →
   // verify → payout). Shown once per device, localStorage-gated.
   const [showOnboard, setShowOnboard] = useState(false);
+  const [showBrawl, setShowBrawl] = useState(false); // GR5
   useEffect(() => {
     try { if (!localStorage.getItem('vergr.tourney.onboarded')) setShowOnboard(true); } catch { /* ignore */ }
   }, []);
@@ -81,11 +83,19 @@ export default function TournamentScreen() {
     return (
       <div className="screen-container min-h-screen pb-8">
         {onboardOverlay}
+        {showBrawl && <BrawlQuickplay onClose={() => setShowBrawl(false)} />}
         <TopBar
           title="Tournaments"
           showBack
           actions={
             <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowBrawl(true)}
+                className="h-9 px-3 rounded-full bg-brand-cyan/15 border border-brand-cyan/40 flex items-center gap-1.5 text-brand-cyan text-xs font-bold"
+                aria-label="Brawl quickplay"
+              >
+                <Icon name="bolt" size={16} /> Brawl
+              </button>
               <button
                 onClick={() => navigate('/tournaments/me/stats')}
                 className="w-9 h-9 rounded-full bg-surface-2 flex items-center justify-center"
@@ -136,6 +146,7 @@ export default function TournamentScreen() {
   return (
     <div className="flex min-h-screen">
       {onboardOverlay}
+      {showBrawl && <BrawlQuickplay onClose={() => setShowBrawl(false)} />}
       <div className="flex-1 min-w-0 flex flex-col">
         <AppHeader
           title="Tournaments"
@@ -154,6 +165,12 @@ export default function TournamentScreen() {
               height="md"
             />
           )}
+
+          {/* GR5 — Brawl quickplay entry */}
+          <button onClick={() => setShowBrawl(true)}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-brand-cyan/10 border border-brand-cyan/30 text-brand-cyan font-bold text-sm hover:bg-brand-cyan/20 transition-colors w-max">
+            <Icon name="bolt" size={18} /> Brawl — instant 1v1
+          </button>
 
           {/* Filter tabs */}
           <div className="flex gap-2">

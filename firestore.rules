@@ -940,6 +940,13 @@ service cloud.firestore {
       }
     }
 
+    // GR5 — brawl matchmaking queue. Reads allowed (a player polls their own
+    // entry for the matched tournament); all writes go through callables.
+    match /brawl_queue/{queueId} {
+      allow read: if isAuth();
+      allow write: if false;
+    }
+
     match /tournaments/{tourneyId} {
       allow read: if true;
       allow create: if isAuth();

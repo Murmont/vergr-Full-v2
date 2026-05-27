@@ -355,6 +355,11 @@ exports.respondDoubleOrNothing      = tournamentExtras.respondDoubleOrNothing;
 exports.contributeToSquadTournament = tournamentExtras.contributeToSquadTournament;
 exports.attachTournamentSponsor     = tournamentExtras.attachTournamentSponsor;
 exports.sponsorTournamentFromTreasury = tournamentExtras.sponsorTournamentFromTreasury;
+
+// GR5 — Brawl quickplay matchmaking (instant 1v1).
+const brawl = require('./brawl');
+exports.joinBrawlQueue  = brawl.joinBrawlQueue;
+exports.leaveBrawlQueue = brawl.leaveBrawlQueue;
 exports.openMatchSchedulingDm       = tournamentExtras.openMatchSchedulingDm;
 exports.requestReplayReview         = tournamentExtras.requestReplayReview;
 
