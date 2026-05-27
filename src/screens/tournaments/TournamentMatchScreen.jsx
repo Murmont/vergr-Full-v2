@@ -123,7 +123,7 @@ export default function TournamentMatchScreen() {
       // Silent hardware-fingerprint enroll/check.
       try {
         const fp = await computeTournamentFingerprint();
-        await httpsCallable(fns, 'enrollOrCheckFingerprint')({ fingerprint: fp, tournamentId });
+        await httpsCallable(fns, 'enrollOrCheckFingerprint')({ fingerprint: fp, tournamentId, matchId });
       } catch { /* non-blocking */ }
     })().catch((err) => showToast(err?.message || 'Could not load match', 'error'));
     return () => { if (unsub) unsub(); };
