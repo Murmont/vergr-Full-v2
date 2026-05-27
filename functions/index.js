@@ -360,6 +360,12 @@ exports.sponsorTournamentFromTreasury = tournamentExtras.sponsorTournamentFromTr
 const brawl = require('./brawl');
 exports.joinBrawlQueue  = brawl.joinBrawlQueue;
 exports.leaveBrawlQueue = brawl.leaveBrawlQueue;
+
+// GR6 — Coaching marketplace (coin-paid, 10% fee).
+const coaching = require('./coaching');
+exports.upsertCoachingListing   = coaching.upsertCoachingListing;
+exports.setCoachingListingActive = coaching.setCoachingListingActive;
+exports.bookCoaching            = coaching.bookCoaching;
 exports.openMatchSchedulingDm       = tournamentExtras.openMatchSchedulingDm;
 exports.requestReplayReview         = tournamentExtras.requestReplayReview;
 
@@ -1497,6 +1503,7 @@ const PUSHABLE_NOTIFICATION_TYPES = new Set([
   'tournament_player_advanced',
   'tournament_mod_thanks',
   'cheat_signatures_stale',
+  'coaching_booked',
   'admin_test_notification',
 ]);
 

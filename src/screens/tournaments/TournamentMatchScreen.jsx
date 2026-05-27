@@ -571,6 +571,17 @@ export default function TournamentMatchScreen() {
                 />
               </div>
             )}
+            {/* GR6 — coaching CTA for the player who lost. */}
+            {iAmPlayer && match.winner && match.winner !== myUid && (
+              <button
+                onClick={() => navigate(`/coaching?game=${encodeURIComponent(tournament?.game || '')}`)}
+                className="mt-3 w-full p-3 rounded-xl bg-brand-violet/10 border border-brand-violet/30 flex items-center gap-3 hover:bg-brand-violet/20 transition-colors"
+              >
+                <Icon name="school" size={18} className="text-brand-violet-light" />
+                <span className="flex-1 text-left text-sm font-bold text-brand-violet-light">Want pro coaching for {tournament?.game || 'this game'}?</span>
+                <Icon name="chevron_right" size={18} className="text-text-muted" />
+              </button>
+            )}
           </div>
         )}
 

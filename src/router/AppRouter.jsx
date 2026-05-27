@@ -228,6 +228,7 @@ import VanguardModerationRoomScreen from '../screens/vanguard/VanguardModeration
 import TournamentOverlayScreen from '../screens/overlay/TournamentOverlayScreen';
 import TournamentOverlayNeon from '../screens/overlay/TournamentOverlayNeon';
 import StreamerBattleOverlay from '../screens/overlay/StreamerBattleOverlay';
+import CoachingScreen from '../screens/tournaments/CoachingScreen';
 import VanguardQueueScreen from '../screens/vanguard/VanguardQueueScreen';
 import VanguardTreasuryScreen from '../screens/vanguard/VanguardTreasuryScreen';
 import VanguardWalletScreen from '../screens/vanguard/VanguardWalletScreen';
@@ -616,6 +617,8 @@ export default function AppRouter() {
                       <Route path="/match/:matchId" element={<RegionGate feature="tournament entry"><MatchDetailsScreen /></RegionGate>} />
                       <Route path="/tournaments/:tournamentId/match/:matchId" element={<RegionGate feature="tournament entry"><TournamentMatchScreen /></RegionGate>} />
                       <Route path="/tournaments/me/stats" element={<TournamentStatsScreen />} />
+                      {/* GR6 — coaching marketplace */}
+                      <Route path="/coaching" element={<CoachingScreen />} />
                       {/* Mod-internal clip viewer for AI cheat-flag moments.
                           Auth required + client-side mod-role gate. */}
                       <Route path="/clips/cheat-flag/:tournamentId/:matchId/:flagIndex" element={<CheatFlagClipScreen />} />
