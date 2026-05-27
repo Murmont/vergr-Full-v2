@@ -258,6 +258,16 @@ export default function PublicProfileScreen() {
                 ? <img src={masked.avatar} alt={displayName} className="w-full h-full object-cover" />
                 : initial}
             </div>
+            {/* GR4 — recent tournament champion: gold ring + crown for 7 days. */}
+            {user?.championFrameUntil > Date.now() && !masked.isVanguardPersona && (
+              <>
+                <span className="absolute -inset-[3px] rounded-full pointer-events-none"
+                  style={{ boxShadow: '0 0 0 3px #F0A500, 0 0 22px #F5C84288' }} />
+                <span className="absolute -top-3 left-1/2 -translate-x-1/2 z-20" title="Recent tournament champion">
+                  <Icon name="workspace_premium" size={22} className="text-brand-gold-light" />
+                </span>
+              </>
+            )}
             {/* Presence dot. Respects the viewed user's privacy setting:
                 if they've turned off "Show online status", no dot renders
                 at all (not even a grey "offline" one). */}

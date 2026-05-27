@@ -111,7 +111,7 @@ Honest grouping by effort class. AC3/AC4/AC6 are NOT screen edits — they exten
 | GR1 | **Public tournament host profile** — show host's W/L ratio, fairness rating, mod-calls-overturned %, sponsor tier. Answers "is this host legit?" in one click. |
 | GR2 | **Per-game seasonal leaderboards** — top 100 CS2 players this week. Drives habitual return. |
 | GR3 | **Squad-vs-squad rivalry tracker** — if two squads played 3+ tournaments, head-to-head on each profile. |
-| GR4 | **Tournament-themed avatar frames** — winners get a 7-day frame around their avatar across the app. Visible flex. |
+| GR4 | ✅ DEPLOYED 2026-05-27. **Tournament-themed avatar frames** — `finalizeInternal` stamps `users/{uid}.championFrameUntil` (now+7d) + `championFrameTournament` on the solo winner / each squad champion. `UserAvatar` gained `championFrame`/`championUntilMs` props (gold animated ring + `workspace_premium` crown). PublicProfileScreen renders the gold ring + crown on the main avatar when `championFrameUntil > now` (not for masked Vanguard personas). Frame auto-expires (timestamp compare, no cleanup cron). Reaches UserAvatar callsites that pass the prop; profile is the primary flex surface. |
 | GR5 | **Brawl mode (quickplay)** — solo player walks up, gets matched into a 1v1 instantly. Lower barrier than committing to a 16-player bracket. |
 | GR6 | **Coaching marketplace** — pro players list paid coaching slots; tournament loss screen surfaces them ("Want pro coaching for €5 / 30 min?"). New revenue line. |
 | GR7 | **Squad sponsorship of public tournaments** — squads use treasury to sponsor public events. Gives treasuries an outlet beyond holding coins. |

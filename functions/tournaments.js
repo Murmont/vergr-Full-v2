@@ -2269,6 +2269,7 @@ async function finalizeInternal(tournamentId, { uid = null } = {}) {
       const recipients = isSquadMode
         ? ((t.squadChampions || {})[winnerPlace1] || [])
         : [winnerPlace1];
+      const championUntil = Date.now() + 7 * 24 * 60 * 60 * 1000; // GR4 — 7-day frame
       for (const rid of recipients) {
         if (!rid) continue;
         tx.set(db.collection('notifications').doc(), {
@@ -2282,6 +2283,11 @@ async function finalizeInternal(tournamentId, { uid = null } = {}) {
           actionUrl: `/prize-receipt/${tournamentId}`,
           read: false, createdAt: FieldValue.serverTimestamp(),
         });
+        // GR4 — gold champion avatar frame for 7 days (visible app-wide).
+        tx.set(db.collection('users').doc(rid), {
+          championFrameUntil: championUntil,
+          championFrameTournament: t.name || null,
+        }, { merge: true });
       }
     }
 
