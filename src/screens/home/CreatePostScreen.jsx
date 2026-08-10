@@ -105,7 +105,7 @@ export default function CreatePostScreen() {
           <button 
             onClick={handlePost}
             disabled={loading || (!content.trim() && mediaFiles.length === 0 && !linkPreview)}
-            className="bg-brand-cyan text-bg-dark px-6 py-1.5 rounded-full font-black text-xs uppercase tracking-widest disabled:opacity-50"
+            className="bg-brand-violet text-white px-6 py-1.5 rounded-full font-black text-xs uppercase tracking-widest disabled:opacity-50"
           >
             {loading ? 'Posting...' : 'Post'}
           </button>
@@ -121,7 +121,7 @@ export default function CreatePostScreen() {
           <button
             onClick={handlePost}
             disabled={loading || (!content.trim() && mediaFiles.length === 0 && !linkPreview)}
-            className="bg-brand-cyan text-bg-dark px-8 py-2 rounded-full font-black text-sm uppercase tracking-widest disabled:opacity-50"
+            className="bg-brand-violet text-white px-8 py-2 rounded-full font-black text-sm uppercase tracking-widest disabled:opacity-50"
           >
             {loading ? 'Posting...' : 'Post'}
           </button>
@@ -171,7 +171,7 @@ export default function CreatePostScreen() {
                 <div className="flex-1 min-w-0">
                   <h4 className="text-white font-semibold text-sm truncate">{linkPreview.title}</h4>
                   <p className="text-text-muted text-xs mt-1 line-clamp-2">{linkPreview.description}</p>
-                  <span className="text-xs text-brand-cyan mt-1 block">{linkPreview.url}</span>
+                  <span className="text-xs text-brand-violet-light mt-1 block">{linkPreview.url}</span>
                 </div>
                 <button onClick={() => setLinkPreview(null)} className="text-text-muted hover:text-white">
                   <Icon name="close" size={16} />
@@ -194,7 +194,7 @@ export default function CreatePostScreen() {
 
       {/* Footer actions */}
       <footer className="p-4 lg:px-6 border-t border-white/[0.04] flex gap-4 items-center">
-        <button onClick={() => fileInputRef.current?.click()} className="text-brand-cyan hover:text-white transition-colors">
+        <button onClick={() => fileInputRef.current?.click()} className="text-brand-violet-light hover:text-white transition-colors">
           <Icon name="image" size={24} />
         </button>
         <button onClick={() => navigate('/create-poll')} className="text-brand-gold hover:text-white transition-colors">

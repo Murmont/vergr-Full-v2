@@ -74,6 +74,21 @@ export async function getCachedMessages(chatId, maxCount = 200) {
   }
 }
 
+/** Page of messages strictly OLDER than `beforeMs` (newest-last). Drives
+ *  infinite scroll-up — the initial window only loads the last N. */
+export async function getCachedMessagesBefore(chatId, beforeMs, count = 60) {
+  if (!chatId || !beforeMs) return [];
+  try {
+    const rows = await db.messages
+      .where('chatId').equals(chatId)
+      .and(r => (r.createdAtMs || 0) < beforeMs)
+      .sortBy('createdAtMs');
+    return rows.slice(-count).map(hydrate);
+  } catch {
+    return [];
+  }
+}
+
 export async function getLatestCachedTimestamp(chatId) {
   if (!chatId) return 0;
   try {
@@ -111,12 +126,46 @@ export async function removeCachedMessage(chatId, messageId) {
   } catch {/* ignore */}
 }
 
+/**
+ * Delete cached rows for one chat at/older than a cutoff. This is exactly the
+ * set the thread already HIDES behind a cleared-chat watermark, so purging it
+ * removes no message the user can still see. Returns the number of rows gone.
+ */
+export async function purgeBefore(chatId, cutoffMs) {
+  if (!chatId || !cutoffMs) return 0;
+  try {
+    return await db.messages
+      .where('chatId').equals(chatId)
+      .and((r) => (r.createdAtMs || 0) <= cutoffMs)
+      .delete();
+  } catch {
+    return 0;
+  }
+}
+
 export async function clearChatCache(chatId) {
   if (!chatId) return;
   try {
     await db.messages.where('chatId').equals(chatId).delete();
     await db.meta.delete(chatId);
   } catch {/* ignore */}
+}
+
+/** Global message search across EVERY cached chat (relay history is local,
+ *  so Dexie IS the message store). Case-insensitive substring on text;
+ *  newest first. Bounded by the per-chat prune cap, so the scan stays small. */
+export async function searchAllMessages(term, maxResults = 30) {
+  const q = (term || '').trim().toLowerCase();
+  if (q.length < 2) return [];
+  try {
+    const rows = await db.messages
+      .filter(r => typeof r.text === 'string' && r.text.toLowerCase().includes(q))
+      .toArray();
+    rows.sort((a, b) => (b.createdAtMs || 0) - (a.createdAtMs || 0));
+    return rows.slice(0, maxResults).map(r => ({ chatId: r.chatId, ...hydrate(r) }));
+  } catch {
+    return [];
+  }
 }
 
 /** Prune cache to keep only recent N messages per chat (avoid unbounded growth). */

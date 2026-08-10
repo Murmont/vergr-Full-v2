@@ -47,7 +47,7 @@ export default function NewsPostCard({ item, onOpenVideo }) {
             {/* Header: source name + time */}
             <div className="flex items-center gap-1.5">
               <span className="font-semibold text-text-primary text-sm truncate">{item.source}</span>
-              <span className="w-4 h-4 rounded-full bg-brand-cyan flex items-center justify-center shrink-0">
+              <span className="w-4 h-4 rounded-full bg-brand-violet flex items-center justify-center shrink-0">
                 <Icon name="check" size={10} className="text-bg-dark" />
               </span>
               <span className="text-text-muted text-sm truncate">@{item.source?.toLowerCase().replace(/[^a-z0-9]/g, '')}</span>
@@ -74,7 +74,7 @@ export default function NewsPostCard({ item, onOpenVideo }) {
                 {shouldTruncate && (
                   <button
                     onClick={() => setExpanded(v => !v)}
-                    className="text-brand-cyan text-xs font-semibold hover:underline"
+                    className="text-brand-violet-light text-xs font-semibold hover:underline"
                   >
                     {expanded ? 'Show less' : 'Read more'}
                   </button>
@@ -83,7 +83,7 @@ export default function NewsPostCard({ item, onOpenVideo }) {
                   href={item.link}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-text-muted text-xs font-semibold hover:text-brand-cyan hover:underline"
+                  className="text-text-muted text-xs font-semibold hover:text-brand-violet-light hover:underline"
                 >
                   Open on {item.source} →
                 </a>
@@ -115,7 +115,7 @@ export default function NewsPostCard({ item, onOpenVideo }) {
                 href={item.link}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center gap-1.5 px-2 py-1.5 rounded-full text-text-muted hover:text-brand-cyan transition-colors"
+                className="flex items-center gap-1.5 px-2 py-1.5 rounded-full text-text-muted hover:text-brand-violet-light transition-colors"
               >
                 <Icon name="open_in_new" size={18} />
                 <span className="text-xs font-dmmono">Read</span>

@@ -66,7 +66,7 @@ export default function ContributeScreen() {
       <div className="px-4 py-4">
         <div className="text-center mb-6">
           <p className="text-text-secondary text-sm">Contributing to</p>
-          <h2 className="font-syne text-xl font-bold text-brand-cyan">{squadName || 'Squad'}</h2>
+          <h2 className="font-syne text-xl font-bold text-brand-violet-light">{squadName || 'Squad'}</h2>
         </div>
 
         {/* Balance */}
@@ -81,7 +81,7 @@ export default function ContributeScreen() {
           {presets.map(p => (
             <button key={p} onClick={() => setAmount(String(p))}
               className={`py-3 rounded-xl text-center font-bold text-sm transition-all ${
-                String(p) === amount ? 'bg-brand-cyan text-bg-dark' : 'bg-surface-2 text-text-secondary border border-white/[0.06]'
+                String(p) === amount ? 'bg-brand-violet text-white' : 'bg-surface-2 text-text-secondary border border-white/[0.06]'
               }`}>
               {p}
             </button>
@@ -96,7 +96,7 @@ export default function ContributeScreen() {
             value={amount}
             onChange={e => setAmount(e.target.value)}
             placeholder="Enter coins..."
-            className="w-full bg-surface-2 border border-white/[0.06] rounded-xl px-4 py-4 text-text-primary text-xl font-bold font-dmmono focus:border-brand-cyan focus:outline-none text-center"
+            className="w-full bg-surface-2 border border-white/[0.06] rounded-xl px-4 py-4 text-text-primary text-xl font-bold font-dmmono focus:border-brand-violet focus:outline-none text-center"
           />
         </label>
         {numAmount > balance && (
@@ -113,7 +113,7 @@ export default function ContributeScreen() {
           onClick={handleContribute}
           disabled={!isValid || contributing}
           className={`w-full py-4 rounded-2xl text-lg font-bold transition-all ${
-            isValid && !contributing ? 'bg-brand-cyan text-bg-dark' : 'bg-surface-3 text-text-muted'
+            isValid && !contributing ? 'bg-brand-violet text-white' : 'bg-surface-3 text-text-muted'
           }`}>
           {contributing ? 'Contributing...' : `Contribute ${numAmount > 0 ? `${numAmount} Coins` : ''}`}
         </button>

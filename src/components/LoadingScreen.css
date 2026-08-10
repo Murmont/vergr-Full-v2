@@ -1,0 +1,313 @@
+/* VERGR returning-user loading screen — nebula plate + breathing glow + icon disc.
+   All selectors scoped under .vl-root so nothing leaks into the app. */
+
+.vl-root {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  overflow: hidden;
+  background: #07080D;
+  isolation: isolate;
+}
+
+/* Layer 0: base nebula plate, slow drift + zoom */
+/* Framing MUST match #boot-splash .bs-plate in index.html AND the Android
+   launch-window drawable (res/drawable/vergr_splash.xml, gravity="fill"):
+   inset 0, stretched to the box, drift starting at scale(1). A different zoom
+   or crop here would jump at the boot-splash -> LoadingScreen handoff. */
+.vl-root .vl-plate {
+  position: absolute;
+  inset: 0;
+  background-image: url("/brand/loader-nebula.webp");
+  background-size: 100% 100%;
+  background-position: center;
+  animation: vl-plate-drift 24s ease-in-out infinite;
+  z-index: 0;
+  will-change: transform;
+}
+@keyframes vl-plate-drift {
+  0%, 100% { transform: scale(1) translate(0, 0); }
+  25%      { transform: scale(1.04) translate(-0.8%, 0.5%); }
+  50%      { transform: scale(1.02) translate(0.6%, -0.5%); }
+  75%      { transform: scale(1.03) translate(-0.3%, -0.6%); }
+}
+
+/* Layer 1: breathing color wash */
+.vl-root .vl-breath {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(60% 50% at 18% 24%, rgba(180, 79, 255, 0.18), transparent 70%),
+    radial-gradient(50% 50% at 88% 22%, rgba(200, 127, 255, 0.20), transparent 70%),
+    radial-gradient(45% 60% at 50% 90%, rgba(123, 111, 255, 0.18), transparent 70%);
+  mix-blend-mode: screen;
+  animation: vl-breath 5.2s ease-in-out infinite;
+  z-index: 1;
+  pointer-events: none;
+}
+@keyframes vl-breath {
+  0%, 100% { opacity: 0.7; }
+  50%      { opacity: 1; }
+}
+
+/* Layer 2: highlight sweep */
+.vl-root .vl-sweep {
+  position: absolute;
+  top: -10%; bottom: -10%;
+  left: -40%; width: 50%;
+  background: linear-gradient(105deg,
+    transparent 0%, rgba(255,255,255,0) 30%, rgba(255,255,255,0.08) 50%,
+    rgba(255,255,255,0) 70%, transparent 100%);
+  filter: blur(8px);
+  transform: skewX(-12deg);
+  animation: vl-sweep-travel 11s cubic-bezier(0.65,0,0.35,1) infinite;
+  mix-blend-mode: screen;
+  pointer-events: none;
+  z-index: 2;
+}
+@keyframes vl-sweep-travel {
+  0%   { transform: skewX(-12deg) translateX(0); opacity: 0; }
+  20%  { opacity: 1; }
+  80%  { opacity: 1; }
+  100% { transform: skewX(-12deg) translateX(360%); opacity: 0; }
+}
+
+/* Layer 3: bokeh particles */
+.vl-root .vl-particles { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
+.vl-root .vl-particle {
+  position: absolute;
+  border-radius: 50%;
+  opacity: 0;
+  filter: blur(0.3px);
+  animation: vl-particle-rise linear infinite;
+  will-change: transform, opacity;
+}
+.vl-root .vl-particle.cy { background: radial-gradient(circle, #B44FFF 0%, rgba(180, 79, 255,0.5) 30%, transparent 70%); box-shadow: 0 0 12px rgba(180, 79, 255,0.7); }
+.vl-root .vl-particle.vi { background: radial-gradient(circle, #BBA7FF 0%, rgba(123,111,255,0.5) 30%, transparent 70%); box-shadow: 0 0 12px rgba(123,111,255,0.7); }
+.vl-root .vl-particle.pi { background: radial-gradient(circle, #F2C0FF 0%, rgba(200,127,255,0.5) 30%, transparent 70%); box-shadow: 0 0 12px rgba(200,127,255,0.7); }
+.vl-root .vl-particle.wh { background: radial-gradient(circle, #ffffff 0%, rgba(255,255,255,0.5) 30%, transparent 70%); box-shadow: 0 0 14px rgba(255,255,255,0.6); }
+@keyframes vl-particle-rise {
+  0%   { opacity: 0; transform: translate3d(0, 40px, 0) scale(0.5); }
+  15%  { opacity: 1; }
+  85%  { opacity: 0.7; }
+  100% { opacity: 0; transform: translate3d(20px, -160px, 0) scale(1.15); }
+}
+
+/* Layer 5: vignette */
+.vl-root .vl-vignette {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  background: radial-gradient(110% 80% at 50% 50%, transparent 30%, rgba(7,8,13,0.55) 100%);
+  pointer-events: none;
+}
+
+/* Foreground */
+.vl-root .vl-foreground {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  text-align: center;
+}
+.vl-root .vl-center { display: flex; flex-direction: column; align-items: center; gap: 28px; }
+
+/* Icon disc */
+.vl-root .vl-icon-stage {
+  position: relative;
+  width: 156px; height: 156px;
+  display: flex; align-items: center; justify-content: center;
+  animation: vl-icon-float 4s ease-in-out infinite;
+}
+@keyframes vl-icon-float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+.vl-root .vl-icon-glow {
+  position: absolute;
+  inset: -22%;
+  border-radius: 30%;
+  background:
+    radial-gradient(50% 50% at 32% 30%, rgba(180, 79, 255,0.45), transparent 70%),
+    radial-gradient(50% 50% at 70% 78%, rgba(200,127,255,0.45), transparent 70%);
+  filter: blur(20px);
+  animation: vl-glow-breath 4s ease-in-out infinite;
+  z-index: 0;
+}
+@keyframes vl-glow-breath { 0%,100% { opacity:0.7; transform: scale(1); } 50% { opacity:1; transform: scale(1.08); } }
+.vl-root .vl-icon-img {
+  position: relative;
+  z-index: 2;
+  width: 124px; height: 124px;
+  border-radius: 28px;
+  display: block;
+  filter: drop-shadow(0 12px 32px rgba(0,0,0,0.5)) drop-shadow(0 0 24px rgba(180, 79, 255,0.25));
+}
+/* Second glow layer, replacing the removed dashed ring. Rounded-square radius so
+   it echoes the mark's silhouette instead of framing it with a circle. Mirrors
+   #boot-splash .bs-glow-core. */
+.vl-root .vl-icon-glow-core {
+  position: absolute; inset: -6%; border-radius: 34px; filter: blur(14px); z-index: 1;
+  background: linear-gradient(135deg, rgba(180,79,255,0.30), rgba(123,111,255,0.34) 55%, rgba(200,127,255,0.30));
+  animation: vl-glow-breath 4s ease-in-out infinite reverse;
+}
+
+/* Progress pill */
+.vl-root .vl-progress {
+  position: relative;
+  width: 220px; height: 4px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.08);
+  overflow: hidden;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.06);
+}
+.vl-root .vl-progress-bar {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg, transparent 0%, #B44FFF 30%, #7B6FFF 55%, #C87FFF 80%, transparent 100%);
+  width: 40%;
+  animation: vl-progress 1.8s cubic-bezier(0.65,0,0.35,1) infinite;
+  box-shadow: 0 0 10px rgba(180, 79, 255,0.5);
+}
+@keyframes vl-progress { 0% { transform: translateX(-100%); } 100% { transform: translateX(350%); } }
+
+/* Microcopy */
+.vl-root .vl-microcopy {
+  font-family: "DM Mono", ui-monospace, monospace;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: rgba(242,244,250,0.72);
+  min-height: 1.4em;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  text-shadow: 0 0 12px rgba(7,8,13,0.6);
+}
+.vl-root .vl-dot {
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: #B44FFF;
+  box-shadow: 0 0 6px #B44FFF;
+  animation: vl-dot-pulse 1.2s ease-in-out infinite;
+}
+@keyframes vl-dot-pulse { 0%,100% { opacity:0.4; transform: scale(0.85); } 50% { opacity:1; transform: scale(1.1); } }
+.vl-root .vl-microcopy-text { display: inline-block; animation: vl-micro-cycle 1800ms ease-out; }
+@keyframes vl-micro-cycle {
+  0%   { opacity: 0; transform: translateY(4px); }
+  15%, 85% { opacity: 0.85; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(-3px); }
+}
+
+/* Top chip */
+.vl-root .vl-top-chip {
+  position: absolute;
+  top: calc(22px + env(safe-area-inset-top, 0px));
+  left: 50%;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px 6px 8px;
+  background: rgba(15,17,24,0.45);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 999px;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  font-family: "DM Mono", ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: rgba(242,244,250,0.65);
+  text-transform: uppercase;
+  z-index: 11;
+}
+.vl-root .vl-top-chip img { width: 20px; height: 20px; border-radius: 5px; display: block; object-fit: cover; }
+
+/* Bottom tagline */
+/* No centering transform here: this is a flex child of .vl-bottom, which centres
+   it. A leftover `left:50%; translateX(-50%)` from the old absolutely-positioned
+   version shifted it half a SCREEN right and pushed it off the edge. */
+.vl-root .vl-tagline {
+  position: relative;
+  font-family: "DM Mono", ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: rgba(242,244,250,0.32);
+  z-index: 11;
+  white-space: nowrap;
+}
+
+/* Tip card */
+/* Same rule as .vl-tagline: .vl-bottom centres this. The old translateX(-50%)
+   dragged the card half its own width off the left edge, and the keyframes below
+   re-applied it every frame, so the text was permanently clipped mid-word. */
+.vl-root .vl-tip {
+  position: relative;
+  max-width: 320px;
+  width: 100%;
+  padding: 10px 14px 10px 12px;
+  border-radius: 12px;
+  background: rgba(15,17,24,0.55);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(255,255,255,0.08);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11px;
+  color: rgba(242,244,250,0.7);
+  z-index: 11;
+  animation: vl-tip-fade 6s ease-in-out infinite;
+}
+@keyframes vl-tip-fade {
+  0%, 100% { opacity: 0; transform: translateY(6px); }
+  15%, 85% { opacity: 1; transform: translateY(0); }
+}
+.vl-root .vl-tip-label {
+  flex-shrink: 0;
+  font-family: "DM Mono", ui-monospace, monospace;
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  color: #B44FFF;
+  text-transform: uppercase;
+  padding: 3px 6px;
+  border-radius: 4px;
+  background: rgba(180, 79, 255,0.10);
+  border: 1px solid rgba(180, 79, 255,0.25);
+}
+.vl-root .vl-tip-body { line-height: 1.4; text-align: left; }
+
+@media (prefers-reduced-motion: reduce) {
+  .vl-root .vl-plate, .vl-root .vl-breath, .vl-root .vl-sweep, .vl-root .vl-particle,
+  .vl-root .vl-icon-stage, .vl-root .vl-icon-glow, .vl-root .vl-icon-glow-core,
+  .vl-root .vl-progress-bar,
+  .vl-root .vl-microcopy-text, .vl-root .vl-tip {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+  }
+  .vl-root .vl-progress-bar { width: 60%; opacity: 0.6; }
+}
+
+/* Bottom stack: tip card then tagline, in one flow with real separation. They
+   were previously two independently bottom-anchored elements, which overlapped
+   the moment the tip wrapped to a second line. */
+.vl-root .vl-bottom {
+  position: absolute;
+  left: 0; right: 0;
+  bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  padding: 0 24px;
+  z-index: 3;
+}
+/* Clamp the body so the text can never spill outside the card it sits in. */
+.vl-root .vl-tip-body {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}

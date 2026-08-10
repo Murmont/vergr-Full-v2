@@ -40,24 +40,29 @@ exports.requestStreamClip = functions.https.onCall(
     const s = sSnap.data();
 
     // Viewer tier → duration cap + per-stream count cap.
+    // Admins (founder/ops) bypass every paywall → treated as 'pro', no quota.
     const uSnap = await db.collection('users').doc(uid).get();
-    const sub = uSnap.data()?.subscription;
+    const uData = uSnap.exists ? uSnap.data() : {};
+    const isAdmin = uData.role === 'admin' || (uData.email || '').toLowerCase() === 'vergenerd@gmail.com';
+    const sub = uData.subscription;
     const t = typeof sub === 'string' ? sub : sub?.tier;
-    const tier = t === 'pro' || t === 'lite' ? t : 'free';
+    const tier = isAdmin ? 'pro' : (t === 'pro' || t === 'lite' ? t : 'free');
     const cfg = CLIP_TIER[tier];
     const want = Math.min(Math.max(Number(durationSec) || cfg.sec, 5), cfg.sec);
 
-    // Atomic per-stream quota.
+    // Atomic per-stream quota (admins uncapped).
     const qRef = db.collection('stream_clip_quota').doc(`${streamId}_${uid}`);
-    await db.runTransaction(async (tx) => {
-      const q = await tx.get(qRef);
-      const used = q.exists ? (q.data().count || 0) : 0;
-      if (used >= cfg.max) {
-        throw new functions.https.HttpsError('resource-exhausted',
-          `Clip limit reached (${cfg.max} per stream on ${tier}).`);
-      }
-      tx.set(qRef, { count: used + 1, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
-    });
+    if (!isAdmin) {
+      await db.runTransaction(async (tx) => {
+        const q = await tx.get(qRef);
+        const used = q.exists ? (q.data().count || 0) : 0;
+        if (used >= cfg.max) {
+          throw new functions.https.HttpsError('resource-exhausted',
+            `Clip limit reached (${cfg.max} per stream on ${tier}).`);
+        }
+        tx.set(qRef, { count: used + 1, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+      });
+    }
 
     const sourceHls = s.compositeHlsUrl || s.hlsUrl
       || (s.streamKey ? `${CDN_BASE}/streams/${s.streamKey}/index.m3u8` : null);
@@ -75,7 +80,7 @@ exports.requestStreamClip = functions.https.onCall(
       if (!res.ok) throw new Error(result?.error || `clipper ${res.status}`);
     } catch (err) {
       // Refund the quota slot on failure so a transient error doesn't burn a clip.
-      await qRef.set({ count: FieldValue.increment(-1) }, { merge: true }).catch(() => {});
+      if (!isAdmin) await qRef.set({ count: FieldValue.increment(-1) }, { merge: true }).catch(() => {});
       throw new functions.https.HttpsError('internal', String(err.message || err).slice(0, 200));
     }
 

@@ -1,30 +1,23 @@
-import { HashRouter as BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom';
 import { AuthProvider } from '../context/AuthContext';
 import { UserProvider } from '../context/UserContext';
 import { NotificationProvider } from '../context/NotificationContext';
 import { UIProvider } from '../context/UIContext';
 import { LayoutProvider } from '../context/LayoutContext';
+import { isTauri, IS_NATIVE_BUILD } from '../utils/platform';
+import { pruneNavOrigin } from '../utils/navOrigin';
 import ProtectedRoute from '../components/ProtectedRoute';
+import DisplaySettingsApplier from '../components/DisplaySettingsApplier';
 import KycGate from '../components/KycGate';
 import RegionGate from '../components/RegionGate';
 import GuestRouteGate from '../components/GuestRouteGate';
 import Toast from '../components/Toast';
 import PushToast from '../components/PushToast';
 import IncomingCallOverlay from '../components/IncomingCallOverlay';
-import AdminAnnounceScreen from '../screens/admin/AdminAnnounceScreen';
-import AdminDashboardScreen from '../screens/admin/AdminDashboardScreen';
-import AdminAccessScreen from '../screens/admin/AdminAccessScreen';
-import AdminUsersScreen from '../screens/admin/AdminUsersScreen';
-import AdminEconomyScreen from '../screens/admin/AdminEconomyScreen';
-import AdminModerationScreen from '../screens/admin/AdminModerationScreen';
-import AdminModerationAuditScreen from '../screens/admin/AdminModerationAuditScreen';
-import AdminBotsScreen from '../screens/admin/AdminBotsScreen';
-import AdminSecurityScreen from '../screens/admin/AdminSecurityScreen';
-import AdminConfigScreen from '../screens/admin/AdminConfigScreen';
-import AdminAuditScreen from '../screens/admin/AdminAuditScreen';
-import AdminSubscriptionsScreen from '../screens/admin/AdminSubscriptionsScreen';
-import AdminTournamentsScreen from '../screens/admin/AdminTournamentsScreen';
-import AdminStatsScreen from '../screens/admin/AdminStatsScreen';
+import VoiceSessionPill from '../components/VoiceSessionPill';
+// Admin screens are code-split into ./AdminRoutes (lazy) and excluded from the
+// native APK build entirely — see the __VERGR_NATIVE__ gate below. Do NOT
+// statically import any AdminXScreen here or it rejoins the main bundle.
 import DesktopNotificationManager from '../components/DesktopNotificationManager';
 import NotificationsDrawer from '../components/NotificationsDrawer';
 import ConsentSheet from '../components/ConsentSheet';
@@ -38,13 +31,28 @@ import MainLayout from '../layouts/MainLayout';
 import MessagesMasterDetail from '../layouts/MessagesMasterDetail';
 import ResponsiveLayout from '../components/ResponsiveLayout';
 import LoadingScreen from '../components/LoadingScreen';
+import { signalAppPaintedAfterFrame } from '../utils/nativeSplash';
+import { prefetchPrimaryRoutes } from '../utils/routePrefetch';
+import { FeedSkeleton } from '../components/skeletons/GlassSkeletons';
+import FirstBootGate from '../components/FirstBootIntro';
+import NativeUpdateBanner from '../components/NativeUpdateBanner';
+import DevChannelBadge from '../components/DevChannelBadge';
+import { LiveUsersProvider } from '../context/LiveUsersContext';
+import InstallAppBanner from '../components/InstallAppBanner';
+import { MobileNavDrawerHost } from '../components/MobileNavDrawer';
 import usePresence from '../hooks/usePresence';
-import { useEffect } from 'react';
+import { useEffect, Suspense, lazy } from 'react';
+
+// Admin UI is lazy-loaded on web and, crucially, gated behind __VERGR_NATIVE__
+// so the admin chunk is tree-shaken out of the native APK build entirely.
+// __VERGR_NATIVE__ is a vite `define` (literal true/false), so on native this
+// folds to `null` and Rollup never emits AdminRoutes or its admin screens.
+const AdminRoutes = __VERGR_NATIVE__ ? null : lazy(() => import('./AdminRoutes'));
 import { checkScheduledBackup } from '../utils/chatBackup';
 
 // Vergr.me Link‑in‑Bio
-import VergrMeEditorScreen from '../screens/VergrMeEditorScreen';
-import VergrMePage from '../screens/VergrMePage';
+const VergrMeEditorScreen = lazy(() => import('../screens/VergrMeEditorScreen'));
+const VergrMePage = lazy(() => import('../screens/VergrMePage'));
 
 // Renders nothing — just activates the presence system inside the auth context
 function PresenceManager() {
@@ -90,42 +98,166 @@ function SignalsCapture() {
   return null;
 }
 
+/**
+ * Tells the NATIVE Kotlin splash when it may lift.
+ *
+ * It is rendered INSIDE <Suspense>, which is the whole trick: React does not
+ * mount a Suspense boundary's children until the lazy chunk they need has
+ * arrived, so this mounting is proof that a real screen — not a fallback — is
+ * about to paint. signalAppPaintedAfterFrame then waits two frames so the paint
+ * is genuinely committed before the splash starts its cross-fade.
+ *
+ * The signal used to live in AuthContext, on auth resolving. That is roughly a
+ * second too early: auth only unblocks the router, and the screen behind it was
+ * still a pending chunk, so the splash lifted onto nothing. A cold-start capture
+ * showed the cost exactly — 200ms of #000000 then 150ms of the bare body colour.
+ * Do not move it back to an earlier gate, and do not put it on a timer.
+ */
+/**
+ * Suspense fallback for route transitions.
+ *
+ * The full <LoadingScreen/> is right for a COLD BOOT — a deep link straight into
+ * a lazy screen has nothing else to show. It is wrong for a tab switch: once 311
+ * lazy boundaries existed, tapping Explore suspended on a chunk fetch and flashed
+ * the whole branded nebula splash for a few tens of milliseconds. Visible, and it
+ * reads as the app restarting.
+ *
+ * So it shows the splash only while the app has never rendered a route, and
+ * nothing after that. Combined with prefetchPrimaryRoutes() the common tabs are
+ * already in memory and this never renders at all.
+ */
+let hasRenderedARoute = false;
+function RouteFallback() {
+  if (!hasRenderedARoute) return <LoadingScreen />;
+  // Mid-session: a skeleton, which is what a loading screen is for. Rendering
+  // null flashed a blank; rendering the full splash flashed the whole brand
+  // animation for a chunk fetch and read as the app restarting.
+  return (
+    <div className="min-h-screen bg-bg-dark px-4 pt-6">
+      <FeedSkeleton count={3} />
+    </div>
+  );
+}
+
+function SplashHandoff() {
+  const { loading } = useAuth();
+  useEffect(() => {
+    hasRenderedARoute = true;
+    prefetchPrimaryRoutes();
+  }, []);
+  useEffect(() => {
+    // Gate on auth having resolved, not just on this component mounting. Mount
+    // alone only proves the route chunk arrived; while `loading` is true every
+    // route still renders <LoadingScreen/>, so signalling then hands the screen
+    // back to a loading state rather than to the app.
+    if (loading) return;
+    signalAppPaintedAfterFrame();
+  }, [loading]);
+  return null;
+}
+
+/**
+ * Paths on this origin that belong to VLink, not to Vergr.
+ *
+ * VLink is a separate product served by Cloud Functions behind the /vlink/**
+ * and /l/** Hosting rewrites (see firebase.json). They are not Vergr SPA
+ * routes and never were.
+ *
+ * The catch-all below used to send them through RootRoute, which for a
+ * logged-out visitor lands on /platform — Vergr's marketing landing. Inside
+ * the Shopify admin's app frame that renders a coin-selling page, which is
+ * what paused VLink's submission under requirement 1.2.1, ref 126602.
+ *
+ * Never render Vergr UI on a VLink URL: hand the URL back to the server once,
+ * and render nothing rather than redirect.
+ */
+const VLINK_PATH = /^\/(vlink|l)(\/|$)/;
+
+/**
+ * Hand a VLink URL back to the network and render nothing.
+ *
+ * The sessionStorage flag guards against a reload loop if something is still
+ * intercepting the request — better a blank frame than a redirect loop.
+ */
+function VLinkHandback() {
+  const { pathname, search } = window.location;
+  try {
+    if (!sessionStorage.getItem('vgr_vlink_handback')) {
+      sessionStorage.setItem('vgr_vlink_handback', '1');
+      window.location.replace(pathname + search);
+    }
+  } catch (_) { /* private mode: skip the retry, still render nothing */ }
+  return null;
+}
+
+function CatchAllRoute() {
+  // Two or more segments (/vlink/admin/..., /l/handle) land here.
+  if (VLINK_PATH.test(window.location.pathname)) return <VLinkHandback />;
+
+  // Unchanged for every Vergr path: root, which sends logged-out visitors on
+  // to /platform exactly as before.
+  return <Navigate to="/" replace />;
+}
+
 function RootRoute() {
   const { currentUser, loading } = useAuth();
+  // vergr.me ROOT is the link-in-bio product landing (host-gated; dormant
+  // until the founder points vergr.me at Hosting, same as VergrMeHostRoute).
+  const host = typeof window !== 'undefined' ? window.location.hostname : '';
+  if (host === 'vergr.me' || host.endsWith('.vergr.me')) return <LinkInBioScreen />;
   if (loading) return <LoadingScreen />;
-  if (!currentUser) return <LandingScreen />;
-  return <HomeFeedScreen />;
+  if (!currentUser) {
+    // Installed apps should open straight into the app (login → which links to
+    // sign-up/onboarding), NOT the public marketing landing. Someone who tapped
+    // the app icon already downloaded it — the sales page is pointless there.
+    // Covers: the native shell (Tauri Android/desktop), PWA Add-to-Home-Screen /
+    // standalone display mode, and the ?source=pwa manifest hint.
+    const isStandalone =
+      isTauri() ||
+      (typeof window !== 'undefined' && window.matchMedia?.('(display-mode: standalone)').matches) ||
+      (typeof navigator !== 'undefined' && navigator.standalone) ||
+      (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('source') === 'pwa');
+    if (isStandalone) return <Navigate to="/login" replace />;
+    // Public landing lives at /platform (clean, SEO-indexed); root redirects there.
+    return <Navigate to="/platform" replace />;
+  }
+  return IS_NATIVE_BUILD ? <NativeHomeFeedScreen /> : <HomeFeedScreen />;
 }
 
 // Auth
-import SplashScreen from '../screens/auth/SplashScreen';
+const SplashScreen = lazy(() => import('../screens/auth/SplashScreen'));
 import LoginScreen from '../screens/auth/LoginScreen';
-import SignUpStep1 from '../screens/auth/SignUpStep1';
-import SignUpStep2 from '../screens/auth/SignUpStep2';
-import ForgotPasswordScreen from '../screens/auth/ForgotPasswordScreen';
-import TwoFASetupScreen from '../screens/auth/TwoFASetupScreen';
-import TwoFALoginScreen from '../screens/auth/TwoFALoginScreen';
-import EmailVerificationScreen from '../screens/auth/EmailVerificationScreen';
-import PhoneEntryScreen from '../screens/auth/PhoneEntryScreen';
-import PhoneOTPScreen from '../screens/auth/PhoneOTPScreen';
-import NewPasswordScreen from '../screens/auth/NewPasswordScreen';
-import ResetSuccessScreen from '../screens/auth/ResetSuccessScreen';
-import SocialLoginScreen from '../screens/auth/SocialLoginScreen';
-import AccountTypeScreen from '../screens/auth/AccountTypeScreen';
-import ConnectGamingScreen from '../screens/auth/ConnectGamingScreen';
+const SignUpStep1 = lazy(() => import('../screens/auth/SignUpStep1'));
+const SignUpStep2 = lazy(() => import('../screens/auth/SignUpStep2'));
+const InviteLandingScreen = lazy(() => import('../screens/auth/InviteLandingScreen'));
+const ForgotPasswordScreen = lazy(() => import('../screens/auth/ForgotPasswordScreen'));
+const TwoFASetupScreen = lazy(() => import('../screens/auth/TwoFASetupScreen'));
+const TwoFALoginScreen = lazy(() => import('../screens/auth/TwoFALoginScreen'));
+const EmailVerificationScreen = lazy(() => import('../screens/auth/EmailVerificationScreen'));
+const PhoneEntryScreen = lazy(() => import('../screens/auth/PhoneEntryScreen'));
+const PhoneOTPScreen = lazy(() => import('../screens/auth/PhoneOTPScreen'));
+const NewPasswordScreen = lazy(() => import('../screens/auth/NewPasswordScreen'));
+const ResetSuccessScreen = lazy(() => import('../screens/auth/ResetSuccessScreen'));
+const SocialLoginScreen = lazy(() => import('../screens/auth/SocialLoginScreen'));
+const AccountTypeScreen = lazy(() => import('../screens/auth/AccountTypeScreen'));
+const ConnectGamingScreen = lazy(() => import('../screens/auth/ConnectGamingScreen'));
 import {
   LandingScreen,
   StoreScreen,
   DownloadScreen,
   HelpScreen as MarketingHelpScreen,
+  HelpCategoryScreen,
+  HelpArticleScreen,
   LegalScreen,
   AboutScreen as MarketingAboutScreen,
   CareersScreen,
   ContactScreen,
+  DeleteAccountScreen,
   CodeOfConductScreen,
   ForumsScreen,
   BecomeStreamerScreen,
   MonetizationScreen,
+  CreatorsLandingScreen,
   StudioToolsScreen,
   PartnerProgramScreen,
   LearnLiveScreen,
@@ -133,147 +265,239 @@ import {
   LearnSquadsScreen,
   LearnClipsScreen,
   LearnCoinsScreen,
-} from '../screens/marketing/PublicMarketingScreens';
+  MakeMoneyGamingScreen,
+  LegitScreen,
+  PlayGameScreen,
+  LinkInBioScreen,
+} from '../screens/marketing/marketingLazy';
 
-// Onboarding
-import OnboardingScreen from '../screens/onboarding/OnboardingScreen';
-import InterestSelectionScreen from '../screens/onboarding/InterestSelectionScreen';
-import ProfileSetupScreen from '../screens/onboarding/ProfileSetupScreen';
-import FollowSuggestionsScreen from '../screens/onboarding/FollowSuggestionsScreen';
-import OnboardingCompleteScreen from '../screens/onboarding/OnboardingCompleteScreen';
-import ProfileSetupStep2Screen from '../screens/onboarding/ProfileSetupStep2Screen';
-import ProfileIdentityScreen from '../screens/onboarding/ProfileIdentityScreen';
+// Onboarding — the setup-first flow (rebuilt 2026-07-09). The old screen
+// chain (slides/interests/profile/follow/complete) navigated to routes that
+// never existed and dropped its data; legacy paths below redirect into the
+// new flow. /onboarding/identity (Didit KYC wizard) is unrelated and stays.
+const OnboardingFlowScreen = lazy(() => import('../screens/onboarding/OnboardingFlowScreen'));
+const ProfileIdentityScreen = lazy(() => import('../screens/onboarding/ProfileIdentityScreen'));
 
 // Main tabs
 import HomeFeedScreen from '../screens/home/HomeFeedScreen';
-import ExploreScreen from '../screens/explore/ExploreScreen';
-import SquadsScreen from '../screens/squads/SquadsScreen';
-import ProfileScreen from '../screens/profile/ProfileScreen';
+import NativeHomeFeedScreen from '../screens/home/native/NativeHomeFeedScreen';
+const ExploreScreen = lazy(() => import('../screens/explore/ExploreScreen'));
+const NativeExploreScreen = lazy(() => import('../screens/explore/native/NativeExploreScreen'));
+const NativeEditProfileScreen = lazy(() => import('../screens/profile/native/NativeEditProfileScreen'));
+const SquadsScreen = lazy(() => import('../screens/squads/SquadsScreen'));
+const ProfileScreen = lazy(() => import('../screens/profile/ProfileScreen'));
+const NativeProfileScreen = lazy(() => import('../screens/profile/native/NativeProfileScreens').then((m) => ({ default: m.NativeProfileScreen })));
+const NativePublicProfileScreen = lazy(() => import('../screens/profile/native/NativeProfileScreens').then((m) => ({ default: m.NativePublicProfileScreen })));
 
 // Home
-import EarnCoinsScreen from '../screens/home/EarnCoinsScreen';
-import NotificationsScreen from '../screens/home/NotificationsScreen';
-import CreatePostScreen from '../screens/home/CreatePostScreen';
-import LeaderboardScreen from '../screens/home/LeaderboardScreen';
-import PostDetailScreen from '../screens/home/PostDetailScreen';
-import CreatePollScreen from '../screens/home/CreatePollScreen';
-import TrendingHashtagsScreen from '../screens/home/TrendingHashtagsScreen';
-
+const EarnCoinsScreen = lazy(() => import('../screens/home/EarnCoinsScreen'));
+const NotificationsScreen = lazy(() => import('../screens/home/NotificationsScreen'));
+const CreatePostScreen = lazy(() => import('../screens/home/CreatePostScreen'));
+const LeaderboardScreen = lazy(() => import('../screens/home/LeaderboardScreen'));
+const PostDetailScreen = lazy(() => import('../screens/home/PostDetailScreen'));
+const CreatePollScreen = lazy(() => import('../screens/home/CreatePollScreen'));
+const TrendingHashtagsScreen = lazy(() => import('../screens/home/TrendingHashtagsScreen'));
+const NativeNotificationsScreen = lazy(() => import('../screens/home/native/NativeHomeScreens').then((m) => ({ default: m.NativeNotificationsScreen })));
+const NativeTrendingHashtagsScreen = lazy(() => import('../screens/home/native/NativeHomeScreens').then((m) => ({ default: m.NativeTrendingHashtagsScreen })));
+const NativeLeaderboardScreen = lazy(() => import('../screens/home/native/NativeHomeScreens').then((m) => ({ default: m.NativeLeaderboardScreen })));
+const NativeEarnCoinsScreen = lazy(() => import('../screens/home/native/NativeHomeScreens').then((m) => ({ default: m.NativeEarnCoinsScreen })));
+const NativeReferralScreen = lazy(() => import('../screens/home/native/NativeHomeScreens').then((m) => ({ default: m.NativeReferralScreen })));
+const NativePostDetailScreen = lazy(() => import('../screens/home/native/NativeHomeScreens').then((m) => ({ default: m.NativePostDetailScreen })));
 // Create (post types)
-import CreatePostSelectorScreen from '../screens/create/CreatePostSelectorScreen';
-import CreateTextPostScreen from '../screens/create/CreateTextPostScreen';
-import CreatePhotoPostScreen from '../screens/create/CreatePhotoPostScreen';
-import CreateClipPostScreen from '../screens/create/CreateClipPostScreen';
-import CreateArticleScreen from '../screens/create/CreateArticleScreen';
-import CreateLFGScreen from '../screens/create/CreateLFGScreen';
-import CreateTierListScreen from '../screens/create/CreateTierListScreen';
-import CreateAchievementScreen from '../screens/create/CreateAchievementScreen';
-import QuotePostScreen from '../screens/create/QuotePostScreen';
+const CreatePostSelectorScreen = lazy(() => import('../screens/create/CreatePostSelectorScreen'));
+const CreateTextPostScreen = lazy(() => import('../screens/create/CreateTextPostScreen'));
+const CreatePhotoPostScreen = lazy(() => import('../screens/create/CreatePhotoPostScreen'));
+const CreateClipPostScreen = lazy(() => import('../screens/create/CreateClipPostScreen'));
+const CreateArticleScreen = lazy(() => import('../screens/create/CreateArticleScreen'));
+const CreateLFGScreen = lazy(() => import('../screens/create/CreateLFGScreen'));
+const CreateTierListScreen = lazy(() => import('../screens/create/CreateTierListScreen'));
+const CreateAchievementScreen = lazy(() => import('../screens/create/CreateAchievementScreen'));
+const QuotePostScreen = lazy(() => import('../screens/create/QuotePostScreen'));
 
 // Viewers
-import ClipViewerScreen from '../screens/viewer/ClipViewerScreen';
+const ClipViewerScreen = lazy(() => import('../screens/viewer/ClipViewerScreen'));
+const NativeClipViewerScreen = lazy(() => import('../screens/viewer/native/NativeClipViewerScreen'));
 
 // Shorts
-import ShortsScreen from '../screens/shorts/ShortsScreen';
-import CreateShortScreen from '../screens/create/CreateShortScreen';
-
+const ShortsScreen = lazy(() => import('../screens/shorts/ShortsScreen'));
+const NativeShortsScreen = lazy(() => import('../screens/shorts/native/NativeShortsScreen'));
+const CreateShortScreen = lazy(() => import('../screens/create/CreateShortScreen'));
+const NativeCreatePostSelectorScreen = lazy(() => import('../screens/create/native/NativeCreateScreens').then((m) => ({ default: m.NativeCreatePostSelectorScreen })));
+const NativeCreateTextPostScreen = lazy(() => import('../screens/create/native/NativeCreateScreens').then((m) => ({ default: m.NativeCreateTextPostScreen })));
+const NativeCreatePhotoPostScreen = lazy(() => import('../screens/create/native/NativeCreateScreens').then((m) => ({ default: m.NativeCreatePhotoPostScreen })));
+const NativeCreateClipPostScreen = lazy(() => import('../screens/create/native/NativeCreateScreens').then((m) => ({ default: m.NativeCreateClipPostScreen })));
+const NativeCreateShortScreen = lazy(() => import('../screens/create/native/NativeCreateScreens').then((m) => ({ default: m.NativeCreateShortScreen })));
+const NativeCreateArticleScreen = lazy(() => import('../screens/create/native/NativeCreateScreens').then((m) => ({ default: m.NativeCreateArticleScreen })));
+const NativeCreateAchievementScreen = lazy(() => import('../screens/create/native/NativeCreateScreens').then((m) => ({ default: m.NativeCreateAchievementScreen })));
+const NativeCreateLFGScreen = lazy(() => import('../screens/create/native/NativeCreateScreens').then((m) => ({ default: m.NativeCreateLFGScreen })));
+const NativeCreateTierListScreen = lazy(() => import('../screens/create/native/NativeCreateScreens').then((m) => ({ default: m.NativeCreateTierListScreen })));
+const NativeQuotePostScreen = lazy(() => import('../screens/create/native/NativeCreateScreens').then((m) => ({ default: m.NativeQuotePostScreen })));
+const NativeCreatePollScreen = lazy(() => import('../screens/create/native/NativeCreateScreens').then((m) => ({ default: m.NativeCreatePollScreen })));
 // Profile
-import EditProfileScreen from '../screens/profile/EditProfileScreen';
-import FollowListScreen from '../screens/profile/FollowListScreen';
-import PublicProfileScreen from '../screens/profile/PublicProfileScreen';
-import BrowseCreatorsScreen from '../screens/profile/BrowseCreatorsScreen';
-import EsportsTeamScreen from '../screens/profile/EsportsTeamScreen';
-import PrestigeLevelsScreen from '../screens/profile/PrestigeLevelsScreen';
+const EditProfileScreen = lazy(() => import('../screens/profile/EditProfileScreen'));
+const FollowListScreen = lazy(() => import('../screens/profile/FollowListScreen'));
+const NativeFollowListScreen = lazy(() => import('../screens/explore/native/NativeDiscoveryScreens').then((m) => ({ default: m.NativeFollowListScreen })));
+const NativeSearchResultsAllScreen = lazy(() => import('../screens/explore/native/NativeDiscoveryScreens').then((m) => ({ default: m.NativeSearchResultsAllScreen })));
+const PublicProfileScreen = lazy(() => import('../screens/profile/PublicProfileScreen'));
+const MyMembershipsScreen = lazy(() => import('../screens/MyMembershipsScreen'));
+const VergrMePurchasesScreen = lazy(() => import('../screens/VergrMePurchasesScreen'));
+const NativeMyMembershipsScreen = lazy(() => import('../screens/membership/native/NativeMyMembershipsScreen'));
+const BrowseCreatorsScreen = lazy(() => import('../screens/profile/BrowseCreatorsScreen'));
+const EsportsTeamScreen = lazy(() => import('../screens/profile/EsportsTeamScreen'));
+const PrestigeLevelsScreen = lazy(() => import('../screens/profile/PrestigeLevelsScreen'));
+const NativeSearchResultsStreamsScreen = lazy(() => import('../screens/explore/native/NativeDiscoveryScreens').then((m) => ({ default: m.NativeSearchResultsStreamsScreen })));
+const NativeBrowseCreatorsScreen = lazy(() => import('../screens/explore/native/NativeDiscoveryScreens').then((m) => ({ default: m.NativeBrowseCreatorsScreen })));
+const NativePrestigeLevelsScreen = lazy(() => import('../screens/explore/native/NativeDiscoveryScreens').then((m) => ({ default: m.NativePrestigeLevelsScreen })));
+const NativeEsportsTeamScreen = lazy(() => import('../screens/explore/native/NativeDiscoveryScreens').then((m) => ({ default: m.NativeEsportsTeamScreen })));
 
 // Messages
-import MessagesInboxScreen from '../screens/messages/MessagesInboxScreen';
-import ChatThreadScreen from '../screens/messages/ChatThreadScreen';
-import MessageRequestsScreen from '../screens/messages/MessageRequestsScreen';
-import CreateGroupChatScreen from '../screens/messages/CreateGroupChatScreen';
-import NewMessageScreen from '../screens/messages/NewMessageScreen';
-import ChatSettingsScreen from '../screens/messages/ChatSettingsScreen';
-import ChatDetailScreen from '../screens/messages/ChatDetailScreen';
-import CallScreen from '../screens/messages/CallScreen';
+const MessagesInboxScreen = lazy(() => import('../screens/messages/MessagesInboxScreen'));
+const NativeMessagesInboxScreen = lazy(() => import('../screens/messages/native/NativeMessageScreens').then((m) => ({ default: m.NativeMessagesInboxScreen })));
+const ChatThreadScreen = lazy(() => import('../screens/messages/ChatThreadScreen'));
+const MessageRequestsScreen = lazy(() => import('../screens/messages/MessageRequestsScreen'));
+const CallHistoryScreen = lazy(() => import('../screens/messages/CallHistoryScreen'));
+const CreateGroupChatScreen = lazy(() => import('../screens/messages/CreateGroupChatScreen'));
+const NewMessageScreen = lazy(() => import('../screens/messages/NewMessageScreen'));
+const ChatSettingsScreen = lazy(() => import('../screens/messages/ChatSettingsScreen'));
+const ChatDetailScreen = lazy(() => import('../screens/messages/ChatDetailScreen'));
+const GroupInfoScreen = lazy(() => import('../screens/messages/GroupInfoScreen'));
+const JoinGroupScreen = lazy(() => import('../screens/messages/JoinGroupScreen'));
+const ImportChatScreen = lazy(() => import('../screens/messages/ImportChatScreen'));
+const CallScreen = lazy(() => import('../screens/messages/CallScreen'));
+const GroupCallScreen = lazy(() => import('../screens/messages/GroupCallScreen'));
+// Messages — dedicated native (phone) screens
+const NativeMessageRequestsScreen = lazy(() => import('../screens/messages/native/NativeMessageRequestsScreen'));
+const NativeCallHistoryScreen = lazy(() => import('../screens/messages/native/NativeCallHistoryScreen'));
+const NativeCreateGroupChatScreen = lazy(() => import('../screens/messages/native/NativeCreateGroupChatScreen'));
+const NativeNewMessageScreen = lazy(() => import('../screens/messages/native/NativeNewMessageScreen'));
+const NativeChatSettingsScreen = lazy(() => import('../screens/messages/native/NativeChatSettingsScreen'));
+const NativeChatDetailScreen = lazy(() => import('../screens/messages/native/NativeChatDetailScreen'));
+const NativeGroupInfoScreen = lazy(() => import('../screens/messages/native/NativeGroupInfoScreen'));
+const NativeJoinGroupScreen = lazy(() => import('../screens/messages/native/NativeJoinGroupScreen'));
+const NativeFriendsScreen = lazy(() => import('../screens/messages/native/NativeFriendsScreen'));
+const NativeBrowseGroupsScreen = lazy(() => import('../screens/messages/native/NativeBrowseGroupsScreen'));
+const NativeVoiceChannelScreen = lazy(() => import('../screens/messages/native/NativeVoiceChannelScreen'));
+const NativeChatThreadScreen = lazy(() => import('../screens/messages/native/NativeChatThreadScreen'));
+const NativeCallScreen = lazy(() => import('../screens/messages/native/NativeCallScreen'));
 
 // Squads
-import CreateSquadScreen from '../screens/squads/CreateSquadScreen';
-import SquadDetailScreen from '../screens/squads/SquadDetailScreen';
-import SquadOverviewScreen from '../screens/squads/SquadOverviewScreen';
-import SquadStreamScreen from '../screens/squads/SquadStreamScreen';
-import VoiceChannelScreen from '../screens/messages/VoiceChannelScreen';
-import FriendsScreen from '../screens/messages/FriendsScreen';
-import BrowseGroupsScreen from '../screens/messages/BrowseGroupsScreen';
-import SquadChatThreadScreen from '../screens/squads/SquadChatThreadScreen';
-import SquadSettingsScreen from '../screens/squads/SquadSettingsScreen';
-import SquadRolesScreen from '../screens/squads/SquadRolesScreen';
-import SquadMembersScreen from '../screens/squads/SquadMembersScreen';
-import SquadMediaScreen from '../screens/squads/SquadMediaScreen';
-import SquadPinnedScreen from '../screens/squads/SquadPinnedScreen';
-import SquadChallengesScreen from '../screens/squads/SquadChallengesScreen';
-import SquadEventsScreen from '../screens/squads/SquadEventsScreen';
-import SquadJoinRequestsScreen from '../screens/squads/SquadJoinRequestsScreen';
-import SquadAnnouncementsScreen from '../screens/squads/SquadAnnouncementsScreen';
-import SquadLeaderboardScreen from '../screens/squads/SquadLeaderboardScreen';
-import SquadsMineScreen from '../screens/squads/SquadsMineScreen';
-import SquadInvitationsScreen from '../screens/squads/SquadInvitationsScreen';
-import SquadApplicationsScreen from '../screens/squads/SquadApplicationsScreen';
-import BrowsePlayersScreen from '../screens/squads/BrowsePlayersScreen';
-import SquadAnalyticsScreen from '../screens/squads/SquadAnalyticsScreen';
-import AdminVanguardScreen from '../screens/admin/AdminVanguardScreen';
-import VanguardInvitationScreen from '../screens/vanguard/VanguardInvitationScreen';
-import VanguardMeScreen from '../screens/vanguard/VanguardMeScreen';
-import VanguardTodayScreen from '../screens/vanguard/VanguardTodayScreen';
-import VanguardScheduleScreen from '../screens/vanguard/VanguardScheduleScreen';
-import VanguardModerationRoomScreen from '../screens/vanguard/VanguardModerationRoomScreen';
-import TournamentOverlayScreen from '../screens/overlay/TournamentOverlayScreen';
-import TournamentOverlayNeon from '../screens/overlay/TournamentOverlayNeon';
-import StreamerBattleOverlay from '../screens/overlay/StreamerBattleOverlay';
-import CoachingScreen from '../screens/tournaments/CoachingScreen';
-import VanguardQueueScreen from '../screens/vanguard/VanguardQueueScreen';
-import VanguardTreasuryScreen from '../screens/vanguard/VanguardTreasuryScreen';
-import VanguardWalletScreen from '../screens/vanguard/VanguardWalletScreen';
-import VanguardRankScreen from '../screens/vanguard/VanguardRankScreen';
-import VanguardStatsScreen from '../screens/vanguard/VanguardStatsScreen';
-import VanguardRosterScreen from '../screens/vanguard/VanguardRosterScreen';
-import VanguardHandbookScreen from '../screens/vanguard/VanguardHandbookScreen';
-import {
-  VanguardPeerScreen,
-  VanguardLiveScreen,
-  VanguardPayoutsScreen,
-  VanguardMyCasesScreen,
-  VanguardNotesScreen,
-  VanguardEscalationsScreen,
-  VanguardAnnouncementsScreen,
-  VanguardLibraryScreen,
-  VanguardChatScreen,
-  VanguardLookupUserScreen,
-  VanguardLookupTournamentScreen,
-  VanguardLookupActionScreen,
-} from '../screens/vanguard/VanguardPagesB';
-import InviteMembersScreen from '../screens/squads/InviteMembersScreen';
+const CreateSquadScreen = lazy(() => import('../screens/squads/CreateSquadScreen'));
+const SquadDetailScreen = lazy(() => import('../screens/squads/SquadDetailScreen'));
+const SquadOverviewScreen = lazy(() => import('../screens/squads/SquadOverviewScreen'));
+const SquadStreamScreen = lazy(() => import('../screens/squads/SquadStreamScreen'));
+const VoiceChannelScreen = lazy(() => import('../screens/messages/VoiceChannelScreen'));
+const FriendsScreen = lazy(() => import('../screens/messages/FriendsScreen'));
+const BrowseGroupsScreen = lazy(() => import('../screens/messages/BrowseGroupsScreen'));
+const SquadChatThreadScreen = lazy(() => import('../screens/squads/SquadChatThreadScreen'));
+const SquadSettingsScreen = lazy(() => import('../screens/squads/SquadSettingsScreen'));
+const SquadRolesScreen = lazy(() => import('../screens/squads/SquadRolesScreen'));
+const SquadMembersScreen = lazy(() => import('../screens/squads/SquadMembersScreen'));
+const SquadMediaScreen = lazy(() => import('../screens/squads/SquadMediaScreen'));
+const SquadPinnedScreen = lazy(() => import('../screens/squads/SquadPinnedScreen'));
+const SquadChallengesScreen = lazy(() => import('../screens/squads/SquadChallengesScreen'));
+const SquadEventsScreen = lazy(() => import('../screens/squads/SquadEventsScreen'));
+const SquadJoinRequestsScreen = lazy(() => import('../screens/squads/SquadJoinRequestsScreen'));
+const SquadAnnouncementsScreen = lazy(() => import('../screens/squads/SquadAnnouncementsScreen'));
+const SquadLeaderboardScreen = lazy(() => import('../screens/squads/SquadLeaderboardScreen'));
+const SquadsMineScreen = lazy(() => import('../screens/squads/SquadsMineScreen'));
+const SquadInvitationsScreen = lazy(() => import('../screens/squads/SquadInvitationsScreen'));
+const SquadApplicationsScreen = lazy(() => import('../screens/squads/SquadApplicationsScreen'));
+const BrowsePlayersScreen = lazy(() => import('../screens/squads/BrowsePlayersScreen'));
+const SquadAnalyticsScreen = lazy(() => import('../screens/squads/SquadAnalyticsScreen'));
+// Native squad screens (rendered only on the APK build via IS_NATIVE_BUILD).
+const NativeSquadsScreen = lazy(() => import('../screens/squads/native/NativeSquadsScreen'));
+const NativeSquadsMineScreen = lazy(() => import('../screens/squads/native/NativeSquadsMineScreen'));
+const NativeSquadInvitationsScreen = lazy(() => import('../screens/squads/native/NativeSquadInvitationsScreen'));
+const NativeSquadApplicationsScreen = lazy(() => import('../screens/squads/native/NativeSquadApplicationsScreen'));
+const NativeBrowsePlayersScreen = lazy(() => import('../screens/squads/native/NativeBrowsePlayersScreen'));
+const NativeCreateSquadScreen = lazy(() => import('../screens/squads/native/NativeCreateSquadScreen'));
+const NativeSquadOverviewScreen = lazy(() => import('../screens/squads/native/NativeSquadOverviewScreen'));
+const NativeSquadMembersScreen = lazy(() => import('../screens/squads/native/NativeSquadMembersScreen'));
+const NativeSquadEventsScreen = lazy(() => import('../screens/squads/native/NativeSquadEventsScreen'));
+const NativeSquadChallengesScreen = lazy(() => import('../screens/squads/native/NativeSquadChallengesScreen'));
+const NativeSquadAnnouncementsScreen = lazy(() => import('../screens/squads/native/NativeSquadAnnouncementsScreen'));
+const NativeSquadLeaderboardScreen = lazy(() => import('../screens/squads/native/NativeSquadLeaderboardScreen'));
+const NativeSquadMediaScreen = lazy(() => import('../screens/squads/native/NativeSquadMediaScreen'));
+const NativeSquadPinnedScreen = lazy(() => import('../screens/squads/native/NativeSquadPinnedScreen'));
+const NativeSquadSettingsScreen = lazy(() => import('../screens/squads/native/NativeSquadSettingsScreen'));
+const NativeSquadRolesScreen = lazy(() => import('../screens/squads/native/NativeSquadRolesScreen'));
+const NativeSquadJoinRequestsScreen = lazy(() => import('../screens/squads/native/NativeSquadJoinRequestsScreen'));
+const NativeSquadAnalyticsScreen = lazy(() => import('../screens/squads/native/NativeSquadAnalyticsScreen'));
+const NativeInviteMembersScreen = lazy(() => import('../screens/squads/native/NativeInviteMembersScreen'));
+const NativeSquadChatThreadScreen = lazy(() => import('../screens/squads/native/NativeSquadChatThreadScreen'));
+const NativeSquadStreamScreen = lazy(() => import('../screens/squads/native/NativeSquadStreamScreen'));
+const VanguardInvitationScreen = lazy(() => import('../screens/vanguard/VanguardInvitationScreen'));
+const VanguardMeScreen = lazy(() => import('../screens/vanguard/VanguardMeScreen'));
+const VanguardTodayScreen = lazy(() => import('../screens/vanguard/VanguardTodayScreen'));
+const VanguardScheduleScreen = lazy(() => import('../screens/vanguard/VanguardScheduleScreen'));
+const VanguardModerationRoomScreen = lazy(() => import('../screens/vanguard/VanguardModerationRoomScreen'));
+const TournamentOverlayScreen = lazy(() => import('../screens/overlay/TournamentOverlayScreen'));
+const TournamentOverlayNeon = lazy(() => import('../screens/overlay/TournamentOverlayNeon'));
+const StreamerBattleOverlay = lazy(() => import('../screens/overlay/StreamerBattleOverlay'));
+const VanguardQueueScreen = lazy(() => import('../screens/vanguard/VanguardQueueScreen'));
+const VanguardTreasuryScreen = lazy(() => import('../screens/vanguard/VanguardTreasuryScreen'));
+const VanguardWalletScreen = lazy(() => import('../screens/vanguard/VanguardWalletScreen'));
+const VanguardRankScreen = lazy(() => import('../screens/vanguard/VanguardRankScreen'));
+const VanguardStatsScreen = lazy(() => import('../screens/vanguard/VanguardStatsScreen'));
+const VanguardRosterScreen = lazy(() => import('../screens/vanguard/VanguardRosterScreen'));
+const VanguardHandbookScreen = lazy(() => import('../screens/vanguard/VanguardHandbookScreen'));
+const VanguardPeerScreen = lazy(() => import('../screens/vanguard/VanguardPagesB').then((m) => ({ default: m.VanguardPeerScreen })));
+const VanguardLiveScreen = lazy(() => import('../screens/vanguard/VanguardPagesB').then((m) => ({ default: m.VanguardLiveScreen })));
+const VanguardPayoutsScreen = lazy(() => import('../screens/vanguard/VanguardPagesB').then((m) => ({ default: m.VanguardPayoutsScreen })));
+const VanguardMyCasesScreen = lazy(() => import('../screens/vanguard/VanguardPagesB').then((m) => ({ default: m.VanguardMyCasesScreen })));
+const VanguardNotesScreen = lazy(() => import('../screens/vanguard/VanguardPagesB').then((m) => ({ default: m.VanguardNotesScreen })));
+const VanguardEscalationsScreen = lazy(() => import('../screens/vanguard/VanguardPagesB').then((m) => ({ default: m.VanguardEscalationsScreen })));
+const VanguardAnnouncementsScreen = lazy(() => import('../screens/vanguard/VanguardPagesB').then((m) => ({ default: m.VanguardAnnouncementsScreen })));
+const VanguardLibraryScreen = lazy(() => import('../screens/vanguard/VanguardPagesB').then((m) => ({ default: m.VanguardLibraryScreen })));
+const VanguardChatScreen = lazy(() => import('../screens/vanguard/VanguardPagesB').then((m) => ({ default: m.VanguardChatScreen })));
+const VanguardLookupUserScreen = lazy(() => import('../screens/vanguard/VanguardPagesB').then((m) => ({ default: m.VanguardLookupUserScreen })));
+const VanguardLookupTournamentScreen = lazy(() => import('../screens/vanguard/VanguardPagesB').then((m) => ({ default: m.VanguardLookupTournamentScreen })));
+const VanguardLookupActionScreen = lazy(() => import('../screens/vanguard/VanguardPagesB').then((m) => ({ default: m.VanguardLookupActionScreen })));
+const InviteMembersScreen = lazy(() => import('../screens/squads/InviteMembersScreen'));
 
 // Wallet & Coins
-import WalletScreen from '../screens/wallet/WalletScreen';
-import ConvertCoinsScreen from '../screens/wallet/ConvertCoinsScreen';
-import TransactionReceiptScreen from '../screens/wallet/TransactionReceiptScreen';
-import TransactionFiltersScreen from '../screens/wallet/TransactionFiltersScreen';
-import RequestPayoutScreen from '../screens/wallet/RequestPayoutScreen';
-import PayoutSuccessScreen from '../screens/wallet/PayoutSuccessScreen';
-import WalletSecurityScreen from '../screens/wallet/WalletSecurityScreen';
-import { PayoutStatusScreen, PayoutHistoryScreen, SavedAddressesScreen } from '../screens/wallet/PayoutScreens';
+const WalletScreen = lazy(() => import('../screens/wallet/WalletScreen'));
+const ConvertCoinsScreen = lazy(() => import('../screens/wallet/ConvertCoinsScreen'));
+const TransactionReceiptScreen = lazy(() => import('../screens/wallet/TransactionReceiptScreen'));
+const TransactionFiltersScreen = lazy(() => import('../screens/wallet/TransactionFiltersScreen'));
+const RequestPayoutScreen = lazy(() => import('../screens/wallet/RequestPayoutScreen'));
+const PayoutSuccessScreen = lazy(() => import('../screens/wallet/PayoutSuccessScreen'));
+const WalletSecurityScreen = lazy(() => import('../screens/wallet/WalletSecurityScreen'));
+const PayoutStatusScreen = lazy(() => import('../screens/wallet/PayoutScreens').then((m) => ({ default: m.PayoutStatusScreen })));
+const PayoutHistoryScreen = lazy(() => import('../screens/wallet/PayoutScreens').then((m) => ({ default: m.PayoutHistoryScreen })));
+const SavedAddressesScreen = lazy(() => import('../screens/wallet/PayoutScreens').then((m) => ({ default: m.SavedAddressesScreen })));
 
 // Wallet v2 (Session 1 redesign) — own layout, own routes, own onboarding.
 // See src/layouts/WalletLayout.jsx and src/screens/wallet/v2/*.jsx.
 import WalletLayout from '../layouts/WalletLayout';
-import WalletHomeScreen      from '../screens/wallet/v2/HomeScreen';
-import WalletBuyScreen       from '../screens/wallet/v2/BuyScreen';
-import WalletConvertScreen   from '../screens/wallet/v2/ConvertScreen';
-import WalletWithdrawScreen  from '../screens/wallet/v2/WithdrawScreen';
-import WalletNewAddressScreen from '../screens/wallet/v2/NewAddressScreen';
-import WalletHistoryScreen   from '../screens/wallet/v2/HistoryScreen';
-import WalletSettingsV2Screen from '../screens/wallet/v2/SettingsScreen';
-import WalletKycScreen       from '../screens/wallet/v2/KycScreen';
-import WalletHelpV2Screen    from '../screens/wallet/v2/HelpScreen';
+
+// Vergr Shop — standalone seller workspace (own layout + side nav).
+import ShopLayout from '../layouts/ShopLayout';
+const LinkShopifyScreen = lazy(() => import('../screens/shop/LinkShopifyScreen'));
+const ShopOverviewScreen = lazy(() => import('../screens/shop/ShopScreens').then((m) => ({ default: m.ShopOverviewScreen })));
+const ShopProductsScreen = lazy(() => import('../screens/shop/ShopScreens').then((m) => ({ default: m.ShopProductsScreen })));
+const ShopOrdersScreen = lazy(() => import('../screens/shop/ShopScreens').then((m) => ({ default: m.ShopOrdersScreen })));
+const ShopCustomersScreen = lazy(() => import('../screens/shop/ShopScreens').then((m) => ({ default: m.ShopCustomersScreen })));
+const ShopIntegrationsScreen = lazy(() => import('../screens/shop/ShopScreens').then((m) => ({ default: m.ShopIntegrationsScreen })));
+const ShopSettingsScreen = lazy(() => import('../screens/shop/ShopScreens').then((m) => ({ default: m.ShopSettingsScreen })));
+const WalletHomeScreen = lazy(() => import('../screens/wallet/v2/HomeScreen'));
+const WalletBuyScreen = lazy(() => import('../screens/wallet/v2/BuyScreen'));
+const WalletConvertScreen = lazy(() => import('../screens/wallet/v2/ConvertScreen'));
+const WalletWithdrawScreen = lazy(() => import('../screens/wallet/v2/WithdrawScreen'));
+const WalletNewAddressScreen = lazy(() => import('../screens/wallet/v2/NewAddressScreen'));
+const WalletHistoryScreen = lazy(() => import('../screens/wallet/v2/HistoryScreen'));
+const WalletSettingsV2Screen = lazy(() => import('../screens/wallet/v2/SettingsScreen'));
+const WalletKycScreen = lazy(() => import('../screens/wallet/v2/KycScreen'));
+const WalletHelpV2Screen = lazy(() => import('../screens/wallet/v2/HelpScreen'));
+// NATIVE-APP-ONLY wallet screens (single-column, immune to the Android WebView's
+// inflated layout width). Desktop + mobile-web keep the v2 screens above.
+const NativeHomeScreen = lazy(() => import('../screens/wallet/native/NativeWalletScreens').then((m) => ({ default: m.NativeHomeScreen })));
+const NativeConvertScreen = lazy(() => import('../screens/wallet/native/NativeWalletScreens').then((m) => ({ default: m.NativeConvertScreen })));
+const NativeSettingsScreen = lazy(() => import('../screens/wallet/native/NativeWalletScreens').then((m) => ({ default: m.NativeSettingsScreen })));
+const NativeHistoryScreen = lazy(() => import('../screens/wallet/native/NativeWalletScreens').then((m) => ({ default: m.NativeHistoryScreen })));
+const NativeKycScreen = lazy(() => import('../screens/wallet/native/NativeWalletScreens').then((m) => ({ default: m.NativeKycScreen })));
+const NativeBuyScreen = lazy(() => import('../screens/wallet/native/NativeWalletScreens').then((m) => ({ default: m.NativeBuyScreen })));
+const NativeDepositScreen = lazy(() => import('../screens/wallet/native/NativeWalletScreens').then((m) => ({ default: m.NativeDepositScreen })));
 import {
   SecurityScreen          as WalletSecurityHubScreen,
   SecurityPinScreen       as WalletSecurityPinScreen,
@@ -283,16 +507,28 @@ import {
 } from '../screens/wallet/v2/SecurityScreens';
 
 // Creator
-import CreatorDashboardScreen from '../screens/creator/CreatorDashboardScreen';
-import CreatorEarningsScreen from '../screens/creator/CreatorEarningsScreen';
-import CreatorContentScreen from '../screens/creator/CreatorContentScreen';
-import CreatorScheduleScreen from '../screens/creator/CreatorScheduleScreen';
-import CreatorAudienceScreen from '../screens/creator/CreatorAudienceScreen';
-import CreatorCommunityScreen from '../screens/creator/CreatorCommunityScreen';
-import MonthlyAnalyticsScreen from '../screens/creator/MonthlyAnalyticsScreen';
-import CreatorQuestsScreen from '../screens/creator/CreatorQuestsScreen';
-import MembershipTiersScreen from '../screens/creator/MembershipTiersScreen';
-import CreatorVerificationScreen from '../screens/creator/CreatorVerificationScreen';
+const CreatorDashboardScreen = lazy(() => import('../screens/creator/CreatorDashboardScreen'));
+const CreatorEarningsScreen = lazy(() => import('../screens/creator/CreatorEarningsScreen'));
+const CreatorContentScreen = lazy(() => import('../screens/creator/CreatorContentScreen'));
+const CreatorScheduleScreen = lazy(() => import('../screens/creator/CreatorScheduleScreen'));
+const CreatorAudienceScreen = lazy(() => import('../screens/creator/CreatorAudienceScreen'));
+const CreatorCommunityScreen = lazy(() => import('../screens/creator/CreatorCommunityScreen'));
+const MonthlyAnalyticsScreen = lazy(() => import('../screens/creator/MonthlyAnalyticsScreen'));
+const CreatorQuestsScreen = lazy(() => import('../screens/creator/CreatorQuestsScreen'));
+const MembershipTiersScreen = lazy(() => import('../screens/creator/MembershipTiersScreen'));
+const CreatorVerificationScreen = lazy(() => import('../screens/creator/CreatorVerificationScreen'));
+// Creator Studio — dedicated native (phone) screens
+const NativeCreatorDashboardScreen = lazy(() => import('../screens/creator/native/NativeCreatorDashboardScreen'));
+const NativeCreatorEarningsScreen = lazy(() => import('../screens/creator/native/NativeCreatorEarningsScreen'));
+const NativeCreatorContentScreen = lazy(() => import('../screens/creator/native/NativeCreatorContentScreen'));
+const NativeCreatorScheduleScreen = lazy(() => import('../screens/creator/native/NativeCreatorScheduleScreen'));
+const NativeCreatorAudienceScreen = lazy(() => import('../screens/creator/native/NativeCreatorAudienceScreen'));
+const NativeCreatorCommunityScreen = lazy(() => import('../screens/creator/native/NativeCreatorCommunityScreen'));
+const NativeCreatorAnalyticsScreen = lazy(() => import('../screens/creator/native/NativeCreatorAnalyticsScreen'));
+const NativeCreatorQuestsScreen = lazy(() => import('../screens/creator/native/NativeCreatorQuestsScreen'));
+const NativeCreatorMembershipScreen = lazy(() => import('../screens/creator/native/NativeCreatorMembershipScreen'));
+const NativeCreatorAdsScreen = lazy(() => import('../screens/creator/native/NativeCreatorAdsScreen'));
+const NativeCreatorVerifyScreen = lazy(() => import('../screens/creator/native/NativeCreatorVerifyScreen'));
 import { useParams } from 'react-router-dom';
 function MobileKycHandoff() {
   const { sid } = useParams();
@@ -306,86 +542,119 @@ function MobileKycHandoff() {
     </div>
   );
 }
-import VerificationPendingScreen from '../screens/creator/VerificationPendingScreen';
+
+// Bare /:username route. Only resolves to the vergr.me link-in-bio page when
+// the page is served on the vergr.me apex (so vergr.me/Vergr serves the page
+// directly, no /u/ prefix). On vergr.app a single unknown segment falls back
+// to home, matching the previous catch-all behaviour. Static routes always
+// outrank this dynamic single-segment route, so app routes are unaffected.
+function VergrMeHostRoute() {
+  const host = typeof window !== 'undefined' ? window.location.hostname : '';
+  // `/vlink` is ONE segment, so React Router ranks it as a :username match and
+  // it never reaches the catch-all. That is the exact URL Shopify loads the
+  // embedded app at, so without this the Navigate below sent the app frame to
+  // "/" and on to /platform — Vergr's coin-selling landing page, rendered
+  // inside the Shopify admin. Requirement 1.2.1, ref 126602.
+  if (VLINK_PATH.test(window.location.pathname)) return <VLinkHandback />;
+  const isVergrMe = host === 'vergr.me' || host.endsWith('.vergr.me');
+  return isVergrMe ? <VergrMePage /> : <Navigate to="/" replace />;
+}
+const VerificationPendingScreen = lazy(() => import('../screens/creator/VerificationPendingScreen'));
 import CreatorLayout from '../components/creator/CreatorLayout';
 
 // Streams
-import GoLiveSetupScreen from '../screens/streams/GoLiveSetupScreen';
-import LiveStreamScreen from '../screens/streams/LiveStreamScreen';
-import BroadcasterScreen from '../screens/streams/BroadcasterScreen';
-import ViewerStreamScreen from '../screens/streams/ViewerStreamScreen';
-import StreamAnalyticsScreen from '../screens/streams/StreamAnalyticsScreen';
-import StreamEndingScreen from '../screens/streams/StreamEndingScreen';
-import StreamModerationScreen from '../screens/streams/StreamModerationScreen';
-import CoStreamingScreen from '../screens/streams/CoStreamingScreen';
-import CoStreamInviteScreen from '../screens/streams/CoStreamInviteScreen';
+const GoLiveSetupScreen = lazy(() => import('../screens/streams/GoLiveSetupScreen'));
+const LiveStreamScreen = lazy(() => import('../screens/streams/LiveStreamScreen'));
+const LiveStreamsScreen = lazy(() => import('../screens/streams/LiveStreamsScreen'));
+const BroadcasterScreen = lazy(() => import('../screens/streams/BroadcasterScreen'));
+const ViewerStreamScreen = lazy(() => import('../screens/streams/ViewerStreamScreen'));
+const StreamAnalyticsScreen = lazy(() => import('../screens/streams/StreamAnalyticsScreen'));
+const StreamEndingScreen = lazy(() => import('../screens/streams/StreamEndingScreen'));
+const StreamModerationScreen = lazy(() => import('../screens/streams/StreamModerationScreen'));
+const CoStreamingScreen = lazy(() => import('../screens/streams/CoStreamingScreen'));
+const CoStreamInviteScreen = lazy(() => import('../screens/streams/CoStreamInviteScreen'));
+const NativeGoLiveScreen = lazy(() => import('../screens/streams/native/NativeGoLiveScreen'));
+const NativeBroadcasterScreen = lazy(() => import('../screens/streams/native/NativeBroadcasterScreen'));
+const NativeViewerStreamScreen = lazy(() => import('../screens/streams/native/NativeViewerStreamScreen'));
+const NativeCoStreamingScreen = lazy(() => import('../screens/streams/native/NativeStreamScreens').then((m) => ({ default: m.NativeCoStreamingScreen })));
+const NativeCoStreamInviteScreen = lazy(() => import('../screens/streams/native/NativeStreamScreens').then((m) => ({ default: m.NativeCoStreamInviteScreen })));
+const NativeStreamEndingScreen = lazy(() => import('../screens/streams/native/NativeStreamScreens').then((m) => ({ default: m.NativeStreamEndingScreen })));
+const NativeStreamAnalyticsScreen = lazy(() => import('../screens/streams/native/NativeStreamScreens').then((m) => ({ default: m.NativeStreamAnalyticsScreen })));
 import LiveInviteBanner from '../components/LiveInviteBanner';
 import TournamentSummonsBanner from '../components/TournamentSummonsBanner';
 
 // Tournaments
-import TournamentScreen from '../screens/tournaments/TournamentScreen';
-import TournamentStandingsScreen from '../screens/tournaments/TournamentStandingsScreen';
-import TournamentPrizePoolScreen from '../screens/tournaments/TournamentPrizePoolScreen';
-import MatchDetailsScreen from '../screens/tournaments/MatchDetailsScreen';
-import TournamentMatchScreen from '../screens/tournaments/TournamentMatchScreen';
-import TournamentStatsScreen from '../screens/tournaments/TournamentStatsScreen';
-import ModWallScreen from '../screens/tournaments/ModWallScreen';
-import VanguardReviewQueueScreen from '../screens/tournaments/VanguardReviewQueueScreen';
-import HudOverlay from '../screens/hud/HudOverlay';
-import CheatSignaturesScreen from '../screens/admin/CheatSignaturesScreen';
-import AdminRouteGate from '../components/AdminRouteGate';
-import TeamManagementScreen from '../screens/tournaments/TeamManagementScreen';
-import TeamFundingScreen from '../screens/tournaments/TeamFundingScreen';
-import ContributeScreen from '../screens/tournaments/ContributeScreen';
-import ContributionSuccessScreen from '../screens/tournaments/ContributionSuccessScreen';
-import PrizeReceiptScreen from '../screens/tournaments/PrizeReceiptScreen';
-import CreateTournamentScreen from '../screens/tournaments/CreateTournamentScreen';
-import ModeratorMatchControlScreen from '../screens/tournaments/ModeratorMatchControlScreen';
-import TournamentListScreen from '../screens/tournaments/TournamentListScreen';
-import TournamentApplicationsScreen from '../screens/tournaments/TournamentApplicationsScreen';
-import CheatFlagClipScreen from '../screens/clips/CheatFlagClipScreen';
-import WarmupLobbyScreen from '../screens/tournaments/WarmupLobbyScreen';
+const TournamentScreen = lazy(() => import('../screens/tournaments/TournamentScreen'));
+const NativeTournamentScreen = lazy(() => import('../screens/tournaments/native/NativeTournamentScreen'));
+const TournamentStandingsScreen = lazy(() => import('../screens/tournaments/TournamentStandingsScreen'));
+const TournamentPrizePoolScreen = lazy(() => import('../screens/tournaments/TournamentPrizePoolScreen'));
+const MatchDetailsScreen = lazy(() => import('../screens/tournaments/MatchDetailsScreen'));
+const NativeMatchDetailsScreen = lazy(() => import('../screens/tournaments/native/NativeMatchDetailsScreen'));
+const TournamentMatchScreen = lazy(() => import('../screens/tournaments/TournamentMatchScreen'));
+const TournamentStatsScreen = lazy(() => import('../screens/tournaments/TournamentStatsScreen'));
+const ModWallScreen = lazy(() => import('../screens/tournaments/ModWallScreen'));
+const VanguardReviewQueueScreen = lazy(() => import('../screens/tournaments/VanguardReviewQueueScreen'));
+const HudOverlay = lazy(() => import('../screens/hud/HudOverlay'));
+const TeamManagementScreen = lazy(() => import('../screens/tournaments/TeamManagementScreen'));
+const TeamFundingScreen = lazy(() => import('../screens/tournaments/TeamFundingScreen'));
+const ContributeScreen = lazy(() => import('../screens/tournaments/ContributeScreen'));
+const ContributionSuccessScreen = lazy(() => import('../screens/tournaments/ContributionSuccessScreen'));
+const PrizeReceiptScreen = lazy(() => import('../screens/tournaments/PrizeReceiptScreen'));
+const CreateTournamentScreen = lazy(() => import('../screens/tournaments/CreateTournamentScreen'));
+// Redesigned Create Tournament flow. To revert: swap CreateTournamentV2 back to
+// CreateTournamentScreen in the /create-tournament route below.
+const CreateTournamentV2 = lazy(() => import('../screens/tournaments/CreateTournamentV2'));
+const EventLandingScreen = lazy(() => import('../screens/events/EventLandingScreen'));
+const ModeratorMatchControlScreen = lazy(() => import('../screens/tournaments/ModeratorMatchControlScreen'));
+const TournamentListScreen = lazy(() => import('../screens/tournaments/TournamentListScreen'));
+const TournamentApplicationsScreen = lazy(() => import('../screens/tournaments/TournamentApplicationsScreen'));
+const CheatFlagClipScreen = lazy(() => import('../screens/clips/CheatFlagClipScreen'));
+const WarmupLobbyScreen = lazy(() => import('../screens/tournaments/WarmupLobbyScreen'));
 
 // Settings
-import SettingsScreen from '../screens/settings/SettingsScreen';
-import BackupSettingsScreen from '../screens/settings/BackupSettingsScreen';
-import PrivacySettingsScreen from '../screens/settings/PrivacySettingsScreen';
-import LinkedAccountsScreen from '../screens/settings/LinkedAccountsScreen';
-import NotificationSettingsScreen from '../screens/settings/NotificationSettingsScreen';
-import AboutScreen from '../screens/settings/AboutScreen';
-import SecuritySettingsScreen from '../screens/settings/SecuritySettingsScreen';
-import LanguageSettingsScreen from '../screens/settings/LanguageSettingsScreen';
-import DisplaySettingsScreen from '../screens/settings/DisplaySettingsScreen';
-import AppPermissionsScreen from '../screens/settings/AppPermissionsScreen';
-import BlockedWordsScreen from '../screens/settings/BlockedWordsScreen';
-import BlockedUsersScreen from '../screens/settings/BlockedUsersScreen';
-import AccountDataExportScreen from '../screens/settings/AccountDataExportScreen';
-import AccountDeletionScreen from '../screens/settings/AccountDeletionScreen';
-import DisconnectAccountScreen from '../screens/settings/DisconnectAccountScreen';
-import HelpCenterScreen from '../screens/settings/HelpCenterScreen';
-import HowItWorksScreen from '../screens/settings/HowItWorksScreen';
-import BoostScreen from '../screens/wallet/BoostScreen';
-import ReferralScreen from '../screens/home/ReferralScreen';
-import CallsScreen from '../screens/calls/CallsScreen';
-import StatusScreen from '../screens/status/StatusScreen';
-import PrivacyPolicyScreen from '../screens/settings/PrivacyPolicyScreen';
-import PhoneAllowListScreen from '../screens/settings/PhoneAllowListScreen';
-import SubscriptionScreen from '../screens/settings/SubscriptionScreen';
-import VPRanksScreen from '../screens/settings/VPRanksScreen';
+const SettingsScreen = lazy(() => import('../screens/settings/SettingsScreen'));
+const NativeSettingsHubScreen = lazy(() => import('../screens/settings/native/NativeSettingsScreen'));
+const BackupSettingsScreen = lazy(() => import('../screens/settings/BackupSettingsScreen'));
+const PrivacySettingsScreen = lazy(() => import('../screens/settings/PrivacySettingsScreen'));
+const LinkedAccountsScreen = lazy(() => import('../screens/settings/LinkedAccountsScreen'));
+const NotificationSettingsScreen = lazy(() => import('../screens/settings/NotificationSettingsScreen'));
+const AboutScreen = lazy(() => import('../screens/settings/AboutScreen'));
+const SecuritySettingsScreen = lazy(() => import('../screens/settings/SecuritySettingsScreen'));
+const LanguageSettingsScreen = lazy(() => import('../screens/settings/LanguageSettingsScreen'));
+const DisplaySettingsScreen = lazy(() => import('../screens/settings/DisplaySettingsScreen'));
+const StorageSettingsScreen = lazy(() => import('../screens/settings/StorageSettingsScreen'));
+const AppPermissionsScreen = lazy(() => import('../screens/settings/AppPermissionsScreen'));
+const BlockedWordsScreen = lazy(() => import('../screens/settings/BlockedWordsScreen'));
+const BlockedUsersScreen = lazy(() => import('../screens/settings/BlockedUsersScreen'));
+const AccountDataExportScreen = lazy(() => import('../screens/settings/AccountDataExportScreen'));
+const AccountDeletionScreen = lazy(() => import('../screens/settings/AccountDeletionScreen'));
+const DisconnectAccountScreen = lazy(() => import('../screens/settings/DisconnectAccountScreen'));
+const HelpCenterScreen = lazy(() => import('../screens/settings/HelpCenterScreen'));
+const HowItWorksScreen = lazy(() => import('../screens/settings/HowItWorksScreen'));
+const BoostScreen = lazy(() => import('../screens/wallet/BoostScreen'));
+const ReferralScreen = lazy(() => import('../screens/home/ReferralScreen'));
+const WalletReferralScreen = lazy(() => import('../screens/home/ReferralScreen').then((m) => ({ default: m.WalletReferralScreen })));
+const CallsScreen = lazy(() => import('../screens/calls/CallsScreen'));
+const StatusScreen = lazy(() => import('../screens/status/StatusScreen'));
+const SquadsHub = lazy(() => import('../screens/messages/hub/SquadsHub'));
+const PrivacyPolicyScreen = lazy(() => import('../screens/settings/PrivacyPolicyScreen'));
+const PhoneAllowListScreen = lazy(() => import('../screens/settings/PhoneAllowListScreen'));
+const SubscriptionScreen = lazy(() => import('../screens/settings/SubscriptionScreen'));
+const VPRanksScreen = lazy(() => import('../screens/settings/VPRanksScreen'));
 
 // Ad Center
-import AdCenterScreen from '../screens/ad/AdCenterScreen';
+const AdCenterScreen = lazy(() => import('../screens/ad/AdCenterScreen'));
 
 // Search
-import SearchResultsAllScreen from '../screens/search/SearchResultsAllScreen';
-import SearchResultsStreamsScreen from '../screens/search/SearchResultsStreamsScreen';
-import NoSearchResultsScreen from '../screens/search/NoSearchResultsScreen';
+const SearchResultsAllScreen = lazy(() => import('../screens/search/SearchResultsAllScreen'));
+const SearchResultsStreamsScreen = lazy(() => import('../screens/search/SearchResultsStreamsScreen'));
+const NoSearchResultsScreen = lazy(() => import('../screens/search/NoSearchResultsScreen'));
 
 // Utility
-import MaintenanceScreen from '../screens/utility/MaintenanceScreen';
-import ForceUpdateScreen from '../screens/utility/ForceUpdateScreen';
-import NetworkErrorScreen from '../screens/utility/NetworkErrorScreen';
-import ActivityLogScreen from '../screens/utility/ActivityLogScreen';
+const MaintenanceScreen = lazy(() => import('../screens/utility/MaintenanceScreen'));
+const ForceUpdateScreen = lazy(() => import('../screens/utility/ForceUpdateScreen'));
+const NetworkErrorScreen = lazy(() => import('../screens/utility/NetworkErrorScreen'));
+const ActivityLogScreen = lazy(() => import('../screens/utility/ActivityLogScreen'));
 
 // Capture an incoming `?ref=<uid>` invite parameter into localStorage as
 // early as possible. It survives any number of navigations (splash → login
@@ -402,17 +671,14 @@ import ActivityLogScreen from '../screens/utility/ActivityLogScreen';
   } catch { /* SSR / private-mode — ignore */ }
 })();
 
-// Firebase Hosting serves the SPA for clean URLs like /store. HashRouter
-// needs those paths moved into the hash before React routes mount.
-(function bridgeCleanUrlsToHashRoutes() {
-  try {
-    if (typeof window === 'undefined') return;
-    const { pathname, search, hash } = window.location;
-    if (hash || pathname === '/' || pathname.includes('.')) return;
-    if (pathname.startsWith('/media/') || pathname.startsWith('/share/')) return;
-    window.history.replaceState(null, '', `/#${pathname}${search || ''}`);
-  } catch { /* ignore */ }
-})();
+// Drops a section-entry breadcrumb (see utils/navOrigin) once the user has
+// navigated out of the section it belongs to, so a later visit that arrived
+// from somewhere else never inherits a stale "back" target.
+function NavOriginTracker() {
+  const location = useLocation();
+  useEffect(() => { pruneNavOrigin(location.pathname); }, [location.pathname]);
+  return null;
+}
 
 export default function AppRouter() {
   return (
@@ -422,14 +688,18 @@ export default function AppRouter() {
           <NotificationProvider>
             <UIProvider>
               <LayoutProvider>
+                <LiveUsersProvider>
                 <div className="app-container mx-auto min-h-screen bg-bg-dark text-text-primary relative">
+                  <NavOriginTracker />
                   <Toast />
                   <PushToast />
                   <LiveInviteBanner />
                   <TournamentSummonsBanner />
                   <IncomingCallOverlay />
+                  <VoiceSessionPill />
                   <DesktopNotificationManager />
                   <PresenceManager />
+                  <DisplaySettingsApplier />
                   <BackupChecker />
                   <ImageProtection />
                   <SignalsCapture />
@@ -438,32 +708,81 @@ export default function AppRouter() {
                   <GuestSignupPrompt />
                   <GuestModeBanner />
                   <NotificationsDrawer />
+                  <FirstBootGate />
+                  <NativeUpdateBanner />
+                  <DevChannelBadge />
+                  <InstallAppBanner />
+                  <MobileNavDrawerHost />
+                  <Suspense fallback={<RouteFallback />}>
+                  <SplashHandoff />
                   <Routes>
                     {/* ---------- PUBLIC ROUTES (no layout) ---------- */}
                     <Route path="/" element={<RootRoute />} />
-                    <Route path="/store" element={<StoreScreen />} />
-                    <Route path="/download" element={<DownloadScreen />} />
-                    <Route path="/help" element={<MarketingHelpScreen />} />
-                    <Route path="/privacy"               element={<LegalScreen type="privacy" />} />
-                    <Route path="/terms"                 element={<LegalScreen type="terms" />} />
-                    <Route path="/acceptable-use"        element={<LegalScreen type="acceptable_use" />} />
-                    <Route path="/cookies"               element={<LegalScreen type="cookies" />} />
-                    <Route path="/learn/tournament-rules" element={<LegalScreen type="tournament_rules" />} />
-                    {/* Phase 1 marketing pages — see PublicMarketingScreens.jsx */}
-                    <Route path="/about" element={<MarketingAboutScreen />} />
-                    <Route path="/careers" element={<CareersScreen />} />
-                    <Route path="/contact" element={<ContactScreen />} />
-                    <Route path="/code-of-conduct" element={<CodeOfConductScreen />} />
-                    <Route path="/forums" element={<ForumsScreen />} />
-                    <Route path="/streamer" element={<BecomeStreamerScreen />} />
-                    <Route path="/monetization" element={<MonetizationScreen />} />
-                    <Route path="/studio-tools" element={<StudioToolsScreen />} />
-                    <Route path="/partners" element={<PartnerProgramScreen />} />
-                    <Route path="/learn/live" element={<LearnLiveScreen />} />
-                    <Route path="/learn/tournaments" element={<LearnTournamentsScreen />} />
-                    <Route path="/learn/squads" element={<LearnSquadsScreen />} />
-                    <Route path="/learn/clips" element={<LearnClipsScreen />} />
-                    <Route path="/learn/coins" element={<LearnCoinsScreen />} />
+                    {/* ---------- PUBLIC: PLATFORM (marketing/info, SEO-indexed) ---------- */}
+                    <Route path="/platform" element={<LandingScreen />} />
+                    <Route path="/platform/store" element={<StoreScreen />} />
+                    <Route path="/platform/download" element={<DownloadScreen />} />
+                    <Route path="/platform/help" element={<MarketingHelpScreen />} />
+                    <Route path="/platform/help/category/:catId" element={<HelpCategoryScreen />} />
+                    <Route path="/platform/help/:slug" element={<HelpArticleScreen />} />
+                    <Route path="/platform/privacy"               element={<LegalScreen type="privacy" />} />
+                    <Route path="/platform/terms"                 element={<LegalScreen type="terms" />} />
+                    <Route path="/platform/acceptable-use"        element={<LegalScreen type="acceptable_use" />} />
+                    <Route path="/platform/cookies"               element={<LegalScreen type="cookies" />} />
+                    {/* Required by Google Play's Child Safety Standards policy —
+                        the declaration points at this URL, so it must stay live
+                        and publicly reachable. */}
+                    <Route path="/platform/child-safety"          element={<LegalScreen type="child_safety" />} />
+                    <Route path="/platform/learn/tournament-rules" element={<LegalScreen type="tournament_rules" />} />
+                    <Route path="/platform/about" element={<MarketingAboutScreen />} />
+                    <Route path="/platform/careers" element={<CareersScreen />} />
+                    <Route path="/platform/contact" element={<ContactScreen />} />
+                    <Route path="/platform/delete-account" element={<DeleteAccountScreen />} />
+                    <Route path="/platform/code-of-conduct" element={<CodeOfConductScreen />} />
+                    <Route path="/platform/forums" element={<ForumsScreen />} />
+                    <Route path="/platform/streamer" element={<BecomeStreamerScreen />} />
+                    <Route path="/platform/monetization" element={<MonetizationScreen />} />
+                    <Route path="/platform/creators" element={<CreatorsLandingScreen />} />
+                    <Route path="/platform/studio-tools" element={<StudioToolsScreen />} />
+                    <Route path="/platform/partners" element={<PartnerProgramScreen />} />
+                    <Route path="/platform/learn/live" element={<LearnLiveScreen />} />
+                    <Route path="/platform/learn/tournaments" element={<LearnTournamentsScreen />} />
+                    <Route path="/platform/learn/squads" element={<LearnSquadsScreen />} />
+                    <Route path="/platform/learn/clips" element={<LearnClipsScreen />} />
+                    <Route path="/platform/learn/coins" element={<LearnCoinsScreen />} />
+                    <Route path="/platform/make-money-gaming" element={<MakeMoneyGamingScreen />} />
+                    <Route path="/platform/legit" element={<LegitScreen />} />
+                    <Route path="/linkinbio" element={<LinkInBioScreen />} />
+                    <Route path="/platform/play/:gameSlug" element={<PlayGameScreen />} />
+                    <Route path="/platform/play" element={<Navigate to="/platform/make-money-gaming" replace />} />
+
+                    {/* Public ticketed-event landing page (share target, works logged-out) */}
+                    <Route path="/e/:id" element={<EventLandingScreen />} />
+                    {/* Legacy clean-path → /platform redirects (in-app nav safety; direct hits also 301 via firebase.json) */}
+                    <Route path="/store" element={<Navigate to="/platform/store" replace />} />
+                    <Route path="/download" element={<Navigate to="/platform/download" replace />} />
+                    <Route path="/help" element={<Navigate to="/platform/help" replace />} />
+                    <Route path="/privacy" element={<Navigate to="/platform/privacy" replace />} />
+                    <Route path="/terms" element={<Navigate to="/platform/terms" replace />} />
+                    <Route path="/acceptable-use" element={<Navigate to="/platform/acceptable-use" replace />} />
+                    <Route path="/cookies" element={<Navigate to="/platform/cookies" replace />} />
+                    <Route path="/about" element={<Navigate to="/platform/about" replace />} />
+                    <Route path="/careers" element={<Navigate to="/platform/careers" replace />} />
+                    <Route path="/contact" element={<Navigate to="/platform/contact" replace />} />
+                    <Route path="/delete-account" element={<Navigate to="/platform/delete-account" replace />} />
+                    <Route path="/code-of-conduct" element={<Navigate to="/platform/code-of-conduct" replace />} />
+                    <Route path="/forums" element={<Navigate to="/platform/forums" replace />} />
+                    <Route path="/streamer" element={<Navigate to="/platform/streamer" replace />} />
+                    <Route path="/monetization" element={<Navigate to="/platform/monetization" replace />} />
+                    <Route path="/creators" element={<Navigate to="/platform/creators" replace />} />
+                    <Route path="/studio-tools" element={<Navigate to="/platform/studio-tools" replace />} />
+                    <Route path="/partners" element={<Navigate to="/platform/partners" replace />} />
+                    <Route path="/learn/tournament-rules" element={<Navigate to="/platform/learn/tournament-rules" replace />} />
+                    <Route path="/learn/live" element={<Navigate to="/platform/learn/live" replace />} />
+                    <Route path="/learn/tournaments" element={<Navigate to="/platform/learn/tournaments" replace />} />
+                    <Route path="/learn/squads" element={<Navigate to="/platform/learn/squads" replace />} />
+                    <Route path="/learn/clips" element={<Navigate to="/platform/learn/clips" replace />} />
+                    <Route path="/learn/coins" element={<Navigate to="/platform/learn/coins" replace />} />
 
                     {/* Tournament OBS overlay — public (token-gated, not auth-gated) */}
                     <Route path="/overlay/:tournamentId" element={<TournamentOverlayScreen />} />
@@ -478,6 +797,13 @@ export default function AppRouter() {
 
                     {/* Auth */}
                     <Route path="/splash" element={<SplashScreen />} />
+                    {/* Referral landing. The ?ref=<uid> param is captured into
+                        localStorage by captureReferral() at module load (above);
+                        this screen adds the "you were invited" moment (friend's
+                        name/avatar + reward + one-tap signup) so shared links
+                        actually convert instead of dumping visitors on the
+                        generic marketing page. */}
+                    <Route path="/reflink" element={<InviteLandingScreen />} />
                     <Route path="/login" element={<LoginScreen />} />
                     <Route path="/signup" element={<SignUpStep1 />} />
                     <Route path="/signup/step2" element={<SignUpStep2 />} />
@@ -494,13 +820,19 @@ export default function AppRouter() {
                     <Route path="/connect-gaming" element={<ConnectGamingScreen />} />
 
                     {/* Onboarding */}
-                    <Route path="/onboarding" element={<OnboardingScreen />} />
-                    <Route path="/onboarding/interests" element={<InterestSelectionScreen />} />
-                    <Route path="/onboarding/profile" element={<ProfileSetupScreen />} />
-                    <Route path="/onboarding/profile-step2" element={<ProfileSetupStep2Screen />} />
+                    <Route path="/onboarding" element={<OnboardingFlowScreen />} />
                     <Route path="/onboarding/identity" element={<ProfileIdentityScreen />} />
-                    <Route path="/onboarding/follow" element={<FollowSuggestionsScreen />} />
-                    <Route path="/onboarding/complete" element={<OnboardingCompleteScreen />} />
+                    {/* Legacy onboarding paths (old screens + the /setup/*
+                        strings some auth screens still emit) → the new flow. */}
+                    <Route path="/onboarding/welcome" element={<Navigate to="/onboarding" replace />} />
+                    <Route path="/onboarding/interests" element={<Navigate to="/onboarding" replace />} />
+                    <Route path="/onboarding/profile" element={<Navigate to="/onboarding" replace />} />
+                    <Route path="/onboarding/profile-step2" element={<Navigate to="/onboarding" replace />} />
+                    <Route path="/onboarding/follow" element={<Navigate to="/onboarding" replace />} />
+                    <Route path="/onboarding/complete" element={<Navigate to="/onboarding" replace />} />
+                    <Route path="/setup/interests" element={<Navigate to="/onboarding" replace />} />
+                    <Route path="/setup/profile" element={<Navigate to="/onboarding" replace />} />
+                    <Route path="/setup/follow-suggestions" element={<Navigate to="/onboarding" replace />} />
 
                     {/* Utility (public) */}
                     <Route path="/maintenance" element={<MaintenanceScreen />} />
@@ -513,55 +845,75 @@ export default function AppRouter() {
                     {/* ---------- PROTECTED MAIN APP (with MainLayout) ---------- */}
                     <Route element={<ProtectedRoute><MainLayout /></ProtectedRoute>}>
                       {/* Main tabs */}
-                      <Route path="/explore" element={<ExploreScreen />} />
-                      {/* "Social Media" nav — opens the feed on the Gaming News
-                          (RSS/social) tab so it's distinct from Home. */}
-                      <Route path="/feed" element={<HomeFeedScreen initialTab="Gaming News" />} />
-                      <Route path="/profile" element={<ProfileScreen />} />
+                      <Route path="/explore" element={IS_NATIVE_BUILD ? <NativeExploreScreen /> : <ExploreScreen />} />
+                      <Route path="/streams" element={<LiveStreamsScreen />} />
+                      <Route path="/profile" element={IS_NATIVE_BUILD ? <NativeProfileScreen /> : <ProfileScreen />} />
+                      <Route path="/memberships" element={IS_NATIVE_BUILD ? <NativeMyMembershipsScreen /> : <MyMembershipsScreen />} />
+                      <Route path="/purchases" element={<VergrMePurchasesScreen />} />
 
                       {/* Home */}
-                      <Route path="/earn" element={<EarnCoinsScreen />} />
+                      <Route path="/earn" element={IS_NATIVE_BUILD ? <NativeEarnCoinsScreen /> : <EarnCoinsScreen />} />
+                      {/* Native uses the SAME tabbed Referral hub as web (its
+                          standalone variant already renders a mobile header +
+                          hamburger drawer with safe-area insets). The old
+                          NativeReferralScreen is retired from this route. */}
                       <Route path="/earn/refer" element={<ReferralScreen />} />
-                      <Route path="/notifications" element={<NotificationsScreen />} />
-                      <Route path="/create-post" element={<Navigate to="/create" replace />} />
-                      <Route path="/create-poll" element={<GuestRouteGate action="create polls"><CreatePollScreen /></GuestRouteGate>} />
-                      <Route path="/leaderboard" element={<LeaderboardScreen />} />
-                      <Route path="/post/:postId" element={<PostDetailScreen />} />
-                      <Route path="/trending" element={<TrendingHashtagsScreen />} />
+                      <Route path="/notifications" element={IS_NATIVE_BUILD ? <NativeNotificationsScreen /> : <NotificationsScreen />} />
+                      <Route path="/create-post" element={<Navigate to="/" replace />} />
+                      {/* /create-poll: native-only route (footer icon in NativeCreateScreens).
+                          On web, polls are created inline in the CreateComposer modal. */}
+                      <Route path="/create-poll" element={IS_NATIVE_BUILD ? <GuestRouteGate action="create polls"><NativeCreatePollScreen /></GuestRouteGate> : <Navigate to="/" replace />} />
+                      <Route path="/leaderboard" element={IS_NATIVE_BUILD ? <NativeLeaderboardScreen /> : <LeaderboardScreen />} />
+                      <Route path="/post/:postId" element={IS_NATIVE_BUILD ? <NativePostDetailScreen /> : <PostDetailScreen />} />
+                      <Route path="/trending" element={IS_NATIVE_BUILD ? <NativeTrendingHashtagsScreen /> : <TrendingHashtagsScreen />} />
 
-                      {/* Create — all variants are write-only, gated against guests */}
-                      <Route path="/create"             element={<GuestRouteGate action="create posts"><CreatePostSelectorScreen /></GuestRouteGate>} />
-                      <Route path="/create/text"        element={<GuestRouteGate action="create posts"><CreateTextPostScreen /></GuestRouteGate>} />
-                      <Route path="/create/photo"       element={<GuestRouteGate action="post photos"><CreatePhotoPostScreen /></GuestRouteGate>} />
-                      <Route path="/create/clip"        element={<GuestRouteGate action="post clips"><CreateClipPostScreen /></GuestRouteGate>} />
-                      <Route path="/create/article"     element={<GuestRouteGate action="post articles"><CreateArticleScreen /></GuestRouteGate>} />
-                      <Route path="/create/lfg"         element={<GuestRouteGate action="post LFG"><CreateLFGScreen /></GuestRouteGate>} />
-                      <Route path="/create/tierlist"    element={<GuestRouteGate action="post tier lists"><CreateTierListScreen /></GuestRouteGate>} />
-                      <Route path="/create/achievement" element={<GuestRouteGate action="post achievements"><CreateAchievementScreen /></GuestRouteGate>} />
-                      <Route path="/create/quote"       element={<GuestRouteGate action="post quotes"><QuotePostScreen /></GuestRouteGate>} />
+                      {/* Create — native-only screens (footer/selector flow in NativeCreateScreens).
+                          On web/desktop, post creation is the CreateComposer modal (sidebar "Create"
+                          button / mobile FAB) — these per-type screens are superseded there and would
+                          otherwise be dead URLs reachable only by typing them, so they redirect home. */}
+                      <Route path="/create"             element={IS_NATIVE_BUILD ? <GuestRouteGate action="create posts"><NativeCreatePostSelectorScreen /></GuestRouteGate> : <Navigate to="/" replace />} />
+                      <Route path="/create/text"        element={IS_NATIVE_BUILD ? <GuestRouteGate action="create posts"><NativeCreateTextPostScreen /></GuestRouteGate> : <Navigate to="/" replace />} />
+                      <Route path="/create/photo"       element={IS_NATIVE_BUILD ? <GuestRouteGate action="post photos"><NativeCreatePhotoPostScreen /></GuestRouteGate> : <Navigate to="/" replace />} />
+                      <Route path="/create/clip"        element={IS_NATIVE_BUILD ? <GuestRouteGate action="post clips"><NativeCreateClipPostScreen /></GuestRouteGate> : <Navigate to="/" replace />} />
+                      <Route path="/create/article"     element={IS_NATIVE_BUILD ? <GuestRouteGate action="post articles"><NativeCreateArticleScreen /></GuestRouteGate> : <Navigate to="/" replace />} />
+                      <Route path="/create/lfg"         element={IS_NATIVE_BUILD ? <GuestRouteGate action="post LFG"><NativeCreateLFGScreen /></GuestRouteGate> : <Navigate to="/" replace />} />
+                      <Route path="/create/tierlist"    element={IS_NATIVE_BUILD ? <GuestRouteGate action="post tier lists"><NativeCreateTierListScreen /></GuestRouteGate> : <Navigate to="/" replace />} />
+                      <Route path="/create/achievement" element={IS_NATIVE_BUILD ? <GuestRouteGate action="post achievements"><NativeCreateAchievementScreen /></GuestRouteGate> : <Navigate to="/" replace />} />
+                      {/* /create/quote stays live on web too — PostCard's "Quote" action links here. */}
+                      <Route path="/create/quote"       element={<GuestRouteGate action="post quotes">{IS_NATIVE_BUILD ? <NativeQuotePostScreen /> : <QuotePostScreen />}</GuestRouteGate>} />
 
                       {/* Shorts */}
-                      <Route path="/shorts" element={<ShortsScreen />} />
-                      <Route path="/create/short" element={<GuestRouteGate action="create shorts"><CreateShortScreen /></GuestRouteGate>} />
+                      <Route path="/shorts" element={IS_NATIVE_BUILD ? <NativeShortsScreen /> : <ShortsScreen />} />
+                      <Route path="/create/short" element={<GuestRouteGate action="create shorts">{IS_NATIVE_BUILD ? <NativeCreateShortScreen /> : <CreateShortScreen />}</GuestRouteGate>} />
 
                       {/* Viewers */}
-                      <Route path="/clip/:postId" element={<ClipViewerScreen />} />
+                      <Route path="/clip/:postId" element={IS_NATIVE_BUILD ? <NativeClipViewerScreen /> : <ClipViewerScreen />} />
 
                       {/* Profile */}
-                      <Route path="/edit-profile" element={<GuestRouteGate action="edit your profile"><EditProfileScreen /></GuestRouteGate>} />
-                      <Route path="/followers/:tab" element={<FollowListScreen />} />
-                      <Route path="/user/:id" element={<PublicProfileScreen />} />
-                      <Route path="/browse-creators" element={<BrowseCreatorsScreen />} />
-                      <Route path="/esports-team/:teamId" element={<EsportsTeamScreen />} />
-                      <Route path="/prestige" element={<PrestigeLevelsScreen />} />
+                      <Route path="/edit-profile" element={<GuestRouteGate action="edit your profile">{IS_NATIVE_BUILD ? <NativeEditProfileScreen /> : <EditProfileScreen />}</GuestRouteGate>} />
+                      <Route path="/followers/:tab" element={IS_NATIVE_BUILD ? <NativeFollowListScreen /> : <FollowListScreen />} />
+                      {/* Followers/following for ANY user (self or others). uid scopes whose list. */}
+                      <Route path="/connections/:uid/:tab" element={IS_NATIVE_BUILD ? <NativeFollowListScreen /> : <FollowListScreen />} />
+                      <Route path="/user/:id" element={IS_NATIVE_BUILD ? <NativePublicProfileScreen /> : <PublicProfileScreen />} />
+                      <Route path="/browse-creators" element={IS_NATIVE_BUILD ? <NativeBrowseCreatorsScreen /> : <BrowseCreatorsScreen />} />
+                      <Route path="/esports-team/:teamId" element={IS_NATIVE_BUILD ? <NativeEsportsTeamScreen /> : <EsportsTeamScreen />} />
+                      <Route path="/prestige" element={IS_NATIVE_BUILD ? <NativePrestigeLevelsScreen /> : <PrestigeLevelsScreen />} />
 
                       {/* Standalone message screens (not master‑detail) */}
-                      <Route path="/messages/new" element={<NewMessageScreen />} />
-                      <Route path="/messages/requests" element={<MessageRequestsScreen />} />
-                      <Route path="/messages/create-group" element={<CreateGroupChatScreen />} />
-                      <Route path="/messages/:chatId/settings" element={<ChatSettingsScreen />} />
-                      <Route path="/messages/:chatId/details" element={<ChatDetailScreen />} />
-                      <Route path="/call/:chatId/:callType" element={<CallScreen />} />
+                      <Route path="/messages/new" element={IS_NATIVE_BUILD ? <NativeNewMessageScreen /> : <NewMessageScreen />} />
+                      <Route path="/messages/requests" element={IS_NATIVE_BUILD ? <NativeMessageRequestsScreen /> : <MessageRequestsScreen />} />
+                      <Route path="/messages/calls" element={IS_NATIVE_BUILD ? <NativeCallHistoryScreen /> : <CallHistoryScreen />} />
+                      <Route path="/messages/create-group" element={IS_NATIVE_BUILD ? <NativeCreateGroupChatScreen /> : <CreateGroupChatScreen />} />
+                      {/* WhatsApp chat import (share-target lands here too) */}
+                      <Route path="/messages/import" element={<ImportChatScreen />} />
+                      <Route path="/messages/g/:chatId" element={IS_NATIVE_BUILD ? <NativeJoinGroupScreen /> : <JoinGroupScreen />} />
+                      <Route path="/messages/:chatId/settings" element={IS_NATIVE_BUILD ? <NativeChatSettingsScreen /> : <ChatSettingsScreen />} />
+                      <Route path="/messages/:chatId/details" element={IS_NATIVE_BUILD ? <NativeChatDetailScreen /> : <ChatDetailScreen />} />
+                      <Route path="/messages/:chatId/group" element={IS_NATIVE_BUILD ? <NativeGroupInfoScreen /> : <GroupInfoScreen />} />
+                      <Route path="/call/:chatId/:callType" element={IS_NATIVE_BUILD ? <NativeCallScreen /> : <CallScreen />} />
+                      {/* Group calls run on the SFU, not P2P — one screen for
+                          web + native (it's already a single-column layout). */}
+                      <Route path="/group-call/:callId" element={<GroupCallScreen />} />
 
                       {/* /squads/create was here under MainLayout — moved out
                           to the standalone squad route group below (line ~600)
@@ -593,21 +945,21 @@ export default function AppRouter() {
                       <Route path="/verification-pending" element={<VerificationPendingScreen />} />
 
                       {/* Streams */}
-                      <Route path="/go-live" element={<GuestRouteGate action="go live"><GoLiveSetupScreen /></GuestRouteGate>} />
-                      <Route path="/go-live/co-stream" element={<GuestRouteGate action="co-stream"><CoStreamingScreen /></GuestRouteGate>} />
-                      <Route path="/co-stream/invite/:inviteId" element={<GuestRouteGate action="co-stream"><CoStreamInviteScreen /></GuestRouteGate>} />
+                      <Route path="/go-live" element={<GuestRouteGate action="go live">{IS_NATIVE_BUILD ? <NativeGoLiveScreen /> : <GoLiveSetupScreen />}</GuestRouteGate>} />
+                      <Route path="/go-live/co-stream" element={<GuestRouteGate action="co-stream">{IS_NATIVE_BUILD ? <NativeCoStreamingScreen /> : <CoStreamingScreen />}</GuestRouteGate>} />
+                      <Route path="/co-stream/invite/:inviteId" element={<GuestRouteGate action="co-stream">{IS_NATIVE_BUILD ? <NativeCoStreamInviteScreen /> : <CoStreamInviteScreen />}</GuestRouteGate>} />
                       <Route path="/stream/:streamId" element={<LiveStreamScreen />} />
-                      <Route path="/broadcast" element={<GuestRouteGate action="broadcast"><BroadcasterScreen /></GuestRouteGate>} />
-                      <Route path="/broadcast/:streamId" element={<GuestRouteGate action="broadcast"><BroadcasterScreen /></GuestRouteGate>} />
-                      <Route path="/watch" element={<ViewerStreamScreen />} />
-                      <Route path="/watch/:streamId" element={<ViewerStreamScreen />} />
+                      <Route path="/broadcast" element={<GuestRouteGate action="broadcast">{IS_NATIVE_BUILD ? <NativeBroadcasterScreen /> : <BroadcasterScreen />}</GuestRouteGate>} />
+                      <Route path="/broadcast/:streamId" element={<GuestRouteGate action="broadcast">{IS_NATIVE_BUILD ? <NativeBroadcasterScreen /> : <BroadcasterScreen />}</GuestRouteGate>} />
+                      <Route path="/watch" element={IS_NATIVE_BUILD ? <NativeViewerStreamScreen /> : <ViewerStreamScreen />} />
+                      <Route path="/watch/:streamId" element={IS_NATIVE_BUILD ? <NativeViewerStreamScreen /> : <ViewerStreamScreen />} />
                       <Route path="/stream/:streamId/moderation" element={<StreamModerationScreen />} />
-                      <Route path="/stream/analytics" element={<StreamAnalyticsScreen />} />
-                      <Route path="/stream/ended" element={<StreamEndingScreen />} />
+                      <Route path="/stream/analytics" element={IS_NATIVE_BUILD ? <NativeStreamAnalyticsScreen /> : <StreamAnalyticsScreen />} />
+                      <Route path="/stream/ended" element={IS_NATIVE_BUILD ? <NativeStreamEndingScreen /> : <StreamEndingScreen />} />
 
                       {/* Tournaments — browse-only screens stay open; entry
                           and creation require KYC + supported region. */}
-                      <Route path="/tournaments" element={<RegionGate feature="tournaments"><TournamentScreen /></RegionGate>} />
+                      <Route path="/tournaments" element={<RegionGate feature="tournaments">{IS_NATIVE_BUILD ? <NativeTournamentScreen /> : <TournamentScreen />}</RegionGate>} />
                       <Route path="/tournaments/all" element={<RegionGate feature="tournaments"><TournamentListScreen variant="all" /></RegionGate>} />
                       <Route path="/tournaments/mine" element={<RegionGate feature="tournaments"><TournamentListScreen variant="mine" /></RegionGate>} />
                       <Route path="/tournaments/following" element={<RegionGate feature="tournaments"><TournamentListScreen variant="following" /></RegionGate>} />
@@ -617,28 +969,27 @@ export default function AppRouter() {
                       <Route path="/tournaments/rules" element={<LegalScreen type="tournament_rules" />} />
                       <Route path="/tournaments/:tournamentId/standings" element={<TournamentStandingsScreen />} />
                       <Route path="/tournaments/:tournamentId/prizes" element={<TournamentPrizePoolScreen />} />
-                      <Route path="/match/:matchId" element={<RegionGate feature="tournament entry"><MatchDetailsScreen /></RegionGate>} />
+                      <Route path="/match/:matchId" element={<RegionGate feature="tournament entry">{IS_NATIVE_BUILD ? <NativeMatchDetailsScreen /> : <MatchDetailsScreen />}</RegionGate>} />
                       <Route path="/tournaments/:tournamentId/match/:matchId" element={<RegionGate feature="tournament entry"><TournamentMatchScreen /></RegionGate>} />
                       <Route path="/tournaments/me/stats" element={<TournamentStatsScreen />} />
-                      {/* GR6 — coaching marketplace */}
-                      <Route path="/coaching" element={<CoachingScreen />} />
                       {/* Mod-internal clip viewer for AI cheat-flag moments.
                           Auth required + client-side mod-role gate. */}
                       <Route path="/clips/cheat-flag/:tournamentId/:matchId/:flagIndex" element={<CheatFlagClipScreen />} />
                       {/* Pre-match warmup lobby — voice P2P + readiness for the two players. */}
                       <Route path="/squads/warmup/:tag" element={<WarmupLobbyScreen />} />
                       <Route path="/vanguard/wall" element={<ModWallScreen />} />
-                      <Route path="/vanguard/queue" element={<VanguardReviewQueueScreen />} />
+                      {/* Distinct path — /vanguard/queue resolves to the active moderation queue (VanguardQueueScreen) below; this is the separate review/anti-cheat queue. */}
+                      <Route path="/vanguard/review-queue" element={<VanguardReviewQueueScreen />} />
                       <Route path="/team/:teamId/manage" element={<TeamManagementScreen />} />
                       <Route path="/team/:teamId/funding" element={<TeamFundingScreen />} />
                       <Route path="/team-contribute" element={<GuestRouteGate action="fund a team"><RegionGate feature="team funding"><KycGate feature="team funding"><ContributeScreen /></KycGate></RegionGate></GuestRouteGate>} />
                       <Route path="/contribution-success" element={<ContributionSuccessScreen />} />
                       <Route path="/prize-receipt/:prizeId" element={<PrizeReceiptScreen />} />
-                      <Route path="/create-tournament" element={<GuestRouteGate action="create a tournament"><RegionGate feature="creating tournaments"><KycGate feature="creating tournaments"><CreateTournamentScreen /></KycGate></RegionGate></GuestRouteGate>} />
+                      <Route path="/create-tournament" element={<GuestRouteGate action="create a tournament"><RegionGate feature="creating tournaments"><KycGate feature="creating tournaments"><CreateTournamentV2 /></KycGate></RegionGate></GuestRouteGate>} />
                       <Route path="/match/:matchId/control" element={<ModeratorMatchControlScreen />} />
 
                       {/* Settings */}
-                      <Route path="/settings" element={<SettingsScreen />} />
+                      <Route path="/settings" element={IS_NATIVE_BUILD ? <NativeSettingsHubScreen /> : <SettingsScreen />} />
                       <Route path="/settings/backup" element={<BackupSettingsScreen />} />
                       <Route path="/settings/privacy" element={<PrivacySettingsScreen />} />
                       <Route path="/settings/linked-accounts" element={<LinkedAccountsScreen />} />
@@ -647,6 +998,7 @@ export default function AppRouter() {
                       <Route path="/settings/security" element={<SecuritySettingsScreen />} />
                       <Route path="/settings/language" element={<LanguageSettingsScreen />} />
                       <Route path="/settings/display" element={<DisplaySettingsScreen />} />
+                      <Route path="/settings/storage" element={<StorageSettingsScreen />} />
                       <Route path="/settings/permissions" element={<AppPermissionsScreen />} />
                       <Route path="/settings/blocked-words" element={<BlockedWordsScreen />} />
                       <Route path="/settings/blocked-users" element={<BlockedUsersScreen />} />
@@ -675,57 +1027,63 @@ export default function AppRouter() {
 
                       {/* Admin — new sidebar-shell dashboard. Old card-grid replaced 2026-05-17.
                           Phase 1 will replace each "SOON" screen with its redesigned mockup. */}
-                      <Route path="/admin" element={<AdminDashboardScreen />} />
-                      <Route path="/admin/access" element={<AdminAccessScreen />} />
-                      <Route path="/admin/users" element={<AdminUsersScreen />} />
-                      <Route path="/admin/economy" element={<AdminEconomyScreen />} />
-                      <Route path="/admin/reports" element={<AdminModerationScreen />} />
-                      <Route path="/admin/reports/audit" element={<AdminModerationAuditScreen />} />
-                      <Route path="/admin/bots" element={<AdminBotsScreen />} />
-                      <Route path="/admin/announce" element={<AdminAnnounceScreen />} />
-                      <Route path="/admin/vanguard" element={<AdminVanguardScreen />} />
-                      <Route path="/admin/security" element={<AdminSecurityScreen />} />
-                      <Route path="/admin/config" element={<AdminConfigScreen />} />
-                      <Route path="/admin/audit" element={<AdminAuditScreen />} />
-                      <Route path="/admin/cheat-signatures" element={
-                        <AdminRouteGate screen="cheat-signatures"><CheatSignaturesScreen /></AdminRouteGate>
-                      } />
+                      {/* Admin UI: lazy chunk on web, EXCLUDED from the native APK
+                          (AdminRoutes is null when __VERGR_NATIVE__). */}
+                      {!IS_NATIVE_BUILD && AdminRoutes && (
+                        <Route path="/admin/*" element={<Suspense fallback={null}><AdminRoutes /></Suspense>} />
+                      )}
                       <Route path="/hud" element={<HudOverlay />} />
-                      <Route path="/admin/subscriptions" element={<AdminSubscriptionsScreen />} />
-                      <Route path="/admin/tournaments" element={<AdminTournamentsScreen />} />
-                      <Route path="/admin/stats" element={<AdminStatsScreen />} />
                       <Route path="/vanguard/invitation" element={<VanguardInvitationScreen />} />
                       {/* Legacy redirect — /vanguard/me → /vanguard/today (new shell) */}
                       <Route path="/vanguard/me" element={<Navigate to="/vanguard/today" replace />} />
 
                       {/* Search */}
-                      <Route path="/search" element={<SearchResultsAllScreen />} />
-                      <Route path="/search/streams" element={<SearchResultsStreamsScreen />} />
+                      <Route path="/search" element={IS_NATIVE_BUILD ? <NativeSearchResultsAllScreen /> : <SearchResultsAllScreen />} />
+                      <Route path="/search/streams" element={IS_NATIVE_BUILD ? <NativeSearchResultsStreamsScreen /> : <SearchResultsStreamsScreen />} />
                       <Route path="/search/empty" element={<NoSearchResultsScreen />} />
 
                       {/* Activity */}
                       <Route path="/activity" element={<ActivityLogScreen />} />
-
-                      {/* Vergr.me Editor — Pro user only, protected */}
-                      <Route path="/vergrme/edit" element={<VergrMeEditorScreen />} />
                     </Route>
+
+                    {/* Vergr.me Editor — standalone focused editor (own chrome,
+                        no app rail) so the Settings/Creator nav context isn't
+                        replaced by the generic main nav. Back button returns
+                        to wherever the user came from. */}
+                    <Route path="/vergrme/edit" element={<ProtectedRoute><VergrMeEditorScreen /></ProtectedRoute>} />
 
                     {/* ---------- WALLET v2 (own layout — sidebar + topbar + mobile bottom-nav) ---------- */}
                     <Route element={<ProtectedRoute><RegionGate feature="the VERGR wallet"><WalletLayout /></RegionGate></ProtectedRoute>}>
-                      <Route path="/wallet"                          element={<WalletHomeScreen />} />
-                      <Route path="/wallet/buy"                      element={<WalletBuyScreen />} />
-                      <Route path="/wallet/convert"                  element={<WalletConvertScreen />} />
+                      <Route path="/wallet"                          element={IS_NATIVE_BUILD ? <NativeHomeScreen /> : <WalletHomeScreen />} />
+                      <Route path="/wallet/buy"                      element={IS_NATIVE_BUILD ? <NativeBuyScreen /> : <WalletBuyScreen />} />
+                      <Route path="/wallet/convert"                  element={IS_NATIVE_BUILD ? <NativeConvertScreen /> : <WalletConvertScreen />} />
                       <Route path="/wallet/withdraw"                 element={<WalletWithdrawScreen />} />
                       <Route path="/wallet/withdraw/new-address"     element={<WalletNewAddressScreen />} />
-                      <Route path="/wallet/history"                  element={<WalletHistoryScreen />} />
-                      <Route path="/wallet/settings"                 element={<WalletSettingsV2Screen />} />
+                      <Route path="/wallet/history"                  element={IS_NATIVE_BUILD ? <NativeHistoryScreen /> : <WalletHistoryScreen />} />
+                      <Route path="/wallet/settings"                 element={IS_NATIVE_BUILD ? <NativeSettingsScreen /> : <WalletSettingsV2Screen />} />
                       <Route path="/wallet/security"                 element={<WalletSecurityHubScreen />} />
                       <Route path="/wallet/security/pin"             element={<WalletSecurityPinScreen />} />
                       <Route path="/wallet/security/totp"            element={<WalletSecurityTotpScreen />} />
                       <Route path="/wallet/security/addresses"       element={<WalletSecurityAddressesScreen />} />
-                      <Route path="/wallet/security/deposit"         element={<WalletSecurityDepositScreen />} />
-                      <Route path="/wallet/kyc"                      element={<WalletKycScreen />} />
+                      <Route path="/wallet/security/deposit"         element={IS_NATIVE_BUILD ? <NativeDepositScreen /> : <WalletSecurityDepositScreen />} />
+                      <Route path="/wallet/kyc"                      element={IS_NATIVE_BUILD ? <NativeKycScreen /> : <WalletKycScreen />} />
+                      <Route path="/wallet/referral"                 element={<WalletReferralScreen />} />
                       <Route path="/wallet/help"                     element={<WalletHelpV2Screen />} />
+                    </Route>
+
+                    {/* ---------- VERGR SHOP (own layout — seller commerce workspace) ----------
+                        Standalone on purpose: vergr.me is the display tool, this is
+                        where selling is managed (catalog, orders, customers, stores). */}
+                    {/* Outside ShopLayout: the merchant arrives here straight
+                        from Shopify admin, before any store is linked. */}
+                    <Route path="/shop/link-shopify" element={<LinkShopifyScreen />} />
+                    <Route element={<ProtectedRoute><ShopLayout /></ProtectedRoute>}>
+                      <Route path="/shop"              element={<ShopOverviewScreen />} />
+                      <Route path="/shop/products"     element={<ShopProductsScreen />} />
+                      <Route path="/shop/orders"       element={<ShopOrdersScreen />} />
+                      <Route path="/shop/customers"    element={<ShopCustomersScreen />} />
+                      <Route path="/shop/integrations" element={<ShopIntegrationsScreen />} />
+                      <Route path="/shop/settings"     element={<ShopSettingsScreen />} />
                     </Route>
 
                     {/* ---------- VANGUARD DASHBOARD (own layout — sidebar + topbar) ---------- */}
@@ -758,17 +1116,17 @@ export default function AppRouter() {
                     {/* ---------- CREATOR STUDIO (own layout — sidebar + topbar) ---------- */}
                     <Route element={<ProtectedRoute><Outlet /></ProtectedRoute>}>
                       <Route path="/creator" element={<Navigate to="/creator/dashboard" replace />} />
-                      <Route path="/creator/dashboard"  element={<CreatorDashboardScreen />} />
-                      <Route path="/creator/earnings"   element={<CreatorEarningsScreen />} />
-                      <Route path="/creator/content"    element={<CreatorContentScreen />} />
-                      <Route path="/creator/schedule"   element={<CreatorScheduleScreen />} />
-                      <Route path="/creator/audience"   element={<CreatorAudienceScreen />} />
-                      <Route path="/creator/community"  element={<CreatorCommunityScreen />} />
-                      <Route path="/creator/analytics"  element={<CreatorLayout page="analytics" title="Analytics" subtitle="Deep dive into your performance" requiredTier="lite" lockDescription="Detailed monthly analytics with growth, engagement and revenue breakdowns. Upgrade to Lite to unlock."><MonthlyAnalyticsScreen embedded /></CreatorLayout>} />
-                      <Route path="/creator/quests"     element={<CreatorLayout page="quests" title="Creator Quests" subtitle="Earn VP — level up your creator rank"><CreatorQuestsScreen embedded /></CreatorLayout>} />
-                      <Route path="/creator/membership" element={<CreatorLayout page="memberships" title="Membership Tiers" subtitle="Offer paid perks to your fans" requiredTier="pro" lockDescription="Build paid tiers with perks, Discord roles and monthly earnings caps. Upgrade to Pro to enable."><MembershipTiersScreen embedded /></CreatorLayout>} />
-                      <Route path="/creator/ads"        element={<CreatorLayout page="ads" title="Ad Center" subtitle="Run targeted in-feed campaigns"><AdCenterScreen embedded /></CreatorLayout>} />
-                      <Route path="/creator/verify"     element={<CreatorLayout page="verify" title="Creator Verification" subtitle="Identity check — required for Ad Center, payouts and membership tiers"><CreatorVerificationScreen embedded /></CreatorLayout>} />
+                      <Route path="/creator/dashboard"  element={IS_NATIVE_BUILD ? <NativeCreatorDashboardScreen /> : <CreatorDashboardScreen />} />
+                      <Route path="/creator/earnings"   element={IS_NATIVE_BUILD ? <NativeCreatorEarningsScreen /> : <CreatorEarningsScreen />} />
+                      <Route path="/creator/content"    element={IS_NATIVE_BUILD ? <NativeCreatorContentScreen /> : <CreatorContentScreen />} />
+                      <Route path="/creator/schedule"   element={IS_NATIVE_BUILD ? <NativeCreatorScheduleScreen /> : <CreatorScheduleScreen />} />
+                      <Route path="/creator/audience"   element={IS_NATIVE_BUILD ? <NativeCreatorAudienceScreen /> : <CreatorAudienceScreen />} />
+                      <Route path="/creator/community"  element={IS_NATIVE_BUILD ? <NativeCreatorCommunityScreen /> : <CreatorCommunityScreen />} />
+                      <Route path="/creator/analytics"  element={IS_NATIVE_BUILD ? <NativeCreatorAnalyticsScreen /> : <CreatorLayout page="analytics" title="Analytics" subtitle="Deep dive into your performance" requiredTier="lite" lockDescription="Detailed monthly analytics with growth, engagement and revenue breakdowns. Upgrade to Lite to unlock."><MonthlyAnalyticsScreen embedded /></CreatorLayout>} />
+                      <Route path="/creator/quests"     element={IS_NATIVE_BUILD ? <NativeCreatorQuestsScreen /> : <CreatorLayout page="quests" title="Creator Quests" subtitle="Earn VP — level up your creator rank"><CreatorQuestsScreen embedded /></CreatorLayout>} />
+                      <Route path="/creator/membership" element={IS_NATIVE_BUILD ? <NativeCreatorMembershipScreen /> : <CreatorLayout page="memberships" title="Membership Tiers" subtitle="Offer paid perks to your fans" requiredTier="pro" lockDescription="Build paid tiers with perks, Discord roles and monthly earnings caps. Upgrade to Pro to enable."><MembershipTiersScreen embedded /></CreatorLayout>} />
+                      <Route path="/creator/ads"        element={IS_NATIVE_BUILD ? <NativeCreatorAdsScreen /> : <CreatorLayout page="ads" title="Ad Center" subtitle="Run targeted in-feed campaigns"><AdCenterScreen embedded /></CreatorLayout>} />
+                      <Route path="/creator/verify"     element={IS_NATIVE_BUILD ? <NativeCreatorVerifyScreen /> : <CreatorLayout page="verify" title="Creator Verification" subtitle="Identity check — required for Ad Center, payouts and membership tiers"><CreatorVerificationScreen embedded /></CreatorLayout>} />
                     </Route>
 
                     {/* Mobile hand-off route for QR-code verification continuation */}
@@ -776,43 +1134,59 @@ export default function AppRouter() {
 
                     {/* ---------- MESSAGES MASTER‑DETAIL ---------- */}
                     <Route path="/messages" element={<ProtectedRoute><MessagesMasterDetail /></ProtectedRoute>}>
-                      <Route index element={<MessagesInboxScreen />} />
-                      <Route path="browse" element={<BrowseGroupsScreen />} />
-                      <Route path="friends" element={<FriendsScreen />} />
-                      <Route path="voice/:slug" element={<VoiceChannelScreen />} />
-                      <Route path=":chatId" element={<ChatThreadScreen />} />
+                      <Route index element={IS_NATIVE_BUILD ? <NativeMessagesInboxScreen /> : <MessagesInboxScreen />} />
+                      <Route path="browse" element={IS_NATIVE_BUILD ? <NativeBrowseGroupsScreen /> : <BrowseGroupsScreen />} />
+                      <Route path="friends" element={IS_NATIVE_BUILD ? <NativeFriendsScreen /> : <FriendsScreen />} />
+                      <Route path="voice/:slug" element={IS_NATIVE_BUILD ? <NativeVoiceChannelScreen /> : <VoiceChannelScreen />} />
+                      {/* Communication-hub sections — render inside the messages
+                          shell so the glossy hub rail stays pinned (they each
+                          bring their own list column + main). */}
+                      <Route path="hub/calls" element={<CallsScreen />} />
+                      <Route path="hub/status" element={<StatusScreen />} />
+                      <Route path="hub/squads" element={<SquadsHub />} />
+                      <Route path=":chatId" element={IS_NATIVE_BUILD ? <NativeChatThreadScreen /> : <ChatThreadScreen />} />
                     </Route>
 
-                    {/* ---------- SQUADS (redesigned — self-contained SquadShell chrome) ---------- */}
+                    {/* ---------- SQUADS ----------
+                        Web = self-contained SquadShell chrome. Native (APK) = a
+                        dedicated phone-first screen per surface (NativeSquad*),
+                        routed via IS_NATIVE_BUILD so the desktop-rail DOM never
+                        ships to the WebView. */}
                     {/* Global level */}
-                    <Route path="/squads" element={<ProtectedRoute><SquadsScreen /></ProtectedRoute>} />
-                    <Route path="/squads/mine" element={<ProtectedRoute><SquadsMineScreen /></ProtectedRoute>} />
-                    <Route path="/squads/invitations" element={<ProtectedRoute><SquadInvitationsScreen /></ProtectedRoute>} />
-                    <Route path="/squads/applications" element={<ProtectedRoute><SquadApplicationsScreen /></ProtectedRoute>} />
-                    <Route path="/squads/players" element={<ProtectedRoute><BrowsePlayersScreen /></ProtectedRoute>} />
-                    <Route path="/squads/create" element={<ProtectedRoute><CreateSquadScreen /></ProtectedRoute>} />
+                    <Route path="/squads" element={<ProtectedRoute>{IS_NATIVE_BUILD ? <NativeSquadsScreen /> : <SquadsScreen />}</ProtectedRoute>} />
+                    <Route path="/squads/mine" element={<ProtectedRoute>{IS_NATIVE_BUILD ? <NativeSquadsMineScreen /> : <SquadsMineScreen />}</ProtectedRoute>} />
+                    <Route path="/squads/invitations" element={<ProtectedRoute>{IS_NATIVE_BUILD ? <NativeSquadInvitationsScreen /> : <SquadInvitationsScreen />}</ProtectedRoute>} />
+                    <Route path="/squads/applications" element={<ProtectedRoute>{IS_NATIVE_BUILD ? <NativeSquadApplicationsScreen /> : <SquadApplicationsScreen />}</ProtectedRoute>} />
+                    <Route path="/squads/players" element={<ProtectedRoute>{IS_NATIVE_BUILD ? <NativeBrowsePlayersScreen /> : <BrowsePlayersScreen />}</ProtectedRoute>} />
+                    <Route path="/squads/create" element={<ProtectedRoute>{IS_NATIVE_BUILD ? <NativeCreateSquadScreen /> : <CreateSquadScreen />}</ProtectedRoute>} />
                     {/* Per-squad */}
-                    <Route path="/squads/:squadId" element={<ProtectedRoute><SquadOverviewScreen /></ProtectedRoute>} />
-                    <Route path="/squads/:squadId/chat" element={<ProtectedRoute><SquadChatThreadScreen /></ProtectedRoute>} />
-                    <Route path="/squads/:squadId/members" element={<ProtectedRoute><SquadMembersScreen /></ProtectedRoute>} />
-                    <Route path="/squads/:squadId/announcements" element={<ProtectedRoute><SquadAnnouncementsScreen /></ProtectedRoute>} />
-                    <Route path="/squads/:squadId/leaderboard" element={<ProtectedRoute><SquadLeaderboardScreen /></ProtectedRoute>} />
-                    <Route path="/squads/:squadId/events" element={<ProtectedRoute><SquadEventsScreen /></ProtectedRoute>} />
-                    <Route path="/squads/:squadId/challenges" element={<ProtectedRoute><SquadChallengesScreen /></ProtectedRoute>} />
-                    <Route path="/squads/:squadId/media" element={<ProtectedRoute><SquadMediaScreen /></ProtectedRoute>} />
-                    <Route path="/squads/:squadId/pinned" element={<ProtectedRoute><SquadPinnedScreen /></ProtectedRoute>} />
-                    <Route path="/squads/:squadId/settings" element={<ProtectedRoute><SquadSettingsScreen /></ProtectedRoute>} />
-                    <Route path="/squads/:squadId/roles" element={<ProtectedRoute><SquadRolesScreen /></ProtectedRoute>} />
-                    <Route path="/squads/:squadId/requests" element={<ProtectedRoute><SquadJoinRequestsScreen /></ProtectedRoute>} />
-                    <Route path="/squads/:squadId/invite" element={<ProtectedRoute><InviteMembersScreen /></ProtectedRoute>} />
-                    <Route path="/squads/:squadId/analytics" element={<ProtectedRoute><SquadAnalyticsScreen /></ProtectedRoute>} />
-                    {/* Squad voice/video hangout still uses its own self-contained screen */}
-                    <Route path="/squads/:squadId/stream" element={<ProtectedRoute><SquadStreamScreen /></ProtectedRoute>} />
+                    <Route path="/squads/:squadId" element={<ProtectedRoute>{IS_NATIVE_BUILD ? <NativeSquadOverviewScreen /> : <SquadOverviewScreen />}</ProtectedRoute>} />
+                    <Route path="/squads/:squadId/chat" element={<ProtectedRoute>{IS_NATIVE_BUILD ? <NativeSquadChatThreadScreen /> : <SquadChatThreadScreen />}</ProtectedRoute>} />
+                    <Route path="/squads/:squadId/members" element={<ProtectedRoute>{IS_NATIVE_BUILD ? <NativeSquadMembersScreen /> : <SquadMembersScreen />}</ProtectedRoute>} />
+                    <Route path="/squads/:squadId/announcements" element={<ProtectedRoute>{IS_NATIVE_BUILD ? <NativeSquadAnnouncementsScreen /> : <SquadAnnouncementsScreen />}</ProtectedRoute>} />
+                    <Route path="/squads/:squadId/leaderboard" element={<ProtectedRoute>{IS_NATIVE_BUILD ? <NativeSquadLeaderboardScreen /> : <SquadLeaderboardScreen />}</ProtectedRoute>} />
+                    <Route path="/squads/:squadId/events" element={<ProtectedRoute>{IS_NATIVE_BUILD ? <NativeSquadEventsScreen /> : <SquadEventsScreen />}</ProtectedRoute>} />
+                    <Route path="/squads/:squadId/challenges" element={<ProtectedRoute>{IS_NATIVE_BUILD ? <NativeSquadChallengesScreen /> : <SquadChallengesScreen />}</ProtectedRoute>} />
+                    <Route path="/squads/:squadId/media" element={<ProtectedRoute>{IS_NATIVE_BUILD ? <NativeSquadMediaScreen /> : <SquadMediaScreen />}</ProtectedRoute>} />
+                    <Route path="/squads/:squadId/pinned" element={<ProtectedRoute>{IS_NATIVE_BUILD ? <NativeSquadPinnedScreen /> : <SquadPinnedScreen />}</ProtectedRoute>} />
+                    <Route path="/squads/:squadId/settings" element={<ProtectedRoute>{IS_NATIVE_BUILD ? <NativeSquadSettingsScreen /> : <SquadSettingsScreen />}</ProtectedRoute>} />
+                    <Route path="/squads/:squadId/roles" element={<ProtectedRoute>{IS_NATIVE_BUILD ? <NativeSquadRolesScreen /> : <SquadRolesScreen />}</ProtectedRoute>} />
+                    <Route path="/squads/:squadId/requests" element={<ProtectedRoute>{IS_NATIVE_BUILD ? <NativeSquadJoinRequestsScreen /> : <SquadJoinRequestsScreen />}</ProtectedRoute>} />
+                    <Route path="/squads/:squadId/invite" element={<ProtectedRoute>{IS_NATIVE_BUILD ? <NativeInviteMembersScreen /> : <InviteMembersScreen />}</ProtectedRoute>} />
+                    <Route path="/squads/:squadId/analytics" element={<ProtectedRoute>{IS_NATIVE_BUILD ? <NativeSquadAnalyticsScreen /> : <SquadAnalyticsScreen />}</ProtectedRoute>} />
+                    {/* Squad voice/video hangout (self-contained, already phone-first) */}
+                    <Route path="/squads/:squadId/stream" element={<ProtectedRoute>{IS_NATIVE_BUILD ? <NativeSquadStreamScreen /> : <SquadStreamScreen />}</ProtectedRoute>} />
+
+                    {/* vergr.me/:username — bare handle on the vergr.me apex serves
+                        the link-in-bio page directly (host-gated; see VergrMeHostRoute). */}
+                    <Route path="/:username" element={<VergrMeHostRoute />} />
 
                     {/* ---------- CATCH‑ALL ---------- */}
-                    <Route path="*" element={<Navigate to="/" replace />} />
+                    <Route path="*" element={<CatchAllRoute />} />
                   </Routes>
+                  </Suspense>
                 </div>
+                </LiveUsersProvider>
               </LayoutProvider>
             </UIProvider>
           </NotificationProvider>

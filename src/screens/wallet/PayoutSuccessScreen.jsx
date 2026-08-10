@@ -47,7 +47,7 @@ export default function PayoutSuccessScreen() {
         You'll receive it within 3-5 business days.
       </p>
 
-      <button onClick={() => navigate('/wallet')} className="w-full max-w-xs py-4 rounded-2xl bg-brand-cyan text-bg-dark font-bold text-lg mb-3">
+      <button onClick={() => navigate('/wallet')} className="w-full max-w-xs py-4 rounded-2xl bg-brand-violet text-white font-bold text-lg mb-3">
         Back to Wallet
       </button>
       <button onClick={() => navigate('/')} className="w-full max-w-xs py-3 rounded-2xl bg-surface-2 text-text-secondary font-semibold text-sm">

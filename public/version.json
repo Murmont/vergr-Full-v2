@@ -1,0 +1,7 @@
+{
+  "androidVersion": "1.0.191",
+  "androidVersionCode": 191,
+  "apkUrl": "https://cdn.vergr.app/downloads/VERGR.apk?v=1000191",
+  "minSupportedVersionCode": 1,
+  "notes": "The screen you see before sending a photo or video is rebuilt: the video actually shows now, no flicker, and it fits the screen properly. You can trim a video, mute it, rotate a photo, and pick a size before it sends."
+}

@@ -1,14 +1,15 @@
 export default function VergrLogo({ size = 48, showText = false, className = '' }) {
+  // Uses the real app icon (same asset as the PWA home-screen icon) so the
+  // auth screens and the installed-app icon stay visually identical.
   return (
     <div className={`flex items-center gap-3 ${className}`}>
-      <div
-        className="rounded-xl bg-brand-cyan flex items-center justify-center"
-        style={{ width: size, height: size }}
-      >
-        <span className="font-syne font-black text-bg-dark tracking-tighter" style={{ fontSize: size * 0.38 }}>
-          V
-        </span>
-      </div>
+      <img
+        src="/icons/icon-512-v2.png"
+        alt="VERGR"
+        width={size}
+        height={size}
+        style={{ width: size, height: size, borderRadius: size * 0.22, display: 'block' }}
+      />
       {showText && (
         <h1 className="font-syne text-2xl font-extrabold text-text-primary tracking-tight">VERGR</h1>
       )}

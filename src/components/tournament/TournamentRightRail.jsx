@@ -69,7 +69,7 @@ export default function TournamentRightRail() {
     <AppRightRail width={320}>
       <SectionCard title="My Stats" action="View All" onAction={() => navigate('/tournaments/me/stats')} padding="p-4">
         <div className="grid grid-cols-3 gap-2">
-          <StatTile icon="emoji_events" iconColor="text-brand-cyan" label="Active" value={activeCount} />
+          <StatTile icon="emoji_events" iconColor="text-brand-violet-light" label="Active" value={activeCount} />
           <StatTile icon="military_tech" iconColor="text-brand-gold" label="Won" value={won} />
           <StatTile icon="paid" iconColor="text-brand-violet" label="Earned" value={earned.toLocaleString()} />
         </div>
@@ -123,7 +123,7 @@ export default function TournamentRightRail() {
         <div className="grid grid-cols-2 gap-2">
           {HOW_IT_WORKS.map((s, i) => (
             <div key={i} className="rounded-lg bg-white/[0.03] border border-white/[0.05] p-2.5">
-              <Icon name={s.icon} size={16} className="text-brand-cyan mb-1" />
+              <Icon name={s.icon} size={16} className="text-brand-violet-light mb-1" />
               <div className="text-[11px] font-bold text-text-primary">{s.title}</div>
               <div className="text-[10px] text-text-muted leading-snug mt-0.5">{s.body}</div>
             </div>

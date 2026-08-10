@@ -9,15 +9,38 @@ if (admin.apps.length === 0) admin.initializeApp();
 functions.setGlobalOptions({ region: 'europe-west1' });
 const db = getFirestore('vgrdb');
 
+// Huawei Push Kit (HMS) — the push channel for Huawei devices, which have no
+// Google Play Services (so no FCM). sendHuaweiPush is a no-op until the two
+// secrets below hold real AppGallery-Connect values, so declaring them on the
+// push triggers below is safe. Any trigger that should reach Huawei users must
+// list these two secrets so v2 injects them into process.env.
+const { sendHuaweiPush } = require('./huaweiPush');
+const HUAWEI_PUSH_APP_ID = functions.params.defineSecret('HUAWEI_PUSH_APP_ID');
+const HUAWEI_PUSH_CLIENT_SECRET = functions.params.defineSecret('HUAWEI_PUSH_CLIENT_SECRET');
+const HUAWEI_PUSH_SECRETS = [HUAWEI_PUSH_APP_ID, HUAWEI_PUSH_CLIENT_SECRET];
+
+// Cron consolidation shim: turns a former scheduled-function definition into a
+// plain async handler (drops the schedule, keeps the body). The handlers are
+// invoked by the consolidated dispatchers (cronDaily / cronEvery6h /
+// cronMonthly) at the bottom of this file, so 12 separate Cloud Scheduler jobs
+// collapse into 3 without changing any handler logic. The 2nd arg is always the
+// handler, whether the original passed a cron string or an options object.
+const defer = (_opts, fn) => fn;
+
+// Public-UGC server renderer — bot-readable HTML + JSON-LD for
+// /post /clip /user /u /watch + /sitemap-ugc.xml (SEO viral engine).
+const ugcRenderer = require('./ugcRenderer');
+exports.ugcRenderer = ugcRenderer.ugcRenderer;
+
 // Scheduled-post publisher (releases scheduled posts/polls + honours options).
 const scheduledPosts = require('./scheduledPosts');
-exports.publishScheduledPosts = scheduledPosts.publishScheduledPosts;
+// publishScheduledPosts — folded into cron5Min dispatcher (see EOF).
 
 // KYC module — exports its own callables and a purge helper.
 const kyc = require('./kyc');
 exports.reviewKyc = kyc.reviewKyc;
 exports.decideKyc = kyc.decideKyc;
-exports.scheduledKycRetention = kyc.scheduledKycRetention;
+// scheduledKycRetention — folded into cronDaily dispatcher (see EOF).
 
 // Geo-blocking — country + US-state blocklist for compliance with
 // skill-gaming-for-cash regulations. See functions/geo.js.
@@ -37,9 +60,21 @@ exports.diditWebhook         = didit.diditWebhook;
 const marketingForms = require('./marketingForms');
 exports.submitContactForm = marketingForms.submitContactForm;
 
+// DM/group/squad push fan-out — called by the vergr-chat relay on every
+// broadcast. The relay forwards DM ciphertext + sender/membership context;
+// this function looks up offline recipients' FCM tokens and pushes data-only
+// notifications. Service worker decrypts (DMs) and renders the notification.
+// See functions/dmNotify.js + public/firebase-messaging-sw.js.
+const dmNotify = require('./dmNotify');
+exports.notifyDmDelivery = dmNotify.notifyDmDelivery;
+
 // Economy — server-side coin→gem conversion + shared rate-limit helpers.
 const economy = require('./economy');
 exports.convertCoinsToGems = economy.convertCoinsToGems;
+// Person-to-person gem transfer (the DM "Wallet"). Deliberately its own
+// callable rather than a branch inside sendTip — see functions/gemTransfer.js.
+exports.sendGems = require('./gemTransfer').sendGems;
+exports.quoteGemSend = require('./gemTransfer').quoteGemSend;
 
 // Admin security — TOTP step-up, audit log, rate-limit, alert pipeline.
 // Every privileged callable wraps through these helpers.
@@ -50,7 +85,17 @@ exports.confirmAdminTotpEnrollment   = adminSecurity.confirmAdminTotpEnrollment;
 exports.verifyAdminTotp              = adminSecurity.verifyAdminTotp;
 exports.disableAdminTotp             = adminSecurity.disableAdminTotp;
 exports.getMyAdminSecurityStatus     = adminSecurity.getMyAdminSecurityStatus;
-exports.cleanupExpiredTotpEnrollments = adminSecurity.cleanupExpiredTotpEnrollments;
+// cleanupExpiredTotpEnrollments — folded into cronDaily dispatcher (see EOF).
+
+// Account security — TOTP step-up 2FA for ANY user (Settings → Security).
+// Zero-cost: real authenticator second factor that gates sensitive account
+// actions (not Firebase login itself, which needs paid Identity Platform).
+const accountSecurity = require('./accountSecurity');
+exports.enrollAccountTotp            = accountSecurity.enrollAccountTotp;
+exports.confirmAccountTotpEnrollment = accountSecurity.confirmAccountTotpEnrollment;
+exports.verifyAccountTotp            = accountSecurity.verifyAccountTotp;
+exports.disableAccountTotp           = accountSecurity.disableAccountTotp;
+exports.getMyAccountSecurityStatus   = accountSecurity.getMyAccountSecurityStatus;
 
 // Admin access — founder-invited sub-admins with per-screen scopes.
 // See functions/adminAccess.js.
@@ -121,7 +166,12 @@ exports.adminGetLiveStatsOverview = adminStats.adminGetLiveStatsOverview;
 exports.adminGetSystemMetrics     = adminStats.adminGetSystemMetrics;
 exports.adminGetGeographyStats    = adminStats.adminGetGeographyStats;
 exports.adminGetLiveActivityFeed  = adminStats.adminGetLiveActivityFeed;
-exports.writePresenceSnapshot     = adminStats.writePresenceSnapshot;
+exports.adminGetEventLoad         = adminStats.adminGetEventLoad;
+exports.adminGetCostSnapshot      = adminStats.adminGetCostSnapshot;
+exports.adminGetUsersLive         = adminStats.adminGetUsersLive;
+exports.adminGetEngagementStats   = adminStats.adminGetEngagementStats;
+exports.adminGetErrorLog          = adminStats.adminGetErrorLog;
+// writePresenceSnapshot — folded into cronEvery6h dispatcher (see EOF).
 
 // Admin → Dashboard landing page. See functions/adminDashboard.js.
 const adminDashboard = require('./adminDashboard');
@@ -129,7 +179,7 @@ exports.adminGetDashboardSummary = adminDashboard.adminGetDashboardSummary;
 
 // Dashboard charts — daily rollup cron + chart-data callable. See functions/dailyMetricsRollup.js
 const dailyMetricsRollup = require('./dailyMetricsRollup');
-exports.rollupDailyMetrics        = dailyMetricsRollup.rollupDailyMetrics;
+// rollupDailyMetrics — folded into cronDaily dispatcher (see EOF).
 exports.adminGetDashboardCharts   = dailyMetricsRollup.adminGetDashboardCharts;
 exports.adminBackfillDailyMetrics = dailyMetricsRollup.adminBackfillDailyMetrics;
 
@@ -170,7 +220,7 @@ exports.adminUpsertPlan                      = adminSubscriptions.adminUpsertPla
 exports.adminDeletePlan                      = adminSubscriptions.adminDeletePlan;
 exports.adminSchedulePriceChange             = adminSubscriptions.adminSchedulePriceChange;
 exports.adminCancelScheduledPriceChange      = adminSubscriptions.adminCancelScheduledPriceChange;
-exports.applyScheduledPriceChanges           = adminSubscriptions.applyScheduledPriceChanges;
+// applyScheduledPriceChanges — folded into cronDaily dispatcher (see EOF).
 exports.adminListOverrides                   = adminSubscriptions.adminListOverrides;
 exports.adminCompUser                        = adminSubscriptions.adminCompUser;
 exports.adminApplyOverride                   = adminSubscriptions.adminApplyOverride;
@@ -190,11 +240,12 @@ exports.adminExportAuditCsv   = adminAudit.adminExportAuditCsv;
 
 const adminAlerts = require('./adminAlerts');
 exports.onAdminActionCreated        = adminAlerts.onAdminActionCreated;
-exports.adminTotpBruteForceMonitor  = adminAlerts.adminTotpBruteForceMonitor;
+// adminTotpBruteForceMonitor — folded into cron15Min dispatcher (see EOF).
 
 // R2 media storage — presigned upload URLs + engagement-driven cold-tiering.
 const r2 = require('./r2');
 exports.getR2UploadUrl      = r2.getR2UploadUrl;
+exports.getImportUploadUrl  = r2.getImportUploadUrl;
 exports.coldStorageDemotion = r2.coldStorageDemotion;
 exports.setR2CorsPolicy     = r2.setR2CorsPolicy;
 
@@ -240,6 +291,10 @@ const circleWallets = require('./circleWallets');
 exports.circleWalletsWebhook = circleWallets.circleWalletsWebhook;
 exports.pollCircleDeposits   = circleWallets.pollCircleDeposits;
 
+// AdMob Rewarded watch-to-earn — server-side-verified coin crediting.
+const admobReward = require('./admobReward');
+exports.admobSsvCallback = admobReward.admobSsvCallback;
+
 // Squad challenges — auto-distribute VP/coin rewards on completion.
 // Also handles squad invitation notifications.
 const squadChallenges = require('./squadChallenges');
@@ -256,10 +311,11 @@ exports.declineVanguardInvitation  = vanguard.declineVanguardInvitation;
 exports.changeVanguardRank         = vanguard.changeVanguardRank;
 exports.setVanguardStatus          = vanguard.setVanguardStatus;
 exports.setVanguardSquadConfig     = vanguard.setVanguardSquadConfig;
-exports.distributeVanguardTreasury       = vanguard.distributeVanguardTreasury;
+// distributeVanguardTreasury — folded into cronMonthly dispatcher (see EOF).
 exports.adminTriggerVanguardDistribution = vanguard.adminTriggerVanguardDistribution;
 exports.vanguardCallTournamentWinner     = vanguard.vanguardCallTournamentWinner;
 exports.vanguardResolveReport            = vanguard.vanguardResolveReport;
+exports.vanguardReviewAiFlag             = vanguard.vanguardReviewAiFlag;
 exports.vanguardMuteUser                 = vanguard.vanguardMuteUser;
 exports.vanguardTempBanUser              = vanguard.vanguardTempBanUser;
 exports.vanguardPermaBanUser             = vanguard.vanguardPermaBanUser;
@@ -269,7 +325,7 @@ exports.vanguardResolveQueueItem         = vanguard.vanguardResolveQueueItem;
 const streamingBoost = require('./streamingBoost');
 exports.requestStreamQualityBoost = streamingBoost.requestStreamQualityBoost;
 exports.cancelStreamQualityBoost  = streamingBoost.cancelStreamQualityBoost;
-exports.chargeStreamBoosts        = streamingBoost.chargeStreamBoosts;
+// chargeStreamBoosts — folded into cronMinute dispatcher (see EOF).
 
 // Co-stream invitations (host invites publishers; SFU room is `ingest_<streamId>`).
 const coStream = require('./coStream');
@@ -297,6 +353,17 @@ exports.unmuteViewer          = streamChatMod.unmuteViewer;
 exports.banViewer             = streamChatMod.banViewer;
 exports.unbanViewer           = streamChatMod.unbanViewer;
 exports.setStreamBannedWords  = streamChatMod.setStreamBannedWords;
+exports.setStreamSlowMode     = streamChatMod.setStreamSlowMode;
+exports.setStreamFollowersOnly = streamChatMod.setStreamFollowersOnly;
+exports.pinStreamMessage      = streamChatMod.pinStreamMessage;
+exports.setStreamModerator    = streamChatMod.setStreamModerator;
+
+// Username index — maintains usernameLower + usernames/{lower} so username
+// search and vergr.me (/u/:username) actually resolve. Trigger keeps it in
+// sync; backfillUsernameIndex (token-gated HTTP) seeds existing users.
+const usernameIndex = require('./usernameIndex');
+exports.maintainUsernameIndex = usernameIndex.maintainUsernameIndex;
+exports.backfillUsernameIndex = usernameIndex.backfillUsernameIndex;
 
 // Music: Last.fm "now playing" + Pretzel Rocks recommendation are the
 // agreed approach (see project_music_integration memory). Implementation
@@ -308,18 +375,21 @@ exports.setStreamBannedWords  = streamChatMod.setStreamBannedWords;
 const tournamentSummons = require('./tournamentSummons');
 exports.getTournamentPreflight       = tournamentSummons.getTournamentPreflight;
 exports.tournamentParticipantCheckIn = tournamentSummons.tournamentParticipantCheckIn;
-exports.summonsParticipants          = tournamentSummons.summonsParticipants;
-exports.detectParticipantNoShows     = tournamentSummons.detectParticipantNoShows;
+// summonsParticipants — folded into cronMinute dispatcher (see EOF).
+// detectParticipantNoShows — folded into cron5Min dispatcher (see EOF).
 
 // Lobby-screenshot verification — Gemini Vision OCR cross-checks each
 // player's expected in-game handle appears in the opponent's lobby
 // screenshot. Anti-impersonation safeguard for non-Tier-A games.
 const lobbyVerification = require('./lobbyVerification');
 exports.submitLobbyScreenshot         = lobbyVerification.submitLobbyScreenshot;
-exports.detectLobbyVerificationTimeouts = lobbyVerification.detectLobbyVerificationTimeouts;
+// detectLobbyVerificationTimeouts — folded into cron5Min dispatcher (see EOF).
 
 // Same-lobby verification — per-match unique lobbyCode displayed in-game,
 // confirmed by OCR / mod / self attestation.
+const autoResults = require('./autoResults');
+exports.processAutoResults = autoResults.processAutoResults;
+
 const matchVerification = require('./matchVerification');
 exports.getMatchVerification        = matchVerification.getMatchVerification;
 exports.selfAttestMatchVerification = matchVerification.selfAttestMatchVerification;
@@ -333,7 +403,7 @@ exports.setMatchFollow              = matchVerification.setMatchFollow;
 exports.thankMatchMod               = matchVerification.thankMatchMod;
 
 // AC7 — cheat-signature staleness cadence (monthly health check + admin nudge).
-exports.cheatSignaturesHealthCron = require('./cheatSignaturesRefresh').cheatSignaturesHealthCron;
+// cheatSignaturesHealthCron — folded into cronMonthly dispatcher (see EOF).
 
 // Trust / reputation / rivalry / sportsmanship / AI summarizer.
 const tournamentTrust = require('./tournamentTrust');
@@ -344,14 +414,11 @@ exports.aiSummarizeMatch            = tournamentTrust.aiSummarizeMatch;
 exports.routeSportsmanshipBonus     = tournamentTrust.routeSportsmanshipBonus;
 exports.recordRivalryOnMatchComplete = tournamentTrust.recordRivalryOnMatchComplete;
 
-// Tournament esports batch 2: betting, voice DM, warmup, double-or-nothing,
-// squad-funded, sponsor, hype, tip-underdog, replay-on-demand.
+// Tournament esports batch 2: voice DM, warmup, squad-funded, sponsor,
+// hype, tip-underdog, replay-on-demand.
 const tournamentExtras = require('./tournamentExtras');
-exports.placeMatchBet               = tournamentExtras.placeMatchBet;
 exports.tipUnderdog                 = tournamentExtras.tipUnderdog;
 exports.aggregateStreamHype         = tournamentExtras.aggregateStreamHype;
-exports.requestDoubleOrNothing      = tournamentExtras.requestDoubleOrNothing;
-exports.respondDoubleOrNothing      = tournamentExtras.respondDoubleOrNothing;
 exports.contributeToSquadTournament = tournamentExtras.contributeToSquadTournament;
 exports.attachTournamentSponsor     = tournamentExtras.attachTournamentSponsor;
 exports.sponsorTournamentFromTreasury = tournamentExtras.sponsorTournamentFromTreasury;
@@ -361,18 +428,13 @@ const brawl = require('./brawl');
 exports.joinBrawlQueue  = brawl.joinBrawlQueue;
 exports.leaveBrawlQueue = brawl.leaveBrawlQueue;
 
-// GR6 — Coaching marketplace (coin-paid, 10% fee).
-const coaching = require('./coaching');
-exports.upsertCoachingListing   = coaching.upsertCoachingListing;
-exports.setCoachingListingActive = coaching.setCoachingListingActive;
-exports.bookCoaching            = coaching.bookCoaching;
 exports.openMatchSchedulingDm       = tournamentExtras.openMatchSchedulingDm;
 exports.requestReplayReview         = tournamentExtras.requestReplayReview;
 
 // Tournament discovery + VOD AI.
 const tournamentDiscovery = require('./tournamentDiscovery');
 exports.tournamentOfTheDayCron      = tournamentDiscovery.tournamentOfTheDayCron;
-exports.startingSoonPushCron        = tournamentDiscovery.startingSoonPushCron;
+// startingSoonPushCron — folded into cronMinute dispatcher (see EOF).
 exports.aiCheatFlagVod              = tournamentDiscovery.aiCheatFlagVod;
 exports.autoCutVodHighlights        = tournamentDiscovery.autoCutVodHighlights;
 exports.tournamentMatchFollowerPush = tournamentDiscovery.tournamentMatchFollowerPush;
@@ -390,10 +452,19 @@ exports.adminSeedCheatSignatures    = seedCheatSignatures.adminSeedCheatSignatur
 // VOD archive transcode pipeline (Hetzner ffmpeg job → R2 → match.archiveVodUrl).
 const vodArchive = require('./vodArchive');
 exports.dispatchTournamentVodArchive = vodArchive.dispatchTournamentVodArchive;
+exports.dispatchStreamVodArchive     = vodArchive.dispatchStreamVodArchive;
 exports.markVodArchived              = vodArchive.markVodArchived;
+
+// HLS rendition ladder for shorts/clips — lets the viewer's connection pick the
+// quality instead of everyone getting the uploader's single bitrate.
+const videoLadder = require('./videoLadder');
+exports.dispatchVideoLadder = videoLadder.dispatchVideoLadder;
+exports.markLadderReady     = videoLadder.markLadderReady;
 
 // Engine-independent server-side stream clipping (works on Apple webviews).
 exports.requestStreamClip            = require('./streamClips').requestStreamClip;
+// On-demand translation via self-hosted LibreTranslate (box 2).
+exports.translateContent             = require('./translate').translateContent;
 
 // Two-camera proof feed for high-stakes tournament matches.
 const tournamentProof = require('./tournamentProof');
@@ -411,7 +482,7 @@ exports.getTurnCredentials           = turnCredentials.getTurnCredentials;
 
 // 48h per-match timeout enforcer (Tournament System doc rule).
 const tournamentTimeouts = require('./tournamentTimeouts');
-exports.detectMatchTimeouts          = tournamentTimeouts.detectMatchTimeouts;
+// detectMatchTimeouts — folded into cron5Min dispatcher (see EOF).
 
 // Tournament AI moderation Phase 1 — OBS overlay signal capture + consensus.
 // Tesseract + Vision OCR signals come in Phase 1B (requires Hetzner ops).
@@ -436,16 +507,16 @@ exports.vanguardClaimTournament              = vanguardAssignments.vanguardClaim
 exports.vanguardReleaseTournamentAssignment  = vanguardAssignments.vanguardReleaseTournamentAssignment;
 exports.vanguardCheckIn                      = vanguardAssignments.vanguardCheckIn;
 exports.vanguardCompleteAssignment           = vanguardAssignments.vanguardCompleteAssignment;
-exports.detectTournamentNoShows              = vanguardAssignments.detectTournamentNoShows;
-exports.notifyUpcomingAssignments            = vanguardAssignments.notifyUpcomingAssignments;
+// detectTournamentNoShows — folded into cron5Min dispatcher (see EOF).
+// notifyUpcomingAssignments — folded into cron15Min dispatcher (see EOF).
 
 // Per-match Vanguard claiming + auto-OCR suggestion cron + Commander review.
 const tournamentMatchClaims = require('./tournamentMatchClaims');
 exports.vanguardClaimMatch           = tournamentMatchClaims.vanguardClaimMatch;
 exports.vanguardReleaseMatchClaim    = tournamentMatchClaims.vanguardReleaseMatchClaim;
-exports.autoSuggestMatchWinners      = tournamentMatchClaims.autoSuggestMatchWinners;
+// autoSuggestMatchWinners — folded into cronMinute dispatcher (see EOF).
 exports.commanderResolveMatchReview  = tournamentMatchClaims.commanderResolveMatchReview;
-exports.detectTournamentStreamDrops  = tournamentMatchClaims.detectTournamentStreamDrops;
+// detectTournamentStreamDrops — folded into cronMinute dispatcher (see EOF).
 
 // Live streaming — Oracle nginx-rtmp + R2 + Cloudflare CDN architecture.
 // Provisions stream keys, charges/refunds Stream Boost, ranks discovery feed.
@@ -457,6 +528,15 @@ exports.getLikelyTipperScore     = streaming.getLikelyTipperScore;
 exports.getLiveDiscoveryFeed     = streaming.getLiveDiscoveryFeed;
 exports.recordStreamTip          = streaming.recordStreamTip;
 exports.setLiveStreamingPaused   = streaming.setLiveStreamingPaused;
+
+// Twitch mirror (Twitch → Vergr): poll Twitch for linked users going live and
+// surface them as native Vergr streams (Twitch embed in our UI).
+const twitchMirror = require('./twitchMirror');
+exports.pollTwitchMirrors  = twitchMirror.pollTwitchMirrors;
+exports.syncTwitchMirrorNow = twitchMirror.syncTwitchMirrorNow;
+exports.refreshTwitchMirrorTokens = twitchMirror.refreshTwitchMirrorTokens;
+exports.getTwitchMirrorViewers = twitchMirror.getTwitchMirrorViewers;
+exports.twitchChannelImport = twitchMirror.twitchChannelImport;
 
 // PayRam — the only inbound rail (card/Apple Pay/bank → USDC on Base → Circle
 // omnibus). createPayramPayment opens a hosted PayRam payment (shown in an
@@ -474,9 +554,10 @@ exports.pollPayramOrders      = payram.pollPayramOrders;
 // and Tier B (coins debited from VERGR wallet, instant). Daily cron handles
 // auto-renewal + reminders + downgrade.
 const subs = require('./subscriptions');
+const memberships = require('./memberships');
 exports.subscribeWithCoins         = subs.subscribeWithCoins;
 exports.cancelSubscription         = subs.cancelSubscription;
-exports.renewExpiringSubscriptions = subs.renewExpiringSubscriptions;
+// renewExpiringSubscriptions — folded into cronDaily dispatcher (see EOF).
 
 // Tournaments — server-authoritative escrow + bracket advance + payouts.
 // These supersede the client-side helpers in src/firebase/firestore.js;
@@ -500,6 +581,93 @@ exports.resolveTournamentDispute = tournaments.resolveTournamentDispute;
 exports.applyToTournamentSecure       = tournaments.applyToTournamentSecure;
 exports.approveTournamentApplication  = tournaments.approveTournamentApplication;
 exports.declineTournamentApplication  = tournaments.declineTournamentApplication;
+
+// Ticketed events — non-gambling funding model. Fans buy spectator tickets;
+// competitors register free. See functions/eventTickets.js for the contract.
+const eventTickets = require('./eventTickets');
+exports.purchaseEventTicket  = eventTickets.purchaseEventTicket;
+exports.getEventTicketStatus = eventTickets.getEventTicketStatus;
+exports.purchaseSeasonPass   = eventTickets.purchaseSeasonPass;
+
+// Paid access to content: locked posts, locked chat media, paid streams. ONE
+// system for all of them, so the next thing that charges for access does not
+// become the eighth bespoke purchase flow in this file. Prices are always
+// re-read server-side; the client only names the resource.
+// See functions/entitlements.js and docs/CREATOR_MONETIZATION_PLAN.md.
+const entitlements = require('./entitlements');
+exports.purchaseAccess = entitlements.purchaseAccess;
+exports.getAccess      = entitlements.getAccess;
+
+// Creating locked posts. Separate from r2.js on purpose: that one presigns into
+// a PUBLIC prefix and returns a CDN URL, which for paid content would mean the
+// bytes are reachable by anyone who reads the document.
+const lockedPosts = require('./lockedPosts');
+exports.getLockedUploadUrl = lockedPosts.getLockedUploadUrl;
+exports.createLockedPost   = lockedPosts.createLockedPost;
+
+// Google Play Billing — coin purchases on the Play store build only. Verifies
+// the purchase token against the Play Developer API before crediting; see
+// functions/playBilling.js for the founder setup steps it depends on.
+const playBilling = require('./playBilling');
+exports.redeemPlayPurchase     = playBilling.redeemPlayPurchase;
+exports.redeemPlaySubscription = playBilling.redeemPlaySubscription;
+
+// Discord-server clone (Phase 1: structure → Vergr groups + voice channels).
+// See functions/discordClone.js. Needs the DISCORD_BOT_TOKEN secret + the bot
+// added to the server by its owner.
+const discordClone = require('./discordClone');
+exports.getDiscordCloneSetup        = discordClone.getDiscordCloneSetup;
+exports.cloneDiscordServerStructure = discordClone.cloneDiscordServerStructure;
+exports.importDiscordMessages       = discordClone.importDiscordMessages;
+exports.postDiscordMigrationNotice  = discordClone.postDiscordMigrationNotice;
+exports.checkDiscordRejoin          = discordClone.checkDiscordRejoin;
+exports.claimDiscordRejoin          = discordClone.claimDiscordRejoin;
+
+// WhatsApp export import (owner-supplied "Export chat" file → relay store).
+const whatsappImport = require('./whatsappImport');
+exports.importWhatsAppExport  = whatsappImport.importWhatsAppExport;
+exports.claimWhatsAppMessages = whatsappImport.claimWhatsAppMessages;
+
+// vergr.me public analytics — counts logged-out visitors via the Admin SDK
+// (vergrMeViews is server-write-only). See functions/vergrMe.js.
+const vergrMe = require('./vergrMe');
+exports.trackVergrMeEvent = vergrMe.trackVergrMeEvent;
+exports.onVergrMeLead = vergrMe.onVergrMeLead;
+
+// vergr.me wallet-native digital sales — 8% flat fee, seller paid in GEMS
+// directly (no coin→gem conversion commission). See functions/vergrMeShop.js.
+const vergrMeShop = require('./vergrMeShop');
+exports.getVergrMeProductUploadUrl   = vergrMeShop.getVergrMeProductUploadUrl;
+exports.purchaseVergrMeProduct       = vergrMeShop.purchaseVergrMeProduct;
+exports.getVergrMeProductDownloadUrl = vergrMeShop.getVergrMeProductDownloadUrl;
+exports.cancelVergrMeOrder           = vergrMeShop.cancelVergrMeOrder;
+exports.fetchShopCatalog             = vergrMeShop.fetchShopCatalog;
+
+// Vergr Shop — external store integrations (Shopify / WooCommerce). Seller
+// connects with an API token; we import products as native coin-buyable items
+// and keep inventory in sync. See functions/shopSync.js. The daily reconcile
+// (syncAllShopInventories) is folded into cronDaily below.
+const shopSync = require('./shopSync');
+const guestCleanup = require('./guestCleanup');
+exports.connectShopIntegration    = shopSync.connectShopIntegration;
+exports.syncShopInventory         = shopSync.syncShopInventory;
+exports.disconnectShopIntegration = shopSync.disconnectShopIntegration;
+exports.getMyShopIntegration      = shopSync.getMyShopIntegration;
+
+// RETIRED 2026-07-23. The public Shopify app is now VLink, which lives in its
+// OWN REPO (GitHub/VLink) and deploys as the separate "vlink" functions
+// codebase. shopifyApp survives only as a webhook tombstone: webhooks
+// registered by a legacy install still point at /shopify/webhooks and stay
+// registered until that shop re-authorises, so it must keep answering them
+// (mandatory compliance webhooks included). Every other /shopify path now
+// redirects to /vlink. Retire it fully once shopify_shops is empty.
+const shopifyApp = require('./shopifyApp');
+exports.shopifyApp = shopifyApp.shopifyApp;
+
+// Vergr Shop's "connect via the Shopify app" path. Moved out of shopifyApp.js
+// when that retired: shopSync.js reads the shopIntegration doc this writes, so
+// deleting it with the legacy app would have silently killed that path.
+exports.linkShopifyStore = require('./vlinkAccountLink').linkShopifyStore;
 
 // Steam GSI — auto-result detection for CS2 and Dota 2 via Valve's
 // official Game State Integration. See functions/gsi.js for the contract.
@@ -539,11 +707,24 @@ exports.steamOpenIdCallback = steamAuth.steamOpenIdCallback;
 const PLAN_VP_MULT = { free: 1, lite: 1.5, pro: 2 };
 const MONTHLY_VP_BONUS = { free: 0, lite: 1000, pro: 3000 };
 const MONTHLY_COIN_BONUS = { free: 0, lite: 50, pro: 150 };
+// Gifting → VP (sender only). Mirrors src/utils/vpSystem.js GIFT_COINS_PER_VP —
+// 1 VP per 25 coins tipped (sub-1:1), plan-multiplied. See sendTip.
+const GIFT_COINS_PER_VP = 25;
 const applyVPMultiplier = (base, plan) => Math.round(base * (PLAN_VP_MULT[plan] || 1));
+// Canonical plan read off a user doc's data. `subscription` (string) is the
+// field the purchase flows write; `tier`/`plan` are legacy fallbacks. Reading
+// only the latter returned 'free' for every paying user, so the VP multiplier
+// always collapsed to 1×.
+const normalizePlan = (d) => {
+  if (!d) return 'free';
+  const s = d.subscription;
+  const t = (typeof s === 'string' ? s : (s && s.tier)) || d.tier || d.plan || 'free';
+  return t === 'lite' || t === 'pro' ? t : 'free';
+};
 const getUserPlan = async (uid) => {
   try {
     const snap = await db.collection('users').doc(uid).get();
-    return snap.exists ? (snap.data().tier || snap.data().plan || 'free') : 'free';
+    return snap.exists ? normalizePlan(snap.data()) : 'free';
   } catch { return 'free'; }
 };
 
@@ -751,14 +932,27 @@ exports.rssProxy = functions.https.onRequest(async (req, res) => {
 // ──────────────────────────────────────────────────────────────
 // 3. DAILY LOGIN — 5 consecutive days to earn 25 coins
 // ──────────────────────────────────────────────────────────────
+// Public VP read. The wallet doc (where VP is authoritative) is owner-only
+// readable because it holds USDC balance / KYC / withdrawal limits, so a visitor
+// cannot read another user's VP directly. This callable reads the wallet
+// server-side and returns ONLY the VP integer — no financial data leaks.
+exports.getUserVP = functions.https.onCall(async (request) => {
+  const targetUid = request.data?.uid;
+  if (!targetUid) throw new functions.https.HttpsError('invalid-argument', 'uid required');
+  const snap = await db.collection('wallets').doc(targetUid).get();
+  return { vp: snap.exists ? (snap.data().vp || 0) : 0 };
+});
+
 exports.claimDailyReward = functions.https.onCall(async (request) => {
   const uid = request.auth?.uid;
   if (!uid) throw new functions.https.HttpsError('unauthenticated', 'Must be logged in');
 
   const walletRef = db.collection('wallets').doc(uid);
+  const userRef = db.collection('users').doc(uid);
 
   return db.runTransaction(async (tx) => {
     const walletSnap = await tx.get(walletRef);
+    const userSnap = await tx.get(userRef);
     const currentBalance = walletSnap.exists ? (walletSnap.data().balance || 0) : 0;
     const currentEarned = walletSnap.exists ? (walletSnap.data().totalEarned || 0) : 0;
     const currentStreak = walletSnap.exists ? (walletSnap.data().dailyStreak || 0) : 0;
@@ -784,26 +978,26 @@ exports.claimDailyReward = functions.https.onCall(async (request) => {
       }
     }
 
-    const plan = walletSnap.exists ? (walletSnap.data().tier || 'free') : 'free';
-    let reward = 0;
-    let vpReward = applyVPMultiplier(10, plan);
-    let streakToSave = newStreak;
-    if (newStreak >= 5) {
-      reward = 5;
-      vpReward = applyVPMultiplier(50, plan);
-      streakToSave = 0;
-    }
+    const plan = normalizePlan(userSnap.exists ? userSnap.data() : null);
+    const mult = PLAN_VP_MULT[plan] || 1;
+    // Daily login is VP-ONLY. It never mints coins (founder: coins for daily
+    // login were never approved). Base 10 VP/day, 50 VP on the 5-day milestone,
+    // both plan-multiplied (Free 1× / Lite 1.5× / Pro 2×).
+    const milestone = newStreak >= 5;
+    const baseVp = milestone ? 50 : 10;
+    const vpReward = applyVPMultiplier(baseVp, plan);
+    const streakToSave = milestone ? 0 : newStreak;
 
     const walletData = {
-      balance: currentBalance + reward,
-      totalEarned: currentEarned + reward,
+      balance: currentBalance,
+      totalEarned: currentEarned,
       vp: (walletSnap.exists ? (walletSnap.data().vp || 0) : 0) + vpReward,
       totalSpent: walletSnap.exists ? (walletSnap.data().totalSpent || 0) : 0,
       gems: walletSnap.exists ? (walletSnap.data().gems || 0) : 0,
       totalGemsEarned: walletSnap.exists ? (walletSnap.data().totalGemsEarned || 0) : 0,
       totalReceived: walletSnap.exists ? (walletSnap.data().totalReceived || 0) : 0,
       totalTipped: walletSnap.exists ? (walletSnap.data().totalTipped || 0) : 0,
-      tier: walletSnap.exists ? (walletSnap.data().tier || 'free') : 'free',
+      tier: plan, // keep the denormalised wallet.tier in sync with the real plan
       lastDailyCheckIn: now,
       dailyStreak: streakToSave,
       updatedAt: now,
@@ -813,30 +1007,31 @@ exports.claimDailyReward = functions.https.onCall(async (request) => {
 
     const claimId = `${uid}_daily_login_${today}`;
     tx.set(db.collection('quest_claims').doc(claimId), {
-      userId: uid, questId: 'daily_login', amount: reward, claimedAt: now,
+      userId: uid, questId: 'daily_login', amount: vpReward, currency: 'vp', claimedAt: now,
     });
 
-    if (reward > 0) {
+    // VP milestone notification on streak completion (no coins).
+    if (milestone) {
       tx.set(db.collection('transactions').doc(), {
-        userId: uid, type: 'daily_reward', amount: reward, currency: 'coins',
-        description: `5-day streak: +${reward} coins + ${vpReward} VP`, createdAt: now,
+        userId: uid, type: 'daily_reward', amount: vpReward, currency: 'vp',
+        description: `5-day login streak: +${vpReward} VP`, createdAt: now,
       });
       tx.set(db.collection('notifications').doc(), {
-        recipientId: uid, type: 'coins',
-        title: `+${reward} coins + ${vpReward} VP — 5-day streak!`,
-        body: 'Streak reset — start again tomorrow!',
-        read: false, data: { amount: reward, vp: vpReward, type: 'daily_reward' }, createdAt: now,
+        recipientId: uid, type: 'vp',
+        title: `+${vpReward} VP — 5-day streak!`,
+        body: 'Streak complete — start again tomorrow!',
+        read: false, data: { vp: vpReward, type: 'daily_reward' }, createdAt: now,
       });
     }
 
-    return { 
-      reward, vpReward,
-      streak: newStreak >= 5 ? 0 : newStreak, 
-      dayOfStreak: newStreak >= 5 ? 5 : newStreak,
-      paid: reward > 0,
-      message: reward > 0 
-        ? `+${reward} coins + ${vpReward} VP! Streak complete!` 
-        : `Day ${newStreak}/5 — +${vpReward} VP · ${5 - newStreak} more day${5 - newStreak === 1 ? '' : 's'} for coins`
+    return {
+      vpReward, baseVp, plan, multiplier: mult,
+      milestone,
+      streak: streakToSave,
+      dayOfStreak: milestone ? 5 : newStreak,
+      message: milestone
+        ? `5-day streak complete! +${vpReward} VP`
+        : `Day ${newStreak}/5 — +${vpReward} VP`,
     };
   });
 });
@@ -862,8 +1057,16 @@ exports.claimQuestReward = functions.https.onCall(async (request) => {
     throw new functions.https.HttpsError('invalid-argument', 'Use the daily login banner');
   }
 
+  // Profile-completion quests (founder-approved table 2026-07-09): amounts
+  // are SERVER-LOCKED here (client-sent reward ignored) and each one verifies
+  // the data actually exists before paying — see the validation block below.
+  const PROFILE_QUEST_REWARDS = {
+    profile_avatar: 500, profile_banner: 300, profile_bio: 200,
+    profile_interests: 200, first_follow_5: 300, profile_gaming_link: 500,
+  };
+
   const today = new Date().toISOString().split('T')[0];
-  const isOneTime = ['first_squad', 'first_tournament', 'creator_content'].includes(questId);
+  const isOneTime = ['first_squad', 'first_tournament', 'creator_content', ...Object.keys(PROFILE_QUEST_REWARDS)].includes(questId);
   // `refer_friend` is special: one claim *per friend*, not one per referrer.
   // We key on both uids so the same referrer can claim multiple invites.
   const claimId = questId === 'refer_friend'
@@ -874,6 +1077,11 @@ exports.claimQuestReward = functions.https.onCall(async (request) => {
   const claimRef = db.collection('quest_claims').doc(claimId);
   const walletRef = db.collection('wallets').doc(uid);
 
+  // Subscriber VP multiplier (Free 1× / Lite 1.5× / Pro 2×) applies to all
+  // engagement/creation quests. Referral payouts are LOCKED fixed amounts
+  // (referrer 5000 / referee 3000) and are never multiplied.
+  const plan = await getUserPlan(uid);
+
   return db.runTransaction(async (tx) => {
     const claimSnap = await tx.get(claimRef);
     if (claimSnap.exists) throw new functions.https.HttpsError('already-exists', 'Already claimed');
@@ -882,9 +1090,12 @@ exports.claimQuestReward = functions.https.onCall(async (request) => {
     // ─────────────────────────────────────────
     // Completion criteria (all required):
     //   1. friend's user doc exists and isn't soft-deleted
-    //   2. friend has a phoneHash (phone number saved)
-    //   3. friend has EITHER joined a squad OR subscribed to Lite/Pro
-    //   4. friend's `referredBy` matches the caller (uid). This is set at
+    //   2. friend has a phoneHash (phone number verified) — this is the only
+    //      completion gate now. The old "join a squad OR subscribe" step was
+    //      too much to ask of a brand-new invitee and killed most referrals,
+    //      so it was dropped (founder decision 2026-07-03): reward fires as
+    //      soon as the invited friend verifies a phone number.
+    //   3. friend's `referredBy` matches the caller (uid). This is set at
     //      signup when the invitee lands via `?ref=<uid>`.
     //
     // Payouts:
@@ -906,21 +1117,7 @@ exports.claimQuestReward = functions.https.onCall(async (request) => {
           'That user wasn\'t referred by you. They must sign up via your invite link.');
       }
       if (!friend.phoneHash) {
-        throw new functions.https.HttpsError('failed-precondition', 'Friend needs to add a phone number first');
-      }
-
-      // Either "joined a squad" OR "subscribed to Lite/Pro" unlocks the claim.
-      const friendWalletSnap = await tx.get(db.collection('wallets').doc(friendId));
-      const friendTier = friendWalletSnap.exists ? (friendWalletSnap.data().tier || 'free') : 'free';
-      const hasSub = friendTier === 'lite' || friendTier === 'pro';
-      let hasSquad = false;
-      if (!hasSub) {
-        const squadSnap = await db.collectionGroup('members').where('userId', '==', friendId).limit(1).get();
-        hasSquad = !squadSnap.empty;
-      }
-      if (!hasSub && !hasSquad) {
-        throw new functions.https.HttpsError('failed-precondition',
-          'Friend needs to join a squad or subscribe to Lite/Pro');
+        throw new functions.https.HttpsError('failed-precondition', 'Friend needs to verify a phone number first');
       }
 
       // Per-week referral cap. Vanguard members bypass (they're incentivised
@@ -935,8 +1132,7 @@ exports.claimQuestReward = functions.https.onCall(async (request) => {
         userData.vanguard?.status !== 'suspended' &&
         userData.vanguard?.status !== 'retired';
       if (!isVanguardActive) {
-        const callerWalletSnap = await tx.get(db.collection('wallets').doc(uid));
-        const callerTier = callerWalletSnap.exists ? (callerWalletSnap.data().tier || 'free') : 'free';
+        const callerTier = normalizePlan(userData);
         const isPaid = callerTier === 'lite' || callerTier === 'pro';
         const weeklyCap = isPaid ? 20 : 5;
         // Compute Monday-00:00-UTC of this week.
@@ -1000,33 +1196,55 @@ exports.claimQuestReward = functions.https.onCall(async (request) => {
       if (tourneysSnap.empty) throw new functions.https.HttpsError('failed-precondition', 'Enter a tournament first');
     }
 
+    if (PROFILE_QUEST_REWARDS[questId] != null) {
+      const fail = (msg) => { throw new functions.https.HttpsError('failed-precondition', msg); };
+      if (questId === 'first_follow_5') {
+        const followsSnap = await db.collection('follows')
+          .where('followerId', '==', uid).limit(5).get();
+        if (followsSnap.size < 5) fail(`Follow 5 accounts first (${followsSnap.size}/5)`);
+      } else {
+        const uSnap = await db.collection('users').doc(uid).get();
+        const u = uSnap.exists ? uSnap.data() : {};
+        if (questId === 'profile_avatar' && !u.avatar) fail('Add a profile picture first');
+        if (questId === 'profile_banner' && !u.banner) fail('Add a profile banner first');
+        if (questId === 'profile_bio' && String(u.bio || '').trim().length < 20) fail('Write a bio of at least 20 characters first');
+        if (questId === 'profile_interests' && (u.gameTags || []).length < 3) fail('Pick at least 3 interests first');
+        if (questId === 'profile_gaming_link' && !(u.linkedAccounts && Object.keys(u.linkedAccounts).length > 0)) fail('Connect a gaming account first');
+      }
+      reward = PROFILE_QUEST_REWARDS[questId];
+    }
+
     // Pay out — quest rewards are VP ONLY (CLAUDE.md hard rule:
     // "Creator quests award VP only — never coins"). Earlier versions of this
     // function credited `balance` instead of `vp`; that was a bug.
     const walletSnap = await tx.get(walletRef);
     const currentVP = walletSnap.exists ? (walletSnap.data().vp || 0) : 0;
 
+    // Referral payouts stay at their locked amount; every other quest is
+    // plan-multiplied for Lite/Pro subscribers.
+    const payoutVp = questId === 'refer_friend' ? reward : applyVPMultiplier(reward, plan);
+
     if (walletSnap.exists) {
-      tx.update(walletRef, { vp: currentVP + reward, updatedAt: new Date() });
+      tx.update(walletRef, { vp: currentVP + payoutVp, updatedAt: new Date() });
     } else {
       tx.set(walletRef, {
-        balance: 0, gems: 0, vp: reward,
+        balance: 0, gems: 0, vp: payoutVp,
         totalEarned: 0, totalSpent: 0, totalReceived: 0, totalTipped: 0,
-        tier: 'free', dailyStreak: 0, lastDailyCheckIn: null,
+        tier: plan, dailyStreak: 0, lastDailyCheckIn: null,
         createdAt: new Date(), updatedAt: new Date(),
       });
     }
 
-    tx.set(claimRef, { userId: uid, questId, amount: reward, currency: 'vp', claimedAt: new Date(), ...(referralFriendId && { friendId: referralFriendId }) });
+    tx.set(claimRef, { userId: uid, questId, amount: payoutVp, currency: 'vp', claimedAt: new Date(), ...(referralFriendId && { friendId: referralFriendId }) });
     tx.set(db.collection('transactions').doc(), {
-      userId: uid, type: 'quest_reward', amount: reward, currency: 'vp',
+      userId: uid, type: 'quest_reward', amount: payoutVp, currency: 'vp',
       description: title || `Quest: ${questId}`, createdAt: new Date(),
     });
     tx.set(db.collection('notifications').doc(), {
-      recipientId: uid, type: 'coins',
-      title: `+${reward} VP earned!`,
+      recipientId: uid, type: 'vp',
+      title: `+${payoutVp} VP earned!`,
       body: title || `Quest completed: ${questId}`,
-      read: false, data: { amount: reward, currency: 'vp', type: 'quest_reward' }, createdAt: new Date(),
+      read: false, data: { amount: payoutVp, currency: 'vp', type: 'quest_reward' }, createdAt: new Date(),
     });
 
     // refer_friend: also pay the invitee their 3000 VP welcome bonus. Use a
@@ -1055,7 +1273,7 @@ exports.claimQuestReward = functions.https.onCall(async (request) => {
           description: 'Referral bonus — thanks for joining!', createdAt: new Date(),
         });
         tx.set(db.collection('notifications').doc(), {
-          recipientId: referralFriendId, type: 'coins',
+          recipientId: referralFriendId, type: 'vp',
           title: `+${FRIEND_REWARD} VP referral bonus!`,
           body: 'You completed your VERGR setup — here\'s your welcome reward.',
           read: false, data: { amount: FRIEND_REWARD, type: 'quest_reward' }, createdAt: new Date(),
@@ -1139,7 +1357,7 @@ exports.savePhoneNumber = functions.https.onCall(async (request) => {
         description: 'Added phone number', createdAt: new Date(),
       });
       tx.set(db.collection('notifications').doc(), {
-        recipientId: uid, type: 'coins',
+        recipientId: uid, type: 'vp',
         title: `+${PHONE_ADD_REWARD} VP earned!`,
         body: 'Phone number added — invite your contacts to earn more.',
         read: false, data: { amount: PHONE_ADD_REWARD, type: 'quest_reward' }, createdAt: new Date(),
@@ -1221,7 +1439,7 @@ exports.matchContactHashes = functions.https.onCall(async (request) => {
 // 5. ENGAGEMENT REWARD — post liked → author gets 2 VP (skip news bots)
 // ──────────────────────────────────────────────────────────────
 exports.onPostLiked = functions.firestore
-  .onDocumentCreated({ document: 'posts/{postId}/likes/{userId}', database: 'vgrdb' }, async (event) => {
+  .onDocumentCreated({ document: 'posts/{postId}/likes/{userId}', database: 'vgrdb', secrets: HUAWEI_PUSH_SECRETS }, async (event) => {
     const postId = event.params.postId;
     const likerId = event.params.userId;
     try {
@@ -1283,10 +1501,14 @@ exports.sendAnnouncement = functions.https.onCall(async (request) => {
   // Cap reward per-send to limit blast radius if TOTP secret is stolen.
   const safeReward = Math.max(0, Math.min(1000, Number(coinReward || 0)));
 
+  // Target by the user-doc `subscription` field (what purchases write). The old
+  // wallets.where('tier',...) queries hit a field that was never set on purchase,
+  // so lite/pro/paid announcements reached nobody. Doc ids match (both keyed by
+  // uid) so downstream recipientId logic is unchanged.
   let usersQuery;
-  if (audience === 'lite') usersQuery = db.collection('wallets').where('tier', '==', 'lite');
-  else if (audience === 'pro') usersQuery = db.collection('wallets').where('tier', '==', 'pro');
-  else if (audience === 'paid') usersQuery = db.collection('wallets').where('tier', 'in', ['lite', 'pro']);
+  if (audience === 'lite') usersQuery = db.collection('users').where('subscription', '==', 'lite');
+  else if (audience === 'pro') usersQuery = db.collection('users').where('subscription', '==', 'pro');
+  else if (audience === 'paid') usersQuery = db.collection('users').where('subscription', 'in', ['lite', 'pro']);
   else usersQuery = db.collection('users').select();
 
   const snap = await usersQuery.get();
@@ -1331,8 +1553,7 @@ exports.sendAnnouncement = functions.https.onCall(async (request) => {
 // ──────────────────────────────────────────────────────────────
 // 8. MONTHLY SQUAD ELECTIONS
 // ──────────────────────────────────────────────────────────────
-exports.monthlySquadElections = functions.scheduler
-  .onSchedule('0 12 1 * *', async () => {
+const _monthlySquadElections = defer('0 12 1 * *', async () => {
     const squadsSnap = await db.collection('squads').where('memberCount', '>=', 3).get();
     let count = 0;
     for (const squadDoc of squadsSnap.docs) {
@@ -1366,8 +1587,7 @@ exports.monthlySquadElections = functions.scheduler
 // ──────────────────────────────────────────────────────────────
 // 9. RESOLVE EXPIRED VOTES (every 6 hours)
 // ──────────────────────────────────────────────────────────────
-exports.resolveExpiredVotes = functions.scheduler
-  .onSchedule('0 */6 * * *', async () => {
+const _resolveExpiredVotes = defer('0 */6 * * *', async () => {
     const now = new Date();
     const squadsSnap = await db.collection('squads').get();
     let resolved = 0;
@@ -1449,26 +1669,74 @@ exports.resolveExpiredVotes = functions.scheduler
 // ──────────────────────────────────────────────────────────────
 // PUSH HELPERS
 // ──────────────────────────────────────────────────────────────
+// Map a push `type` → the settings category key in
+// users/{uid}.settings.notifications.{key}_push (NotificationSettingsScreen).
+// Default ALLOW: only suppress when the user explicitly turned the mapped
+// category's _push toggle off. Unmapped types are always allowed.
+const PUSH_TYPE_TO_PREF = {
+  like: 'likes', comment: 'comments', mention: 'mentions', squad_mention: 'mentions', follow: 'followers',
+  dm: 'dm', message: 'dm', msgreq: 'msgreq',
+  tip: 'tips', tip_received: 'tips', payout: 'payout', summary: 'summary',
+  // An unlock is a creator payment, so it rides the existing "Tips" toggle
+  // rather than adding a preference the settings screen does not render yet.
+  content_unlocked: 'tips',
+  squad_invite: 'squads_inv', squad_activity: 'squads_act', squad: 'squads_act',
+  tournament_starting_soon: 'tourney_start', tournament_match_starting: 'tourney_start',
+  tournament_match_ready: 'tourney_remind', tournament_assignment_reminder: 'tourney_remind',
+  tournament_match_reschedule: 'tourney_remind',
+  tournament_won: 'tourney_results', tournament_player_advanced: 'tourney_results',
+  security: 'security', updates: 'updates', surveys: 'surveys',
+  incoming_call: 'calls',
+  stream_live: 'live', stream_scheduled_reminder: 'live', stream_scheduled_soon: 'live',
+};
+function pushCategoryAllowed(userData, type) {
+  if (!type) return true;
+  const key = PUSH_TYPE_TO_PREF[type];
+  if (!key) return true; // unmapped → always allowed
+  const prefs = userData?.settings?.notifications;
+  if (!prefs) return true; // no prefs set → default on
+  return prefs[`${key}_push`] !== false;
+}
+
 async function sendPushToUser(userId, title, body, data = {}) {
   try {
-    const fcmDoc = await db.collection('users').doc(userId).collection('private').doc('fcm').get();
+    const fcmRef = db.collection('users').doc(userId).collection('private').doc('fcm');
+    const fcmDoc = await fcmRef.get();
     if (!fcmDoc.exists) return;
-    const tokens = fcmDoc.data()?.tokens || [];
-    if (tokens.length === 0) return;
+    const tokens = fcmDoc.data()?.tokens || [];          // FCM (web/PWA + GMS Android)
+    const hmsTokens = fcmDoc.data()?.hmsTokens || [];    // Huawei (HMS, no GMS)
+    if (tokens.length === 0 && hmsTokens.length === 0) return;
     const user = await db.collection('users').doc(userId).get();
     if (user.exists && user.data()?.settings?.pushNotifications === false) return;
-    // Data-only payload — the service worker builds the visible notification
-    // from data.title / data.body so we have full control over display + click routing.
+    // Per-category opt-out (Settings → Notifications). Global flag above is the
+    // master kill; this respects the individual category toggles.
+    if (user.exists && !pushCategoryAllowed(user.data(), data?.type)) return;
+    // Data-only payload — the service worker / native service builds the visible
+    // notification from data.title / data.body so we control display + routing.
     const payload = { ...data, title, body };
-    const response = await admin.messaging().sendEachForMulticast({
-      tokens,
-      data: Object.fromEntries(Object.entries(payload).map(([k, v]) => [k, String(v ?? '')])),
-    });
-    const invalid = [];
-    response.responses.forEach((r, i) => {
-      if (!r.success && (r.error?.code === 'messaging/invalid-registration-token' || r.error?.code === 'messaging/registration-token-not-registered')) invalid.push(tokens[i]);
-    });
-    if (invalid.length > 0) await db.collection('users').doc(userId).collection('private').doc('fcm').update({ tokens: admin.firestore.FieldValue.arrayRemove(...invalid) });
+    const strPayload = Object.fromEntries(Object.entries(payload).map(([k, v]) => [k, String(v ?? '')]));
+    // Calls must wake a Dozing/closed app immediately → high priority + no TTL.
+    const isCall = data?.type === 'incoming_call';
+    if (tokens.length > 0) {
+      const response = await admin.messaging().sendEachForMulticast({
+        tokens,
+        data: strPayload,
+        android: isCall ? { priority: 'high', ttl: 0 } : { priority: 'high' },
+      });
+      const invalid = [];
+      response.responses.forEach((r, i) => {
+        if (!r.success && (r.error?.code === 'messaging/invalid-registration-token' || r.error?.code === 'messaging/registration-token-not-registered')) invalid.push(tokens[i]);
+      });
+      if (invalid.length > 0) await fcmRef.update({ tokens: admin.firestore.FieldValue.arrayRemove(...invalid) });
+    }
+    // Huawei push — fully isolated so it can never affect the FCM path above.
+    // No-op unless the HUAWEI_PUSH_* secrets hold real values on this function.
+    if (hmsTokens.length > 0) {
+      try {
+        const r = await sendHuaweiPush(hmsTokens, payload);
+        if (r.invalidTokens && r.invalidTokens.length) await fcmRef.update({ hmsTokens: admin.firestore.FieldValue.arrayRemove(...r.invalidTokens) });
+      } catch (_) {}
+    }
   } catch (err) {}
 }
 async function sendPushToAll(userIds, title, body, data = {}) {
@@ -1502,13 +1770,24 @@ const PUSHABLE_NOTIFICATION_TYPES = new Set([
   'tournament_match_starting',
   'tournament_player_advanced',
   'tournament_mod_thanks',
+  'tournament_result_confirm',
+  'tournament_result_confirmed',
+  'tournament_summons',
+  'tournament_no_show',
   'cheat_signatures_stale',
-  'coaching_booked',
   'admin_test_notification',
+  // Someone paid to unlock your content. Written by entitlements.js inside the
+  // purchase transaction, so it is not inline-pushed and belongs here.
+  'content_unlocked',
+  'stream_scheduled_reminder',
+  'squad_mention',
+  // Squad activity (elections, role changes, kicks) — written as type 'squad'
+  // notification docs; gated by the "Squad activity" toggle via PUSH_TYPE_TO_PREF.
+  'squad',
 ]);
 
 exports.onNotificationCreated = functions.firestore
-  .onDocumentCreated({ document: 'notifications/{notifId}', database: 'vgrdb' }, async (event) => {
+  .onDocumentCreated({ document: 'notifications/{notifId}', database: 'vgrdb', secrets: HUAWEI_PUSH_SECRETS }, async (event) => {
     const n = event.data?.data();
     if (!n || !n.recipientId || !n.title) return;
     if (!PUSHABLE_NOTIFICATION_TYPES.has(n.type)) return;
@@ -1521,6 +1800,51 @@ exports.onNotificationCreated = functions.firestore
     try {
       await sendPushToUser(n.recipientId, n.title, n.body || '', data);
     } catch (err) { console.error('onNotificationCreated push error:', err); }
+  });
+
+// ──────────────────────────────────────────────────────────────
+// SQUAD CHAT @MENTIONS — write a pushable notification when a squad
+// message mentions a member by @username. Squad chat is Firestore-based
+// (PRIVATE surface, no Gemini), so a doc trigger is the natural hook.
+// Capped at 5 mentions per message; only resolves usernames that belong
+// to actual squad members; never notifies the sender about themselves.
+// ──────────────────────────────────────────────────────────────
+exports.onSquadMessageMention = functions.firestore
+  .onDocumentCreated({ document: 'squads/{squadId}/messages/{msgId}', database: 'vgrdb' }, async (event) => {
+    const m = event.data?.data();
+    const { squadId } = event.params;
+    const text = m?.text || '';
+    if (!m?.senderId || !text.includes('@')) return;
+    const usernames = [...new Set(
+      [...text.matchAll(/@([a-zA-Z0-9_.]{2,30})/g)].map(x => x[1].toLowerCase()),
+    )].slice(0, 5);
+    if (!usernames.length) return;
+
+    const squadSnap = await db.collection('squads').doc(squadId).get();
+    if (!squadSnap.exists) return;
+    const squad = squadSnap.data() || {};
+    const memberIds = new Set(squad.memberIds || []);
+
+    const batch = db.batch();
+    let writes = 0;
+    for (const uname of usernames) {
+      const uq = await db.collection('users').where('username', '==', uname).limit(1).get();
+      if (uq.empty) continue;
+      const target = uq.docs[0];
+      if (target.id === m.senderId || !memberIds.has(target.id)) continue;
+      batch.set(db.collection('notifications').doc(), {
+        recipientId: target.id,
+        type: 'squad_mention',
+        title: `${m.senderName || 'A squadmate'} mentioned you in ${squad.name || 'squad chat'}`,
+        body: text.slice(0, 120),
+        read: false,
+        actionUrl: `/squads/${squadId}/chat`,
+        data: { squadId, type: 'squad_mention' },
+        createdAt: new Date(),
+      });
+      writes++;
+    }
+    if (writes) await batch.commit();
   });
 
 // ──────────────────────────────────────────────────────────────
@@ -1581,8 +1905,75 @@ function hashString(str) {
   return Math.abs(hash).toString(36);
 }
 
-exports.syncNewsBotFeeds = functions.scheduler
-  .onSchedule('0 6 * * *', async () => {
+// SEO-friendly slug for a news/article post: a readable title slug plus the
+// content hash so it's unique even when two articles share a title (e.g.
+// "werewolf-metroidvania-revealed-5k8ymm"). Used as the post's `slug` field +
+// its canonical /post/<slug> URL; the doc id stays the dedup key.
+function newsSlug(title, hash) {
+  const base = String(title || '')
+    .toLowerCase()
+    .normalize('NFKD').replace(/[̀-ͯ]/g, '')   // strip accents (é -> e)
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60)
+    .replace(/-+$/g, '');
+  return base ? `${base}-${hash}` : `post-${hash}`;
+}
+
+// Official brand icon for a bot account — Google's public favicon service
+// serves the outlet's own site icon (recognizable, official, always up,
+// nothing scraped or rehosted). 128px is plenty for card avatars.
+function botFavicon(siteUrl) {
+  try { return `https://www.google.com/s2/favicons?sz=128&domain=${new URL(siteUrl).hostname}`; }
+  catch { return null; }
+}
+
+// Brand sites for the YouTube shorts bots — their `website` is a youtube.com
+// channel URL whose favicon is just the YouTube logo; use the actual brand
+// domain for a recognizable avatar instead.
+const SHORTS_BOT_BRAND_SITE = {
+  'yt-ign': 'https://www.ign.com',
+  'yt-gamespot': 'https://www.gamespot.com',
+  'yt-nintendo': 'https://www.nintendo.com',
+  'yt-playstation': 'https://www.playstation.com',
+  'yt-xbox': 'https://www.xbox.com',
+  'yt-riotgames': 'https://www.riotgames.com',
+};
+
+// Self-heal a bot account's branding: favicon avatar when missing, and the
+// newest article/video image as the profile banner when missing. Runs every
+// sync so new bots and bots whose first image arrives later both get covered.
+async function healBotBranding(userRef, userData, { faviconSite, bannerCandidate = null }) {
+  const updates = {};
+  if (!userData.avatar && faviconSite) {
+    const fav = botFavicon(faviconSite);
+    if (fav) updates.avatar = fav;
+  }
+  if (!userData.banner) {
+    let banner = bannerCandidate;
+    if (!banner) {
+      // Newest post by this bot that carries an image.
+      try {
+        const snap = await db.collection('posts')
+          .where('authorId', '==', userRef.id)
+          .orderBy('createdAt', 'desc')
+          .limit(8).get();
+        for (const d of snap.docs) {
+          const p = d.data();
+          const img = p.linkPreview?.image || p.thumbnailUrl || (p.mediaUrls || [])[0];
+          if (img && /^https:\/\//.test(img)) { banner = img; break; }
+        }
+      } catch (err) { console.warn(`healBotBranding query failed ${userRef.id}:`, err.message); }
+    }
+    if (banner) updates.banner = banner;
+  }
+  if (Object.keys(updates).length > 0) {
+    await userRef.update({ ...updates, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+    console.log(`🎨 Bot branding healed: ${userRef.id} (${Object.keys(updates).join(', ')})`);
+  }
+}
+
+const _syncNewsBotFeeds = defer('0 6 * * *', async () => {
     // KILL SWITCH — flip app_config/general.botsPaused = true in Firestore to halt all bot posting.
     const cfg = await db.collection('app_config').doc('general').get();
     if (cfg.exists && cfg.data()?.botsPaused === true) {
@@ -1593,12 +1984,17 @@ exports.syncNewsBotFeeds = functions.scheduler
     for (const bot of NEWS_BOT_ACCOUNTS) {
       const userRef = db.collection('users').doc(bot.id);
       const snap = await userRef.get();
+      if (snap.exists) {
+        // Self-heal branding on existing bots (favicon avatar + newest
+        // article image as banner — drives the Explore creator cards).
+        await healBotBranding(userRef, snap.data() || {}, { faviconSite: bot.website });
+      }
       if (!snap.exists) {
         await userRef.set({
           username: bot.username,
           displayName: bot.displayName,
           bio: bot.bio,
-          avatar: null,
+          avatar: botFavicon(bot.website),
           banner: null,
           website: bot.website,
           accountType: 'news_bot',
@@ -1632,6 +2028,7 @@ exports.syncNewsBotFeeds = functions.scheduler
           console.log(`[syncNewsBotFeeds] ${bot.id} paused — skipping`);
           continue;
         }
+        let botHasBanner = !!(botSnap.exists && botSnap.data()?.banner);
         const response = await axios.get(bot.rssUrl, { timeout: 10000 });
         // Pull a small candidate window — we only need enough headroom to
         // skip already-ingested items and still find ~2 fresh ones.
@@ -1640,7 +2037,8 @@ exports.syncNewsBotFeeds = functions.scheduler
         for (const item of items) {
           if (createdForThisBot >= PER_BOT_DAILY_LIMIT) break;
           if (!item.link) continue;
-          const postId = `${bot.id}-${hashString(item.link)}`;
+          const linkHash = hashString(item.link);
+          const postId = `${bot.id}-${linkHash}`;
           const postRef = db.collection('posts').doc(postId);
           const postSnap = await postRef.get();
           if (postSnap.exists) continue;
@@ -1669,6 +2067,7 @@ exports.syncNewsBotFeeds = functions.scheduler
             authorId: bot.id,
             content: item.title || '',
             type: 'text',
+            slug: newsSlug(item.title, linkHash),
             mediaUrls: imageUrl ? [imageUrl] : [],
             hashtags: [],
             likeCount: 0,
@@ -1682,6 +2081,7 @@ exports.syncNewsBotFeeds = functions.scheduler
             isNewsPost: true,
             previewText: cleanPreview,
             needsEnrichment: true,
+            needsSeoRewrite: true,
             linkPreview: {
               url: item.link,
               title: item.title || '',
@@ -1692,9 +2092,14 @@ exports.syncNewsBotFeeds = functions.scheduler
             updatedAt: new Date(),
           });
 
-          await db.collection('users').doc(bot.id).update({
-            postCount: admin.firestore.FieldValue.increment(1),
-          });
+          const botUpdate = { postCount: admin.firestore.FieldValue.increment(1) };
+          // First image we see while the bot has no banner = its banner
+          // (newest article art keeps the Explore card fresh + relevant).
+          if (!botHasBanner && imageUrl) {
+            botUpdate.banner = imageUrl;
+            botHasBanner = true;
+          }
+          await db.collection('users').doc(bot.id).update(botUpdate);
           totalCreated++;
           createdForThisBot++;
         }
@@ -1711,16 +2116,19 @@ exports.syncNewsBotFeeds = functions.scheduler
         // Ensure bot account exists
         const userRef = db.collection('users').doc(bot.id);
         const snap = await userRef.get();
+        const brandSite = SHORTS_BOT_BRAND_SITE[bot.id] || bot.website;
         if (!snap.exists) {
           await userRef.set({
             username: bot.username, displayName: bot.displayName, bio: bot.bio,
-            avatar: null, banner: null, website: bot.website,
+            avatar: botFavicon(brandSite), banner: null, website: bot.website,
             accountType: 'shorts_bot', isVerified: true, isOnboarded: true,
             followerCount: 0, followingCount: 0, postCount: 0,
             level: 0, totalXP: 0, tier: null, vp: 0,
             createdAt: admin.firestore.FieldValue.serverTimestamp(),
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
           });
+        } else {
+          await healBotBranding(userRef, snap.data() || {}, { faviconSite: brandSite });
         }
 
         const rssUrl = `https://api.rss2json.com/v1/api.json?rss_url=https://www.youtube.com/feeds/videos.xml?channel_id=${bot.channelId}`;
@@ -1737,15 +2145,21 @@ exports.syncNewsBotFeeds = functions.scheduler
           const videoId = vidMatch ? vidMatch[1] : null;
           if (!videoId) continue;
 
-          const postId = `${bot.id}-${hashString(item.link)}`;
+          const linkHash = hashString(item.link);
+          const postId = `${bot.id}-${linkHash}`;
           const postRef = db.collection('posts').doc(postId);
           const postSnap = await postRef.get();
           if (postSnap.exists) continue;
 
           await postRef.set({
             authorId: bot.id,
+            // YouTube embeds can't play in the native Shorts/Clips vertical
+            // viewers (those need uploaded video), so a 'short' type just made
+            // a dead grey tile. Keep as a regular post — PostCard renders the
+            // YouTube embed inline from youtubeVideoId.
             content: item.title || '',
-            type: 'short',
+            type: 'text',
+            slug: newsSlug(item.title, linkHash),
             mediaUrls: [],
             hashtags: [],
             embedVideoUrl: item.link,
@@ -1756,6 +2170,7 @@ exports.syncNewsBotFeeds = functions.scheduler
             rankScore: 0,
             sourceUrl: item.link,
             isNewsPost: true,
+            needsSeoRewrite: true,
             createdAt: item.pubDate ? new Date(item.pubDate) : new Date(),
             updatedAt: new Date(),
           });
@@ -1853,8 +2268,7 @@ async function extractFirstParagraphOrVideo(url) {
 // With the per-bot daily cap of 2 posts, ~54 docs/day max — one
 // run with a larger batch easily clears the queue.
 // ──────────────────────────────────────────────────────────────
-exports.enrichNewsPosts = functions.scheduler
-  .onSchedule('30 6 * * *', async () => {
+const _enrichNewsPosts = defer('30 6 * * *', async () => {
     // KILL SWITCH — same flag as syncNewsBotFeeds.
     const cfg = await db.collection('app_config').doc('general').get();
     if (cfg.exists && cfg.data()?.botsPaused === true) {
@@ -1875,7 +2289,11 @@ exports.enrichNewsPosts = functions.scheduler
         const updateData = { needsEnrichment: false, enrichedAt: admin.firestore.FieldValue.serverTimestamp() };
         if (result.type === 'video') {
           updateData.youtubeVideoId = result.youtubeId;
-          updateData.type = 'clip';
+          // News-bot videos are YouTube EMBEDS — they can't play in the
+          // TikTok-style Clips/Shorts vertical viewers (which need native
+          // uploaded video), so they rendered as dead grey tiles there.
+          // Keep them as regular posts (type stays 'text'); PostCard renders
+          // the YouTube embed inline from youtubeVideoId. Do NOT set type:'clip'.
           // CRITICAL: clear any stale mediaUrls/mediaUrl left over from the
           // initial ingest (they contained the article hero image and would
           // make PostCard render a broken <video> element on top of the embed).
@@ -1904,10 +2322,18 @@ exports.backfillNewsPosts = functions.https.onRequest(async (req, res) => {
   const snap = await postsRef.where('isNewsPost', '==', true).limit(500).get();
   let cleaned = 0;
   let requeued = 0;
+  let retyped = 0;
   const batch = db.batch();
   for (const d of snap.docs) {
     const p = d.data();
     const updates = {};
+    // 0) Bot YouTube-embed posts wrongly typed as clip/short — they can't play
+    //    in the native vertical viewers and showed as dead grey tiles. Revert
+    //    to a regular post so PostCard renders the embed inline.
+    if ((p.youtubeVideoId || p.embedVideoUrl) && (p.type === 'clip' || p.type === 'short')) {
+      updates.type = 'text';
+      retyped++;
+    }
     // 1) Embed posts with stale mediaUrls
     if ((p.youtubeVideoId || p.embedVideoUrl) && (Array.isArray(p.mediaUrls) ? p.mediaUrls.length > 0 : !!p.mediaUrl)) {
       updates.mediaUrls = [];
@@ -1925,7 +2351,7 @@ exports.backfillNewsPosts = functions.https.onRequest(async (req, res) => {
     if (Object.keys(updates).length > 0) batch.update(d.ref, updates);
   }
   await batch.commit();
-  res.status(200).json({ scanned: snap.size, cleaned, requeued });
+  res.status(200).json({ scanned: snap.size, cleaned, requeued, retyped });
 });
 
 // ──────────────────────────────────────────────────────────────
@@ -2049,7 +2475,7 @@ exports.onUserDeleted = functionsV1.region('europe-west1').auth.user().onDelete(
 // ──────────────────────────────────────────────────────────────
 
 exports.onNewFollower = functions.firestore
-  .onDocumentCreated({ document: 'follows/{followId}', database: 'vgrdb' }, async (event) => {
+  .onDocumentCreated({ document: 'follows/{followId}', database: 'vgrdb', secrets: HUAWEI_PUSH_SECRETS }, async (event) => {
     const data = event.data.data();
     const { followerId, followingId } = data;
     try {
@@ -2074,8 +2500,151 @@ exports.onNewFollower = functions.firestore
     } catch (err) { console.error('onNewFollower error:', err); }
   });
 
+// onStreamWentLive — when a public stream flips to 'live', notify the host's
+// followers once ("X is live"). Opt-out via streams/{id}.notifyFollowers===false.
+// Deduped with a wentLiveNotified flag so a re-render / status churn can't
+// double-fire. Capped fan-out via sendPushToAll.
+exports.onStreamWentLive = functions.firestore
+  .onDocumentUpdated({ document: 'streams/{streamId}', database: 'vgrdb' }, async (event) => {
+    const before = event.data?.before?.data() || {};
+    const after = event.data?.after?.data() || {};
+    const streamId = event.params.streamId;
+    const becameLive = before.status !== 'live' && after.status === 'live';
+    if (!becameLive) return;
+    if (after.wentLiveNotified === true) return;
+    if (after.notifyFollowers === false) return;
+    // Only public / followers-audience streams ping followers (not friends-only).
+    if (after.audience && !['public', 'followers'].includes(after.audience)) return;
+    const hostUid = after.hostUid;
+    if (!hostUid) return;
+    try {
+      // Claim the notify slot first (idempotent guard).
+      await db.collection('streams').doc(streamId).update({ wentLiveNotified: true });
+      const host = await db.collection('users').doc(hostUid).get();
+      const hostName = host.exists ? (host.data().displayName || host.data().username || 'Someone') : 'Someone';
+      const followersSnap = await db.collection('users').doc(hostUid)
+        .collection('followers').limit(5000).get();
+      const followerIds = followersSnap.docs.map(d => d.id).filter(id => id !== hostUid);
+      if (followerIds.length === 0) return;
+      const title = `${hostName} is live`;
+      const body = after.title ? `${after.title}` : 'Tap to watch the stream';
+      await sendPushToAll(followerIds, title, body, {
+        type: 'stream_live',
+        streamId,
+        senderId: hostUid,
+        actionUrl: `/watch/${streamId}`,
+      });
+    } catch (err) { console.error('onStreamWentLive error:', err); }
+  });
+
+// notifyScheduledStreams — reminder cron for schedule-ahead streams. A host can
+// schedule a stream from Go Live (scheduled_streams/{id}, status:'scheduled').
+// ~10 min before scheduledStart we ping the host to go live and, if
+// notifyFollowers, ping their followers ("X is going live soon"). If the host is
+// already live we link the doc as 'started' (no reminder). Docs >3h past a
+// missed start are expired so they don't linger. €0: one small query every 5
+// min + direct pushes (no per-message Firestore fan-out).
+const _notifyScheduledStreams = defer('*/5 * * * *', async () => {
+    const now = Date.now();
+    const DUE_WINDOW = 10 * 60 * 1000;   // remind within 10 min of start
+    const STALE = 3 * 60 * 60 * 1000;    // expire 3h after a missed start
+    let snap;
+    try {
+      snap = await db.collection('scheduled_streams').where('status', '==', 'scheduled').limit(200).get();
+    } catch (e) { console.error('notifyScheduledStreams query', e); return; }
+    for (const docSnap of snap.docs) {
+      const s = docSnap.data();
+      const start = Number(s.scheduledStart) || 0;
+      if (!start) continue;
+      try {
+        if (start < now - STALE) { await docSnap.ref.update({ status: 'expired' }); continue; }
+        if (start > now + DUE_WINDOW) continue;   // not due yet
+        if (s.reminderSentAt) continue;           // already reminded
+        const hostUid = s.hostUid;
+        if (!hostUid) continue;
+        // Already live → link the schedule + skip the reminder.
+        const liveSnap = await db.collection('streams')
+          .where('hostUid', '==', hostUid).where('status', '==', 'live').limit(1).get();
+        if (!liveSnap.empty) {
+          await docSnap.ref.update({ status: 'started', startedStreamId: liveSnap.docs[0].id });
+          continue;
+        }
+        await docSnap.ref.update({ reminderSentAt: admin.firestore.FieldValue.serverTimestamp() });
+        // Host gets BOTH channels: an in-app drawer entry (this doc) +, because
+        // the type is allowlisted, onNotificationCreated fires the push.
+        await db.collection('notifications').add({
+          recipientId: hostUid,
+          type: 'stream_scheduled_reminder',
+          title: 'Your scheduled stream starts soon',
+          body: s.title ? `Time to go live: ${s.title}` : 'Tap to start your stream',
+          actionUrl: '/go-live',
+          read: false,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        // Followers get a push heads-up (same pattern as onStreamWentLive — no
+        // per-follower drawer docs, to avoid N Firestore writes per stream).
+        if (s.notifyFollowers !== false) {
+          const host = await db.collection('users').doc(hostUid).get();
+          const hostName = host.exists ? (host.data().displayName || host.data().username || 'Someone') : 'Someone';
+          const followersSnap = await db.collection('users').doc(hostUid).collection('followers').limit(5000).get();
+          const followerIds = followersSnap.docs.map(d => d.id).filter(id => id !== hostUid);
+          if (followerIds.length) {
+            await sendPushToAll(followerIds, `${hostName} is going live soon`,
+              s.title ? s.title : 'Tap to catch the stream',
+              { type: 'stream_scheduled_soon', senderId: hostUid, actionUrl: `/user/${hostUid}` });
+          }
+        }
+      } catch (e) { console.error('notifyScheduledStreams item', docSnap.id, e); }
+    }
+  });
+
+// onCallCreated — push an incoming-call notification to the callee(s) the moment
+// a ringing call doc is written. The in-app overlay (IncomingCallOverlay) covers
+// the foreground case; this covers backgrounded/closed apps. Gated by the
+// 'calls' notification category (default on). Web-push can't play a custom
+// ringtone on a closed app (OS limit), but the notification will show + tapping
+// opens the call.
+exports.onCallCreated = functions.firestore
+  .onDocumentWritten({ document: 'calls/{callId}', database: 'vgrdb', secrets: HUAWEI_PUSH_SECRETS }, async (event) => {
+    const before = event.data?.before?.data() || null;
+    const after = event.data?.after?.data() || null;
+    if (!after || after.status !== 'ringing') return;
+    // CRITICAL: call docs reuse the conversation id (calls/{chatId}), so a
+    // repeat call is an UPDATE of an existing (ended) doc, NOT a create. The
+    // old onDocumentCreated trigger therefore never fired for any call after
+    // the first one. Fire on the transition INTO ringing instead.
+    if (before && before.status === 'ringing') return;
+    const c = after;
+    const callId = event.params.callId;
+    const callerId = c.callerId;
+    const callees = (c.participants || []).filter((uid) => uid && uid !== callerId);
+    if (callees.length === 0) return;
+    const callerName = c.callerName || 'Someone';
+    const type = c.type === 'video' ? 'video' : 'audio';
+    // A GROUP call rides the SFU (/group-call); a 1:1 stays raw WebRTC P2P
+    // (/call). Sending a group callee to the P2P route would drop them into a
+    // mesh that cannot work — the route MUST follow the call kind.
+    const isGroup = c.isGroup === true;
+    const title = isGroup
+      ? `${c.groupName || 'Group'} call`
+      : `${callerName} is calling`;
+    const body = isGroup
+      ? `${callerName} started a ${type === 'video' ? 'video' : 'voice'} call`
+      : (type === 'video' ? 'Incoming video call' : 'Incoming voice call');
+    try {
+      await Promise.allSettled(callees.map((uid) => sendPushToUser(uid, title, body, {
+        type: 'incoming_call',
+        callId,
+        callType: type,
+        senderId: callerId || '',
+        isGroup: isGroup ? 'true' : 'false',
+        actionUrl: isGroup ? `/group-call/${callId}` : `/call/${callId}/${type}?role=callee`,
+      })));
+    } catch (err) { console.error('onCallCreated error:', err); }
+  });
+
 exports.onNewComment = functions.firestore
-  .onDocumentCreated({ document: 'posts/{postId}/comments/{commentId}', database: 'vgrdb' }, async (event) => {
+  .onDocumentCreated({ document: 'posts/{postId}/comments/{commentId}', database: 'vgrdb', secrets: HUAWEI_PUSH_SECRETS }, async (event) => {
     const postId = event.params.postId;
     const comment = event.data.data();
     try {
@@ -2085,10 +2654,34 @@ exports.onNewComment = functions.firestore
 
       await db.collection('posts').doc(postId).update({ commentCount: admin.firestore.FieldValue.increment(1) });
 
-      if (authorId === comment.authorId) return;
-
       const commenter = await db.collection('users').doc(comment.authorId).get();
       const commenterName = commenter.exists ? (commenter.data().displayName || 'Someone') : 'Someone';
+      const preview = (comment.content || '').substring(0, 100);
+
+      // B5: a reply (parentId set) notifies the PARENT COMMENT author. Resolve
+      // them first so we can also avoid double-notifying the post author below.
+      let parentAuthorId = null;
+      if (comment.parentId) {
+        const parent = await db.collection('posts').doc(postId).collection('comments').doc(comment.parentId).get().catch(() => null);
+        parentAuthorId = parent && parent.exists ? parent.data().authorId : null;
+        if (parentAuthorId && parentAuthorId !== comment.authorId) {
+          await db.collection('notifications').add({
+            recipientId: parentAuthorId,
+            type: 'comment_reply',
+            title: 'New reply',
+            body: `${commenterName} replied to your comment`,
+            senderId: comment.authorId,
+            data: { postId, commentId: event.params.commentId, parentId: comment.parentId },
+            read: false,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+          await sendPushToUser(parentAuthorId, 'New reply', `${commenterName}: ${preview}`, { type: 'comment_reply', postId });
+        }
+      }
+
+      // Post-author notification — skip when they authored the comment, or when
+      // they already got the reply notification above (they were the parent).
+      if (authorId === comment.authorId || authorId === parentAuthorId) return;
 
       await db.collection('notifications').add({
         recipientId: authorId,
@@ -2101,7 +2694,7 @@ exports.onNewComment = functions.firestore
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
       });
 
-      await sendPushToUser(authorId, 'New comment', `${commenterName}: ${(comment.content || '').substring(0, 100)}`, { type: 'comment', postId });
+      await sendPushToUser(authorId, 'New comment', `${commenterName}: ${preview}`, { type: 'comment', postId });
     } catch (err) { console.error('onNewComment error:', err); }
   });
 
@@ -2119,7 +2712,7 @@ function buildPreview(message) {
 }
 
 exports.onNewMessage = functions.firestore
-  .onDocumentCreated({ document: 'conversations/{convoId}/messages/{messageId}', database: 'vgrdb' }, async (event) => {
+  .onDocumentCreated({ document: 'conversations/{convoId}/messages/{messageId}', database: 'vgrdb', secrets: HUAWEI_PUSH_SECRETS }, async (event) => {
     const convoId = event.params.convoId;
     const message = event.data.data();
     // Skip — relayMessage already handled push + metadata
@@ -2161,7 +2754,7 @@ exports.onNewMessage = functions.firestore
 // remains as a fallback for direct Firestore writes (e.g. the offline
 // outbox falling back when the callable is unreachable).
 // ──────────────────────────────────────────────────────────────
-exports.relayMessage = functions.https.onCall(async (request) => {
+exports.relayMessage = functions.https.onCall({ secrets: HUAWEI_PUSH_SECRETS }, async (request) => {
   const uid = request.auth?.uid;
   if (!uid) throw new functions.https.HttpsError('unauthenticated', 'Must be logged in');
 
@@ -2285,6 +2878,26 @@ exports.relayMessage = functions.https.onCall(async (request) => {
           .update({ tokens: admin.firestore.FieldValue.arrayRemove(...invalid) }).catch(() => {});
       }
     }
+    // Huawei (HMS) push for the same recipients — isolated from FCM, no-op
+    // until the HUAWEI_PUSH_* secrets hold real values.
+    try {
+      const hmsPayload = {
+        title: senderName, body: preview, type: 'message',
+        conversationId: chatId, senderId: uid, senderAvatar,
+      };
+      await Promise.all(otherPids.map(async (pid, i) => {
+        const userDoc = userDocs[i];
+        if (userDoc?.exists && userDoc.data()?.settings?.pushNotifications === false) return;
+        const fcmDoc = fcmDocs[i];
+        const hmsTokens = fcmDoc?.exists ? (fcmDoc.data()?.hmsTokens || []) : [];
+        if (!hmsTokens.length) return;
+        const r = await sendHuaweiPush(hmsTokens, hmsPayload);
+        if (r.invalidTokens && r.invalidTokens.length) {
+          await db.collection('users').doc(pid).collection('private').doc('fcm')
+            .update({ hmsTokens: admin.firestore.FieldValue.arrayRemove(...r.invalidTokens) }).catch(() => {});
+        }
+      }));
+    } catch (_) {}
   } catch (err) { console.error('relayMessage push error:', err); }
 
   return { messageId: msgRef.id, clientId: clientId || null };
@@ -2296,7 +2909,7 @@ exports.relayMessage = functions.https.onCall(async (request) => {
  * critical because onSnapshot listeners scoped to createdAt > lastSync do not
  * fire 'removed' events for older cached-only messages.
  */
-exports.deleteMessage = functions.https.onCall(async (request) => {
+exports.deleteMessage = functions.https.onCall({ secrets: HUAWEI_PUSH_SECRETS }, async (request) => {
   const uid = request.auth?.uid;
   if (!uid) throw new functions.https.HttpsError('unauthenticated', 'Must be logged in');
   const { chatId, messageId } = request.data || {};
@@ -2389,6 +3002,26 @@ exports.deleteMessage = functions.https.onCall(async (request) => {
         }
       }
     }
+    // Huawei (HMS) silent cache-scrub for the same recipients.
+    try {
+      const otherPids2 = participants.filter(p => p !== uid);
+      const hmsData = {
+        type: 'message_deleted',
+        conversationId: String(chatId),
+        messageId: String(messageId),
+        senderId: String(uid),
+      };
+      await Promise.all(otherPids2.map(async (pid) => {
+        const fcmDoc = await db.collection('users').doc(pid).collection('private').doc('fcm').get();
+        const hmsTokens = fcmDoc.exists ? (fcmDoc.data()?.hmsTokens || []) : [];
+        if (!hmsTokens.length) return;
+        const r = await sendHuaweiPush(hmsTokens, hmsData);
+        if (r.invalidTokens && r.invalidTokens.length) {
+          await db.collection('users').doc(pid).collection('private').doc('fcm')
+            .update({ hmsTokens: admin.firestore.FieldValue.arrayRemove(...r.invalidTokens) }).catch(() => {});
+        }
+      }));
+    } catch (_) {}
   } catch (err) { console.error('deleteMessage push error:', err); }
 
   return { ok: true };
@@ -2529,8 +3162,7 @@ exports.autoModCheck = functions.firestore
 // are indistinguishable to users on a small app but cut reads by 6×.
 // Author boost is read ONCE per author per run via in-memory cache instead
 // of N+1 lookups, and we batch-fetch authors with `where(__name__, in, [...])`.
-exports.calculateRankScores = functions.scheduler
-  .onSchedule('0 */6 * * *', async () => {
+const _calculateRankScores = defer('0 */6 * * *', async () => {
     const now = Date.now();
     const twentyFourHoursAgo = new Date(now - 24 * 60 * 60 * 1000);
     const posts = await db.collection('posts').where('status', '==', 'published').where('createdAt', '>=', twentyFourHoursAgo).get();
@@ -2576,13 +3208,43 @@ exports.calculateRankScores = functions.scheduler
     }
     await batch.commit();
     console.log(`Ranked ${count} posts using ${uniqueAuthorIds.length} unique authors`);
+
+    // Staleness sweep. The rescoring above only touches the last-24h window, so a
+    // post that once trended keeps a frozen-high rankScore forever and Trending
+    // (orderBy rankScore desc) drifts into an ALL-TIME leaderboard. Drain it at
+    // the source: walk the HEAD of the rankScore list (the exact posts that
+    // dominate Trending) and zero any that have aged past the 72h trending window
+    // (matches the getTrendingPosts client cutoff). Bounded (one indexed query,
+    // ≤400 docs/run, no new index); since the list is desc and scores are always
+    // ≥0, we can stop at the first ≤0. A trickle crosses 72h each run, so the head
+    // of the list stays genuinely recent without ever rescoring the whole corpus.
+    try {
+      const staleCutoff = now - 72 * 60 * 60 * 1000;
+      const head = await db.collection('posts')
+        .where('status', '==', 'published')
+        .orderBy('rankScore', 'desc')
+        .limit(400).get();
+      let sweep = db.batch();
+      let swept = 0;
+      for (const doc of head.docs) {
+        const d = doc.data();
+        if ((d.rankScore || 0) <= 0) break; // rest are already ≤0
+        const created = d.createdAt?.toMillis ? d.createdAt.toMillis() : new Date(d.createdAt).getTime();
+        if (created < staleCutoff) {
+          sweep.update(doc.ref, { rankScore: 0 });
+          swept++;
+          if (swept % 400 === 0) { await sweep.commit(); sweep = db.batch(); }
+        }
+      }
+      if (swept > 0) await sweep.commit();
+      console.log(`Staleness sweep zeroed ${swept} posts older than 72h`);
+    } catch (e) { console.error('rank staleness sweep failed:', e?.message); }
   });
 
 // Trending hashtags refreshed every 3 hours (was hourly). A trending tag
 // list does not need minute-level freshness, and this query reads every
 // published post from the last 24h on each run.
-exports.updateTrending = functions.scheduler
-  .onSchedule('0 */3 * * *', async () => {
+const _updateTrending = defer('0 */3 * * *', async () => {
     const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
     const posts = await db.collection('posts').where('status', '==', 'published').where('createdAt', '>=', twentyFourHoursAgo).get();
 
@@ -2624,8 +3286,7 @@ exports.updateTrending = functions.scheduler
 
 // Stories cleanup every 6 hours. A story expiring up to 6 hours late is
 // irrelevant (the client already hides stories older than 24h on read).
-exports.cleanupExpiredStories = functions.scheduler
-  .onSchedule('0 */6 * * *', async () => {
+const _cleanupExpiredStories = defer('0 */6 * * *', async () => {
     const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
     const expired = await db.collection('stories').where('active', '==', true).where('createdAt', '<=', twentyFourHoursAgo).get();
     if (expired.empty) return;
@@ -2637,6 +3298,21 @@ exports.cleanupExpiredStories = functions.scheduler
     }
     await batch.commit();
     if (count > 0) console.log(`Expired ${count} stories`);
+  });
+
+// The Status feature writes to `statuses` (NOT the legacy `stories` collection
+// the job above sweeps), and NOTHING ever deleted them — they piled up in
+// Firestore forever, and a 24h status past its window kept counting against the
+// author-scoped query. Delete statuses older than 24h. Batched + capped so one
+// run can't blow the write budget; the next run continues the backlog.
+const _cleanupExpiredStatuses = defer('0 */6 * * *', async () => {
+    const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const expired = await db.collection('statuses').where('createdAt', '<=', cutoff).limit(400).get();
+    if (expired.empty) return;
+    const batch = db.batch();
+    for (const doc of expired.docs) batch.delete(doc.ref);
+    await batch.commit();
+    console.log(`Deleted ${expired.size} expired statuses`);
   });
 
 // ──────────────────────────────────────────────────────────────
@@ -2652,9 +3328,12 @@ exports.sendTip = functions.https.onCall(async (request) => {
   if (uid === recipientId) throw new functions.https.HttpsError('invalid-argument', 'Cannot tip yourself');
   if (amount > 50000) throw new functions.https.HttpsError('invalid-argument', 'Maximum tip is 50,000 coins');
 
+  const senderPlan = await getUserPlan(uid);
+
   return db.runTransaction(async (tx) => {
     const senderWalletRef = db.collection('wallets').doc(uid);
     const recipientWalletRef = db.collection('wallets').doc(recipientId);
+    // All reads MUST precede writes in a transaction.
     const senderWallet = await tx.get(senderWalletRef);
     const recipientWallet = await tx.get(recipientWalletRef);
     if (!senderWallet.exists) throw new functions.https.HttpsError('not-found', 'Sender wallet not found');
@@ -2665,16 +3344,34 @@ exports.sendTip = functions.https.onCall(async (request) => {
     const platformFee = Math.floor(amount * 0.10);
     const recipientAmount = amount - platformFee;
 
-    tx.update(senderWalletRef, { balance: admin.firestore.FieldValue.increment(-amount), totalSpent: admin.firestore.FieldValue.increment(amount), totalTipped: admin.firestore.FieldValue.increment(amount), updatedAt: admin.firestore.FieldValue.serverTimestamp() });
-    tx.update(recipientWalletRef, { balance: admin.firestore.FieldValue.increment(recipientAmount), totalEarned: admin.firestore.FieldValue.increment(recipientAmount), totalReceived: admin.firestore.FieldValue.increment(recipientAmount), updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+    // ── Sender (gifter) VP — sub-1:1 (1 VP per 25 coins), plan-multiplied, uncapped ──
+    const vpEarned = applyVPMultiplier(Math.floor(amount / GIFT_COINS_PER_VP), senderPlan);
+
+    const senderUpdate = { balance: admin.firestore.FieldValue.increment(-amount), totalSpent: admin.firestore.FieldValue.increment(amount), totalTipped: admin.firestore.FieldValue.increment(amount), updatedAt: admin.firestore.FieldValue.serverTimestamp() };
+    if (vpEarned > 0) senderUpdate.vp = admin.firestore.FieldValue.increment(vpEarned);
+    tx.update(senderWalletRef, senderUpdate);
+    // A received tip is the canonical convertible credit: it came from someone
+    // else, so the recipient may convert it to gems and withdraw. earnedBalance
+    // is what makes that legal under Play's payments policy — see coinLedger.js.
+    tx.update(recipientWalletRef, { balance: admin.firestore.FieldValue.increment(recipientAmount), earnedBalance: admin.firestore.FieldValue.increment(recipientAmount), totalEarned: admin.firestore.FieldValue.increment(recipientAmount), totalReceived: admin.firestore.FieldValue.increment(recipientAmount), updatedAt: admin.firestore.FieldValue.serverTimestamp() });
 
     const tipRef = db.collection('tips').doc();
-    tx.set(tipRef, { senderId: uid, recipientId, amount, recipientAmount, platformFee, message: message || null, postId: postId || null, streamId: streamId || null, createdAt: admin.firestore.FieldValue.serverTimestamp() });
-    tx.set(db.collection('transactions').doc(), { userId: uid, type: 'tip_sent', amount: -amount, balance: senderBalance - amount, recipientId, tipId: tipRef.id, description: `Tipped ${amount} coins`, createdAt: admin.firestore.FieldValue.serverTimestamp() });
+    tx.set(tipRef, { senderId: uid, recipientId, amount, recipientAmount, platformFee, vpEarned, message: message || null, postId: postId || null, streamId: streamId || null, createdAt: admin.firestore.FieldValue.serverTimestamp() });
+    tx.set(db.collection('transactions').doc(), { userId: uid, type: 'tip_sent', amount: -amount, balance: senderBalance - amount, recipientId, tipId: tipRef.id, vpEarned, description: `Tipped ${amount} coins${vpEarned > 0 ? ` (+${vpEarned} VP)` : ''}`, createdAt: admin.firestore.FieldValue.serverTimestamp() });
     tx.set(db.collection('transactions').doc(), { userId: recipientId, type: 'tip_received', amount: recipientAmount, balance: (recipientWallet.data().balance || 0) + recipientAmount, senderId: uid, tipId: tipRef.id, description: `Received ${recipientAmount} coins (${amount} - ${platformFee} fee)`, createdAt: admin.firestore.FieldValue.serverTimestamp() });
     tx.set(db.collection('notifications').doc(), { recipientId, type: 'tip', title: 'You received a tip!', body: `Someone tipped you ${recipientAmount} coins${message ? ': "' + message + '"' : ''}`, senderId: uid, read: false, data: { tipId: tipRef.id, amount: recipientAmount }, createdAt: admin.firestore.FieldValue.serverTimestamp() });
 
-    return { tipId: tipRef.id, recipientAmount, platformFee };
+    // Top-gifters leaderboard: accumulate this sender's running coin total for
+    // the stream they're watching (server-written so the board can't be faked).
+    // Display-only; names/avatars are resolved client-side from the uid.
+    if (streamId && typeof streamId === 'string') {
+      tx.set(db.collection('streams').doc(streamId).collection('gifters').doc(uid), {
+        uid, coins: admin.firestore.FieldValue.increment(amount),
+        lastTipAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+    }
+
+    return { tipId: tipRef.id, recipientAmount, platformFee, vpEarned };
   });
 });
 
@@ -2826,53 +3523,29 @@ exports.requestPayout = functions.https.onCall(async (request) => {
   return { payoutId: payout.id, amountEUR: payoutEUR };
 });
 
-exports.subscribeMembership = functions.https.onCall(async (request) => {
-  const uid = request.auth?.uid;
-  if (!uid) throw new functions.https.HttpsError('unauthenticated', 'Must be logged in');
-  const { membershipId, paymentType } = request.data;
-  if (!membershipId) throw new functions.https.HttpsError('invalid-argument', 'membershipId required');
-  const membership = await db.collection('memberships').doc(membershipId).get();
-  if (!membership.exists) throw new functions.https.HttpsError('not-found', 'Membership tier not found');
-  const tier = membership.data();
+// Creator memberships (subscribe/cancel/list) live in ./memberships — they read the
+// real `creators/{uid}.membershipTiers` the Studio editor writes (the old inline
+// versions read a `memberships` collection nothing ever populated). Auto-renew cron
+// is registered in cronDaily below.
+exports.subscribeMembership = memberships.subscribeMembership;
+exports.cancelMembership = memberships.cancelMembership;
+exports.getMyMemberships = memberships.getMyMemberships;
 
-  const existingSub = await db.collection('member_subscriptions').where('userId', '==', uid).where('membershipId', '==', membershipId).where('status', '==', 'active').limit(1).get();
-  if (!existingSub.empty) throw new functions.https.HttpsError('already-exists', 'Already subscribed');
+// Scheduled messages (Lite/Pro) — creation callable; the relay executes due ones.
+exports.scheduleMessage = require('./scheduledMessages').scheduleMessage;
 
-  if (paymentType !== 'coins') throw new functions.https.HttpsError('unimplemented', 'Stripe subscriptions coming soon');
+// Platform announcements — @Vergr broadcasts a flagged post to the FCM
+// `announcements` topic (one send, all devices, bypasses post-notif prefs).
+const announcements = require('./announcements');
+exports.subscribeAnnouncements = announcements.subscribeAnnouncements;
+exports.unsubscribeAnnouncements = announcements.unsubscribeAnnouncements;
+exports.postAnnouncement = announcements.postAnnouncement;
 
-  return db.runTransaction(async (tx) => {
-    const walletRef = db.collection('wallets').doc(uid);
-    const wallet = await tx.get(walletRef);
-    const balance = wallet.data()?.balance || 0;
-    if (balance < tier.priceCoins) throw new functions.https.HttpsError('failed-precondition', 'Insufficient coin balance');
-
-    const platformFee = Math.floor(tier.priceCoins * 0.10);
-    const creatorAmount = tier.priceCoins - platformFee;
-
-    tx.update(walletRef, { balance: admin.firestore.FieldValue.increment(-tier.priceCoins), totalSpent: admin.firestore.FieldValue.increment(tier.priceCoins), updatedAt: admin.firestore.FieldValue.serverTimestamp() });
-    tx.update(db.collection('wallets').doc(tier.creatorId), { balance: admin.firestore.FieldValue.increment(creatorAmount), totalEarned: admin.firestore.FieldValue.increment(creatorAmount), updatedAt: admin.firestore.FieldValue.serverTimestamp() });
-
-    const subRef = db.collection('member_subscriptions').doc();
-    tx.set(subRef, { userId: uid, creatorId: tier.creatorId, membershipId, tierName: tier.name, priceCoins: tier.priceCoins, paymentType: 'coins', status: 'active', startedAt: admin.firestore.FieldValue.serverTimestamp(), renewsAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), createdAt: admin.firestore.FieldValue.serverTimestamp() });
-    tx.set(db.collection('transactions').doc(), { userId: uid, type: 'membership', amount: -tier.priceCoins, balance: balance - tier.priceCoins, description: `Subscribed to ${tier.name} membership`, membershipId, creatorId: tier.creatorId, createdAt: admin.firestore.FieldValue.serverTimestamp() });
-    tx.set(db.collection('notifications').doc(), { recipientId: tier.creatorId, type: 'membership', title: 'New subscriber!', body: `Someone subscribed to your ${tier.name} tier`, senderId: uid, read: false, createdAt: admin.firestore.FieldValue.serverTimestamp() });
-
-    return { subscriptionId: subRef.id };
-  });
-});
-
-exports.cancelMembership = functions.https.onCall(async (request) => {
-  const uid = request.auth?.uid;
-  if (!uid) throw new functions.https.HttpsError('unauthenticated', 'Must be logged in');
-  const { subscriptionId } = request.data;
-  if (!subscriptionId) throw new functions.https.HttpsError('invalid-argument', 'subscriptionId required');
-  const subRef = db.collection('member_subscriptions').doc(subscriptionId);
-  const sub = await subRef.get();
-  if (!sub.exists) throw new functions.https.HttpsError('not-found', 'Subscription not found');
-  if (sub.data().userId !== uid) throw new functions.https.HttpsError('permission-denied', 'Not your subscription');
-  await subRef.update({ status: 'cancelled', cancelledAt: admin.firestore.FieldValue.serverTimestamp() });
-  return { cancelled: true };
-});
+// Email verification (6-digit code over Spacemail SMTP; dormant until the SMTP
+// secrets are real — see functions/emailVerification.js + docs/EMAIL_VERIFICATION.md).
+const emailVerification = require('./emailVerification');
+exports.sendEmailVerificationCode = emailVerification.sendEmailVerificationCode;
+exports.verifyEmailCode = emailVerification.verifyEmailCode;
 
 // ──────────────────────────────────────────────────────────────
 // STORAGE LIFECYCLE: delete chat media past its TTL.
@@ -2915,8 +3588,7 @@ async function deleteExpiredFiles(folderPrefix) {
   return { folderPrefix, scanned, deleted };
 }
 
-exports.cleanupExpiredMedia = functions.scheduler
-  .onSchedule({ schedule: '0 3 * * *', timeZone: 'Etc/UTC' }, async () => {
+const _cleanupExpiredMedia = defer({ schedule: '0 3 * * *', timeZone: 'Etc/UTC' }, async () => {
     const results = [];
     for (const folder of TTL_FOLDERS) {
       try {
@@ -2953,18 +3625,27 @@ function escapeHtml(s) {
 }
 
 exports.shareLink = functions.https.onRequest(async (req, res) => {
-  // Path looks like /share/post/abc123 or /share/clip/abc123
+  // Path looks like /share/post/abc123, /share/clip/abc123, /share/stream/abc123
   const parts = (req.path || '').split('/').filter(Boolean);
   // Function rewrite strips the /share prefix and we get [kind, id]
-  const [kind, id] = parts.length === 2 ? parts : [parts[parts.length - 2], parts[parts.length - 1]];
-  if (!id || !['post', 'clip'].includes(kind)) {
+  let [kind, id] = parts.length === 2 ? parts : [parts[parts.length - 2], parts[parts.length - 1]];
+  if (kind === 'live') kind = 'stream'; // alias
+  if (!id || !['post', 'clip', 'stream'].includes(kind)) {
     return res.status(404).send('Not found');
   }
 
-  const APP_BASE = 'https://vergr-44494.web.app';
-  const APP_ROUTE = kind === 'clip' ? `/clip/${id}` : `/post/${id}`;
-  const canonicalUrl = `${APP_BASE}/share/${kind}/${id}`;
-  const fallbackImage = `${APP_BASE}/icons/icon-512.png`;
+  const APP_BASE = 'https://vergr.app';
+  const APP_ROUTE_BASE = kind === 'clip' ? `/clip/${id}` : kind === 'stream' ? `/watch/${id}` : `/post/${id}`;
+  // Forward a referral code so a shared clip/stream/post credits the sharer.
+  // captureReferral() in the SPA reads ?ref once the human lands on APP_ROUTE.
+  const refRaw = typeof req.query?.ref === 'string' ? req.query.ref : '';
+  const ref = /^[A-Za-z0-9_-]{6,64}$/.test(refRaw) ? refRaw : '';
+  const APP_ROUTE = ref ? `${APP_ROUTE_BASE}?ref=${ref}` : APP_ROUTE_BASE;
+  // Canonical = the REAL app route (now server-rendered by ugcRenderer), so
+  // /share/* never competes with /post|/clip|/watch in the index (SEO_PLAN 8.6).
+  // Always the CLEAN route (no ?ref) so referral params never pollute the index.
+  const canonicalUrl = `${APP_BASE}${APP_ROUTE_BASE}`;
+  const fallbackImage = `${APP_BASE}/og/share-poster.jpg`;
 
   let title = 'VERGR — Where Gamers Converge';
   let description = 'Compete, create, earn and shop with the gaming community.';
@@ -2972,27 +3653,53 @@ exports.shareLink = functions.https.onRequest(async (req, res) => {
   let videoEmbed = null;
 
   try {
-    const postSnap = await db.collection('posts').doc(id).get();
-    if (postSnap.exists) {
-      const post = postSnap.data();
-      const author = post.authorId ? (await db.collection('users').doc(post.authorId).get()).data() : null;
-      const authorName = author?.displayName || author?.username || 'A gamer';
-      title = post.content
-        ? `${authorName}: ${post.content.slice(0, 60)}${post.content.length > 60 ? '…' : ''}`
-        : `${authorName} on VERGR`;
-      description = (post.previewText || post.content || description).slice(0, 200);
-      const firstMedia = Array.isArray(post.mediaUrls) ? post.mediaUrls[0] : post.mediaUrl;
-      if (firstMedia) image = firstMedia;
-      else if (post.youtubeVideoId) {
-        image = `https://img.youtube.com/vi/${post.youtubeVideoId}/hqdefault.jpg`;
-        videoEmbed = `https://www.youtube.com/embed/${post.youtubeVideoId}`;
+    if (kind === 'stream') {
+      const sSnap = await db.collection('streams').doc(id).get();
+      if (sSnap.exists) {
+        const s = sSnap.data();
+        const live = s.status === 'live';
+        let host = s.hostUsername || null;
+        if (!host && s.hostUid) {
+          const h = (await db.collection('users').doc(s.hostUid).get()).data();
+          host = h?.displayName || h?.username || null;
+        }
+        host = host || 'A creator';
+        const streamTitle = (s.title || '').trim();
+        title = `${live ? '🔴 LIVE · ' : ''}${host}${streamTitle ? ` — ${streamTitle}` : ' is streaming'} on VERGR`;
+        description = s.game
+          ? `${live ? 'Live now' : 'Streaming'} · ${s.game}. Tap to watch on VERGR.`
+          : `${live ? 'Live now on VERGR.' : 'Watch on VERGR.'} Tap to join the stream.`;
+        image = s.coverUrl || s.thumbnailUrl || fallbackImage;
+      }
+    } else {
+      // Resolve by doc id first, then by SEO slug (news/article pretty URLs).
+      let postSnap = await db.collection('posts').doc(id).get();
+      if (!postSnap.exists) {
+        const q = await db.collection('posts').where('slug', '==', id).limit(1).get();
+        if (!q.empty) postSnap = q.docs[0];
+      }
+      if (postSnap.exists) {
+        const post = postSnap.data();
+        const author = post.authorId ? (await db.collection('users').doc(post.authorId).get()).data() : null;
+        const authorName = author?.displayName || author?.username || 'A gamer';
+        title = post.content
+          ? `${authorName}: ${post.content.slice(0, 60)}${post.content.length > 60 ? '…' : ''}`
+          : `${authorName} on VERGR`;
+        description = (post.previewText || post.content || description).slice(0, 200);
+        const firstMedia = Array.isArray(post.mediaUrls) ? post.mediaUrls[0] : post.mediaUrl;
+        if (firstMedia) image = firstMedia;
+        else if (post.youtubeVideoId) {
+          image = `https://img.youtube.com/vi/${post.youtubeVideoId}/hqdefault.jpg`;
+          videoEmbed = `https://www.youtube.com/embed/${post.youtubeVideoId}`;
+        }
       }
     }
   } catch (err) {
     console.error('shareLink lookup failed:', err.message);
   }
 
-  res.set('Cache-Control', 'public, max-age=300, s-maxage=600');
+  // Live streams should not be CDN-cached long (status flips); others can.
+  res.set('Cache-Control', kind === 'stream' ? 'public, max-age=30, s-maxage=30' : 'public, max-age=300, s-maxage=600');
   res.status(200).send(`<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -3013,14 +3720,14 @@ exports.shareLink = functions.https.onRequest(async (req, res) => {
   <meta name="twitter:title" content="${escapeHtml(title)}" />
   <meta name="twitter:description" content="${escapeHtml(description)}" />
   <meta name="twitter:image" content="${escapeHtml(image)}" />
-  <meta http-equiv="refresh" content="0; url=${escapeHtml(APP_BASE + '/#' + APP_ROUTE)}" />
+  <meta http-equiv="refresh" content="0; url=${escapeHtml(APP_BASE + APP_ROUTE)}" />
   <style>body{margin:0;background:#07080D;color:#ECEFFE;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;text-align:center;padding:24px}</style>
 </head>
 <body>
   <div>
     <h1 style="margin:0 0 12px">${escapeHtml(title)}</h1>
     <p style="margin:0 0 24px;opacity:0.7">${escapeHtml(description)}</p>
-    <a href="${escapeHtml(APP_BASE + '/#' + APP_ROUTE)}" style="color:#4DFFD4">Open in VERGR →</a>
+    <a href="${escapeHtml(APP_BASE + APP_ROUTE)}" style="color:#4DFFD4">Open in VERGR →</a>
   </div>
 </body>
 </html>`);
@@ -3109,7 +3816,7 @@ exports.serveMedia = functions.https.onRequest(async (req, res) => {
 // ──────────────────────────────────────────────────────────────
 // MONTHLY PLAN BONUS — Lite/Pro subscribers get VP + coins on the 1st
 // ──────────────────────────────────────────────────────────────
-exports.payMonthlyPlanBonus = functions.scheduler.onSchedule(
+const _payMonthlyPlanBonus = defer(
   { schedule: '0 6 1 * *', timeZone: 'UTC', region: 'europe-west1' },
   async () => {
     const monthKey = new Date().toISOString().slice(0, 7); // YYYY-MM
@@ -3123,7 +3830,10 @@ exports.payMonthlyPlanBonus = functions.scheduler.onSchedule(
 
       let lastDoc = null;
       while (true) {
-        let q = db.collection('users').where('tier', '==', plan).limit(400);
+        // Query the `subscription` field — that's what the purchase flows
+        // (payram.js / subscriptions.js) actually write. The old `tier` query
+        // matched nobody, so the monthly bonus never paid out.
+        let q = db.collection('users').where('subscription', '==', plan).limit(400);
         if (lastDoc) q = q.startAfter(lastDoc);
         const batch = await q.get();
         if (batch.empty) break;
@@ -3624,8 +4334,7 @@ exports.rollupUserAffinity = functions.https.onCall(
  * Scheduled — rolls up affinity for users who have recent events.
  * Runs daily at 03:30 UTC. Scans users with new events in the last 36h.
  */
-exports.scheduledRollupAffinity = functions.scheduler
-  .onSchedule('30 3 * * *', async () => {
+const _scheduledRollupAffinity = defer('30 3 * * *', async () => {
     // Walk the collectionGroup of recent events to find active uids
     const since = Date.now() - 36 * 3600 * 1000;
     const recent = await db.collectionGroup('events')
@@ -3654,8 +4363,7 @@ exports.scheduledRollupAffinity = functions.scheduler
  * Affinity rollups survive; raw logs are GDPR-minimised.
  * Runs daily at 04:00 UTC.
  */
-exports.scheduledPruneEvents = functions.scheduler
-  .onSchedule('0 4 * * *', async () => {
+const _scheduledPruneEvents = defer('0 4 * * *', async () => {
     const cutoff = Date.now() - 90 * 24 * 3600 * 1000;
     const old = await db.collectionGroup('events')
       .where('tsMs', '<', cutoff)
@@ -3704,7 +4412,8 @@ exports.runBotSyncNow = functions.https.onCall(async (request) => {
       for (const item of items) {
         if (createdForThisBot >= PER_BOT_LIMIT) break;
         if (!item.link) continue;
-        const postId = `${bot.id}-${hashString(item.link)}`;
+        const linkHash = hashString(item.link);
+        const postId = `${bot.id}-${linkHash}`;
         const postRef = db.collection('posts').doc(postId);
         const postSnap = await postRef.get();
         if (postSnap.exists) continue;
@@ -3719,10 +4428,15 @@ exports.runBotSyncNow = functions.https.onCall(async (request) => {
         if (!cleanPreview) cleanPreview = item.title || '';
         await postRef.set({
           authorId: bot.id, content: item.title || '', type: 'text',
+          slug: newsSlug(item.title, linkHash),
           mediaUrls: imageUrl ? [imageUrl] : [], hashtags: [],
           likeCount: 0, commentCount: 0, shareCount: 0, saveCount: 0, viewCount: 0,
           status: 'published', rankScore: 0, sourceUrl: item.link, isNewsPost: true,
           previewText: cleanPreview, needsEnrichment: true,
+          // MUST match the cron path (_syncNewsBotFeeds). Without this flag a
+          // manually-synced post is never queued for its SEO rewrite, so it
+          // stays a verbatim copy and ugcRenderer keeps it noindex forever.
+          needsSeoRewrite: true,
           linkPreview: { url: item.link, title: item.title || '', description: cleanPreview, image: imageUrl },
           createdAt: item.pubDate ? new Date(item.pubDate) : new Date(),
           updatedAt: new Date(),
@@ -3816,3 +4530,124 @@ exports.setBotPostLimit = functions.https.onCall(async (request) => {
   }).catch(() => {});
   return { ok: true, limit: n };
 });
+
+// ──────────────────────────────────────────────────────────────
+// CONSOLIDATED CRON DISPATCHERS
+// 11 former scheduled maintenance jobs are folded into 3 Cloud Scheduler
+// jobs below (see the `defer` shim near the top). Each handler runs inside
+// its own try/catch so one failure never aborts the others. notifyScheduledStreams
+// keeps its own every-5-min schedule (time-sensitive go-live reminders).
+// ──────────────────────────────────────────────────────────────
+async function _runJobs(label, jobs) {
+  for (const [name, fn] of jobs) {
+    try { await fn(); }
+    catch (e) { console.error(`[${label}] ${name} failed:`, e?.message || e); }
+  }
+}
+
+// Daily maintenance — cleanups, prunes, affinity rollup, and the news bot
+// sync + enrich + SEO rewrite (order guaranteed: sync → enrich → rewrite,
+// so the day's new bot posts get their original Gemini write-up in the
+// same pass; see newsSeoRewrite.js — no polling, founder directive).
+const newsSeoRewrite = require('./newsSeoRewrite');
+exports.cronDaily = functions.scheduler.onSchedule(
+  {
+    schedule: '0 3 * * *', timeZone: 'UTC', region: 'europe-west1',
+    timeoutSeconds: 540, secrets: [newsSeoRewrite.GEMINI_POST_TEXT_KEY],
+  },
+  async () => _runJobs('cronDaily', [
+    ['cleanupExpiredMedia', _cleanupExpiredMedia],
+    ['scheduledPruneEvents', _scheduledPruneEvents],
+    ['scheduledRollupAffinity', _scheduledRollupAffinity],
+    ['syncNewsBotFeeds', _syncNewsBotFeeds],
+    ['enrichNewsPosts', _enrichNewsPosts],
+    ['rewriteNewsForSeo', newsSeoRewrite.rewriteNewsForSeo],
+    ['cleanupExpiredTotpEnrollments', adminSecurity.cleanupExpiredTotpEnrollments],
+    ['scheduledKycRetention', kyc.scheduledKycRetention],
+    ['rollupDailyMetrics', dailyMetricsRollup.rollupDailyMetrics],
+    ['applyScheduledPriceChanges', adminSubscriptions.applyScheduledPriceChanges],
+    ['renewExpiringSubscriptions', subs.renewExpiringSubscriptions],
+    ['renewMemberSubscriptions', memberships.renewMemberSubscriptions],
+    ['syncAllShopInventories', shopSync.syncAllShopInventories],
+    ['purgeStaleGuests', guestCleanup.purgeStaleGuests],
+    // Play renews subscriptions on its own schedule and does not tell us, so a
+    // tier granted once would outlive the payment without this reconcile.
+    ['syncPlaySubscriptions', playBilling.syncPlaySubscriptions],
+  ]),
+);
+
+// Every 6 hours — vote resolution, rank scores, trending, story expiry.
+exports.cronEvery6h = functions.scheduler.onSchedule(
+  { schedule: '0 */6 * * *', timeZone: 'UTC', region: 'europe-west1' },
+  async () => _runJobs('cronEvery6h', [
+    ['resolveExpiredVotes', _resolveExpiredVotes],
+    ['calculateRankScores', _calculateRankScores],
+    ['updateTrending', _updateTrending],
+    ['cleanupExpiredStories', _cleanupExpiredStories],
+    ['cleanupExpiredStatuses', _cleanupExpiredStatuses],
+    ['writePresenceSnapshot', adminStats.writePresenceSnapshot],
+  ]),
+);
+
+// Monthly — plan bonus + squad elections (1st of month, 06:00 UTC).
+exports.cronMonthly = functions.scheduler.onSchedule(
+  { schedule: '0 6 1 * *', timeZone: 'UTC', region: 'europe-west1' },
+  async () => _runJobs('cronMonthly', [
+    ['payMonthlyPlanBonus', _payMonthlyPlanBonus],
+    ['monthlySquadElections', _monthlySquadElections],
+    ['distributeVanguardTreasury', vanguard.distributeVanguardTreasury],
+    ['cheatSignaturesHealthCron', require('./cheatSignaturesRefresh').cheatSignaturesHealthCron],
+  ]),
+);
+
+// Every minute — tournament/stream live machinery. Each handler self-gates
+// (queries for live/imminent work and returns fast when there is none), so
+// calling them sequentially from one Scheduler job is behaviour-identical to
+// the 5 former every-1-minute jobs, at 1/5th the Scheduler cost. 540s timeout
+// covers autoSuggestMatchWinners' worst case; handlers run in try/catch.
+exports.cronMinute = functions.scheduler.onSchedule(
+  { schedule: 'every 1 minutes', timeZone: 'UTC', region: 'europe-west1', timeoutSeconds: 540 },
+  async () => _runJobs('cronMinute', [
+    ['summonsParticipants', tournamentSummons.summonsParticipants],
+    ['autoStartTournaments', tournamentSummons.autoStartTournaments],
+    ['autoConfirmMatchResults', tournamentTimeouts.autoConfirmMatchResults],
+    ['startingSoonPushCron', tournamentDiscovery.startingSoonPushCron],
+    ['autoSuggestMatchWinners', tournamentMatchClaims.autoSuggestMatchWinners],
+    ['detectTournamentStreamDrops', tournamentMatchClaims.detectTournamentStreamDrops],
+    ['chargeStreamBoosts', streamingBoost.chargeStreamBoosts],
+    ['reapStaleStreams', streaming.reapStaleStreams],
+  ]),
+);
+
+// Every 5 minutes — tournament timeout/no-show sweeps, scheduled-post publish,
+// scheduled-stream reminders. All self-gate (query for due work, return fast
+// when none). detectMatchTimeouts was a 30-min job; running it every 5 min is
+// behaviour-safe (it just checks deadlines more often) and saves a Scheduler
+// job. Payment pollers + secret/money-out crons intentionally kept standalone.
+exports.cron5Min = functions.scheduler.onSchedule(
+  { schedule: 'every 5 minutes', timeZone: 'UTC', region: 'europe-west1', timeoutSeconds: 300 },
+  async () => _runJobs('cron5Min', [
+    ['detectParticipantNoShows', tournamentSummons.detectParticipantNoShows],
+    ['detectTournamentNoShows', vanguardAssignments.detectTournamentNoShows],
+    ['detectLobbyVerificationTimeouts', lobbyVerification.detectLobbyVerificationTimeouts],
+    ['detectMatchTimeouts', tournamentTimeouts.detectMatchTimeouts],
+    ['publishScheduledPosts', scheduledPosts.publishScheduledPosts],
+    ['notifyScheduledStreams', _notifyScheduledStreams],
+  ]),
+);
+
+// Every 15 minutes — assignment reminders + admin TOTP brute-force monitor.
+// Both self-gate and carry no secrets. (processReadyWithdrawals stays a
+// standalone 512MB money-out job; payment pollers stay standalone too.)
+exports.cron15Min = functions.scheduler.onSchedule(
+  { schedule: 'every 15 minutes', timeZone: 'UTC', region: 'europe-west1' },
+  async () => _runJobs('cron15Min', [
+    ['notifyUpcomingAssignments', vanguardAssignments.notifyUpcomingAssignments],
+    ['adminTotpBruteForceMonitor', adminAlerts.adminTotpBruteForceMonitor],
+  ]),
+);
+exports.backfillNewsSeoQueue = newsSeoRewrite.backfillNewsSeoQueue;
+
+// IndexNow (Bing/Yandex/Naver/Seznam fast path — Google does NOT participate).
+exports.indexNowBacklog = require('./indexNow').indexNowBacklog;
+exports.adminRewriteNewsSeo = newsSeoRewrite.adminRewriteNewsSeo;

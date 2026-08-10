@@ -7,6 +7,20 @@
   body { @apply font-dmsans text-text-primary bg-bg-dark antialiased; }
 }
 
+/* Reduced Motion (Settings → Appearance). Applied via the data-reduced-motion
+   attribute on <html> by DisplaySettingsApplier. Kills CSS transitions/animations
+   app-wide; framer-motion respects the same flag through usePrefersReducedMotion. */
+html[data-reduced-motion="true"] *,
+html[data-reduced-motion="true"] *::before,
+html[data-reduced-motion="true"] *::after {
+  animation-duration: 0.001ms !important;
+  animation-delay: 0ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+  transition-delay: 0ms !important;
+  scroll-behavior: auto !important;
+}
+
 @layer components {
   /* Primary CTA — violet gradient (matches Claude Design Go Live button). */
   .btn-primary {
@@ -32,6 +46,12 @@
       focus:outline-none transition-colors duration-200 h-[52px] text-[15px] font-dmsans;
   }
   .input-with-icon { @apply input-field pl-12; }
+  /* Compact input for dense builder/editor forms (vergr.me block editor, etc.) */
+  .input-mini {
+    @apply w-full bg-surface-2 border border-white/[0.08] rounded-lg
+      py-2 px-3 text-text-primary placeholder:text-text-muted text-sm
+      focus:border-brand-violet/50 focus:ring-0 focus:outline-none transition-colors;
+  }
 
   /* Card — flat dark surface with subtle border (matches design's card-bg #14141F). */
   .card {
@@ -43,7 +63,7 @@
 
   /* Badges — pill style matching the new palette. */
   .badge        { @apply inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold; }
-  .badge-cyan   { @apply badge bg-brand-cyan/10        text-brand-cyan; }
+  .badge-cyan   { @apply badge bg-brand-violet/10        text-brand-violet-light; }
   .badge-violet { @apply badge bg-brand-violet/15      text-brand-violet-light; }
   .badge-gem    { @apply badge bg-gem-blue/10          text-gem-blue; }
   .badge-gold   { @apply badge bg-brand-gold-light/10  text-brand-gold-light; }
@@ -127,6 +147,24 @@
 }
 .glass-header.scrolled {
   border-bottom-color: rgba(255, 255, 255, 0.1);
+}
+
+/* ─── Emoji picker slot-machine entrance ───
+   Cells roll in from below with an overshoot spring; later ROWS start from a
+   steeper offset (--eiy grows per row) so the bottom of the grid visibly
+   swings in from an angle, Telegram-style. --eid = per-cell delay. Both vars
+   are set inline per cell in EmojiPicker.jsx. */
+@keyframes emojiRollIn {
+  from { opacity: 0; transform: translateY(var(--eiy, 14px)) scale(0.55); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.emoji-in {
+  opacity: 0;
+  animation: emojiRollIn 0.34s cubic-bezier(0.22, 1.36, 0.36, 1) both;
+  animation-delay: var(--eid, 0s);
+}
+@media (prefers-reduced-motion: reduce) {
+  .emoji-in { animation: none; opacity: 1; }
 }
 
 /* ─── Skeleton shimmer wave ─── */
@@ -262,6 +300,59 @@
   animation: deliveredPulse 0.4s ease-out;
 }
 
+/* ─── "New posts" pill (B4) — drops in from under the tab bar ─── */
+@keyframes newPostsPillIn {
+  from { opacity: 0; transform: translate(-50%, -12px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+.new-posts-pill {
+  left: 50%;
+  animation: newPostsPillIn 0.28s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .new-posts-pill { animation-duration: 0.001s; }
+}
+
+/* ─── AnimatedNumber (B11-1) — count rolls in the change direction ─── */
+@keyframes anRoll {
+  from { opacity: 0; transform: translateY(calc(var(--an-dir, 1) * 0.7em)); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.an-roll {
+  display: inline-block;
+  animation: anRoll 0.18s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+/* ─── Like particle burst (B11-1) — tiny hearts/sparks fly outward ─── */
+@keyframes likeParticle {
+  0%   { opacity: 1; transform: translate(-50%, -50%) translate(0, 0) scale(0.4); }
+  70%  { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%, -50%) translate(var(--px), var(--py)) scale(1); }
+}
+.like-particle {
+  animation: likeParticle 0.42s cubic-bezier(0.2, 0.7, 0.3, 1) forwards;
+}
+
+/* ─── Double-tap heart pop on media (B11-2) ─── */
+@keyframes mediaHeartPop {
+  0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.3); }
+  25%  { opacity: 0.95; transform: translate(-50%, -50%) scale(1.15); }
+  70%  { opacity: 0.95; transform: translate(-50%, -50%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(1.25); }
+}
+.media-heart-pop {
+  animation: mediaHeartPop 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+
+/* ─── Skeleton → content crossfade (B11-5) ─── */
+@keyframes feedFadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.feed-fade-in {
+  animation: feedFadeIn 0.15s ease-out both;
+}
+
 /* ─── Read receipt crossfade ─── */
 .receipt-fade-enter {
   opacity: 0;
@@ -281,4 +372,51 @@ button[role="img"] span {
   text-shadow: none !important;
   filter: none !important;
   opacity: 1 !important;
+}
+
+/* ─── Image protection ───────────────────────────────────────────────
+   Pairs with the <ImageProtection /> JS handler in AppRouter.jsx that
+   blocks contextmenu + dragstart on <img>. Stops casual right-click →
+   "Save image as", drag-to-desktop, and middle-click → "Open in new tab".
+   Doesn't stop devtools / network tab / screenshots — those are
+   un-blockable in a browser. Applies to every image in the app
+   including the logo, avatars, banners, post media, etc. */
+img {
+  -webkit-user-drag: none;
+  -khtml-user-drag: none;
+  -moz-user-select: none;
+  -webkit-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}
+
+/* ── Status canvas entrance animations (Canva-style) ──────────────────────
+   Used by StatusCanvasView; ids must match CANVAS_ANIMS in statusCanvas.js.
+   Every one ends at the layer's resting transform, and the element already
+   carries `translate(-50%,-50%) rotate(...)` from its own positioning — so
+   these compose ON TOP via an extra transform in the keyframe, never replace
+   it, or animated layers would jump to the top-left corner on the last frame. */
+@keyframes vsc-fade { from { opacity: 0 } to { opacity: 1 } }
+@keyframes vsc-pop {
+  0% { opacity: 0; scale: 0.6 }
+  70% { opacity: 1; scale: 1.06 }
+  100% { opacity: 1; scale: 1 }
+}
+@keyframes vsc-slideUp { from { opacity: 0; translate: 0 26% } to { opacity: 1; translate: 0 0 } }
+@keyframes vsc-slideDown { from { opacity: 0; translate: 0 -26% } to { opacity: 1; translate: 0 0 } }
+@keyframes vsc-slideLeft { from { opacity: 0; translate: 26% 0 } to { opacity: 1; translate: 0 0 } }
+@keyframes vsc-zoom { from { opacity: 0; scale: 1.5 } to { opacity: 1; scale: 1 } }
+@keyframes vsc-bounce {
+  0% { opacity: 0; translate: 0 -40% }
+  55% { opacity: 1; translate: 0 6% }
+  75% { translate: 0 -3% }
+  100% { opacity: 1; translate: 0 0 }
+}
+@keyframes vsc-spin {
+  from { opacity: 0; rotate: -180deg; scale: 0.5 }
+  to { opacity: 1; rotate: 0deg; scale: 1 }
+}
+@media (prefers-reduced-motion: reduce) {
+  /* Respect the OS setting: content still appears, it just does not move. */
+  [style*="vsc-"] { animation: vsc-fade 200ms both !important }
 }

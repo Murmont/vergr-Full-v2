@@ -6,38 +6,59 @@ import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useAuth } from '../../context/AuthContext';
+import { withRef } from '../../utils/shareRef';
+import { vergrMeUrl } from '../../utils/vergrMeUrl';
+import { ProfileSkeleton } from '../../components/skeletons/GlassSkeletons';
 import { useUI } from '../../context/UIContext';
 import { useLayout } from '../../context/LayoutContext';
 import {
-  getUserById, getUserByUsername, getUserPosts,
+  getUserById, getUserByUsername, getUserPosts, getPost, blockUser, reportUser,
   followUser, unfollowUser, isFollowing as checkFollowing,
-  createConversation, getWallet, getFollowers, getFollowing,
+  createConversation, getUserVP, getFollowers, getFollowing, getTaggedPosts,
 } from '../../firebase/firestore';
-import { isUserOnline, presenceVisible } from '../../utils/presence';
+import StreamScheduleCard from '../../components/profile/StreamScheduleCard';
+import NameAudioButton from '../../components/profile/NameAudioButton';
+import MyQrModal from '../../components/messages/MyQrModal';
+import ReportSheet from '../../components/ReportSheet';
+import useHeaderCollapse from '../../hooks/useHeaderCollapse';
+import { bannerGradient, CountUpNumber, MiniDockHeader } from '../../components/profile/profilePolish';
+import { presenceVisible } from '../../utils/presence';
+import useOnlineStatus from '../../hooks/useOnlineStatus';
+import { IS_NATIVE_BUILD } from '../../utils/platform';
 import { isVanguard, applyVanguardMask, rankMeta } from '../../utils/vanguard';
 import VanguardBadge from '../../components/VanguardBadge';
 import { useUser } from '../../context/UserContext';
+import { useLiveUsers } from '../../context/LiveUsersContext';
 import { getVPLevel, getVPProgress, getNextVPLevel } from '../../utils/vpSystem';
 import { trackEvent } from '../../utils/trackEvent';
 import BadgesShowcase from '../../components/BadgesShowcase';
+import CachedImg from '../../components/CachedImg';
+import MembershipBlock from '../../components/membership/MembershipBlock';
 import TwitchMirrorPlayer from '../../components/streams/TwitchMirrorPlayer';
 import PostCard from '../../components/PostCard';
 import Icon from '../../components/Icon';
+import SendCoinsModal from '../../components/SendCoinsModal';
 import { CoinIcon, VPIcon } from '../../components/CoinIcon';
+import { PRIVACY_DEFAULTS } from '../../utils/privacy';
 
-const PROFILE_TABS = ['Posts', 'Media', 'Clips', 'Likes'];
+// Likes are private (IG model): the tab lives only on your OWN profile
+// (ProfileScreen), never on someone else's.
+const PROFILE_TABS = ['Posts', 'Media', 'Clips', 'Tagged'];
 
 export default function PublicProfileScreen() {
   const { id } = useParams();
   const { currentUser } = useAuth();
+  const { isUserLive, liveStreamFor } = useLiveUsers();
   const { profile: viewer } = useUser();
   const { showToast } = useUI();
   const navigate = useNavigate();
   const { setRightPanel, setContentAlign } = useLayout();
 
   const [user, setUser] = useState(null);
+  const { isOnline: userOnline } = useOnlineStatus(user?.id);
   const [userVP, setUserVP] = useState(0);
   const [posts, setPosts] = useState([]);
+  const [taggedPosts, setTaggedPosts] = useState([]);
   const [following, setFollowing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('Posts');
@@ -45,6 +66,23 @@ export default function PublicProfileScreen() {
   const [followerCount, setFollowerCount] = useState(0);
   const [followingCount, setFollowingCount] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [showTip, setShowTip] = useState(false);
+  const [showQr, setShowQr] = useState(false);
+  const [showReport, setShowReport] = useState(false);
+  const [targetFollowsMe, setTargetFollowsMe] = useState(false);
+  const { bannerRef, docked } = useHeaderCollapse();
+  const [pinnedPosts, setPinnedPosts] = useState([]);
+
+  // Pinned posts — fetched by id in array order (cap 3, set from PostCard's
+  // own-post "Pin to profile"). Deleted posts silently drop out.
+  useEffect(() => {
+    const ids = (user?.pinnedPostIds || []).slice(0, 3);
+    if (!ids.length) { setPinnedPosts([]); return; }
+    let live = true;
+    Promise.all(ids.map(pid => getPost(pid).catch(() => null)))
+      .then(list => { if (live) setPinnedPosts(list.filter(Boolean)); });
+    return () => { live = false; };
+  }, [user?.pinnedPostIds]);
 
   useEffect(() => {
     if (!id) return;
@@ -58,18 +96,22 @@ export default function PublicProfileScreen() {
           if (currentUser?.uid && u.id !== currentUser.uid) {
             trackEvent('profile_visit', { authorId: u.id, target: 'user' });
           }
-          const [userPosts, isFollow, walletData, followers, followingList] = await Promise.all([
+          const [userPosts, isFollow, vpData, followers, followingList, tagged] = await Promise.all([
             getUserPosts(u.id, 30),
             currentUser ? checkFollowing(currentUser.uid, u.id) : false,
-            getWallet(u.id).catch(() => ({ vp: 0 })),
+            getUserVP(u.id).catch(() => ({ vp: 0 })),
             getFollowers(u.id).catch(() => []),
             getFollowing(u.id).catch(() => []),
+            getTaggedPosts(u.id, 30).catch(() => []),
           ]);
           setPosts(userPosts || []);
+          setTaggedPosts(tagged || []);
           setFollowing(!!isFollow);
-          setUserVP(walletData?.vp || 0);
+          setUserVP(vpData?.vp || 0);
           setFollowerCount((followers?.length) ?? u.followerCount ?? 0);
           setFollowingCount((followingList?.length) ?? u.followingCount ?? 0);
+          // For privacy relationship checks: does the viewed user follow the viewer?
+          setTargetFollowsMe(currentUser?.uid ? (followingList || []).some(e => e.followingId === currentUser.uid) : false);
         }
       } catch (err) {
         console.error('Error loading profile:', err);
@@ -81,11 +123,13 @@ export default function PublicProfileScreen() {
   }, [id, currentUser]);
 
   const isMe = currentUser?.uid === user?.id;
-  const isBot = user?.accountType === 'news_bot';
+  const isBot = String(user?.accountType || '').includes('bot');
   const vpLevel = getVPLevel(userVP);
   const vpProgress = getVPProgress(userVP);
   const vpNext = getNextVPLevel(userVP);
   const vpToNext = vpNext ? Math.max(0, vpNext.vpRequired - userVP) : 0;
+  // Real engagement totals from the loaded posts (user.totalLikes is often unset).
+  const pLikes = useMemo(() => posts.reduce((s, p) => s + (p.likeCount || 0), 0), [posts]);
 
   // Right panel — public version
   useEffect(() => {
@@ -132,10 +176,11 @@ export default function PublicProfileScreen() {
   };
 
   const handleShare = () => {
-    // Always share the public web profile (vergr.me), never the in-app
-    // tauri.localhost / hash URL. Prefer username, fall back to uid.
+    // Always share the public vergr.me page, never the in-app
+    // tauri.localhost / hash URL. One helper owns the public URL shape
+    // (matches the VergrMe editor's copy action).
     const handle = user?.username || user?.id;
-    const url = `https://vergr.app/u/${handle}`;
+    const url = withRef(vergrMeUrl(handle));
     if (navigator.share) navigator.share({ title: user?.displayName || user?.username, url }).catch(() => {});
     else {
       navigator.clipboard?.writeText(url).then(() => showToast?.('Profile link copied', 'success'));
@@ -148,16 +193,12 @@ export default function PublicProfileScreen() {
     if (activeTab === 'Posts') return decorated;
     if (activeTab === 'Media') return decorated.filter(p => p.imageUrl || p.videoUrl);
     if (activeTab === 'Clips') return decorated.filter(p => p.type === 'clip');
-    if (activeTab === 'Likes') return []; // Liked posts are private
+    if (activeTab === 'Tagged') return taggedPosts; // authored by others — PostCard resolves each author itself
     return decorated;
-  }, [activeTab, posts, user]);
+  }, [activeTab, posts, taggedPosts, user]);
 
   if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="w-6 h-6 border-2 border-surface-3 border-t-brand-cyan rounded-full animate-spin" />
-      </div>
-    );
+    return <ProfileSkeleton />;
   }
   if (!user) {
     return (
@@ -168,10 +209,40 @@ export default function PublicProfileScreen() {
     );
   }
 
+  // Privacy → Profile visibility. Admins/self bypass; otherwise "Only me" hides
+  // from everyone and "Friends & Followers" hides from non-related viewers.
+  const _priv = { ...PRIVACY_DEFAULTS, ...(user.settings?.privacy || {}) };
+  const _related = following || targetFollowsMe;
+  const _isAdmin = viewer?.role === 'admin';
+  const profilePrivate = !isMe && !_isAdmin &&
+    (_priv.profileVis === 'Only me' || (_priv.profileVis === 'Friends & Followers' && !_related));
+  if (profilePrivate) {
+    const pvName = user.username ? `@${user.username}` : (user.displayName || 'This user');
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center text-center px-6">
+        <div className="w-20 h-20 rounded-full bg-surface-2 flex items-center justify-center mb-4">
+          <Icon name="lock" size={32} className="text-text-muted" />
+        </div>
+        <p className="text-text-primary font-semibold mb-1">{pvName}</p>
+        <p className="text-text-muted text-sm max-w-xs mb-4">This profile is private. Follow this user to see their profile.</p>
+        {currentUser && !following && (
+          <button onClick={handleFollowToggle} disabled={toggling}
+            className="px-5 py-2 rounded-full bg-brand-violet-light text-white font-semibold text-sm disabled:opacity-60">
+            Follow
+          </button>
+        )}
+      </div>
+    );
+  }
+
   // Vanguard identity mask. If `user` is an active Vanguard and `viewer`
   // is a normal user, swap to the persona before reading display fields.
   // Founder + other Vanguard see the real identity (with rank badge).
   const masked = applyVanguardMask(user, viewer);
+  // Profile accent colour (Edit Profile → Profile Images). Brand swatches
+  // only; validate the hex anyway. Masked personas never reveal it.
+  const accent = (!masked.isVanguardPersona && /^#[0-9a-fA-F]{6}$/.test(user.accentColor || ''))
+    ? user.accentColor : '#B44FFF';
   const displayName = masked.displayName || masked.username || 'User';
   const handle = masked.username ? `@${masked.username}` : '';
   const initial = (displayName[0] || 'V').toUpperCase();
@@ -183,24 +254,34 @@ export default function PublicProfileScreen() {
 
   return (
     <div className="pb-10" style={{ background: '#0B0B14' }}>
-      {/* BANNER */}
+      {/* Docked mini-header — fades in when the banner scrolls away (B8.1). */}
+      <MiniDockHeader show={docked} avatar={masked.avatar} name={displayName} onBack={() => navigate(-1)} />
+
+      {/* BANNER — inner wrapper carries the parallax transform so the overlaid
+          back/share buttons never move or blur with it. */}
       <div className="relative h-[220px] overflow-hidden">
-        <div className="absolute inset-0"
-             style={{ background: 'linear-gradient(135deg,#0d0820 0%,#1a0a3a 30%,#2d0a5a 60%,#1a0a30 100%)' }}>
+        <div ref={bannerRef} className="absolute inset-0 will-change-transform">
+          {/* Bannerless fallback: deterministic per-uid brand gradient (B8.4)
+              so no profile ever looks broken. */}
           <div className="absolute inset-0"
-               style={{ background: 'radial-gradient(ellipse at 70% 50%,rgba(123,31,255,0.4) 0%,transparent 65%), radial-gradient(ellipse at 90% 30%,rgba(61,127,255,0.2) 0%,transparent 50%)' }} />
+               style={{ background: (!masked.isVanguardPersona && user.banner)
+                 ? 'linear-gradient(135deg,#0d0820 0%,#1a0a3a 30%,#2d0a5a 60%,#1a0a30 100%)'
+                 : bannerGradient(user.id) }}>
+            <div className="absolute inset-0"
+                 style={{ background: 'radial-gradient(ellipse at 70% 50%,rgba(123,31,255,0.25) 0%,transparent 65%), radial-gradient(ellipse at 90% 30%,rgba(61,127,255,0.15) 0%,transparent 50%)' }} />
+          </div>
+          {/* Banner: only show the real user's banner if NOT masked. A masked
+              Vanguard persona reveals no personal banner art. */}
+          {!masked.isVanguardPersona && user.banner && (
+            <CachedImg src={user.banner} permanent alt="" className="absolute inset-0 w-full h-full object-cover" />
+          )}
+          <span
+            className="absolute right-5 bottom-4 font-syne font-black tracking-widest uppercase select-none pointer-events-none leading-none"
+            style={{ fontSize: 64, color: 'rgba(255,255,255,0.05)' }}
+          >
+            {(masked.username || 'VERGR').toUpperCase()}
+          </span>
         </div>
-        {/* Banner: only show the real user's banner if NOT masked. A masked
-            Vanguard persona reveals no personal banner art. */}
-        {!masked.isVanguardPersona && user.banner && (
-          <img src={user.banner} alt="" className="absolute inset-0 w-full h-full object-cover" />
-        )}
-        <span
-          className="absolute right-5 bottom-4 font-syne font-black tracking-widest uppercase select-none pointer-events-none leading-none"
-          style={{ fontSize: 64, color: 'rgba(255,255,255,0.05)' }}
-        >
-          {(masked.username || 'VERGR').toUpperCase()}
-        </span>
 
         {/* Back button (top-left) */}
         <button
@@ -235,16 +316,33 @@ export default function PublicProfileScreen() {
                 onClick={(e) => e.stopPropagation()}
               >
                 <DropdownItem icon="share" label="Copy link" onClick={() => { setMenuOpen(false); handleShare(); }} />
-                {!isMe && <DropdownItem icon="block" label="Block user" onClick={() => { setMenuOpen(false); showToast('Block — coming soon', 'info'); }} />}
-                {!isMe && <DropdownItem icon="flag" label="Report" onClick={() => { setMenuOpen(false); showToast('Report — coming soon', 'info'); }} />}
+                {!masked.isVanguardPersona && (
+                  <DropdownItem icon="qr_code_2" label="QR code" onClick={() => { setMenuOpen(false); setShowQr(true); }} />
+                )}
+                {!isMe && currentUser && (
+                  <DropdownItem icon="block" label="Block user" onClick={async () => {
+                    setMenuOpen(false);
+                    if (!window.confirm(`Block ${displayName}? They won't be able to message you.`)) return;
+                    try {
+                      await blockUser(currentUser.uid, user.id);
+                      showToast(`@${masked.username || displayName} blocked — manage in Settings → Privacy`, 'success');
+                    } catch (err) {
+                      showToast(err?.message || 'Could not block', 'error');
+                    }
+                  }} />
+                )}
+                {!isMe && currentUser && <DropdownItem icon="flag" label="Report" onClick={() => { setMenuOpen(false); setShowReport(true); }} />}
               </div>
             )}
           </div>
         </div>
       </div>
 
-      {/* PROFILE HEADER */}
-      <div className="px-5">
+      {/* PROFILE HEADER — relative z-10 so it paints ABOVE the positioned
+          banner. Without this the banner (position:relative) renders on top of
+          the static header in the -mt-11 overlap zone, hiding the username and
+          clipping the action buttons. */}
+      <div className="px-5 relative z-10">
         <div className="flex items-end gap-4 -mt-11 mb-3">
           <div
             className="w-[88px] h-[88px] rounded-full flex items-center justify-center font-syne font-black text-[30px] relative shrink-0"
@@ -261,14 +359,29 @@ export default function PublicProfileScreen() {
                 ? <img src={masked.avatar} alt={displayName} className="w-full h-full object-cover" />
                 : initial}
             </div>
-            {/* GR4 — recent tournament champion: gold ring + crown for 7 days. */}
+            {/* Featured-creator frame: gold ring + crown while active. */}
             {user?.championFrameUntil > Date.now() && !masked.isVanguardPersona && (
               <>
                 <span className="absolute -inset-[3px] rounded-full pointer-events-none"
                   style={{ boxShadow: '0 0 0 3px #F0A500, 0 0 22px #F5C84288' }} />
-                <span className="absolute -top-3 left-1/2 -translate-x-1/2 z-20" title="Recent tournament champion">
+                <span className="absolute -top-3 left-1/2 -translate-x-1/2 z-20" title="Featured creator">
                   <Icon name="workspace_premium" size={22} className="text-brand-gold-light" />
                 </span>
+              </>
+            )}
+            {/* Live now — red ring + clickable LIVE pill (suppressed for masked personas). */}
+            {user?.id && !masked.isVanguardPersona && isUserLive(user.id) && (
+              <>
+                <span className="absolute -inset-[3px] rounded-full pointer-events-none"
+                  style={{ boxShadow: '0 0 0 3px #F04060, 0 0 22px #F0406088' }} />
+                <button
+                  onClick={(e) => { e.stopPropagation(); const sid = liveStreamFor(user.id); if (sid) navigate(`/watch/${sid}`); }}
+                  className="absolute -bottom-2 left-1/2 -translate-x-1/2 z-30 bg-brand-ember px-2 py-0.5 rounded text-[9px] font-bold text-white uppercase tracking-wider"
+                  style={{ whiteSpace: 'nowrap' }}
+                  title="Watch live"
+                >
+                  Live
+                </button>
               </>
             )}
             {/* Presence dot. Respects the viewed user's privacy setting:
@@ -278,70 +391,77 @@ export default function PublicProfileScreen() {
               <span
                 className="absolute bottom-1 right-1 w-4 h-4 rounded-full"
                 style={{
-                  background: isUserOnline(user) ? '#22D17E' : '#555',
+                  background: userOnline ? '#22D17E' : '#555',
                   border: '3px solid #0B0B14',
-                  boxShadow: isUserOnline(user) ? '0 0 8px rgba(34,209,126,0.55)' : 'none',
+                  boxShadow: userOnline ? '0 0 8px rgba(34,209,126,0.55)' : 'none',
                 }}
-                title={isUserOnline(user) ? 'Online' : 'Offline'}
+                title={userOnline ? 'Online' : 'Offline'}
               />
             )}
           </div>
           <div className="flex-1 pb-1 min-w-0">
-            <div className="flex items-center justify-between gap-3 mb-0.5 flex-wrap">
-              <div className="flex items-center gap-2 min-w-0">
-                <span className="text-[22px] font-extrabold text-text-primary truncate">{displayName}</span>
-                {user.isVerified && (
-                  <div className="w-5 h-5 rounded-full flex items-center justify-center shrink-0" style={{ background: '#7B1FFF' }}>
-                    <Icon name="check" size={11} className="text-white" />
-                  </div>
-                )}
-                {!isBot && (
-                  <span className="px-2 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase shrink-0"
-                        style={{ background: 'rgba(123,31,255,0.20)', color: '#B44FFF', border: '1px solid rgba(180,79,255,0.30)' }}>
-                    {vpLevel?.name || 'Rookie'}
-                  </span>
-                )}
-              </div>
-
-              {/* ACTION BUTTONS — read-only */}
-              {!isMe && !isBot && (
-                <div className="flex gap-2">
-                  <button onClick={handleMessage}
-                          className="w-10 h-10 rounded-full flex items-center justify-center hover:brightness-125 transition-all"
-                          style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.10)' }}
-                          title="Message">
-                    <Icon name="chat_bubble" size={16} />
-                  </button>
-                  <button onClick={() => navigate('/wallet')}
-                          className="w-10 h-10 rounded-full flex items-center justify-center hover:brightness-125 transition-all"
-                          style={{ background: 'rgba(245,197,66,0.12)', border: '1px solid rgba(245,197,66,0.25)' }}
-                          title="Tip">
-                    <CoinIcon size={16} />
-                  </button>
-                  <motion.button
-                    onClick={handleFollowToggle}
-                    disabled={toggling}
-                    whileTap={{ scale: 0.92 }}
-                    transition={{ type: 'spring', stiffness: 500, damping: 25 }}
-                    className="px-5 py-2 rounded-full font-bold text-[13px] transition-colors"
-                    style={following
-                      ? { background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.10)', color: '#a0a0c0' }
-                      : { background: '#B44FFF', color: '#fff', boxShadow: '0 0 18px rgba(180,79,255,0.45)' }}
-                  >
-                    {following ? 'Following' : 'Follow'}
-                  </motion.button>
+            <div className="flex items-center gap-2 mb-1.5 flex-wrap min-w-0">
+              <span className="text-[22px] font-extrabold text-text-primary truncate">{displayName}</span>
+              {!masked.isVanguardPersona && <NameAudioButton url={user.nameAudioUrl} accent={accent} />}
+              {user.isVerified && (
+                <div className="w-5 h-5 rounded-full flex items-center justify-center shrink-0" style={{ background: '#7B1FFF' }}>
+                  <Icon name="check" size={11} className="text-white" />
                 </div>
               )}
-              {isMe && (
-                <button
-                  onClick={() => navigate('/edit-profile')}
-                  className="px-4 py-2 rounded-lg font-bold text-[12px]"
-                  style={{ background: 'rgba(180,79,255,0.15)', color: '#B44FFF', border: '1px solid rgba(180,79,255,0.40)' }}
-                >
-                  Edit Profile
-                </button>
+              {!isBot && (
+                <span className="px-2 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase shrink-0"
+                      style={{ background: `${accent}33`, color: accent, border: `1px solid ${accent}4D` }}>
+                  {vpLevel?.name || 'Rookie'}
+                </span>
               )}
             </div>
+
+            {/* ACTION BUTTONS — own row so they're never pulled into the
+                banner overlap (-mt-11) or clipped on narrow widths. Follow is
+                available for everyone except yourself (news bots included, so
+                their posts reach your feed); Message + Tip are for real users
+                only. Wraps cleanly on mobile. */}
+            {!isMe && (
+              <div className="flex items-center gap-2 mb-2 flex-wrap">
+                <motion.button
+                  onClick={handleFollowToggle}
+                  disabled={toggling}
+                  whileTap={{ scale: 0.92 }}
+                  transition={{ type: 'spring', stiffness: 500, damping: 25 }}
+                  className="px-5 py-2 rounded-full font-bold text-[13px] transition-colors shrink-0"
+                  style={following
+                    ? { background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.10)', color: '#a0a0c0' }
+                    : { background: accent, color: '#fff', boxShadow: `0 0 18px ${accent}73` }}
+                >
+                  {following ? 'Following' : 'Follow'}
+                </motion.button>
+                {!isBot && (
+                  <>
+                    <button onClick={handleMessage}
+                            className="w-10 h-10 rounded-full flex items-center justify-center hover:brightness-125 transition-all shrink-0 text-white"
+                            style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.10)' }}
+                            title="Message">
+                      <Icon name="chat_bubble" size={16} />
+                    </button>
+                    <button onClick={() => setShowTip(true)}
+                            className="w-10 h-10 rounded-full flex items-center justify-center hover:brightness-125 transition-all shrink-0"
+                            style={{ background: 'rgba(245,197,66,0.12)', border: '1px solid rgba(245,197,66,0.25)' }}
+                            title="Tip">
+                      <CoinIcon size={16} />
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+            {isMe && (
+              <button
+                onClick={() => navigate('/edit-profile')}
+                className="px-4 py-2 rounded-lg font-bold text-[12px] mb-2"
+                style={{ background: 'rgba(180,79,255,0.15)', color: '#B44FFF', border: '1px solid rgba(180,79,255,0.40)' }}
+              >
+                Edit Profile
+              </button>
+            )}
             <div className="flex items-center gap-2 mb-1.5">
               <div className="text-[12px] text-text-muted">{handle}</div>
               {/* Rank badge sits next to the handle. Visible to all viewers
@@ -365,6 +485,14 @@ export default function PublicProfileScreen() {
                 </p>
               )
             )}
+            {/* Membership: shows the creator's tiers + join CTA. Self-hides when
+                the creator has no published tiers, when viewing your own profile,
+                or for masked Vanguard personas. */}
+            {!masked.isVanguardPersona && !isMe && (
+              <div className="my-3 max-w-[500px]">
+                <MembershipBlock creatorId={user.id} creatorName={displayName} />
+              </div>
+            )}
             {/* Linked socials + join date — both leak identity, so hide when
                 masked. */}
             <div className="flex items-center gap-2.5 flex-wrap">
@@ -385,19 +513,21 @@ export default function PublicProfileScreen() {
         </div>
       </div>
 
-      {/* STATS BAR — Followers · Following · VP+badges combined */}
-      <div className="flex items-center gap-0 px-5 py-2.5 border-b" style={{ borderColor: '#1E1E2E' }}>
-        <Stat icon="person" label="Followers" value={formatCount(followerCount)} onClick={() => navigate(`/profile/followers/${user.id}`)} />
-        <div className="border-r mr-6 self-stretch" style={{ borderColor: '#1E1E2E' }} />
-        <Stat icon="group" label="Following" value={formatCount(followingCount)} onClick={() => navigate(`/profile/following/${user.id}`)} />
-        <div className="border-r mr-6 self-stretch" style={{ borderColor: '#1E1E2E' }} />
-        <Stat icon="favorite" label="Likes" value={formatCount(user?.totalLikes || 0)} />
-        <div className="border-r mr-6 self-stretch" style={{ borderColor: '#1E1E2E' }} />
+      {/* STATS BAR — compact 3-up counts (Instagram/TikTok style), VP banner
+          stacked full-width below. Mobile-first: no bulky icon boxes, no
+          inline VP banner that overflowed off-screen on phones. */}
+      <div className="px-5 py-3 border-b" style={{ borderColor: '#1E1E2E' }}>
+        {/* Compact inline counts (left-aligned, not stretched across the row). */}
+        <div className="flex items-center gap-8 md:gap-10">
+          <Stat label="Followers" value={<CountUpNumber value={followerCount} format={formatCount} />} onClick={() => navigate(`/connections/${user.id}/followers`)} />
+          <Stat label="Following" value={<CountUpNumber value={followingCount} format={formatCount} />} onClick={() => navigate(`/connections/${user.id}/following`)} />
+          <Stat label="Likes" value={<CountUpNumber value={pLikes} format={formatCount} />} />
+        </div>
 
         {!isBot && (
           <button
             onClick={() => navigate('/prestige')}
-            className="flex-1 flex items-center gap-3 p-3 rounded-xl text-left hover:brightness-110 transition-all"
+            className="w-full mt-3 flex items-center gap-3 p-3 rounded-xl text-left hover:brightness-110 transition-all"
             style={{ background: 'rgba(123,31,255,0.08)', border: '1px solid rgba(180,79,255,0.20)' }}
           >
             <div className="flex-1 min-w-0">
@@ -406,7 +536,7 @@ export default function PublicProfileScreen() {
                 {userVP.toLocaleString()} <span className="text-[13px]" style={{ color: '#B44FFF' }}>VP</span>
               </p>
               <div className="h-[3px] rounded mt-1.5" style={{ background: 'rgba(255,255,255,0.08)' }}>
-                <div className="h-full rounded" style={{ width: `${Math.min(100, (vpProgress || 0) * 100)}%`, background: 'linear-gradient(90deg,#7B1FFF,#B44FFF)' }} />
+                <div className="h-full rounded" style={{ width: `${Math.min(100, (vpProgress || 0))}%`, background: 'linear-gradient(90deg,#7B1FFF,#B44FFF)' }} />
               </div>
               <p className="text-[10px] text-text-muted mt-1">
                 {vpNext ? `${vpToNext.toLocaleString()} VP to Lvl ${vpNext.level}` : 'Max level reached'}
@@ -424,6 +554,13 @@ export default function PublicProfileScreen() {
         )}
       </div>
 
+      {/* STREAM SCHEDULE — read-only card, self-hides when unset/masked. */}
+      {!masked.isVanguardPersona && user.streamSchedule && (
+        <div className="px-5 pt-4">
+          <StreamScheduleCard schedule={user.streamSchedule} accent={accent} />
+        </div>
+      )}
+
       {/* TABS — hidden when the profile is masked. A Vanguard persona
           doesn't show personal post history; their actions are attributed
           to "@Vanguard" wherever those posts/comments live in feeds. */}
@@ -435,7 +572,7 @@ export default function PublicProfileScreen() {
                 onClick={() => setActiveTab(t)}
                 className="px-4 py-3 text-[13px] font-semibold transition-colors"
                 style={activeTab === t
-                  ? { color: '#fff', borderBottom: '2px solid #B44FFF' }
+                  ? { color: '#fff', borderBottom: `2px solid ${accent}` }
                   : { color: '#6B7280', borderBottom: '2px solid transparent' }}>
                 {t}
               </button>
@@ -455,23 +592,49 @@ export default function PublicProfileScreen() {
         </div>
       ) : (
       <div className="px-5 py-4">
-        {activeTab === 'Likes' ? (
-          <div className="text-center py-16">
-            <Icon name="favorite_border" size={48} className="text-text-muted/20 mx-auto mb-3" />
-            <p className="text-text-muted text-sm">Liked posts are private</p>
-          </div>
-        ) : filteredPosts.length === 0 ? (
-          <div className="text-center py-16">
-            <Icon name="inbox" size={48} className="text-text-muted/20 mx-auto mb-3" />
-            <p className="text-text-muted text-sm">No {activeTab.toLowerCase()} yet</p>
-          </div>
-        ) : (
-          <div className="grid gap-3.5" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))' }}>
-            {filteredPosts.map(p => <PostCard key={p.id} post={p} compact />)}
+        {/* PINNED — above the Posts grid only; the main list drops pinned ids
+            so nothing renders twice. */}
+        {activeTab === 'Posts' && pinnedPosts.length > 0 && (
+          <div className="mb-4">
+            <p className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-text-secondary mb-2.5">
+              <Icon name="push_pin" size={13} style={{ color: accent }} /> Pinned
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+              {pinnedPosts.map(p => <PostCard key={`pin-${p.id}`} post={{ ...p, author: user }} compact />)}
+            </div>
           </div>
         )}
+        {(() => {
+          const pinnedIds = new Set(pinnedPosts.map(p => p.id));
+          const list = activeTab === 'Posts' ? filteredPosts.filter(p => !pinnedIds.has(p.id)) : filteredPosts;
+          if (list.length === 0 && !(activeTab === 'Posts' && pinnedPosts.length)) {
+            return (
+              <div className="text-center py-16">
+                <Icon name="inbox" size={48} className="text-text-muted/20 mx-auto mb-3" />
+                <p className="text-text-muted text-sm">No {activeTab.toLowerCase()} yet</p>
+              </div>
+            );
+          }
+          return (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+              {list.map(p => <PostCard key={p.id} post={p} compact />)}
+            </div>
+          );
+        })()}
       </div>
       )}
+
+      {showTip && user && (
+        <SendCoinsModal isOpen={showTip} onClose={() => setShowTip(false)} preselectedUser={user} />
+      )}
+      <MyQrModal open={showQr} onClose={() => setShowQr(false)} user={user} />
+      <ReportSheet open={showReport} title="Report User" onClose={() => setShowReport(false)}
+        onSubmit={(reason) => {
+          setShowReport(false);
+          reportUser(currentUser.uid, user.id, reason)
+            .then(() => showToast('Report submitted — our moderators will review it', 'success'))
+            .catch(() => showToast('Could not submit report', 'error'));
+        }} />
     </div>
   );
 }
@@ -487,17 +650,14 @@ function DropdownItem({ icon, label, onClick }) {
   );
 }
 
-function Stat({ icon, label, value, onClick }) {
+function Stat({ label, value, onClick }) {
   return (
-    <button onClick={onClick} className="flex items-center gap-2.5 pr-6 transition-colors hover:brightness-125">
-      <div className="w-[34px] h-[34px] rounded-lg flex items-center justify-center"
-           style={{ background: 'rgba(123,31,255,0.15)', border: '1px solid rgba(180,79,255,0.25)', color: '#B44FFF' }}>
-        <Icon name={icon} size={16} />
-      </div>
-      <div className="text-left">
-        <div className="text-[16px] font-extrabold text-text-primary leading-none">{value}</div>
-        <div className="text-[10px] text-text-muted mt-0.5">{label}</div>
-      </div>
+    <button
+      onClick={onClick}
+      className="flex flex-col items-center justify-center py-1.5 rounded-lg transition-colors hover:bg-white/[0.04]"
+    >
+      <div className="text-[18px] font-extrabold text-text-primary leading-none font-dmmono tabular-nums">{value}</div>
+      <div className="text-[11px] text-text-muted mt-1">{label}</div>
     </button>
   );
 }

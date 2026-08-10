@@ -50,14 +50,14 @@ export default function WalletSecurityScreen() {
           { k: 'withdrawalConfirm', icon: 'shield', label: 'Withdrawal Confirmation', desc: 'Extra verification for payouts' }
         ].map(s => (
           <div key={s.k} className="flex items-center gap-3 py-4 border-b border-white/[0.03]">
-            <Icon name={s.icon} size={20} className="text-brand-cyan" />
+            <Icon name={s.icon} size={20} className="text-brand-violet-light" />
             <div className="flex-1">
               <p className="text-white font-semibold text-sm">{s.label}</p>
               <p className="text-text-secondary text-xs">{s.desc}</p>
             </div>
             <button
               onClick={() => toggle(s.k)}
-              className={`w-12 h-7 rounded-full relative transition-colors ${settings[s.k] ? 'bg-brand-cyan' : 'bg-surface-3'}`}
+              className={`w-12 h-7 rounded-full relative transition-colors ${settings[s.k] ? 'bg-brand-violet' : 'bg-surface-3'}`}
             >
               <div className={`w-5 h-5 rounded-full bg-white absolute top-1 transition-transform ${settings[s.k] ? 'translate-x-6' : 'translate-x-1'}`} />
             </button>

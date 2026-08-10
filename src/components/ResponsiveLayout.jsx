@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import useResponsive from '../hooks/useResponsive';
+import { IS_NATIVE_BUILD } from '../utils/platform';
 import DesktopSidebar from './DesktopSidebar';
 import BottomNav from './BottomNav';
 import DiscoveryStrip from './DiscoveryStrip';
@@ -144,11 +145,23 @@ export default function ResponsiveLayout({
     );
   }
 
-  // Mobile
-  const immersivePath = typeof window !== 'undefined' && /^\/(broadcast|watch|shorts|call)(\/|$)/.test(window.location.pathname);
+  // Mobile. The X-style nav drawer (+ left-edge swipe) is mounted globally as
+  // <MobileNavDrawerHost/> in AppRouter so it works on every screen, including
+  // those that own their own chrome (e.g. HomeFeedScreen).
+  const immersivePath =
+    typeof window !== 'undefined' &&
+    /^\/(broadcast|watch|shorts|call)(\/|$)/.test(window.location.pathname);
   return (
     <div className="min-h-screen bg-bg-dark">
-      <div className={`max-w-[480px] mx-auto min-h-screen relative ${immersivePath ? '' : 'pb-20'}`}>
+      {/* Native app: fill the phone width. The Android WebView reports an inflated
+          viewport (~980px), so the 480px-centered web column leaves big dead
+          gutters and squashes content into a thin strip on a real phone.
+          NOTE: do NOT add `safe-top` here. Every screen owns its own sticky
+          header that already insets the status bar (TopBar, the dedicated native
+          headers, HomeFeed/Explore glass headers). Adding the inset here too
+          double-padded the top of every screen. Banner-led screens
+          (Native[Public]ProfileScreen) inset their floating controls directly. */}
+      <div className={`${IS_NATIVE_BUILD ? 'w-full' : 'max-w-[480px] mx-auto'} min-h-screen relative ${immersivePath ? '' : 'pb-20'}`}>
         {children}
         <BottomNav />
       </div>

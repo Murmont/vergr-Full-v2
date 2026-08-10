@@ -39,7 +39,7 @@ export default function BrowseCreatorsScreen() {
     <div className={isDesktop ? "min-h-screen pb-8" : "screen-container min-h-screen pb-8"}>
       <TopBar title="Browse Creators" showBack />
       <div className="px-4 py-4">
-        {loading ? <div className="flex justify-center py-16"><div className="w-6 h-6 border-2 border-surface-3 border-t-brand-cyan rounded-full animate-spin" /></div>
+        {loading ? <div className="flex justify-center py-16"><div className="w-6 h-6 border-2 border-surface-3 border-t-brand-violet-light rounded-full animate-spin" /></div>
         : creators.length === 0 ? (
           <div className="text-center py-16">
             <Icon name="video_camera_front" size={48} className="text-text-muted/30 mx-auto mb-3" />
@@ -52,7 +52,7 @@ export default function BrowseCreatorsScreen() {
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-1.5">
                 <p className="font-bold text-sm truncate">{c.displayName || c.username}</p>
-                {c.isVerified && <Icon name="verified" filled size={14} className="text-brand-cyan" />}
+                {c.isVerified && <Icon name="verified" filled size={14} className="text-brand-violet-light" />}
               </div>
               <p className="text-xs text-text-muted">@{c.username}</p>
               <p className="text-xs text-brand-gold font-dmmono mt-1">{formatCount(c.followerCount)} fans</p>

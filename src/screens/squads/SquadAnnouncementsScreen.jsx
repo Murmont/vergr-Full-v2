@@ -1,145 +1,197 @@
+// SquadAnnouncementsScreen — leadership posts on the .sqd design system.
+// Composer (leaders / co-leaders) + pinned section + earlier list.
+// Route: /squads/:squadId/announcements.
+
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useUI } from '../../context/UIContext';
-import { getSquadAnnouncements, createSquadAnnouncement, getSquadMember, getUser } from '../../firebase/firestore';
-import TopBar from '../../components/TopBar';
-import UserAvatar from '../../components/UserAvatar';
-import Icon from '../../components/Icon';
-import useResponsive from '../../hooks/useResponsive';
+import {
+  getSquad, getSquadMembers, getSquadAnnouncements, createSquadAnnouncement,
+} from '../../firebase/firestore';
+import SquadShell from '../../components/squad/SquadShell';
+import SquadInfoRail from '../../components/squad/SquadInfoRail';
+import { roleKey, roleMeta, avatarClass, initials, nameOf } from '../../components/squad/squadHelpers';
+
+const tsMs = (t) => (t?.toDate ? t.toDate().getTime() : t?.seconds ? t.seconds * 1000 : t ? new Date(t).getTime() : 0);
+const when = (t) => {
+  const d = new Date(tsMs(t));
+  return d.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' · ' +
+    d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+};
+const splitTitle = (content) => {
+  const i = (content || '').indexOf('\n');
+  return i === -1 ? { title: '', body: content || '' } : { title: content.slice(0, i), body: content.slice(i + 1).trim() };
+};
 
 export default function SquadAnnouncementsScreen() {
   const { squadId } = useParams();
   const { currentUser } = useAuth();
   const { showToast } = useUI();
-  const { isMobile } = useResponsive();
-  const navigate = useNavigate();
 
+  const [squad, setSquad] = useState(null);
+  const [members, setMembers] = useState([]);
   const [announcements, setAnnouncements] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [canPost, setCanPost] = useState(false);
-  const [newContent, setNewContent] = useState('');
+  const [title, setTitle] = useState('');
+  const [body, setBody] = useState('');
+  const [pin, setPin] = useState(false);
   const [posting, setPosting] = useState(false);
 
-  useEffect(() => {
-    if (!squadId || !currentUser) return;
-    const load = async () => {
-      setLoading(true);
-      try {
-        const anns = await getSquadAnnouncements(squadId, 50);
-        for (const ann of anns) {
-          ann.author = await getUser(ann.authorId);
-        }
-        setAnnouncements(anns);
-        const myMembership = await getSquadMember(squadId, currentUser.uid);
-        setCanPost(['president', 'vice_president'].includes(myMembership?.role));
-      } catch (err) { console.error(err); }
-      setLoading(false);
-    };
-    load();
-  }, [squadId, currentUser]);
+  const reload = async () => {
+    const [s, m, a] = await Promise.all([
+      getSquad(squadId), getSquadMembers(squadId), getSquadAnnouncements(squadId, 30),
+    ]);
+    setSquad(s); setMembers(m); setAnnouncements(a);
+  };
 
-  const handlePost = async () => {
-    if (!newContent.trim() || posting) return;
+  useEffect(() => {
+    if (!squadId) return;
+    let alive = true;
+    (async () => {
+      setLoading(true);
+      try { await reload(); } catch (e) { /* ignore */ }
+      if (alive) setLoading(false);
+    })();
+    return () => { alive = false; };
+  }, [squadId]);
+
+  const myRole = members.find((m) => m.id === currentUser?.uid)?.role;
+  const canPost = ['leader', 'co'].includes(roleKey(myRole));
+  const authorOf = (uid) => members.find((m) => m.id === uid)?.user;
+
+  const post = async () => {
+    if (!body.trim() && !title.trim()) return;
     setPosting(true);
     try {
-      await createSquadAnnouncement(squadId, currentUser.uid, newContent.trim());
-      setNewContent('');
-      showToast('Announcement posted!', 'success');
-      const anns = await getSquadAnnouncements(squadId, 50);
-      for (const ann of anns) {
-        ann.author = await getUser(ann.authorId);
-      }
-      setAnnouncements(anns);
+      const content = title.trim() ? `${title.trim()}\n${body.trim()}` : body.trim();
+      await createSquadAnnouncement(squadId, currentUser.uid, content, pin);
+      setTitle(''); setBody(''); setPin(false);
+      await reload();
+      showToast('Announcement posted', 'success');
     } catch (err) {
-      showToast('Failed to post', 'error');
+      showToast(err?.message || 'Failed to post', 'error');
     }
     setPosting(false);
   };
 
-  const formatDate = (ts) => {
-    if (!ts) return '';
-    const d = ts.toDate ? ts.toDate() : new Date(ts);
-    const now = new Date();
-    const diff = now - d;
-    if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
-    if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
-    return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  const pinned = announcements.filter((a) => a.pinned);
+  const earlier = announcements.filter((a) => !a.pinned);
+
+  const Card = (a) => {
+    const u = authorOf(a.authorId);
+    const meta = roleMeta(members.find((m) => m.id === a.authorId)?.role);
+    const { title: t, body: b } = splitTitle(a.content);
+    return (
+      <div className={`ann${a.pinned ? ' pinned' : ''}`} key={a.id}>
+        <div className="ann-h">
+          <div className={`av ${avatarClass(a.authorId)}`}>
+            {u?.avatar ? <img src={u.avatar} alt="" /> : initials(nameOf(u))}
+          </div>
+          <div>
+            <div className="name">
+              {nameOf(u)}
+              <span className={`role-pill ${meta.pill}`} style={{ marginLeft: 4 }}>
+                {meta.icon && <span className="material-symbols-outlined">{meta.icon}</span>}{meta.label}
+              </span>
+            </div>
+            <div className="time">{when(a.createdAt)}</div>
+          </div>
+          {a.pinned && (
+            <span className="pin-tag" style={{ marginLeft: 6 }}>
+              <span className="material-symbols-outlined">push_pin</span>Pinned
+            </span>
+          )}
+        </div>
+        {t && <div className="ann-title">{t}</div>}
+        <div className="ann-body">{b.split('\n').map((line, i) => <p key={i}>{line}</p>)}</div>
+      </div>
+    );
   };
 
-  const goToChat = () => navigate(`/squads/${squadId}/chat`);
-
-  return (
-    <div className="pb-8">
-      {isMobile ? (
-        <div className="sticky top-0 z-40 glass-header flex items-center gap-3 px-4 py-3 border-b border-white/[0.04]">
-          <button onClick={goToChat} className="text-white/80 hover:text-white transition-colors">
-            <Icon name="arrow_back" size={24} />
-          </button>
-          <h1 className="text-white font-syne font-bold text-lg">Announcements</h1>
+  const main = (
+    <main className="main">
+      <header className="page-header">
+        <div>
+          <div className="ttl">Announcements</div>
+          <div className="sub">Squad-wide posts from leadership · pinned ones surface on Overview</div>
         </div>
-      ) : (
-        <div className="flex items-center justify-between px-4 lg:px-6 pt-4 pr-12 lg:pr-16">
-          <button onClick={() => navigate(-1)} className="text-white/80 hover:text-white transition-colors">
-            <Icon name="arrow_back" size={24} />
-          </button>
-          <h1 className="text-white font-syne font-bold text-lg">Announcements</h1>
-          <div className="w-6" />
-        </div>
-      )}
+      </header>
 
-      {canPost && (
-        <div className="px-4 pt-4">
-          <div className="p-4 rounded-2xl bg-surface-1 border border-white/[0.06]">
-            <textarea
-              value={newContent}
-              onChange={(e) => setNewContent(e.target.value)}
-              placeholder="Write an announcement for your squad..."
-              className="w-full bg-transparent text-sm text-text-primary placeholder:text-text-muted focus:outline-none resize-none h-20"
-              maxLength={500}
-            />
-            <div className="flex items-center justify-between mt-2">
-              <span className="text-[10px] text-text-muted">{newContent.length}/500</span>
-              <button onClick={handlePost} disabled={!newContent.trim() || posting}
-                className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all ${
-                  newContent.trim() && !posting ? 'bg-brand-cyan text-bg-dark' : 'bg-surface-3 text-text-muted'
-                }`}>
-                {posting ? 'Posting...' : 'Post'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <div className="px-4 py-4">
+      <div className="scroll content">
         {loading ? (
-          <div className="flex justify-center py-12">
-            <div className="w-6 h-6 border-2 border-surface-3 border-t-brand-cyan rounded-full animate-spin" />
-          </div>
-        ) : announcements.length === 0 ? (
-          <div className="text-center py-16">
-            <Icon name="campaign" size={48} className="text-text-muted/30 mx-auto mb-3" />
-            <p className="text-text-muted text-sm">No announcements yet</p>
-            {canPost && <p className="text-text-muted/60 text-xs mt-1">Post the first announcement for your squad</p>}
-          </div>
+          <div className="dim center" style={{ padding: 48 }}>Loading…</div>
         ) : (
-          <div className="space-y-3">
-            {announcements.map(ann => (
-              <div key={ann.id} className="p-4 rounded-2xl bg-surface-1 border border-white/[0.06]">
-                <div className="flex items-center gap-2 mb-2">
-                  <UserAvatar src={ann.author?.avatar} size="sm" />
-                  <div className="flex-1">
-                    <p className="text-xs font-semibold">{ann.author?.displayName || ann.author?.username}</p>
-                    <p className="text-[10px] text-text-muted">{formatDate(ann.createdAt)}</p>
+          <>
+            {canPost && (
+              <div className="composer">
+                <div className="composer-h">
+                  <div className={`av ${avatarClass(currentUser?.uid)}`}>
+                    {initials(currentUser?.displayName || 'You')}
                   </div>
-                  {ann.pinned && <Icon name="push_pin" filled size={14} className="text-brand-gold" />}
+                  <div className="name">Posting as {currentUser?.displayName || 'You'}</div>
+                  <div className="lbl">New announcement</div>
                 </div>
-                <p className="text-sm text-text-primary leading-relaxed">{ann.content}</p>
+                <input
+                  className="title" placeholder="Announcement title…"
+                  value={title} onChange={(e) => setTitle(e.target.value)}
+                />
+                <textarea
+                  placeholder="Write to the squad — practice schedule, lineup changes, big wins, treasury moves…"
+                  value={body} onChange={(e) => setBody(e.target.value)}
+                />
+                <div className="composer-tools">
+                  <div className="left" />
+                  <div className="right">
+                    <label className="pintog">
+                      <span>Pin to top</span>
+                      <span className="switch">
+                        <input type="checkbox" checked={pin} onChange={(e) => setPin(e.target.checked)} />
+                        <span className="slider" />
+                      </span>
+                    </label>
+                    <button className="btn primary" onClick={post} disabled={posting}>
+                      <span className="material-symbols-outlined">send</span>{posting ? 'Posting…' : 'Post'}
+                    </button>
+                  </div>
+                </div>
               </div>
-            ))}
-          </div>
+            )}
+
+            {announcements.length === 0 && (
+              <div className="empty">
+                <div className="ic"><span className="material-symbols-outlined">campaign</span></div>
+                <div className="t">No announcements yet</div>
+                <div className="d">Leadership posts here — schedules, lineup changes, wins.</div>
+              </div>
+            )}
+
+            {pinned.length > 0 && (
+              <>
+                <div className="section-label">
+                  <span className="material-symbols-outlined" style={{ fontSize: 13, color: 'var(--violet-light)' }}>push_pin</span>
+                  <span>Pinned</span><span className="line" />
+                </div>
+                {pinned.map(Card)}
+              </>
+            )}
+
+            {earlier.length > 0 && (
+              <>
+                <div className="section-label"><span>Earlier</span><span className="line" /></div>
+                {earlier.map(Card)}
+              </>
+            )}
+          </>
         )}
       </div>
-    </div>
+    </main>
+  );
+
+  return (
+    <SquadShell mode="squad" activeId="announcements" squadId={squadId}
+      rightRail={<SquadInfoRail squad={squad} members={members} />}>
+      {main}
+    </SquadShell>
   );
 }

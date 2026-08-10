@@ -7,6 +7,8 @@ import { useUI } from '../../context/UIContext';
 import { useLayout } from '../../context/LayoutContext';
 import { deleteUser, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
 import { auth } from '../../firebase/config';
+import { getMyAccountSecurityStatus } from '../../firebase/accountSecurityCallables';
+import { StepUpModal } from '../../components/settings/TwoFactor';
 import TopBar from '../../components/TopBar';
 import useResponsive from '../../hooks/useResponsive';
 import { C, PageShell } from './_settingsUI';
@@ -19,12 +21,25 @@ export default function AccountDeletionScreen() {
   const [pwVisible, setPwVisible] = useState(false);
   const [password, setPassword] = useState('');
   const [deleting, setDeleting] = useState(false);
+  const [twoFaEnrolled, setTwoFaEnrolled] = useState(false);
+  const [stepUpOpen, setStepUpOpen] = useState(false);
 
   useEffect(() => {
     setRightPanel(null);
     setContentAlign('left');
     return () => { setRightPanel(null); setContentAlign('center'); };
   }, [setRightPanel, setContentAlign]);
+
+  useEffect(() => {
+    getMyAccountSecurityStatus().then(s => setTwoFaEnrolled(!!s.enrolled)).catch(() => {});
+  }, []);
+
+  // With 2FA on, require a fresh authenticator code before the irreversible delete.
+  const onDeleteClick = () => {
+    if (!password || deleting) return;
+    if (twoFaEnrolled) setStepUpOpen(true);
+    else handleDelete();
+  };
 
   const handleDelete = async () => {
     if (!password || deleting) return;
@@ -191,7 +206,7 @@ export default function AccountDeletionScreen() {
             </div>
             <button
               type="button"
-              onClick={handleDelete}
+              onClick={onDeleteClick}
               disabled={!password || deleting}
               style={{
                 background: `linear-gradient(135deg,${C.redDeep},#991b1b)`,
@@ -234,6 +249,14 @@ export default function AccountDeletionScreen() {
           </button>
         </div>
       </PageShell>
+
+      {stepUpOpen && (
+        <StepUpModal
+          title="Confirm account deletion"
+          onClose={() => setStepUpOpen(false)}
+          onSuccess={() => { setStepUpOpen(false); handleDelete(); }}
+        />
+      )}
     </div>
   );
 }

@@ -31,7 +31,7 @@ export default function ContributionSuccessScreen() {
       </p>
       <p className="text-text-muted text-xs text-center mb-8">Contributing members receive a share of tournament winnings proportional to their contribution.</p>
 
-      <button onClick={() => navigate(-2)} className="w-full max-w-[360px] py-4 rounded-2xl bg-brand-cyan text-bg-dark text-lg font-bold mb-3">
+      <button onClick={() => navigate(-2)} className="w-full max-w-[360px] py-4 rounded-2xl bg-brand-violet text-white text-lg font-bold mb-3">
         Back to Squad
       </button>
       <button onClick={() => navigate('/')} className="text-text-secondary font-semibold text-sm">

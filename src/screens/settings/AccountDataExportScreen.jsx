@@ -48,12 +48,12 @@ export default function AccountDataExportScreen() {
         </div>
         <div className="p-3 rounded-xl bg-surface-1 border border-white/[0.06] mb-6">
           <div className="flex items-start gap-2">
-            <Icon name="info" size={14} className="text-brand-cyan mt-0.5" />
-            <p className="text-text-muted text-xs">Your data export will be sent to <span className="text-brand-cyan">{currentUser?.email}</span> within 48 hours.</p>
+            <Icon name="info" size={14} className="text-brand-violet-light mt-0.5" />
+            <p className="text-text-muted text-xs">Your data export will be sent to <span className="text-brand-violet-light">{currentUser?.email}</span> within 48 hours.</p>
           </div>
         </div>
         <button onClick={handleRequest} disabled={requested}
-          className={`w-full py-4 rounded-2xl font-bold ${requested ? 'bg-surface-3 text-text-muted' : 'bg-brand-cyan text-bg-dark'}`}>
+          className={`w-full py-4 rounded-2xl font-bold ${requested ? 'bg-surface-3 text-text-muted' : 'bg-brand-violet text-white'}`}>
           {requested ? 'Export Requested ✓' : 'Request Data Export'}
         </button>
       </div>

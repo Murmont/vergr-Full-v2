@@ -77,7 +77,7 @@ export function VPAvatarRing({ vp = 0, children, size = 44 }) {
         className={`absolute inset-0 rounded-full ${isAnimated ? 'animate-spin-slow' : ''}`}
         style={{
           background: isAnimated
-            ? `conic-gradient(${level.ringColor}, #C87FFF, #7B6FFF, #4DFFD4, ${level.ringColor})`
+            ? `conic-gradient(${level.ringColor}, #C87FFF, #7B6FFF, #B44FFF, ${level.ringColor})`
             : level.ringColor,
           padding: 2,
           borderRadius: '50%',

@@ -7,6 +7,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { IS_STORE_BUILD } from '../../utils/platform';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import {
   collection, query, orderBy, limit, onSnapshot, addDoc, serverTimestamp,
@@ -19,7 +20,7 @@ import { compressMedia } from '../../utils/mediaCompression';
 const C = {
   surface: '#14141F', soft: '#1A1A2A', border: 'rgba(255,255,255,0.10)',
   text: '#fff', dim: 'rgba(255,255,255,0.65)',
-  gold: '#F0A500', goldLight: '#F5C842', cyan: '#4DFFD4',
+  gold: '#F0A500', goldLight: '#F5C842', cyan: '#B44FFF',
   green: '#22c55e', red: '#ef4444',
 };
 
@@ -38,6 +39,9 @@ export function WarmupLobby({ tournamentId, matchId, opponentUid }) {
 }
 
 export function DoubleOrNothingButton({ tournamentId, matchId }) {
+  // Double-or-nothing stakes coins on an outcome — same Play gambling policy
+  // constraint as SpectatorBetPanel. Play build only; every other path keeps it.
+  if (IS_STORE_BUILD) return null;
   const { showToast } = useUI();
   const [busy, setBusy] = useState(false);
   const fire = async () => {
@@ -58,6 +62,9 @@ export function DoubleOrNothingButton({ tournamentId, matchId }) {
 }
 
 export function DoubleOrNothingPrompt({ tournamentId, matchId, cost, onResolved }) {
+  // Double-or-nothing stakes coins on an outcome — same Play gambling policy
+  // constraint as SpectatorBetPanel. Play build only; every other path keeps it.
+  if (IS_STORE_BUILD) return null;
   const { showToast } = useUI();
   const [busy, setBusy] = useState(false);
   const respond = async (accept) => {
@@ -229,7 +236,7 @@ export function DisputeEvidenceUpload({ tournamentId, matchId, match, myUid, opp
     setBusy(true);
     try {
       const compressed = await compressMedia(file, 'free', 'post');
-      const url = await uploadToR2(compressed, 'tournament');
+      const { url } = await uploadToR2(compressed, 'tournament');
       await httpsCallable(fns(), 'uploadDisputeEvidence')({ tournamentId, matchId, evidenceUrl: url });
       showToast('Evidence submitted. A mod will review.', 'success');
     } catch (err) { showToast(err?.message || 'Upload failed', 'error'); }

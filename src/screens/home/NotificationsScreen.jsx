@@ -2,6 +2,7 @@ import { useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useNotifications } from '../../context/NotificationContext';
+import { useMergedNotifications } from '../../hooks/useMergedNotifications';
 import TopBar from '../../components/TopBar';
 import UserAvatar from '../../components/UserAvatar';
 import Icon from '../../components/Icon';
@@ -10,39 +11,39 @@ import { useLayout } from '../../context/LayoutContext';
 
 const NOTIF_ICONS = {
   like: { icon: 'favorite', color: 'text-brand-ember', bg: 'bg-brand-ember/10' },
-  follow: { icon: 'person_add', color: 'text-brand-cyan', bg: 'bg-brand-cyan/10' },
+  follow: { icon: 'person_add', color: 'text-brand-violet-light', bg: 'bg-brand-violet/10' },
   coins: { icon: 'paid', color: 'text-brand-gold', bg: 'bg-brand-gold/10' },
+  vp: { icon: 'auto_awesome', color: 'text-brand-violet', bg: 'bg-brand-violet/10' },
+  gem_transfer: { icon: 'diamond', color: 'text-gem-blue', bg: 'bg-gem-blue/10' },
+  tip: { icon: 'paid', color: 'text-brand-gold', bg: 'bg-brand-gold/10' },
   squad: { icon: 'groups', color: 'text-brand-violet', bg: 'bg-brand-violet/10' },
-  comment: { icon: 'chat_bubble', color: 'text-brand-cyan', bg: 'bg-brand-cyan/10' },
+  comment: { icon: 'chat_bubble', color: 'text-brand-violet-light', bg: 'bg-brand-violet/10' },
   stream: { icon: 'live_tv', color: 'text-brand-ember', bg: 'bg-brand-ember/10' },
+  message: { icon: 'chat', color: 'text-brand-ember', bg: 'bg-brand-ember/10' },
+  request: { icon: 'mark_email_unread', color: 'text-brand-gold', bg: 'bg-brand-gold/10' },
+  missed_call: { icon: 'call_missed', color: 'text-success-green', bg: 'bg-success-green/10' },
   system: { icon: 'info', color: 'text-brand-violet', bg: 'bg-brand-violet/10' },
 };
 
 export default function NotificationsScreen() {
-  const { notifications: ctxNotifications, markAllRead, markRead } = useNotifications();
+  const { markAllRead, markRead } = useNotifications();
+  const { items, routeFor } = useMergedNotifications();
   const navigate = useNavigate();
   const { setRightPanel } = useLayout();
-  const loading = ctxNotifications == null;
+  const loading = items == null;
 
-  // Reuse the shared notifications subscription instead of opening a second
-  // listener (saves another full read of the notifications collection per
-  // visit).
+  // Merged feed (real notifications + synthesized message/squad/request/call
+  // rows). Falls back to a welcome row when there's genuinely nothing.
   const notifications = useMemo(() => {
-    const list = (ctxNotifications || []).map(n => ({
-      ...n,
-      createdAt: n.createdAt?.toDate ? n.createdAt.toDate() : (n.createdAt || new Date()),
-    }));
-    if (list.length === 0) {
-      return [{
-        id: 'welcome-system',
-        type: 'system',
-        content: 'Welcome to Vergr! Start by following creators or posting your first clip.',
-        read: false,
-        createdAt: new Date(),
-      }];
-    }
-    return list;
-  }, [ctxNotifications]);
+    if (items && items.length > 0) return items;
+    return [{
+      id: 'welcome-system',
+      type: 'system',
+      content: 'Welcome to Vergr! Start by following creators or posting your first clip.',
+      read: false,
+      _ms: Date.now(),
+    }];
+  }, [items]);
 
   useEffect(() => {
     setRightPanel(null);
@@ -50,19 +51,9 @@ export default function NotificationsScreen() {
   }, [setRightPanel]);
 
   const handleNotifClick = async (notif) => {
-    if (!notif.read && notif.id !== 'welcome-system') {
-      markRead(notif.id);
-    }
-
-    if (notif.type === 'follow' && notif.senderId) {
-      navigate(`/user/${notif.senderId}`);
-    } else if ((notif.type === 'like' || notif.type === 'comment') && notif.postId) {
-      navigate(`/post/${notif.postId}`);
-    } else if (notif.type === 'squad' && notif.squadId) {
-      navigate(`/squads/${notif.squadId}`);
-    } else if (notif.type === 'stream' && notif.streamId) {
-      navigate(`/stream/${notif.streamId}`);
-    }
+    if (!notif.read && notif._kind === 'doc') markRead(notif.id);
+    const path = routeFor(notif);
+    if (path) navigate(path);
   };
 
   return (
@@ -80,7 +71,7 @@ export default function NotificationsScreen() {
       <div className="divide-y divide-white/[0.04]">
         {loading ? (
           <div className="p-8 text-center text-text-muted">
-            <div className="w-6 h-6 border-2 border-surface-3 border-t-brand-cyan rounded-full animate-spin mx-auto mb-3" />
+            <div className="w-6 h-6 border-2 border-surface-3 border-t-brand-violet rounded-full animate-spin mx-auto mb-3" />
             <span className="text-xs font-dmmono">Loading</span>
           </div>
         ) : (
@@ -93,7 +84,7 @@ export default function NotificationsScreen() {
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: Math.min(idx * 0.04, 0.4), duration: 0.2 }}
                 onClick={() => handleNotifClick(notif)}
-                className={`w-full flex items-start gap-3 px-4 py-4 text-left transition-colors hover:bg-surface-1/30 ${!notif.read ? 'bg-brand-cyan/[0.02]' : ''}`}
+                className={`w-full flex items-start gap-3 px-4 py-4 text-left transition-colors hover:bg-surface-1/30 ${!notif.read ? 'bg-brand-violet/[0.02]' : ''}`}
               >
                 {notif.senderAvatar ? (
                   <UserAvatar src={notif.senderAvatar} size={40} />
@@ -105,12 +96,14 @@ export default function NotificationsScreen() {
                 <div className="flex-1 min-w-0">
                   <p className={`text-sm leading-relaxed ${!notif.read ? 'text-text-primary font-medium' : 'text-text-secondary'}`}>
                     {notif.senderName && <span className="font-bold text-white">{notif.senderName} </span>}
-                    {notif.content}
+                    {notif.content || notif.body}
                   </p>
-                  <p className="text-text-muted text-xs mt-1 font-dmmono">{timeAgo(notif.createdAt)}</p>
+                  <p className="text-text-muted text-xs mt-1 font-dmmono">
+                    {timeAgo(notif._ms ? new Date(notif._ms) : (notif.createdAt?.toDate ? notif.createdAt.toDate() : notif.createdAt))}
+                  </p>
                 </div>
                 {!notif.read && (
-                  <div className="w-2 h-2 bg-brand-cyan rounded-full mt-2 shrink-0" />
+                  <div className="w-2 h-2 bg-brand-violet rounded-full mt-2 shrink-0" />
                 )}
               </motion.button>
             );

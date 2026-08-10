@@ -110,7 +110,7 @@ export default function RightSidebarPanel() {
           placeholder="Search Vergr..."
           onClick={() => navigate('/search')}
           readOnly
-          className="w-full bg-surface-2 border border-white/[0.06] rounded-full py-2.5 pl-10 pr-4 text-text-primary text-sm focus:border-brand-cyan transition-colors outline-none cursor-pointer"
+          className="w-full bg-surface-2 border border-white/[0.06] rounded-full py-2.5 pl-10 pr-4 text-text-primary text-sm focus:border-brand-violet transition-colors outline-none cursor-pointer"
         />
       </label>
 
@@ -121,7 +121,7 @@ export default function RightSidebarPanel() {
           <div className="px-4 pb-3 flex flex-wrap gap-2">
             {trendingTags.map((tag, index) => (
               <button key={index} onClick={() => navigate(`/search?q=%23${tag}`)}
-                className="px-3 py-1.5 rounded-lg bg-surface-2 border border-white/[0.06] text-brand-cyan text-xs font-bold hover:border-white/[0.12] transition-colors">
+                className="px-3 py-1.5 rounded-lg bg-surface-2 border border-white/[0.06] text-brand-violet-light text-xs font-bold hover:border-white/[0.12] transition-colors">
                 #{tag}
               </button>
             ))}
@@ -154,7 +154,7 @@ export default function RightSidebarPanel() {
                     className={`px-3 py-1 rounded-full text-[10px] font-bold border transition-colors ${
                       isFollowing
                         ? 'bg-surface-2 text-text-secondary border-white/[0.08] hover:border-brand-ember hover:text-brand-ember'
-                        : 'bg-brand-cyan/10 text-brand-cyan border-brand-cyan/20 hover:bg-brand-cyan/20'
+                        : 'bg-brand-violet/10 text-brand-violet-light border-brand-violet/20 hover:bg-brand-violet/20'
                     }`}
                   >
                     {isFollowing ? 'Following' : 'Follow'}
@@ -165,7 +165,7 @@ export default function RightSidebarPanel() {
           </div>
           <button 
             onClick={() => navigate('/browse-creators')}
-            className="w-full px-4 py-3 text-brand-cyan text-sm font-semibold hover:bg-surface-2/30 transition-colors"
+            className="w-full px-4 py-3 text-brand-violet-light text-sm font-semibold hover:bg-surface-2/30 transition-colors"
           >
             Show more
           </button>

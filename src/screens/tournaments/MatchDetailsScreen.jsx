@@ -3,9 +3,12 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useUser } from '../../context/UserContext';
 import { useUI } from '../../context/UIContext';
+import { StackSkeleton } from '../../components/skeletons/GlassSkeletons';
 import { getTournament, subscribeTournament, joinTournamentSecure, leaveTournamentSecure, startTournamentSecure, reportMatchResultSecure, finalizeTournamentSecure, applyToTournamentSecure, getTournamentMatches, getUser, getSquad, getFollowing, getHostStats } from '../../firebase/firestore';
 import { gameById } from '../../utils/tournamentGames';
 import LaunchGameDropdown from '../../components/tournament/LaunchGameDropdown';
+import EventTicketCard from '../../components/tournament/EventTicketCard';
+import { EventShareRow } from '../../components/tournament/EventShareSheet';
 import { useLayout } from '../../context/LayoutContext';
 import useResponsive from '../../hooks/useResponsive';
 import TopBar from '../../components/TopBar';
@@ -14,7 +17,7 @@ import VanguardBadge from '../../components/VanguardBadge';
 import { applyVanguardMask } from '../../utils/vanguard';
 import VanguardPresence from '../../components/VanguardPresence';
 import Icon from '../../components/Icon';
-import { SingleElimBracket, DoubleElimBracket, RoundRobinSchedule, SwissRoundsList } from '../../components/tournaments/BracketVisualization';
+import { SingleElimBracket, DoubleElimBracket, RoundRobinSchedule, SwissRoundsList, BracketFullscreen } from '../../components/tournaments/BracketVisualization';
 import { RoundRobinStandings, SwissStandings } from '../../components/tournaments/StandingsTable';
 import BRScoreboard from '../../components/tournaments/BRScoreboard';
 import {
@@ -36,7 +39,7 @@ const WEBCAM_PRIZE_THRESHOLD = 5000;
 // feed, which needs getDisplayMedia (macOS 13+ / Safari 16). macOS version is no
 // longer reliably readable from a browser (Apple freezes the UA string), so we
 // feature-detect the capture API and best-effort confirm macOS>=13 via UA-CH.
-async function highStakesCaptureSupported() {
+export async function highStakesCaptureSupported() {
   if (!navigator.mediaDevices?.getDisplayMedia) return false;
   try {
     const uaData = navigator.userAgentData;
@@ -57,6 +60,9 @@ export default function MatchDetailsScreen() {
   const { wallet } = useUser();
   const { showToast } = useUI();
   const navigate = useNavigate();
+  // Open any bracket node → the live match screen (spectator: follow / Champion
+  // Pick / tip; player: verification + report). `matchId` here is the tournamentId.
+  const openMatch = (mId) => mId && navigate(`/tournaments/${matchId}/match/${mId}`);
   const { isDesktop } = useResponsive();
   const { setRightPanel, setContentAlign } = useLayout();
 
@@ -87,6 +93,8 @@ export default function MatchDetailsScreen() {
   // Phase 2 — which stage the user is currently viewing on the Bracket tab.
   // Null falls through to tournament.currentStageId in render.
   const [viewStageId, setViewStageId] = useState(null);
+  // Phase 3 — full-screen bracket takeover.
+  const [bracketFull, setBracketFull] = useState(false);
 
   useEffect(() => {
     setRightPanel(null);
@@ -145,6 +153,7 @@ export default function MatchDetailsScreen() {
 
   const isRegistered = tournament?.participants?.includes(currentUser?.uid);
   const isFull = (tournament?.participants?.length || 0) >= (tournament?.maxParticipants || Infinity);
+  const isTicketed = tournament?.fundingModel === 'ticketed';
   const isAdmin = tournament?.adminId === currentUser?.uid;
   const isInvited = (tournament?.invitedUserIds || []).includes(currentUser?.uid);
   // Private tournament + not host + not invited + not already in → the user
@@ -231,11 +240,12 @@ export default function MatchDetailsScreen() {
     if (joining) return;
     setJoining(true);
     try {
-      // AC9 — high-stakes capture gate. Block up front (and tell the server)
-      // when this device cannot screen-capture, so the player never escrows
-      // coins into a win they could not claim.
+      // Capture gate — ALL paid entries (Phase 2 result engine): results on
+      // paid events are auto-detected from the player's game capture, so a
+      // device that cannot screen-capture must not escrow coins. Block up
+      // front (and tell the server).
       let captureOk = null;
-      if ((tournament?.entryFee || 0) > WEBCAM_PRIZE_THRESHOLD) {
+      if ((tournament?.entryFee || 0) > 0) {
         captureOk = await highStakesCaptureSupported();
         if (!captureOk) {
           setShowJoinConfirm(false);
@@ -293,7 +303,7 @@ export default function MatchDetailsScreen() {
     // eslint-disable-next-line
   }, [tournament?.status, currentUser?.uid]);
 
-  if (loading) return <div className="min-h-screen"><TopBar showBack title="Tournament" /><div className="flex justify-center py-20"><div className="w-8 h-8 border-3 border-brand-cyan border-t-transparent rounded-full animate-spin" /></div></div>;
+  if (loading) return <div className="min-h-screen"><TopBar showBack title="Tournament" /><StackSkeleton rows={5} height={88} /></div>;
   if (!tournament) return <div className="min-h-screen"><TopBar showBack title="Tournament" /><div className="text-center py-20"><p className="text-text-muted">Tournament not found</p></div></div>;
 
   const status = getStatusStyle(tournament.status);
@@ -349,10 +359,11 @@ export default function MatchDetailsScreen() {
             <div className="font-bold text-base">Screen capture required</div>
           </div>
           <p className="text-sm text-text-secondary leading-relaxed mb-4">
-            This high-stakes tournament needs screen capture (the two-camera proof feed)
-            to claim a win. Your device or browser does not support it. On Mac you need
-            macOS 13 (Ventura) or newer, or use a current browser. You can still
-            spectate this tournament.
+            Paid tournaments use automatic result detection: you pick your game window
+            once and your verification and result are read from your screen — no manual
+            reporting. Your device or browser does not support screen capture. Use a
+            desktop browser (Chrome/Edge) or the VERGR desktop app; on Mac you need
+            macOS 13 (Ventura) or newer. You can still spectate, or join free tournaments.
           </p>
           <button
             onClick={() => setMacBlock(false)}
@@ -380,23 +391,35 @@ export default function MatchDetailsScreen() {
             <div className="grid grid-cols-3 gap-3 mt-5">
               <div className="relative p-3 rounded-xl bg-bg-dark/50 border border-white/[0.06] text-center">
                 {(tournament.status === 'open' || tournament.status === 'registration') && (
-                  <span className="absolute top-2 right-2 flex items-center gap-1" title="Prize pool grows as players join">
+                  <span className="absolute top-2 right-2 flex items-center gap-1" title={isTicketed ? 'Purse grows as tickets sell' : 'Prize pool grows as players join'}>
                     <span className="w-1.5 h-1.5 rounded-full bg-brand-gold animate-pulse" />
                   </span>
                 )}
                 <Icon name="emoji_events" size={20} className="text-brand-gold mx-auto mb-1" />
-                <p className="text-brand-gold font-dmmono font-bold text-lg">{(tournament.prizePool || 0).toLocaleString()}</p>
-                <p className="text-text-muted text-[9px] uppercase">Prize Pool</p>
+                <p className="text-brand-gold font-dmmono font-bold text-lg">{((isTicketed ? tournament.declaredPurse : tournament.prizePool) || 0).toLocaleString()}</p>
+                <p className="text-text-muted text-[9px] uppercase">{isTicketed ? 'Prize Purse' : 'Prize Pool'}</p>
               </div>
+              {isTicketed ? (
+                <div className="p-3 rounded-xl bg-bg-dark/50 border border-white/[0.06] text-center">
+                  <Icon name="confirmation_number" size={20} className="text-brand-violet-light mx-auto mb-1" />
+                  <p className="text-brand-violet-light font-dmmono font-bold text-lg">{tournament.ticket?.priceCoins ? tournament.ticket.priceCoins.toLocaleString() : 'Free'}</p>
+                  <p className="text-text-muted text-[9px] uppercase">Ticket</p>
+                </div>
+              ) : (
+                <div className="p-3 rounded-xl bg-bg-dark/50 border border-white/[0.06] text-center">
+                  <Icon name="confirmation_number" size={20} className="text-brand-violet-light mx-auto mb-1" />
+                  <p className="text-brand-violet-light font-dmmono font-bold text-lg">{tournament.entryFee || 'Free'}</p>
+                  <p className="text-text-muted text-[9px] uppercase">Entry Fee</p>
+                </div>
+              )}
               <div className="p-3 rounded-xl bg-bg-dark/50 border border-white/[0.06] text-center">
-                <Icon name="confirmation_number" size={20} className="text-brand-cyan mx-auto mb-1" />
-                <p className="text-brand-cyan font-dmmono font-bold text-lg">{tournament.entryFee || 'Free'}</p>
-                <p className="text-text-muted text-[9px] uppercase">Entry Fee</p>
-              </div>
-              <div className="p-3 rounded-xl bg-bg-dark/50 border border-white/[0.06] text-center">
-                <Icon name="group" size={20} className="text-brand-violet mx-auto mb-1" />
-                <p className="text-brand-violet font-dmmono font-bold text-lg">{tournament.participants?.length || 0}/{tournament.maxParticipants}</p>
-                <p className="text-text-muted text-[9px] uppercase">Players</p>
+                <Icon name={isTicketed ? 'visibility' : 'group'} size={20} className="text-brand-violet mx-auto mb-1" />
+                {isTicketed ? (
+                  <p className="text-brand-violet font-dmmono font-bold text-lg">{tournament.ticket?.sold || 0}/{tournament.ticket?.capacity || 0}</p>
+                ) : (
+                  <p className="text-brand-violet font-dmmono font-bold text-lg">{tournament.participants?.length || 0}/{tournament.maxParticipants}</p>
+                )}
+                <p className="text-text-muted text-[9px] uppercase">{isTicketed ? 'Tickets' : 'Players'}</p>
               </div>
             </div>
           </div>
@@ -427,13 +450,13 @@ export default function MatchDetailsScreen() {
             <div className="flex items-center gap-2">
               <input
                 readOnly
-                value={`${window.location.origin}/#/overlay/${matchId}?token=${tournament.overlayToken}&mode=obs`}
+                value={`${window.location.origin}/overlay/${matchId}?token=${tournament.overlayToken}&mode=obs`}
                 onFocus={(e) => e.target.select()}
                 className="flex-1 text-[10px] font-mono bg-bg-dark border border-white/10 rounded px-2 py-1.5 text-text-primary"
               />
               <button
                 onClick={() => {
-                  navigator.clipboard.writeText(`${window.location.origin}/#/overlay/${matchId}?token=${tournament.overlayToken}&mode=obs`);
+                  navigator.clipboard.writeText(`${window.location.origin}/overlay/${matchId}?token=${tournament.overlayToken}&mode=obs`);
                   showToast('Overlay URL copied. Paste into OBS Sources → Browser.', 'success');
                 }}
                 className="px-3 py-1.5 rounded bg-brand-violet text-white text-xs font-bold hover:brightness-110"
@@ -452,15 +475,34 @@ export default function MatchDetailsScreen() {
           </button>
         )}
         {tournament.status === 'completed' && tournament.payoutStatus === 'paid' && (
-          <div className="w-full mb-3 py-3 rounded-xl bg-brand-cyan/10 border border-brand-cyan/30 text-brand-cyan text-center text-sm font-bold flex items-center justify-center gap-2">
+          <div className="w-full mb-3 py-3 rounded-xl bg-brand-violet/10 border border-brand-violet/30 text-brand-violet-light text-center text-sm font-bold flex items-center justify-center gap-2">
             <Icon name="check_circle" size={18} /> Prizes distributed
           </div>
         )}
+        {/* Ticketed events: fans buy a spectator ticket. Hidden for the host
+            and for registered competitors (server also rejects those). */}
+        {isTicketed && !isAdmin && !isRegistered && (tournament.status === 'open' || tournament.status === 'active') && (
+          <div className="mb-4">
+            <EventTicketCard tournament={{ ...tournament, id: matchId }} source="direct" />
+          </div>
+        )}
+
+        {/* Share / sell tickets — host + anyone can spread the event link. */}
+        {isTicketed && tournament.status !== 'cancelled' && (
+          <div className="mb-4 flex items-center justify-between gap-2 p-3 rounded-xl bg-surface-1 border border-white/[0.06]">
+            <div className="min-w-0">
+              <p className="text-text-primary text-sm font-bold">{isAdmin ? 'Sell tickets' : 'Share this event'}</p>
+              <p className="text-text-muted text-[11px] truncate">{isAdmin ? 'Send the link to your fans and followers.' : 'Invite friends to watch.'}</p>
+            </div>
+            <EventShareRow tournament={{ ...tournament, id: matchId }} />
+          </div>
+        )}
+
         {tournament.status === 'open' && (
           <div className="mb-4">
             {isRegistered ? (
               <div className="flex gap-2">
-                <div className="flex-1 py-3 rounded-xl bg-brand-cyan/10 border border-brand-cyan/30 text-brand-cyan text-center text-sm font-bold flex items-center justify-center gap-2">
+                <div className="flex-1 py-3 rounded-xl bg-brand-violet/10 border border-brand-violet/30 text-brand-violet-light text-center text-sm font-bold flex items-center justify-center gap-2">
                   <Icon name="check_circle" size={18} /> Registered
                 </div>
                 <button onClick={handleLeave} className="px-4 py-3 rounded-xl bg-surface-2 border border-white/[0.06] text-text-muted text-sm font-bold hover:text-brand-ember hover:border-brand-ember/30 transition-colors">
@@ -482,9 +524,9 @@ export default function MatchDetailsScreen() {
                 </button>
               )
             ) : (
-              <button onClick={() => setShowJoinConfirm(true)} disabled={joining}
-                className="w-full py-3.5 rounded-xl bg-brand-cyan text-bg-dark font-bold text-sm hover:brightness-110 active:scale-[0.98] transition-all  disabled:opacity-50">
-                {joining ? 'Joining...' : tournament.entryFee > 0 ? `Join — ${tournament.entryFee} coins` : 'Join Tournament'}
+              <button onClick={() => isTicketed ? handleJoin() : setShowJoinConfirm(true)} disabled={joining}
+                className="w-full py-3.5 rounded-xl bg-brand-violet text-white font-bold text-sm hover:brightness-110 active:scale-[0.98] transition-all  disabled:opacity-50">
+                {joining ? 'Joining...' : isTicketed ? 'Compete (free)' : tournament.entryFee > 0 ? `Join — ${tournament.entryFee} coins` : 'Join Tournament'}
               </button>
             )}
             {tournament.entryFee > 0 && !isRegistered && (
@@ -513,14 +555,14 @@ export default function MatchDetailsScreen() {
                 const p2 = participants.find(p => p.id === m.player2);
                 const isInMatch = m.player1 === currentUser?.uid || m.player2 === currentUser?.uid;
                 return (
-                  <div key={m.id} className="p-4 rounded-2xl bg-surface-1 border border-brand-cyan/20">
+                  <div key={m.id} className="p-4 rounded-2xl bg-surface-1 border border-brand-violet/20">
                     <div className="flex items-center gap-2 mb-3">
                       <span className="text-text-muted text-[10px] uppercase font-bold tracking-widest">Round {m.round} · Match {m.matchNumber}</span>
                       <span className={`ml-auto px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${
                         m.status === 'awaiting_confirmation' ? 'bg-brand-gold/15 text-brand-gold' :
                         m.status === 'disputed' ? 'bg-brand-ember/15 text-brand-ember' :
-                        'bg-brand-cyan/15 text-brand-cyan'
-                      }`}>{m.status === 'awaiting_confirmation' ? 'Awaiting confirmation' : m.status}</span>
+                        'bg-brand-violet/15 text-brand-violet-light'
+                      }`}>{m.status === 'awaiting_confirmation' ? 'Awaiting confirmation' : m.status === 'in_progress' ? 'Live' : m.status}</span>
                     </div>
                     <p className="text-text-muted text-xs mb-3">
                       {isAdmin && !isInMatch ? 'As host, your call advances the bracket immediately.' :
@@ -529,12 +571,12 @@ export default function MatchDetailsScreen() {
                     </p>
                     <div className="grid grid-cols-2 gap-2">
                       <button onClick={() => handleReport(m.id, m.player1)}
-                        className="py-2.5 rounded-xl bg-surface-2 border border-white/[0.08] hover:border-brand-cyan/40 hover:bg-brand-cyan/10 text-sm font-bold flex items-center justify-center gap-2 transition-colors">
+                        className="py-2.5 rounded-xl bg-surface-2 border border-white/[0.08] hover:border-brand-violet/40 hover:bg-brand-violet/10 text-sm font-bold flex items-center justify-center gap-2 transition-colors">
                         <UserAvatar src={p1?.avatar} size={22} />
                         <span className="truncate">{p1?.displayName || p1?.username || 'Player 1'} won</span>
                       </button>
                       <button onClick={() => handleReport(m.id, m.player2)}
-                        className="py-2.5 rounded-xl bg-surface-2 border border-white/[0.08] hover:border-brand-cyan/40 hover:bg-brand-cyan/10 text-sm font-bold flex items-center justify-center gap-2 transition-colors">
+                        className="py-2.5 rounded-xl bg-surface-2 border border-white/[0.08] hover:border-brand-violet/40 hover:bg-brand-violet/10 text-sm font-bold flex items-center justify-center gap-2 transition-colors">
                         <UserAvatar src={p2?.avatar} size={22} />
                         <span className="truncate">{p2?.displayName || p2?.username || 'Player 2'} won</span>
                       </button>
@@ -564,8 +606,8 @@ export default function MatchDetailsScreen() {
             {tournament.visibility !== 'private'
               && ['open', 'registration', 'active', 'live'].includes(tournament.status) && (
               <button onClick={() => setShowSponsor(true)}
-                className="w-full p-4 rounded-2xl bg-surface-1 border border-brand-cyan/20 flex items-center gap-3 hover:border-brand-cyan/40 transition-colors">
-                <Icon name="volunteer_activism" size={20} className="text-brand-cyan" />
+                className="w-full p-4 rounded-2xl bg-surface-1 border border-brand-violet/20 flex items-center gap-3 hover:border-brand-violet/40 transition-colors">
+                <Icon name="volunteer_activism" size={20} className="text-brand-violet-light" />
                 <span className="flex-1 text-sm font-semibold text-left">Sponsor from squad treasury</span>
                 <Icon name="chevron_right" size={18} className="text-text-muted" />
               </button>
@@ -635,115 +677,29 @@ export default function MatchDetailsScreen() {
 
         {activeTab === 'bracket' && (
           <div className="space-y-4">
-            {/* Phase 2 — stage tabs for multi-stage tournaments. */}
-            {Array.isArray(tournament.stages) && tournament.stages.length > 1 && (
-              <MultiStageTabs
-                tournament={tournament} matches={matches}
-                viewStageId={viewStageId} setViewStageId={setViewStageId}
-              />
-            )}
-            {(() => {
-              // Real bracket data is derived from the match docs themselves —
-              // tournament.bracketData only carries metadata (format/totalRounds).
-              // buildRoundsFromMatches turns the raw match docs into the shape
-              // the viz components expect (rounds[][{ home, away, winner }]).
-              const t = tournament;
-              // Phase 2 — filter matches to the selected stage when multi-stage.
-              const isMulti = Array.isArray(t.stages) && t.stages.length > 1;
-              const activeStageId = viewStageId || t.currentStageId || (isMulti ? t.stages[0].id : null);
-              const activeStage = isMulti
-                ? t.stages.find((s) => s.id === activeStageId) || t.stages[0]
-                : null;
-              const stageMatches = !isMulti ? matches
-                : (matches || []).filter((m) => m.stageId === activeStageId
-                    || (!m.stageId && activeStageId === t.stages[0].id));
-              const stageType = activeStage ? activeStage.type : t.type;
-              const shaped = stageMatches?.length > 0
-                ? buildRoundsFromMatches(stageMatches, participants, stageType)
-                : null;
-              if (stageType === 'single_elim' || stageType === 'squad_single_elim' || stageType === 'invitational') {
-                if (!shaped || (Array.isArray(shaped) && shaped.length === 0)) {
-                  return <p className="text-text-muted text-sm text-center py-8">Bracket appears once the tournament starts</p>;
-                }
-                return <SingleElimBracket rounds={shaped} followedUids={followedUids} />;
-              }
-              if (stageType === 'double_elim') {
-                if (!shaped?.winners?.length) {
-                  return <p className="text-text-muted text-sm text-center py-8">Bracket appears once the tournament starts</p>;
-                }
-                return <DoubleElimBracket
-                  followedUids={followedUids}
-                  winners={shaped.winners}
-                  losers={shaped.losers}
-                  grandFinal={shaped.grandFinal}
-                />;
-              }
-              if (stageType === 'squad_round_robin' || stageType === 'round_robin') {
-                if (!shaped || shaped.length === 0) {
-                  return <p className="text-text-muted text-sm text-center py-8">Schedule appears once the league begins</p>;
-                }
-                return <>
-                  <RoundRobinStandings
-                    standings={computeRoundRobinStandings(shaped.flat())}
-                    teamLookup={Object.fromEntries(participants.map((p) => [p.id, p]))}
-                  />
-                  <RoundRobinSchedule rounds={shaped} />
-                </>;
-              }
-              if (stageType === 'swiss') {
-                if (!shaped || shaped.length === 0) {
-                  return <p className="text-text-muted text-sm text-center py-8">Pairings appear once round 1 starts</p>;
-                }
-                return <>
-                  <SwissStandings
-                    standings={computeSwissStandings(
-                      (t.participants || []).map((uid) => ({
-                        playerId: uid,
-                        name: participants.find((p) => p.id === uid)?.displayName ||
-                              participants.find((p) => p.id === uid)?.username || uid,
-                      })),
-                      shaped.flat().map((m) => ({
-                        played: m.played, winner: m.winner,
-                        home: { playerId: m.home?.playerId }, away: { playerId: m.away?.playerId },
-                      })),
-                    )}
-                  />
-                  <SwissRoundsList rounds={shaped} />
-                </>;
-              }
-              if (t.type === 'battle_royale') {
-                return <BRScoreboard
-                  standings={computeBRStandings(buildBrResults(t, matches))}
-                  gameCount={t.brGameCount || 3}
-                  playerLookup={Object.fromEntries(participants.map((p) => [p.id, p]))}
-                />;
-              }
-              return <p className="text-text-muted text-sm text-center py-8">Bracket view not available for this format yet.</p>;
-            })()}
-            {!tournament.bracketData && matches.length > 0 && matches.map(match => (
-                <div key={match.id} className="p-4 rounded-2xl bg-surface-1 border border-white/[0.06]">
-                  <div className="flex items-center gap-2 mb-3">
-                    <span className="text-text-muted text-[10px] uppercase font-bold tracking-widest">Round {match.round} · Match {match.matchNumber}</span>
-                    <span className={`ml-auto px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${
-                      match.status === 'completed' ? 'bg-brand-cyan/15 text-brand-cyan' : 'bg-brand-gold/15 text-brand-gold'
-                    }`}>{match.status}</span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className={`flex-1 flex items-center gap-2 p-2 rounded-xl ${match.winner === match.player1 ? 'bg-brand-cyan/10 border border-brand-cyan/30' : 'bg-surface-2'}`}>
-                      <UserAvatar src={match.player1Data?.avatar} size={28} />
-                      <span className="text-sm font-semibold truncate">{match.player1Data?.displayName || 'TBD'}</span>
-                      {match.winner === match.player1 && <Icon name="check_circle" size={16} className="text-brand-cyan ml-auto shrink-0" />}
-                    </div>
-                    <span className="text-text-muted text-xs font-bold">VS</span>
-                    <div className={`flex-1 flex items-center gap-2 p-2 rounded-xl ${match.winner === match.player2 ? 'bg-brand-cyan/10 border border-brand-cyan/30' : 'bg-surface-2'}`}>
-                      <UserAvatar src={match.player2Data?.avatar} size={28} />
-                      <span className="text-sm font-semibold truncate">{match.player2Data?.displayName || 'BYE'}</span>
-                      {match.winner === match.player2 && <Icon name="check_circle" size={16} className="text-brand-cyan ml-auto shrink-0" />}
-                    </div>
-                  </div>
-                </div>
-              ))}
+            {/* Phase 3 — full-screen bracket toggle. */}
+            <div className="flex justify-end">
+              <button onClick={() => setBracketFull(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/[0.04] border border-white/[0.06] text-text-secondary text-xs font-bold hover:border-white/[0.12] transition-colors">
+                <Icon name="open_in_full" size={13} />
+                Full screen
+              </button>
+            </div>
+            <BracketPanel
+              tournament={tournament} matches={matches} participants={participants}
+              viewStageId={viewStageId} setViewStageId={setViewStageId}
+              followedUids={followedUids} openMatch={openMatch}
+            />
           </div>
+        )}
+        {bracketFull && (
+          <BracketFullscreen title={`${tournament.name} · Bracket`} onClose={() => setBracketFull(false)}>
+            <BracketPanel
+              tournament={tournament} matches={matches} participants={participants}
+              viewStageId={viewStageId} setViewStageId={setViewStageId}
+              followedUids={followedUids} openMatch={openMatch}
+            />
+          </BracketFullscreen>
         )}
       </div>
     </div>
@@ -759,7 +715,7 @@ export default function MatchDetailsScreen() {
 // GR1 — public host reputation card. Answers "is this host legit?" inline on
 // the tournament page: how many events they've run, completion rate, players
 // served, prizes paid, and how often they bring in Vanguard moderation.
-function HostLegitCard({ hostUid }) {
+export function HostLegitCard({ hostUid }) {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   useEffect(() => {
@@ -773,14 +729,14 @@ function HostLegitCard({ hostUid }) {
   if (loading || !stats || stats.hosted === 0) return null;
   const Stat = ({ label, value }) => (
     <div className="flex-1 text-center">
-      <p className="text-brand-cyan font-dmmono font-bold text-base">{value}</p>
+      <p className="text-brand-violet-light font-dmmono font-bold text-base">{value}</p>
       <p className="text-text-muted text-[9px] uppercase tracking-wider">{label}</p>
     </div>
   );
   return (
     <div className="p-4 rounded-2xl bg-surface-1 border border-white/[0.06]">
       <div className="flex items-center gap-2 mb-3">
-        <Icon name="verified_user" size={16} className="text-brand-cyan" />
+        <Icon name="verified_user" size={16} className="text-brand-violet-light" />
         <p className="text-text-secondary text-xs font-bold uppercase tracking-wider">Host track record</p>
       </div>
       <div className="flex items-center gap-2">
@@ -797,7 +753,7 @@ function HostLegitCard({ hostUid }) {
   );
 }
 
-function GameOwnershipModal({ tournament, joining, onCancel, onConfirm }) {
+export function GameOwnershipModal({ tournament, joining, onCancel, onConfirm }) {
   const game = gameById(tournament.game);
   const gameName = game?.label || tournament.game || 'this game';
   const paid = (tournament.entryFee || 0) > 0;
@@ -805,7 +761,7 @@ function GameOwnershipModal({ tournament, joining, onCancel, onConfirm }) {
     <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={onCancel}>
       <div className="w-full max-w-sm rounded-2xl bg-surface-1 border border-white/[0.08] p-5" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-2 mb-3">
-          <Icon name="sports_esports" size={22} className="text-brand-cyan" />
+          <Icon name="sports_esports" size={22} className="text-brand-violet-light" />
           <h3 className="font-syne text-lg font-bold">Before you register</h3>
         </div>
         <p className="text-text-secondary text-sm leading-relaxed">
@@ -824,7 +780,7 @@ function GameOwnershipModal({ tournament, joining, onCancel, onConfirm }) {
             Cancel
           </button>
           <button onClick={onConfirm} disabled={joining}
-            className="flex-1 py-3 rounded-xl bg-brand-cyan text-bg-dark font-bold text-sm disabled:opacity-50">
+            className="flex-1 py-3 rounded-xl bg-brand-violet text-white font-bold text-sm disabled:opacity-50">
             {joining ? 'Joining…' : paid ? `Register — ${tournament.entryFee}c` : 'Register'}
           </button>
         </div>
@@ -857,11 +813,133 @@ function MultiStageTabs({ tournament, matches, viewStageId, setViewStageId }) {
             }`}>
             <span className="font-dmmono text-[10px] opacity-70">{i + 1}</span>
             {s.name || s.type}
-            {isDone && <Icon name="check_circle" size={12} className="text-brand-cyan" />}
-            {isCurrent && !isDone && <span className="w-1.5 h-1.5 rounded-full bg-brand-cyan animate-pulse" />}
+            {isDone && <Icon name="check_circle" size={12} className="text-brand-violet-light" />}
+            {isCurrent && !isDone && <span className="w-1.5 h-1.5 rounded-full bg-brand-violet animate-pulse" />}
           </button>
         );
       })}
+    </div>
+  );
+}
+
+// Phase 3 — the bracket content, extracted so it renders identically inline
+// (Bracket tab) AND inside the BracketFullscreen takeover. Real bracket data
+// is derived from the match docs themselves; tournament.bracketData only
+// carries metadata (format/totalRounds). buildRoundsFromMatches turns the
+// raw match docs into the shape the viz components expect.
+export function BracketPanel({ tournament, matches, participants, viewStageId, setViewStageId, followedUids, openMatch }) {
+  const renderFormat = () => {
+    const t = tournament;
+    // Phase 2 — filter matches to the selected stage when multi-stage.
+    const isMulti = Array.isArray(t.stages) && t.stages.length > 1;
+    const activeStageId = viewStageId || t.currentStageId || (isMulti ? t.stages[0].id : null);
+    const activeStage = isMulti
+      ? t.stages.find((s) => s.id === activeStageId) || t.stages[0]
+      : null;
+    const stageMatches = !isMulti ? matches
+      : (matches || []).filter((m) => m.stageId === activeStageId
+          || (!m.stageId && activeStageId === t.stages[0].id));
+    const stageType = activeStage ? activeStage.type : t.type;
+    const shaped = stageMatches?.length > 0
+      ? buildRoundsFromMatches(stageMatches, participants, stageType)
+      : null;
+    if (stageType === 'single_elim' || stageType === 'squad_single_elim' || stageType === 'invitational') {
+      if (!shaped || (Array.isArray(shaped) && shaped.length === 0)) {
+        return <p className="text-text-muted text-sm text-center py-8">Bracket appears once the tournament starts</p>;
+      }
+      return <SingleElimBracket rounds={shaped} followedUids={followedUids} onMatchOpen={openMatch} />;
+    }
+    if (stageType === 'double_elim') {
+      if (!shaped?.winners?.length) {
+        return <p className="text-text-muted text-sm text-center py-8">Bracket appears once the tournament starts</p>;
+      }
+      return <DoubleElimBracket
+        followedUids={followedUids}
+        onMatchOpen={openMatch}
+        winners={shaped.winners}
+        losers={shaped.losers}
+        grandFinal={shaped.grandFinal}
+      />;
+    }
+    if (stageType === 'squad_round_robin' || stageType === 'round_robin') {
+      if (!shaped || shaped.length === 0) {
+        return <p className="text-text-muted text-sm text-center py-8">Schedule appears once the league begins</p>;
+      }
+      return <>
+        <RoundRobinStandings
+          standings={computeRoundRobinStandings(shaped.flat())}
+          teamLookup={Object.fromEntries(participants.map((p) => [p.id, p]))}
+        />
+        <RoundRobinSchedule rounds={shaped} onMatchOpen={openMatch} />
+      </>;
+    }
+    if (stageType === 'swiss') {
+      if (!shaped || shaped.length === 0) {
+        return <p className="text-text-muted text-sm text-center py-8">Pairings appear once round 1 starts</p>;
+      }
+      return <>
+        <SwissStandings
+          standings={computeSwissStandings(
+            (t.participants || []).map((uid) => ({
+              playerId: uid,
+              name: participants.find((p) => p.id === uid)?.displayName ||
+                    participants.find((p) => p.id === uid)?.username || uid,
+            })),
+            shaped.flat().map((m) => ({
+              played: m.played, winner: m.winner,
+              home: { playerId: m.home?.playerId }, away: { playerId: m.away?.playerId },
+            })),
+          )}
+        />
+        <SwissRoundsList rounds={shaped} onMatchOpen={openMatch} />
+      </>;
+    }
+    if (t.type === 'battle_royale') {
+      return <BRScoreboard
+        standings={computeBRStandings(buildBrResults(t, matches))}
+        gameCount={t.brGameCount || 3}
+        playerLookup={Object.fromEntries(participants.map((p) => [p.id, p]))}
+      />;
+    }
+    return <p className="text-text-muted text-sm text-center py-8">Bracket view not available for this format yet.</p>;
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Phase 2 — stage tabs for multi-stage tournaments. */}
+      {Array.isArray(tournament.stages) && tournament.stages.length > 1 && (
+        <MultiStageTabs
+          tournament={tournament} matches={matches}
+          viewStageId={viewStageId} setViewStageId={setViewStageId}
+        />
+      )}
+      {renderFormat()}
+      {!tournament.bracketData && matches.length > 0 && matches.map(match => (
+        <div key={match.id}
+          onClick={() => openMatch(match.id)}
+          role="button"
+          className="p-4 rounded-2xl bg-surface-1 border border-white/[0.06] cursor-pointer active:opacity-80 transition-opacity">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-text-muted text-[10px] uppercase font-bold tracking-widest">Round {match.round} · Match {match.matchNumber}</span>
+            <span className={`ml-auto px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${
+              match.status === 'completed' ? 'bg-brand-violet/15 text-brand-violet-light' : 'bg-brand-gold/15 text-brand-gold'
+            }`}>{match.status}</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className={`flex-1 flex items-center gap-2 p-2 rounded-xl ${match.winner === match.player1 ? 'bg-brand-violet/10 border border-brand-violet/30' : 'bg-surface-2'}`}>
+              <UserAvatar src={match.player1Data?.avatar} size={28} />
+              <span className="text-sm font-semibold truncate">{match.player1Data?.displayName || 'TBD'}</span>
+              {match.winner === match.player1 && <Icon name="check_circle" size={16} className="text-brand-violet-light ml-auto shrink-0" />}
+            </div>
+            <span className="text-text-muted text-xs font-bold">VS</span>
+            <div className={`flex-1 flex items-center gap-2 p-2 rounded-xl ${match.winner === match.player2 ? 'bg-brand-violet/10 border border-brand-violet/30' : 'bg-surface-2'}`}>
+              <UserAvatar src={match.player2Data?.avatar} size={28} />
+              <span className="text-sm font-semibold truncate">{match.player2Data?.displayName || 'BYE'}</span>
+              {match.winner === match.player2 && <Icon name="check_circle" size={16} className="text-brand-violet-light ml-auto shrink-0" />}
+            </div>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

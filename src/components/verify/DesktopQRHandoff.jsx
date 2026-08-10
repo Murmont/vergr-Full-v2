@@ -14,7 +14,7 @@ export default function DesktopQRHandoff({ onContinueHere }) {
   const [sid] = useState(() => Math.random().toString(36).slice(2) + Date.now().toString(36));
   const [status, setStatus] = useState('idle'); // idle | scanned | completed | expired
 
-  const mobileUrl = useMemo(() => `${window.location.origin}/#/verify/mobile/${sid}`, [sid]);
+  const mobileUrl = useMemo(() => `${window.location.origin}/verify/mobile/${sid}`, [sid]);
 
   useEffect(() => {
     if (!currentUser) return;
@@ -36,8 +36,8 @@ export default function DesktopQRHandoff({ onContinueHere }) {
 
   return (
     <div className="max-w-md mx-auto text-center">
-      <div className="w-16 h-16 rounded-full bg-brand-cyan/10 mx-auto flex items-center justify-center mb-4">
-        <Icon name="qr_code_2" size={32} className="text-brand-cyan" />
+      <div className="w-16 h-16 rounded-full bg-brand-violet/10 mx-auto flex items-center justify-center mb-4">
+        <Icon name="qr_code_2" size={32} className="text-brand-violet-light" />
       </div>
       <h2 className="font-syne font-bold text-white text-xl mb-1">Continue on your phone</h2>
       <p className="text-text-secondary text-sm mb-5">Camera-based verification works much better on mobile. Scan this QR code to pick up where you left off.</p>
@@ -48,8 +48,8 @@ export default function DesktopQRHandoff({ onContinueHere }) {
 
       <p className="text-text-muted text-[11px] break-all max-w-xs mx-auto mb-4">{mobileUrl}</p>
 
-      <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold mb-4 ${status === 'completed' ? 'bg-green-500/15 text-green-400' : status === 'scanned' ? 'bg-brand-cyan/15 text-brand-cyan' : 'bg-surface-2 text-text-muted'}`}>
-        <span className={`w-1.5 h-1.5 rounded-full ${status === 'completed' ? 'bg-green-400' : status === 'scanned' ? 'bg-brand-cyan animate-pulse' : 'bg-text-muted'}`} />
+      <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold mb-4 ${status === 'completed' ? 'bg-green-500/15 text-green-400' : status === 'scanned' ? 'bg-brand-violet/15 text-brand-violet-light' : 'bg-surface-2 text-text-muted'}`}>
+        <span className={`w-1.5 h-1.5 rounded-full ${status === 'completed' ? 'bg-green-400' : status === 'scanned' ? 'bg-brand-violet animate-pulse' : 'bg-text-muted'}`} />
         {status === 'completed' ? 'Submitted from your phone' : status === 'scanned' ? 'Phone connected — continue there' : 'Waiting for your phone…'}
       </div>
 

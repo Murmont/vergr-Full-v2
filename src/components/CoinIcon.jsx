@@ -19,6 +19,6 @@ function makeIcon(src, alt) {
   };
 }
 
-export const CoinIcon = makeIcon('/brand/vc-coin.png', 'VC coin');
-export const VPIcon   = makeIcon('/brand/vp-gem.png',  'VP');
-export const GemIcon  = makeIcon('/brand/gems.png',    'Gems');
+export const CoinIcon = makeIcon('/brand/vc-coin.webp', 'VC coin');
+export const VPIcon   = makeIcon('/brand/vp-gem.webp',  'VP');
+export const GemIcon  = makeIcon('/brand/gems.webp',    'Gems');

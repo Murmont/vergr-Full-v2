@@ -3,32 +3,17 @@
 import Icon from '../Icon';
 import UserAvatar from '../UserAvatar';
 
-// Default placeholder members used when a real conversation has no role
-// metadata yet. Keeps the design looking alive.
-const PLACEHOLDER = [
-  { id: 'p1', name: 'Luna_Tc',    role: 'Owner',   online: true,  status: 'Streaming' },
-  { id: 'p2', name: 'Thunder42',  role: 'Admin',   online: true,  status: 'Online' },
-  { id: 'p3', name: 'Raze',       role: 'Admin',   online: false, status: 'Idle' },
-  { id: 'p4', name: 'GhostRider', role: 'Mod',     online: true,  status: 'Online' },
-  { id: 'p5', name: 'Vixen',      role: 'Mod',     online: false, status: 'Offline' },
-  { id: 'p6', name: 'Rook',       role: 'Mod',     online: true,  status: 'In Match' },
-  { id: 'p7', name: 'Ace',        role: 'Member',  online: true,  status: 'Online' },
-  { id: 'p8', name: 'Blitz',      role: 'Member',  online: true,  status: 'Online' },
-  { id: 'p9', name: 'Drake',      role: 'Member',  online: false, status: 'Offline' },
-  { id: 'p10', name: 'Gravity',   role: 'Member',  online: false, status: 'Offline' },
-];
-
 const ROLE_ORDER = ['Owner', 'Admin', 'Mod', 'Member'];
 const ROLE_LABELS = { Owner: 'OWNER', Admin: 'ADMIN', Mod: 'MOD', Member: 'MEMBERS' };
 const ROLE_COLORS = {
   Owner: 'text-brand-gold',
   Admin: 'text-brand-ember',
-  Mod:   'text-brand-cyan',
+  Mod:   'text-brand-violet-light',
   Member: 'text-text-muted',
 };
 
 export default function ChatMembersRail({ members, onInvite, width = 260 }) {
-  const list = (members && members.length > 0) ? members : PLACEHOLDER;
+  const list = members && members.length > 0 ? members : [];
 
   const byRole = {};
   for (const role of ROLE_ORDER) byRole[role] = [];
@@ -46,27 +31,34 @@ export default function ChatMembersRail({ members, onInvite, width = 260 }) {
       <div className="px-4 pt-4 pb-3 border-b border-white/[0.04]">
         <div className="flex items-center justify-between">
           <span className="text-[10px] font-dmmono uppercase tracking-[0.18em] text-text-muted">Members</span>
-          <span className="text-[10px] font-dmmono text-brand-cyan">{online} online</span>
+          <span className="text-[10px] font-dmmono text-brand-violet-light">{online} online</span>
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto no-scrollbar px-3 py-3 space-y-4">
-        {ROLE_ORDER.map(role => {
-          const bucket = byRole[role];
-          if (!bucket.length) return null;
-          return (
-            <div key={role}>
-              <div className="px-2 pb-1.5 flex items-center justify-between">
-                <span className={`text-[9px] font-dmmono uppercase tracking-[0.18em] ${ROLE_COLORS[role]}`}>
-                  {ROLE_LABELS[role]} — {bucket.length}
-                </span>
+        {list.length === 0 ? (
+          <div className="px-2 pt-6 text-center text-text-muted text-[12px]">
+            <Icon name="group" size={28} className="text-text-muted/30 mx-auto mb-2" />
+            No members loaded yet.
+          </div>
+        ) : (
+          ROLE_ORDER.map(role => {
+            const bucket = byRole[role];
+            if (!bucket.length) return null;
+            return (
+              <div key={role}>
+                <div className="px-2 pb-1.5 flex items-center justify-between">
+                  <span className={`text-[9px] font-dmmono uppercase tracking-[0.18em] ${ROLE_COLORS[role]}`}>
+                    {ROLE_LABELS[role]} — {bucket.length}
+                  </span>
+                </div>
+                <div className="space-y-0.5">
+                  {bucket.map(m => <MemberRow key={m.id} member={m} />)}
+                </div>
               </div>
-              <div className="space-y-0.5">
-                {bucket.map(m => <MemberRow key={m.id} member={m} />)}
-              </div>
-            </div>
-          );
-        })}
+            );
+          })
+        )}
       </div>
 
       <div className="p-3 border-t border-white/[0.04]">

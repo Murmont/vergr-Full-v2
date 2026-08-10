@@ -45,7 +45,15 @@ export default function Modal({ isOpen, onClose, title, children, fullScreen = f
                 </button>
               </div>
             )}
-            <div className="overflow-y-auto p-4">{children}</div>
+            {/* Bottom-anchored sheet: without the safe-area allowance the last
+                control (usually the primary button) sits under the Android
+                gesture/nav bar and cannot be tapped. */}
+            <div
+              className="overflow-y-auto p-4"
+              style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 16px)' }}
+            >
+              {children}
+            </div>
           </motion.div>
         </div>
       )}

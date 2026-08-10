@@ -108,7 +108,7 @@ export default function MessageRequestsScreen() {
                 <div className="flex items-center gap-4 mb-4">
                   <UserAvatar src={senderData?.avatar} size={52} tier={tier} />
                   <div className="flex-1 min-w-0">
-                    <p className={`font-black text-sm truncate ${tier.holographic ? 'text-brand-cyan' : 'text-white'}`}>
+                    <p className={`font-black text-sm truncate ${tier.holographic ? 'text-brand-violet-light' : 'text-white'}`}>
                         {senderData?.name || 'Anonymous Pilot'}
                     </p>
                     <p className="text-xs text-text-muted italic">wants to connect</p>
@@ -118,7 +118,7 @@ export default function MessageRequestsScreen() {
                 <div className="flex gap-2">
                   <button 
                     onClick={() => handleAction(r.id, 'accept')}
-                    className="flex-1 py-3 bg-brand-cyan text-bg-dark font-black text-[10px] uppercase tracking-widest rounded-xl hover:scale-[1.02] active:scale-95 transition-all"
+                    className="flex-1 py-3 bg-brand-violet text-white font-black text-[10px] uppercase tracking-widest rounded-xl hover:scale-[1.02] active:scale-95 transition-all"
                   >
                     Accept
                   </button>

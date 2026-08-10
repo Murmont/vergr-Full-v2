@@ -9,7 +9,7 @@ const SECTIONS = [
   {
     id: 'overview',
     icon: 'stadia_controller',
-    color: '#4DFFD4',
+    color: '#B44FFF',
     title: 'What is VERGR?',
     content: 'VERGR is a gaming social platform where you compete, create, earn, and cash out. Unlike other platforms where you just spend money, VERGR rewards you for being active. Every like you get, every quest you complete, every tournament you win — you earn real coins that have real value.',
   },
@@ -29,7 +29,7 @@ const SECTIONS = [
   {
     id: 'earning',
     icon: 'diamond',
-    color: '#4DFFD4',
+    color: '#B44FFF',
     title: 'How to Earn Real Money',
     content: 'There are two main ways to earn gems (cashable money) on VERGR:',
     items: [
@@ -58,19 +58,19 @@ const SECTIONS = [
     icon: 'star',
     color: '#7B6FFF',
     title: 'VP Levels & Perks',
-    content: '100 VP levels across 11 ranks. Commission drops from 30% at L1 to 10% at L100 (Immortal). After L100 you can optionally Prestige — reset your visible level with a badge, never forced.',
+    content: '100 VP levels across 11 ranks. Your coin-to-gem commission steps down with lifetime VP, from 30% to a 15% floor (reached around 100,000 VP). After L100 you can optionally Prestige: reset your visible level with a badge (never forced).',
     items: [
-      { label: 'Rookie (L1–10)', value: 'No ring, 30% → ~28% commission' },
-      { label: 'Contender (L11–20)', value: 'Bronze ring, ~28% → ~26% commission' },
-      { label: 'Rival (L21–30)', value: 'Silver ring, ~26% → ~24% commission' },
-      { label: 'Challenger (L31–40)', value: 'Gold ring, ~24% → ~22% commission' },
-      { label: 'Elite (L41–50)', value: 'Platinum ring, ~22% → ~20% commission' },
-      { label: 'Champion (L51–60)', value: 'Diamond ring, ~20% → ~18% commission' },
-      { label: 'Veteran (L61–70)', value: 'Onyx ring, ~18% → ~16% commission' },
-      { label: 'Legend (L71–80)', value: 'Ruby ring, ~16% → ~14% commission' },
-      { label: 'Mythic (L81–90)', value: 'Mythic ring, ~14% → ~12% commission' },
-      { label: 'Ascendant (L91–99)', value: 'Ascendant ring, ~12% → ~10% commission' },
-      { label: 'Immortal (L100)', value: '10% commission floor, +20% coin discount, prestige unlocked' },
+      { label: 'Rookie (L1–10)', value: 'No ring, 30% → 20% commission' },
+      { label: 'Contender (L11–20)', value: 'Bronze ring, 20% → 18% commission' },
+      { label: 'Rival (L21–30)', value: 'Silver ring, 18% commission' },
+      { label: 'Challenger (L31–40)', value: 'Gold ring, 18% → 15% commission' },
+      { label: 'Elite (L41–50)', value: 'Platinum ring, 15% commission' },
+      { label: 'Champion (L51–60)', value: 'Diamond ring, 15% commission' },
+      { label: 'Veteran (L61–70)', value: 'Onyx ring, 15% commission' },
+      { label: 'Legend (L71–80)', value: 'Ruby ring, 15% commission' },
+      { label: 'Mythic (L81–90)', value: 'Mythic ring, 15% commission' },
+      { label: 'Ascendant (L91–99)', value: 'Ascendant ring, 15% commission' },
+      { label: 'Immortal (L100)', value: '15% commission floor, prestige unlocked' },
     ],
   },
   {
@@ -88,7 +88,7 @@ const SECTIONS = [
   {
     id: 'squads',
     icon: 'shield',
-    color: '#4DFFD4',
+    color: '#B44FFF',
     title: 'Squads',
     content: 'Squads are your gaming crew. Create or join a squad to compete together in tournaments, chat, share media, and climb the squad leaderboard. Every squad has a leadership structure elected by members.',
     items: [
@@ -149,7 +149,7 @@ const SECTIONS = [
   {
     id: 'cashout',
     icon: 'account_balance',
-    color: '#4DFFD4',
+    color: '#B44FFF',
     title: 'Cashing Out',
     content: 'When your wallet has at least 1000 coins (€10), you can request a payout. VERGR takes a 10% platform fee, and the payment processor takes ~3%. You receive the rest via Wise (bank transfer), PayPal, or direct bank deposit. For example: 1000 coins = €10, minus €1 platform fee, minus ~€0.27 processor fee = you receive ~€8.73.',
   },
@@ -174,7 +174,7 @@ export default function HowItWorksScreen() {
       <div className={`px-4 py-4 ${isDesktop ? 'max-w-2xl' : ''}`}>
         {/* Hero */}
         <div className="p-5 rounded-2xl bg-surface-1 border border-white/[0.06] mb-5">
-          <h2 className="font-syne text-xl font-bold mb-2">Where Gamers Converge</h2>
+          <h2 className="font-syne text-xl font-bold mb-2">Play. Stream. Earn.</h2>
           <p className="text-text-secondary text-sm leading-relaxed">
             VERGR is built for gamers who want more than just another social feed. 
             You earn real money for doing what you already do — gaming, posting, competing, and being part of a community.
@@ -212,7 +212,7 @@ export default function HowItWorksScreen() {
                     )}
 
                     {section.extra && (
-                      <p className="text-text-muted text-xs leading-relaxed mt-3 pl-3 border-l-2 border-brand-cyan/30">{section.extra}</p>
+                      <p className="text-text-muted text-xs leading-relaxed mt-3 pl-3 border-l-2 border-brand-violet/30">{section.extra}</p>
                     )}
                   </div>
                 )}
@@ -226,7 +226,7 @@ export default function HowItWorksScreen() {
           <h3 className="font-syne font-bold text-base mb-2">Ready to start?</h3>
           <p className="text-text-secondary text-sm mb-4">Create your first post, join a squad, or enter a tournament.</p>
           <div className="flex gap-2 justify-center">
-            <button onClick={() => navigate('/create')} className="px-5 py-2.5 rounded-xl bg-brand-cyan text-bg-dark text-sm font-bold">Create Post</button>
+            <button onClick={() => navigate('/create')} className="px-5 py-2.5 rounded-xl bg-brand-violet text-white text-sm font-bold">Create Post</button>
             <button onClick={() => navigate('/squads')} className="px-5 py-2.5 rounded-xl bg-surface-2 border border-white/[0.06] text-text-secondary text-sm font-bold">Find a Squad</button>
           </div>
         </div>

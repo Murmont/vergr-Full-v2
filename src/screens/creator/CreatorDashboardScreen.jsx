@@ -3,14 +3,17 @@
 // Uses existing Firestore helpers (getUserPosts, getTransactions) — no schema changes.
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { IS_NATIVE_BUILD } from '../../utils/platform';
 import { useAuth } from '../../context/AuthContext';
+import { StackSkeleton } from '../../components/skeletons/GlassSkeletons';
 import { useUser } from '../../context/UserContext';
-import { getUserPosts, getTransactions } from '../../firebase/firestore';
+import { getUserPosts, getTransactions, getFollowers } from '../../firebase/firestore';
 import CreatorLayout from '../../components/creator/CreatorLayout';
 import { Card, KpiCard, SectionHeader, InsightCard, StatRow, PeriodPicker } from '../../components/creator/Widgets';
 import { TrendLineChart, DonutChart, ActivityHeatmap, PALETTE, compactNum } from '../../components/creator/charts';
 import Icon from '../../components/Icon';
 import UserAvatar from '../../components/UserAvatar';
+import { getVPLevel, getVPProgress, getNextVPLevel, RANK_TIERS } from '../../utils/vpSystem';
 
 // ── helpers ─────────────────────────────────────────────────────────────
 function tsMs(t) {
@@ -46,6 +49,7 @@ export default function CreatorDashboardScreen() {
   const [period, setPeriod] = useState('30d');
   const [posts, setPosts] = useState([]);
   const [transactions, setTransactions] = useState([]);
+  const [follows, setFollows] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -54,13 +58,15 @@ export default function CreatorDashboardScreen() {
     (async () => {
       setLoading(true);
       try {
-        const [p, tx] = await Promise.all([
+        const [p, tx, fl] = await Promise.all([
           getUserPosts(currentUser.uid, 50),
           getTransactions(currentUser.uid, 200),
+          getFollowers(currentUser.uid).catch(() => []),
         ]);
         if (!alive) return;
         setPosts(p || []);
         setTransactions(tx || []);
+        setFollows(fl || []);
       } catch (e) { console.error(e); }
       if (alive) setLoading(false);
     })();
@@ -99,6 +105,23 @@ export default function CreatorDashboardScreen() {
     [posts, days]
   );
 
+  // Follower growth — real, from follow doc createdAt timestamps. Daily NET new
+  // followers in-window, then turned into a cumulative line so the spark reflects
+  // the actual follower count over time (flat at 0 for a brand-new/guest account
+  // instead of a fabricated rise).
+  const newFollowerBuckets = useMemo(
+    () => bucketDaily(follows, f => tsMs(f.createdAt), () => 1, days),
+    [follows, days]
+  );
+  const totalFollowers = profile?.followerCount ?? follows.length;
+  const followersSpark = useMemo(() => {
+    // back-fill a cumulative line ending at the true current follower count
+    const newInWindow = newFollowerBuckets.reduce((a, b) => a + b, 0);
+    let running = Math.max(0, totalFollowers - newInWindow);
+    return newFollowerBuckets.map(n => (running += n));
+  }, [newFollowerBuckets, totalFollowers]);
+  const newFollowersThisPeriod = newFollowerBuckets.reduce((a, b) => a + b, 0);
+
   const earnedThisPeriod = earnedBuckets.reduce((a, b) => a + b, 0);
   const viewsThisPeriod  = viewsBuckets.reduce((a, b) => a + b, 0);
   const likesThisPeriod  = likesBuckets.reduce((a, b) => a + b, 0);
@@ -132,15 +155,15 @@ export default function CreatorDashboardScreen() {
   }, [earnedBuckets, viewsBuckets, likesBuckets, days]);
 
   // revenue sources (client-side classification from transaction types)
-  // VERGR model: Tips, Memberships, Tournament prizes, Boosts received — no "gifts"
+  // VERGR model: Tips, Memberships, Paid streams, Boosts received — no "gifts"
   const revenueSources = useMemo(() => {
-    const buckets = { Tips: 0, Memberships: 0, Tournaments: 0, Boosts: 0, Other: 0 };
+    const buckets = { Tips: 0, Memberships: 0, 'Paid streams': 0, Boosts: 0, Other: 0 };
     for (const tx of transactions) {
       if (!(tx.amount > 0)) continue;
       const t = (tx.type || '').toLowerCase();
       if (t.includes('tip') || t.includes('gift')) buckets.Tips += tx.amount;
       else if (t.includes('member') || t.includes('sub')) buckets.Memberships += tx.amount;
-      else if (t.includes('tournament') || t.includes('prize')) buckets.Tournaments += tx.amount;
+      else if (t.includes('stream_unlock') || t.includes('paid_stream')) buckets['Paid streams'] += tx.amount;
       else if (t.includes('boost')) buckets.Boosts += tx.amount;
       else buckets.Other += tx.amount;
     }
@@ -150,12 +173,11 @@ export default function CreatorDashboardScreen() {
   }, [transactions]);
 
   // Engagement heatmap — 7 days × 24 hours.
-  // Uses post createdAt timestamps + viewCount to estimate when the audience is active.
-  // Falls back to a smooth synthetic pattern (evenings + weekends peak) when there's
-  // not enough data, so the widget always looks alive.
+  // Built ONLY from the creator's real post createdAt timestamps weighted by reach.
+  // Returns null when there isn't enough real activity, so we show an honest empty
+  // state instead of a fabricated pattern.
   const heatmap = useMemo(() => {
     const grid = Array.from({ length: 7 }, () => Array(24).fill(0));
-    const counts = Array.from({ length: 7 }, () => Array(24).fill(0));
     let hasData = false;
     for (const p of posts) {
       const t = tsMs(p.createdAt);
@@ -166,35 +188,23 @@ export default function CreatorDashboardScreen() {
       const hr = d.getHours();
       const weight = 1 + Math.log10(1 + (p.viewCount || 0) + (p.likeCount || 0));
       grid[dow][hr] += weight;
-      counts[dow][hr] += 1;
       hasData = true;
     }
-    // Normalize 0..1
     let max = 0;
     for (const row of grid) for (const v of row) if (v > max) max = v;
-    if (!hasData || max === 0) {
-      // Synthetic evenings-and-weekends pattern
-      for (let d = 0; d < 7; d++) {
-        for (let h = 0; h < 24; h++) {
-          const evening = Math.exp(-Math.pow((h - 20) / 3.5, 2)); // peak at 20:00
-          const lunch   = 0.3 * Math.exp(-Math.pow((h - 13) / 2, 2));
-          const weekendBoost = d >= 5 ? 0.3 : 0;
-          grid[d][h] = Math.min(1, evening + lunch + weekendBoost);
-        }
-      }
-      return grid;
-    }
+    if (!hasData || max === 0) return null;
     return grid.map(row => row.map(v => v / max));
   }, [posts]);
 
   const peakSlot = useMemo(() => {
-    const days = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+    if (!heatmap) return null;
+    const dayNames = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
     let best = { d: 0, h: 0, v: -1 };
     for (let d = 0; d < 7; d++) for (let h = 0; h < 24; h++) {
       if (heatmap[d][h] > best.v) best = { d, h, v: heatmap[d][h] };
     }
     const fmt = (h) => `${((h + 11) % 12) + 1}${h < 12 ? 'am' : 'pm'}`;
-    return { day: days[best.d], range: `${fmt(best.h)}–${fmt((best.h + 1) % 24)}` };
+    return { day: dayNames[best.d], range: `${fmt(best.h)}–${fmt((best.h + 1) % 24)}` };
   }, [heatmap]);
 
   const topPosts = useMemo(
@@ -202,32 +212,96 @@ export default function CreatorDashboardScreen() {
     [posts]
   );
 
-  // quick actions (VP quests earn VP only — never coins)
+  // Routing helper: '#composer' opens the new CreateComposer popup (mounted in
+  // CreatorLayout); anything else is a normal route.
+  const go = (path) => {
+    if (path === '#composer') { window.dispatchEvent(new CustomEvent('vergr:open-composer')); return; }
+    navigate(path);
+  };
+
+  // quick actions — the surfaces a working creator reaches for most (benchmarked
+  // against TikTok / Instagram / Patreon / YouTube Studio), all real routes.
   const quickActions = [
-    { label: 'Go Live',      icon: 'podcasts',     path: '/go-live',              hue: 'from-rose-500/20 to-orange-500/10', iconColor: 'text-rose-400' },
-    { label: 'New Post',     icon: 'add_circle',   path: '/create',               hue: 'from-brand-cyan/20 to-brand-cyan/5', iconColor: 'text-brand-cyan' },
-    { label: 'Schedule',     icon: 'calendar_month', path: '/creator/schedule',   hue: 'from-brand-violet/20 to-brand-violet/5', iconColor: 'text-brand-violet' },
-    { label: 'Tiers',        icon: 'workspace_premium', path: '/creator/membership', hue: 'from-amber-500/20 to-yellow-500/5', iconColor: 'text-amber-400' },
-    { label: 'Wallet',       icon: 'account_balance_wallet', path: '/wallet',     hue: 'from-emerald-500/20 to-emerald-500/5', iconColor: 'text-emerald-400' },
-    { label: 'Analytics',    icon: 'analytics',    path: '/creator/analytics',    hue: 'from-brand-pink/20 to-brand-pink/5', iconColor: 'text-brand-pink' },
+    { label: 'Go Live',      icon: 'podcasts',               path: '/go-live',            hue: 'from-rose-500/20 to-orange-500/10',     iconColor: 'text-rose-400' },
+    { label: 'New Post',     icon: 'add_circle',             path: '#composer',           hue: 'from-brand-violet/20 to-brand-violet/5',    iconColor: 'text-brand-violet-light' },
+    { label: 'Schedule',     icon: 'calendar_month',         path: '/creator/schedule',   hue: 'from-brand-violet/20 to-brand-violet/5', iconColor: 'text-brand-violet' },
+    { label: 'Membership',   icon: 'workspace_premium',      path: '/creator/membership', hue: 'from-amber-500/20 to-yellow-500/5',     iconColor: 'text-amber-400' },
+    { label: 'Promote',      icon: 'campaign',               path: '/creator/ads',        hue: 'from-fuchsia-500/20 to-pink-500/5',     iconColor: 'text-fuchsia-400' },
+    { label: 'Quests',       icon: 'military_tech',          path: '/creator/quests',     hue: 'from-brand-pink/20 to-brand-pink/5',    iconColor: 'text-brand-pink' },
+    { label: 'Earnings',     icon: 'paid',                   path: '/creator/earnings',   hue: 'from-emerald-500/20 to-emerald-500/5',  iconColor: 'text-emerald-400' },
+    { label: 'Payout',       icon: 'account_balance_wallet', path: '/request-payout',     hue: 'from-teal-500/20 to-cyan-500/5',        iconColor: 'text-teal-400' },
   ];
 
   // AI-style insight — picks a real, data-driven observation
   const insight = useMemo(() => {
-    if (!posts.length) return { title: 'Get started', body: 'Create your first post to start earning coins and attracting followers. Consistency in the first 14 days is the biggest predictor of growth.', cta: 'Create Post', path: '/create' };
+    if (!posts.length) return { title: 'Get started', body: 'Create your first post to start earning coins and attracting followers. Consistency in the first 14 days is the biggest predictor of growth.', cta: 'Create Post', path: '#composer' };
     const engDelta = delta(likesBuckets);
     if (engDelta > 20) return { title: 'You\'re on fire', body: `Engagement is up ${engDelta}% vs the first half of this period. Keep your current posting rhythm — your audience is warming up.`, cta: 'View Analytics', path: '/creator/analytics' };
-    if (postsThisPeriod < days / 7) return { title: 'Post more often', body: `Creators who post at least once a week grow 3× faster. You've posted ${postsThisPeriod} time${postsThisPeriod===1?'':'s'} in the last ${days} days.`, cta: 'Create Post', path: '/create' };
+    if (postsThisPeriod < days / 7) return { title: 'Post more often', body: `Creators who post at least once a week grow 3× faster. You've posted ${postsThisPeriod} time${postsThisPeriod===1?'':'s'} in the last ${days} days.`, cta: 'Create Post', path: '#composer' };
     if (earnedThisPeriod === 0 && (wallet?.totalEarned || 0) === 0) return { title: 'Unlock tips', body: 'Add a membership tier so your biggest fans can support you monthly. Verified creators earn 4× more on average.', cta: 'Manage Tiers', path: '/creator/membership' };
     return { title: 'Keep the momentum', body: `Your ${totals.engagement.toFixed(1)}% engagement rate is solid. Try going live this week — live viewers tip 6× more than post viewers.`, cta: 'Go Live', path: '/go-live' };
   }, [posts, likesBuckets, postsThisPeriod, days, earnedThisPeriod, wallet, totals]);
 
+  // ── creator rank progression (real VP) ───────────────────────────────
+  // VP canonical store is wallet.vp (awardVP + tournament/ad/service VP all write
+  // there); fall back to profile.vp only if the wallet hasn't loaded yet.
+  const rank = useMemo(() => {
+    const vp = wallet?.vp ?? profile?.vp ?? 0;
+    const lvl = getVPLevel(vp);
+    const next = getNextVPLevel(vp);
+    const pct = getVPProgress(vp);
+    const tier = RANK_TIERS.find(t => lvl.level >= t.min && lvl.level <= t.max) || RANK_TIERS[0];
+    const toNext = next ? Math.max(0, next.vpRequired - vp) : 0;
+    // Rank badge art exists for the 10 named tiers; Immortal has none → no badge.
+    const badge = tier.name === 'Immortal' ? null : `/brand/firstboot/rank-${tier.name.toLowerCase()}.webp`;
+    return { vp, level: lvl.level, name: tier.name, color: tier.ringColor, pct, toNext, maxed: !next, badge };
+  }, [wallet, profile]);
+
   // ── render ──────────────────────────────────────────────────────────
   return (
     <CreatorLayout page="home" subtitle="Everything you need to grow — in one studio">
+      {/* Creator rank progression banner */}
+      <div className="relative overflow-hidden rounded-2xl border border-white/[0.07] bg-gradient-to-br from-[#12131d] to-[#0a0d14] p-4 md:p-5 mb-5">
+        <div className="absolute -top-12 -right-8 w-40 h-40 rounded-full blur-3xl pointer-events-none opacity-25"
+          style={{ background: rank.color }} />
+        <div className="relative flex items-center gap-4">
+          <div className="flex items-center gap-2 shrink-0">
+            <div className="relative">
+              <UserAvatar src={profile?.avatar} size={52} />
+              <span className="absolute -bottom-1 -right-1 px-1.5 py-0.5 rounded-md font-dmmono font-bold text-[10px] text-bg-dark shadow-sm"
+                style={{ backgroundColor: rank.color }}>L{rank.level}</span>
+            </div>
+            {rank.badge && (
+              <img src={rank.badge} alt={rank.name}
+                className="w-12 h-12 md:w-14 md:h-14 object-contain drop-shadow-[0_2px_8px_rgba(0,0,0,0.4)]"
+                onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+            )}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-syne font-extrabold text-white text-base md:text-lg leading-none">{rank.name}</span>
+              <span className="font-dmmono font-bold text-xs tabular-nums" style={{ color: rank.color }}>{compactNum(rank.vp)} VP</span>
+            </div>
+            <div className="mt-2 h-2 rounded-full bg-white/[0.06] overflow-hidden max-w-md">
+              <div className="h-full rounded-full transition-[width] duration-700"
+                style={{ width: `${rank.pct}%`, background: `linear-gradient(90deg, ${rank.color}, #ffffff66)` }} />
+            </div>
+            <p className="text-[11px] text-text-muted mt-1.5">
+              {rank.maxed
+                ? 'Max rank reached — Immortal.'
+                : <>{compactNum(rank.toNext)} VP to level {rank.level + 1}. Earn VP by completing <button onClick={() => navigate('/creator/quests')} className="text-brand-violet font-semibold hover:underline">quests</button>.</>}
+            </p>
+          </div>
+          <button onClick={() => navigate('/creator/quests')}
+            className="hidden sm:flex items-center gap-1.5 px-3.5 h-9 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] text-white font-bold text-xs transition-all shrink-0">
+            <Icon name="military_tech" size={15} className="text-brand-violet" /> Quests
+          </button>
+        </div>
+      </div>
+
       {/* Period picker strip */}
-      <div className="flex items-center justify-between gap-3 mb-5">
-        <div>
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
+        <div className="min-w-0">
           <h2 className="font-syne font-extrabold text-white text-lg">Your performance</h2>
           <p className="text-text-muted text-xs">Metrics update in real-time as fans interact with you.</p>
         </div>
@@ -235,9 +309,7 @@ export default function CreatorDashboardScreen() {
       </div>
 
       {loading ? (
-        <div className="flex items-center justify-center py-24">
-          <div className="w-8 h-8 rounded-full border-2 border-white/10 border-t-brand-cyan animate-spin" />
-        </div>
+        <StackSkeleton rows={5} height={88} />
       ) : (
         <>
           {/* ── KPI row ── */}
@@ -255,12 +327,13 @@ export default function CreatorDashboardScreen() {
             />
             <KpiCard
               label="Followers"
-              value={profile?.followerCount || 0}
+              value={totalFollowers}
               icon="group"
-              iconColor="text-brand-cyan"
-              spark={postsBuckets.map((v, i) => (profile?.followerCount || 0) - (postsBuckets.length - 1 - i) * 2)}
+              iconColor="text-brand-violet-light"
+              spark={followersSpark}
               sparkColor={PALETTE.cyan}
-              delta={null}
+              delta={newFollowersThisPeriod}
+              deltaLabel="new this period"
             />
             <KpiCard
               label="Views"
@@ -293,12 +366,12 @@ export default function CreatorDashboardScreen() {
                 <p className="text-[11px] text-text-muted">Everything a creator needs, one tap away.</p>
               </div>
             </div>
-            <div className="grid grid-cols-3 md:grid-cols-6 gap-2 md:gap-3">
+            <div className={`grid gap-2 md:gap-3 ${IS_NATIVE_BUILD ? 'grid-cols-4' : 'grid-cols-4 md:grid-cols-8'}`}>
               {quickActions.map(a => (
-                <button key={a.label} onClick={() => navigate(a.path)}
+                <button key={a.label} onClick={() => go(a.path)}
                   className={`group relative overflow-hidden rounded-xl p-3 md:p-4 bg-gradient-to-br ${a.hue} border border-white/[0.06] hover:border-white/[0.14] transition-all hover:-translate-y-0.5`}>
-                  <Icon name={a.icon} size={22} filled className={`${a.iconColor} mb-2`} />
-                  <div className="text-xs md:text-sm font-bold text-white text-left">{a.label}</div>
+                  <Icon name={a.icon} size={22} filled className={`${a.iconColor} mb-2 transition-transform group-hover:scale-110`} />
+                  <div className="text-[11px] md:text-sm font-bold text-white text-left leading-tight">{a.label}</div>
                 </button>
               ))}
             </div>
@@ -368,7 +441,7 @@ export default function CreatorDashboardScreen() {
               title="AI coach"
               body={insight.body}
               cta={insight.cta}
-              onCta={() => navigate(insight.path)}
+              onCta={() => go(insight.path)}
               icon="auto_awesome"
               tone="violet"
             />
@@ -380,17 +453,28 @@ export default function CreatorDashboardScreen() {
               title="Engagement heatmap"
               subtitle="When your audience is most active"
               right={
-                <div className="hidden md:flex items-center gap-2 px-2.5 py-1 rounded-full bg-brand-violet/10 border border-brand-violet/20">
-                  <Icon name="bolt" size={13} className="text-brand-violet" />
-                  <span className="text-[11px] font-dmmono uppercase tracking-[0.12em] text-brand-violet">Peak</span>
-                  <span className="text-[11px] text-text-primary font-semibold">{peakSlot.day}, {peakSlot.range}</span>
-                </div>
+                peakSlot && (
+                  <div className="hidden md:flex items-center gap-2 px-2.5 py-1 rounded-full bg-brand-violet/10 border border-brand-violet/20">
+                    <Icon name="bolt" size={13} className="text-brand-violet" />
+                    <span className="text-[11px] font-dmmono uppercase tracking-[0.12em] text-brand-violet">Peak</span>
+                    <span className="text-[11px] text-text-primary font-semibold">{peakSlot.day}, {peakSlot.range}</span>
+                  </div>
+                )
               }
             />
-            <ActivityHeatmap values={heatmap} />
-            <p className="mt-3 text-[11px] text-text-muted">
-              Your viewers are most active on <span className="text-text-primary font-semibold">{peakSlot.day}</span> around <span className="text-text-primary font-semibold">{peakSlot.range}</span>. Post 30 minutes before the peak for maximum reach.
-            </p>
+            {heatmap ? (
+              <>
+                <ActivityHeatmap values={heatmap} />
+                <p className="mt-3 text-[11px] text-text-muted">
+                  Your posts land most on <span className="text-text-primary font-semibold">{peakSlot.day}</span> around <span className="text-text-primary font-semibold">{peakSlot.range}</span>. Posting consistently around your audience's active hours boosts reach.
+                </p>
+              </>
+            ) : (
+              <div className="h-[180px] flex flex-col items-center justify-center text-center">
+                <Icon name="schedule" size={28} className="text-text-muted mb-2" />
+                <p className="text-text-muted text-xs max-w-xs">Not enough activity yet. Once you post and your audience engages, we'll show you the best times to post here.</p>
+              </div>
+            )}
           </Card>
 
           {/* ── Top posts + wallet ── */}
@@ -399,14 +483,14 @@ export default function CreatorDashboardScreen() {
               <SectionHeader
                 title="Top performing posts"
                 subtitle="Ranked by engagement"
-                right={<button onClick={() => navigate('/creator/content')} className="text-xs font-bold text-brand-cyan hover:underline">View all</button>}
+                right={<button onClick={() => navigate('/creator/content')} className="text-xs font-bold text-brand-violet-light hover:underline">View all</button>}
               />
               {topPosts.length === 0 ? (
                 <div className="py-10 text-center">
                   <Icon name="photo_library" size={28} className="text-text-muted mb-2" />
                   <p className="text-text-muted text-sm mb-3">No posts yet — create your first to see stats here.</p>
-                  <button onClick={() => navigate('/create')}
-                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-brand-cyan text-bg-dark font-bold text-sm">
+                  <button onClick={() => go('#composer')}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-brand-violet text-white font-bold text-sm">
                     <Icon name="add" size={16} /> New post
                   </button>
                 </div>
@@ -415,7 +499,7 @@ export default function CreatorDashboardScreen() {
                   {topPosts.map((p, i) => (
                     <button key={p.id} onClick={() => navigate(`/post/${p.id}`)}
                       className="w-full flex items-center gap-3 p-3 rounded-xl bg-white/[0.02] hover:bg-white/[0.04] border border-white/[0.04] hover:border-white/[0.1] text-left transition-all">
-                      <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-violet/20 to-brand-cyan/10 flex items-center justify-center shrink-0">
+                      <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-violet/20 to-brand-violet/10 flex items-center justify-center shrink-0">
                         <span className="font-syne font-extrabold text-xs text-white">{i + 1}</span>
                       </div>
                       <div className="flex-1 min-w-0">

@@ -31,7 +31,7 @@ export default function MessageStatus({ status = 'sent', read = false }) {
         {state === 'sending' && <Icon name="schedule" size={13} className="text-text-muted/40" />}
         {state === 'sent' && <Icon name="done" size={13} className="text-text-muted/40" />}
         {state === 'delivered' && <Icon name="done_all" size={13} className="text-text-muted/50" />}
-        {state === 'read' && <Icon name="done_all" size={13} className="text-brand-cyan" />}
+        {state === 'read' && <Icon name="done_all" size={13} className="text-brand-violet-light" />}
       </motion.span>
     </AnimatePresence>
   );

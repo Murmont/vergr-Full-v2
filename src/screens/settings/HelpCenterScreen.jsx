@@ -16,9 +16,9 @@ export default function HelpCenterScreen() {
   const [expanded, setExpanded] = useState(null);
   const faqs = [
     {q:'What are coins, gems, and VP?',a:'Coins are bought with real money and spent on tips, tournaments, and boosts. Gems are earned when someone spends coins ON YOU (tips, tournament prizes) — gems can be cashed out. VP is earned through activity and unlocks levels, perks, and commission discounts.'},
-    {q:'How do I earn real money?',a:'Win tournaments or receive tips. People pay with coins, you receive gems. Cash out gems when you reach 1000 (€10). Your VP level determines your commission rate — from 30% at level 1 down to 10% at level 100 (Immortal).'},
+    {q:'How do I earn real money?',a:'Win tournaments or receive tips. People pay with coins, you receive gems. Cash out gems when you reach 1000 (€10). Your VP determines your conversion commission, which steps down from 30% to a 15% floor as your lifetime VP grows.'},
     {q:'How do free coin bonuses work?',a:'You get 5 coins + 50 VP for a 5-day login streak. Referrals give 25 coins + 500 VP each (both need paid sub, friend must have bought coins). Lite subscribers get +1,000 VP & +50 coins / month. Pro gets +3,000 VP & +150 coins / month. Coin pack purchases include 10% bonus coins.'},
-    {q:'What does VP unlock?',a:'VP spans 100 levels across 11 ranks (Rookie → Immortal). Higher levels lower your commission (30% → 10%), unlock up to a 20% coin discount, custom reactions, and rank rings. After level 100 you can optionally Prestige for cosmetic badges.'},
+    {q:'What does VP unlock?',a:'VP spans 100 levels across 11 ranks (Rookie → Immortal). Higher VP lowers your coin-to-gem commission (30% down to a 15% floor) and earns rank rings and 30 collectible badges. After level 100 you can optionally Prestige for cosmetic badges.'},
     {q:'Does Lite/Pro lower my commission?',a:'No. Commission is determined ONLY by your VP level, not by your subscription. Plans give you a VP multiplier (1.5× on Lite, 2× on Pro) so you level up — and earn down commission — faster.'},
     {q:'How do squads work?',a:'Create or join a squad. The creator starts as president. Monthly elections on the 1st — all members vote. When members win tournaments, 10% of their gems go to the squad treasury. The treasury funds future tournament entries.'},
     {q:'How do tournaments work?',a:'Players pay coin entry fees forming the prize pool. Coins convert to gems: 1st (60%), 2nd (25%), 3rd/4th (7.5% each). The moderator running the tournament gets 5%. Winners also get VP. Brackets auto-advance.'},
@@ -32,15 +32,15 @@ export default function HelpCenterScreen() {
       <header className="flex items-center gap-3 px-5 pt-12 pb-4"><button onClick={()=>navigate(-1)} className="text-white/80"><Icon name="arrow_back" size={24}/></button><h1 className="text-white font-syne font-bold text-lg">Help Center</h1></header>
       <main className="flex-1 px-5 pb-8">
         <div className="flex items-center bg-surface rounded-xl px-4 py-3 border border-surface-border mb-6"><Icon name="search" size={18} className="text-text-secondary mr-2"/><input className="flex-1 bg-transparent text-white text-sm outline-none" placeholder="Search help topics..."/></div>
-        <button onClick={() => navigate('/settings/how-it-works')} className="w-full flex items-center gap-3 p-4 rounded-2xl bg-brand-cyan/[0.06] border border-brand-cyan/20 hover:border-white/[0.12] transition-all mb-6 group">
-          <div className="w-10 h-10 rounded-xl bg-brand-cyan/15 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-            <Icon name="school" size={20} className="text-brand-cyan" />
+        <button onClick={() => navigate('/settings/how-it-works')} className="w-full flex items-center gap-3 p-4 rounded-2xl bg-brand-violet/[0.06] border border-brand-violet/20 hover:border-white/[0.12] transition-all mb-6 group">
+          <div className="w-10 h-10 rounded-xl bg-brand-violet/15 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+            <Icon name="school" size={20} className="text-brand-violet-light" />
           </div>
           <div className="flex-1 text-left">
-            <p className="text-brand-cyan font-bold text-sm">How VERGR Works</p>
+            <p className="text-brand-violet-light font-bold text-sm">How VERGR Works</p>
             <p className="text-text-secondary text-[10px]">Complete guide to coins, squads, tournaments, and earning</p>
           </div>
-          <Icon name="arrow_forward" size={18} className="text-brand-cyan/50 group-hover:text-brand-cyan transition-colors" />
+          <Icon name="arrow_forward" size={18} className="text-brand-violet-light/50 group-hover:text-brand-violet-light transition-colors" />
         </button>
         <p className="text-text-secondary text-xs font-bold uppercase tracking-wider mb-3">Frequently Asked</p>
         {faqs.map((f,i)=>(

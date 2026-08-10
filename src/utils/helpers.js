@@ -3,7 +3,7 @@ export const TIERS = {
   SILVER: { name: 'Silver', min: 100, max: 499, color: '#C0C0C0', ring: 'ring-gray-400', bg: 'bg-gray-400/10', text: 'text-gray-400' },
   GOLD: { name: 'Gold', min: 500, max: 1499, color: '#F5C542', ring: 'ring-brand-gold', bg: 'bg-brand-gold/10', text: 'text-brand-gold' },
   PLATINUM: { name: 'Platinum', min: 1500, max: 1999, color: '#60A5FA', ring: 'ring-blue-400', bg: 'bg-blue-400/10', text: 'text-blue-400' },
-  DIAMOND: { name: 'Diamond Apex Elite', min: 2000, max: Infinity, color: '#4DFFD4', ring: 'ring-brand-cyan', bg: 'bg-brand-cyan/10', text: 'text-brand-cyan', holographic: true },
+  DIAMOND: { name: 'Diamond Apex Elite', min: 2000, max: Infinity, color: '#B44FFF', ring: 'ring-brand-violet', bg: 'bg-brand-violet/10', text: 'text-brand-violet-light', holographic: true },
 };
 
 export function getTier(coinsSpent = 0) {

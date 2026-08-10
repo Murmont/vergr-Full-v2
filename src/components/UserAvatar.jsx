@@ -1,6 +1,16 @@
+import { useState } from 'react';
 import { getTier } from '../utils/helpers';
 import { RANK_TIERS } from '../utils/vpSystem';
+import { IS_NATIVE_BUILD } from '../utils/platform';
+import { useCachedImage, reportImageError } from '../utils/deviceMediaCache';
 import Icon from './Icon';
+
+// B9: a bundled, zero-network default avatar. The old fallback hit
+// api.dicebear.com on EVERY missing/broken avatar (a remote fetch per empty
+// list row). This inline data-URI renders instantly with no request — a dark
+// disc with the brand-cyan person glyph, matching the avatar background.
+const PLACEHOLDER_AVATAR =
+  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='32' fill='%231A1A1A'/%3E%3Cpath d='M32 33c5 0 9-4 9-9s-4-9-9-9-9 4-9 9 4 9 9 9zm0 5c-7 0-18 3-18 10v3h36v-3c0-7-11-10-18-10z' fill='%23B44FFF' fill-opacity='0.35'/%3E%3C/svg%3E";
 
 // Legacy ring colors (coinsSpent-based getTier). Kept so old callers passing
 // a tier name string still render their old ring.
@@ -8,7 +18,7 @@ const LEGACY_TIER_RING_COLORS = {
   Bronze: '#CD7F32',
   Silver: '#C0C0C0',
   Gold: '#F5C542',
-  Platinum: '#4DFFD4',
+  Platinum: '#B44FFF',
   'Diamond Apex Elite': null, // animated rainbow ring below
 };
 
@@ -34,7 +44,13 @@ export default function UserAvatar({
   tier,
   isVerified,
   isLive,
-  showTierRing = true,
+  // A coloured ring is a SIGNAL, not decoration. Only two things earn one:
+  // the user is live, or they have an unseen active status. Everything else
+  // gets the neutral lift ring below, so a list of avatars reads as calm.
+  hasStory = false,
+  // VP/tier rank rings still exist but are now OPT-IN — painting one on every
+  // avatar in every list made the whole app look permanently "on fire".
+  showTierRing = false,
   // GR4 — recent tournament champions get a gold animated frame + crown for 7
   // days. Pass `championFrame` (bool) OR `championUntilMs` (ms epoch) where the
   // user doc is available; an expiry in the past renders nothing.
@@ -42,6 +58,14 @@ export default function UserAvatar({
   championUntilMs = null,
   className = '',
 }) {
+  // Normalize size to pixels. Callsites pass either a number (px) or a legacy
+  // string token ('xs'|'sm'|'md'|'lg'|'xl'). A string was being written
+  // straight into `width`/`height` (invalid CSS) so those avatars rendered at
+  // inconsistent intrinsic sizes — map them to real px instead.
+  const px = typeof size === 'number'
+    ? size
+    : ({ xs: 24, sm: 32, md: 40, lg: 56, xl: 72 }[size] ?? 40);
+
   const championActive = championFrame || (championUntilMs != null && championUntilMs > Date.now());
   // Pick ring color.
   let ringColor = null;
@@ -65,18 +89,49 @@ export default function UserAvatar({
     }
   }
 
-  // Live overrides everything else — red ring + LIVE chip below.
+  // Live overrides everything else — red ring + LIVE chip below. An unseen
+  // status ring comes next. Failing both, every avatar gets the same neutral
+  // hairline: a couple of tones lighter than the surface it sits on, which
+  // lifts the circle off the background without claiming anything about it.
   const showLiveRing = !!isLive;
-  const finalRing = showLiveRing ? '#F04060' : ringColor;
+  const LIFT_RING = 'rgba(255,255,255,0.10)';
+  const finalRing = showLiveRing
+    ? '#F04060'
+    : (hasStory ? '#B44FFF' : (ringColor || LIFT_RING));
+
+  // Resolve through the on-device media cache: the first sighting shows the
+  // remote url + persists the bytes on the phone (hidden app dir); every later
+  // view — including after an app restart — renders instantly from a local
+  // object URL with zero network. Telegram-style. Falls back to the raw src if
+  // caching is unavailable (no regression).
+  // `permanent` — an avatar is ~20KB and its absence is the most visible thing
+  // in the app, so it goes in storage Android will not reclaim.
+  const displaySrc = useCachedImage(src, { permanent: true });
+
+  // Fade the real image in over the dark placeholder disc so a slow avatar
+  // fetch shows a branded disc (not a white/empty pop). `loaded` also lets us
+  // treat a cache HIT as instant (onLoad fires synchronously → no visible fade).
+  const [loaded, setLoaded] = useState(false);
 
   const handleImageError = (e) => {
-    e.target.src = `https://api.dicebear.com/7.x/avataaars/svg?seed=default`;
+    // A local file can disappear underneath us: Android is allowed to clear the
+    // reclaimable cache tier whenever storage runs low, and it does not tell us.
+    // So a failure on a local source is not a broken avatar, it is a stale
+    // manifest entry — forget it and retry over the network once before giving
+    // up and showing the placeholder.
+    if (src && e.target.src !== src && e.target.src !== PLACEHOLDER_AVATAR) {
+      reportImageError(src);
+      e.target.src = src;
+      return;
+    }
+    setLoaded(true);
+    if (e.target.src !== PLACEHOLDER_AVATAR) e.target.src = PLACEHOLDER_AVATAR;
   };
 
   return (
     <div
       className={`relative inline-flex shrink-0 ${className}`}
-      style={{ width: size, height: size }}
+      style={{ width: px, height: px }}
     >
       {/* GR4 champion: gold animated ring + crown badge */}
       {championActive && !showLiveRing && (
@@ -93,14 +148,27 @@ export default function UserAvatar({
       )}
 
       <img
-        src={src || `https://api.dicebear.com/7.x/avataaars/svg?seed=default`}
+        // If the image is already cached, it can finish before onLoad binds —
+        // detect `complete` on attach so it isn't stuck at opacity 0.
+        ref={(el) => { if (el && el.complete && el.naturalWidth > 0) setLoaded(true); }}
+        src={displaySrc || PLACEHOLDER_AVATAR}
         alt="Avatar"
         onError={handleImageError}
+        onLoad={() => setLoaded(true)}
+        // Native (Android WebView) reports a false ~980px viewport, which makes
+        // native lazy-loading misjudge on-screen avatars as far off-screen and
+        // defer them for seconds. Load eagerly + high priority on native so
+        // visible avatars fetch immediately; web/PWA keeps lazy for long lists.
+        loading={IS_NATIVE_BUILD ? 'eager' : 'lazy'}
+        fetchpriority={IS_NATIVE_BUILD ? 'high' : 'auto'}
+        decoding="async"
         className="rounded-full object-cover relative z-10"
         style={{
-          width: size,
-          height: size,
+          width: px,
+          height: px,
           backgroundColor: '#1A1A1A',
+          opacity: loaded ? 1 : 0.01,
+          transition: 'opacity 220ms ease-out',
           // Use inline style so any ring color (including hex from VP ranks)
           // works without needing a Tailwind class.
           boxShadow: finalRing ? `0 0 0 2px ${finalRing}` : 'none',
@@ -119,16 +187,16 @@ export default function UserAvatar({
       {championActive && !isLive && (
         <div
           className="absolute -top-1.5 left-1/2 -translate-x-1/2 z-20"
-          style={{ fontSize: Math.max(10, size * 0.3), lineHeight: 1 }}
+          style={{ fontSize: Math.max(10, px * 0.3), lineHeight: 1 }}
           title="Recent tournament champion"
         >
-          <Icon name="workspace_premium" size={Math.max(12, size * 0.32)} className="text-brand-gold-light" />
+          <Icon name="workspace_premium" size={Math.max(12, px * 0.32)} className="text-brand-gold-light" />
         </div>
       )}
 
       {isVerified && !isLive && (
         <div
-          className="absolute -bottom-0.5 -right-0.5 z-20 w-4 h-4 rounded-full bg-brand-cyan flex items-center justify-center border-2 border-bg-dark"
+          className="absolute -bottom-0.5 -right-0.5 z-20 w-4 h-4 rounded-full bg-brand-violet flex items-center justify-center border-2 border-bg-dark"
         >
           <Icon name="check" size={10} className="text-bg-dark font-bold" />
         </div>

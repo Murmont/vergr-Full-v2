@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useUser } from '../../context/UserContext';
+import { StackSkeleton } from '../../components/skeletons/GlassSkeletons';
 import { getFollowers, getTransactions } from '../../firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../../firebase/config';
@@ -164,14 +165,12 @@ export default function CreatorAudienceScreen() {
       </div>
 
       {loading ? (
-        <div className="flex items-center justify-center py-24">
-          <div className="w-8 h-8 rounded-full border-2 border-white/10 border-t-brand-cyan animate-spin" />
-        </div>
+        <StackSkeleton rows={5} height={88} />
       ) : (
         <>
           {/* KPIs */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 mb-6">
-            <KpiCard label="Followers" value={totalFollowers} icon="groups" iconColor="text-brand-cyan"
+            <KpiCard label="Followers" value={totalFollowers} icon="groups" iconColor="text-brand-violet-light"
               spark={growth.map(g => g.Followers)} sparkColor={PALETTE.cyan}
               delta={gainedInPeriod} deltaLabel={`new in ${period}`} />
             <KpiCard label="Paying fans" value={payingCount} icon="workspace_premium" iconColor="text-brand-violet"
@@ -200,7 +199,7 @@ export default function CreatorAudienceScreen() {
               <SectionHeader title="Gender split" subtitle={hasAudienceData ? `${consentedFollowers} consented` : 'Not enough data'} />
               {audienceLoading ? (
                 <div className="h-[220px] flex items-center justify-center">
-                  <div className="w-6 h-6 rounded-full border-2 border-white/10 border-t-brand-cyan animate-spin" />
+                  <div className="w-6 h-6 rounded-full border-2 border-white/10 border-t-brand-violet animate-spin" />
                 </div>
               ) : hasAudienceData && gender.length ? (
                 <>
@@ -302,7 +301,7 @@ export default function CreatorAudienceScreen() {
                         className="w-full rounded-sm"
                         style={{
                           height: 42,
-                          backgroundColor: `rgba(77, 255, 212, ${0.08 + intensity * 0.75})`,
+                          backgroundColor: `rgba(180,79,255, ${0.08 + intensity * 0.75})`,
                         }}
                         title={`${h}:00 — ${v}`}
                       />
@@ -325,7 +324,7 @@ export default function CreatorAudienceScreen() {
           <Card className="p-4 md:p-5">
             <SectionHeader title="Your top supporters"
               subtitle="Fans who tip, sub, or buy memberships"
-              right={<button onClick={() => navigate('/creator/earnings')} className="text-xs font-bold text-brand-cyan hover:underline">View all</button>}
+              right={<button onClick={() => navigate('/creator/earnings')} className="text-xs font-bold text-brand-violet-light hover:underline">View all</button>}
             />
             {payingFans.length === 0 ? (
               <div className="py-10 text-center text-text-muted text-sm">No paying fans yet — share your profile to get your first tip.</div>

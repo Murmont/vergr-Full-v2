@@ -3,6 +3,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useUI } from '../../context/UIContext';
 import VergrLogo from '../../components/VergrLogo';
 import Icon from '../../components/Icon';
+import { IS_HUAWEI_BUILD } from '../../utils/platform';
 
 export default function SocialLoginScreen() {
   const navigate = useNavigate();
@@ -11,8 +12,12 @@ export default function SocialLoginScreen() {
 
   const handleGoogle = async () => { try { await loginWithGoogle(); navigate('/', { replace: true }); } catch(e) { showToast(e.message, 'error'); }};
 
+  // Google sign-in needs Google Play Services, absent on Huawei devices, so the
+  // option is dropped on the AppGallery build rather than offered and failing.
   const socials = [
-    { id: 'google', label: 'Continue with Google', icon: 'chrome', color: 'bg-white/5 hover:bg-white/10', handler: handleGoogle },
+    ...(IS_HUAWEI_BUILD ? [] : [
+      { id: 'google', label: 'Continue with Google', icon: 'chrome', color: 'bg-white/5 hover:bg-white/10', handler: handleGoogle },
+    ]),
     { id: 'discord', label: 'Continue with Discord', icon: 'message-circle', color: 'bg-[#5865F2]/10 hover:bg-[#5865F2]/20', handler: () => showToast('Discord login coming soon', 'info') },
     { id: 'twitch', label: 'Continue with Twitch', icon: 'tv', color: 'bg-[#9146FF]/10 hover:bg-[#9146FF]/20', handler: () => showToast('Twitch login coming soon', 'info') },
   ];

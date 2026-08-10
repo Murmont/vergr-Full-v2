@@ -46,7 +46,7 @@ export default function PrizeReceiptScreen() {
   }, [tournamentId, stateAmount]);
 
   const share = async () => {
-    const url = `${window.location.origin}/#/prize-receipt/${tournamentId || ''}`;
+    const url = `${window.location.origin}/prize-receipt/${tournamentId || ''}`;
     const text = `I won${amount ? ` ${amount.toLocaleString()} coins` : ''} in ${name || 'a tournament'} on VERGR!`;
     try {
       if (navigator.share) await navigator.share({ title: 'VERGR Prize', text, url });
@@ -66,7 +66,7 @@ export default function PrizeReceiptScreen() {
       <button onClick={share} className="w-full max-w-xs py-4 rounded-2xl bg-brand-gold text-bg-dark font-bold mb-3 flex items-center justify-center gap-2">
         <Icon name="share" size={18} /> Share
       </button>
-      <button onClick={() => navigate('/wallet')} className="w-full max-w-xs py-4 rounded-2xl bg-brand-cyan text-bg-dark font-bold mb-3">View Wallet</button>
+      <button onClick={() => navigate('/wallet')} className="w-full max-w-xs py-4 rounded-2xl bg-brand-violet text-white font-bold mb-3">View Wallet</button>
       <button onClick={() => navigate('/')} className="text-text-secondary text-sm font-semibold">Home</button>
     </div>
   );

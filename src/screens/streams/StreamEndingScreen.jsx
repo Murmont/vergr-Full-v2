@@ -19,8 +19,8 @@ export default function StreamEndingScreen() {
 
   return (
     <div className={isDesktop ? "min-h-screen flex flex-col items-center justify-center px-6 pb-8" : "screen-container min-h-screen flex flex-col items-center justify-center px-6 pb-8"}>
-      <div className="w-20 h-20 rounded-full bg-brand-cyan/10 flex items-center justify-center mb-6">
-        <Icon name="live_tv" size={40} className="text-brand-cyan" />
+      <div className="w-20 h-20 rounded-full bg-brand-violet/10 flex items-center justify-center mb-6">
+        <Icon name="live_tv" size={40} className="text-brand-violet-light" />
       </div>
       <h1 className="font-syne text-2xl font-bold mb-2">Stream Ended</h1>
       <p className="text-text-muted text-sm mb-6">Great stream! Here is your summary.</p>
@@ -40,7 +40,7 @@ export default function StreamEndingScreen() {
         ))}
       </div>
 
-      <button onClick={() => navigate('/')} className="w-full py-4 rounded-2xl bg-brand-cyan text-bg-dark font-bold">Back Home</button>
+      <button onClick={() => navigate('/')} className="w-full py-4 rounded-2xl bg-brand-violet text-white font-bold">Back Home</button>
     </div>
   );
 }

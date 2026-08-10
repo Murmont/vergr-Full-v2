@@ -14,7 +14,7 @@ export default function BackgroundPickerModal({ isOpen, onClose, squadId, curren
 
   const colors = [
     '#0B0B0F', '#1A1B1F', '#2A2C32', '#3A3C44', '#4A4C56',
-    '#4DFFD4', '#7B6FFF', '#FF6B4A', '#FFD93D', '#C56CF0'
+    '#B44FFF', '#7B6FFF', '#FF6B4A', '#FFD93D', '#C56CF0'
   ];
 
   const [uploadedImageUrl, setUploadedImageUrl] = useState(currentBackground === 'image' ? currentValue : null);
@@ -54,13 +54,13 @@ export default function BackgroundPickerModal({ isOpen, onClose, squadId, curren
         <div className="flex gap-2">
           <button
             onClick={() => setSelectedType('color')}
-            className={`flex-1 py-2 rounded-lg font-semibold text-sm ${selectedType === 'color' ? 'bg-brand-cyan text-bg-dark' : 'bg-surface-2 text-text-muted'}`}
+            className={`flex-1 py-2 rounded-lg font-semibold text-sm ${selectedType === 'color' ? 'bg-brand-violet text-white' : 'bg-surface-2 text-text-muted'}`}
           >
             Color
           </button>
           <button
             onClick={() => setSelectedType('image')}
-            className={`flex-1 py-2 rounded-lg font-semibold text-sm ${selectedType === 'image' ? 'bg-brand-cyan text-bg-dark' : 'bg-surface-2 text-text-muted'}`}
+            className={`flex-1 py-2 rounded-lg font-semibold text-sm ${selectedType === 'image' ? 'bg-brand-violet text-white' : 'bg-surface-2 text-text-muted'}`}
           >
             Image
           </button>
@@ -89,7 +89,7 @@ export default function BackgroundPickerModal({ isOpen, onClose, squadId, curren
 
         {selectedType === 'image' && (
           <div>
-            <label className="block w-full p-4 border-2 border-dashed border-white/[0.06] rounded-xl text-center cursor-pointer hover:border-brand-cyan transition-colors">
+            <label className="block w-full p-4 border-2 border-dashed border-white/[0.06] rounded-xl text-center cursor-pointer hover:border-brand-violet transition-colors">
               <Icon name="cloud_upload" size={32} className="mx-auto text-text-muted mb-2" />
               <span className="text-sm text-text-muted">Click to upload image</span>
               <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
@@ -111,7 +111,7 @@ export default function BackgroundPickerModal({ isOpen, onClose, squadId, curren
         <button
           onClick={handleSave}
           disabled={uploading}
-          className="w-full py-3 rounded-xl bg-brand-cyan text-bg-dark font-bold text-sm"
+          className="w-full py-3 rounded-xl bg-brand-violet text-white font-bold text-sm"
         >
           {uploading ? 'Uploading...' : 'Apply Background'}
         </button>

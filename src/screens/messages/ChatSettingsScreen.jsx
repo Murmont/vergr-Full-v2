@@ -4,23 +4,29 @@ import { doc, onSnapshot, updateDoc, arrayRemove } from 'firebase/firestore';
 import { uploadToR2 } from '../../utils/r2Storage';
 import { db, auth } from '../../firebase/config';
 import Icon from '../../components/Icon';
+import { TTL_OPTIONS } from '../../utils/disappearing';
+import { StackSkeleton } from '../../components/skeletons/GlassSkeletons';
 import UserAvatar from '../../components/UserAvatar';
 import { useLayout } from '../../context/LayoutContext';
 import useResponsive from '../../hooks/useResponsive';
+import { IS_NATIVE_BUILD } from '../../utils/platform';
 import {
   CHAT_BACKGROUNDS,
   BG_CATEGORIES,
   getBackgroundsByCategory,
   getChatBgStyle,
+  resizeCustomBackground,
   getChatBackground,
 } from '../../utils/chatBackgrounds';
 import BackgroundPreviewModal from '../../components/BackgroundPreviewModal';
+import usePresenceMap from '../../hooks/usePresenceMap';
+import { peekChatUser } from '../../utils/chatIdentity';
 
 export default function ChatSettingsScreen() {
   const { chatId } = useParams();
   const navigate = useNavigate();
   const { setRightPanel, setContentAlign } = useLayout();
-  const { isMobile } = useResponsive();
+  const { isMobile, isDesktop } = useResponsive();
   const [chat, setChat] = useState(null);
   const [showBgPicker, setShowBgPicker] = useState(false);
   const [selectedBg, setSelectedBg] = useState('bg_1');
@@ -48,10 +54,32 @@ export default function ChatSettingsScreen() {
     });
   }, [chatId]);
 
+  // Live RTDB presence for everyone in this chat (1:1 or group members).
+  const me = auth.currentUser?.uid;
+  const presMap = usePresenceMap(
+    (chat?.participants || []).filter((id) => id !== me),
+  );
+
   const canEditBackground = () => {
     if (!chat || !auth.currentUser) return false;
     if (!chat.isGroup) return chat.participants?.includes(auth.currentUser.uid);
     return chat.createdBy === auth.currentUser.uid;
+  };
+
+  // Disappearing messages. Group = admins/creator only, DM = either party
+  // (mirrors the Firestore rule, which is what actually enforces it).
+  const chatTtl = Number(chat?.ttlSeconds) || 0;
+  const canSetTtl = () => {
+    if (!chat || !auth.currentUser) return false;
+    if (!chat.isGroup) return chat.participants?.includes(auth.currentUser.uid);
+    return chat.createdBy === auth.currentUser.uid
+      || (chat.admins || []).includes(auth.currentUser.uid);
+  };
+  const applyTtl = async (seconds) => {
+    if (seconds === chatTtl) return;
+    try {
+      await updateDoc(doc(db, 'conversations', chatId), { ttlSeconds: seconds });
+    } catch (err) { console.error('Failed to set auto-delete:', err); }
   };
 
   const applyBackground = async (bgId) => {
@@ -72,7 +100,30 @@ export default function ChatSettingsScreen() {
 
     setUploading(true);
     try {
-      const { url } = await uploadToR2(file, 'post');
+      // Resize + compress in the browser before upload. Returns a WebP blob
+      // targeted at mobile (portrait) or desktop (landscape) based on the
+      // source aspect ratio.
+      const resized = await resizeCustomBackground(file).catch(() => null);
+      let toUpload = file;
+      if (resized?.blob) {
+        // Warn the user if their upload's orientation doesn't match their
+        // current device — it'll stretch on the other form factor.
+        if (resized.orientation === 'mobile' && isDesktop) {
+          const proceed = window.confirm(
+            'Your image is portrait (mobile-sized). On desktop it will be stretched to fit the wider screen. Upload anyway?',
+          );
+          if (!proceed) { setUploading(false); e.target.value = ''; return; }
+        } else if (resized.orientation === 'desktop' && !isDesktop) {
+          const proceed = window.confirm(
+            'Your image is landscape (desktop-sized). On mobile it may be cropped or letterboxed. Upload anyway?',
+          );
+          if (!proceed) { setUploading(false); e.target.value = ''; return; }
+        }
+        // Wrap the blob back into a File so uploadToR2 (which keys by name)
+        // gets a stable filename.
+        toUpload = new File([resized.blob], `chatbg_${Date.now()}.webp`, { type: resized.type });
+      }
+      const { url } = await uploadToR2(toUpload, 'post');
       setCustomImageUrl(url);
       setSelectedBg('custom_image');
       await updateDoc(doc(db, 'conversations', chatId), { chatBackground: 'custom_image', chatBackgroundImage: url });
@@ -96,21 +147,19 @@ export default function ChatSettingsScreen() {
     navigate('/messages');
   };
 
-  if (!chat) return (
-    <div className="min-h-full flex items-center justify-center">
-      <div className="w-8 h-8 border-2 border-brand-cyan border-t-transparent rounded-full animate-spin" />
-    </div>
-  );
+  if (!chat) return <div className="min-h-full"><StackSkeleton rows={4} height={64} /></div>;
 
   const otherUserId = chat.participants?.find(id => id !== auth.currentUser?.uid);
-  const otherUser = chat.metadata?.[otherUserId];
+  // Live identity from the persisted cache first; chat.metadata is a frozen
+  // creation-time snapshot and renders someone's old name/avatar.
+  const otherUser = peekChatUser(otherUserId) || chat.metadata?.[otherUserId];
   const bgsByCategory = getBackgroundsByCategory();
 
   return (
     <div className="min-h-full">
       {/* Header */}
       {isMobile ? (
-        <header className="sticky top-0 z-40 glass-header flex items-center gap-3 px-5 py-4 border-b border-white/[0.04]">
+        <header className="sticky top-0 z-40 glass-header flex items-center gap-3 px-5 py-4 border-b border-white/[0.04]" style={IS_NATIVE_BUILD ? { paddingTop: 'calc(env(safe-area-inset-top, 0px) + 12px)' } : undefined}>
           <button onClick={() => navigate(-1)} className="text-white/80"><Icon name="arrow_back" size={24} /></button>
           <h1 className="text-white font-syne font-bold text-lg">{chat.isGroup ? 'Group Info' : 'Chat Details'}</h1>
         </header>
@@ -133,14 +182,83 @@ export default function ChatSettingsScreen() {
             )}
           </div>
           <h2 className="text-xl font-bold text-white">
-            {chat.isGroup ? chat.groupName : otherUser?.name || 'Direct Message'}
+            {chat.isGroup ? chat.groupName : (otherUser?.displayName || otherUser?.username || otherUser?.name) || 'Direct Message'}
           </h2>
-          {!chat.isGroup && otherUser?.status && (
-            <p className={`text-xs mt-1 font-bold ${otherUser.status === 'online' ? 'text-green-400' : 'text-text-muted'}`}>
-              {otherUser.status === 'online' ? 'Online' : 'Offline'}
+          {!chat.isGroup && otherUserId && (
+            <p className={`text-xs mt-1 font-bold ${presMap[otherUserId] ? 'text-green-400' : 'text-text-muted'}`}>
+              {presMap[otherUserId] ? 'Online' : 'Offline'}
             </p>
           )}
           {chat.isGroup && <p className="text-xs text-text-muted mt-1">{chat.participants?.length || 0} members</p>}
+        </div>
+
+        {/* ═══════ Group Visibility (owner only) ═══════ */}
+        {chat.isGroup && chat.createdBy === auth.currentUser?.uid && (
+          <div className="mb-6">
+            <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest px-1 mb-3">Visibility</p>
+            <div className="bg-surface-1 rounded-2xl border border-white/[0.06] p-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-brand-violet/10 flex items-center justify-center shrink-0">
+                  <Icon name={chat.visibility === 'public' ? 'public' : 'lock'} size={20} className="text-brand-violet-light" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold text-white">
+                    {chat.visibility === 'public' ? 'Public group' : 'Private group'}
+                  </p>
+                  <p className="text-[11px] text-text-muted leading-snug mt-0.5">
+                    {chat.visibility === 'public'
+                      ? 'Anyone can find this group in Browse Groups and join.'
+                      : 'Only invited members can see and join this group.'}
+                  </p>
+                </div>
+                <button
+                  onClick={async () => {
+                    const next = chat.visibility === 'public' ? 'private' : 'public';
+                    try {
+                      await updateDoc(doc(db, 'conversations', chatId), { visibility: next });
+                    } catch (err) {
+                      console.error('Failed to update visibility', err);
+                    }
+                  }}
+                  role="switch"
+                  aria-checked={chat.visibility === 'public'}
+                  className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ${
+                    chat.visibility === 'public' ? 'bg-brand-violet' : 'bg-white/[0.12]'
+                  }`}
+                >
+                  <span
+                    className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform ${
+                      chat.visibility === 'public' ? 'translate-x-5' : ''
+                    }`}
+                  />
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ═══════ Auto-delete (disappearing messages) ═══════ */}
+        <div className="mb-6">
+          <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest px-1 mb-3">Auto-delete</p>
+          <div className="bg-surface-1 rounded-2xl border border-white/[0.06] overflow-hidden">
+            {TTL_OPTIONS.map((o) => (
+              <button
+                key={o.seconds}
+                onClick={() => canSetTtl() && applyTtl(o.seconds)}
+                disabled={!canSetTtl()}
+                className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-surface-2 transition-colors disabled:opacity-50 border-b border-white/[0.03] last:border-b-0"
+              >
+                <Icon name="timer" size={18} className={chatTtl === o.seconds ? 'text-brand-violet-light' : 'text-text-muted'} />
+                <span className={`text-sm flex-1 ${chatTtl === o.seconds ? 'text-brand-violet-light font-bold' : 'text-text-primary'}`}>{o.label}</span>
+                {chatTtl === o.seconds && <Icon name="check" size={18} className="text-brand-violet-light" />}
+              </button>
+            ))}
+          </div>
+          <p className="text-[10px] text-text-muted mt-2 px-1">
+            {canSetTtl()
+              ? 'Messages are deleted for everyone once they reach this age.'
+              : 'Only group admins can change the auto-delete timer.'}
+          </p>
         </div>
 
         {/* ═══════ Chat Background Section ═══════ */}
@@ -152,7 +270,7 @@ export default function ChatSettingsScreen() {
             onClick={() => canEditBackground() && setShowBgPicker(!showBgPicker)}
             className="w-full bg-surface-1 rounded-2xl border border-white/[0.06] overflow-hidden hover:border-white/[0.12] transition-all group"
           >
-            <div className="h-28 w-full relative overflow-hidden" style={getChatBgStyle(selectedBg, customImageUrl)}>
+            <div className="h-28 w-full relative overflow-hidden" style={getChatBgStyle(selectedBg, customImageUrl, { isDesktop })}>
               <div className="absolute inset-0 p-4 flex flex-col justify-center gap-2 relative">
                 <div className="flex justify-start">
                   <div className="bg-surface-2/90 border border-white/[0.04] rounded-2xl rounded-bl-sm px-4 py-2 max-w-[55%]">
@@ -160,7 +278,7 @@ export default function ChatSettingsScreen() {
                   </div>
                 </div>
                 <div className="flex justify-end">
-                  <div className="bg-brand-cyan rounded-2xl rounded-br-sm px-4 py-2 max-w-[55%]">
+                  <div className="bg-brand-violet rounded-2xl rounded-br-sm px-4 py-2 max-w-[55%]">
                     <p className="text-[11px] text-bg-dark/70">GG! Let's run it back</p>
                   </div>
                 </div>
@@ -168,13 +286,13 @@ export default function ChatSettingsScreen() {
             </div>
             <div className="flex items-center justify-between p-3 bg-surface-2/50">
               <div className="flex items-center gap-2">
-                <Icon name="wallpaper" size={18} className="text-brand-cyan" />
+                <Icon name="wallpaper" size={18} className="text-brand-violet-light" />
                 <span className="text-sm text-text-primary font-medium">
                   {getChatBackground(selectedBg)?.name || 'Wallpaper'}
                 </span>
               </div>
               {canEditBackground() && (
-                <div className="flex items-center gap-1 text-text-muted group-hover:text-brand-cyan transition-colors">
+                <div className="flex items-center gap-1 text-text-muted group-hover:text-brand-violet-light transition-colors">
                   <span className="text-[10px] font-bold uppercase tracking-wider">Change</span>
                   <Icon name={showBgPicker ? 'expand_less' : 'expand_more'} size={18} />
                 </div>
@@ -201,12 +319,12 @@ export default function ChatSettingsScreen() {
                       <button key={bg.id}
                         onClick={() => handleBgClick(bg)}
                         className={`relative aspect-square rounded-xl overflow-hidden border-2 transition-all active:scale-95 ${
-                          selectedBg === bg.id ? 'border-brand-cyan border-brand-cyan' : 'border-white/[0.04] hover:border-white/20'
+                          selectedBg === bg.id ? 'border-brand-violet border-brand-violet' : 'border-white/[0.04] hover:border-white/20'
                         }`}
                       >
-                        <div className="absolute inset-0" style={{ ...getChatBgStyle(bg.id, ''), backgroundSize: 'cover', backgroundRepeat: 'no-repeat' }} />
+                        <div className="absolute inset-0" style={{ ...getChatBgStyle(bg.id, '', { isDesktop }), backgroundSize: 'cover', backgroundRepeat: 'no-repeat' }} />
                         {selectedBg === bg.id && (
-                          <div className="absolute top-1 left-1 w-4 h-4 rounded-full bg-brand-cyan flex items-center justify-center">
+                          <div className="absolute top-1 left-1 w-4 h-4 rounded-full bg-brand-violet flex items-center justify-center">
                             <Icon name="check" size={12} className="text-bg-dark" />
                           </div>
                         )}
@@ -224,23 +342,23 @@ export default function ChatSettingsScreen() {
                   <button
                     onClick={() => fileInputRef.current?.click()}
                     className={`relative aspect-square rounded-xl overflow-hidden border-2 transition-all active:scale-95 ${
-                      selectedBg === 'custom_image' ? 'border-brand-cyan border-brand-cyan' : 'border-white/[0.04] hover:border-white/20'
+                      selectedBg === 'custom_image' ? 'border-brand-violet border-brand-violet' : 'border-white/[0.04] hover:border-white/20'
                     }`}
                   >
                     <div className="absolute inset-0 flex items-center justify-center bg-surface-2">
                       <Icon name="add_photo_alternate" size={24} className="text-text-muted" />
                     </div>
                     {selectedBg === 'custom_image' && (
-                      <div className="absolute top-1 left-1 w-4 h-4 rounded-full bg-brand-cyan flex items-center justify-center">
+                      <div className="absolute top-1 left-1 w-4 h-4 rounded-full bg-brand-violet flex items-center justify-center">
                         <Icon name="check" size={12} className="text-bg-dark" />
                       </div>
                     )}
                   </button>
                 </div>
                 {uploading && (
-                  <div className="flex items-center gap-3 px-4 py-3 bg-brand-cyan/5 border-t border-brand-cyan/20">
-                    <div className="w-5 h-5 border-2 border-brand-cyan border-t-transparent rounded-full animate-spin" />
-                    <span className="text-xs text-brand-cyan font-bold">Uploading image...</span>
+                  <div className="flex items-center gap-3 px-4 py-3 bg-brand-violet/5 border-t border-brand-violet/20">
+                    <div className="w-5 h-5 border-2 border-brand-violet border-t-transparent rounded-full animate-spin" />
+                    <span className="text-xs text-brand-violet-light font-bold">Uploading image...</span>
                   </div>
                 )}
               </div>
@@ -275,7 +393,7 @@ export default function ChatSettingsScreen() {
                         {isMe && <span className="text-[8px] font-bold text-text-muted uppercase">(you)</span>}
                       </div>
                     </div>
-                    <div className={`w-2 h-2 rounded-full ${member?.status === 'online' ? 'bg-green-400' : 'bg-text-muted/30'}`} />
+                    <div className={`w-2 h-2 rounded-full ${presMap[uid] ? 'bg-green-400' : 'bg-text-muted/30'}`} />
                   </button>
                 );
               })}

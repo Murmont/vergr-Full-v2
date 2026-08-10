@@ -1,7 +1,9 @@
 import { Fragment, useMemo, useState } from 'react';
+import CachedImg from './CachedImg';
 import { Dialog, Transition } from '@headlessui/react';
 import { useNavigate } from 'react-router-dom';
 import { useNotifications } from '../context/NotificationContext';
+import { useMergedNotifications } from '../hooks/useMergedNotifications';
 import { useUI } from '../context/UIContext';
 import Icon from './Icon';
 import { timeAgo } from '../utils/helpers';
@@ -9,27 +11,33 @@ import { timeAgo } from '../utils/helpers';
 // Custom .webp icons live in /public/notif-icons/ (sourced from design upload).
 // Falls back to Material Symbols for types without a custom icon.
 const NOTIF_ICONS = {
-  follow:     { icon: 'person_add',       color: 'text-brand-cyan',   bg: 'bg-brand-cyan/15' },
+  follow:     { icon: 'person_add',       color: 'text-brand-violet-light',   bg: 'bg-brand-violet/15' },
   like:       { icon: 'favorite',         color: 'text-brand-ember',  bg: 'bg-brand-ember/15',  webp: '/notif-icons/like.webp' },
   comment:    { icon: 'chat_bubble',      color: 'text-brand-violet', bg: 'bg-brand-violet/15', webp: '/notif-icons/comment.webp' },
   tip:        { icon: 'monetization_on',  color: 'text-brand-gold',   bg: 'bg-brand-gold/15',   webp: '/notif-icons/coins.webp' },
   coins:      { icon: 'paid',             color: 'text-brand-gold',   bg: 'bg-brand-gold/15',   webp: '/notif-icons/coins.webp' },
   vp:         { icon: 'auto_awesome',     color: 'text-brand-violet', bg: 'bg-brand-violet/15', webp: '/notif-icons/vp.webp' },
+  gem_transfer: { icon: 'diamond',       color: 'text-gem-blue',     bg: 'bg-gem-blue/15' },
   security:   { icon: 'security',         color: 'text-brand-ember',  bg: 'bg-brand-ember/15',  webp: '/notif-icons/security.webp' },
-  system:     { icon: 'info',             color: 'text-brand-cyan',   bg: 'bg-brand-cyan/15',   webp: '/notif-icons/system.webp' },
+  system:     { icon: 'info',             color: 'text-brand-violet-light',   bg: 'bg-brand-violet/15',   webp: '/notif-icons/system.webp' },
   update:     { icon: 'campaign',         color: 'text-brand-violet', bg: 'bg-brand-violet/15', webp: '/notif-icons/system.webp' },
   membership: { icon: 'card_membership',  color: 'text-brand-pink',   bg: 'bg-brand-pink/15' },
   order:      { icon: 'shopping_bag',     color: 'text-brand-violet', bg: 'bg-brand-violet/15' },
   tournament: { icon: 'emoji_events',     color: 'text-brand-gold',   bg: 'bg-brand-gold/15' },
-  squad:      { icon: 'shield',           color: 'text-brand-cyan',   bg: 'bg-brand-cyan/15' },
-  message:    { icon: 'chat',             color: 'text-brand-violet', bg: 'bg-brand-violet/15' },
+  squad:      { icon: 'shield',           color: 'text-brand-violet-light', bg: 'bg-brand-violet-light/15' },
+  squad_invite:            { icon: 'mail',           color: 'text-brand-violet-light', bg: 'bg-brand-violet-light/15' },
+  squad_challenge_reward:  { icon: 'military_tech',  color: 'text-brand-gold',   bg: 'bg-brand-gold/15', webp: '/notif-icons/vp.webp' },
+  message:     { icon: 'chat',            color: 'text-brand-ember',  bg: 'bg-brand-ember/15' },
+  request:     { icon: 'mark_email_unread', color: 'text-brand-gold', bg: 'bg-brand-gold/15' },
+  missed_call: { icon: 'call_missed',     color: 'text-success-green', bg: 'bg-success-green/15' },
 };
 
 const FILTERS = [
-  { id: 'all',     label: 'All',     match: () => true },
-  { id: 'tips',    label: 'Tips',    match: n => ['tip','coins','vp'].includes(n.type) },
-  { id: 'social',  label: 'Social',  match: n => ['follow','like','comment','message','squad'].includes(n.type) },
-  { id: 'system',  label: 'System',  match: n => ['system','update','security'].includes(n.type) },
+  { id: 'all',      label: 'All',      match: () => true },
+  { id: 'messages', label: 'Messages', match: n => ['message','squad','request','missed_call'].includes(n.type) || n._kind === 'squad_message' },
+  { id: 'tips',     label: 'Tips',     match: n => ['tip','coins','vp','gem_transfer'].includes(n.type) },
+  { id: 'social',   label: 'Social',   match: n => ['follow','like','comment','squad_invite','squad_challenge_reward'].includes(n.type) },
+  { id: 'system',   label: 'System',   match: n => ['system','update','security'].includes(n.type) },
 ];
 
 function bucketLabel(ts) {
@@ -47,7 +55,8 @@ function bucketLabel(ts) {
 
 export default function NotificationsDrawer() {
   const { notificationsDrawerOpen, setNotificationsDrawerOpen } = useUI();
-  const { notifications, markRead, markAllRead, unreadNotifCount } = useNotifications();
+  const { markRead, markAllRead, unreadNotifCount } = useNotifications();
+  const { items: notifications, routeFor } = useMergedNotifications();
   const navigate = useNavigate();
   const [expandedId, setExpandedId] = useState(null);
   const [filterId, setFilterId] = useState('all');
@@ -76,25 +85,22 @@ export default function NotificationsDrawer() {
     return isNaN(d.getTime()) ? '' : timeAgo(d);
   };
 
+  const handleNavigate = (notif) => {
+    closeDrawer();
+    const path = routeFor(notif);
+    if (path) navigate(path);
+  };
+
   const handleClick = (notif) => {
+    // Synthetic rows (messages / squad / request / call) open their target
+    // directly — there's no doc to expand or mark read; they clear when the
+    // thread is opened.
+    if (notif._kind && notif._kind !== 'doc') { handleNavigate(notif); return; }
     if (!notif.read) markRead(notif.id);
     setExpandedId(expandedId === notif.id ? null : notif.id);
   };
 
-  const handleNavigate = (notif) => {
-    closeDrawer();
-    const postId = notif.postId || notif.data?.postId;
-    const userId = notif.senderId || notif.userId || notif.data?.senderId;
-    const squadId = notif.squadId || notif.data?.squadId;
-    const orderId = notif.data?.orderId;
-    if (postId) navigate(`/post/${postId}`);
-    else if (orderId) navigate(`/orders/${orderId}`);
-    else if (squadId) navigate(`/squads/${squadId}`);
-    else if (userId) navigate(`/user/${userId}`);
-    else if (notif.actionUrl) navigate(notif.actionUrl);
-  };
-
-  const hasLink = (notif) => !!(notif.postId || notif.data?.postId || notif.senderId || notif.data?.senderId || notif.squadId || notif.data?.squadId || notif.data?.orderId || notif.actionUrl);
+  const hasLink = (notif) => !!routeFor(notif);
 
   return (
     <Transition show={notificationsDrawerOpen} as={Fragment}>
@@ -183,9 +189,16 @@ export default function NotificationsDrawer() {
                               <div key={notif.id}>
                                 <button onClick={() => handleClick(notif)}
                                   className={`w-full px-4 py-3 text-left transition-colors flex items-start gap-3 ${
-                                    !notif.read ? 'bg-brand-cyan/5 hover:bg-brand-cyan/8' : 'hover:bg-surface-1/50'
+                                    !notif.read ? 'bg-brand-violet/5 hover:bg-brand-violet/8' : 'hover:bg-surface-1/50'
                                   }`}>
-                                  {style.webp ? (
+                                  {notif._kind && notif._kind !== 'doc' && notif.senderAvatar ? (
+                                    <div className="relative shrink-0 mt-0.5">
+                                      <CachedImg src={notif.senderAvatar} permanent alt="" className="w-9 h-9 rounded-full object-cover" />
+                                      <span className={`absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full ${style.bg} flex items-center justify-center ring-2 ring-bg-dark`}>
+                                        <Icon name={style.icon} size={10} className={style.color} />
+                                      </span>
+                                    </div>
+                                  ) : style.webp ? (
                                     <img src={style.webp} alt="" className="w-9 h-9 object-contain shrink-0 mt-0.5" />
                                   ) : (
                                     <div className={`w-9 h-9 rounded-xl ${style.bg} flex items-center justify-center shrink-0 mt-0.5`}>
@@ -201,7 +214,7 @@ export default function NotificationsDrawer() {
                                     )}
                                     <p className="text-[10px] text-text-muted font-dmmono mt-1">{formatDate(notif.createdAt)}</p>
                                   </div>
-                                  {!notif.read && <div className="w-2 h-2 rounded-full bg-brand-cyan shrink-0 mt-2" />}
+                                  {!notif.read && <div className="w-2 h-2 rounded-full bg-brand-violet shrink-0 mt-2" />}
                                 </button>
 
                                 {isExpanded && (
@@ -215,7 +228,7 @@ export default function NotificationsDrawer() {
                                     <div className="flex gap-2">
                                       {hasLink(notif) && (
                                         <button onClick={() => handleNavigate(notif)}
-                                          className="px-3 py-1.5 rounded-lg bg-brand-cyan/10 border border-brand-cyan/15 text-brand-cyan text-xs font-semibold hover:bg-brand-cyan/15 transition-colors">
+                                          className="px-3 py-1.5 rounded-lg bg-brand-violet/10 border border-brand-violet/15 text-brand-violet-light text-xs font-semibold hover:bg-brand-violet/15 transition-colors">
                                           View
                                         </button>
                                       )}

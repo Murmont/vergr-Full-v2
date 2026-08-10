@@ -42,7 +42,7 @@ export default function CreateTextPostScreen() {
 
   const remaining = MAX_CHARS - content.length;
   const pct = (content.length / MAX_CHARS) * 100;
-  const ringColor = remaining < 0 ? 'text-brand-ember' : remaining < 100 ? 'text-brand-gold' : 'text-brand-cyan';
+  const ringColor = remaining < 0 ? 'text-brand-ember' : remaining < 100 ? 'text-brand-gold' : 'text-brand-violet-light';
 
   return (
     <div className="min-h-screen flex flex-col bg-bg-dark">
@@ -69,7 +69,7 @@ export default function CreateTextPostScreen() {
             <button
               onClick={handlePost}
               disabled={loading || !content.trim() || remaining < 0}
-              className="bg-brand-cyan text-bg-dark px-6 py-2 rounded-full font-bold text-sm disabled:opacity-30 hover:brightness-110 active:scale-[0.97] transition-all"
+              className="bg-brand-violet text-white px-6 py-2 rounded-full font-bold text-sm disabled:opacity-30 hover:brightness-110 active:scale-[0.97] transition-all"
             >
               {loading ? <div className="w-4 h-4 border-2 border-bg-dark/30 border-t-bg-dark rounded-full animate-spin" /> : 'Post'}
             </button>
@@ -82,10 +82,10 @@ export default function CreateTextPostScreen() {
         <div className="flex gap-3.5">
           <div className="shrink-0 pt-1">
             <UserAvatar src={profile?.avatar || profile?.photoURL} size={44} />
-            <div className="w-0.5 mx-auto mt-2 flex-1 bg-gradient-to-b from-brand-cyan/30 to-transparent min-h-[40px] rounded-full" />
+            <div className="w-0.5 mx-auto mt-2 flex-1 bg-gradient-to-b from-brand-violet/30 to-transparent min-h-[40px] rounded-full" />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-brand-cyan text-xs font-dmmono mb-2">@{profile?.username || 'you'}</p>
+            <p className="text-brand-violet-light text-xs font-dmmono mb-2">@{profile?.username || 'you'}</p>
             <textarea
               ref={textRef}
               value={content}
@@ -97,7 +97,7 @@ export default function CreateTextPostScreen() {
             {tags.length > 0 && (
               <div className="flex flex-wrap gap-1.5 mt-3 pt-3 border-t border-white/[0.04]">
                 {tags.map(tag => (
-                  <span key={tag} className="px-2.5 py-1 rounded-lg bg-brand-cyan/8 border border-brand-cyan/15 text-brand-cyan text-[11px] font-semibold">#{tag}</span>
+                  <span key={tag} className="px-2.5 py-1 rounded-lg bg-brand-violet/8 border border-brand-violet/15 text-brand-violet-light text-[11px] font-semibold">#{tag}</span>
                 ))}
               </div>
             )}
@@ -111,7 +111,7 @@ export default function CreateTextPostScreen() {
           <button onClick={() => navigate('/create/photo')} className="w-10 h-10 rounded-xl flex items-center justify-center text-text-muted hover:text-brand-violet hover:bg-brand-violet/10 transition-all" title="Add photos">
             <Icon name="image" size={20} />
           </button>
-          <button onClick={() => navigate('/create/short')} className="w-10 h-10 rounded-xl flex items-center justify-center text-text-muted hover:text-brand-cyan hover:bg-brand-cyan/10 transition-all" title="Create short">
+          <button onClick={() => navigate('/create/short')} className="w-10 h-10 rounded-xl flex items-center justify-center text-text-muted hover:text-brand-violet-light hover:bg-brand-violet/10 transition-all" title="Create short">
             <Icon name="slow_motion_video" size={20} />
           </button>
           <button onClick={() => navigate('/create/clip')} className="w-10 h-10 rounded-xl flex items-center justify-center text-text-muted hover:text-brand-ember hover:bg-brand-ember/10 transition-all" title="Upload clip">

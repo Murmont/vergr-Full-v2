@@ -100,7 +100,7 @@ export default function CreatorVerificationScreen({ embedded = false, sessionId 
 }
 
 function Spinner() {
-  return <div className="flex justify-center py-16"><div className="w-6 h-6 border-2 border-brand-cyan border-t-transparent rounded-full animate-spin" /></div>;
+  return <div className="flex justify-center py-16"><div className="w-6 h-6 border-2 border-brand-violet border-t-transparent rounded-full animate-spin" /></div>;
 }
 function Tile({ label, value }) {
   return <div className="bg-surface-1 rounded-xl p-3">

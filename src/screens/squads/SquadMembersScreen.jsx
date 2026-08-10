@@ -1,369 +1,265 @@
-import { useState, useEffect } from 'react';
+// SquadMembersScreen — roster grouped by role on the .sqd design system.
+// Preserves moderation: mute / unmute, kick-vote, follow, message.
+
+import { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useUI } from '../../context/UIContext';
 import {
-  getSquadMembers,
-  muteSquadMember,
-  unmuteSquadMember,
-  createSquadVote,
-  isFollowing,
-  followUser,
-  createConversation,
+  getSquad, getSquadMembers, muteSquadMember, unmuteSquadMember,
+  createSquadVote, followUser, isFollowing, createConversation,
 } from '../../firebase/firestore';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../firebase/config';
-import { SQUAD_ROLES, MUTE_DURATIONS } from '../../utils/constants';
-import TopBar from '../../components/TopBar';
-import UserAvatar from '../../components/UserAvatar';
-import Icon from '../../components/Icon';
+import { MUTE_DURATIONS } from '../../utils/constants';
 import Modal from '../../components/Modal';
-import useResponsive from '../../hooks/useResponsive';
+import SquadShell from '../../components/squad/SquadShell';
+import SquadInfoRail from '../../components/squad/SquadInfoRail';
+import { roleKey, roleMeta, avatarClass, initials, nameOf, compact } from '../../components/squad/squadHelpers';
+import usePresenceMap from '../../hooks/usePresenceMap';
+import { presenceVisible } from '../../utils/presence';
+
+const GROUPS = [
+  { key: 'leader', label: 'Leader', color: 'var(--gold-light)' },
+  { key: 'co', label: 'Co-Leader', color: 'var(--violet-light)' },
+  { key: 'officer', label: 'Officers', color: 'var(--cyan)' },
+  { key: 'member', label: 'Members', color: 'var(--t2)' },
+];
 
 export default function SquadMembersScreen() {
   const { squadId } = useParams();
   const { currentUser } = useAuth();
   const { showToast } = useUI();
   const navigate = useNavigate();
-  const { isMobile } = useResponsive();
 
+  const [squad, setSquad] = useState(null);
   const [members, setMembers] = useState([]);
-  const [myRole, setMyRole] = useState(null);
+  const presMap = usePresenceMap(members.map((m) => m.id));
   const [loading, setLoading] = useState(true);
-  const [selectedMember, setSelectedMember] = useState(null);
-  const [showMuteModal, setShowMuteModal] = useState(false);
   const [followingMap, setFollowingMap] = useState({});
-  
-  // Kick vote reason modal
-  const [showKickReasonModal, setShowKickReasonModal] = useState(false);
-  const [kickReason, setKickReason] = useState('');
+  const [muteTarget, setMuteTarget] = useState(null);
   const [kickTarget, setKickTarget] = useState(null);
+  const [kickReason, setKickReason] = useState('');
 
-  // Load members and role
+  const reload = async () => {
+    const [s, m] = await Promise.all([getSquad(squadId), getSquadMembers(squadId)]);
+    setSquad(s); setMembers(m);
+  };
+
   useEffect(() => {
     if (!squadId || !currentUser) return;
-    const load = async () => {
+    let alive = true;
+    (async () => {
       setLoading(true);
-      try {
-        const mems = await getSquadMembers(squadId);
-        setMembers(mems);
-        const me = mems.find(m => m.id === currentUser.uid);
-        setMyRole(me?.role);
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    load();
+      try { await reload(); } catch (e) { /* ignore */ }
+      if (alive) setLoading(false);
+    })();
+    return () => { alive = false; };
   }, [squadId, currentUser]);
 
-  // Load follow status for each member (skip self)
   useEffect(() => {
     if (!members.length || !currentUser) return;
-    const fetchFollowStatus = async () => {
-      const newMap = { ...followingMap };
-      for (const member of members) {
-        if (member.id === currentUser.uid) continue;
-        if (newMap[member.id] === undefined) {
-          const following = await isFollowing(currentUser.uid, member.id);
-          newMap[member.id] = following;
-        }
+    (async () => {
+      const map = {};
+      for (const m of members) {
+        if (m.id === currentUser.uid) continue;
+        map[m.id] = await isFollowing(currentUser.uid, m.id).catch(() => false);
       }
-      setFollowingMap(newMap);
-    };
-    fetchFollowStatus();
+      setFollowingMap(map);
+    })();
   }, [members, currentUser]);
 
+  const myRole = members.find((m) => m.id === currentUser?.uid)?.role;
   const canModerate = ['president', 'vice_president', 'security'].includes(myRole);
 
+  const grouped = useMemo(() => {
+    const g = { leader: [], co: [], officer: [], member: [] };
+    members.forEach((m) => g[roleKey(m.role)].push(m));
+    return g;
+  }, [members]);
+
+  const isMuted = (m) =>
+    m.mutedUntil && new Date(m.mutedUntil?.toDate ? m.mutedUntil.toDate() : m.mutedUntil) > new Date();
+
   const handleMute = async (duration) => {
-    if (!selectedMember) return;
+    if (!muteTarget) return;
     try {
-      await muteSquadMember(squadId, selectedMember.id, duration.ms, 'Muted by moderator');
-      showToast(`${selectedMember.user?.username} muted for ${duration.label}`, 'info');
-      setShowMuteModal(false);
-      setSelectedMember(null);
-      const mems = await getSquadMembers(squadId);
-      setMembers(mems);
-    } catch (err) {
-      showToast('Failed to mute member', 'error');
-    }
+      await muteSquadMember(squadId, muteTarget.id, duration.ms, 'Muted by moderator');
+      showToast(`${nameOf(muteTarget.user)} muted for ${duration.label}`, 'info');
+      setMuteTarget(null);
+      await reload();
+    } catch { showToast('Failed to mute member', 'error'); }
   };
-
-  const handleUnmute = async (member) => {
-    try {
-      await unmuteSquadMember(squadId, member.id);
-      showToast(`${member.user?.username} unmuted`, 'success');
-      const mems = await getSquadMembers(squadId);
-      setMembers(mems);
-    } catch (err) {
-      showToast('Failed to unmute', 'error');
-    }
+  const handleUnmute = async (m) => {
+    try { await unmuteSquadMember(squadId, m.id); showToast(`${nameOf(m.user)} unmuted`, 'success'); await reload(); }
+    catch { showToast('Failed to unmute', 'error'); }
   };
-
-  // Open reason modal before starting kick vote
-  const openKickModal = (member) => {
-    setKickTarget(member);
-    setKickReason('');
-    setShowKickReasonModal(true);
-  };
-
   const startKickVote = async () => {
     if (!kickTarget) return;
     try {
-      const voteId = await createSquadVote(
-        squadId,
-        currentUser.uid,
-        {
-          title: `Kick @${kickTarget.user?.username} from squad?`,
-          type: 'kick_member',
-          options: ['Yes - Remove', 'No - Keep'],
-          targetUserId: kickTarget.id,
-          duration: 24,
-          reason: kickReason.trim() || 'No reason provided',
-        }
-      );
-
-      // Add system message to squad chat (using current user as sender)
-      await addDoc(collection(db, 'squads', squadId, 'messages'), {
-        type: 'vote',
-        voteId: voteId,
-        senderId: currentUser.uid,
-        senderName: currentUser.displayName || 'Anonymous',
-        senderAvatar: currentUser.photoURL || '',
-        createdAt: serverTimestamp(),
-        readBy: [currentUser.uid],
+      const voteId = await createSquadVote(squadId, currentUser.uid, {
+        title: `Kick @${kickTarget.user?.username} from squad?`,
+        type: 'kick_member', options: ['Yes - Remove', 'No - Keep'],
+        targetUserId: kickTarget.id, duration: 24, reason: kickReason.trim() || 'No reason provided',
       });
-
-      showToast('Kick vote started! All members can vote for 24 hours.', 'success');
-      setShowKickReasonModal(false);
-      setKickTarget(null);
-    } catch (err) {
-      console.error('Error starting kick vote:', err);
-      showToast(`Failed to start vote: ${err.message || 'Unknown error'}`, 'error');
-    }
+      await addDoc(collection(db, 'squads', squadId, 'messages'), {
+        type: 'vote', voteId, senderId: currentUser.uid,
+        senderName: currentUser.displayName || 'Anonymous', senderAvatar: currentUser.photoURL || '',
+        createdAt: serverTimestamp(), readBy: [currentUser.uid],
+      });
+      showToast('Kick vote started — members can vote for 24h.', 'success');
+      setKickTarget(null); setKickReason('');
+    } catch (err) { showToast(`Failed to start vote: ${err?.message || 'error'}`, 'error'); }
   };
-
-  const handleFollow = async (member) => {
-    try {
-      await followUser(currentUser.uid, member.id);
-      setFollowingMap(prev => ({ ...prev, [member.id]: true }));
-      showToast(`You are now following ${member.user?.username}`, 'success');
-    } catch (err) {
-      showToast('Failed to follow', 'error');
-    }
+  const handleFollow = async (m) => {
+    try { await followUser(currentUser.uid, m.id); setFollowingMap((p) => ({ ...p, [m.id]: true })); showToast(`Following ${nameOf(m.user)}`, 'success'); }
+    catch { showToast('Failed to follow', 'error'); }
   };
-
-  const handleMessage = async (member) => {
+  const handleMessage = async (m) => {
     try {
       const convoId = await createConversation(currentUser.uid, {
-        id: member.id,
-        username: member.user?.username,
-        displayName: member.user?.displayName,
-        avatar: member.user?.avatar,
+        id: m.id, username: m.user?.username, displayName: m.user?.displayName, avatar: m.user?.avatar,
       });
       navigate(`/messages/${convoId}`);
-    } catch (err) {
-      console.error(err);
-      showToast('Could not open chat', 'error');
-    }
+    } catch { showToast('Could not open chat', 'error'); }
   };
 
-  const isMuted = (member) =>
-    member.mutedUntil &&
-    new Date(member.mutedUntil?.toDate ? member.mutedUntil.toDate() : member.mutedUntil) > new Date();
-
-  if (loading)
+  const Row = (m) => {
+    const meta = roleMeta(m.role);
+    const isMe = m.id === currentUser?.uid;
+    const muted = isMuted(m);
     return (
-      <div className="flex justify-center py-16">
-        <div className="w-6 h-6 border-2 border-surface-3 border-t-brand-cyan rounded-full animate-spin" />
-      </div>
-    );
-
-  const goToChat = () => navigate(`/squads/${squadId}/chat`);
-
-  return (
-    <div className="pb-8">
-      {/* Mobile header with back button */}
-      {isMobile ? (
-        <div className="sticky top-0 z-40 glass-header flex items-center gap-3 px-4 py-3 border-b border-white/[0.04]">
-          <button onClick={goToChat} className="text-white/80 hover:text-white transition-colors">
-            <Icon name="arrow_back" size={24} />
-          </button>
-          <h1 className="text-white font-syne font-bold text-lg">Members ({members.length})</h1>
-          {canModerate && (
-            <button
-              onClick={() => navigate(`/squads/${squadId}/invite`)}
-              className="ml-auto w-9 h-9 rounded-full bg-brand-cyan flex items-center justify-center"
-            >
-              <Icon name="person_add" size={18} className="text-bg-dark" />
-            </button>
-          )}
+      <div className="m-row" key={m.id}>
+        <div className={`m-av ${avatarClass(m.id)}`} onClick={() => navigate(`/user/${m.id}`)} style={{ cursor: 'pointer' }}>
+          {m.user?.avatar ? <img src={m.user.avatar} alt="" /> : initials(nameOf(m.user))}
+          <span className="st" style={{ background: (presenceVisible(m.user) && presMap[m.id]) ? 'var(--success)' : '#444' }} />
         </div>
-      ) : (
-        <div className="flex items-center justify-between px-4 lg:px-6 pt-4 pr-12 lg:pr-16">
-          <button onClick={() => navigate(-1)} className="text-white/80 hover:text-white transition-colors">
-            <Icon name="arrow_back" size={24} />
-          </button>
-          <h1 className="text-white font-syne font-bold text-lg">Members ({members.length})</h1>
-          <div className="w-6" />
+        <div className="m-info">
+          <div className="nm">
+            {nameOf(m.user)}
+            {isMe && <span style={{ fontSize: 9, color: 'var(--cyan)', fontWeight: 700 }}>(You)</span>}
+            {m.user?.isVerified && <span className="material-symbols-outlined verified-tick">verified</span>}
+          </div>
+          <div className="handle">@{m.user?.username || 'user'}</div>
         </div>
-      )}
-
-      <div className="px-4 py-3 space-y-2">
-        {members.map((member) => {
-          const role = SQUAD_ROLES[member.role] || SQUAD_ROLES.member;
-          const muted = isMuted(member);
-          const isMe = member.id === currentUser.uid;
-          const following = followingMap[member.id] || false;
-
-          return (
-            <div
-              key={member.id}
-              className={`flex items-center gap-3 p-3 rounded-2xl bg-surface-1 border ${
-                muted ? 'border-brand-ember/30' : 'border-white/[0.06]'
-              }`}
-            >
-              {/* Avatar */}
-              <button
-                onClick={() => !isMe && navigate(`/user/${member.user?.id || member.id}`)}
-                className="shrink-0"
-              >
-                <UserAvatar src={member.user?.avatar} size={40} />
+        <div className="m-cell">
+          <div className="lbl">Role</div>
+          <div className="v">
+            <span className={`role-pill ${meta.pill}`}>
+              {meta.icon && <span className="material-symbols-outlined">{meta.icon}</span>}{meta.label}
+            </span>
+          </div>
+        </div>
+        <div className="m-cell">
+          <div className="lbl">Level</div>
+          <div className="v mono">Lvl {m.user?.vpLevel || m.user?.level || 1}</div>
+        </div>
+        <div className="m-cell">
+          <div className="lbl">Contribution</div>
+          <div className="m-contrib">
+            <div className="bar"><div style={{ width: `${Math.min(100, (m.totalContributed || 0) / 100)}%` }} /></div>
+            <span className="v mono">{compact(m.totalContributed || 0)}</span>
+          </div>
+        </div>
+        <div className="m-actions">
+          {!isMe && (
+            <>
+              <button className="icon-btn" title="Message" onClick={() => handleMessage(m)}>
+                <span className="material-symbols-outlined">chat</span>
               </button>
-
-              {/* Name & username */}
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-1.5">
-                  <p className="text-sm font-semibold truncate">
-                    {member.user?.displayName || member.user?.username}
-                  </p>
-                  {isMe && <span className="text-[9px] text-brand-cyan font-bold">(You)</span>}
-                  {member.user?.isVerified && (
-                    <Icon name="verified" filled size={12} className="text-brand-cyan" />
-                  )}
-                </div>
-                <p className="text-xs text-text-muted">@{member.user?.username}</p>
-                {member.totalContributed > 0 && (
-                  <p className="text-[10px] text-brand-gold font-dmmono mt-0.5">
-                    {member.totalContributed} contributed
-                  </p>
-                )}
-              </div>
-
-              {/* Role badge (right side) */}
-              <div className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-brand-cyan/10 border border-brand-cyan/20 shrink-0">
-                <span className="text-xs">{role.icon}</span>
-                <span className="text-[10px] font-bold text-brand-cyan uppercase whitespace-nowrap">
-                  {role.label}
-                </span>
-              </div>
-
-              {/* Action buttons */}
-              <div className="flex gap-1 shrink-0">
-                {canModerate && !isMe && member.role === 'member' ? (
-                  <>
-                    {muted ? (
-                      <button
-                        onClick={() => handleUnmute(member)}
-                        className="px-2 py-1 rounded-lg bg-green-500/10 border border-green-500/20 text-green-500 text-[10px] font-bold whitespace-nowrap"
-                      >
-                        Unmute
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => {
-                          setSelectedMember(member);
-                          setShowMuteModal(true);
-                        }}
-                        className="px-2 py-1 rounded-lg bg-brand-ember/10 border border-brand-ember/20 text-brand-ember text-[10px] font-bold whitespace-nowrap"
-                      >
-                        Mute
-                      </button>
-                    )}
-                    <button
-                      onClick={() => openKickModal(member)}
-                      className="px-2 py-1 rounded-lg bg-surface-2 border border-white/[0.06] text-text-muted text-[10px] font-bold whitespace-nowrap"
-                    >
-                      Vote Kick
-                    </button>
-                  </>
-                ) : !isMe ? (
-                  following ? (
-                    <button
-                      onClick={() => handleMessage(member)}
-                      className="px-3 py-1 rounded-full bg-brand-cyan text-bg-dark text-xs font-bold whitespace-nowrap"
-                    >
-                      Message
+              <button className="icon-btn" title="View profile" onClick={() => navigate(`/user/${m.id}`)}>
+                <span className="material-symbols-outlined">person</span>
+              </button>
+              {!followingMap[m.id] && (
+                <button className="icon-btn" title="Follow" onClick={() => handleFollow(m)}>
+                  <span className="material-symbols-outlined">person_add</span>
+                </button>
+              )}
+              {canModerate && roleKey(m.role) === 'member' && (
+                <>
+                  {muted ? (
+                    <button className="icon-btn" title="Unmute" onClick={() => handleUnmute(m)} style={{ color: 'var(--success)' }}>
+                      <span className="material-symbols-outlined">volume_up</span>
                     </button>
                   ) : (
-                    <button
-                      onClick={() => handleFollow(member)}
-                      className="px-3 py-1 rounded-full bg-surface-2 border border-white/[0.06] text-text-primary text-xs font-bold whitespace-nowrap hover:bg-surface-3 transition-colors"
-                    >
-                      Follow
+                    <button className="icon-btn" title="Mute" onClick={() => setMuteTarget(m)} style={{ color: 'var(--ember)' }}>
+                      <span className="material-symbols-outlined">volume_off</span>
                     </button>
-                  )
-                ) : null}
+                  )}
+                  <button className="icon-btn" title="Start kick vote" onClick={() => { setKickTarget(m); setKickReason(''); }}>
+                    <span className="material-symbols-outlined">gavel</span>
+                  </button>
+                </>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const main = (
+    <main className="main">
+      <header className="page-header">
+        <div>
+          <div className="ttl">Members <span className="mono" style={{ fontSize: 14, color: 'var(--t2)', marginLeft: 8 }}>{members.length}</span></div>
+          <div className="sub">Manage roles, moderate, and invite new members</div>
+        </div>
+        <div className="actions">
+          <button className="btn ghost" onClick={() => navigate(`/squads/${squadId}/roles`)}>
+            <span className="material-symbols-outlined">admin_panel_settings</span>Roles
+          </button>
+          <button className="btn primary" onClick={() => navigate(`/squads/${squadId}/invite`)}>
+            <span className="material-symbols-outlined">person_add</span>Invite Members
+          </button>
+        </div>
+      </header>
+
+      <div className="scroll content">
+        {loading ? (
+          <div className="dim center" style={{ padding: 48 }}>Loading…</div>
+        ) : (
+          GROUPS.map((g) => grouped[g.key].length > 0 && (
+            <div key={g.key}>
+              <div className="role-header">
+                <span style={{ color: g.color }}>{g.label}</span>
+                <span className="count">{grouped[g.key].length}</span>
+                <div className="line" />
               </div>
+              <div className="list">{grouped[g.key].map(Row)}</div>
             </div>
-          );
-        })}
+          ))
+        )}
       </div>
 
-      {/* Mute modal */}
-      <Modal
-        isOpen={showMuteModal}
-        onClose={() => {
-          setShowMuteModal(false);
-          setSelectedMember(null);
-        }}
-        title={`Mute @${selectedMember?.user?.username}`}
-      >
-        <p className="text-text-secondary text-sm mb-4">
-          Choose how long to mute this member. They won't be able to send messages in squad chat.
-        </p>
+      <Modal isOpen={!!muteTarget} onClose={() => setMuteTarget(null)} title={`Mute @${muteTarget?.user?.username || ''}`}>
+        <p className="text-text-secondary text-sm mb-4">Choose how long to mute this member from squad chat.</p>
         <div className="space-y-2">
-          {MUTE_DURATIONS.map((duration) => (
-            <button
-              key={duration.label}
-              onClick={() => handleMute(duration)}
-              className="w-full p-3 rounded-xl bg-surface-2 border border-white/[0.06] text-left hover:border-white/[0.12] transition-colors"
-            >
-              <p className="text-sm font-semibold">{duration.label}</p>
+          {MUTE_DURATIONS.map((d) => (
+            <button key={d.label} onClick={() => handleMute(d)}
+              className="w-full p-3 rounded-xl bg-surface-2 border border-white/[0.06] text-left hover:border-white/[0.12] transition-colors">
+              <p className="text-sm font-semibold">{d.label}</p>
             </button>
           ))}
         </div>
       </Modal>
 
-      {/* Kick vote reason modal */}
-      <Modal
-        isOpen={showKickReasonModal}
-        onClose={() => {
-          setShowKickReasonModal(false);
-          setKickTarget(null);
-          setKickReason('');
-        }}
-        title={`Kick @${kickTarget?.user?.username}`}
-      >
-        <p className="text-text-secondary text-sm mb-2">
-          Please provide a reason for this kick vote. This will be visible to all members.
-        </p>
+      <Modal isOpen={!!kickTarget} onClose={() => { setKickTarget(null); setKickReason(''); }} title={`Kick @${kickTarget?.user?.username || ''}`}>
+        <p className="text-text-secondary text-sm mb-2">Provide a reason for the kick vote — visible to all members.</p>
         <textarea
-          value={kickReason}
-          onChange={(e) => setKickReason(e.target.value)}
-          placeholder="Reason for kick (optional)"
-          className="w-full bg-surface-2 border border-white/[0.06] rounded-xl p-3 text-sm text-text-primary placeholder:text-text-muted focus:border-brand-cyan focus:outline-none mb-4"
-          rows={3}
+          value={kickReason} onChange={(e) => setKickReason(e.target.value)}
+          placeholder="Reason for kick (optional)" rows={3}
+          className="w-full bg-surface-2 border border-white/[0.06] rounded-xl p-3 text-sm text-text-primary placeholder:text-text-muted focus:border-brand-violet-light focus:outline-none mb-4"
         />
-        <button
-          onClick={startKickVote}
-          className="w-full py-3 rounded-xl bg-brand-cyan text-bg-dark font-bold text-sm hover:brightness-110 transition-all"
-        >
-          Start Kick Vote
-        </button>
+        <button onClick={startKickVote} className="w-full py-3 rounded-xl bg-brand-violet-light text-bg-dark font-bold text-sm">Start Kick Vote</button>
       </Modal>
-    </div>
+    </main>
+  );
+
+  return (
+    <SquadShell mode="squad" activeId="members" squadId={squadId}
+      rightRail={<SquadInfoRail squad={squad} members={members} />}>
+      {main}
+    </SquadShell>
   );
 }

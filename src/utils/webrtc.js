@@ -4,15 +4,56 @@
 import { doc, setDoc, updateDoc, onSnapshot, collection, addDoc, getDocs, deleteDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
 
-const ICE_SERVERS = [
+// Baseline STUN — works for ~85% of pairs (everyone except symmetric NAT).
+const STUN_FALLBACK = [
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' },
   { urls: 'stun:stun2.l.google.com:19302' },
   { urls: 'stun:stun3.l.google.com:19302' },
 ];
 
+// Cache TURN creds for their full TTL so we don't fetch on every call.
+// Server-issued ttlSeconds is 24h; we expire 60s early to avoid races.
+let cachedIceServers = null;
+let cachedExpiryMs = 0;
+
+async function fetchIceServers() {
+  const now = Date.now();
+  if (cachedIceServers && cachedExpiryMs > now + 60_000) return cachedIceServers;
+  try {
+    const { getFunctions, httpsCallable } = await import('firebase/functions');
+    const fn = httpsCallable(getFunctions(undefined, 'europe-west1'), 'getTurnCredentials');
+    const res = await fn({});
+    const list = res?.data?.iceServers;
+    if (Array.isArray(list) && list.length) {
+      cachedIceServers = list;
+      cachedExpiryMs = now + (res.data.ttlSeconds || 24 * 3600) * 1000;
+      return list;
+    }
+  } catch (err) {
+    // Anonymous users + server outages fall through to STUN-only. Voice
+    // will still work for the ~85% of pairs that don't need TURN.
+    console.warn('TURN creds unavailable, STUN-only', err?.message || err);
+  }
+  return STUN_FALLBACK;
+}
+
 export function createPeerConnection() {
-  return new RTCPeerConnection({ iceServers: ICE_SERVERS });
+  // Synchronous path keeps callers simple — uses cached creds if warm,
+  // otherwise STUN-only this call and warm the cache for next time.
+  const iceServers = cachedIceServers && cachedExpiryMs > Date.now() + 60_000
+    ? cachedIceServers
+    : STUN_FALLBACK;
+  if (iceServers === STUN_FALLBACK) { fetchIceServers().catch(() => {}); }
+  return new RTCPeerConnection({ iceServers });
+}
+
+// Async variant — awaits TURN credentials before creating the peer.
+// Use this for the FIRST call of a session; subsequent createPeerConnection()
+// calls will hit the warm cache and return TURN-enabled immediately.
+export async function createPeerConnectionWithTurn() {
+  const iceServers = await fetchIceServers();
+  return new RTCPeerConnection({ iceServers });
 }
 
 // Caller: create offer and write to Firestore

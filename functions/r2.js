@@ -1,5 +1,5 @@
 const functions = require('firebase-functions/v2');
-const { S3Client, PutObjectCommand, CopyObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
+const { S3Client, PutObjectCommand, CopyObjectCommand, DeleteObjectCommand, PutBucketCorsCommand, GetBucketCorsCommand, ListBucketsCommand, HeadBucketCommand } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const { getFirestore } = require('firebase-admin/firestore');
 const crypto = require('crypto');
@@ -20,21 +20,38 @@ const ALLOWED_TYPES = [
   'audio/mpeg', 'audio/ogg', 'audio/wav', 'audio/webm',
 ];
 
-const ALLOWED_KINDS = ['avatar', 'banner', 'post', 'short', 'clip', 'article', 'squad', 'tournament'];
+const ALLOWED_KINDS = ['avatar', 'banner', 'post', 'short', 'clip', 'article', 'squad', 'tournament', 'tournament-proof'];
+
+// Trim every secret value — they were stored with trailing newlines (likely
+// set via `echo "x" | firebase functions:secrets:set` which appends \n).
+// That newline broke the AWS SDK ("Invalid character in header content") and
+// the bucket-name in the URL ("/vergr-media%0A/..."). Defending here instead
+// of forcing a secret rotation.
+const env = (name) => (process.env[name] || '').replace(/[\s\r\n]+$/g, '').trim();
 
 function getClient() {
-  const accountId = process.env.R2_ACCOUNT_ID;
-  const accessKeyId = process.env.R2_ACCESS_KEY_ID;
-  const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
+  const accountId = env('R2_ACCOUNT_ID');
+  const accessKeyId = env('R2_ACCESS_KEY_ID');
+  const secretAccessKey = env('R2_SECRET_ACCESS_KEY');
   return new S3Client({
     region: REGION,
     endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
     credentials: { accessKeyId, secretAccessKey },
+    // AWS SDK v3 (≥3.730) auto-injects an x-amz-sdk-checksum-algorithm=CRC32
+    // header/query param on PutObject. Cloudflare R2's CORS implementation
+    // doesn't match the wildcard AllowedHeaders against that header, so
+    // browser preflights fail with "No Access-Control-Allow-Origin header
+    // is present". Setting these two options to WHEN_REQUIRED stops the SDK
+    // from sending the checksum on requests that don't actually need it
+    // (PutObject doesn't), so the signed URL stays plain and R2's CORS is
+    // happy. https://github.com/aws/aws-sdk-js-v3/issues/6810
+    requestChecksumCalculation: 'WHEN_REQUIRED',
+    responseChecksumValidation: 'WHEN_REQUIRED',
   });
 }
 
-function getBucket() { return process.env.R2_BUCKET || 'vergr-media'; }
-function getPublicBase() { return (process.env.R2_PUBLIC_BASE || 'https://cdn.vergr.app').replace(/\/$/, ''); }
+function getBucket() { return env('R2_BUCKET') || 'vergr-media'; }
+function getPublicBase() { return (env('R2_PUBLIC_BASE') || 'https://cdn.vergr.app').replace(/\/$/, ''); }
 
 exports.getR2UploadUrl = functions.https.onCall({
   secrets: ['R2_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET', 'R2_PUBLIC_BASE'],
@@ -59,10 +76,12 @@ exports.getR2UploadUrl = functions.https.onCall({
     throw new functions.https.HttpsError('invalid-argument', 'sizeBytes required.');
   }
 
-  // Get user plan
+  // Get user plan. Admins (founder/ops) bypass every paywall → treated as 'pro'.
   const db = getFirestore('vgrdb');
   const userDoc = await db.collection('users').doc(req.auth.uid).get();
-  const plan = userDoc.exists ? (userDoc.data().subscription || 'free') : 'free';
+  const _ud = userDoc.exists ? userDoc.data() : {};
+  const isAdmin = _ud.role === 'admin' || (_ud.email || '').toLowerCase() === 'vergenerd@gmail.com';
+  const plan = isAdmin ? 'pro' : (userDoc.exists ? (userDoc.data().subscription || 'free') : 'free');
   const cap = SIZE_CAPS[plan] || SIZE_CAPS.free;
 
   // Kill switch enforcement (free tier only — paid users always pass).
@@ -78,18 +97,165 @@ exports.getR2UploadUrl = functions.https.onCall({
   const ext = contentType.split('/')[1].replace('quicktime', 'mov').replace('mpeg', 'mp3');
   const key = `${kind}/${req.auth.uid}/${Date.now()}_${crypto.randomBytes(6).toString('hex')}.${ext}`;
 
+  // B9: every object key is content-unique (timestamp + random), so the object
+  // at a given URL never changes. Mark it immutable + 1-year max-age so the CDN
+  // and device HTTP cache keep it forever and avatars/thumbnails fetch once.
+  // This becomes a signed header, so the client PUT MUST send the same value
+  // (r2Storage.js mirrors it) or the signature won't match.
+  const cacheControl = 'public, max-age=31536000, immutable';
+
   const client = getClient();
   const command = new PutObjectCommand({
     Bucket: getBucket(),
     Key: key,
     ContentType: contentType,
     ContentLength: sizeBytes,
+    CacheControl: cacheControl,
   });
 
   const uploadUrl = await getSignedUrl(client, command, { expiresIn: 300 });
   const publicUrl = `${getPublicBase()}/${key}`;
 
-  return { uploadUrl, publicUrl, key };
+  return { uploadUrl, publicUrl, key, cacheControl };
+});
+
+// Presign a WhatsApp "Export chat" .txt into the import STAGING prefix
+// (imports/whatsapp/<uid>/). Deliberately separate from getR2UploadUrl: the
+// media kind/type matrix doesn't apply (text file, fixed 30MB cap — WhatsApp
+// caps text exports at ~40k messages so real files are single-digit MB), and
+// the key prefix is what importWhatsAppExport + the box worker validate.
+exports.getImportUploadUrl = functions.https.onCall({
+  secrets: ['R2_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET', 'R2_PUBLIC_BASE'],
+  region: 'europe-west1',
+}, async (req) => {
+  if (!req.auth) throw new functions.https.HttpsError('unauthenticated', 'Sign in required.');
+  const sizeBytes = Number(req.data?.sizeBytes) || 0;
+  if (sizeBytes <= 0 || sizeBytes > 30 * 1024 * 1024) {
+    throw new functions.https.HttpsError('invalid-argument', 'Export file must be under 30MB (export "Without media").');
+  }
+  const key = `imports/whatsapp/${req.auth.uid}/${Date.now()}_${crypto.randomBytes(6).toString('hex')}.txt`;
+  const client = getClient();
+  const command = new PutObjectCommand({
+    Bucket: getBucket(),
+    Key: key,
+    ContentType: 'text/plain',
+    ContentLength: sizeBytes,
+  });
+  const uploadUrl = await getSignedUrl(client, command, { expiresIn: 300 });
+  return { uploadUrl, key };
+});
+
+// Admin-only diagnostic. Reports everything we need to root-cause R2 upload
+// failures: what bucket name the function thinks it's using, what buckets the
+// token can actually see, whether the bucket exists, what CORS R2 reports on
+// the bucket right now (NOT what the Cloudflare dashboard claims), and a
+// fresh presigned URL so we can inspect it. Then tries to WRITE a correct
+// CORS policy — that may 403 if the token is Object-scoped but we report
+// the exact error either way.
+exports.setR2CorsPolicy = functions.https.onCall({
+  secrets: ['R2_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET', 'R2_PUBLIC_BASE'],
+  region: 'europe-west1',
+}, async (req) => {
+  if (!req.auth) throw new functions.https.HttpsError('unauthenticated', 'Sign in required.');
+  const db = getFirestore('vgrdb');
+  const userDoc = await db.collection('users').doc(req.auth.uid).get();
+  if (!userDoc.exists || userDoc.data().role !== 'admin') {
+    throw new functions.https.HttpsError('permission-denied', 'Admin only.');
+  }
+
+  const report = {
+    configuredBucket: getBucket(),
+    accountId: env('R2_ACCOUNT_ID'),
+    publicBase: getPublicBase(),
+    endpoint: `https://${env('R2_ACCOUNT_ID')}.r2.cloudflarestorage.com`,
+  };
+  const client = getClient();
+
+  // 1. Can we even reach R2? List the buckets the token can see.
+  try {
+    const list = await client.send(new ListBucketsCommand({}));
+    report.visibleBuckets = (list.Buckets || []).map(b => b.Name);
+  } catch (e) {
+    report.listBucketsError = `${e.name}: ${e.message}`;
+  }
+
+  // 2. Does the bucket we're targeting actually exist?
+  try {
+    await client.send(new HeadBucketCommand({ Bucket: getBucket() }));
+    report.bucketExists = true;
+  } catch (e) {
+    report.bucketExists = false;
+    report.headBucketError = `${e.name}: ${e.message}`;
+  }
+
+  // 3. What does R2 say the current CORS rules ARE? This is the ground truth.
+  try {
+    const got = await client.send(new GetBucketCorsCommand({ Bucket: getBucket() }));
+    report.currentCorsRules = got.CORSRules;
+  } catch (e) {
+    report.currentCorsError = `${e.name}: ${e.message}`;
+  }
+
+  // 4. Try to write the correct CORS. If token is Object-only this 403s.
+  const desiredCors = {
+    CORSRules: [{
+      AllowedOrigins: [
+        'https://vergr.app', 'https://www.vergr.app',
+        'https://vergr-44494.web.app', 'https://vergr-44494.firebaseapp.com',
+        'http://localhost:5173', 'http://localhost:5174',
+        // NATIVE SHELL. Uploads go direct to R2 from the WebView via a
+        // presigned PUT, and the Android WebView's origin is
+        // http://tauri.localhost (Tauri serves custom protocols over http on
+        // Android + Windows, https elsewhere). Without these, EVERY native
+        // upload — voice notes, video messages, photos — dies with
+        // "Failed to fetch" and reads to the user as a broken feature.
+        'http://tauri.localhost', 'https://tauri.localhost',
+        'http://asset.localhost', 'https://asset.localhost',
+      ],
+      AllowedMethods: ['GET', 'PUT', 'HEAD', 'POST', 'DELETE'],
+      AllowedHeaders: ['*'],
+      ExposeHeaders: ['ETag'],
+      MaxAgeSeconds: 3600,
+    }],
+  };
+  try {
+    await client.send(new PutBucketCorsCommand({
+      Bucket: getBucket(),
+      CORSConfiguration: desiredCors,
+    }));
+    report.putCorsSucceeded = true;
+    // Read it back.
+    try {
+      const got = await client.send(new GetBucketCorsCommand({ Bucket: getBucket() }));
+      report.corsAfterWrite = got.CORSRules;
+    } catch (e) { report.corsAfterWriteError = `${e.name}: ${e.message}`; }
+  } catch (e) {
+    report.putCorsSucceeded = false;
+    report.putCorsError = `${e.name}: ${e.message} (Code=${e.Code || e.$metadata?.httpStatusCode})`;
+  }
+
+  // 5. Generate a fresh presigned URL exactly like the upload path would, so
+  // the caller can see the URL shape and signed-headers list.
+  try {
+    const command = new PutObjectCommand({
+      Bucket: getBucket(),
+      Key: `_diagnostic/${Date.now()}.png`,
+      ContentType: 'image/png',
+      ContentLength: 1024,
+    });
+    const url = await getSignedUrl(client, command, { expiresIn: 60 });
+    report.samplePresignedUrl = url;
+    try {
+      const u = new URL(url);
+      report.samplePresignedHost = u.host;
+      report.samplePresignedPath = u.pathname;
+      report.samplePresignedSignedHeaders = u.searchParams.get('X-Amz-SignedHeaders');
+    } catch {}
+  } catch (e) {
+    report.presignError = `${e.name}: ${e.message}`;
+  }
+
+  return report;
 });
 
 // Scheduled weekly — engagement-aware tiering.

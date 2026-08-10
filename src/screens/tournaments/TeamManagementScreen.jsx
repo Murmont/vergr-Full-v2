@@ -39,7 +39,7 @@ export default function TeamManagementScreen() {
     load();
   }, [teamId]);
 
-  if (loading) return <div className={isDesktop ? "min-h-screen" : "screen-container min-h-screen"}><TopBar showBack title="Team" /><div className="flex justify-center py-20"><div className="w-6 h-6 border-2 border-surface-3 border-t-brand-cyan rounded-full animate-spin" /></div></div>;
+  if (loading) return <div className={isDesktop ? "min-h-screen" : "screen-container min-h-screen"}><TopBar showBack title="Team" /><div className="flex justify-center py-20"><div className="w-6 h-6 border-2 border-surface-3 border-t-brand-violet rounded-full animate-spin" /></div></div>;
 
   return (
     <div className={isDesktop ? "min-h-screen pb-8" : "screen-container min-h-screen pb-8"}>

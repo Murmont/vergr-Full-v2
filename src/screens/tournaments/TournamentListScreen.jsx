@@ -6,12 +6,14 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { StackSkeleton } from '../../components/skeletons/GlassSkeletons';
 import Icon from '../../components/Icon';
 import AppHeader from '../../components/brand/AppHeader';
 import { useUser } from '../../context/UserContext';
 import { useLayout } from '../../context/LayoutContext';
 import useResponsive from '../../hooks/useResponsive';
 import TopBar from '../../components/TopBar';
+import { IS_NATIVE_BUILD } from '../../utils/platform';
 import CoinDisplay from '../../components/CoinDisplay';
 import {
   getTournaments,
@@ -217,7 +219,7 @@ export default function TournamentListScreen({ variant = 'all' }) {
                 return (
                   <button key={q.key} onClick={() => toggleQuick(q.key)}
                     className={`px-3 py-1.5 rounded-full text-[11px] font-semibold whitespace-nowrap inline-flex items-center gap-1.5 border ${
-                      on ? 'bg-brand-cyan/15 text-brand-cyan border-brand-cyan/40' : 'bg-white/[0.03] text-text-muted border-white/[0.06]'
+                      on ? 'bg-brand-violet/15 text-brand-violet-light border-brand-violet/40' : 'bg-white/[0.03] text-text-muted border-white/[0.06]'
                     }`}
                   >
                     <Icon name={q.icon} size={13} />{q.label}
@@ -227,7 +229,7 @@ export default function TournamentListScreen({ variant = 'all' }) {
             </div>
           )}
           {loading ? (
-            <div className="py-10 text-center"><div className="w-5 h-5 mx-auto border-2 border-surface-3 border-t-brand-cyan rounded-full animate-spin" /></div>
+            <StackSkeleton rows={5} height={88} />
           ) : filtered.length === 0 ? (
             <EmptyState variant={variant} />
           ) : (
@@ -282,7 +284,7 @@ export default function TournamentListScreen({ variant = 'all' }) {
                   <button key={q.key} onClick={() => toggleQuick(q.key)}
                     className={`px-3 py-1.5 rounded-full text-[11px] font-semibold transition-colors inline-flex items-center gap-1.5 border ${
                       on
-                        ? 'bg-brand-cyan/15 text-brand-cyan border-brand-cyan/40'
+                        ? 'bg-brand-violet/15 text-brand-violet-light border-brand-violet/40'
                         : 'bg-white/[0.03] text-text-muted border-white/[0.06] hover:text-text-primary'
                     }`}
                   >
@@ -303,13 +305,11 @@ export default function TournamentListScreen({ variant = 'all' }) {
 
           {/* Body */}
           {loading ? (
-            <div className="py-16 flex justify-center">
-              <div className="w-6 h-6 border-2 border-surface-3 border-t-brand-cyan rounded-full animate-spin" />
-            </div>
+            <StackSkeleton rows={5} height={88} />
           ) : filtered.length === 0 ? (
             <EmptyState variant={variant} />
           ) : view === 'grid' ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-4">
+            <div className={`grid gap-4 ${IS_NATIVE_BUILD ? 'grid-cols-1' : 'grid-cols-1 md:grid-cols-2 2xl:grid-cols-3'}`}>
               {filtered.map(t => <TournamentCard key={t.id} t={t} onClick={() => onCardClick(t)} />)}
             </div>
           ) : view === 'list' ? (

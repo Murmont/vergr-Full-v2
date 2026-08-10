@@ -38,8 +38,8 @@ export const TOURNAMENT_GAMES = [
   { id: 'rocketleague',label: 'Rocket League',     category: 'Sports',  detection: 'ocr',     verifyMethod: 'lobby_name', linkedPlatform: 'epic' },
   { id: 'fortnite',    label: 'Fortnite',          category: 'BR',      detection: 'ocr',     verifyMethod: 'chat',  linkedPlatform: 'epic' },
   { id: 'pubg',        label: 'PUBG: Battlegrounds', category: 'BR',    detection: 'ocr',     verifyMethod: 'chat',  linkedPlatform: 'steam' },
-  { id: 'warzone',     label: 'Call of Duty: Warzone', category: 'BR',  detection: 'ocr',     verifyMethod: 'name',  linkedPlatform: 'battlenet' },
-  { id: 'cod_mw3',     label: 'Call of Duty: Modern Warfare III', category: 'FPS', detection: 'ocr', verifyMethod: 'name', linkedPlatform: 'battlenet' },
+  { id: 'warzone',     label: 'Call of Duty: Warzone', category: 'BR',  detection: 'ocr',     verifyMethod: 'name',  linkedPlatform: 'activision' },
+  { id: 'cod_mw3',     label: 'Call of Duty: Modern Warfare III', category: 'FPS', detection: 'ocr', verifyMethod: 'name', linkedPlatform: 'activision' },
   { id: 'r6s',         label: 'Rainbow Six Siege', category: 'FPS',     detection: 'ocr',     verifyMethod: 'chat',  linkedPlatform: 'ubisoft' },
   { id: 'sc2',         label: 'StarCraft II',      category: 'RTS',     detection: 'ocr',     verifyMethod: 'chat',  linkedPlatform: 'battlenet' },
   { id: 'aoe4',        label: 'Age of Empires IV', category: 'RTS',     detection: 'ocr',     verifyMethod: 'chat',  linkedPlatform: 'steam' },
@@ -80,6 +80,60 @@ export const TOURNAMENT_GAMES = [
   { id: 'other',       label: 'Other (manual report)', category: 'Other', detection: 'manual', verifyMethod: 'chat', linkedPlatform: null },
 ];
 
+// ── Official cover art (frontend-only field, NOT mirrored in functions/games.js) ──
+// Publisher-uploaded portrait box art served straight from Valve's official
+// Steam CDN per appid (the same assets the Steam store renders — hotlinked,
+// never rehosted, so it's the legit original artwork). Every URL below was
+// verified live (HTTP 200 image/jpeg) on 2026-06-10. Games without a Steam
+// presence (VALORANT, LoL, Fortnite, console titles, Battle.net titles) have
+// no entry and fall back to the branded gradient card until official art is
+// supplied (e.g. press-kit images dropped into public/games/).
+const steamCover = (appid) => `https://cdn.cloudflare.steamstatic.com/steam/apps/${appid}/library_600x900.jpg`;
+// Non-Steam titles use Twitch's public box-art CDN — the official IGDB box
+// art (publisher-managed, the same image Twitch's directory shows). All URLs
+// verified live + visually confirmed as the real key art 2026-06-10.
+const twitchBoxArt = (gameId) => `https://static-cdn.jtvnw.net/ttv-boxart/${gameId}-600x800.jpg`;
+const COVER_ART = {
+  // Riot / Epic / Blizzard / Nintendo (no Steam presence)
+  valorant: twitchBoxArt(516575),
+  lol: twitchBoxArt(21779),
+  fortnite: twitchBoxArt(33214),
+  tft: twitchBoxArt(513143),
+  lor: twitchBoxArt(514790),
+  hearthstone: twitchBoxArt(138585),
+  sc2: twitchBoxArt(490422),
+  wow_arena: twitchBoxArt(18122),
+  ssbu: twitchBoxArt(504461),
+  cs2: steamCover(730),
+  dota2: steamCover(570),
+  overwatch2: steamCover(2357570),
+  apex: steamCover(1172470),
+  rocketleague: steamCover(252950),
+  pubg: steamCover(578080),
+  warzone: steamCover(1962663),
+  cod_mw3: steamCover(2519060),
+  r6s: steamCover(359550),
+  aoe4: steamCover(1466860),
+  aoe2de: steamCover(813780),
+  sf6: steamCover(1364780),
+  tekken8: steamCover(1778820),
+  mk1: steamCover(1971870),
+  gg_strive: steamCover(1384160),
+  fc25: steamCover(2669320),
+  nba2k: steamCover(2338770),
+  madden: steamCover(2582560),
+  pes_efootball: steamCover(1665460),
+  // F1 25 uses Steam's newer hashed asset paths — portrait art isn't at the
+  // static path, so we use its verified official header image (landscape).
+  f1_25: 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/3059520/76dc8ac45f1bd6dec26e04434ca1c8814e7bb330/header.jpg',
+  forza: steamCover(2440510),
+  iracing: steamCover(266410),
+  mtg_arena: steamCover(2141910),
+  brawlhalla: steamCover(291550),
+  smite: steamCover(386360),
+};
+TOURNAMENT_GAMES.forEach((g) => { g.coverArt = COVER_ART[g.id] || null; });
+
 export const VERIFY_METHOD_LABEL = {
   chat:         'Type the code in your in-game lobby chat',
   name:         'Temporarily set your in-game name to include the code',
@@ -91,6 +145,7 @@ export const PLATFORM_LABEL = {
   steam:     'Steam',
   riot:      'Riot',
   battlenet: 'Battle.net',
+  activision: 'Activision',
   origin:    'EA / Origin',
   ea:        'EA Account',
   epic:      'Epic Games',

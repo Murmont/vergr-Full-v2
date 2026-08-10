@@ -75,6 +75,24 @@ service cloud.firestore {
     // USERS
     // ============================================================
 
+    // Username -> uid reservation index, maintained server-side by the
+    // maintainUsernameIndex Cloud Function. Public read so vergr.me
+    // (/u/:username) and the signup availability check can resolve handles;
+    // writes are server-only (the Admin SDK bypasses these rules).
+    match /usernames/{name} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // Time-locked buy-and-send price quotes (functions/gemTransfer.js). Fully
+    // server-side — a client that could read or write these could re-price its
+    // own transfer, which is the one thing the lock exists to prevent. Default
+    // deny already covers this; it is stated explicitly so nobody later opens
+    // it up on the assumption the client needs access.
+    match /gem_quotes/{quoteId} {
+      allow read, write: if false;
+    }
+
     match /users/{userId} {
       allow read: if true;
       allow create: if isOwner(userId)
@@ -92,7 +110,21 @@ service cloud.firestore {
       allow delete: if isAdmin();
 
       match /private/{docId} {
-        allow read, write: if isOwner(userId);
+        // shopIntegration holds raw Shopify/Woo API tokens — CF-only (Admin SDK
+        // bypasses rules). A specific match can't REVOKE a broad allow in
+        // Firestore, so the exclusion lives here.
+        //
+        // lockedPostFiles / lockedMessageFiles hold the R2 object keys behind
+        // paid content, and getAccess signs whatever key it finds in them. If a
+        // creator could write here they would point their own cheap post at
+        // SOMEONE ELSE'S locked object and sell access to content they do not
+        // own, routing around the ownership check in createLockedPost. Owner
+        // read is denied too: the keys are useless without a signature, and a
+        // readable key is one screenshot away from being a support problem.
+        allow read, write: if isOwner(userId)
+          && docId != 'shopIntegration'
+          && docId != 'lockedPostFiles'
+          && docId != 'lockedMessageFiles';
       }
 
       match /blocked/{blockedId} {
@@ -129,6 +161,41 @@ service cloud.firestore {
         allow read:  if isOwner(userId);
         allow write: if isOwner(userId);
       }
+
+      // vergr.me (Linktree-style) page config. Public read so the
+      // /u/:username renderer works for anyone; only the owner writes.
+      match /vergrMe/{docId} {
+        allow read:  if true;
+        allow write: if isOwner(userId);
+      }
+
+      // vergr.me view/click analytics. Owner (+admin) reads. Writes are
+      // SERVER-ONLY (trackVergrMeEvent CF via Admin SDK) so logged-out
+      // visitors are counted without opening the doc to client tampering.
+      match /vergrMeViews/{docId} {
+        allow read:  if isOwner(userId) || isAdmin();
+        allow create, update, delete: if false;
+      }
+
+      // vergr.me email-collect leads. Public (incl. logged-out) visitors may
+      // submit an email via the page pop-up; only the owner/admin can read them.
+      match /vergrMeLeads/{leadId} {
+        allow read:   if isOwner(userId) || isAdmin();
+        allow create: if request.resource.data.email is string
+                      && request.resource.data.email.size() > 3
+                      && request.resource.data.email.size() < 200;
+        allow update, delete: if false;
+      }
+
+      // vergr.me digital product catalog. World-read so the public page can
+      // list products (incl. logged-out); owner writes. The paid FILE's R2 key
+      // is deliberately NOT on this doc (it lives in the owner-only
+      // private/vergrMeProductFiles map; the download CF reads it server-side)
+      // so a world-readable listing can never leak the paywalled object.
+      match /vergrMeProducts/{productId} {
+        allow read:  if true;
+        allow write: if isOwner(userId);
+      }
     }
 
     // ============================================================
@@ -153,7 +220,15 @@ service cloud.firestore {
       allow create: if isRegistered()
         && request.resource.data.authorId == request.auth.uid
         && validString('content', 5000);
-      allow update: if isRegisteredOwner(resource.data.authorId) || isModerator();
+      // Author/moderator can edit the post freely. Any authenticated user may
+      // touch ONLY the engagement counters (like/comment/save/share/view) so
+      // that toggleLike/toggleBookmark/repost/impression batches — which bump a
+      // counter on the post doc alongside writing their own like/save subdoc —
+      // are not denied. The subcollection rules still gate who can actually
+      // create a like/save, so this can't be used to forge engagement records.
+      allow update: if isRegisteredOwner(resource.data.authorId) || isModerator()
+        || (isAuth() && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['likeCount', 'commentCount', 'saveCount', 'shareCount', 'viewCount', 'repostCount']));
       allow delete: if isRegisteredOwner(resource.data.authorId) || isModerator();
 
       match /comments/{commentId} {
@@ -161,8 +236,19 @@ service cloud.firestore {
         allow create: if isRegistered()
           && request.resource.data.authorId == request.auth.uid
           && validString('content', 2000);
-        allow update: if isRegisteredOwner(resource.data.authorId) || isModerator();
+        // Author/mod edit freely; any auth user may touch ONLY likeCount so a
+        // comment-like batch (marker subdoc + counter bump) isn't denied. The
+        // likes subcollection below still gates who can create a like record.
+        allow update: if isRegisteredOwner(resource.data.authorId) || isModerator()
+          || (isAuth() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likeCount']));
         allow delete: if isRegisteredOwner(resource.data.authorId) || isModerator();
+
+        match /likes/{userId} {
+          allow read: if true;
+          allow create: if isRegisteredOwner(userId);
+          allow delete: if isRegisteredOwner(userId);
+          allow update: if false;
+        }
       }
 
       match /likes/{userId} {
@@ -177,6 +263,16 @@ service cloud.firestore {
         allow create: if isRegisteredOwner(userId);
         allow delete: if isRegisteredOwner(userId);
       }
+    }
+
+    // Collection-group query support. The nested posts/{postId}/likes rule above
+    // does NOT authorize a collectionGroup('likes') query (Firestore evaluates
+    // those against a rule that matches the group itself). getLikedPosts runs
+    // collectionGroup('likes').where('userId','==',uid), so allow a user to read
+    // their own like docs across all posts. Without this the query is denied
+    // with "Missing or insufficient permissions".
+    match /{path=**}/likes/{likeId} {
+      allow read: if isAuth() && resource.data.userId == request.auth.uid;
     }
 
     // ============================================================
@@ -222,6 +318,11 @@ service cloud.firestore {
         request.auth.uid != null &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberIds', 'memberCount', 'updatedAt']) &&
         request.auth.uid in request.resource.data.memberIds
+      ) || (
+        // Any squad member may stamp ONLY the chat-activity fields (used by the
+        // side-nav unread badge). Nothing sensitive is writable here.
+        isSquadMember(squadId) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastMessageAt', 'lastMessageSenderId'])
       );
       allow delete: if isSquadOwner(squadId) || isAdmin();
 
@@ -371,6 +472,47 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
+    // ── Vanguard collaboration tools (client-written, gated to members) ──────
+    // These are working tools the Vanguard uses directly (no Cloud Function in
+    // the path), so writes are allowed from members with author-stamp checks.
+    // The Vanguard is a small, founder-invited, trusted group.
+
+    // Shared watchlist / case notes. Any member writes their own; Commander+
+    // (or the author) can edit or delete.
+    match /vanguard_notes/{noteId} {
+      allow read: if isAuth() && (isVanguardMember() || isAdmin());
+      allow create: if (isVanguardMember() || isAdmin()) && request.resource.data.authorId == request.auth.uid;
+      allow update, delete: if isAdmin() || vanguardRankAtLeast(4) ||
+        (isVanguardMember() && resource.data.authorId == request.auth.uid);
+    }
+
+    // Case escalations up the chain. Any member opens one; the author or a
+    // Senior+ can resolve it.
+    match /vanguard_escalations/{escId} {
+      allow read: if isAuth() && (isVanguardMember() || isAdmin());
+      allow create: if (isVanguardMember() || isAdmin()) && request.resource.data.authorId == request.auth.uid;
+      allow update: if isAdmin() || vanguardRankAtLeast(3) ||
+        (isVanguardMember() && resource.data.authorId == request.auth.uid);
+      allow delete: if isAdmin() || vanguardRankAtLeast(4) ||
+        (isVanguardMember() && resource.data.authorId == request.auth.uid);
+    }
+
+    // Announcements — read by all members, authored only by Overseers + founder.
+    match /vanguard_announcements/{annId} {
+      allow read: if isAuth() && (isVanguardMember() || isAdmin());
+      allow create: if (isAdmin() || vanguardRankAtLeast(5)) && request.resource.data.authorId == request.auth.uid;
+      allow update, delete: if isAdmin() || vanguardRankAtLeast(5);
+    }
+
+    // Decision Library — documented precedents. Any member contributes; author
+    // or Commander+ can remove.
+    match /vanguard_precedents/{precId} {
+      allow read: if isAuth() && (isVanguardMember() || isAdmin());
+      allow create: if (isVanguardMember() || isAdmin()) && request.resource.data.authorId == request.auth.uid;
+      allow update, delete: if isAdmin() || vanguardRankAtLeast(4) ||
+        (isVanguardMember() && resource.data.authorId == request.auth.uid);
+    }
+
     // Cheat signature registry — admin manages via /admin/cheat-signatures
     // (`upsertCheatSignature` / `deleteCheatSignature` / `adminSeedCheatSignatures`
     // callables). Read needed so the admin screen can render the list.
@@ -415,6 +557,17 @@ service cloud.firestore {
     }
 
     // ============================================================
+    // CLIENT ERROR TELEMETRY (I4) — silent-failure capture
+    // ============================================================
+    // Any signed-in client may APPEND an error report (capped + deduped
+    // client-side). Only admins read; nobody edits/deletes from the client.
+    match /client_errors/{errId} {
+      allow read: if isAdmin();
+      allow create: if isAuth();
+      allow update, delete: if false;
+    }
+
+    // ============================================================
     // ADMIN SECURITY  (TOTP secrets — server-only)
     // ============================================================
     // Holds the confirmed TOTP secret + backup codes + enrolled-at timestamp
@@ -426,9 +579,28 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Twitch mirror secrets — holds the user's Twitch stream key + OAuth tokens
+    // so the Hetzner relay (re-push to Twitch) + vergr-chat IRC bridge can read
+    // them via the Admin SDK. NEVER readable/writable by clients (the key would
+    // let anyone hijack the user's Twitch broadcast). Written only by oauth.js.
+    match /twitch_mirror_secrets/{uid} {
+      allow read, write: if false;
+    }
+
     // Pending TOTP enrollments (intermediate state between enroll + confirm).
     // Server-only. Auto-expires after 10 min via a scheduled cleanup.
     match /admin_totp_enrollment/{uid} {
+      allow read, write: if false;
+    }
+
+    // Account-level 2FA (Settings → Security). Holds the user's TOTP secret +
+    // hashed recovery codes. NEVER client-readable — only the account*Totp
+    // callables (Admin SDK) touch it. The non-secret "is 2FA on?" flag lives at
+    // users/{uid}.settings.twoFactorEnabled for the UI.
+    match /account_security/{uid} {
+      allow read, write: if false;
+    }
+    match /account_totp_enrollment/{uid} {
       allow read, write: if false;
     }
 
@@ -566,6 +738,30 @@ service cloud.firestore {
     }
 
     // ============================================================
+    // GROUP INVITE CODES
+    // ============================================================
+    // Doc id IS the code (random, unguessable). Holding a live code is what
+    // lets you join; deleting the doc revokes every link that carried it.
+    //
+    // `list` is FORBIDDEN on purpose: if you could query this collection you
+    // could enumerate codes (or look one up by chatId) and walk straight past a
+    // revoke. Get-by-exact-id only.
+    match /group_invites/{code} {
+      function convoOf(chatId) { return get(/databases/$(database)/documents/conversations/$(chatId)).data; }
+      function isAdminOf(chatId) {
+        return isAuth() && (
+          request.auth.uid in convoOf(chatId).admins
+          || convoOf(chatId).createdBy == request.auth.uid
+        );
+      }
+      allow get: if isAuth();
+      allow list: if false;
+      allow create: if isAdminOf(request.resource.data.chatId);
+      allow delete: if isAdminOf(resource.data.chatId);
+      allow update: if false;   // rotate = delete + create, never mutate
+    }
+
+    // ============================================================
     // CONVERSATIONS (DIRECT MESSAGES)
     // ============================================================
 
@@ -573,8 +769,103 @@ service cloud.firestore {
       allow get: if isAuth();
       allow list: if isAuth() && request.auth.uid in resource.data.participants;
       allow create: if isAuth() && request.auth.uid in request.resource.data.participants;
-      allow update: if isAuth() && request.auth.uid in resource.data.participants;
+      // Group-management fields (name/icon/admins/membership) are ADMIN-only
+      // (creator implicit). Everything else (unread, readAt, mute, pin,
+      // archive, lastMessage*, status, wallpaper...) stays open to any
+      // participant. Self-leave (removing only yourself) is always allowed.
+      // `ttlSeconds` (disappearing messages) rides this same list: in a GROUP
+      // only an admin/creator may arm the timer; in a 1:1 DM either party may
+      // (isGroup != true short-circuits below), which is the Telegram model.
+      allow update: if isAuth() && request.auth.uid in resource.data.participants && (
+        !request.resource.data.diff(resource.data).affectedKeys()
+          .hasAny(['groupName', 'groupIcon', 'admins', 'participants', 'onlyAdminsPost', 'ttlSeconds',
+                   'permissions', 'banned', 'requireInvite'])
+        || resource.data.isGroup != true
+        || resource.data.createdBy == request.auth.uid
+        || (resource.data.admins != null && request.auth.uid in resource.data.admins)
+        || (
+          // self-leave: membership fields only, and you are no longer in it
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['participants', 'admins', 'lastMessageAt', 'lastMessageText', 'lastMessage'])
+          && !(request.auth.uid in request.resource.data.participants)
+        )
+      );
+      // Public-group self-join: a signed-in NON-member may add ONLY their own
+      // uid (plus their own metadata/unread seed) to a group whose visibility
+      // is 'public'. Without this, the base update rule above (which requires
+      // you to ALREADY be a participant) makes self-join impossible — that was
+      // the "you don't have permission to view it" invite bug. Private groups
+      // are excluded here; they go through joinRequests + admin approval below.
+      //
+      // Two extra gates on top of that (2026-07-14):
+      //  - banned users can never self-join.
+      //  - once an admin has issued an invite code (`requireInvite`), the joiner
+      //    must PRESENT that code (in their own metadata entry) and it must
+      //    resolve to THIS group. Revoking = deleting the group_invites doc, at
+      //    which point every old link stops working. The code deliberately does
+      //    NOT live on the conversation doc: `allow get` above is open to any
+      //    signed-in user, so anyone holding the chatId could simply read the
+      //    current code and revocation would be theatre.
+      allow update: if isAuth()
+        && resource.data.isGroup == true
+        && resource.data.get('visibility', 'private') == 'public'
+        && !(request.auth.uid in resource.data.participants)
+        && !(request.auth.uid in resource.data.get('banned', []))
+        && (request.auth.uid in request.resource.data.participants)
+        && request.resource.data.participants.toSet()
+             .difference(resource.data.participants.toSet()).hasOnly([request.auth.uid])
+        && resource.data.participants.toSet()
+             .difference(request.resource.data.participants.toSet()).size() == 0
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['participants', 'metadata', 'unreadCount'])
+        && (
+          resource.data.get('requireInvite', false) != true
+          || (
+            request.resource.data.metadata[request.auth.uid].via is string
+            && exists(/databases/$(database)/documents/group_invites/$(request.resource.data.metadata[request.auth.uid].via))
+            && get(/databases/$(database)/documents/group_invites/$(request.resource.data.metadata[request.auth.uid].via)).data.chatId == convoId
+          )
+        );
       allow delete: if false;
+
+      // Join requests for PRIVATE groups. Doc id = requester uid. The requester
+      // creates/cancels their own; admins (and the creator) read + delete on
+      // approve/deny. Approval itself is the admin adding the uid to
+      // participants via the base update rule above.
+      match /joinRequests/{reqUid} {
+        function convo() { return get(/databases/$(database)/documents/conversations/$(convoId)).data; }
+        function isGroupAdmin() {
+          return isAuth() && (
+            request.auth.uid in convo().admins
+            || convo().createdBy == request.auth.uid
+          );
+        }
+        allow read: if isAuth() && (reqUid == request.auth.uid || isGroupAdmin());
+        // Same two gates as public self-join: banned users can't even ask, and
+        // once an invite code is required the requester must present a live one.
+        allow create: if isAuth() && reqUid == request.auth.uid
+          && !(request.auth.uid in convo().participants)
+          && !(request.auth.uid in convo().get('banned', []))
+          && (
+            convo().get('requireInvite', false) != true
+            || (
+              request.resource.data.via is string
+              && exists(/databases/$(database)/documents/group_invites/$(request.resource.data.via))
+              && get(/databases/$(database)/documents/group_invites/$(request.resource.data.via)).data.chatId == convoId
+            )
+          );
+        allow delete: if isAuth() && (reqUid == request.auth.uid || isGroupAdmin());
+      }
+
+      // The group's CURRENT invite code, readable only by its admins (the
+      // conversation doc itself is world-readable to signed-in users, so the
+      // code cannot be kept there — see the self-join rule above).
+      match /groupInvite/{docId} {
+        function convo() { return get(/databases/$(database)/documents/conversations/$(convoId)).data; }
+        allow read, write: if isAuth() && (
+          request.auth.uid in convo().admins || convo().createdBy == request.auth.uid
+        );
+      }
 
       match /messages/{messageId} {
         allow read: if isAuth() && request.auth.uid in get(/databases/$(database)/documents/conversations/$(convoId)).data.participants;
@@ -594,11 +885,39 @@ service cloud.firestore {
           !exists(/databases/$(database)/documents/conversations/$(convoId))
         );
       }
+
+      // Content-free op sync for the relay chat path (reactions + delete
+      // tombstones — msg ids, emoji and uids only, never message text).
+      match /meta/{docId} {
+        allow read, write: if isConversationParticipant(convoId);
+      }
     }
 
     // ============================================================
     // CALLS
     // ============================================================
+
+    // Voice channels (Discord-style rooms). No explicit rules existed before
+    // (default deny). Owner manages; any signed-in user may update ONLY the
+    // `active` presence map (join/leave/heartbeat written by voiceSession).
+    match /voice_channels/{channelId} {
+      allow read: if isAuth();
+      allow create: if isAuth() && request.resource.data.ownerId == request.auth.uid;
+      allow update: if isAuth() && (
+        resource.data.ownerId == request.auth.uid
+        || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['active'])
+      );
+      allow delete: if isAuth() && resource.data.ownerId == request.auth.uid;
+    }
+
+    // Call history — one doc per finished call, participants-gated.
+    match /calls_history/{entryId} {
+      allow read: if isAuth() && request.auth.uid in resource.data.participants;
+      allow create: if isAuth() && request.auth.uid in request.resource.data.participants;
+      allow update: if isAuth() && request.auth.uid in resource.data.participants
+        && request.resource.data.participants == resource.data.participants;
+      allow delete: if false;
+    }
 
     match /calls/{callId} {
       allow read: if isAuth();
@@ -771,6 +1090,12 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
+    // Email verification codes — Cloud-Functions-only. The (hashed) code must
+    // never be client-readable, and only the CF may write/clear it.
+    match /email_verifications/{uid} {
+      allow read, write: if false;
+    }
+
     // ============================================================
     // BOOSTS, STATUSES, etc.
     // ============================================================
@@ -782,7 +1107,17 @@ service cloud.firestore {
     }
 
     match /statuses/{statusId} {
-      allow read: if isAuth();
+      // Followers-only by default (matches the product promise + help docs). A
+      // status is readable by its author, by anyone when it's explicitly
+      // `audience == 'public'`, or by a viewer who FOLLOWS the author (a
+      // `follows/{viewer}_{author}` doc exists). This is real enforcement — a
+      // non-follower cannot read a followers-only status even by crafting a
+      // query. Legacy statuses (no `audience` field) fall to followers-only.
+      allow read: if isAuth() && (
+        resource.data.authorId == request.auth.uid ||
+        resource.data.audience == 'public' ||
+        exists(/databases/$(database)/documents/follows/$(request.auth.uid + '_' + resource.data.authorId))
+      );
       allow create: if isAuth() && request.resource.data.authorId == request.auth.uid;
       allow update: if isAuth() && (
         resource.data.authorId == request.auth.uid ||
@@ -805,6 +1140,13 @@ service cloud.firestore {
       allow create: if isAuth() && request.resource.data.userId == request.auth.uid;
       allow update: if false;
       allow delete: if false;
+    }
+
+    // Referral revenue-share dedupe markers — server-written only (Cloud
+    // Functions admin SDK bypasses these). No client access.
+    match /referral_purchase_bonuses/{sourceId} {
+      allow read: if isAdmin();
+      allow write: if false;
     }
 
     match /coin_packages/{packageId} {
@@ -874,6 +1216,108 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Event tickets (ticketed-tournament spectator passes). All money movement
+    // runs server-side in purchaseEventTicket — clients never write these.
+    match /event_tickets/{ticketId} {
+      allow read: if isAuth() && (
+        resource.data.buyerUid == request.auth.uid ||
+        resource.data.hostUid == request.auth.uid ||
+        isAdmin()
+      );
+      allow write: if false;
+    }
+
+    // Paid access to content: locked posts, locked chat media, paid streams.
+    // Written ONLY by purchaseAccess, inside the wallet transaction.
+    //
+    // `allow write: if false` is the entire enforcement. The doc id is
+    // deterministic (`{type}_{id}_{buyerUid}`), so a client that could write here
+    // would simply mint itself the entitlement for anything at zero cost. Reads
+    // are buyer and seller only: an unlock is a purchase record, and who bought
+    // what is not public.
+    match /entitlements/{entitlementId} {
+      allow read: if isAuth() && (
+        resource.data.buyerUid == request.auth.uid ||
+        resource.data.sellerUid == request.auth.uid ||
+        isAdmin()
+      );
+      allow write: if false;
+    }
+
+    // vergr.me digital product purchases. CF-write only (purchaseVergrMeProduct);
+    // buyer + seller read their own rows.
+    match /vergrme_purchases/{purchaseId} {
+      allow read: if isAuth() && (
+        resource.data.buyerUid == request.auth.uid ||
+        resource.data.sellerUid == request.auth.uid ||
+        isAdmin()
+      );
+      allow write: if false;
+    }
+
+    // vergr.me PHYSICAL product orders (carry the buyer's shipping address =
+    // PII, so reads are strictly buyer/seller/admin). Created by CF only.
+    // The seller's ONLY direct write is marking a placed order shipped
+    // (+ an optional tracking note) — cancellation moves money, so it goes
+    // through cancelVergrMeOrder.
+    match /vergrme_orders/{orderId} {
+      allow read: if isAuth() && (
+        resource.data.buyerUid == request.auth.uid ||
+        resource.data.sellerUid == request.auth.uid ||
+        isAdmin()
+      );
+      allow update: if isAuth()
+        && resource.data.sellerUid == request.auth.uid
+        && resource.data.status == 'placed'
+        && request.resource.data.status == 'shipped'
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['status', 'trackingNote', 'shippedAtMs']);
+      allow create, delete: if false;
+    }
+
+    // Vergr Shop connected-store registry (which sellers have a Shopify/Woo
+    // integration). CF-only — written by connectShopIntegration, read by the
+    // daily reconcile. Holds no secrets, but no client needs it.
+    match /shop_connected/{uid} {
+      allow read, write: if false;
+    }
+
+    // Shopify PUBLIC app (Vergr Link In Bio). shopify_shops holds the RAW
+    // Shopify Admin access token per installed shop, so it is server-only and
+    // must stay that way — a callable returns a safe view if a client ever
+    // needs one. The other three are OAuth nonces, GDPR erasure evidence and
+    // a webhook log; none of them has a client reader.
+    match /shopify_shops/{shopDomain} {
+      allow read, write: if false;
+    }
+    // One-time codes binding a Shopify store to a Vergr account. Server-only:
+    // the code IS the authorisation, so a client able to read this collection
+    // could claim any pending store.
+    match /shopify_connect_codes/{code} {
+      allow read, write: if false;
+    }
+
+    match /shopify_oauth_states/{nonce} {
+      allow read, write: if false;
+    }
+    match /shopify_erasures/{docId} {
+      allow read, write: if false;
+    }
+    match /shopify_webhook_log/{docId} {
+      allow read, write: if false;
+    }
+
+    // Season passes (host-level access to all their ticketed events).
+    // Written only by purchaseSeasonPass.
+    match /event_season_passes/{passId} {
+      allow read: if isAuth() && (
+        resource.data.buyerUid == request.auth.uid ||
+        resource.data.hostUid == request.auth.uid ||
+        isAdmin()
+      );
+      allow write: if false;
+    }
+
     // ============================================================
     // CREATORS, MEMBERSHIPS, STREAMS, TOURNAMENTS
     // ============================================================
@@ -913,11 +1357,89 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Chat polls (DM/group message polls). The poll body is a top-level doc
+    // because relay-stored DM messages can't persist nested data; the chat
+    // message carries only the poll id. Membership of the conversation gates
+    // everything; votes are strictly own-doc writes so one user can never
+    // touch another's vote. Squad chat has its own inline poll system and
+    // does NOT use this collection.
+    match /chat_polls/{pollId} {
+      function pollConvOf(data) {
+        return get(/databases/$(database)/documents/conversations/$(data.convId)).data;
+      }
+      function isPollMember(data) {
+        return data.scope == 'dm'
+          && data.convId is string
+          && request.auth.uid in pollConvOf(data).participants;
+      }
+      allow read: if isAuth() && (isPollMember(resource.data) || isAdmin());
+      allow create: if isAuth()
+        && request.resource.data.creatorUid == request.auth.uid
+        && request.resource.data.question is string
+        && request.resource.data.options is list
+        && request.resource.data.options.size() >= 2
+        && request.resource.data.options.size() <= 6
+        && isPollMember(request.resource.data);
+      allow update: if false;
+      allow delete: if isAuth() && resource.data.creatorUid == request.auth.uid;
+
+      match /votes/{voterUid} {
+        allow read: if isAuth() && (
+          isPollMember(get(/databases/$(database)/documents/chat_polls/$(pollId)).data) || isAdmin()
+        );
+        allow create, update: if isAuth()
+          && voterUid == request.auth.uid
+          && request.resource.data.picks is list
+          && request.resource.data.picks.size() <= 6
+          && isPollMember(get(/databases/$(database)/documents/chat_polls/$(pollId)).data);
+        allow delete: if isAuth() && voterUid == request.auth.uid;
+      }
+    }
+
+    // Scheduled messages (Lite/Pro). Created only by the scheduleMessage CF
+    // (tier gate), executed by the relay. The owner can read + cancel (delete)
+    // their own pending ones; no client create/update.
+    match /scheduled_messages/{schedId} {
+      allow read: if isAuth() && resource.data.senderUid == request.auth.uid;
+      allow create: if false;
+      allow update: if false;
+      allow delete: if isAuth() && resource.data.senderUid == request.auth.uid;
+    }
+
+    // Community-import jobs (Discord Phase 2 / WhatsApp export → relay store).
+    // CF-created + box-worker-updated only; the requester may READ their job
+    // for the progress UI. No client writes ever (a client-writable queue doc
+    // would let anyone import into any group).
+    match /community_imports/{importId} {
+      allow read: if isAuth() && resource.data.requestedBy == request.auth.uid;
+      allow write: if false;
+    }
+
     match /streams/{streamId} {
       allow read: if true;
-      allow create: if isAuth() && request.resource.data.streamerId == request.auth.uid;
-      allow update: if isOwner(resource.data.streamerId) || isModerator();
-      allow delete: if isOwner(resource.data.streamerId) || isModerator();
+
+      // A PAID stream's playback URLs live here rather than on the document
+      // above, precisely because the document above is world-readable. Denying
+      // clients entirely is the enforcement: getAccess (Admin SDK, bypasses
+      // rules) hands the URL over after checking the entitlement.
+      //
+      // This must stay `if false`. Allowing the host to read their own would be
+      // harmless; allowing anything broader hands the stream away for free.
+      match /private/{docId} {
+        allow read, write: if false;
+      }
+      // Two creation paths: the legacy client `createStream` sets streamerId;
+      // the live-streaming `createStreamSession` Cloud Function (admin SDK,
+      // bypasses rules) sets hostUid. So owner checks must accept EITHER field —
+      // keying only on streamerId silently denied every non-admin host's own
+      // updates (status/metadata/lastHeartbeat), which broke the stale-stream
+      // heartbeat (admins bypassed via isModerator, hiding the bug).
+      allow create: if isAuth() && (
+        request.resource.data.streamerId == request.auth.uid ||
+        request.resource.data.hostUid == request.auth.uid
+      );
+      allow update: if isOwner(resource.data.streamerId) || isOwner(resource.data.hostUid) || isModerator();
+      allow delete: if isOwner(resource.data.streamerId) || isOwner(resource.data.hostUid) || isModerator();
 
       match /chat/{messageId} {
         allow read: if true;
@@ -928,6 +1450,16 @@ service cloud.firestore {
       match /drops/{dropId} {
         allow read: if true;
         allow write: if isOwner(resource.data.streamerId);
+      }
+
+      // Join announcements (JoinAnnouncer overlay). Viewers write their OWN
+      // join doc when entering a stream; everyone watching reads the feed.
+      // Ephemeral hype data: no updates; author or mods can delete.
+      match /joins/{joinId} {
+        allow read: if true;
+        allow create: if isAuth() && request.resource.data.uid == request.auth.uid;
+        allow update: if false;
+        allow delete: if isModerator() || isOwner(resource.data.uid);
       }
 
       // Vanguard presence — written when a Vanguard viewer mounts the
@@ -946,27 +1478,29 @@ service cloud.firestore {
           isAdmin()
         );
       }
+
+      // Top-gifters leaderboard. The sendTip callable (Admin SDK) accumulates
+      // each gifter's per-stream coin total here; everyone watching reads the
+      // ranking. Server-written only so the board can't be spoofed.
+      match /gifters/{gifterUid} {
+        allow read: if true;
+        allow write: if false;
+      }
+    }
+
+    // Schedule-ahead live streams. The host creates/edits their own scheduled
+    // doc from Go Live; the notifyScheduledStreams cron (Admin SDK) flips status
+    // + sends reminders. Public-readable for an "Upcoming" discovery surface.
+    match /scheduled_streams/{schedId} {
+      allow read: if true;
+      allow create: if isAuth() && request.resource.data.hostUid == request.auth.uid;
+      allow update, delete: if (isAuth() && resource.data.hostUid == request.auth.uid) || isAdmin();
     }
 
     // GR5 — brawl matchmaking queue. Reads allowed (a player polls their own
     // entry for the matched tournament); all writes go through callables.
     match /brawl_queue/{queueId} {
       allow read: if isAuth();
-      allow write: if false;
-    }
-
-    // GR6 — coaching marketplace. Listings are public to browse; bookings are
-    // private to the two parties. All writes go through callables.
-    match /coaching_listings/{coachUid} {
-      allow read: if true;
-      allow write: if false;
-    }
-    match /coaching_bookings/{bookingId} {
-      allow read: if isAuth() && (
-        resource.data.coachUid == request.auth.uid ||
-        resource.data.learnerUid == request.auth.uid ||
-        isAdmin()
-      );
       allow write: if false;
     }
 
@@ -1036,7 +1570,12 @@ service cloud.firestore {
 
     match /reports/{reportId} {
       allow create: if isAuth() && request.resource.data.reporterId == request.auth.uid;
-      allow read: if isModerator();
+      // Vanguard members ARE the report queue audience (they approve/reject/
+      // escalate via the vanguardResolveReport callable, which runs server-side
+      // and bypasses rules), but accepting a Vanguard invite sets vanguard.rank,
+      // not role:'moderator' — so READ must include isVanguardMember() or the
+      // queue is invisible to them. Writes stay server-side only.
+      allow read: if isModerator() || isVanguardMember();
       allow update: if isModerator();
       allow delete: if isAdmin();
     }

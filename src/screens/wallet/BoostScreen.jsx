@@ -91,7 +91,7 @@ export default function BoostScreen() {
   };
 
   const BOOST_ICONS = { post: 'trending_up', profile: 'person_search', lfg: 'group_add', squad: 'shield', tournament: 'emoji_events' };
-  const BOOST_COLORS = { post: '#FF4D6A', profile: '#7B6FFF', lfg: '#4DFFD4', squad: '#C87FFF', tournament: '#F5C542' };
+  const BOOST_COLORS = { post: '#FF4D6A', profile: '#7B6FFF', lfg: '#B44FFF', squad: '#C87FFF', tournament: '#F5C542' };
 
   return (
     <div className="min-h-screen pb-20 lg:pb-8">
@@ -116,7 +116,7 @@ export default function BoostScreen() {
             const isHighlighted = preselectedType === type;
             const color = BOOST_COLORS[type];
             return (
-              <div key={type} className={`p-4 rounded-2xl border transition-all ${isHighlighted ? 'border-brand-cyan/40 bg-brand-cyan/5' : 'border-white/[0.04] bg-surface-1'}`}>
+              <div key={type} className={`p-4 rounded-2xl border transition-all ${isHighlighted ? 'border-brand-violet/40 bg-brand-violet/5' : 'border-white/[0.04] bg-surface-1'}`}>
                 <div className="flex items-start gap-3">
                   <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: `${color}15` }}>
                     <Icon name={BOOST_ICONS[type]} size={20} style={{ color }} />
@@ -131,7 +131,7 @@ export default function BoostScreen() {
                   </div>
                   <button onClick={() => handleBoost(type)} disabled={!canAfford || purchasing === type}
                     className={`px-4 py-2 rounded-xl text-xs font-bold transition-all shrink-0 ${
-                      canAfford ? 'bg-brand-cyan text-bg-dark' : 'bg-surface-3 text-text-muted'
+                      canAfford ? 'bg-brand-violet text-white' : 'bg-surface-3 text-text-muted'
                     } disabled:opacity-50`}>
                     {purchasing === type ? '...' : canAfford ? 'Boost' : 'Need coins'}
                   </button>

@@ -59,14 +59,14 @@ export default function AddPhoneModal({ onSaved, onClose, rewardAmount = 1000 })
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
       <div className="relative w-full sm:max-w-md bg-surface-1 border border-white/[0.06] rounded-t-3xl sm:rounded-3xl shadow-2xl p-5">
         <div className="flex items-start gap-3 mb-4">
-          <div className="w-10 h-10 rounded-full bg-brand-cyan/15 text-brand-cyan flex items-center justify-center shrink-0">
+          <div className="w-10 h-10 rounded-full bg-brand-violet/15 text-brand-violet-light flex items-center justify-center shrink-0">
             <Icon name="phone" size={20} />
           </div>
           <div className="flex-1">
             <h2 className="text-white font-bold text-base">Add your phone number</h2>
             <p className="text-text-muted text-xs mt-0.5">
               Lets you invite your contacts and match them to their VERGR accounts.
-              First save earns <span className="text-brand-cyan font-bold">+{rewardAmount} VP</span>.
+              First save earns <span className="text-brand-violet-light font-bold">+{rewardAmount} VP</span>.
             </p>
           </div>
           <button onClick={onClose} className="text-text-muted hover:text-white p-1 -mr-1 -mt-1">
@@ -83,7 +83,7 @@ export default function AddPhoneModal({ onSaved, onClose, rewardAmount = 1000 })
           <button
             type="button"
             onClick={() => setPickerOpen((v) => !v)}
-            className="flex items-center gap-1.5 bg-surface-2 border border-white/[0.06] rounded-xl px-3 text-sm text-white hover:border-brand-cyan/40 transition-colors"
+            className="flex items-center gap-1.5 bg-surface-2 border border-white/[0.06] rounded-xl px-3 text-sm text-white hover:border-brand-violet/40 transition-colors"
             aria-haspopup="listbox"
           >
             <span className="text-base leading-none">{country.flag}</span>
@@ -98,7 +98,7 @@ export default function AddPhoneModal({ onSaved, onClose, rewardAmount = 1000 })
             placeholder="Your local number"
             value={localNumber}
             onChange={(e) => setLocalNumber(e.target.value)}
-            className="flex-1 bg-surface-2 border border-white/[0.06] rounded-xl px-4 py-3 text-white text-sm outline-none focus:border-brand-cyan font-dmmono"
+            className="flex-1 bg-surface-2 border border-white/[0.06] rounded-xl px-4 py-3 text-white text-sm outline-none focus:border-brand-violet font-dmmono"
           />
         </div>
 
@@ -125,7 +125,7 @@ export default function AddPhoneModal({ onSaved, onClose, rewardAmount = 1000 })
                   key={c.code}
                   onClick={() => { setCountry(c); setPickerOpen(false); setPickerQuery(''); }}
                   className={`w-full flex items-center gap-2 px-3 py-2 text-left text-sm hover:bg-surface-3 transition-colors ${
-                    country.code === c.code ? 'bg-brand-cyan/10 text-brand-cyan' : 'text-white'
+                    country.code === c.code ? 'bg-brand-violet/10 text-brand-violet-light' : 'text-white'
                   }`}
                 >
                   <span className="text-base leading-none w-6">{c.flag}</span>
@@ -152,7 +152,7 @@ export default function AddPhoneModal({ onSaved, onClose, rewardAmount = 1000 })
           <button
             onClick={submit}
             disabled={busy}
-            className="flex-1 py-3 rounded-xl bg-brand-cyan text-bg-dark text-sm font-bold hover:brightness-110 disabled:opacity-50 transition-all"
+            className="flex-1 py-3 rounded-xl bg-brand-violet text-white text-sm font-bold hover:brightness-110 disabled:opacity-50 transition-all"
           >
             {busy ? 'Saving...' : `Save & earn ${rewardAmount} VP`}
           </button>

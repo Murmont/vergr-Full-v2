@@ -34,7 +34,7 @@ export default function TipPostModal({ isOpen, onClose, post }) {
     if (!valid || sending) return;
     setSending(true);
     try {
-      await sendCoins(currentUser.uid, authorId, finalAmount, `Tipped ${finalAmount} coins on post`);
+      await sendCoins(currentUser.uid, authorId, finalAmount, `Tipped ${finalAmount} coins on post`, { postId: post.id });
       showToast(`Tipped ${finalAmount} coins to @${authorName}`, 'coins');
       await refreshWallet?.();
       onClose();

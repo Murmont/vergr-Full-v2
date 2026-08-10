@@ -10,19 +10,13 @@ import { updateUserSettings, getBlockedUsers } from '../../firebase/firestore';
 import TopBar from '../../components/TopBar';
 import useResponsive from '../../hooks/useResponsive';
 import { C, Toggle, SelectDropdown, SectionLabel, PageShell } from './_settingsUI';
+import { PRIVACY_DEFAULTS } from '../../utils/privacy';
 
 const VIS_OPTIONS = ['Everyone', 'Friends & Followers', 'Only me'];
 
-const DEFAULTS = {
-  profileVis: 'Everyone', searchVis: 'Everyone',
-  receiveMsg: 'Friends & Followers', msgReq: true,
-  mention: 'Friends & Followers', tagMe: 'Friends & Followers',
-  readReceipts: false, onlineStatus: true,
-  activityFeed: true, friendReq: true,
-  viewContent: 'Friends & Followers', commentContent: 'Everyone',
-  shareContent: 'Friends & Followers', allowDownloads: false,
-  suggestedUsers: true, hashtagSearch: true, showTrending: false,
-};
+// Single source of truth lives in utils/privacy.js so the screen and the
+// enforcement code can never drift apart.
+const DEFAULTS = PRIVACY_DEFAULTS;
 
 export default function PrivacySettingsScreen() {
   const { currentUser } = useAuth();
@@ -104,7 +98,6 @@ export default function PrivacySettingsScreen() {
               <SectionLabel>Communication</SectionLabel>
               <RowSelect label="Receive messages" desc="Allow others to send you direct messages." k="receiveMsg"/>
               <RowToggle label="Message requests" desc="Allow messages from people you don't follow." k="msgReq" icon="person"/>
-              <RowSelect label="Who can @mention me" desc="Choose who can mention you in posts and comments." k="mention"/>
               <RowSelect label="Who can tag me" desc="Choose who can tag you in content." k="tagMe"/>
               <RowToggle label="Read receipts" desc="Show others when you've read their messages." k="readReceipts" icon="done_all"/>
             </Section>
@@ -132,9 +125,7 @@ export default function PrivacySettingsScreen() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <Section>
               <SectionLabel>Content Permissions</SectionLabel>
-              <RowSelect label="Who can view my content" desc="Choose who can see your posts, clips, and content." k="viewContent"/>
               <RowSelect label="Who can comment on my content" desc="Choose who can comment on your posts and clips." k="commentContent"/>
-              <RowSelect label="Who can share my content" desc="Choose who can share your posts and clips." k="shareContent"/>
               <RowToggle label="Allow downloads" desc="Allow others to download your content." k="allowDownloads" icon="download"/>
             </Section>
 

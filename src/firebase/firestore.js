@@ -1,12 +1,29 @@
 import { db, storage, auth } from './config';
 import {
-  collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, addDoc,
-  query, where, orderBy, limit, startAfter, onSnapshot, serverTimestamp,
-  increment, arrayUnion, arrayRemove, writeBatch, runTransaction,
+  collection, collectionGroup, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, addDoc,
+  query, where, orderBy, limit, startAfter, startAt, endAt, documentId, onSnapshot, serverTimestamp,
+  increment, arrayUnion, arrayRemove, writeBatch, runTransaction, deleteField,
 } from 'firebase/firestore';
 import { uploadToR2 } from '../utils/r2Storage';
 import { compressMedia } from '../utils/mediaCompression';
 import { ADS_CONFIG } from '../config/ads';
+import { PLAN_VP_MULTIPLIER } from '../utils/vpSystem';
+import { resolveTier } from '../utils/tierSystem';
+import { addFollowingCache, removeFollowingCache } from '../utils/followingCache';
+import { VERGR_PIN_HOURS } from '../utils/feedRank';
+import { bumpAuthor } from '../utils/feedPrefs';
+
+// Multiply a base VP amount by the recipient's subscription plan multiplier
+// (Free 1× / Lite 1.5× / Pro 2×). Reads the recipient's user doc; VP grants are
+// infrequent so the extra read is negligible. Falls back to 1× on any error.
+// Mirrors the server-side applyVPMultiplier in functions/index.js.
+const planVpMultiply = async (userId, baseVp) => {
+  try {
+    const snap = await getDoc(doc(db, 'users', userId));
+    const plan = resolveTier(snap.exists() ? snap.data() : null);
+    return Math.round(baseVp * (PLAN_VP_MULTIPLIER[plan] || 1));
+  } catch { return baseVp; }
+};
 
 // ═══════════════════════════════════════════
 // USERS
@@ -17,9 +34,59 @@ export const getUser = async (uid) => {
   return snap.exists() ? { id: snap.id, ...snap.data() } : null;
 };
 
+// Load the last-24h statuses the viewer is allowed to see: their OWN plus
+// anyone they FOLLOW. This replaces the old global "newest 50 statuses in the
+// app" query, which (a) leaked every user's status to the whole platform
+// despite the docs promising followers-only, and (b) silently evicted your
+// friends' updates behind whoever posted most. Rules enforce the same
+// follower/own/public scope server-side, so this is real privacy, not just a
+// client filter. Returns a flat array of status docs, newest first.
+export const loadFollowingStatuses = async (uid) => {
+  if (!uid) return [];
+  // Who this viewer follows (top-level `follows`, id = `${follower}_${following}`).
+  let followingIds = [];
+  try {
+    const fSnap = await getDocs(query(collection(db, 'follows'), where('followerId', '==', uid), limit(500)));
+    followingIds = fSnap.docs.map((d) => d.data().followingId).filter(Boolean);
+  } catch { /* fall back to self-only below */ }
+
+  const authorIds = Array.from(new Set([uid, ...followingIds]));
+  const cutoffMs = Date.now() - 24 * 60 * 60 * 1000;
+
+  // Firestore `in` takes at most 30 values → chunk. Each status doc returned is
+  // provably one of these authors, so the follower-scoped read rule passes for
+  // the whole query (a global createdAt query would 403 on non-followed docs).
+  const chunks = [];
+  for (let i = 0; i < authorIds.length; i += 30) chunks.push(authorIds.slice(i, i + 30));
+
+  const results = await Promise.all(chunks.map(async (chunk) => {
+    try {
+      const snap = await getDocs(query(collection(db, 'statuses'), where('authorId', 'in', chunk), limit(300)));
+      return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    } catch { return []; }
+  }));
+
+  const all = results.flat().filter((s) => {
+    const ms = s.createdAt?.toMillis?.() ?? (s.createdAt?.seconds ? s.createdAt.seconds * 1000 : 0);
+    return ms >= cutoffMs; // client 24h filter (statuses aren't range-queried above)
+  });
+  all.sort((a, b) => {
+    const at = a.createdAt?.toMillis?.() ?? 0;
+    const bt = b.createdAt?.toMillis?.() ?? 0;
+    return bt - at;
+  });
+  return all;
+};
+
 export const getUserByUsername = async (username) => {
-  const q = query(collection(db, 'users'), where('username', '==', username), limit(1));
-  const snap = await getDocs(q);
+  if (!username) return null;
+  const lower = String(username).toLowerCase();
+  // Case-insensitive lookup via the maintained usernameLower index. Falls back
+  // to an exact-case match for any user not yet backfilled.
+  let snap = await getDocs(query(collection(db, 'users'), where('usernameLower', '==', lower), limit(1)));
+  if (snap.empty) {
+    snap = await getDocs(query(collection(db, 'users'), where('username', '==', username), limit(1)));
+  }
   return snap.empty ? null : { id: snap.docs[0].id, ...snap.docs[0].data() };
 };
 
@@ -57,9 +124,14 @@ export const updateUserCoins = async (uid, amount) => {
 };
 
 export const subscribeToUser = (uid, callback) => {
-  return onSnapshot(doc(db, 'users', uid), (snap) => {
-    callback(snap.exists() ? { id: snap.id, ...snap.data() } : null);
-  });
+  return onSnapshot(
+    doc(db, 'users', uid),
+    (snap) => callback(snap.exists() ? { id: snap.id, ...snap.data() } : null),
+    (err) => {
+      // Sign-out / auth-handoff race; recovers when auth re-attaches.
+      if (err?.code !== 'permission-denied') console.warn('user subscribe:', err);
+    },
+  );
 };
 
 // ═══════════════════════════════════════════
@@ -80,11 +152,13 @@ export const followUser = async (followerId, followingId) => {
     followingCount: increment(1) 
   });
 
-  batch.update(doc(db, 'users', followingId), { 
-    followerCount: increment(1) 
+  batch.update(doc(db, 'users', followingId), {
+    followerCount: increment(1)
   });
 
   await batch.commit();
+  addFollowingCache(followingId); // keep the For You ranker's follow set in sync
+  bumpAuthor(followingId, 2);     // following = a strong author-affinity signal
 };
 
 export const unfollowUser = async (followerId, followingId) => {
@@ -97,11 +171,12 @@ export const unfollowUser = async (followerId, followingId) => {
     followingCount: increment(-1) 
   });
 
-  batch.update(doc(db, 'users', followingId), { 
-    followerCount: increment(-1) 
+  batch.update(doc(db, 'users', followingId), {
+    followerCount: increment(-1)
   });
 
   await batch.commit();
+  removeFollowingCache(followingId);
 };
 
 export const isFollowing = async (followerId, followingId) => {
@@ -119,6 +194,145 @@ export const getFollowers = async (uid) => {
   const q = query(collection(db, 'follows'), where('followingId', '==', uid));
   const snap = await getDocs(q);
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+};
+
+// Normalize a Firestore Timestamp / {seconds} / ms-number into milliseconds.
+const _ts = (t) => (typeof t?.toDate === 'function' ? t.toDate().getTime()
+  : (t?.seconds ? t.seconds * 1000 : (typeof t === 'number' ? t : 0)));
+
+// Resolve an array of user ids → full user profile docs.
+// Order of `ids` is preserved; missing/deleted users are dropped; duplicates collapsed.
+const resolveUserProfiles = async (ids) => {
+  const unique = [...new Set((ids || []).filter(Boolean))];
+  if (!unique.length) return [];
+  const snaps = await Promise.all(unique.map(id => getDoc(doc(db, 'users', id)).catch(() => null)));
+  const map = new Map();
+  snaps.forEach(s => { if (s && s.exists()) map.set(s.id, { id: s.id, ...s.data() }); });
+  return unique.map(id => map.get(id)).filter(Boolean);
+};
+
+// FOLLOWERS (people who clicked Follow) — resolved to FULL user profiles, newest first.
+// `id` is the other user's uid, so navigation + follow toggles work off the list.
+// (The plain getFollowers/getFollowing above return raw follow-edge docs and are
+// used elsewhere for counts / id extraction — do not change their shape.)
+export const getFollowersDetailed = async (uid, max = 100) => {
+  if (!uid) return [];
+  const snap = await getDocs(query(collection(db, 'follows'), where('followingId', '==', uid), limit(max)));
+  const rows = snap.docs.map(d => ({ uid: d.data().followerId, at: _ts(d.data().createdAt) }))
+    .filter(r => r.uid).sort((a, b) => b.at - a.at);
+  return resolveUserProfiles(rows.map(r => r.uid));
+};
+
+// FOLLOWING (people this user follows) — resolved to full profiles, newest first.
+export const getFollowingDetailed = async (uid, max = 100) => {
+  if (!uid) return [];
+  const snap = await getDocs(query(collection(db, 'follows'), where('followerId', '==', uid), limit(max)));
+  const rows = snap.docs.map(d => ({ uid: d.data().followingId, at: _ts(d.data().createdAt) }))
+    .filter(r => r.uid).sort((a, b) => b.at - a.at);
+  return resolveUserProfiles(rows.map(r => r.uid));
+};
+
+// FANS (paying supporters) — users with an ACTIVE monthly membership to this creator.
+// Distinct from followers: a fan pays coins each month for a MembershipTier the
+// creator set up in the Creator dashboard. Source: `member_subscriptions`
+// (written by the `subscribeMembership` callable). Each row carries the tier name.
+export const getFans = async (creatorId, max = 100) => {
+  if (!creatorId) return [];
+  let snap;
+  try {
+    snap = await getDocs(query(
+      collection(db, 'member_subscriptions'),
+      where('creatorId', '==', creatorId),
+      where('status', '==', 'active'),
+      limit(max),
+    ));
+  } catch (err) { console.error('getFans failed:', err); return []; }
+  const byUser = new Map();
+  snap.docs.forEach(d => {
+    const s = d.data();
+    if (!s.userId || byUser.has(s.userId)) return;
+    byUser.set(s.userId, s);
+  });
+  const users = await resolveUserProfiles([...byUser.keys()]);
+  return users.map(u => ({
+    ...u,
+    _fanTier: byUser.get(u.id)?.tierName || null,
+    _fanSince: _ts(byUser.get(u.id)?.startedAt),
+  }));
+};
+
+// ── Creator memberships ─────────────────────────────────────────────────────
+// Tiers live on `creators/{uid}.membershipTiers` (the Studio editor writes them;
+// the subscribeMembership callable reads them). `forOwner` returns drafts too;
+// public callers get only published tiers.
+export const getMembershipTiers = async (creatorId, { forOwner = false } = {}) => {
+  if (!creatorId) return { tiers: [], seasonPass: null };
+  try {
+    const snap = await getDoc(doc(db, 'creators', creatorId));
+    const data = snap.exists() ? snap.data() : {};
+    let tiers = Array.isArray(data.membershipTiers) ? data.membershipTiers : [];
+    if (!forOwner) tiers = tiers.filter((t) => t.published !== false);
+    tiers = [...tiers].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    return { tiers, seasonPass: data.seasonPass || null };
+  } catch (err) { console.error('getMembershipTiers failed:', err); return { tiers: [], seasonPass: null }; }
+};
+
+// Owner-only: persist the full tier set + season-pass config (rules gate to owner).
+export const saveMembershipTiers = async (uid, tiers, seasonPass) => {
+  if (!uid) throw new Error('uid required');
+  const payload = { membershipTiers: tiers, updatedAt: serverTimestamp() };
+  if (seasonPass !== undefined) payload.seasonPass = seasonPass;
+  await setDoc(doc(db, 'creators', uid), payload, { merge: true });
+};
+
+// Real stats for the Studio header: active member count + gross monthly recurring
+// (sum of active tier prices) + the creator's 90% net. All derived from live subs,
+// no placeholders.
+export const getMembershipStats = async (creatorId) => {
+  if (!creatorId) return { activeMembers: 0, monthlyGross: 0, monthlyNet: 0 };
+  try {
+    const snap = await getDocs(query(
+      collection(db, 'member_subscriptions'),
+      where('creatorId', '==', creatorId),
+      where('status', '==', 'active'),
+      limit(1000),
+    ));
+    let gross = 0;
+    snap.docs.forEach((d) => { gross += Math.max(0, Math.floor(d.data().priceCoins || 0)); });
+    return { activeMembers: snap.size, monthlyGross: gross, monthlyNet: Math.floor(gross * 0.9) };
+  } catch (err) { console.error('getMembershipStats failed:', err); return { activeMembers: 0, monthlyGross: 0, monthlyNet: 0 }; }
+};
+
+// Fan-side: subscribe to a creator's tier (coins). Wraps the secure callable.
+export const subscribeMembership = async ({ creatorId, tierId }) => {
+  const { httpsCallable } = await import('firebase/functions');
+  const { functions: fns } = await import('./config');
+  const res = await httpsCallable(fns, 'subscribeMembership')({ creatorId, tierId, paymentType: 'coins' });
+  return res.data;
+};
+
+export const cancelMembershipSub = async (subscriptionId) => {
+  const { httpsCallable } = await import('firebase/functions');
+  const { functions: fns } = await import('./config');
+  const res = await httpsCallable(fns, 'cancelMembership')({ subscriptionId });
+  return res.data;
+};
+
+export const getMyMemberships = async () => {
+  const { httpsCallable } = await import('firebase/functions');
+  const { functions: fns } = await import('./config');
+  const res = await httpsCallable(fns, 'getMyMemberships')({});
+  return res.data?.memberships || [];
+};
+
+// Fan-side: is the current user an active member of this creator (and which tier)?
+export const getMyMembershipFor = async (creatorId, uid) => {
+  if (!creatorId || !uid) return null;
+  try {
+    const snap = await getDoc(doc(db, 'member_subscriptions', `${creatorId}_${uid}`));
+    if (snap.exists() && snap.data().status === 'active') return { id: snap.id, ...snap.data() };
+    return null;
+  } catch { return null; }
 };
 
 // Real audience-activity model from follower presence (`lastSeen`).
@@ -182,21 +396,36 @@ export const getAudienceActivity = async (uid, cap = 120) => {
 // POSTS
 // ═══════════════════════════════════════════
 
+// Resolve a post by its doc id OR its SEO `slug` (news/article posts use a
+// readable slug, e.g. /post/werewolf-metroidvania-revealed-5k8ymm). Doc id is
+// tried first so every legacy /post/<id> link + regular user post still works.
+// Mirrors renderPost() in functions/ugcRenderer.js.
+export const getPostByIdOrSlug = async (idOrSlug) => {
+  if (!idOrSlug) return null;
+  const direct = await getDoc(doc(db, 'posts', idOrSlug));
+  if (direct.exists()) return { id: direct.id, ...direct.data() };
+  const bySlug = await getDocs(query(collection(db, 'posts'), where('slug', '==', idOrSlug), limit(1)));
+  return bySlug.empty ? null : { id: bySlug.docs[0].id, ...bySlug.docs[0].data() };
+};
+
 export const createPost = async (authorId, {
-  content, type = 'text', mediaUrls = [], hashtags = [], pollOptions = [],
+  content, type = 'text', mediaUrls = [], mediaMeta = null, hashtags = [], mentionedUids = [], pollOptions = [],
   linkPreview = null, lfgData = null, articleData = null, tierListData = null, achievementData = null,
   embedVideoUrl = null, youtubeVideoId = null, thumbnailUrl = null,
-  visibility = 'public', scheduledFor = null, scheduleOptions = null
+  visibility = 'public', scheduledFor = null, scheduleOptions = null,
+  isAnnouncement = false, topic = null, game = null,
 }) => {
   // Scheduled posts are parked with status 'scheduled' + a scheduledFor
   // timestamp. They stay out of the feed (which queries status=='published')
-  // until a publish cron flips them — that cron is not built yet.
+  // until the publishScheduledPosts cron (functions/scheduledPosts.js) flips
+  // them. The Creator Studio calendar reads them via getScheduledContent.
   const postData = {
     authorId,
     content,
     type,
     mediaUrls,
     hashtags,
+    mentionedUids,
     visibility,
     likeCount: 0,
     commentCount: 0,
@@ -223,6 +452,12 @@ export const createPost = async (authorId, {
   if (youtubeVideoId) postData.youtubeVideoId = youtubeVideoId;
   if (thumbnailUrl) postData.thumbnailUrl = thumbnailUrl;
   if (type === 'lfg') postData.expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  if (isAnnouncement) postData.isAnnouncement = true; // @Vergr broadcast — pinned + push
+  if (topic) postData.topic = topic; // optional CONTENT_TOPICS tag → feeds For You matching
+  if (game) postData.game = game; // game title (e.g. from a stream clip) → 'Gaming' topic signal + future per-game feeds
+  // Per-image {w,h} aligned to mediaUrls (B11-4): lets the card reserve the exact
+  // box so the image paints with zero layout shift. Only stored when present.
+  if (Array.isArray(mediaMeta) && mediaMeta.some(Boolean)) postData.mediaMeta = mediaMeta;
 
   // Batch the post insert + author postCount bump in one round-trip.
   const postRef = doc(collection(db, 'posts'));
@@ -233,11 +468,63 @@ export const createPost = async (authorId, {
   return postRef.id;
 };
 
+// Top trending tags (single doc read, written by the _updateTrending cron).
+// Drives the composer's suggestion chips. Falls back to [] on any error.
+export const getTrendingHashtags = async (max = 12) => {
+  try {
+    const snap = await getDoc(doc(db, 'trending', 'hashtags'));
+    const tags = snap.exists() ? (snap.data().tags || []) : [];
+    return tags.map(t => (typeof t === 'string' ? t : t?.tag)).filter(Boolean).slice(0, max);
+  } catch { return []; }
+};
+
+// Prefix autocomplete against the `hashtags` collection (doc id == tag). Used
+// by the composer's hashtag input to complete the word / show related tags.
+export const searchHashtags = async (prefix, max = 6) => {
+  const p = (prefix || '').toLowerCase().replace(/[^a-z0-9_]/g, '');
+  if (!p) return [];
+  try {
+    const q = query(
+      collection(db, 'hashtags'),
+      orderBy(documentId()),
+      startAt(p), endAt(p + ''),
+      limit(max)
+    );
+    const snap = await getDocs(q);
+    return snap.docs.map(d => d.id);
+  } catch { return []; }
+};
+
 export const updatePostMediaUrl = async (postId, url) => {
   await updateDoc(doc(db, 'posts', postId), {
     mediaUrls: arrayUnion(url),
     mediaUrl: url,
   });
+};
+
+// Edit a published post through the same composer that created it. Content is
+// always updated; mediaUrls/type/hashtags/mentionedUids are patched only when
+// the caller supplies them (so editing a structured post's caption never
+// clobbers its poll/article/etc. data). `editedAt` is stamped so the card can
+// show an "edited" marker. Author-guarded (posts `allow update` rule enforces
+// it too — no rules change needed). Engagement counters are untouched.
+export const editPost = async (postId, authorId, { content, mediaUrls, mediaMeta, type, hashtags, mentionedUids, topic } = {}) => {
+  const patch = {
+    content: (content || '').trim(),
+    editedAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  };
+  if (Array.isArray(hashtags)) patch.hashtags = hashtags;
+  if (Array.isArray(mentionedUids)) patch.mentionedUids = mentionedUids;
+  if (topic !== undefined) patch.topic = topic || null;
+  if (Array.isArray(mediaUrls)) {
+    patch.mediaUrls = mediaUrls;
+    patch.mediaUrl = mediaUrls[0] || null;
+  }
+  // B11-4 aspect dims: array to set, or null to clear (media changed to legacy).
+  if (mediaMeta !== undefined) patch.mediaMeta = Array.isArray(mediaMeta) && mediaMeta.some(Boolean) ? mediaMeta : null;
+  if (type) patch.type = type;
+  await updateDoc(doc(db, 'posts', postId), patch);
 };
 
 // Author cache: in-memory + persisted to localStorage with a 6h TTL.
@@ -305,6 +592,70 @@ export const getFeedPosts = async (limitCount = 20, lastDoc = null) => {
   return posts;
 };
 
+// The official @Vergr account's uid, resolved once and cached (module +
+// localStorage). Used to pin @Vergr posts into every user's For You feed and to
+// gate the announcement composer toggle.
+let _vergrUid = null;
+const VERGR_UID_LS_KEY = 'vergr_official_uid_v1';
+export const getVergrUid = async () => {
+  if (_vergrUid) return _vergrUid;
+  try {
+    const cached = localStorage.getItem(VERGR_UID_LS_KEY);
+    if (cached) { _vergrUid = cached; return _vergrUid; }
+  } catch {}
+  try {
+    const u = await getUserByUsername('Vergr');
+    if (u?.id) { _vergrUid = u.id; try { localStorage.setItem(VERGR_UID_LS_KEY, u.id); } catch {} }
+  } catch {}
+  return _vergrUid;
+};
+
+// Latest published @Vergr posts to pin at the top of For You for EVERY user,
+// regardless of whether they follow @Vergr. Single equality (authorId) +
+// orderBy createdAt = single-field index, no composite needed; status filtered
+// client-side. Cheap (small limit) and author-hydrated for PostCard.
+export const getVergrPinnedPosts = async (limitCount = 3) => {
+  const uid = await getVergrUid();
+  if (!uid) return [];
+  try {
+    const snap = await getDocs(query(
+      collection(db, 'posts'),
+      where('authorId', '==', uid),
+      orderBy('createdAt', 'desc'),
+      limit(limitCount + 4),
+    ));
+    // Only RECENT official posts get force-injected at the top of For You.
+    // Without this cut-off the newest @Vergr post was pulled in and pinned
+    // forever, so it stayed above the feed for days at a time.
+    const cutoff = Date.now() - VERGR_PIN_HOURS * 3600000;
+    const ms = (t) => (t?.toMillis ? t.toMillis() : (t ? new Date(t).getTime() : 0)) || 0;
+    const posts = snap.docs
+      .map(d => ({ id: d.id, ...d.data(), _doc: d }))
+      .filter(p => p.status === 'published' && ms(p.createdAt) >= cutoff)
+      .slice(0, limitCount);
+    await _hydrateAuthors(posts);
+    return posts;
+  } catch { return []; }
+};
+
+// Cross-device feed prefs (SLICE 3). Stored under the OWNER-ONLY private subdoc
+// so muted-authors stay private (users/{uid} is world-readable). One read on the
+// For You load + a debounced write; no rules change (private/* is owner-only).
+export const getFeedPrefs = async (uid) => {
+  if (!uid) return null;
+  try {
+    const snap = await getDoc(doc(db, 'users', uid, 'private', 'feedPrefs'));
+    return snap.exists() ? snap.data() : null;
+  } catch { return null; }
+};
+export const saveFeedPrefs = async (uid, prefs) => {
+  if (!uid || !prefs) return;
+  try {
+    await setDoc(doc(db, 'users', uid, 'private', 'feedPrefs'),
+      { ...prefs, updatedAt: serverTimestamp() }, { merge: true });
+  } catch {}
+};
+
 export const getFollowingFeedPosts = async (userId, limitCount = 20, lastDoc = null) => {
   // Get list of users this person follows
   const followsSnap = await getDocs(query(collection(db, 'follows'), where('followerId', '==', userId)));
@@ -350,20 +701,33 @@ export const getFollowingFeedPosts = async (userId, limitCount = 20, lastDoc = n
   return sliced;
 };
 
+// Trending = highest rankScore, but rankScore is only re-stamped for the last
+// 24h (functions cron), so an old post that once trended keeps a stale-high
+// score and the list drifts into an ALL-TIME leaderboard. Client-window it:
+// overfetch, drop anything older than 72h, then slice — so Trending stays
+// genuinely recent without waiting on a server decay pass (B3).
+const TRENDING_MAX_AGE_MS = 72 * 60 * 60 * 1000;
 export const getTrendingPosts = async (limitCount = 20, lastDoc = null) => {
+  const fetchN = Math.min(limitCount * 4, 60); // overfetch to survive the age filter
   let q = query(
     collection(db, 'posts'),
     where('status', '==', 'published'),
     orderBy('rankScore', 'desc'),
-    limit(limitCount)
+    limit(fetchN)
   );
   if (lastDoc) q = query(q, startAfter(lastDoc));
   const snap = await getDocs(q);
+  const cutoff = Date.now() - TRENDING_MAX_AGE_MS;
+  const tsMs = (t) => (t?.toMillis ? t.toMillis() : (t ? new Date(t).getTime() : 0)) || 0;
   const posts = snap.docs
     .map(d => ({ id: d.id, ...d.data(), _doc: d }))
-    .filter(p => (p.likeCount || 0) + (p.commentCount || 0) + (p.shareCount || 0) > 0);
+    .filter(p => (p.likeCount || 0) + (p.commentCount || 0) + (p.shareCount || 0) > 0)
+    .filter(p => tsMs(p.createdAt) >= cutoff)
+    .slice(0, limitCount);
   await _hydrateAuthors(posts);
-  if (posts.length > 0) posts._lastDoc = snap.docs[snap.docs.length - 1];
+  // Cursor advances down the full rankScore list (not the filtered slice) so
+  // "load more" keeps descending even when a whole page ages out.
+  if (snap.docs.length > 0) posts._lastDoc = snap.docs[snap.docs.length - 1];
   return posts;
 };
 
@@ -383,15 +747,59 @@ export const getNewerFeedPosts = async (sinceTimestamp, limitCount = 20) => {
   return posts;
 };
 
-export const getUserPosts = async (uid, limitCount = 20) => {
+// Posts by one author.
+//
+// PUBLISHED ONLY BY DEFAULT. This used to return every post regardless of
+// status, and PublicProfileScreen calls it for OTHER users, while
+// firestore.rules has `allow read: if true` on /posts. The result was that a
+// scheduled post — the whole point of which is that it is not public yet — was
+// visible to anyone who opened that author's profile the moment it was created.
+// Lite/Pro schedule posts days ahead, so this leaked planned content on the
+// live web, desktop and Android apps.
+//
+// Filtered CLIENT-SIDE deliberately, matching getVergrPinnedPosts above: a
+// single equality (authorId) plus orderBy createdAt needs only a single-field
+// index, whereas adding status to the query would require a new composite index
+// and a deploy before this fix could take effect. We over-fetch a little to
+// absorb the ones filtered out.
+//
+// `includeUnpublished` is for the AUTHOR'S OWN tooling only (creator content /
+// calendar). Never pass it true for a profile someone else is viewing.
+export const getUserPosts = async (uid, limitCount = 20, { includeUnpublished = false } = {}) => {
   const q = query(
-    collection(db, 'posts'), 
-    where('authorId', '==', uid), 
-    orderBy('createdAt', 'desc'), 
+    collection(db, 'posts'),
+    where('authorId', '==', uid),
+    orderBy('createdAt', 'desc'),
+    limit(includeUnpublished ? limitCount : limitCount + 10)
+  );
+  const snap = await getDocs(q);
+  let posts = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  if (!includeUnpublished) {
+    // Treat a MISSING status as published: posts written before the scheduling
+    // feature existed have no status field, and dropping them would silently
+    // empty older profiles.
+    posts = posts.filter(p => (p.status || 'published') === 'published').slice(0, limitCount);
+  }
+  // PostCard renders post.author.{displayName,username,avatar}. Without this
+  // every post on a profile showed "User" with a blank avatar and a bare "@".
+  await _hydrateAuthors(posts);
+  return posts;
+};
+
+// Posts where this user was @mentioned via the composer's real mention chip
+// (not a plain-typed "@word" — see createComposer's mention token). Powers
+// the profile "Tagged" tab.
+export const getTaggedPosts = async (uid, limitCount = 30) => {
+  const q = query(
+    collection(db, 'posts'),
+    where('mentionedUids', 'array-contains', uid),
+    orderBy('createdAt', 'desc'),
     limit(limitCount)
   );
   const snap = await getDocs(q);
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const posts = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  await _hydrateAuthors(posts);
+  return posts;
 };
 
 export const getPost = async (postId) => {
@@ -408,6 +816,66 @@ export const deletePost = async (postId, authorId) => {
   }
 };
 
+// ── Scheduled content (Creator Studio calendar) ───────────────────────
+// Normalise any Firestore timestamp / Date / millis to a number, or null.
+const _toMillis = (v) => {
+  if (v == null) return null;
+  if (typeof v === 'number') return v;
+  if (typeof v.toMillis === 'function') return v.toMillis();
+  if (typeof v.toDate === 'function') return v.toDate().getTime();
+  if (v.seconds) return v.seconds * 1000;
+  const d = new Date(v); return isNaN(d.getTime()) ? null : d.getTime();
+};
+
+// All of an author's posts + polls parked with status 'scheduled' and a
+// scheduledFor time. Returns a unified shape the calendar renders directly.
+export const getScheduledContent = async (uid) => {
+  if (!uid) return [];
+  const out = [];
+  const [postsSnap, pollsSnap] = await Promise.all([
+    getDocs(query(collection(db, 'posts'), where('authorId', '==', uid), where('status', '==', 'scheduled'))),
+    getDocs(query(collection(db, 'polls'), where('createdBy', '==', uid), where('status', '==', 'scheduled'))),
+  ]);
+  postsSnap.forEach(d => {
+    const p = d.data();
+    const whenMs = _toMillis(p.scheduledFor);
+    if (whenMs == null) return;
+    out.push({
+      id: d.id, kind: 'post',
+      title: (p.content || '').trim() || `${p.type || 'text'} post`,
+      type: p.type || 'text',
+      whenMs,
+      scheduleOptions: p.scheduleOptions || null,
+    });
+  });
+  pollsSnap.forEach(d => {
+    const p = d.data();
+    const whenMs = _toMillis(p.scheduledFor);
+    if (whenMs == null) return;
+    out.push({
+      id: d.id, kind: 'poll',
+      title: (p.question || p.title || 'Poll').trim(),
+      type: 'quote',
+      whenMs,
+      scheduleOptions: p.scheduleOptions || null,
+    });
+  });
+  return out;
+};
+
+// Cancel a scheduled item before it publishes. Posts route through deletePost
+// (which also fixes the author's postCount); polls just delete.
+export const cancelScheduledContent = async (id, kind, authorId) => {
+  if (kind === 'poll') await deleteDoc(doc(db, 'polls', id));
+  else await deletePost(id, authorId);
+};
+
+// Move a scheduled item to a new time (the publish cron re-evaluates it).
+export const rescheduleContent = async (id, kind, whenMs) => {
+  const ref = doc(db, kind === 'poll' ? 'polls' : 'posts', id);
+  await updateDoc(ref, { scheduledFor: new Date(whenMs), updatedAt: serverTimestamp() });
+};
+
 export const reportPost = async (reporterId, postId, reason, details = '') => {
   await addDoc(collection(db, 'reports'), {
     reporterId,
@@ -415,6 +883,57 @@ export const reportPost = async (reporterId, postId, reason, details = '') => {
     targetId: postId,
     reason,
     details: details.substring(0, 1000) || null,
+    status: 'pending',
+    createdAt: serverTimestamp(),
+  });
+};
+
+// Report a user (profile-level) — lands in the same Vanguard queue.
+export const reportUser = async (reporterId, userId, reason, details = '') => {
+  await addDoc(collection(db, 'reports'), {
+    reporterId,
+    targetType: 'user',
+    targetId: userId,
+    reason,
+    details: (details || '').substring(0, 1000) || null,
+    status: 'pending',
+    createdAt: serverTimestamp(),
+  });
+};
+
+// Posts Gemini flagged for human review (moderationStatus 'pending_review').
+// Vanguard queue reads these; resolved via the vanguardReviewAiFlag callable.
+export const getAiFlaggedPosts = async (limitCount = 50) => {
+  const snap = await getDocs(query(
+    collection(db, 'posts'),
+    where('moderationStatus', '==', 'pending_review'),
+    limit(limitCount),
+  ));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+};
+
+// Report a live stream (desktop viewer; the mobile viewer writes the same shape).
+export const reportStream = async (reporterId, streamId, reason, details = '') => {
+  await addDoc(collection(db, 'reports'), {
+    reporterId,
+    targetType: 'stream',
+    targetId: streamId,
+    reason,
+    details: (details || '').substring(0, 1000) || null,
+    status: 'pending',
+    createdAt: serverTimestamp(),
+  });
+};
+
+// Report a comment. targetId = the comment id; postId rides alongside so a
+// mod can open the thread (the queue renders targetType/targetId generically).
+export const reportComment = async (reporterId, postId, commentId, reason) => {
+  await addDoc(collection(db, 'reports'), {
+    reporterId,
+    targetType: 'comment',
+    targetId: commentId,
+    postId,
+    reason,
     status: 'pending',
     createdAt: serverTimestamp(),
   });
@@ -436,13 +955,17 @@ export const getComments = async (postId, limitCount = 20) => {
   return comments;
 };
 
-export const addComment = async (postId, authorId, content, media = null) => {
+export const addComment = async (postId, authorId, content, media = null, parentId = null) => {
   const data = {
     authorId,
     content: content || '',
     likeCount: 0,
     createdAt: serverTimestamp(),
   };
+  // 1-level replies (B5): a reply carries the parent comment's id. Threading is
+  // grouped client-side (getComments returns the flat list), so no reply-count
+  // field or extra index is needed. parentId stays null on top-level comments.
+  if (parentId) data.parentId = parentId;
   // media: { type: 'gif' | 'sticker' | 'clip' | 'image' | 'video', url, thumbnailUrl? }
   if (media?.url) {
     data.mediaUrl = media.url;
@@ -451,12 +974,55 @@ export const addComment = async (postId, authorId, content, media = null) => {
   }
   // Pre-generate the doc ref so we can batch the comment write + counter
   // bump in a single round-trip instead of two sequential writes.
+  // NOTE: do NOT bump posts/{id}.commentCount here — the onNewComment Cloud
+  // Function trigger owns that increment (and the author notification). Doing it
+  // client-side too double-counted every comment.
   const commentRef = doc(collection(db, 'posts', postId, 'comments'));
-  const batch = writeBatch(db);
-  batch.set(commentRef, data);
-  batch.update(doc(db, 'posts', postId), { commentCount: increment(1) });
-  await batch.commit();
+  await setDoc(commentRef, data);
   return commentRef.id;
+};
+
+// Comment like toggle (B5). Mirrors toggleLike: own marker subdoc under the
+// comment + a likeCount bump on the comment doc (rules allow any auth user to
+// touch ONLY likeCount, gated by the marker write). Returns the new liked state.
+export const toggleCommentLike = async (postId, commentId, userId) => {
+  if (!userId) throw new Error('Sign in to like a comment.');
+  const likeRef = doc(db, 'posts', postId, 'comments', commentId, 'likes', userId);
+  const commentRef = doc(db, 'posts', postId, 'comments', commentId);
+  const likeSnap = await getDoc(likeRef);
+  const batch = writeBatch(db);
+  if (likeSnap.exists()) {
+    batch.delete(likeRef);
+    batch.update(commentRef, { likeCount: increment(-1) });
+    await batch.commit();
+    return false;
+  }
+  batch.set(likeRef, { userId, createdAt: serverTimestamp() });
+  batch.update(commentRef, { likeCount: increment(1) });
+  await batch.commit();
+  return true;
+};
+
+// Which of these comment ids the viewer has already liked — one collectionGroup
+// read over the viewer's own comment-like markers (rules allow reading own).
+// Lets PostDetail paint filled hearts on load instead of only after a tap.
+export const getLikedCommentIds = async (postId, userId, commentIds = []) => {
+  if (!userId || !commentIds.length) return new Set();
+  try {
+    const snap = await getDocs(query(
+      collectionGroup(db, 'likes'),
+      where('userId', '==', userId),
+    ));
+    const wanted = new Set(commentIds);
+    const liked = new Set();
+    for (const d of snap.docs) {
+      // path: posts/{postId}/comments/{commentId}/likes/{uid}
+      const parts = d.ref.path.split('/');
+      const cIdx = parts.indexOf('comments');
+      if (cIdx > 0 && parts[cIdx + 1] && wanted.has(parts[cIdx + 1])) liked.add(parts[cIdx + 1]);
+    }
+    return liked;
+  } catch { return new Set(); }
 };
 
 // ═══════════════════════════════════════════
@@ -540,14 +1106,45 @@ export const isBookmarked = async (postId, userId) => {
 };
 
 export const getBookmarks = async (userId, limitCount = 50) => {
-  const q = query(collection(db, 'users', userId, 'bookmarks'), orderBy('createdAt', 'desc'), limit(limitCount));
+  const q = query(collection(db, 'users', userId, 'bookmarks'), limit(limitCount));
   const snap = await getDocs(q);
   const bookmarks = [];
   for (const d of snap.docs) {
     const post = await getPost(d.data().postId);
     if (post) bookmarks.push(post);
   }
+  bookmarks.sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
+  await _hydrateAuthors(bookmarks);
   return bookmarks;
+};
+
+// Posts the user has LIKED (any author), newest first. Likes live at
+// posts/{postId}/likes/{uid} with { userId, createdAt }, so a collectionGroup
+// query on userId finds them. Needs the collectionGroup index
+// (likes: userId ==, createdAt desc) — Firestore prints the create deep-link
+// on first run; returns [] until then.
+export const getLikedPosts = async (userId, limitCount = 30) => {
+  if (!userId) return [];
+  try {
+    const snap = await getDocs(query(
+      collectionGroup(db, 'likes'),
+      where('userId', '==', userId),
+      limit(limitCount),
+    ));
+    const posts = [];
+    for (const d of snap.docs) {
+      const postId = d.ref.parent.parent?.id;
+      if (!postId) continue;
+      const post = await getPost(postId);
+      if (post) posts.push(post);
+    }
+    posts.sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
+    await _hydrateAuthors(posts);
+    return posts;
+  } catch (e) {
+    console.warn('getLikedPosts failed:', e?.message);
+    return [];
+  }
 };
 
 export const incrementShareCount = async (postId) => {
@@ -666,9 +1263,17 @@ export const getNotifications = async (uid, limitCount = 30) => {
 
 export const subscribeToNotifications = (uid, callback) => {
   const q = query(collection(db, 'notifications'), where('recipientId', '==', uid), orderBy('createdAt', 'desc'), limit(30));
-  return onSnapshot(q, (snap) => {
-    callback(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-  });
+  return onSnapshot(
+    q,
+    (snap) => callback(snap.docs.map(d => ({ id: d.id, ...d.data() }))),
+    (err) => {
+      // permission-denied fires briefly during sign-out / token-refresh
+      // transitions when the listener was set up with a uid but Firestore
+      // hasn't propagated the auth context yet. It recovers on its own;
+      // silencing here keeps the console clean.
+      if (err?.code !== 'permission-denied') console.warn('notifications subscribe:', err);
+    },
+  );
 };
 
 export const markNotificationRead = async (notifId) => {
@@ -710,6 +1315,40 @@ export const getConversations = async (uid) => {
   }
 };
 
+// Group chats the user OWNS or admins — for linking a tier's "Private VERGR
+// group" community (auto-invite). Lean (no per-member getUser), shaped for VergrPicker.
+export const getOwnedGroupChats = async (uid) => {
+  if (!uid) return [];
+  try {
+    const snap = await getDocs(query(
+      collection(db, 'conversations'),
+      where('participants', 'array-contains', uid),
+      where('isGroup', '==', true),
+      limit(100),
+    ));
+    return snap.docs
+      .map((d) => ({ id: d.id, ...d.data() }))
+      .filter((c) => c.createdBy === uid || (c.admins || []).includes(uid))
+      .map((c) => ({
+        id: c.id, name: c.groupName || 'Group chat',
+        sub: `${(c.participants || []).length} members${c.visibility === 'public' ? ' · public' : ' · private'}`,
+        image: c.groupAvatar || null, icon: 'forum',
+      }));
+  } catch (err) { console.error('getOwnedGroupChats failed:', err); return []; }
+};
+
+// Per-contact nickname (Telegram/WhatsApp "rename this contact"). Stored on
+// the VIEWER's own user doc so it applies across every chat surface and never
+// leaks to the renamed user. Pass '' / null to clear.
+export const setContactNickname = async (targetUid, nickname) => {
+  const uid = auth.currentUser?.uid;
+  if (!uid || !targetUid) return;
+  const clean = (nickname || '').trim().slice(0, 40);
+  await updateDoc(doc(db, 'users', uid), {
+    [`contactNicknames.${targetUid}`]: clean || deleteField(),
+  });
+};
+
 export const createConversation = async (currentUserId, targetUser, initialMessage = null) => {
   try {
     // News bots are not users. Block DM creation against bot accounts.
@@ -733,6 +1372,26 @@ export const createConversation = async (currentUserId, targetUser, initialMessa
         await updateDoc(convoRef, { status: 'active' });
       }
       return convoId;
+    }
+
+    // Privacy: a NEW conversation must respect the recipient's "Receive messages"
+    // tier + "Message requests" toggle (Settings → Privacy). Existing threads above
+    // are unaffected. Inlined relationship check to avoid a circular import.
+    if (currentUserId !== targetUser.id) {
+      const td = targetSnap.exists() ? targetSnap.data() : {};
+      const priv = td.settings?.privacy || {};
+      const tier = priv.receiveMsg ?? 'Friends & Followers';
+      const allowRequests = priv.msgReq ?? true;
+      const [iFollow, followsMe] = await Promise.all([
+        isFollowing(currentUserId, targetUser.id).catch(() => false),
+        isFollowing(targetUser.id, currentUserId).catch(() => false),
+      ]);
+      const related = iFollow || followsMe;
+      const tierOk = tier === 'Everyone' || (tier === 'Friends & Followers' && related);
+      const requestOk = allowRequests !== false || related;
+      if (!tierOk || !requestOk) {
+        throw new Error("This user isn't accepting messages from you.");
+      }
     }
 
     await setDoc(convoRef, {
@@ -770,11 +1429,11 @@ export const sendMessage = async (convoId, senderId, content, type = 'text') => 
   try {
     const batch = writeBatch(db);
     const msgRef = doc(collection(db, 'conversations', convoId, 'messages'));
-    
-    batch.set(msgRef, { 
-      senderId, 
-      content, 
-      type, 
+
+    batch.set(msgRef, {
+      senderId,
+      content,
+      type,
       createdAt: serverTimestamp(),
       read: false
     });
@@ -813,6 +1472,62 @@ export const markAsRead = async (convoId, userId) => {
   } catch (error) {
     console.error("Error marking as read:", error);
   }
+};
+
+// Call history — one doc per call, deterministic id (chatId + call start ms)
+// so BOTH sides ending the call write the same doc (setDoc merge =
+// idempotent). Participants array gates reads in rules.
+export const logCallEnd = async ({ chatId, callerId, type, startedAtMs, answered, durationSec }) => {
+  const uid = auth.currentUser?.uid;
+  if (!uid || !chatId || !startedAtMs) return;
+  const participants = chatId.split('_').filter(Boolean);
+  if (!participants.includes(uid)) participants.push(uid);
+  try {
+    await setDoc(doc(db, 'calls_history', `${chatId}_${startedAtMs}`), {
+      chatId,
+      participants,
+      callerId: callerId || uid,
+      type: type || 'voice',
+      answered: !!answered,
+      durationSec: Math.max(0, Math.round(durationSec || 0)),
+      startedAtMs,
+      endedAt: serverTimestamp(),
+    }, { merge: true });
+  } catch (e) { console.error('logCallEnd failed:', e); }
+};
+
+export const getCallHistory = async (uid, max = 100) => {
+  try {
+    const q = query(collection(db, 'calls_history'), where('participants', 'array-contains', uid));
+    const snap = await getDocs(q);
+    const rows = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    rows.sort((a, b) => (b.startedAtMs || 0) - (a.startedAtMs || 0));
+    return rows.slice(0, max);
+  } catch (e) { console.error('getCallHistory failed:', e); return []; }
+};
+
+// Saved Messages — Telegram-style self-chat. One per user, deterministic id,
+// participants = [uid] only (the relay membership check passes, fan-out is
+// to self, no unread/push side effects possible).
+export const ensureSavedMessages = async () => {
+  const uid = auth.currentUser?.uid;
+  if (!uid) return null;
+  const id = `saved_${uid}`;
+  const ref = doc(db, 'conversations', id);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) {
+    await setDoc(ref, {
+      participants: [uid],
+      isSaved: true,
+      status: 'active',
+      createdAt: serverTimestamp(),
+      lastMessageAt: serverTimestamp(),
+      lastMessageText: '',
+      unreadCount: { [uid]: 0 },
+      metadata: {},
+    });
+  }
+  return id;
 };
 
 export const deleteConversation = async (convoId) => {
@@ -865,11 +1580,16 @@ export const getMessageRequests = async (uid) => {
 };
 
 export const searchUsers = async (searchTerm, limitCount = 10) => {
-  if (!searchTerm) return [];
+  // Strip a leading "@" (users naturally type @handle) + whitespace, lowercase.
+  const term = String(searchTerm || '').trim().replace(/^@+/, '').toLowerCase();
+  if (!term) return [];
+  // Search the maintained lowercase index so mixed-case usernames are found
+  // (usernames are stored with original case; usernameLower is the normalized
+  // copy kept in sync by the maintainUsernameIndex Cloud Function).
   const q = query(
     collection(db, 'users'),
-    where('username', '>=', searchTerm.toLowerCase()),
-    where('username', '<=', searchTerm.toLowerCase() + '\uf8ff'),
+    where('usernameLower', '>=', term),
+    where('usernameLower', '<=', term + '\uf8ff'),
     limit(20),  // over-fetch so we can drop hidden accounts and still hit limitCount
   );
   const snap = await getDocs(q);
@@ -879,7 +1599,16 @@ export const searchUsers = async (searchTerm, limitCount = 10) => {
   // `filterForEnumeration(users, viewer)` if needed.
   return snap.docs
     .map((d) => ({ id: d.id, ...d.data() }))
-    .filter((u) => u.role !== 'admin' && u.hideFromEnumeration !== true)
+    // Drop operator + opt-in-hidden accounts, plus users whose Privacy →
+    // "Search visibility" is "Only me" (inlined to avoid a circular import with
+    // utils/privacy.js; the relationship-tier "Friends & Followers" is enforced
+    // at the profile / message gates where the viewer is known).
+    // Guests (`isGuest` / `guest_xxxxxx` handles) drop too — an anonymous
+    // browsing session cannot be DM'd, called or invited, so surfacing one in
+    // a people picker only ever produces a dead end.
+    .filter((u) => u.role !== 'admin' && u.hideFromEnumeration !== true
+      && u.isGuest !== true && !/^guest_/i.test(String(u.username || ''))
+      && (u.settings?.privacy?.searchVis ?? 'Everyone') !== 'Only me')
     .slice(0, limitCount);
 };
 
@@ -894,10 +1623,30 @@ export const getWallet = async (uid) => {
   return snap.exists() ? { ...DEFAULT_WALLET, ...snap.data() } : DEFAULT_WALLET;
 };
 
+// Public VP for any user. The wallet (where VP is authoritative) is owner-only
+// readable, so reading another user's VP must go through a Cloud Function that
+// reads it server-side and returns ONLY the integer (no financial data).
+export const getUserVP = async (uid) => {
+  if (!uid) return { vp: 0 };
+  try {
+    const { httpsCallable } = await import('firebase/functions');
+    const { functions: fns } = await import('./config');
+    const res = await httpsCallable(fns, 'getUserVP')({ uid });
+    return res.data || { vp: 0 };
+  } catch (e) {
+    console.warn('getUserVP failed:', e?.message);
+    return { vp: 0 };
+  }
+};
+
 export const subscribeToWallet = (uid, callback) => {
-  return onSnapshot(doc(db, 'wallets', uid), (snap) => {
-    callback(snap.exists() ? { ...DEFAULT_WALLET, ...snap.data() } : DEFAULT_WALLET);
-  });
+  return onSnapshot(
+    doc(db, 'wallets', uid),
+    (snap) => callback(snap.exists() ? { ...DEFAULT_WALLET, ...snap.data() } : DEFAULT_WALLET),
+    (err) => {
+      if (err?.code !== 'permission-denied') console.warn('wallet subscribe:', err);
+    },
+  );
 };
 
 export const getTransactions = async (uid, limitCount = 30) => {
@@ -1011,6 +1760,10 @@ export const recordAdWatch = async (uid) => {
     creditedVp += 5000; // 30-day perfect-month bonus
     monthBonusHit = true;
   }
+
+  // Subscriber VP multiplier (Free 1× / Lite 1.5× / Pro 2×). Paid users rarely
+  // see ads, but apply for honesty/consistency with every other VP grant.
+  creditedVp = await planVpMultiply(uid, creditedVp);
 
   // Persist quest state + wallet VP in a single batch.
   const batch = writeBatch(db);
@@ -1134,11 +1887,17 @@ export const approveServiceOrder = async (orderId, buyerId) => {
 
     const coinsEarned = order.priceCoins;
 
+    // Plan-multiply the seller's service-completion VP (Free 1× / Lite 1.5× /
+    // Pro 2×). Read inside the tx so the amount is consistent with the write.
+    const sellerSnap = await tx.get(doc(db, 'users', order.sellerId));
+    const sellerPlan = resolveTier(sellerSnap.exists() ? sellerSnap.data() : null);
+    const serviceVp = Math.round(30 * (PLAN_VP_MULTIPLIER[sellerPlan] || 1));
+
     // Pay seller in COINS (full amount). Commission applies later on coin→gem conversion.
     tx.update(doc(db, 'wallets', order.sellerId), {
       balance: increment(coinsEarned),
       totalEarned: increment(coinsEarned),
-      vp: increment(30), // VP for completing a service
+      vp: increment(serviceVp), // VP for completing a service (plan-multiplied)
     });
 
     tx.update(orderRef, { status: 'completed', completedAt: serverTimestamp() });
@@ -1955,6 +2714,95 @@ export const getMyVanguardPayoutHistory = async (uid, limitCount = 12) => {
     }));
 };
 
+// ── Vanguard collaboration tools (notes / escalations / announcements /
+// precedents). Client-written, gated to Vanguard members by firestore.rules.
+// Queries are single-field orderBy(createdAt) so no composite index is needed;
+// any secondary filtering happens client-side.
+
+export const getVanguardNotes = async (limitCount = 100) => {
+  const snap = await getDocs(query(collection(db, 'vanguard_notes'), orderBy('createdAt', 'desc'), limit(limitCount)));
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+};
+export const addVanguardNote = async ({ authorId, authorRank, subjectType, subjectLabel, body }) => {
+  const ref = await addDoc(collection(db, 'vanguard_notes'), {
+    authorId,
+    authorRank: authorRank || 'recruit',
+    subjectType: subjectType || 'general',
+    subjectLabel: (subjectLabel || '').slice(0, 120),
+    body: (body || '').slice(0, 2000),
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+  return ref.id;
+};
+export const deleteVanguardNote = async (id) => { await deleteDoc(doc(db, 'vanguard_notes', id)); };
+
+export const getVanguardEscalations = async (limitCount = 100) => {
+  const snap = await getDocs(query(collection(db, 'vanguard_escalations'), orderBy('createdAt', 'desc'), limit(limitCount)));
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+};
+export const addVanguardEscalation = async ({ authorId, authorRank, caseType, caseRef, summary, toRank }) => {
+  const ref = await addDoc(collection(db, 'vanguard_escalations'), {
+    authorId,
+    authorRank: authorRank || 'recruit',
+    caseType: caseType || 'other',
+    caseRef: (caseRef || '').slice(0, 120),
+    summary: (summary || '').slice(0, 2000),
+    toRank: toRank || 'commander',
+    status: 'open',
+    resolution: '',
+    resolvedBy: null,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+  return ref.id;
+};
+export const resolveVanguardEscalation = async (id, { resolvedBy, resolution } = {}) => {
+  await updateDoc(doc(db, 'vanguard_escalations', id), {
+    status: 'resolved',
+    resolvedBy: resolvedBy || null,
+    resolution: (resolution || '').slice(0, 2000),
+    updatedAt: serverTimestamp(),
+  });
+};
+export const deleteVanguardEscalation = async (id) => { await deleteDoc(doc(db, 'vanguard_escalations', id)); };
+
+export const getVanguardAnnouncements = async (limitCount = 50) => {
+  const snap = await getDocs(query(collection(db, 'vanguard_announcements'), orderBy('createdAt', 'desc'), limit(limitCount)));
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+};
+export const addVanguardAnnouncement = async ({ authorId, authorName, authorRank, title, body, pinned }) => {
+  const ref = await addDoc(collection(db, 'vanguard_announcements'), {
+    authorId,
+    authorName: authorName || 'Overseer',
+    authorRank: authorRank || 'overseer',
+    title: (title || '').slice(0, 160),
+    body: (body || '').slice(0, 4000),
+    pinned: !!pinned,
+    createdAt: serverTimestamp(),
+  });
+  return ref.id;
+};
+export const deleteVanguardAnnouncement = async (id) => { await deleteDoc(doc(db, 'vanguard_announcements', id)); };
+
+export const getVanguardPrecedents = async (limitCount = 100) => {
+  const snap = await getDocs(query(collection(db, 'vanguard_precedents'), orderBy('createdAt', 'desc'), limit(limitCount)));
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+};
+export const addVanguardPrecedent = async ({ authorId, authorRank, title, situation, ruling, tags }) => {
+  const ref = await addDoc(collection(db, 'vanguard_precedents'), {
+    authorId,
+    authorRank: authorRank || 'recruit',
+    title: (title || '').slice(0, 160),
+    situation: (situation || '').slice(0, 3000),
+    ruling: (ruling || '').slice(0, 3000),
+    tags: Array.isArray(tags) ? tags.slice(0, 8).map((t) => String(t).slice(0, 24)) : [],
+    createdAt: serverTimestamp(),
+  });
+  return ref.id;
+};
+export const deleteVanguardPrecedent = async (id) => { await deleteDoc(doc(db, 'vanguard_precedents', id)); };
+
 // Founder dashboard reads pending invitations across everyone.
 export const getOutstandingVanguardInvitations = async () => {
   const q = query(
@@ -2094,106 +2942,63 @@ export const convertCoinsToGems = async (uid, amount) => {
 // matter the recipient's tier. Do not parameterise.
 const TIP_PLATFORM_FEE_PCT = 0.10;
 
-export const sendCoins = async (fromUid, toUid, amount, desc = '') => {
+// Tipping moves coins from the sender to ANOTHER user's wallet + writes the
+// platform-commission ledger. A client can never do that under firestore.rules
+// (it can't write a wallet it doesn't own, can't create a transaction with
+// someone else's userId, and platform_commissions is server-only) — so this
+// routes through the `sendTip` Cloud Function (admin SDK), which runs the full
+// atomic transfer with the 10% fee, tip + transaction records, and recipient
+// notification. Signature kept identical so existing callers don't change.
+export const sendCoins = async (fromUid, toUid, amount, desc = '', extra = {}) => {
+  if (!toUid) throw new Error('Recipient required');
+  if (!Number.isFinite(amount) || amount < 1) throw new Error('Invalid tip amount');
   // News bots are not users. Block tips to bot accounts upfront so the
-  // sender sees a clear error before anything debits.
+  // sender sees a clear error before anything is attempted.
   const recipientSnap = await getDoc(doc(db, 'users', toUid));
   if (recipientSnap.exists() && recipientSnap.data().accountType === 'news_bot') {
     throw new Error('Cannot tip a bot account.');
   }
 
-  const fromWalletRef = doc(db, 'wallets', fromUid);
-  const toWalletRef = doc(db, 'wallets', toUid);
-
-  await runTransaction(db, async (transaction) => {
-    const fromSnap = await transaction.get(fromWalletRef);
-    if (!fromSnap.exists()) throw new Error('Wallet not found');
-    if (fromSnap.data().balance < amount) throw new Error('Insufficient balance');
-
-    const platformFee  = Math.ceil(amount * TIP_PLATFORM_FEE_PCT);
-    const netToCreator = amount - platformFee;
-
-    // Deduct full amount from sender
-    transaction.update(fromWalletRef, {
-      balance: increment(-amount),
-      totalSpent: increment(amount),
-      totalTipped: increment(amount),
-      updatedAt: serverTimestamp(),
-    });
-
-    // Credit recipient the net (after the 10% platform cut)
-    transaction.update(toWalletRef, {
-      balance: increment(netToCreator),
-      totalEarned: increment(netToCreator),
-      vp: increment(5), // bonus VP for receiving a tip
-      updatedAt: serverTimestamp(),
-    });
-
-    transaction.set(doc(collection(db, 'transactions')), {
-      userId: fromUid, recipientId: toUid, type: 'tip_sent',
-      amount: -amount, currency: 'coins',
-      description: desc || 'Sent tip',
-      meta: { gross: amount, platformFee, netToCreator },
-      createdAt: serverTimestamp(),
-    });
-    transaction.set(doc(collection(db, 'transactions')), {
-      userId: toUid, senderId: fromUid, type: 'tip_received',
-      amount: netToCreator, currency: 'coins',
-      description: desc ? `Tip received: ${desc}` : 'Received a tip',
-      meta: { gross: amount, platformFee, netToCreator },
-      createdAt: serverTimestamp(),
-    });
-
-    // Platform-side commission ledger entry — admin-readable for accounting.
-    transaction.set(doc(collection(db, 'platform_commissions')), {
-      type: 'tip_platform_fee',
-      senderId: fromUid,
+  const { httpsCallable } = await import('firebase/functions');
+  const { functions: fns } = await import('./config');
+  const fn = httpsCallable(fns, 'sendTip');
+  try {
+    const res = await fn({
       recipientId: toUid,
-      gross: amount,
-      platformFee,
-      netToCreator,
-      ratePct: TIP_PLATFORM_FEE_PCT * 100,
-      createdAt: serverTimestamp(),
+      amount: Math.floor(amount),
+      message: desc || null,
+      postId: extra.postId || null,
+      streamId: extra.streamId || null,
     });
-
-    transaction.set(doc(collection(db, 'notifications')), {
-      recipientId: toUid, type: 'coins',
-      title: `+${netToCreator} coins received!`,
-      body: desc || 'Someone tipped you',
-      read: false, data: { amount: netToCreator, gross: amount, platformFee, type: 'tip_received' },
-      createdAt: serverTimestamp(),
-    });
-  });
+    return res.data;
+  } catch (err) {
+    // Surface the function's friendly message (insufficient balance, etc.).
+    throw new Error(err?.message || 'Failed to send tip');
+  }
 };
 
+// Creator quests award VP ONLY — never coins (hard economy rule).
+// VP lives on the users doc (`vp` field); coins are never minted here.
 export const claimQuestReward = async (uid, questId, rewardAmount, questTitle) => {
-  const walletRef = doc(db, 'wallets', uid);
+  const userRef = doc(db, 'users', uid);
   const questClaimRef = doc(db, 'quest_claims', `${uid}_${questId}_${new Date().toISOString().split('T')[0]}`);
+  const vpAmount = await planVpMultiply(uid, rewardAmount); // plan-multiplied
 
   await runTransaction(db, async (transaction) => {
     const claimSnap = await transaction.get(questClaimRef);
     if (claimSnap.exists()) throw new Error('Quest already claimed today');
 
-    transaction.update(walletRef, {
-      balance: increment(rewardAmount),
-      totalEarned: increment(rewardAmount),
+    transaction.update(userRef, {
+      vp: increment(vpAmount),
       updatedAt: serverTimestamp(),
     });
 
     transaction.set(questClaimRef, {
       userId: uid,
       questId,
-      amount: rewardAmount,
+      vp: vpAmount,
+      reward: 'vp',
       claimedAt: serverTimestamp(),
-    });
-
-    const txRef = doc(collection(db, 'transactions'));
-    transaction.set(txRef, {
-      userId: uid,
-      type: 'quest_reward',
-      amount: rewardAmount,
-      desc: questTitle || 'Quest reward',
-      createdAt: serverTimestamp(),
     });
   });
 };
@@ -2254,11 +3059,16 @@ export const requestPayout = async (uid, amount, method, details) => {
 // USER SETTINGS
 // ═══════════════════════════════════════════
 
+// Merge settings into the user doc WITHOUT clobbering sibling keys. Callers pass
+// a partial settings object (e.g. {notifications:{...}} or {privacy:{...}} or
+// {theme,fontSize,...}); we write each top-level key as a dotted field path so a
+// Notifications save no longer wipes Privacy/Display/Language and vice-versa.
 export const updateUserSettings = async (uid, settings) => {
-  await updateDoc(doc(db, 'users', uid), {
-    settings: settings,
-    updatedAt: serverTimestamp(),
-  });
+  const update = { updatedAt: serverTimestamp() };
+  for (const [k, v] of Object.entries(settings || {})) {
+    update[`settings.${k}`] = v;
+  }
+  await updateDoc(doc(db, 'users', uid), update);
 };
 
 export const updateLinkedAccount = async (uid, platform, accountInfo) => {
@@ -2337,6 +3147,50 @@ export const getQuestClaims = async (uid) => {
   return snap.docs.map(d => d.data().questId);
 };
 
+// Once-ever milestone reward (VP only). Unlike daily quests, the claim doc id is
+// date-less so each milestone level can be claimed exactly once, ever.
+export const claimMilestoneReward = async (uid, milestoneId, rewardAmount, title) => {
+  const userRef = doc(db, 'users', uid);
+  const claimRef = doc(db, 'quest_claims', `${uid}_${milestoneId}`);
+  const vpAmount = await planVpMultiply(uid, rewardAmount); // plan-multiplied
+  await runTransaction(db, async (transaction) => {
+    const claimSnap = await transaction.get(claimRef);
+    if (claimSnap.exists()) throw new Error('Milestone already claimed');
+    transaction.update(userRef, { vp: increment(vpAmount), updatedAt: serverTimestamp() });
+    transaction.set(claimRef, {
+      userId: uid, questId: milestoneId, milestone: true,
+      vp: vpAmount, reward: 'vp', title: title || milestoneId,
+      claimedAt: serverTimestamp(),
+    });
+  });
+};
+
+// All-time milestone claims for a user (returns array of milestoneIds).
+export const getMilestoneClaims = async (uid) => {
+  const q = query(
+    collection(db, 'quest_claims'),
+    where('userId', '==', uid),
+    where('milestone', '==', true)
+  );
+  const snap = await getDocs(q);
+  return snap.docs.map(d => d.data().questId);
+};
+
+// Coins earned from winning tournaments (lifetime), summed from the transaction
+// ledger. finalizeInternal writes positive prize rows tagged with a tournament
+// type/source; we match the same classification the dashboard uses.
+export const getTournamentCoinsEarned = async (uid) => {
+  const txs = await getTransactions(uid, 500);
+  let total = 0;
+  for (const tx of txs) {
+    const amt = tx.amount || 0;
+    if (amt <= 0) continue;
+    const t = `${tx.type || ''} ${tx.source || ''} ${tx.description || ''}`.toLowerCase();
+    if (t.includes('tournament') || t.includes('prize') || tx.tournamentId) total += amt;
+  }
+  return total;
+};
+
 // ═══════════════════════════════════════════
 // STREAMS
 // ═══════════════════════════════════════════
@@ -2371,6 +3225,19 @@ export const createStream = async (streamerId, { title, game, platforms }) => {
 // ═══════════════════════════════════════════
 // TOURNAMENTS
 // ═══════════════════════════════════════════
+
+// Vanguard/admin tournament search — name match across EVERY tournament
+// (public, private, invite-only), since `tournaments` read is world-open.
+// Used by the moderator Tournament Lookup so mods never need a raw ID.
+export const searchTournamentsForMod = async (term, limitCount = 25) => {
+  const lc = String(term || '').trim().toLowerCase();
+  if (!lc) return [];
+  const snap = await getDocs(query(collection(db, 'tournaments'), orderBy('startDate', 'desc'), limit(300)));
+  return snap.docs
+    .map((d) => ({ id: d.id, ...d.data() }))
+    .filter((t) => (t.name || '').toLowerCase().includes(lc) || (t.game || '').toLowerCase().includes(lc) || t.id.toLowerCase() === lc)
+    .slice(0, limitCount);
+};
 
 export const getTournaments = async (status = null, limitCount = 20) => {
   // Public browse: filter out private/invite-only tournaments. Server query
@@ -2442,7 +3309,7 @@ export const getPublicGroupChats = async (limitCount = 50) => {
   }
 };
 
-export const joinGroupChat = async (chatId) => {
+export const joinGroupChat = async (chatId, via = null) => {
   const uid = auth.currentUser?.uid;
   if (!uid) throw new Error('Not signed in');
   const ref = doc(db, 'conversations', chatId);
@@ -2450,16 +3317,233 @@ export const joinGroupChat = async (chatId) => {
   if (!snap.exists()) throw new Error('Group not found');
   const data = snap.data();
   if (!data.isGroup) throw new Error('Not a group chat');
-  if (data.visibility !== 'public') throw new Error('Group is private');
   if ((data.participants || []).includes(uid)) return chatId; // already in
+  if ((data.banned || []).includes(uid)) {
+    const e = new Error('You can no longer join this group.');
+    e.code = 'group/banned';
+    throw e;
+  }
+  // Private groups require admin approval — caller should use
+  // requestToJoinGroup. We signal with a typed error so the join screen can
+  // branch instead of showing a hard failure.
+  if ((data.visibility || 'private') !== 'public') {
+    const e = new Error('This group is private — request to join.');
+    e.code = 'group/private';
+    throw e;
+  }
+  // Once a group requires an invite, the rules make the joiner PRESENT the code
+  // in their own metadata entry. That is what makes a revoked link stop working:
+  // the old code no longer resolves to this group.
   await updateDoc(ref, {
     participants: arrayUnion(uid),
     [`metadata.${uid}`]: {
       name: auth.currentUser?.displayName || 'Vergr Member',
       avatar: auth.currentUser?.photoURL || null,
+      ...(via ? { via } : {}),
     },
   });
   return chatId;
+};
+
+// Lightweight read for the public join screen. `allow get` on conversations is
+// open to any signed-in user, so a not-yet-member can preview name/icon/size
+// before deciding to join or request.
+export const getGroupForJoin = async (chatId) => {
+  const snap = await getDoc(doc(db, 'conversations', chatId));
+  if (!snap.exists()) return null;
+  const data = snap.data();
+  if (!data.isGroup) return null;
+  return {
+    id: snap.id,
+    groupName: data.groupName || 'Group',
+    groupIcon: data.groupIcon || null,
+    description: data.description || '',
+    visibility: data.visibility || 'private',
+    memberCount: (data.participants || []).length,
+    isMember: (data.participants || []).includes(auth.currentUser?.uid),
+    isBanned: (data.banned || []).includes(auth.currentUser?.uid),
+    requireInvite: data.requireInvite === true,
+  };
+};
+
+// ═══ Group management: invite codes, bans, permissions ═══
+
+// Default member permissions for a group. Absent map = everything allowed,
+// which is what every group created before this feature relies on.
+export const DEFAULT_GROUP_PERMISSIONS = {
+  sendMedia: true,
+  sendLinks: true,
+  addMembers: true,
+  pin: true,
+};
+
+export const groupPermissions = (chatInfo) => ({
+  ...DEFAULT_GROUP_PERMISSIONS,
+  ...(chatInfo?.permissions || {}),
+});
+
+// Can `uid` do `action` in this group? Admins are never restricted (the
+// permissions map is about MEMBERS), and a non-group chat has no restrictions.
+export const groupAllows = (chatInfo, action, uid) => {
+  if (!chatInfo?.isGroup) return true;
+  const isAdmin = (chatInfo.admins || []).includes(uid) || chatInfo.createdBy === uid;
+  if (isAdmin) return true;
+  return groupPermissions(chatInfo)[action] !== false;
+};
+
+export const setGroupPermissions = async (chatId, permissions) =>
+  updateDoc(doc(db, 'conversations', chatId), { permissions });
+
+const randomInviteCode = () => {
+  // 16 chars from a 32-symbol alphabet ≈ 80 bits. Must be unguessable: holding
+  // a live code is the entire capability to join.
+  const alphabet = 'abcdefghijkmnopqrstuvwxyz23456789';
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => alphabet[b % alphabet.length]).join('');
+};
+
+// Read the group's current invite code (admins only — rules enforce it).
+export const getGroupInviteCode = async (chatId) => {
+  const snap = await getDoc(doc(db, 'conversations', chatId, 'groupInvite', 'current'));
+  return snap.exists() ? (snap.data().code || null) : null;
+};
+
+// Issue a fresh code and REVOKE the previous one. This is what makes an old
+// link stop working: the group_invites doc it pointed at is deleted, and the
+// join rules require a code that still resolves to this group.
+export const rotateGroupInvite = async (chatId) => {
+  const uid = auth.currentUser?.uid;
+  if (!uid) throw new Error('Not signed in');
+  const prev = await getGroupInviteCode(chatId);
+  const code = randomInviteCode();
+
+  await setDoc(doc(db, 'group_invites', code), {
+    chatId,
+    createdBy: uid,
+    createdAt: serverTimestamp(),
+  });
+  // Flip the group to invite-required the first time a code is issued. Until
+  // then, legacy bare-chatId links keep working (they are all that exists).
+  await updateDoc(doc(db, 'conversations', chatId), { requireInvite: true });
+  await setDoc(doc(db, 'conversations', chatId, 'groupInvite', 'current'), {
+    code, updatedAt: serverTimestamp(),
+  });
+  if (prev && prev !== code) {
+    await deleteDoc(doc(db, 'group_invites', prev)).catch(() => {});
+  }
+  return code;
+};
+
+// Resolve an invite code to its group. Returns null for a revoked/unknown code.
+export const resolveGroupInvite = async (code) => {
+  const snap = await getDoc(doc(db, 'group_invites', code));
+  return snap.exists() ? (snap.data().chatId || null) : null;
+};
+
+// Ban: remove from the group AND block re-joining. Rules refuse a banned uid on
+// both self-join and join-request; the relay refuses their message frames.
+export const banFromGroup = async (chatId, uid) =>
+  updateDoc(doc(db, 'conversations', chatId), {
+    banned: arrayUnion(uid),
+    participants: arrayRemove(uid),
+    admins: arrayRemove(uid),
+  });
+
+export const unbanFromGroup = async (chatId, uid) =>
+  updateDoc(doc(db, 'conversations', chatId), { banned: arrayRemove(uid) });
+
+// Report a public group into the SAME `reports` collection the Vanguard queue
+// reads (create is already allowed for any authed user).
+export const reportGroup = async (chatId, reason = '') => {
+  const uid = auth.currentUser?.uid;
+  if (!uid) throw new Error('Not signed in');
+  return addDoc(collection(db, 'reports'), {
+    type: 'group',
+    targetId: chatId,
+    reporterId: uid,
+    reason: reason || 'Reported from group invite',
+    status: 'pending',
+    createdAt: serverTimestamp(),
+  });
+};
+
+// ═══ Chat polls (DMs/groups + squad chat) ═══
+// Poll body lives in `chat_polls/{id}`; votes in `chat_polls/{id}/votes/{uid}`
+// (own-doc writes only; membership of the conversation/squad enforced in
+// rules via the parent poll's convId/squadId). The chat MESSAGE carries only
+// the poll id in `contentUrl` — the relay strips nested fields, same pattern
+// as the event-ticket cards — and ChatPollBubble live-fetches the rest.
+export const createChatPoll = async ({ scope, convId = null, squadId = null, question, options, multi = false }) => {
+  const uid = auth.currentUser?.uid;
+  if (!uid) throw new Error('Not signed in');
+  const ref = await addDoc(collection(db, 'chat_polls'), {
+    scope: scope === 'squad' ? 'squad' : 'dm',
+    convId, squadId,
+    creatorUid: uid,
+    question: String(question || '').slice(0, 200),
+    options: (options || []).map((t) => String(t || '').slice(0, 80)).filter(Boolean).slice(0, 6),
+    multi: !!multi,
+    createdAt: serverTimestamp(),
+  });
+  return ref.id;
+};
+
+export const voteChatPoll = (pollId, picks) =>
+  setDoc(doc(db, 'chat_polls', pollId, 'votes', auth.currentUser.uid), {
+    picks: (picks || []).slice(0, 6),
+    votedAt: serverTimestamp(),
+  });
+
+export const retractChatPollVote = (pollId) =>
+  deleteDoc(doc(db, 'chat_polls', pollId, 'votes', auth.currentUser.uid));
+
+// Private-group request-to-join. Writes conversations/{id}/joinRequests/{uid}.
+// Idempotent: re-requesting just refreshes the timestamp.
+export const requestToJoinGroup = async (chatId, via = null) => {
+  const uid = auth.currentUser?.uid;
+  if (!uid) throw new Error('Not signed in');
+  await setDoc(doc(db, 'conversations', chatId, 'joinRequests', uid), {
+    uid,
+    name: auth.currentUser?.displayName || 'Vergr Member',
+    avatar: auth.currentUser?.photoURL || null,
+    requestedAt: serverTimestamp(),
+    ...(via ? { via } : {}),   // rules check this resolves to a live invite
+  });
+};
+
+export const cancelJoinRequest = async (chatId) => {
+  const uid = auth.currentUser?.uid;
+  if (!uid) throw new Error('Not signed in');
+  await deleteDoc(doc(db, 'conversations', chatId, 'joinRequests', uid));
+};
+
+export const getMyJoinRequest = async (chatId) => {
+  const uid = auth.currentUser?.uid;
+  if (!uid) return null;
+  const snap = await getDoc(doc(db, 'conversations', chatId, 'joinRequests', uid));
+  return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+};
+
+// Admin-side: list + act on pending requests.
+export const getGroupJoinRequests = async (chatId) => {
+  const snap = await getDocs(collection(db, 'conversations', chatId, 'joinRequests'));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+};
+
+export const approveGroupJoinRequest = async (chatId, req) => {
+  const uid = req?.uid || req?.id;
+  if (!uid) throw new Error('Missing request uid');
+  await updateDoc(doc(db, 'conversations', chatId), {
+    participants: arrayUnion(uid),
+    [`metadata.${uid}`]: { name: req.name || 'Member', avatar: req.avatar || null },
+    [`unreadCount.${uid}`]: 0,
+  });
+  await deleteDoc(doc(db, 'conversations', chatId, 'joinRequests', uid));
+};
+
+export const denyGroupJoinRequest = async (chatId, uid) => {
+  await deleteDoc(doc(db, 'conversations', chatId, 'joinRequests', uid));
 };
 
 // ═══════════════════════════════════════════
@@ -2532,6 +3616,18 @@ export const updateVoiceChannelMembers = async (channelId, allowedUserIds) => {
 
 export const deleteVoiceChannel = async (channelId) => {
   await deleteDoc(doc(db, 'voice_channels', channelId));
+};
+
+// Owner kick: ban + drop from the invite list + clear presence. The kicked
+// client auto-leaves via its channel-doc subscription (SFU itself has no
+// kick API — client-honored, rules stop them rejoining a private channel).
+export const kickFromVoiceChannel = async (channelId, targetUid) => {
+  if (!channelId || !targetUid) return;
+  await updateDoc(doc(db, 'voice_channels', channelId), {
+    bannedUserIds: arrayUnion(targetUid),
+    allowedUserIds: arrayRemove(targetUid),
+    [`active.${targetUid}`]: deleteField(),
+  });
 };
 
 // Tournaments the user is registered in OR hosting (used by My Tournaments).
@@ -2711,11 +3807,70 @@ const callTournamentFn = async (name, payload) => {
   return res.data;
 };
 
+// On-demand translation (self-hosted LibreTranslate). kind: post|comment|message|streamchat.
+// Throws with message 'UPGRADE_REQUIRED' when a paid-only surface is hit by a free user.
+export const translateContent = ({ text, target, kind = 'post', refId = null, knownLang = null }) =>
+  callTournamentFn('translateContent', { text, target, kind, refId, knownLang });
+
 export const createTournamentSecure = (payload) =>
   callTournamentFn('createTournamentSecure', payload);
 
 export const joinTournamentSecure = (tournamentId, opts = {}) =>
   callTournamentFn('joinTournamentSecure', { tournamentId, ...opts });
+
+// Ticketed events — fans buy spectator tickets; competitors register free.
+// registerForEvent is just the free competitor join (entryFee is 0 on
+// ticketed events, so joinTournamentSecure debits nothing).
+export const purchaseEventTicket = ({ tournamentId, source = 'direct', kind = 'single' }) =>
+  callTournamentFn('purchaseEventTicket', { tournamentId, source, kind });
+
+export const registerForEvent = (tournamentId, opts = {}) =>
+  callTournamentFn('joinTournamentSecure', { tournamentId, ...opts });
+
+// Discord-server clone (structure → Vergr groups + voice channels).
+export const getDiscordCloneSetup = () =>
+  callTournamentFn('getDiscordCloneSetup', {});
+
+export const cloneDiscordServerStructure = (guildId) =>
+  callTournamentFn('cloneDiscordServerStructure', { guildId });
+
+// Phase 2: enqueue the message-history import (box worker does the work).
+export const importDiscordMessages = (guildId, { fullHistory = false, gdprAck = false } = {}) =>
+  callTournamentFn('importDiscordMessages', { guildId, fullHistory, gdprAck });
+
+// Live progress of a community-import job (Discord/WhatsApp history).
+export const subscribeCommunityImport = (importId, cb) =>
+  onSnapshot(doc(db, 'community_imports', importId), (snap) => cb(snap.exists() ? { id: snap.id, ...snap.data() } : null));
+
+// Invite loops (growth): owner-triggered migration notice + auto-rejoin.
+export const postDiscordMigrationNotice = (guildId) =>
+  callTournamentFn('postDiscordMigrationNotice', { guildId });
+
+export const checkDiscordRejoin = (force = false) =>
+  callTournamentFn('checkDiscordRejoin', { force });
+
+export const claimDiscordRejoin = (guildId) =>
+  callTournamentFn('claimDiscordRejoin', { guildId });
+
+// WhatsApp export import (owner-supplied "Export chat" .txt → relay store).
+export const getImportUploadUrl = (sizeBytes) =>
+  callTournamentFn('getImportUploadUrl', { sizeBytes });
+
+export const importWhatsAppExport = ({ exportKey, groupName, targetChatId, fullHistory = false, gdprAck = false }) =>
+  callTournamentFn('importWhatsAppExport', { exportKey, groupName, targetChatId, fullHistory, gdprAck });
+
+export const claimWhatsAppMessages = (chatId) =>
+  callTournamentFn('claimWhatsAppMessages', { chatId });
+
+// Twitch import onboarding: prefill profile + starter vergr.me from Helix.
+export const twitchChannelImport = () =>
+  callTournamentFn('twitchChannelImport', {});
+
+export const getEventTicketStatus = (tournamentId) =>
+  callTournamentFn('getEventTicketStatus', { tournamentId });
+
+export const purchaseSeasonPass = (hostUid) =>
+  callTournamentFn('purchaseSeasonPass', { hostUid });
 
 export const leaveTournamentSecure = (tournamentId) =>
   callTournamentFn('leaveTournamentSecure', { tournamentId });
@@ -3228,7 +4383,7 @@ const advanceBracket = async (tournamentId, completedRound) => {
 
 // Prize distribution: coins → gems conversion
 // Entry fees paid in coins. Winners receive gems. Platform keeps commission.
-// Commission based on each winner's VP level (30% at L1 → 10% at L100 Immortal)
+// Commission based on each winner's VP (30% stepping down to a 15% floor at 100k VP)
 export const distributePrizePool = async (tournamentId) => {
   const tournamentRef = doc(db, 'tournaments', tournamentId);
   const snap = await getDoc(tournamentRef);
@@ -3382,7 +4537,14 @@ export const uploadTournamentBanner = async (uid, file) => {
 };
 
 export const uploadPostMedia = async (postId, file) => {
-  const { url } = await uploadToR2(file, 'post');
+  // Compress + normalize images to JPEG (matches uploadAvatar/uploadBanner).
+  // Without this a raw phone photo (multi-MB, sometimes HEIC / odd mime) could
+  // be rejected by the R2 content-type allowlist or time out on a slow mobile
+  // connection — the "image won't post" bug. Videos pass through (server cap).
+  const blob = file?.type?.startsWith('image/')
+    ? await compressMedia(file, 'free', 'post')
+    : file;
+  const { url } = await uploadToR2(blob, 'post');
   return url;
 };
 
@@ -3563,6 +4725,7 @@ export const syncRSSPost = async (botUserId, rssItem, postId) => {
     rankScore: 0,
     sourceUrl: rssItem.link || '',
     isNewsPost: true,
+    needsSeoRewrite: true,
     linkPreview: {
       url: rssItem.link || '',
       title: rssItem.title || '',
@@ -3631,4 +4794,42 @@ export const getRecentAdminActions = async (limitN = 50) => {
   const q = query(collection(db, 'admin_actions'), orderBy('createdAt', 'desc'), limit(limitN));
   const snap = await getDocs(q);
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+};
+
+// ───────────── Game requests (from the Create-Tournament picker) ─────────────
+// A host who can't find their game submits a request that lands in the admin
+// Tournaments → Game Requests tab. Stored in the shared `feedback` collection
+// (rules: user creates own, admin reads/updates/deletes) tagged type=game_request.
+export const requestGame = async ({ game, note = '' }) => {
+  const g = (game || '').trim();
+  if (!auth.currentUser) throw new Error('Sign in to request a game.');
+  if (g.length < 2) throw new Error('Enter the name of the game.');
+  await addDoc(collection(db, 'feedback'), {
+    userId: auth.currentUser.uid,
+    type: 'game_request',
+    game: g.slice(0, 80),
+    note: (note || '').trim().slice(0, 280),
+    username: auth.currentUser.displayName || null,
+    status: 'new',
+    createdAt: serverTimestamp(),
+  });
+};
+
+// Admin: live-subscribe to game requests (newest first, sorted client-side so
+// no composite index is needed). Returns an unsubscribe fn.
+export const subscribeGameRequests = (cb) => {
+  const q = query(collection(db, 'feedback'), where('type', '==', 'game_request'), limit(200));
+  return onSnapshot(q, (snap) => {
+    const rows = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    rows.sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
+    cb(rows);
+  }, () => cb([]));
+};
+
+export const setGameRequestStatus = async (id, status) => {
+  await updateDoc(doc(db, 'feedback', id), { status, resolvedAt: serverTimestamp() });
+};
+
+export const deleteGameRequest = async (id) => {
+  await deleteDoc(doc(db, 'feedback', id));
 };

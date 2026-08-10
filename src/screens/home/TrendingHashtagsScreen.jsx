@@ -39,7 +39,7 @@ export default function TrendingHashtagsScreen() {
       <div className="px-4 py-4">
         {loading ? (
           <div className="flex justify-center py-16">
-            <div className="w-6 h-6 border-2 border-surface-3 border-t-brand-cyan rounded-full animate-spin" />
+            <div className="w-6 h-6 border-2 border-surface-3 border-t-brand-violet rounded-full animate-spin" />
           </div>
         ) : tags.length === 0 ? (
           <div className="text-center py-16">
@@ -55,7 +55,7 @@ export default function TrendingHashtagsScreen() {
                 className="w-full flex items-center gap-3 p-4 rounded-2xl bg-surface-1 border border-white/[0.06] text-left hover:border-white/[0.12] transition-colors">
                 <span className="font-dmmono text-text-muted w-6 text-center">#{i+1}</span>
                 <div className="flex-1">
-                  <p className="text-sm font-bold text-brand-cyan">#{typeof tag === 'string' ? tag : tag.tag}</p>
+                  <p className="text-sm font-bold text-brand-violet-light">#{typeof tag === 'string' ? tag : tag.tag}</p>
                   {tag.count && <p className="text-xs text-text-muted">{tag.count} posts</p>}
                 </div>
                 <Icon name="trending_up" size={18} className="text-green-500" />

@@ -14,7 +14,7 @@ export function Card({ className = '', children, ...rest }) {
 }
 
 // ── KPI card with sparkline ────────────────────────────────────────────
-export function KpiCard({ label, value, unit = '', delta, deltaLabel, icon, iconColor = 'text-brand-cyan', spark, sparkColor, tooltip }) {
+export function KpiCard({ label, value, unit = '', delta, deltaLabel, icon, iconColor = 'text-brand-violet-light', spark, sparkColor, tooltip }) {
   const positive = delta == null ? null : delta >= 0;
   return (
     <Card className="p-4 md:p-5 flex flex-col gap-3 min-w-0">
@@ -73,7 +73,7 @@ export function SectionHeader({ title, subtitle, right }) {
 // ── AI insight / tip card ──────────────────────────────────────────────
 export function InsightCard({ title, body, cta, onCta, icon = 'auto_awesome', tone = 'violet' }) {
   const tones = {
-    violet: 'from-brand-violet/20 via-brand-cyan/10 to-transparent border-brand-violet/30 text-brand-violet',
+    violet: 'from-brand-violet/20 via-brand-violet/10 to-transparent border-brand-violet/30 text-brand-violet',
     gold:   'from-brand-gold/15 via-amber-500/5 to-transparent border-brand-gold/30 text-brand-gold',
     emerald:'from-emerald-500/15 via-emerald-500/5 to-transparent border-emerald-500/30 text-emerald-400',
     pink:   'from-brand-pink/15 via-brand-pink/5 to-transparent border-brand-pink/30 text-brand-pink',
@@ -113,10 +113,10 @@ export function StatRow({ label, value, accent = 'text-text-primary' }) {
 // ── Period/Date range pill selector ────────────────────────────────────
 export function PeriodPicker({ value, onChange, options = ['7d','30d','90d','6m','All'] }) {
   return (
-    <div className="inline-flex items-center gap-1 p-1 rounded-xl bg-white/[0.03] border border-white/[0.05]">
+    <div className="inline-flex max-w-full items-center gap-1 p-1 rounded-xl bg-white/[0.03] border border-white/[0.05] overflow-x-auto no-scrollbar">
       {options.map(opt => (
         <button key={opt} onClick={() => onChange(opt)}
-          className={`px-3 h-7 rounded-lg text-[11px] font-bold transition-all ${
+          className={`px-3 h-7 rounded-lg text-[11px] font-bold transition-all shrink-0 ${
             value === opt
               ? 'bg-white/10 text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.1)]'
               : 'text-text-muted hover:text-text-secondary'

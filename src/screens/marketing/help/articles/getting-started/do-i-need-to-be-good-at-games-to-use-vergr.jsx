@@ -1,0 +1,51 @@
+// Help center article: Do I need to be good at games to use VERGR?
+// Edit the text freely. Block model:
+//   { p } paragraph · { h2 } heading · { list:[...] } bullets · { steps:[...] } numbered
+//   { faq:[[q,a],...] } · { note } callout · { cta:[{ to, label }] } related links
+// Top-level: summary (1-2 sentences, answer-first), updated (YYYY-MM-DD), body [].
+
+export default {
+  summary: "No. You do not need to be good at games to use VERGR. Plenty of people are here to stream, build a community, post clips, hang out in squads, watch, and tip, none of which need you to win anything. Skill only matters if you choose to enter competitive tournaments, and even then there are free, low-stakes events to start with.",
+  updated: "2026-06-06",
+  body: [
+    {
+      p: "This is one of the most common worries from new users, and the honest answer is: not at all. VERGR is a place for gamers of every level. Being good at a game is one path here, not the price of entry."
+    },
+    {
+      h2: "Tons of VERGR has nothing to do with winning"
+    },
+    {
+      list: [
+        "Stream what you play, however you play it. People follow personalities, not just highlight reels.",
+        "Post clips, photos, articles, tier lists, and more. Funny beats flawless most of the time.",
+        "Join a squad, hang out in voice, and split what the group earns together.",
+        "Watch streams, chat, react, and tip the creators you like.",
+        "Build a following and earn from tips and memberships without ever entering a single match for money."
+      ]
+    },
+    {
+      h2: "What if I want to compete?"
+    },
+    {
+      p: "Tournaments are skill-based, so better players do win more often. But you choose your level. There are free tournaments with no entry cost, low-stakes events, and quickplay 1v1s, so you can test the water without risking much. You can also play casual matches purely to improve."
+    },
+    {
+      h2: "Getting better is part of it"
+    },
+    {
+      p: "If you want to climb, watching higher-ranked streamers is a free way to learn, and playing casual matches lets you practise without pressure. Improvement is a feature here, not a requirement."
+    },
+    {
+      cta: [
+        {
+          to: "/platform/help/what-can-i-do-on-vergr",
+          label: "Everything you can do"
+        },
+        {
+          to: "/platform/help/how-do-i-make-money-on-vergr",
+          label: "Ways to earn"
+        }
+      ]
+    }
+  ]
+};

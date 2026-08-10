@@ -10,7 +10,7 @@ import Icon from '../../components/Icon';
 const DEFAULT_TIERS = [
   { id: 's', label: 'S', color: '#FF4D6A', items: [] },
   { id: 'a', label: 'A', color: '#F5C542', items: [] },
-  { id: 'b', label: 'B', color: '#4DFFD4', items: [] },
+  { id: 'b', label: 'B', color: '#B44FFF', items: [] },
   { id: 'c', label: 'C', color: '#7B6FFF', items: [] },
   { id: 'd', label: 'D', color: '#3D4260', items: [] },
 ];
@@ -60,7 +60,7 @@ export default function CreateTierListScreen() {
       <header className="sticky top-0 z-40 bg-bg-dark/90 backdrop-blur-xl border-b border-white/[0.04]">
         <div className="flex items-center justify-between px-4 py-3">
           <div className="flex items-center gap-3"><button onClick={() => navigate(-1)} className="w-9 h-9 rounded-xl bg-surface-2 border border-white/[0.06] flex items-center justify-center text-text-secondary hover:text-white transition-colors"><Icon name="arrow_back" size={20} /></button><h1 className="font-syne font-bold text-base text-white">Tier List</h1></div>
-          <button onClick={handlePost} disabled={loading || !canPost} className="bg-brand-cyan text-bg-dark px-6 py-2 rounded-full font-bold text-sm disabled:opacity-30 hover:brightness-110 active:scale-[0.97] transition-all">{loading ? <div className="w-4 h-4 border-2 border-bg-dark/30 border-t-bg-dark rounded-full animate-spin" /> : 'Post'}</button>
+          <button onClick={handlePost} disabled={loading || !canPost} className="bg-brand-violet text-white px-6 py-2 rounded-full font-bold text-sm disabled:opacity-30 hover:brightness-110 active:scale-[0.97] transition-all">{loading ? <div className="w-4 h-4 border-2 border-bg-dark/30 border-t-bg-dark rounded-full animate-spin" /> : 'Post'}</button>
         </div>
       </header>
       <div className={`flex-1 overflow-y-auto px-4 py-5 ${isDesktop ? 'max-w-3xl' : ''}`}>

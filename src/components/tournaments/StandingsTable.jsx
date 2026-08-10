@@ -27,8 +27,8 @@ export function RoundRobinStandings({ standings = [], teamLookup = {} }) {
             <Cell>{row.w}</Cell>
             <Cell>{row.d}</Cell>
             <Cell>{row.l}</Cell>
-            <Cell className="text-brand-cyan font-bold">{row.pts}</Cell>
-            <Cell className={row.diff >= 0 ? 'text-brand-cyan' : 'text-brand-ember'}>
+            <Cell className="text-brand-violet-light font-bold">{row.pts}</Cell>
+            <Cell className={row.diff >= 0 ? 'text-brand-violet-light' : 'text-brand-ember'}>
               {row.diff > 0 ? `+${row.diff}` : row.diff}
             </Cell>
           </div>
@@ -53,7 +53,7 @@ export function SwissStandings({ standings = [] }) {
         <div key={row.playerId} className="grid grid-cols-[32px_1fr_32px_32px_56px] gap-2 px-3 py-2.5 border-b border-white/[0.04] last:border-0 items-center">
           <span className="text-text-muted text-xs font-bold">{i + 1}</span>
           <span className="text-text-primary text-sm font-bold truncate">{row.name || row.playerId}</span>
-          <Cell className="text-brand-cyan font-bold">{row.wins}</Cell>
+          <Cell className="text-brand-violet-light font-bold">{row.wins}</Cell>
           <Cell>{row.losses}</Cell>
           <Cell className="text-text-secondary">{row.buchholz}</Cell>
         </div>

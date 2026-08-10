@@ -1,148 +1,147 @@
-// Floating daily check-in popup. Renders as a fixed card in the bottom-right
-// corner so it doesn't take up feed real estate. Dismissable via the × button;
-// dismissal persists for the rest of the day.
-import { useState, useEffect } from 'react';
+// Automated daily check-in banner. The user does NOT click anything — on the
+// first app open of the day it auto-claims the daily login reward, slides a
+// glass banner DOWN from the top of the screen with an animated streak progress
+// bar, then slides back up and disappears after a few seconds.
+//
+// Daily login is VP-ONLY (no coins) and the VP is plan-multiplied server-side
+// (Free 1× / Lite 1.5× / Pro 2×) — the banner surfaces the multiplier badge.
+import { useState, useEffect, useRef } from 'react';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../firebase/config';
 import { useAuth } from '../context/AuthContext';
+import { VPIcon } from './CoinIcon';
 import Icon from './Icon';
-import { CoinIcon, VPIcon } from './CoinIcon';
+
+const VISIBLE_MS = 4800; // how long the banner stays on screen after sliding in
 
 export default function DailyRewardBanner() {
   const { currentUser } = useAuth();
-  const [show, setShow] = useState(false);
-  const [claiming, setClaiming] = useState(false);
   const [result, setResult] = useState(null);
-  const [dismissed, setDismissed] = useState(false);
-  const [error, setError] = useState(null);
+  const [mounted, setMounted] = useState(false); // in DOM
+  const [shown, setShown] = useState(false);      // slid down (transform)
+  const timers = useRef([]);
 
   useEffect(() => {
-    if (!currentUser) return;
+    if (!currentUser || !functions) return;
     const today = new Date().toISOString().slice(0, 10);
     const claimKey = `vergr_daily_${currentUser.uid}`;
-    const dismissKey = `vergr_daily_dismissed_${currentUser.uid}`;
-    const lastClaim = localStorage.getItem(claimKey);
-    const lastDismiss = localStorage.getItem(dismissKey);
-    // Only show if: not claimed today AND not dismissed today
-    if (lastClaim !== today && lastDismiss !== today) setShow(true);
+    if (localStorage.getItem(claimKey) === today) return; // already done today
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await httpsCallable(functions, 'claimDailyReward')();
+        localStorage.setItem(claimKey, today);
+        if (cancelled) return;
+        reveal(res.data);
+      } catch (err) {
+        // Already claimed (e.g. claimed on another device) — just mark done.
+        if (err?.code === 'functions/already-exists') {
+          localStorage.setItem(claimKey, today);
+        } else {
+          console.error('Daily check-in error:', err);
+        }
+      }
+    })();
+
+    function reveal(data) {
+      setResult(data);
+      setMounted(true);
+      // next frame → slide down
+      timers.current.push(requestAnimationFrame(() => requestAnimationFrame(() => setShown(true))));
+      // auto-hide
+      timers.current.push(setTimeout(() => setShown(false), VISIBLE_MS));
+      timers.current.push(setTimeout(() => setMounted(false), VISIBLE_MS + 600));
+    }
+
+    return () => {
+      cancelled = true;
+      timers.current.forEach(t => { clearTimeout(t); cancelAnimationFrame(t); });
+      timers.current = [];
+    };
   }, [currentUser]);
 
-  const dismiss = () => {
-    if (currentUser) {
-      const today = new Date().toISOString().slice(0, 10);
-      localStorage.setItem(`vergr_daily_dismissed_${currentUser.uid}`, today);
-    }
-    setDismissed(true);
-  };
+  if (!mounted || !result) return null;
 
-  const claim = async () => {
-    if (claiming || !functions) return;
-    setClaiming(true);
-    setError(null);
-    try {
-      const claimFn = httpsCallable(functions, 'claimDailyReward');
-      const res = await claimFn();
-      setResult(res.data);
-      const today = new Date().toISOString().slice(0, 10);
-      localStorage.setItem(`vergr_daily_${currentUser.uid}`, today);
-      // Auto-dismiss after showing result
-      setTimeout(() => setDismissed(true), res.data.paid ? 5000 : 4000);
-    } catch (err) {
-      console.error('Daily check-in error:', err);
-      if (err.code === 'functions/already-exists') {
-        const today = new Date().toISOString().slice(0, 10);
-        localStorage.setItem(`vergr_daily_${currentUser.uid}`, today);
-        setDismissed(true);
-      } else {
-        setError('Could not check in — try again later');
-        setTimeout(() => setError(null), 3000);
-      }
-    }
-    setClaiming(false);
-  };
+  const { dayOfStreak = 1, vpReward = 0, milestone = false, multiplier = 1 } = result;
+  const prevPct = ((Math.max(0, dayOfStreak - 1)) / 5) * 100;
+  const curPct = (dayOfStreak / 5) * 100;
+  // Literal hex, not var(--brand-*): those CSS variables are not defined
+  // anywhere in the project, so this accent silently resolved to nothing.
+  const accent = milestone ? '#F0A500' : '#B44FFF';
 
-  if (!show || dismissed) return null;
+  return (
+    <div
+      className="fixed top-0 left-1/2 z-[95] w-[360px] max-w-[calc(100vw-1.5rem)] px-1"
+      style={{
+        transform: `translateX(-50%) translateY(${shown ? 'calc(env(safe-area-inset-top, 0px) + 12px)' : '-140%'})`,
+        transition: 'transform 520ms cubic-bezier(.22,1,.36,1)',
+        pointerEvents: 'none',
+      }}
+    >
+      <div
+        className="relative rounded-2xl px-4 py-3.5 overflow-hidden"
+        style={{
+          background: 'rgba(20,20,31,0.55)',
+          backdropFilter: 'blur(22px) saturate(160%)',
+          WebkitBackdropFilter: 'blur(22px) saturate(160%)',
+          border: '1px solid rgba(255,255,255,0.12)',
+          boxShadow: '0 16px 40px -12px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.08)',
+        }}
+      >
+        {/* accent glow wash */}
+        <div
+          className="absolute inset-0 opacity-60 pointer-events-none"
+          style={{ background: `radial-gradient(120% 90% at 50% -20%, ${milestone ? 'rgba(240,165,0,0.22)' : 'rgba(180,79,255,0.18)'}, transparent 70%)` }}
+        />
 
-  // ─── Result state ─────────────────────────────────────────────
-  if (result) {
-    const { paid, reward, vpReward, dayOfStreak, message } = result;
-    return (
-      <FloatingWrap>
-        <div className={`relative rounded-2xl p-4 pr-9 ${paid ? 'bg-gradient-to-br from-brand-gold/20 to-brand-ember/10 border border-brand-gold/30' : 'bg-gradient-to-br from-brand-cyan/15 to-brand-violet/10 border border-brand-cyan/25'} shadow-2xl shadow-black/50 backdrop-blur-md`}>
-          <button onClick={dismiss} className="absolute top-2 right-2 w-6 h-6 rounded-md hover:bg-white/[0.08] flex items-center justify-center text-text-muted">
-            <Icon name="close" size={14} />
-          </button>
-          <div className="flex items-start gap-3">
-            <div className={`w-10 h-10 rounded-xl ${paid ? 'bg-brand-gold/25' : 'bg-brand-cyan/20'} flex items-center justify-center shrink-0`}>
-              <Icon name={paid ? 'local_fire_department' : 'check_circle'} size={22} className={paid ? 'text-brand-gold' : 'text-brand-cyan'} />
-            </div>
-            <div className="flex-1 min-w-0">
-              {paid ? (
-                <>
-                  <p className="text-brand-gold font-extrabold text-[13px] flex items-center gap-1.5 flex-wrap">
-                    <span className="inline-flex items-center gap-1"><CoinIcon size={13} />+{reward}</span>
-                    <span className="text-text-muted">·</span>
-                    <span className="inline-flex items-center gap-1"><VPIcon size={13} />+{vpReward}</span>
-                  </p>
-                  <p className="text-text-secondary text-[10px] font-dmmono mt-0.5">Streak complete — start again tomorrow!</p>
-                </>
-              ) : (
-                <>
-                  <p className="text-brand-cyan font-extrabold text-[13px]">Day {dayOfStreak}/5 checked in</p>
-                  <p className="text-text-secondary text-[10px] mt-0.5 flex items-center gap-1">
-                    <VPIcon size={11} />+{vpReward} VP · {message}
-                  </p>
-                </>
+        <div className="relative flex items-center gap-3">
+          <div
+            className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+            style={{ background: milestone ? 'rgba(240,165,0,0.18)' : 'rgba(180,79,255,0.14)', border: `1px solid ${milestone ? 'rgba(240,165,0,0.35)' : 'rgba(180,79,255,0.3)'}` }}
+          >
+            <Icon name={milestone ? 'local_fire_department' : 'bolt'} size={22} style={{ color: accent }} />
+          </div>
+
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <p className="font-extrabold text-[13px] text-text-primary truncate">
+                {milestone ? '5-day streak complete!' : `Daily check-in · Day ${dayOfStreak}/5`}
+              </p>
+              {multiplier > 1 && (
+                <span
+                  className="shrink-0 text-[9.5px] font-dmmono font-bold px-1.5 py-0.5 rounded-full"
+                  style={{ color: '#B44FFF', background: 'rgba(123,31,255,0.18)', border: '1px solid rgba(180,79,255,0.35)' }}
+                >
+                  {multiplier}× VP
+                </span>
               )}
-              <div className="flex gap-1 mt-2.5">
-                {[1,2,3,4,5].map(day => (
-                  <div key={day} className={`flex-1 h-1.5 rounded-full ${day <= dayOfStreak ? (paid ? 'bg-brand-gold' : 'bg-brand-cyan') : 'bg-white/[0.08]'}`} />
-                ))}
-              </div>
+            </div>
+
+            <p className="mt-0.5 text-[11px] flex items-center gap-1 font-dmmono font-bold" style={{ color: accent }}>
+              <VPIcon size={12} /> +{vpReward} VP
+              {milestone && <span className="text-text-secondary font-normal ml-1">streak reset — keep going!</span>}
+            </p>
+
+            {/* streak progress bar with the new day animating in */}
+            <div className="mt-2 relative h-1.5 rounded-full" style={{ background: 'rgba(255,255,255,0.08)' }}>
+              <div
+                className="absolute inset-y-0 left-0 rounded-full"
+                style={{
+                  width: shown ? `${curPct}%` : `${prevPct}%`,
+                  background: `linear-gradient(90deg, ${accent}, ${milestone ? '#F5C842' : '#C87FFF'})`,
+                  boxShadow: `0 0 10px ${milestone ? 'rgba(240,165,0,0.6)' : 'rgba(180,79,255,0.55)'}`,
+                  transition: 'width 900ms cubic-bezier(.22,1,.36,1) 220ms',
+                }}
+              />
+              {/* day ticks */}
+              {[1, 2, 3, 4].map(i => (
+                <div key={i} className="absolute top-1/2 -translate-y-1/2 w-px h-1.5" style={{ left: `${(i / 5) * 100}%`, background: 'rgba(11,11,20,0.7)' }} />
+              ))}
             </div>
           </div>
         </div>
-      </FloatingWrap>
-    );
-  }
-
-  // ─── Claim state ──────────────────────────────────────────────
-  return (
-    <FloatingWrap>
-      <div className="relative rounded-2xl bg-gradient-to-br from-surface-1 to-surface-2 border border-white/[0.08] p-4 pr-9 shadow-2xl shadow-black/50 backdrop-blur-md">
-        <button onClick={dismiss} className="absolute top-2 right-2 w-6 h-6 rounded-md hover:bg-white/[0.08] flex items-center justify-center text-text-muted hover:text-text-primary">
-          <Icon name="close" size={14} />
-        </button>
-        <button onClick={claim} disabled={claiming} className="flex items-start gap-3 w-full text-left">
-          <div className="w-10 h-10 rounded-xl bg-brand-cyan/15 flex items-center justify-center shrink-0">
-            <Icon name="redeem" size={22} className="text-brand-cyan" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-text-primary font-extrabold text-[13px]">
-              {claiming ? 'Checking in…' : 'Daily Check-in'}
-            </p>
-            <p className="text-text-muted text-[10.5px] mt-0.5 flex items-center gap-1.5 flex-wrap">
-              Log in 5 days straight for
-              <span className="inline-flex items-center gap-0.5 text-brand-gold font-bold"><CoinIcon size={11} />5</span>
-              +
-              <span className="inline-flex items-center gap-0.5 text-brand-violet font-bold"><VPIcon size={11} />50</span>
-            </p>
-            <div className="mt-2.5 inline-flex items-center gap-1 text-[11px] font-dmmono font-bold text-brand-cyan">
-              Check in now <Icon name="arrow_forward" size={12} />
-            </div>
-          </div>
-        </button>
-        {error && <p className="text-brand-ember text-[10px] mt-2">{error}</p>}
       </div>
-    </FloatingWrap>
-  );
-}
-
-// Fixed positioning wrapper — bottom-right on desktop, bottom-center on mobile.
-function FloatingWrap({ children }) {
-  return (
-    <div className="fixed z-[80] bottom-5 right-5 w-[320px] max-w-[calc(100vw-2rem)] lg:w-[340px] animate-in fade-in slide-in-from-bottom-4 duration-300">
-      {children}
     </div>
   );
 }

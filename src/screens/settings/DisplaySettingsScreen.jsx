@@ -33,10 +33,7 @@ export default function DisplaySettingsScreen() {
 
   const save = async (updates) => {
     try {
-      await updateUserSettings(currentUser.uid, {
-        ...profile?.settings,
-        ...updates,
-      });
+      await updateUserSettings(currentUser.uid, updates);
     } catch (err) {
       console.error(err);
       showToast('Failed to save', 'error');
@@ -65,9 +62,9 @@ export default function DisplaySettingsScreen() {
             {THEME_OPTIONS.map(t => (
               <button key={t.id} onClick={() => handleThemeChange(t.id)}
                 className={`w-full flex items-center gap-3 p-3.5 rounded-xl border transition-colors text-left ${
-                  theme === t.id ? 'border-brand-cyan bg-brand-cyan/[0.06]' : 'border-white/[0.06] bg-surface-1 hover:bg-surface-2/50'
+                  theme === t.id ? 'border-brand-violet bg-brand-violet/[0.06]' : 'border-white/[0.06] bg-surface-1 hover:bg-surface-2/50'
                 }`}>
-                <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${theme === t.id ? 'bg-brand-cyan/15 text-brand-cyan' : 'bg-surface-2 text-text-muted'}`}>
+                <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${theme === t.id ? 'bg-brand-violet/15 text-brand-violet-light' : 'bg-surface-2 text-text-muted'}`}>
                   <Icon name={t.icon} size={20} />
                 </div>
                 <div className="flex-1">
@@ -80,7 +77,7 @@ export default function DisplaySettingsScreen() {
                     animate={{ scale: 1 }}
                     transition={{ type: 'spring', stiffness: 500, damping: 25 }}
                   >
-                    <Icon name="check_circle" filled size={20} className="text-brand-cyan" />
+                    <Icon name="check_circle" filled size={20} className="text-brand-violet-light" />
                   </motion.div>
                 )}
               </button>
@@ -100,7 +97,7 @@ export default function DisplaySettingsScreen() {
                 {fontSize === s && (
                   <motion.div
                     layoutId="fontSizePill"
-                    className="absolute inset-0 bg-brand-cyan rounded-lg"
+                    className="absolute inset-0 bg-brand-violet rounded-lg"
                     transition={{ type: 'spring', stiffness: 500, damping: 35 }}
                   />
                 )}
@@ -117,7 +114,7 @@ export default function DisplaySettingsScreen() {
             <p className="text-text-muted text-[11px]">Minimize animations throughout the app</p>
           </div>
           <button onClick={() => { setReducedMotion(!reducedMotion); save({ reducedMotion: !reducedMotion }); }}
-            className={`w-11 h-6 rounded-full transition-colors shrink-0 ml-3 ${reducedMotion ? 'bg-brand-cyan' : 'bg-surface-3'}`}>
+            className={`w-11 h-6 rounded-full transition-colors shrink-0 ml-3 ${reducedMotion ? 'bg-brand-violet' : 'bg-surface-3'}`}>
             <div className={`w-[18px] h-[18px] rounded-full bg-white shadow-sm transition-transform ${reducedMotion ? 'translate-x-[22px]' : 'translate-x-[3px]'}`} />
           </button>
         </div>

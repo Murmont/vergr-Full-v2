@@ -2,10 +2,12 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useUser } from '../../context/UserContext';
 import { getTournaments, getFeaturedTournament } from '../../firebase/firestore';
+import { gameById } from '../../utils/tournamentGames';
 import { useLayout } from '../../context/LayoutContext';
 import useResponsive from '../../hooks/useResponsive';
 import Icon from '../../components/Icon';
 import AppHeader from '../../components/brand/AppHeader';
+import { StackSkeleton } from '../../components/skeletons/GlassSkeletons';
 import HeroBanner from '../../components/brand/HeroBanner';
 import { SectionCard } from '../../components/brand/SectionCard';
 import TopBar from '../../components/TopBar';
@@ -91,7 +93,7 @@ export default function TournamentScreen() {
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setShowBrawl(true)}
-                className="h-9 px-3 rounded-full bg-brand-cyan/15 border border-brand-cyan/40 flex items-center gap-1.5 text-brand-cyan text-xs font-bold"
+                className="h-9 px-3 rounded-full bg-brand-violet/15 border border-brand-violet/40 flex items-center gap-1.5 text-brand-violet-light text-xs font-bold"
                 aria-label="Brawl quickplay"
               >
                 <Icon name="bolt" size={16} /> Brawl
@@ -101,7 +103,7 @@ export default function TournamentScreen() {
                 className="w-9 h-9 rounded-full bg-surface-2 flex items-center justify-center"
                 aria-label="My tournament stats"
               >
-                <Icon name="leaderboard" size={18} className="text-brand-cyan" />
+                <Icon name="leaderboard" size={18} className="text-brand-violet-light" />
               </button>
               <CoinDisplay amount={wallet?.balance || 0} size="sm" />
             </div>
@@ -168,7 +170,7 @@ export default function TournamentScreen() {
 
           {/* GR5 — Brawl quickplay entry */}
           <button onClick={() => setShowBrawl(true)}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-brand-cyan/10 border border-brand-cyan/30 text-brand-cyan font-bold text-sm hover:bg-brand-cyan/20 transition-colors w-max">
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-brand-violet/10 border border-brand-violet/30 text-brand-violet-light font-bold text-sm hover:bg-brand-violet/20 transition-colors w-max">
             <Icon name="bolt" size={18} /> Brawl — instant 1v1
           </button>
 
@@ -197,9 +199,7 @@ export default function TournamentScreen() {
           {/* Upcoming tournaments list */}
           <SectionCard title="Upcoming Tournaments" action="View All" onAction={() => navigate('/tournaments/all')}>
             {loading ? (
-              <div className="flex justify-center py-8">
-                <div className="w-5 h-5 border-2 border-surface-3 border-t-brand-cyan rounded-full animate-spin" />
-              </div>
+              <StackSkeleton rows={3} height={72} />
             ) : tournaments.length === 0 ? (
               <div className="text-center py-8">
                 <Icon name="emoji_events" size={40} className="text-text-muted/30 mx-auto mb-2" />
@@ -224,13 +224,17 @@ export default function TournamentScreen() {
 function TournamentRow({ t, onClick, formatDate }) {
   const prize = (t.prizePool || 0).toLocaleString();
   const entry = t.entryFee ? `${t.entryFee}` : 'Free';
+  // Official game cover (tournament banner wins if the host uploaded one).
+  const art = t.bannerUrl || gameById(t.game)?.coverArt || null;
   return (
     <button
       onClick={onClick}
       className="w-full flex items-center gap-3 p-3 rounded-xl bg-white/[0.02] border border-white/[0.05] hover:border-white/[0.12] hover:bg-white/[0.04] transition-all text-left"
     >
-      <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-brand-violet/30 to-brand-pink/20 flex items-center justify-center shrink-0">
-        <Icon name="emoji_events" size={22} className="text-brand-cyan" />
+      <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-brand-violet/30 to-brand-pink/20 flex items-center justify-center shrink-0 overflow-hidden">
+        {art
+          ? <img src={art} alt={t.game || ''} loading="lazy" className="w-full h-full object-cover" />
+          : <Icon name="emoji_events" size={22} className="text-brand-violet-light" />}
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
@@ -245,13 +249,13 @@ function TournamentRow({ t, onClick, formatDate }) {
         <div className="text-right">
           <div className="text-[9px] font-dmmono uppercase tracking-[0.12em] text-text-muted">Prize</div>
           <div className="flex items-center gap-1 justify-end">
-            <img src="/brand/vc-coin.png" alt="VC" className="w-4 h-4 object-contain" />
+            <img src="/brand/vc-coin.webp" alt="VC" className="w-4 h-4 object-contain" />
             <span className="font-dmmono text-sm font-bold text-brand-gold tabular-nums">{prize}</span>
           </div>
         </div>
         <div className="text-right">
           <div className="text-[9px] font-dmmono uppercase tracking-[0.12em] text-text-muted">Entry</div>
-          <div className="font-dmmono text-sm font-bold text-brand-cyan tabular-nums">{entry}</div>
+          <div className="font-dmmono text-sm font-bold text-brand-violet-light tabular-nums">{entry}</div>
         </div>
         {t.status === 'open' && (
           <div className="px-4 py-2 rounded-lg bg-gradient-to-r from-brand-violet to-brand-pink text-white text-xs font-bold">
@@ -269,7 +273,7 @@ function TournamentRow({ t, onClick, formatDate }) {
 const ONBOARD_STEPS = [
   {
     icon: 'login',
-    color: 'text-brand-cyan',
+    color: 'text-brand-violet-light',
     title: 'Join & escrow',
     body: 'Pick a tournament and register, solo or with your squad. Any entry fee is held safely in escrow, never paid to anyone until the event resolves. Free tournaments need no fee.',
   },
@@ -287,7 +291,7 @@ const ONBOARD_STEPS = [
   },
 ];
 
-function TournamentOnboarding({ onClose }) {
+export function TournamentOnboarding({ onClose }) {
   const [step, setStep] = useState(0);
   const s = ONBOARD_STEPS[step];
   const last = step === ONBOARD_STEPS.length - 1;
@@ -310,7 +314,7 @@ function TournamentOnboarding({ onClose }) {
 
         <div className="flex items-center gap-1.5 mt-4 mb-5">
           {ONBOARD_STEPS.map((_, i) => (
-            <span key={i} className={`h-1.5 rounded-full transition-all ${i === step ? 'w-6 bg-brand-cyan' : 'w-1.5 bg-white/15'}`} />
+            <span key={i} className={`h-1.5 rounded-full transition-all ${i === step ? 'w-6 bg-brand-violet' : 'w-1.5 bg-white/15'}`} />
           ))}
         </div>
 
@@ -320,7 +324,7 @@ function TournamentOnboarding({ onClose }) {
           </button>
           <button
             onClick={() => (last ? onClose() : setStep(step + 1))}
-            className="flex-1 py-3 rounded-xl bg-brand-cyan text-bg-dark font-bold text-sm"
+            className="flex-1 py-3 rounded-xl bg-brand-violet text-white font-bold text-sm"
           >
             {last ? "Let's go" : 'Next'}
           </button>

@@ -12,7 +12,7 @@ import { getUserSquads } from '../../firebase/firestore';
 const C = {
   surface: '#14141F', soft: '#1A1A2A', border: 'rgba(255,255,255,0.10)',
   text: '#fff', dim: 'rgba(255,255,255,0.65)',
-  gold: '#F0A500', goldLight: '#F5C842', cyan: '#4DFFD4',
+  gold: '#F0A500', goldLight: '#F5C842', cyan: '#B44FFF',
 };
 const fns = () => getFunctions(undefined, 'europe-west1');
 

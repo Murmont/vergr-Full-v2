@@ -1,48 +1,14 @@
 // Right rail for Home / Feed.
-// Five cards: Live Now · Trending · Who To Follow · Upcoming Cups · Active Squads
-// Uses real Firestore data where cheap; falls back to placeholders so the
-// rail always looks populated.
+// Cards: Live Now · Trending · Who To Follow · Upcoming Cups · Active Squads
+// Every section reads from Firestore. Empty sections render a short
+// "nothing here yet" message instead of dummy content.
 import { useEffect, useState } from 'react';
+import CachedImg from '../CachedImg';
 import { useNavigate } from 'react-router-dom';
 import { collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
 import { db } from '../../firebase/config';
 import Icon from '../Icon';
 import UserAvatar from '../UserAvatar';
-
-// ── Placeholders (always render so the rail looks alive) ───────────────
-const PLACEHOLDER_LIVE = [
-  { id: 'l1', name: 'NovaStrike', game: 'Valorant',  viewers: 2134, thumb: 'from-brand-violet/50 to-brand-pink/30' },
-  { id: 'l2', name: 'Zephyr_GG',  game: 'Apex',      viewers: 842,  thumb: 'from-brand-cyan/50 to-brand-violet/30' },
-  { id: 'l3', name: 'LumaPlays',  game: 'Fortnite',  viewers: 612,  thumb: 'from-brand-ember/50 to-brand-gold/30' },
-];
-
-const PLACEHOLDER_HASHTAGS = [
-  { tag: 'ValorantEsports',  posts: 12400 },
-  { tag: 'CS2Update',        posts: 8600 },
-  { tag: 'ApexRanked',       posts: 7100 },
-  { tag: 'FortniteChapter5', posts: 5800 },
-  { tag: 'LeagueOfLegends',  posts: 4300 },
-  { tag: 'RocketLeague',     posts: 3100 },
-];
-
-const PLACEHOLDER_CREATORS = [
-  { id: 'c1', name: 'NovaStrike',  handle: '@novastrike',  followers: 32100, verified: true  },
-  { id: 'c2', name: 'Zephyr_GG',   handle: '@zephyr',      followers: 18900, verified: true  },
-  { id: 'c3', name: 'LumaPlays',   handle: '@luma',        followers: 11200, verified: false },
-  { id: 'c4', name: 'Thunder42',   handle: '@thunder',     followers:  9400, verified: false },
-];
-
-const PLACEHOLDER_TOURNAMENTS = [
-  { id: 't1', name: 'Night Raiders Cup', game: 'Valorant',  pool: 25000, when: 'Tonight 8pm' },
-  { id: 't2', name: 'Frag Masters',      game: 'CS2',       pool: 10000, when: 'Sat 9pm' },
-  { id: 't3', name: 'Ranked Royale',     game: 'Apex',      pool:  5000, when: 'Sun 6pm' },
-];
-
-const PLACEHOLDER_SQUADS = [
-  { id: 's1', name: 'Night Raiders', members: 48, tier: 'Competitive' },
-  { id: 's2', name: 'Shadow Legion', members: 32, tier: 'Casual' },
-  { id: 's3', name: 'Apex Wolves',   members: 24, tier: 'Pro' },
-];
 
 function compact(n) {
   if (n >= 1e6) return (n/1e6).toFixed(1).replace(/\.0$/, '') + 'M';
@@ -52,32 +18,92 @@ function compact(n) {
 
 export default function HomeFeedRail() {
   const navigate = useNavigate();
-  const [hashtags, setHashtags] = useState(PLACEHOLDER_HASHTAGS);
-  const [creators, setCreators] = useState(PLACEHOLDER_CREATORS);
+  const [liveStreams, setLiveStreams] = useState([]);
+  const [hashtags, setHashtags] = useState([]);
+  const [creators, setCreators] = useState([]);
+  const [tournaments, setTournaments] = useState([]);
+  const [squads, setSquads] = useState([]);
+  const [loaded, setLoaded] = useState({ live: false, tags: false, creators: false, cups: false, squads: false });
 
   useEffect(() => {
     let alive = true;
+    const mark = (k) => alive && setLoaded(s => ({ ...s, [k]: true }));
+
+    // Live streams currently airing.
+    (async () => {
+      try {
+        const q = query(
+          collection(db, 'streams'),
+          where('status', '==', 'live'),
+          orderBy('viewerCount', 'desc'),
+          limit(3),
+        );
+        const snap = await getDocs(q);
+        if (alive) setLiveStreams(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      } catch (err) {
+        console.warn('Live streams query failed (likely composite index missing)', err.message);
+      } finally { mark('live'); }
+    })();
+
+    // Trending hashtags.
     (async () => {
       try {
         const q = query(collection(db, 'hashtags'), orderBy('postCount', 'desc'), limit(6));
         const snap = await getDocs(q);
-        const rows = snap.docs.map(d => ({ tag: d.id, posts: d.data().postCount || 0 }));
-        if (alive && rows.length) setHashtags(rows);
+        if (alive) setHashtags(snap.docs.map(d => ({ tag: d.id, posts: d.data().postCount || 0 })));
       } catch {}
+      finally { mark('tags'); }
+    })();
+
+    // Who to follow — verified creators sorted by follower count.
+    (async () => {
       try {
         const q = query(collection(db, 'users'), where('isVerified', '==', true), orderBy('followerCount', 'desc'), limit(4));
         const snap = await getDocs(q);
-        const rows = snap.docs.map(d => ({
+        if (alive) setCreators(snap.docs.map(d => ({
           id: d.id,
           name: d.data().displayName || d.data().username,
           handle: '@' + (d.data().username || ''),
           followers: d.data().followerCount || 0,
           avatar: d.data().avatar,
           verified: d.data().isVerified,
-        }));
-        if (alive && rows.length) setCreators(rows);
+        })));
       } catch {}
+      finally { mark('creators'); }
     })();
+
+    // Upcoming tournaments.
+    (async () => {
+      try {
+        const q = query(
+          collection(db, 'tournaments'),
+          where('status', '==', 'open'),
+          orderBy('prizePool', 'desc'),
+          limit(3),
+        );
+        const snap = await getDocs(q);
+        if (alive) setTournaments(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      } catch (err) {
+        console.warn('Upcoming cups query failed (likely composite index missing)', err.message);
+      } finally { mark('cups'); }
+    })();
+
+    // Active public squads sorted by member count.
+    (async () => {
+      try {
+        const q = query(
+          collection(db, 'squads'),
+          where('isPublic', '==', true),
+          orderBy('memberCount', 'desc'),
+          limit(3),
+        );
+        const snap = await getDocs(q);
+        if (alive) setSquads(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      } catch (err) {
+        console.warn('Active squads query failed (likely composite index missing)', err.message);
+      } finally { mark('squads'); }
+    })();
+
     return () => { alive = false; };
   }, []);
 
@@ -87,85 +113,101 @@ export default function HomeFeedRail() {
       <Card>
         <Header
           icon="podcasts" color="text-brand-ember" label="Live Now"
-          action={{ label: 'More', onClick: () => navigate('/explore?live=1') }}
+          action={liveStreams.length > 0 ? { label: 'More', onClick: () => navigate('/explore?live=1') } : null}
         />
-        <div className="space-y-2">
-          {PLACEHOLDER_LIVE.map(l => (
-            <button key={l.id} onClick={() => navigate('/go-live')}
-              className="w-full flex items-center gap-2.5 p-1.5 rounded-lg hover:bg-white/[0.04] text-left">
-              <div className={`relative w-14 h-10 rounded-md bg-gradient-to-br ${l.thumb} shrink-0 overflow-hidden flex items-center justify-center`}>
-                <Icon name="play_arrow" size={16} className="text-white/90" />
-                <span className="absolute top-0.5 left-0.5 px-1 py-[1px] rounded-sm bg-brand-ember text-[8px] font-dmmono font-bold text-white uppercase tracking-wider">Live</span>
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="text-[12px] font-semibold text-text-primary truncate">{l.name}</div>
-                <div className="text-[10px] text-text-muted font-dmmono truncate">{l.game}</div>
-              </div>
-              <div className="flex items-center gap-1 text-[10px] font-dmmono text-brand-ember shrink-0">
-                <Icon name="visibility" size={11} />
-                <span className="tabular-nums">{compact(l.viewers)}</span>
-              </div>
-            </button>
-          ))}
-        </div>
+        {!loaded.live ? <SkeletonRows count={2} />
+          : liveStreams.length === 0 ? (
+            <EmptyHint icon="podcasts" text="No live streams right now." />
+          ) : (
+            <div className="space-y-2">
+              {liveStreams.map(l => (
+                <button key={l.id} onClick={() => navigate(`/stream/${l.id}`)}
+                  className="w-full flex items-center gap-2.5 p-1.5 rounded-lg hover:bg-white/[0.04] text-left">
+                  <div className="relative w-14 h-10 rounded-md bg-gradient-to-br from-brand-violet/50 to-brand-pink/30 shrink-0 overflow-hidden flex items-center justify-center">
+                    {(l.coverUrl || l.thumbnailUrl)
+                      ? <img src={l.coverUrl || l.thumbnailUrl} alt="" className="w-full h-full object-cover" />
+                      : <Icon name="play_arrow" size={16} className="text-white/90" />}
+                    <span className="absolute top-0.5 left-0.5 px-1 py-[1px] rounded-sm bg-brand-ember text-[8px] font-dmmono font-bold text-white uppercase tracking-wider">Live</span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[12px] font-semibold text-text-primary truncate">{l.title || l.hostName || 'Untitled stream'}</div>
+                    <div className="text-[10px] text-text-muted font-dmmono truncate">{l.game || 'Stream'}</div>
+                  </div>
+                  <div className="flex items-center gap-1 text-[10px] font-dmmono text-brand-ember shrink-0">
+                    <Icon name="visibility" size={11} />
+                    <span className="tabular-nums">{compact(l.viewerCount || 0)}</span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
       </Card>
 
       {/* Trending hashtags */}
       <Card>
         <Header
-          icon="trending_up" color="text-brand-cyan" label="Trending"
-          action={{ label: 'See all', onClick: () => navigate('/trending-hashtags') }}
+          icon="trending_up" color="text-brand-violet-light" label="Trending"
+          action={hashtags.length > 0 ? { label: 'See all', onClick: () => navigate('/trending-hashtags') } : null}
         />
-        <div className="space-y-1">
-          {hashtags.map((h, i) => (
-            <button key={h.tag}
-              onClick={() => navigate(`/hashtag/${encodeURIComponent(h.tag)}`)}
-              className="w-full flex items-center gap-3 px-1.5 py-1.5 rounded-lg hover:bg-white/[0.04] text-left">
-              <span className="text-[10px] font-dmmono text-text-muted w-4 tabular-nums">{i+1}</span>
-              <div className="flex-1 min-w-0">
-                <div className="text-[12px] text-text-primary font-semibold truncate">#{h.tag}</div>
-                <div className="text-[10px] text-text-muted font-dmmono">{compact(h.posts)} posts</div>
-              </div>
-              <Icon name="arrow_forward_ios" size={10} className="text-text-muted/50" />
-            </button>
-          ))}
-        </div>
+        {!loaded.tags ? <SkeletonRows count={4} />
+          : hashtags.length === 0 ? (
+            <EmptyHint icon="tag" text="No trending tags yet. Use #tags in posts to start trends." />
+          ) : (
+            <div className="space-y-1">
+              {hashtags.map((h, i) => (
+                <button key={h.tag}
+                  onClick={() => navigate(`/hashtag/${encodeURIComponent(h.tag)}`)}
+                  className="w-full flex items-center gap-3 px-1.5 py-1.5 rounded-lg hover:bg-white/[0.04] text-left">
+                  <span className="text-[10px] font-dmmono text-text-muted w-4 tabular-nums">{i+1}</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[12px] text-text-primary font-semibold truncate">#{h.tag}</div>
+                    <div className="text-[10px] text-text-muted font-dmmono">{compact(h.posts)} posts</div>
+                  </div>
+                  <Icon name="arrow_forward_ios" size={10} className="text-text-muted/50" />
+                </button>
+              ))}
+            </div>
+          )}
       </Card>
 
       {/* Who to follow */}
       <Card>
         <Header
           icon="group_add" color="text-brand-violet" label="Who To Follow"
-          action={{ label: 'Browse', onClick: () => navigate('/browse-creators') }}
+          action={creators.length > 0 ? { label: 'Browse', onClick: () => navigate('/browse-creators') } : null}
         />
-        <div className="space-y-2">
-          {creators.map(c => (
-            <div key={c.id} className="flex items-center gap-2.5">
-              <button onClick={() => navigate(`/user/${c.id}`)} className="shrink-0">
-                {c.avatar
-                  ? <UserAvatar src={c.avatar} size={36} showTierRing={false} isVerified={c.verified} />
-                  : <div className="w-9 h-9 rounded-full bg-gradient-to-br from-brand-violet/40 to-brand-pink/20 flex items-center justify-center">
-                      <span className="text-[12px] font-dmmono font-bold text-white/90">{c.name?.[0] || '?'}</span>
-                    </div>}
-              </button>
-              <button onClick={() => navigate(`/user/${c.id}`)}
-                className="flex-1 min-w-0 text-left">
-                <div className="flex items-center gap-1">
-                  <span className="text-[12px] font-semibold text-text-primary truncate">{c.name}</span>
-                  {c.verified && <Icon name="verified" size={11} className="text-brand-cyan shrink-0" />}
+        {!loaded.creators ? <SkeletonRows count={3} />
+          : creators.length === 0 ? (
+            <EmptyHint icon="group_add" text="No creators to suggest yet." />
+          ) : (
+            <div className="space-y-2">
+              {creators.map(c => (
+                <div key={c.id} className="flex items-center gap-2.5">
+                  <button onClick={() => navigate(`/user/${c.id}`)} className="shrink-0">
+                    {c.avatar
+                      ? <UserAvatar src={c.avatar} size={36} showTierRing={false} isVerified={c.verified} />
+                      : <div className="w-9 h-9 rounded-full bg-gradient-to-br from-brand-violet/40 to-brand-pink/20 flex items-center justify-center">
+                          <span className="text-[12px] font-dmmono font-bold text-white/90">{c.name?.[0] || '?'}</span>
+                        </div>}
+                  </button>
+                  <button onClick={() => navigate(`/user/${c.id}`)} className="flex-1 min-w-0 text-left">
+                    <div className="flex items-center gap-1">
+                      <span className="text-[12px] font-semibold text-text-primary truncate">{c.name}</span>
+                      {c.verified && <Icon name="verified" size={11} className="text-brand-violet-light shrink-0" />}
+                    </div>
+                    <div className="text-[10px] text-text-muted font-dmmono truncate">
+                      {c.handle} · {compact(c.followers)}
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => navigate(`/user/${c.id}`)}
+                    className="text-[11px] font-bold px-3 py-1 rounded-full bg-gradient-to-r from-brand-violet to-brand-pink text-white hover:brightness-110 shrink-0">
+                    Follow
+                  </button>
                 </div>
-                <div className="text-[10px] text-text-muted font-dmmono truncate">
-                  {c.handle} · {compact(c.followers)}
-                </div>
-              </button>
-              <button
-                onClick={() => navigate(`/user/${c.id}`)}
-                className="text-[11px] font-bold px-3 py-1 rounded-full bg-gradient-to-r from-brand-violet to-brand-pink text-white hover:brightness-110 shrink-0">
-                Follow
-              </button>
+              ))}
             </div>
-          ))}
-        </div>
+          )}
       </Card>
 
       {/* Upcoming tournaments */}
@@ -174,21 +216,26 @@ export default function HomeFeedRail() {
           icon="emoji_events" color="text-brand-gold" label="Upcoming Cups"
           action={{ label: 'All', onClick: () => navigate('/tournaments') }}
         />
-        <div className="space-y-2">
-          {PLACEHOLDER_TOURNAMENTS.map(t => (
-            <button key={t.id} onClick={() => navigate('/tournaments')}
-              className="w-full flex items-center gap-2.5 p-2 rounded-lg bg-white/[0.03] hover:bg-white/[0.06] text-left">
-              <div className="w-8 h-8 rounded-lg bg-brand-gold/20 flex items-center justify-center shrink-0">
-                <Icon name="sports_esports" size={14} className="text-brand-gold" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="text-[12px] font-semibold text-text-primary truncate">{t.name}</div>
-                <div className="text-[10px] text-text-muted font-dmmono truncate">{t.game} · {t.when}</div>
-              </div>
-              <span className="text-[10px] font-dmmono font-bold text-brand-gold tabular-nums shrink-0">{compact(t.pool)}c</span>
-            </button>
-          ))}
-        </div>
+        {!loaded.cups ? <SkeletonRows count={2} />
+          : tournaments.length === 0 ? (
+            <EmptyHint icon="emoji_events" text="No tournaments open right now." />
+          ) : (
+            <div className="space-y-2">
+              {tournaments.map(t => (
+                <button key={t.id} onClick={() => navigate(`/match/${t.id}`)}
+                  className="w-full flex items-center gap-2.5 p-2 rounded-lg bg-white/[0.03] hover:bg-white/[0.06] text-left">
+                  <div className="w-8 h-8 rounded-lg bg-brand-gold/20 flex items-center justify-center shrink-0">
+                    <Icon name="sports_esports" size={14} className="text-brand-gold" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[12px] font-semibold text-text-primary truncate">{t.name}</div>
+                    <div className="text-[10px] text-text-muted font-dmmono truncate">{t.game || ''}</div>
+                  </div>
+                  <span className="text-[10px] font-dmmono font-bold text-brand-gold tabular-nums shrink-0">{compact(t.prizePool || 0)}c</span>
+                </button>
+              ))}
+            </div>
+          )}
         <button
           onClick={() => navigate('/create-tournament')}
           className="w-full mt-3 py-1.5 rounded-lg bg-gradient-to-r from-brand-gold/30 to-brand-ember/20 hover:brightness-110 text-brand-gold text-[11px] font-bold">
@@ -199,27 +246,37 @@ export default function HomeFeedRail() {
       {/* Active Squads */}
       <Card>
         <Header
-          icon="shield" color="text-brand-cyan" label="Active Squads"
+          icon="shield" color="text-brand-violet-light" label="Active Squads"
           action={{ label: 'Find', onClick: () => navigate('/squads') }}
         />
-        <div className="space-y-2">
-          {PLACEHOLDER_SQUADS.map(s => (
-            <button key={s.id} onClick={() => navigate('/squads')}
-              className="w-full flex items-center gap-2.5 p-1.5 rounded-lg hover:bg-white/[0.04] text-left">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-violet/40 to-brand-pink/20 flex items-center justify-center shrink-0">
-                <span className="text-[12px] font-syne font-extrabold text-white/90">{s.name[0]}</span>
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="text-[12px] font-semibold text-text-primary truncate">{s.name}</div>
-                <div className="text-[10px] text-text-muted font-dmmono truncate">{s.members} members · {s.tier}</div>
-              </div>
-              <span className="w-2 h-2 rounded-full bg-green-500 shrink-0" />
-            </button>
-          ))}
-        </div>
+        {!loaded.squads ? <SkeletonRows count={2} />
+          : squads.length === 0 ? (
+            <EmptyHint
+              icon="shield"
+              text="No active squads yet."
+              cta={{ label: 'Create one', onClick: () => navigate('/squads/create') }}
+            />
+          ) : (
+            <div className="space-y-2">
+              {squads.map(s => (
+                <button key={s.id} onClick={() => navigate(`/squads/${s.id}`)}
+                  className="w-full flex items-center gap-2.5 p-1.5 rounded-lg hover:bg-white/[0.04] text-left">
+                  <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-violet/40 to-brand-pink/20 flex items-center justify-center shrink-0 overflow-hidden">
+                    {s.avatar
+                      ? <CachedImg src={s.avatar} permanent alt="" className="w-full h-full object-cover" />
+                      : <span className="text-[12px] font-syne font-extrabold text-white/90">{s.name?.[0] || 'S'}</span>}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[12px] font-semibold text-text-primary truncate">{s.name}</div>
+                    <div className="text-[10px] text-text-muted font-dmmono truncate">{s.memberCount || 0} members{s.game ? ` · ${s.game}` : ''}</div>
+                  </div>
+                  <span className="w-2 h-2 rounded-full bg-green-500 shrink-0" />
+                </button>
+              ))}
+            </div>
+          )}
       </Card>
 
-      {/* Brand footer */}
       <div className="text-center pt-1 pb-3">
         <p className="text-[10px] text-text-muted font-dmmono leading-relaxed">
           Talk · Team Up · Belong<br/>
@@ -230,7 +287,6 @@ export default function HomeFeedRail() {
   );
 }
 
-// ── Shared mini-components ─────────────────────────────────────────────
 function Card({ children }) {
   return (
     <div className="rounded-2xl bg-white/[0.03] border border-white/[0.06] p-3.5">
@@ -248,8 +304,38 @@ function Header({ icon, color, label, action }) {
       </div>
       {action && (
         <button onClick={action.onClick}
-          className="text-[10px] font-dmmono text-brand-cyan hover:underline">
+          className="text-[10px] font-dmmono text-brand-violet-light hover:underline">
           {action.label}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function SkeletonRows({ count = 2 }) {
+  return (
+    <div className="space-y-2">
+      {Array.from({ length: count }).map((_, i) => (
+        <div key={i} className="flex items-center gap-2.5 p-1.5">
+          <div className="w-9 h-9 rounded-full bg-white/[0.04] animate-pulse" />
+          <div className="flex-1 space-y-1.5">
+            <div className="h-2.5 w-3/4 rounded bg-white/[0.04] animate-pulse" />
+            <div className="h-2 w-1/2 rounded bg-white/[0.03] animate-pulse" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function EmptyHint({ icon, text, cta }) {
+  return (
+    <div className="px-1 py-3 text-center">
+      <Icon name={icon} size={20} className="text-text-muted/30 mx-auto mb-1.5" />
+      <p className="text-[11px] text-text-muted leading-snug">{text}</p>
+      {cta && (
+        <button onClick={cta.onClick} className="mt-2 text-[11px] font-dmmono font-bold text-brand-violet-light hover:underline">
+          {cta.label}
         </button>
       )}
     </div>

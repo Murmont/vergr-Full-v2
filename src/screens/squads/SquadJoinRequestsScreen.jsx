@@ -1,102 +1,108 @@
-import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+// Squad Join Requests — leader/co-leader queue. Approve or decline.
+import { useEffect, useState } from 'react';
+import { useParams } from 'react-router-dom';
 import { useUI } from '../../context/UIContext';
-import { getSquadJoinRequests, handleJoinRequest } from '../../firebase/firestore';
-import TopBar from '../../components/TopBar';
-import UserAvatar from '../../components/UserAvatar';
-import Icon from '../../components/Icon';
-import useResponsive from '../../hooks/useResponsive';
+import { useAuth } from '../../context/AuthContext';
+import { getSquad, getSquadMembers, getSquadMember, getSquadJoinRequests, handleJoinRequest, getUser } from '../../firebase/firestore';
+import SquadShell from '../../components/squad/SquadShell';
+import SquadInfoRail from '../../components/squad/SquadInfoRail';
+import { avatarClass, initials } from '../../components/squad/squadHelpers';
 
 export default function SquadJoinRequestsScreen() {
   const { squadId } = useParams();
+  const { currentUser } = useAuth();
   const { showToast } = useUI();
-  const { isMobile } = useResponsive();
-  const navigate = useNavigate();
+  const [squad, setSquad] = useState(null);
+  const [members, setMembers] = useState([]);
+  const [role, setRole] = useState(null);
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [processing, setProcessing] = useState(null);
+  const [busyId, setBusyId] = useState(null);
+
+  const load = async () => {
+    if (!squadId) return;
+    setLoading(true);
+    try {
+      const reqs = await getSquadJoinRequests(squadId);
+      const withUser = await Promise.all(reqs.map(async (r) => ({ ...r, user: await getUser(r.userId).catch(() => null) })));
+      setRequests(withUser);
+    } catch (e) { /* ignore */ }
+    setLoading(false);
+  };
 
   useEffect(() => {
     if (!squadId) return;
-    setLoading(true);
-    getSquadJoinRequests(squadId)
-      .then(setRequests)
-      .catch(console.error)
-      .finally(() => setLoading(false));
-  }, [squadId]);
+    getSquad(squadId).then(setSquad).catch(() => {});
+    getSquadMembers(squadId).then(setMembers).catch(() => {});
+    if (currentUser?.uid) getSquadMember(squadId, currentUser.uid).then((m) => setRole(m?.role || null)).catch(() => {});
+    load();
+  }, [squadId, currentUser?.uid]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handle = async (request, approved) => {
-    setProcessing(request.id);
+  const canManage = role === 'president' || role === 'vice_president';
+
+  const onDecide = async (req, approved) => {
+    setBusyId(req.id);
     try {
-      await handleJoinRequest(squadId, request.id, request.userId, approved);
-      setRequests(prev => prev.filter(r => r.id !== request.id));
-      showToast(approved ? `${request.user?.username} joined!` : 'Request denied', approved ? 'success' : 'info');
-    } catch (err) {
-      showToast('Failed to process request', 'error');
+      await handleJoinRequest(squadId, req.id, req.userId, approved);
+      showToast(approved ? 'Request approved' : 'Request declined', 'success');
+      await load();
+    } catch (e) {
+      showToast(e?.message || 'Action failed', 'error');
     }
-    setProcessing(null);
+    setBusyId(null);
   };
 
-  const goToChat = () => navigate(`/squads/${squadId}/chat`);
-
   return (
-    <div className="pb-8">
-      {isMobile ? (
-        <div className="sticky top-0 z-40 glass-header flex items-center gap-3 px-4 py-3 border-b border-white/[0.04]">
-          <button onClick={goToChat} className="text-white/80 hover:text-white transition-colors">
-            <Icon name="arrow_back" size={24} />
-          </button>
-          <h1 className="text-white font-syne font-bold text-lg">Join Requests</h1>
-        </div>
-      ) : (
-        <div className="flex items-center justify-between px-4 lg:px-6 pt-4 pr-12 lg:pr-16">
-          <button onClick={() => navigate(-1)} className="text-white/80 hover:text-white transition-colors">
-            <Icon name="arrow_back" size={24} />
-          </button>
-          <h1 className="text-white font-syne font-bold text-lg">Join Requests</h1>
-          <div className="w-6" />
-        </div>
-      )}
+    <SquadShell mode="squad" activeId="requests" squadId={squadId} rightRail={<SquadInfoRail squad={squad} members={members} />}>
+      <main className="main" style={{ overflowY: 'auto' }}>
+        <header className="channel-header">
+          <div className="channel-title">
+            <span className="channel-name">Join Requests</span>
+            <span className="channel-divider" />
+            <span className="channel-desc">Approve or decline players asking to join</span>
+          </div>
+        </header>
 
-      <div className="px-4 py-4">
-        {loading ? (
-          <div className="flex justify-center py-16">
-            <div className="w-6 h-6 border-2 border-surface-3 border-t-brand-cyan rounded-full animate-spin" />
-          </div>
-        ) : requests.length === 0 ? (
-          <div className="text-center py-16">
-            <Icon name="inbox" size={48} className="text-text-muted/30 mx-auto mb-3" />
-            <p className="text-text-muted text-sm">No pending join requests</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {requests.map(req => (
-              <div key={req.id} className="p-4 rounded-2xl bg-surface-1 border border-white/[0.06]">
-                <div className="flex items-center gap-3 mb-3">
-                  <UserAvatar src={req.user?.avatar} size="md" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold">{req.user?.displayName || req.user?.username}</p>
-                    <p className="text-xs text-text-muted">@{req.user?.username} · Level {req.user?.level || 1}</p>
+        <div style={{ padding: 22 }}>
+          {!canManage ? (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '60px 24px', gap: 12, color: 'var(--t3)', textAlign: 'center', background: 'rgba(255,255,255,.02)', border: '1px dashed rgba(255,255,255,.08)', borderRadius: 18 }}>
+              <span className="material-symbols-outlined" style={{ fontSize: 48, opacity: .45 }}>lock</span>
+              <div style={{ fontFamily: 'Syne', fontWeight: 700, fontSize: 16, color: 'var(--t1)' }}>Leaders only</div>
+              <div style={{ fontSize: 13 }}>Only the President or Vice President can manage join requests.</div>
+            </div>
+          ) : loading ? (
+            <div style={{ textAlign: 'center', color: 'var(--t3)', padding: 60 }}>Loading…</div>
+          ) : requests.length === 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '60px 24px', gap: 12, color: 'var(--t3)', textAlign: 'center', background: 'rgba(255,255,255,.02)', border: '1px dashed rgba(255,255,255,.08)', borderRadius: 18 }}>
+              <span className="material-symbols-outlined" style={{ fontSize: 48, opacity: .45 }}>inbox</span>
+              <div style={{ fontFamily: 'Syne', fontWeight: 700, fontSize: 16, color: 'var(--t1)' }}>No pending requests</div>
+              <div style={{ fontSize: 13 }}>You're all caught up.</div>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {requests.map((r) => (
+                <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: 14, background: 'rgba(255,255,255,.025)', border: '1px solid rgba(255,255,255,.06)', borderRadius: 14 }}>
+                  <div className={`squad-avatar ${avatarClass(r.userId)}`} style={{ width: 44, height: 44, fontSize: 16 }}>
+                    {r.user?.avatar ? <img src={r.user.avatar} alt="" /> : initials(r.user?.displayName || r.user?.username || '?')}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontFamily: 'Syne', fontWeight: 700, color: '#fff', fontSize: 14 }}>
+                      {r.user?.displayName || r.user?.username || 'Player'}
+                    </div>
+                    {r.message && (
+                      <div style={{ marginTop: 4, fontSize: 12, color: 'var(--t2)', lineHeight: 1.5 }}>“{r.message}”</div>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button className="btn ghost sm" disabled={busyId === r.id} onClick={() => onDecide(r, false)}>Decline</button>
+                    <button className="btn primary sm" disabled={busyId === r.id} onClick={() => onDecide(r, true)}>Approve</button>
                   </div>
                 </div>
-                {req.message && (
-                  <p className="text-text-secondary text-sm mb-3 p-2 rounded-lg bg-surface-2">{req.message}</p>
-                )}
-                <div className="flex gap-2">
-                  <button onClick={() => handle(req, true)} disabled={processing === req.id}
-                    className="flex-1 py-2.5 rounded-xl bg-brand-cyan text-bg-dark text-sm font-bold">
-                    {processing === req.id ? '...' : 'Accept'}
-                  </button>
-                  <button onClick={() => handle(req, false)} disabled={processing === req.id}
-                    className="flex-1 py-2.5 rounded-xl bg-surface-2 border border-white/[0.06] text-text-secondary text-sm font-bold">
-                    Deny
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </main>
+    </SquadShell>
   );
 }

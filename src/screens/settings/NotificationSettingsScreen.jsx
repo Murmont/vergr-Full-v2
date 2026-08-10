@@ -21,6 +21,12 @@ const SECTIONS = [
     { label: 'Direct messages', key: 'dm' },
     { label: 'Message requests', key: 'msgreq' },
   ]},
+  { title: 'CALLS', desc: 'Incoming voice and video calls.', icon: 'call', color: '#22c55e', items: [
+    { label: 'Incoming calls', key: 'calls' },
+  ]},
+  { title: 'LIVE', desc: 'When streamers you follow go live or schedule a stream.', icon: 'sensors', color: '#f04060', items: [
+    { label: 'Live & scheduled streams', key: 'live' },
+  ]},
   { title: 'TIPS & REWARDS', desc: 'Tips, payouts, and earnings activity.', icon: 'monetization_on', color: C.purple, items: [
     { label: 'Tips received', key: 'tips' },
     { label: 'Payout status updates', key: 'payout' },
@@ -30,10 +36,10 @@ const SECTIONS = [
     { label: 'Invites & requests', key: 'squads_inv' },
     { label: 'Squad activity', key: 'squads_act' },
   ]},
-  { title: 'TOURNAMENTS', desc: 'Notifications about tournaments you follow or join.', icon: 'emoji_events', color: C.amber, items: [
-    { label: 'Tournament starts', key: 'tourney_start' },
-    { label: 'Match reminders', key: 'tourney_remind' },
-    { label: 'Results & rewards', key: 'tourney_results' },
+  { title: 'LIVE STREAMS', desc: 'Notifications about creators and streams you follow.', icon: 'live_tv', color: C.amber, items: [
+    { label: 'Stream starts', key: 'stream_start' },
+    { label: 'Co-stream invites', key: 'stream_invite' },
+    { label: 'Membership & tips', key: 'stream_support' },
   ]},
   { title: 'SYSTEM', desc: 'Important system updates and account security.', icon: 'settings', color: '#6366f1', items: [
     { label: 'Security alerts', key: 'security' },
@@ -42,9 +48,11 @@ const SECTIONS = [
   ]},
 ];
 
+// Push-only. VERGR has no email-sending backend, so an Email column would be
+// purely cosmetic — every honored preference is a *_push key (see
+// functions/index.js pushCategoryAllowed).
 const DEFAULTS = SECTIONS.flatMap(s => s.items).reduce((acc, item) => {
   acc[`${item.key}_push`] = true;
-  acc[`${item.key}_email`] = item.key !== 'surveys' && item.key !== 'followers' && item.key !== 'msgreq' && item.key !== 'squads_act' && item.key !== 'tourney_remind' && item.key !== 'tourney_results' && item.key !== 'updates' && item.key !== 'summary';
   return acc;
 }, {});
 
@@ -113,7 +121,6 @@ export default function NotificationSettingsScreen() {
                   <div style={{ fontSize: 11, color: C.textVeryDim, marginTop: 2 }}>{section.desc}</div>
                 </div>
                 <ColHead label="Push" icon="phone_iphone" />
-                <ColHead label="Email" icon="mail_outline" />
               </div>
               <div style={{ height: 1, background: C.border, marginBottom: 8 }}/>
               {section.items.map(item => (
@@ -121,9 +128,6 @@ export default function NotificationSettingsScreen() {
                   <span style={{ flex: 1, fontSize: 13, color: C.textSoft }}>{item.label}</span>
                   <div style={{ width: 60, display: 'flex', justifyContent: 'center' }}>
                     <Toggle small checked={!!settings[`${item.key}_push`]} onChange={() => toggle(`${item.key}_push`)} />
-                  </div>
-                  <div style={{ width: 60, display: 'flex', justifyContent: 'center' }}>
-                    <Toggle small checked={!!settings[`${item.key}_email`]} onChange={() => toggle(`${item.key}_email`)} />
                   </div>
                 </div>
               ))}

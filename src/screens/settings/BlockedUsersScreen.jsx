@@ -52,7 +52,7 @@ export default function BlockedUsersScreen() {
       <div className="px-4 py-4">
         {loading ? (
           <div className="flex justify-center py-16">
-            <div className="w-6 h-6 border-2 border-surface-3 border-t-brand-cyan rounded-full animate-spin" />
+            <div className="w-6 h-6 border-2 border-surface-3 border-t-brand-violet rounded-full animate-spin" />
           </div>
         ) : blocked.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16">

@@ -45,7 +45,7 @@ export default function CreateArticleScreen() {
             <button onClick={() => navigate(-1)} className="w-9 h-9 rounded-xl bg-surface-2 border border-white/[0.06] flex items-center justify-center text-text-secondary hover:text-white transition-colors"><Icon name="arrow_back" size={20} /></button>
             <div><h1 className="font-syne font-bold text-base text-white">Write Article</h1><p className="text-text-muted text-[10px] font-dmmono">{body.split(/\s+/).filter(Boolean).length} words · {readTime} min read</p></div>
           </div>
-          <button onClick={handlePost} disabled={loading || !canPost} className="bg-brand-cyan text-bg-dark px-6 py-2 rounded-full font-bold text-sm disabled:opacity-30 hover:brightness-110 active:scale-[0.97] transition-all">{loading ? <div className="w-4 h-4 border-2 border-bg-dark/30 border-t-bg-dark rounded-full animate-spin" /> : 'Publish'}</button>
+          <button onClick={handlePost} disabled={loading || !canPost} className="bg-brand-violet text-white px-6 py-2 rounded-full font-bold text-sm disabled:opacity-30 hover:brightness-110 active:scale-[0.97] transition-all">{loading ? <div className="w-4 h-4 border-2 border-bg-dark/30 border-t-bg-dark rounded-full animate-spin" /> : 'Publish'}</button>
         </div>
       </header>
       <div className={`flex-1 overflow-y-auto ${isDesktop ? 'max-w-3xl mx-auto w-full px-6' : 'px-4'} py-5`}>

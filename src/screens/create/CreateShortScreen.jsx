@@ -6,7 +6,8 @@ import { auth } from '../../firebase/config';
 import { createPost, uploadPostMedia } from '../../firebase/firestore';
 import { useLayout } from '../../context/LayoutContext';
 import useResponsive from '../../hooks/useResponsive';
-import { compressVideo, SHORTS_LIMITS, getMediaDimensions } from '../../utils/Mediacompression';
+import { compressVideo, SHORTS_LIMITS, getMediaDimensions } from '../../utils/mediaCompression';
+import { resolveTier } from '../../utils/tierSystem';
 import UserAvatar from '../../components/UserAvatar';
 import Icon from '../../components/Icon';
 
@@ -25,7 +26,7 @@ export default function CreateShortScreen() {
   const { setRightPanel, setContentAlign } = useLayout();
   const { isDesktop } = useResponsive();
 
-  const userTier = profile?.tier || 'free';
+  const userTier = resolveTier(profile);
   const limits = SHORTS_LIMITS[userTier] || SHORTS_LIMITS.free;
   const nextTier = userTier === 'free' ? 'lite' : userTier === 'lite' ? 'pro' : null;
 
@@ -42,12 +43,9 @@ export default function CreateShortScreen() {
     if (!file) return;
     e.target.value = '';
 
-    // Get duration
+    // Length is not restricted — only size, which the plan's byte cap already
+    // enforces before we get here. Dimensions are still read for the preview.
     const dims = await getMediaDimensions(file);
-    if (dims.duration > limits.maxDuration) {
-      showToast(`Video is ${fmt(dims.duration)} — max ${fmt(limits.maxDuration)} for ${userTier} tier`, 'error');
-      return;
-    }
 
     const preview = URL.createObjectURL(file);
     setVideoFile({ file, preview, duration: dims.duration, width: dims.width, height: dims.height });
@@ -119,14 +117,14 @@ export default function CreateShortScreen() {
             <div>
               <h1 className="font-syne font-bold text-base text-white">Create Short</h1>
               <p className="text-text-muted text-[10px] font-dmmono">
-                {limits.maxShortSide}p · {fmt(limits.maxDuration)} max
+                {limits.maxShortSide}p · any length
               </p>
             </div>
           </div>
           <button
             onClick={handlePost}
             disabled={!canPost}
-            className="bg-brand-cyan text-bg-dark px-6 py-2 rounded-full font-bold text-sm disabled:opacity-30 hover:brightness-110 active:scale-[0.97] transition-all"
+            className="bg-brand-violet text-white px-6 py-2 rounded-full font-bold text-sm disabled:opacity-30 hover:brightness-110 active:scale-[0.97] transition-all"
           >
             {uploading ? (
               <span className="flex items-center gap-2">
@@ -144,7 +142,7 @@ export default function CreateShortScreen() {
         )}
         {uploading && (
           <div className="h-1 bg-surface-3">
-            <div className="h-full bg-brand-cyan transition-all duration-300" style={{ width: `${uploadProgress}%` }} />
+            <div className="h-full bg-brand-violet transition-all duration-300" style={{ width: `${uploadProgress}%` }} />
           </div>
         )}
       </header>
@@ -156,7 +154,7 @@ export default function CreateShortScreen() {
           <div className="flex gap-3">
             <UserAvatar src={profile?.avatar} size={40} />
             <div className="flex-1">
-              <p className="text-brand-cyan text-xs font-dmmono mb-1">@{profile?.username || 'you'}</p>
+              <p className="text-brand-violet-light text-xs font-dmmono mb-1">@{profile?.username || 'you'}</p>
               <textarea
                 value={content}
                 onChange={e => setContent(e.target.value)}
@@ -173,16 +171,16 @@ export default function CreateShortScreen() {
               <Icon name="tune" size={12} /> Your limits
             </p>
             <div className="space-y-2.5">
-              <LimitRow icon="timer" label="Duration" value={fmt(limits.maxDuration)} />
+              <LimitRow icon="timer" label="Length" value="Unlimited" />
               <LimitRow icon="hd" label="Resolution" value={`${limits.maxShortSide}p`} />
               <LimitRow icon="compress" label="Auto-compress" value="On" highlight />
             </div>
             {nextTier && (
               <button
                 onClick={() => navigate('/settings/subscription')}
-                className="w-full mt-3 py-2 rounded-xl bg-brand-cyan/[0.06] border border-brand-cyan/20 text-brand-cyan text-[11px] font-bold hover:bg-brand-cyan/10 transition-colors"
+                className="w-full mt-3 py-2 rounded-xl bg-brand-violet/[0.06] border border-brand-violet/20 text-brand-violet-light text-[11px] font-bold hover:bg-brand-violet/10 transition-colors"
               >
-                Upgrade to {nextTier} for {SHORTS_LIMITS[nextTier].maxDuration}s + {SHORTS_LIMITS[nextTier].maxShortSide}p
+                Upgrade to {nextTier} for {SHORTS_LIMITS[nextTier].maxShortSide}p
               </button>
             )}
           </div>
@@ -203,13 +201,13 @@ export default function CreateShortScreen() {
           )}
 
           {compressedFile && !compressing && compressedFile !== videoFile?.file && (
-            <div className="p-4 rounded-2xl bg-brand-cyan/5 border border-brand-cyan/20">
+            <div className="p-4 rounded-2xl bg-brand-violet/5 border border-brand-violet/20">
               <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-brand-cyan/10 flex items-center justify-center">
-                  <Icon name="check_circle" size={18} className="text-brand-cyan" />
+                <div className="w-8 h-8 rounded-lg bg-brand-violet/10 flex items-center justify-center">
+                  <Icon name="check_circle" size={18} className="text-brand-violet-light" />
                 </div>
                 <div className="flex-1">
-                  <p className="text-brand-cyan text-xs font-bold">Compressed</p>
+                  <p className="text-brand-violet-light text-xs font-bold">Compressed</p>
                   <p className="text-text-muted text-[10px] font-dmmono mt-0.5">
                     {(videoFile.file.size / (1024 * 1024)).toFixed(1)}MB → {(compressedFile.size / (1024 * 1024)).toFixed(1)}MB
                   </p>
@@ -252,15 +250,15 @@ export default function CreateShortScreen() {
           ) : (
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="w-full max-w-sm aspect-[9/16] rounded-2xl border-2 border-dashed border-white/[0.08] bg-gradient-to-b from-surface-1/30 to-surface-1/10 flex flex-col items-center justify-center gap-5 hover:border-brand-cyan/30 hover:from-brand-cyan/5 hover:to-transparent transition-all group cursor-pointer"
+              className="w-full max-w-sm aspect-[9/16] rounded-2xl border-2 border-dashed border-white/[0.08] bg-gradient-to-b from-surface-1/30 to-surface-1/10 flex flex-col items-center justify-center gap-5 hover:border-brand-violet/30 hover:from-brand-violet/5 hover:to-transparent transition-all group cursor-pointer"
             >
-              <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-brand-cyan/15 to-brand-violet/15 border border-white/[0.08] flex items-center justify-center group-hover:scale-110 transition-transform">
-                <Icon name="slow_motion_video" size={38} className="text-brand-cyan" />
+              <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-brand-violet/15 to-brand-violet/15 border border-white/[0.08] flex items-center justify-center group-hover:scale-110 transition-transform">
+                <Icon name="slow_motion_video" size={38} className="text-brand-violet-light" />
               </div>
               <div className="text-center px-6">
                 <p className="text-text-primary font-syne font-bold text-lg">Upload a Short</p>
                 <p className="text-text-muted text-xs mt-2 leading-relaxed">
-                  Up to {fmt(limits.maxDuration)} · Auto-compressed to {limits.maxShortSide}p
+                  Any length · auto-compressed to {limits.maxShortSide}p
                 </p>
                 <p className="text-text-muted/50 text-[10px] mt-1">
                   MP4, WebM, MOV
@@ -283,7 +281,7 @@ function LimitRow({ icon, label, value, highlight }) {
         <Icon name={icon} size={14} className="text-text-muted" />
         <span className="text-text-secondary text-xs">{label}</span>
       </div>
-      <span className={`text-xs font-dmmono font-bold ${highlight ? 'text-brand-violet' : 'text-brand-cyan'}`}>{value}</span>
+      <span className={`text-xs font-dmmono font-bold ${highlight ? 'text-brand-violet' : 'text-brand-violet-light'}`}>{value}</span>
     </div>
   );
 }

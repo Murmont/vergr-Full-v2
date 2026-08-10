@@ -34,20 +34,19 @@ const levelCost = (level) => {
   return 2000 + 1000 * bracket;
 };
 
-// Commission: linear 30% at L1 → 10% at L100. Minimum 10%.
-const commissionForLevel = (level) => {
-  const raw = 0.30 - ((level - 1) / 99) * 0.20;
-  return Math.max(0.10, raw);
+// ── COMMISSION (coin→gem conversion) — SINGLE SOURCE OF TRUTH ──
+// The server (functions/economy.js convertCoinsToGems) is authoritative on the
+// actual gem credit, so these MUST stay byte-aligned with it. Commission steps
+// DOWN as lifetime VP rises (a better conversion rate is the one real rank perk).
+// Keyed by total VP, NOT level. Floor 15%.
+export const COMMISSION_RATES = [0.30, 0.28, 0.25, 0.22, 0.20, 0.18, 0.15];
+export const VP_THRESHOLDS    = [0,    500,  2000, 5000, 15000, 40000, 100000];
+export const commissionForVP = (vp = 0) => {
+  for (let i = VP_THRESHOLDS.length - 1; i >= 0; i--) {
+    if (vp >= VP_THRESHOLDS[i]) return COMMISSION_RATES[i];
+  }
+  return 0.30;
 };
-
-// Discount: gradual coin discount on shop purchases, 0% at L1 → 20% at L100.
-const discountForLevel = (level) => {
-  if (level < 10) return 0;
-  return Math.min(0.20, ((level - 10) / 90) * 0.20);
-};
-
-// Custom reactions unlocked progressively: 1 per 10 levels above 10.
-const reactionsForLevel = (level) => Math.max(0, Math.floor((level - 1) / 10));
 
 // Build 100 levels (index 0 = L1)
 export const VP_LEVELS = (() => {
@@ -63,9 +62,9 @@ export const VP_LEVELS = (() => {
       vpToNext: levelCost(lvl + 1),   // VP cost of next transition (0 at L100 unless prestige)
       ring: rank.ring,
       ringColor: rank.ringColor,
-      discount: discountForLevel(lvl),
-      commission: commissionForLevel(lvl),
-      reactions: reactionsForLevel(lvl),
+      // Commission at the VP needed to BE at this level (matches the server,
+      // which keys off live VP). Steps further down as VP rises within a band.
+      commission: commissionForVP(cumulative),
     });
   }
   return out;
@@ -118,11 +117,10 @@ export const getNextVPLevel = (totalVP) => {
   return VP_LEVELS[current.level];
 };
 
-// Gem rate (seller share per coin spent on them). Buyer pays X coins → seller receives X × (1 - commission) gems.
-export const getGemRate = (totalVP) => 1 - getVPLevel(totalVP).commission;
-
-// Coin discount on shop purchases
-export const getCoinDiscount = (totalVP) => getVPLevel(totalVP).discount;
+// Commission + gem rate at the user's CURRENT VP (use these for any gem-output
+// math so the UI matches what the server will actually credit).
+export const getCommission = (totalVP) => commissionForVP(totalVP);
+export const getGemRate = (totalVP) => 1 - commissionForVP(totalVP);
 
 // ── PLAN VP MULTIPLIERS ──
 // Applied server-side when granting VP. Pro users level up 2× as fast.
@@ -158,6 +156,13 @@ export const VP_ACTIONS = {
   watch_stream_hour: 5,
 };
 
+// ── GIFTING / TIPPING → VP (sender / gifter only) ──
+// Tipping contributes to rank but is deliberately NOT 1:1 with coins: coins are
+// bought with real money, so 1 VP per coin would let anyone buy max rank. Instead
+// a low coins→VP rate keeps gifting a contributor, not a shortcut.
+// Server-enforced in functions/index.js sendTip; this is the source of truth.
+export const GIFT_COINS_PER_VP = 25;   // 25 coins gifted → 1 VP (pre plan-multiplier)
+
 // ── BOOST COSTS ──
 export const BOOST_COSTS = {
   post:       { coins: 50,  duration: 24, label: 'Post Boost',       desc: '3x visibility in For You for 24h' },
@@ -179,6 +184,13 @@ export const BOOST_COSTS = {
 // `vpBonus` is the BASE VP awarded with the pack. Optional promo fields
 // (`promoVPBonus`, `promoLabel`, `promoStartsAt`, `promoEndsAt`) can be set
 // per-pack server-side to layer a temporary bonus on any pack.
+// Display value of ONE coin in EUR, for showing "what is this worth" next to a
+// coin amount. This is the purchase floor above — i.e. what a coin COSTS, which
+// is the number that makes sense when you are about to send some. It is NOT a
+// payout rate: cashing out runs through the coins→gems commission, so never
+// reuse this to promise anyone a withdrawal figure.
+export const COIN_VALUE_EUR = 0.0090;
+
 export const COIN_PACKS = [
   { id: 'starter',   name: 'Starter Pack',   coins: 100,    vpBonus: 0,    priceEUR: 0.99,   tagline: 'Get started for less than a coffee' },
   { id: 'gamer',     name: 'Gamer Pack',     coins: 500,    vpBonus: 0,    priceEUR: 4.79,   tagline: 'Best per-coin value at this size' },
@@ -190,39 +202,13 @@ export const COIN_PACKS = [
   { id: 'ascendant', name: 'Ascendant Pack', coins: 25000,  vpBonus: 3000, priceEUR: 224.99, tagline: 'For top creators & squad leaders',                badge: 'BIGGEST VP BONUS', badgeStyle: 'vp' },
 ];
 
-// ── FIRST-PURCHASE DISCOUNT ────────────────────────────────────────
-// 20% off ANY pack on the user's first paid purchase. No absolute cap —
-// every subsequent purchase is at full price. New users buy at Rookie tier
-// (30% commission), so the conversion margin still covers the discount;
-// tiering up far enough to extract value takes weeks of activity, by which
-// point the user has already burned coins on tips/boosts/tournaments.
-//   Starter   €0.99   → €0.79
-//   Gamer     €4.79   → €3.83
-//   Pro       €11.49  → €9.19
-//   Elite     €22.99  → €18.39
-//   Legend    €44.99  → €35.99
-//   Champion  €89.99  → €71.99
-//   Titan     €134.99 → €107.99
-//   Ascendant €224.99 → €179.99
-export const FIRST_PURCHASE_DISCOUNT = { pct: 0.20 };
-
-export function applyFirstPurchaseDiscount(priceEUR) {
-  const saving = priceEUR * FIRST_PURCHASE_DISCOUNT.pct;
-  return {
-    finalPrice: Math.max(0, +(priceEUR - saving).toFixed(2)),
-    saving: +saving.toFixed(2),
-    capped: false,
-  };
-}
-
-// ── NOWPAYMENTS / WITHDRAWAL CONSTANTS ─────────────────────────────
-// 2% spread platform takes on gem→crypto conversion (covers NOWPayments
-// spread + rate-refresh slack). 60s quote TTL.
+// ── WITHDRAWAL CONSTANTS ───────────────────────────────────────────
+// 2% spread platform takes on gem→crypto conversion (covers FX spread +
+// rate-refresh slack). 60s quote TTL.
 export const PAYOUT_SPREAD_PCT = 0.02;
 export const PAYOUT_QUOTE_TTL_MS = 60_000;
 
-// Currencies surfaced in the picker. NOWPayments supports more, but starting
-// with this short list keeps the UX simple. Cheap-network options first.
+// Currencies surfaced in the picker. Cheap-network options first.
 export const PAYOUT_CURRENCIES = [
   { code: 'usdttrc20',  name: 'USDT',  network: 'TRC-20',   tagline: 'Cheapest fees', recommended: true },
   { code: 'usdcsol',    name: 'USDC',  network: 'Solana',   tagline: 'Fast & cheap' },

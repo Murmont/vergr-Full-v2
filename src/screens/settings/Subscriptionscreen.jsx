@@ -8,8 +8,16 @@ import { useUI } from '../../context/UIContext';
 import { useLayout } from '../../context/LayoutContext';
 import TopBar from '../../components/TopBar';
 import useResponsive from '../../hooks/useResponsive';
-import { TIERS } from '../../utils/tierSystem';
+import { TIERS, resolveTier } from '../../utils/tierSystem';
+import { IS_NATIVE_BUILD, IS_STORE_BUILD, IS_HUAWEI_BUILD } from '../../utils/platform';
+import { useAuth } from '../../context/AuthContext';
+import { isPlayBillingSupported, buySubscription } from '../../utils/nativeBilling';
+import { useBuyCheckout } from '../wallet/v2/buyCheckout';
+import LocalPrice from '../../components/LocalPrice';
 import { C, PageShell } from './_settingsUI';
+
+// (The local popup/openExternalUrl helpers lived here; checkout now goes
+// through the shared useBuyCheckout hook, which owns both.)
 
 export default function SubscriptionScreen() {
   const { profile } = useUser();
@@ -25,7 +33,7 @@ export default function SubscriptionScreen() {
     return () => { setRightPanel(null); setContentAlign('center'); };
   }, [setRightPanel, setContentAlign]);
 
-  const currentTierId = (profile?.subscription?.tier || 'free').toLowerCase();
+  const currentTierId = resolveTier(profile);
   const current = TIERS[currentTierId] || TIERS.free;
   const renewsAt = profile?.subscription?.renewsAt
     ? new Date(profile.subscription.renewsAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
@@ -52,14 +60,12 @@ export default function SubscriptionScreen() {
               }}>CURRENT PLAN</span>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 6 }}>
                 <span style={{ fontSize: 28, fontWeight: 800, color: C.text }}>{current.name}</span>
-                <div style={{
-                  width: 26, height: 26, borderRadius: 6,
-                  background: 'linear-gradient(135deg,#3d1f7a,#7c3aed)',
-                  border: '1px solid #4a2a8a',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                }}>
-                  <VLogo size={14}/>
-                </div>
+                <img
+                  src={`/brand/plans/${currentTierId}-plan.webp`}
+                  alt={`${current.name} plan`}
+                  onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                  style={{ width: 28, height: 28, objectFit: 'contain' }}
+                />
               </div>
               <div style={{ fontSize: 12, color: C.textVeryDim, marginTop: 4 }}>You're on the {current.name} plan</div>
               <div style={{ fontSize: 12, color: C.textVeryDim, marginTop: 2 }}>
@@ -96,14 +102,13 @@ export default function SubscriptionScreen() {
           </div>
 
           {!isMobile && (
-            <div style={{ position: 'relative', width: 96, height: 110, flexShrink: 0 }}>
-              <svg width="96" height="110" viewBox="0 0 96 110">
-                <polygon points="48,4 92,27 92,82 48,106 4,82 4,27" fill="rgba(124,58,237,0.15)" stroke={C.purple} strokeWidth="2"/>
-                <polygon points="48,14 82,32 82,77 48,96 14,77 14,32" fill="rgba(124,58,237,0.1)" stroke="rgba(124,58,237,0.4)" strokeWidth="1"/>
-              </svg>
-              <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)' }}>
-                <VLogo size={38}/>
-              </div>
+            <div style={{ width: 110, height: 110, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <img
+                src={`/brand/plans/${currentTierId}-plan.webp`}
+                alt={`${current.name} plan`}
+                onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                style={{ width: 104, height: 104, objectFit: 'contain' }}
+              />
             </div>
           )}
         </div>
@@ -217,7 +222,56 @@ export default function SubscriptionScreen() {
 }
 
 function ChangePlanModal({ currentId, onClose }) {
+  const { showToast } = useUI();
   const tiers = ['free', 'lite', 'pro'];
+  const [pickedTier, setPickedTier] = useState(null);     // tier the user clicked
+  const [methodOpen, setMethodOpen] = useState(false);    // confirm modal
+  // Card subscription runs through the ONE shared PayRam checkout+polling hook
+  // (buyCheckout.js explicitly forbids forking the money flow). This screen
+  // used to carry a near-identical copy, which had drifted: it still branched
+  // on IS_NATIVE_BUILD, so the Tauri DESKTOP app got a webview popup that
+  // renders blank — i.e. you could not pay for a subscription from it.
+  const { currentUser } = useAuth();
+  const { checkout, startCheckout } = useBuyCheckout(showToast, {
+    onSettled: () => {
+      showToast('Subscription activated!', 'success');
+      onClose();
+    },
+  });
+  const cardWaiting = !!checkout;
+
+  // On the Play build a platform subscription is a digital feature unlocked
+  // inside the app, so it MUST go through Play Billing. PayRam card checkout
+  // stays the path on web, desktop and sideload.
+  const usePlaySubs = IS_STORE_BUILD && !IS_HUAWEI_BUILD && isPlayBillingSupported();
+
+  const startCardCheckout = async (tier) => {
+    setMethodOpen(false);
+    // On the Play build, Play Billing is the ONLY permitted path for a
+    // subscription. If the bridge is missing we fail closed — falling through
+    // to PayRam here would put a card checkout for digital goods inside a Play
+    // app, which is the payments-policy breach that gets an app pulled. A
+    // temporary "try again" is a far cheaper failure than that.
+    // Huawei is exempt: it has no Play Billing to fail closed to, and PayRam is
+    // its intended path, so it falls through to the card checkout below.
+    if (IS_STORE_BUILD && !IS_HUAWEI_BUILD && !isPlayBillingSupported()) {
+      showToast('Purchases are temporarily unavailable. Please reopen the app and try again.', 'error');
+      return;
+    }
+    if (!usePlaySubs) {
+      startCheckout({ subscriptionTier: tier }, `${tier} plan`);
+      return;
+    }
+    try {
+      await buySubscription(tier, currentUser?.uid);
+      showToast('Subscription activated!', 'success');
+      onClose();
+    } catch (err) {
+      if (err?.code === 'cancelled') return;
+      showToast(err?.message || 'Could not start the subscription', 'error');
+    }
+  };
+
   return (
     <div
       onClick={onClose}
@@ -241,7 +295,7 @@ function ChangePlanModal({ currentId, onClose }) {
           <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: C.textDim, cursor: 'pointer', fontSize: 24, lineHeight: 1 }}>×</button>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, marginTop: 16 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: IS_NATIVE_BUILD ? '1fr' : 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, marginTop: 16 }}>
           {tiers.map(id => {
             const tier = TIERS[id];
             const isCurrent = id === currentId;
@@ -262,14 +316,23 @@ function ChangePlanModal({ currentId, onClose }) {
                   }}>RECOMMENDED</div>
                 )}
                 <div style={{ paddingTop: isRecommended ? 8 : 0, display: 'flex', flexDirection: 'column', flex: 1 }}>
+                  <img
+                    src={`/brand/plans/${id}-plan.webp`}
+                    alt={`${tier.name} plan`}
+                    onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                    style={{ width: 56, height: 56, objectFit: 'contain', marginBottom: 8 }}
+                  />
                   <div style={{ fontSize: 16, fontWeight: 700, color: C.text }}>{tier.name}</div>
                   <div style={{
                     fontSize: 22, fontWeight: 800,
                     color: isCurrent ? C.purpleLight : C.text, marginTop: 4,
                   }}>
-                    {tier.price === 0 ? '$0' : `$${tier.price}`}
+                    {tier.price === 0 ? '€0' : <LocalPrice eur={tier.price} fallback={`€${tier.price}`} />}
                     <span style={{ fontSize: 13, fontWeight: 400, color: C.textDim }}>/month</span>
                   </div>
+                  {tier.price > 0 && (
+                    <div style={{ fontSize: 10, color: C.textVeryDim, marginTop: 2 }}>exc. VAT/tax · billed in USD/USDT</div>
+                  )}
                   <div style={{ fontSize: 11, color: C.textVeryDim, marginTop: 4, marginBottom: 12 }}>{tier.tagline}</div>
                   <div style={{ flex: 1 }}>
                     {tier.features.map(f => (
@@ -284,6 +347,20 @@ function ChangePlanModal({ currentId, onClose }) {
                   <button
                     type="button"
                     disabled={isCurrent}
+                    onClick={() => {
+                      if (isCurrent) return;
+                      if (id === 'free') {
+                        // Downgrade — separate flow (cancelSubscription)
+                        if (window.confirm('Cancel paid plan? You keep your current tier until period end.')) {
+                          import('firebase/functions').then(({ getFunctions, httpsCallable }) =>
+                            httpsCallable(getFunctions(undefined, 'europe-west1'), 'cancelSubscription')()
+                          );
+                        }
+                        return;
+                      }
+                      setPickedTier(id);
+                      setMethodOpen(true);
+                    }}
                     style={{
                       marginTop: 14, width: '100%', borderRadius: 8, padding: '9px',
                       fontSize: 13, fontWeight: 600,
@@ -309,8 +386,90 @@ function ChangePlanModal({ currentId, onClose }) {
           display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
         }}>
           <span className="material-symbols-outlined" style={{ fontSize: 12 }}>shield</span>
-          All plans include access to VERGR core features. A flat 10% platform fee applies to tips.
+          All plans include access to VERGR core features. A flat 10% platform fee applies to tips. Prices exclude VAT/tax; checkout is processed in USD/USDT.
         </div>
+      </div>
+
+      {methodOpen && pickedTier && (
+        <PaymentMethodPicker
+          tier={pickedTier}
+          onCard={() => startCardCheckout(pickedTier)}
+          onCoins={async () => {
+            try {
+              const { getFunctions, httpsCallable } = await import('firebase/functions');
+              const fn = httpsCallable(getFunctions(undefined, 'europe-west1'), 'subscribeWithCoins');
+              await fn({ tier: pickedTier });
+              setMethodOpen(false);
+              setPickedTier(null);
+              showToast('Subscription activated!', 'success');
+              onClose();
+            } catch (e) { showToast(e?.message || 'Subscription failed', 'error'); }
+          }}
+          onClose={() => { setMethodOpen(false); setPickedTier(null); }}
+        />
+      )}
+
+      {cardWaiting && (
+        <div onClick={(e) => e.stopPropagation()} style={{
+          position: 'fixed', inset: 0, zIndex: 1100, background: 'rgba(0,0,0,0.82)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20,
+        }}>
+          <div style={{
+            background: C.card, border: `1px solid ${C.border}`, borderRadius: 16,
+            padding: 24, width: 380, maxWidth: '95vw', textAlign: 'center',
+          }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: C.text, marginBottom: 8 }}>Complete your payment</div>
+            <div style={{ fontSize: 12, color: C.textVeryDim, marginBottom: 18, lineHeight: 1.5 }}>
+              Finish paying in the checkout window. This page activates your plan automatically the moment payment confirms — keep it open.
+            </div>
+            <button onClick={() => { stopPoll(); closePopup(); setCardWaiting(false); }} style={{
+              width: '100%', padding: 11, borderRadius: 10, background: 'transparent',
+              color: C.textDim, border: `1px solid ${C.borderHard}`, cursor: 'pointer', fontSize: 13,
+            }}>Cancel</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PaymentMethodPicker({ tier, onCard, onCoins, onClose }) {
+  const COIN_PRICE = { lite: 500, pro: 1000 }[tier];
+  const EUR_PRICE = { lite: 4.99, pro: 9.99 }[tier];
+  return (
+    <div onClick={onClose} style={{
+      position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.7)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20,
+    }}>
+      <div onClick={e => e.stopPropagation()} style={{
+        background: C.card, border: `1px solid ${C.border}`, borderRadius: 16,
+        padding: 20, width: 380, maxWidth: '95vw',
+      }}>
+        <div style={{ fontSize: 16, fontWeight: 700, color: C.text, marginBottom: 4 }}>How do you want to pay?</div>
+        <div style={{ fontSize: 12, color: C.textVeryDim, marginBottom: 14 }}>One month of {tier === 'lite' ? 'Lite' : 'Pro'}.</div>
+        <button onClick={onCard} style={{
+          width: '100%', padding: 14, marginBottom: 8, borderRadius: 10,
+          background: `linear-gradient(135deg,${C.purple},${C.purpleDeep})`, color: '#fff', border: 'none',
+          textAlign: 'left', cursor: 'pointer',
+        }}>
+          <div style={{ fontWeight: 700, fontSize: 14 }}>Pay by card</div>
+          <div style={{ fontSize: 11, opacity: 0.85 }}>
+            <LocalPrice eur={EUR_PRICE} fallback={`€${EUR_PRICE}`} />/month · Visa, Mastercard, Apple Pay
+          </div>
+          <div style={{ fontSize: 10, opacity: 0.7, marginTop: 2 }}>exc. VAT/tax · billed in USD/USDT</div>
+        </button>
+        <button onClick={onCoins} style={{
+          width: '100%', padding: 14, marginBottom: 8, borderRadius: 10,
+          background: 'transparent', color: C.text, border: `1px solid ${C.borderHard}`,
+          textAlign: 'left', cursor: 'pointer',
+        }}>
+          <div style={{ fontWeight: 700, fontSize: 14 }}>Pay with coins</div>
+          <div style={{ fontSize: 11, color: C.textDim }}>{COIN_PRICE} coins from your wallet</div>
+        </button>
+        <button onClick={onClose} style={{
+          width: '100%', padding: 10, marginTop: 4, borderRadius: 10,
+          background: 'transparent', color: C.textDim, border: 'none', cursor: 'pointer', fontSize: 12,
+        }}>Cancel</button>
       </div>
     </div>
   );

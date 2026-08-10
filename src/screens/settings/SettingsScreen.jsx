@@ -9,6 +9,8 @@ import { useLayout } from '../../context/LayoutContext';
 import TopBar from '../../components/TopBar';
 import useResponsive from '../../hooks/useResponsive';
 import { C, PageShell } from './_settingsUI';
+import { APP_VERSION, APP_VERSION_CODE } from '../../utils/appVersion';
+import { resolveTier } from '../../utils/tierSystem';
 
 const Chevron = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3a3a5a" strokeWidth="2" style={{ flexShrink: 0 }}>
@@ -16,28 +18,14 @@ const Chevron = () => (
   </svg>
 );
 
-export default function SettingsScreen() {
-  const { logout } = useAuth();
-  const { profile, wallet } = useUser();
-  const navigate = useNavigate();
-  const { isMobile } = useResponsive();
-  const { setRightPanel, setContentAlign } = useLayout();
-
-  useEffect(() => {
-    setRightPanel(null);
-    setContentAlign('left');
-    return () => { setRightPanel(null); setContentAlign('center'); };
-  }, [setRightPanel, setContentAlign]);
-
-  const handleLogout = async () => {
-    await logout();
-    navigate('/login', { replace: true });
-  };
-
+// Shared settings-card definitions so the web hub and the native hub list the
+// exact same entries (no drift). Sub-components below are function declarations,
+// so they hoist and are usable from here.
+export function getSettingsCards({ navigate, profile, wallet }) {
   const displayName = profile?.username || profile?.displayName || 'You';
   const handle = profile?.username ? `@${profile.username}` : '';
   const email = profile?.email || '';
-  const subTier = (profile?.subscription?.tier || 'free').toLowerCase();
+  const subTier = resolveTier(profile);
   const tierLabel = subTier === 'pro' ? 'PRO' : subTier === 'lite' ? 'LITE' : 'FREE';
   const verifyStatus = profile?.creatorVerification?.status || profile?.verifiedAt ? 'approved' : (profile?.kycSubmittedAt ? 'pending' : null);
 
@@ -80,6 +68,12 @@ export default function SettingsScreen() {
       ),
     },
     {
+      id: 'language', icon: 'translate', color: C.purple, title: 'Language',
+      desc: 'Your language for translating posts and chats, and for content suggestions.',
+      onClick: () => navigate('/settings/language'),
+      right: <ManageBtn>Set</ManageBtn>,
+    },
+    {
       id: 'security', icon: 'shield', color: C.purple, title: 'Security',
       desc: 'Password, 2FA, active sessions, and trusted devices.',
       onClick: () => navigate('/settings/security'),
@@ -118,10 +112,10 @@ export default function SettingsScreen() {
           </div>
           <div style={{ display: 'flex', gap: 12, marginBottom: 10, flexWrap: 'wrap' }}>
             {(subTier === 'pro'
-              ? ['Pro badge', '+1,000 VP/mo', '5 active giveaways', 'Priority support']
+              ? ['Pro badge', '2× VP multiplier', 'Co-streaming', 'Priority support']
               : subTier === 'lite'
-              ? ['Lite badge', '+500 VP/mo', '3 active giveaways', 'Priority support']
-              : ['Free tier', '+100 VP/mo', '1 active giveaway', 'Community support']
+              ? ['Lite badge', '1.5× VP multiplier', 'No ads', '720p streaming']
+              : ['Free tier', 'Core + tournaments', '480p streaming', 'Community support']
             ).map(b => (
               <div key={b} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: C.textMuted }}>
                 <CheckCircle/>{b}
@@ -225,19 +219,42 @@ export default function SettingsScreen() {
       onClick: () => navigate('/settings/about'),
       right: (
         <div style={{ textAlign: 'right' }}>
-          <div style={{ fontSize: 13, color: C.text, fontWeight: 600 }}>VERGR v1.2.4</div>
-          <div style={{ fontSize: 11, color: C.textVeryDim }}>Build 240521.1847</div>
+          <div style={{ fontSize: 13, color: C.text, fontWeight: 600 }}>VERGR v{APP_VERSION}</div>
+          <div style={{ fontSize: 11, color: C.textVeryDim }}>Build {APP_VERSION_CODE}</div>
         </div>
       ),
     },
+    {
+      id: 'appearance', icon: 'palette', color: C.purple, title: 'Appearance',
+      desc: 'Theme, font size, and reduced motion.',
+      onClick: () => navigate('/settings/display'),
+      right: <ManageBtn>Customize</ManageBtn>,
+    },
+    {
+      id: 'storage', icon: 'sd_storage', color: '#3b82f6', title: 'Storage & Data',
+      desc: 'Manage cached media and clear local storage.',
+      onClick: () => navigate('/settings/storage'),
+      right: <ManageBtn>Manage</ManageBtn>,
+    },
+    {
+      id: 'backup', icon: 'cloud_sync', color: '#3b82f6', title: 'Backup & Export',
+      desc: 'Export your data or restore from a backup.',
+      onClick: () => navigate('/settings/backup'),
+      right: <ManageBtn>Manage</ManageBtn>,
+    },
+    {
+      id: 'permissions', icon: 'admin_panel_settings', color: C.amber, title: 'App Permissions',
+      desc: 'Camera, microphone, notifications, location, and photos.',
+      onClick: () => navigate('/settings/permissions'),
+      right: <ManageBtn>Review</ManageBtn>,
+    },
   ];
+  return cards;
+}
 
-  // Pull Subscription out as a full-width hero so the remaining 10 cards make a clean
-  // 5-row × 2-col grid (no awkward empty trailing slot from an odd-numbered card list).
-  const heroCard = cards.find(c => c.id === 'subscription');
-  const gridCards = cards.filter(c => c.id !== 'subscription');
-
-  const renderCard = (card) => (
+// One settings card (icon + title + desc + right slot + optional extra block).
+export function SettingsCard({ card }) {
+  return (
     <div
       key={card.id}
       onClick={card.onClick}
@@ -268,20 +285,43 @@ export default function SettingsScreen() {
       {card.extra}
     </div>
   );
+}
+
+export default function SettingsScreen() {
+  const { logout } = useAuth();
+  const { profile, wallet } = useUser();
+  const navigate = useNavigate();
+  const { isMobile } = useResponsive();
+  const { setRightPanel, setContentAlign } = useLayout();
+
+  useEffect(() => {
+    setRightPanel(null);
+    setContentAlign('left');
+    return () => { setRightPanel(null); setContentAlign('center'); };
+  }, [setRightPanel, setContentAlign]);
+
+  const handleLogout = async () => {
+    await logout();
+    navigate('/login', { replace: true });
+  };
+
+  const cards = getSettingsCards({ navigate, profile, wallet });
+  const heroCard = cards.find(c => c.id === 'subscription');
+  const gridCards = cards.filter(c => c.id !== 'subscription');
 
   return (
     <div style={{ background: C.bg, minHeight: '100%' }}>
       {isMobile && <TopBar title="Settings" showBack />}
       <PageShell>
         {/* Subscription hero (full width — keeps grid below tidy) */}
-        {heroCard && <div style={{ marginBottom: 12 }}>{renderCard(heroCard)}</div>}
+        {heroCard && <div style={{ marginBottom: 12 }}><SettingsCard card={heroCard} /></div>}
 
         <div style={{
           display: 'grid',
           gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',
           gap: 12, marginBottom: 12,
         }}>
-          {gridCards.map(renderCard)}
+          {gridCards.map(c => <SettingsCard key={c.id} card={c} />)}
         </div>
 
         {/* Danger row */}
@@ -360,7 +400,7 @@ function VLogo({ size = 18 }) {
   );
 }
 
-function DangerCard({ icon, title, desc, onClick }) {
+export function DangerCard({ icon, title, desc, onClick }) {
   return (
     <div
       onClick={onClick}

@@ -1,0 +1,8 @@
+{
+  "_comment": "PRIVATE dev channel. Only builds compiled with --mode native-dev read this file. The public download and every existing sideload install read version.json instead. Written by scripts/publish-apk.mjs --channel dev.",
+  "androidVersion": "1.0.192",
+  "androidVersionCode": 192,
+  "apkUrl": "https://cdn.vergr.app/downloads/VERGR-dev.apk?v=1000192",
+  "minSupportedVersionCode": 1,
+  "notes": "Dev channel seed. No dev build published yet."
+}

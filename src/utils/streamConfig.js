@@ -1,6 +1,14 @@
 // src/utils/streamConfig.js
-// Gcore streaming config (stubbed — swap in real ingest/playback URLs post-domain purchase).
-// ALL values are placeholder/dummy. The API surface stays constant once real creds are wired.
+// Live-stream client config.
+//
+// Pipeline (LOCKED, see CLAUDE.md "Live streaming"):
+//   ingest:    Hetzner box (nginx-rtmp for OBS, vergr-ingest for browser fMP4,
+//              Pion vergr-sfu for co-host publishers). Ingest URLs come from
+//              the createStreamSession callable, NOT this file.
+//   composite: vergr-cohost@<streamId>.service (ffmpeg xstack) for co-host.
+//   delivery:  HLS segments synced to R2, served from cdn.vergr.app.
+//
+// This module only owns: stream-type metadata + playback URL derivation.
 
 export const STREAM_TYPES = {
   just_chatting: {
@@ -15,13 +23,6 @@ export const STREAM_TYPES = {
     label: 'Gameplay',
     icon: 'sports_esports',
     description: 'Stream your game with overlay + chat.',
-    minPlan: 'free',
-  },
-  tournament_match: {
-    id: 'tournament_match',
-    label: 'Tournament Match',
-    icon: 'emoji_events',
-    description: 'Broadcast a VERGR tournament match with scoreboard.',
     minPlan: 'free',
   },
   co_stream: {
@@ -42,79 +43,38 @@ export const STREAM_TYPES = {
     id: 'squad_hangout',
     label: 'Squad Hangout',
     icon: 'diversity_3',
-    description: 'Private squad-only stream for team chats.',
+    description: 'Private squad-only stream. Starts from the squad dashboard.',
     minPlan: 'free',
   },
 };
 
 export const STREAM_TYPE_LIST = Object.values(STREAM_TYPES);
 
-/**
- * Gcore config — all placeholder values. Swap in production credentials when ready.
- * Real values you'll get from Gcore console:
- *   - streamingApiBase (your CDN endpoint)
- *   - rtmpIngest (rtmp://...)
- *   - hlsPlayback base URL
- *   - apiKey (server-side only; do not embed in client)
- */
-export const GCORE_CONFIG = {
-  enabled: false, // flip to true once domain + creds ready
-  streamingApiBase: 'https://api.gcore.com/streaming/v1',
-  rtmpIngest: 'rtmp://live.vergr.dummy/live',
-  hlsBase: 'https://cdn.vergr.dummy/hls',
-  lowLatencyHlsBase: 'https://cdn.vergr.dummy/ll-hls',
-  webrtcPlayback: 'wss://wrtc.vergr.dummy/whep',
-  regions: ['eu-west', 'eu-central', 'us-east'],
-};
+// Public CDN base. The viewer reads HLS from cdn.vergr.app/streams/<streamKey>/index.m3u8.
+// R2 lifecycle: segments live here until the ended-stream cleanup cron removes them.
+const HLS_BASE =
+  (import.meta.env.VITE_HLS_BASE_URL || 'https://cdn.vergr.app/streams').replace(/\/$/, '');
 
 /**
- * Returns a stream key for broadcasting. In preview/dummy mode this is
- * a predictable local token; in prod, Gcore issues it server-side.
+ * Returns the HLS playback URL for a stream key.
+ * @param {string} streamKey  Issued server-side by createStreamSession.
  */
-export function getStreamKey(userId, streamId) {
-  if (GCORE_CONFIG.enabled) {
-    // TODO: call Cloud Function 'issueGcoreStreamKey' here once live
-    return null;
-  }
-  return `preview_${userId}_${streamId}`;
+export function getPlaybackUrl(streamKey) {
+  if (!streamKey) return null;
+  return `${HLS_BASE}/${streamKey}/index.m3u8`;
 }
 
-/** Returns RTMP ingest URL for a broadcaster. */
-export function getIngestUrl(streamKey) {
-  return `${GCORE_CONFIG.rtmpIngest}/${streamKey}`;
-}
+/**
+ * Live chat WebSocket relay base (Hetzner). Wired in Phase 7.
+ *   wss://chat.vergr.app/stream/<streamId>
+ */
+export const CHAT_WS_BASE =
+  (import.meta.env.VITE_CHAT_WS_BASE || 'wss://chat.vergr.app').replace(/\/$/, '');
 
-/** Returns HLS playback URL for a viewer. */
-export function getPlaybackUrl(streamId, { lowLatency = true } = {}) {
-  const base = lowLatency ? GCORE_CONFIG.lowLatencyHlsBase : GCORE_CONFIG.hlsBase;
-  return `${base}/${streamId}/index.m3u8`;
+export function getChatSocketUrl(streamId) {
+  if (!streamId) return null;
+  return `${CHAT_WS_BASE}/stream/${streamId}`;
 }
-
-/** Returns WHEP WebRTC playback endpoint (sub-second latency). */
-export function getWebRTCPlaybackUrl(streamId) {
-  return `${GCORE_CONFIG.webrtcPlayback}/${streamId}`;
-}
-
-/** Generate a dummy/preview viewer count that behaves organically. */
-export function getDummyViewerCount(streamId = '') {
-  // stable seed per stream for deterministic preview numbers
-  let seed = 0;
-  for (const c of streamId) seed = (seed * 31 + c.charCodeAt(0)) | 0;
-  const base = 50 + Math.abs(seed % 1800);
-  const drift = Math.floor((Date.now() / 4000) % 40) - 20;
-  return Math.max(1, base + drift);
-}
-
-/** Dummy chat messages for preview mode. */
-export const PREVIEW_CHAT_MESSAGES = [
-  { id: 'pm1', user: 'NovaKill', text: 'LETS GOOO', avatar: null, color: '#5CE1E6' },
-  { id: 'pm2', user: 'xShadow', text: 'GG that play was insane', avatar: null, color: '#B537F2' },
-  { id: 'pm3', user: 'GhostRider', text: 'clip it clip it', avatar: null, color: '#FFB84D' },
-  { id: 'pm4', user: 'ApexQueen', text: 'W stream', avatar: null, color: '#FF5A7A' },
-  { id: 'pm5', user: 'TachyonZ', text: 'pog', avatar: null, color: '#7DD87D' },
-  { id: 'pm6', user: 'MidnightFox', text: 'been here since the start 💪', avatar: null, color: '#5CE1E6' },
-  { id: 'pm7', user: 'Blaze', text: '🔥🔥🔥', avatar: null, color: '#FF4444' },
-];
 
 export function streamTypesForPlan(plan = 'free') {
   const order = { free: 0, lite: 1, pro: 2 };

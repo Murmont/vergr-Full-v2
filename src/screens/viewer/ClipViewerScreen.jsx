@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, Fragment } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
@@ -6,6 +6,9 @@ import { db } from '../../firebase/config';
 import { getUser, toggleLike, incrementShareCount, getComments } from '../../firebase/firestore';
 import UserAvatar from '../../components/UserAvatar';
 import Icon from '../../components/Icon';
+import VergrAd from '../../components/VergrAd';
+import { ADS_CONFIG } from '../../config/ads';
+import InlineVideoPlayer from '../../components/media/InlineVideoPlayer';
 import { getEmbedUrl } from '../../components/EmbedVideoPlayer';
 import { triggerInterstitial } from '../../utils/interstitialAd';
 import { timeAgo } from '../../utils/helpers';
@@ -66,7 +69,8 @@ export default function ClipViewerScreen() {
               : null;
           }
           if (post.videoUrl || post.isEmbed) {
-            if (post.id === postId) targetIdx = all.length;
+            // postId may be a doc id or a SEO slug (news/article posts).
+            if (post.id === postId || post.slug === postId) targetIdx = all.length;
             all.push(post);
           }
         }
@@ -186,7 +190,7 @@ export default function ClipViewerScreen() {
   if (loading) {
     return (
       <div className="fixed inset-0 z-[100] bg-black flex items-center justify-center">
-        <div className="w-8 h-8 border-3 border-brand-cyan border-t-transparent rounded-full animate-spin" />
+        <div className="w-8 h-8 border-3 border-brand-violet border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
@@ -285,7 +289,7 @@ export default function ClipViewerScreen() {
         {currentClip.hashtags?.length > 0 && (
           <div className="flex flex-wrap gap-1.5 mt-1.5">
             {currentClip.hashtags.map(tag => (
-              <span key={tag} className="text-brand-cyan text-xs font-semibold">#{tag}</span>
+              <span key={tag} className="text-brand-violet-light text-xs font-semibold">#{tag}</span>
             ))}
           </div>
         )}
@@ -308,7 +312,7 @@ export default function ClipViewerScreen() {
           <div className="flex-1 overflow-y-auto p-4">
             {commentsLoading ? (
               <div className="flex justify-center py-8">
-                <div className="w-5 h-5 border-2 border-surface-3 border-t-brand-cyan rounded-full animate-spin" />
+                <div className="w-5 h-5 border-2 border-surface-3 border-t-brand-violet rounded-full animate-spin" />
               </div>
             ) : comments.length === 0 ? (
               <div className="text-center py-10">
@@ -316,15 +320,16 @@ export default function ClipViewerScreen() {
                 <p className="text-text-muted text-sm">No comments yet</p>
                 <button
                   onClick={() => { setShowComments(false); navigate(`/post/${currentClip.id}`); }}
-                  className="mt-3 text-brand-cyan text-xs font-semibold hover:underline"
+                  className="mt-3 text-brand-violet-light text-xs font-semibold hover:underline"
                 >
                   Be the first to comment
                 </button>
               </div>
             ) : (
               <div className="space-y-4">
-                {comments.map(c => (
-                  <div key={c.id} className="flex gap-2.5">
+                {comments.map((c, ci) => (
+                  <Fragment key={c.id}>
+                  <div className="flex gap-2.5">
                     <UserAvatar src={c.author?.avatar} size={30} />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5 mb-0.5">
@@ -335,16 +340,18 @@ export default function ClipViewerScreen() {
                       {c.mediaUrl && (
                         <div className="mt-1.5 rounded-lg overflow-hidden border border-white/[0.06] max-w-[200px]">
                           {c.mediaType === 'video' || c.mediaType === 'clip'
-                            ? <video src={c.mediaUrl} controls muted className="w-full h-auto max-h-[180px] bg-black" />
+                            ? <InlineVideoPlayer src={c.mediaUrl} maxHeightClass="max-h-[180px]" objectFit="contain" />
                             : <img src={c.mediaUrl} alt="" className="w-full h-auto max-h-[180px] object-cover" />}
                         </div>
                       )}
                     </div>
                   </div>
+                  {(ci + 1) % ADS_CONFIG.commentAdInterval === 0 && ci < comments.length - 1 && <VergrAd zone="inpage" />}
+                  </Fragment>
                 ))}
                 <button
                   onClick={() => { setShowComments(false); navigate(`/post/${currentClip.id}`); }}
-                  className="w-full text-center text-brand-cyan text-xs font-semibold py-2 hover:underline"
+                  className="w-full text-center text-brand-violet-light text-xs font-semibold py-2 hover:underline"
                 >
                   Add a comment →
                 </button>
@@ -444,7 +451,7 @@ function EmbedVideoFullscreen({ youtubeVideoId, embedVideoUrl }) {
       {!iframeLoaded && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
           <div className="w-12 h-12 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center">
-            <div className="w-6 h-6 border-2 border-brand-cyan border-t-transparent rounded-full animate-spin" />
+            <div className="w-6 h-6 border-2 border-brand-violet border-t-transparent rounded-full animate-spin" />
           </div>
         </div>
       )}

@@ -9,6 +9,7 @@
 
 const functions = require('firebase-functions/v2');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
+const { convertibleCoins } = require('./coinLedger');
 
 const db = getFirestore('vgrdb');
 const REGION = 'europe-west1';
@@ -139,7 +140,29 @@ exports.convertCoinsToGems = functions.https.onCall(
         throw new functions.https.HttpsError('failed-precondition', 'Insufficient coin balance');
       }
 
-      const commission = commissionForVP(w.vp || 0);
+      // Only RECEIVED value converts to gems. Coins the user bought are
+      // spendable in-app but never convertible, because converting them and
+      // withdrawing would turn Play Billing into a cash-out rail. See
+      // coinLedger.js for the full reasoning — this check is the enforcement
+      // point for the whole split, so it must stay server-side.
+      const convertible = convertibleCoins(w);
+      if (convertible < amount) {
+        throw new functions.https.HttpsError(
+          'failed-precondition',
+          `Only coins you have earned can be converted to gems. You can convert ${convertible} right now. Coins you purchased can be spent anywhere in VERGR, but not cashed out.`
+        );
+      }
+
+      // Vanguard perk: active Vanguard members convert coins → gems at 0%
+      // commission. Read inside the transaction so a rank flip mid-write
+      // is still consistent. Suspended/retired Vanguard fall back to tier
+      // commission like any other user.
+      const userSnap = await tx.get(db.collection('users').doc(uid));
+      const userData = userSnap.exists ? userSnap.data() : {};
+      const vanguardActive = userData.vanguard?.rank
+        && userData.vanguard?.status !== 'suspended'
+        && userData.vanguard?.status !== 'retired';
+      const commission = vanguardActive ? 0 : commissionForVP(w.vp || 0);
       const gemsCredited = Math.floor(amount * (1 - commission));
       const platformCut  = amount - gemsCredited;
       const newCoinBalance = (w.balance || 0) - amount;
@@ -147,6 +170,10 @@ exports.convertCoinsToGems = functions.https.onCall(
 
       tx.update(walletRef, {
         balance: FieldValue.increment(-amount),
+        // Converting consumes the earned pool as well, or the same earned
+        // coins could be converted repeatedly as new purchases topped the
+        // balance back up.
+        earnedBalance: FieldValue.increment(-amount),
         gems: FieldValue.increment(gemsCredited),
         totalGemsEarned: FieldValue.increment(gemsCredited),
         updatedAt: FieldValue.serverTimestamp(),

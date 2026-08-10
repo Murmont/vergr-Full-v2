@@ -15,7 +15,7 @@ const BG = {
   'trophy':      '/brand/banner-trophy.png',
   'red-v':       '/brand/banner-red-v.png',
   'cyan-v':      '/brand/banner-cyan-v.png',
-  'violet-gem':  '/brand/banner-violet-gem.png',
+  'violet-gem':  '/brand/banner-violet-gem.webp',
 };
 
 export default function HeroBanner({
@@ -36,7 +36,7 @@ export default function HeroBanner({
       <div className="absolute inset-0 bg-gradient-to-r from-[#07080D]/90 via-[#07080D]/40 to-transparent" />
       <div className="relative h-full flex flex-col justify-center px-8 max-w-[62%]">
         {eyebrow && (
-          <div className="text-[10px] font-dmmono uppercase tracking-[0.22em] text-brand-cyan mb-2">
+          <div className="text-[10px] font-dmmono uppercase tracking-[0.22em] text-brand-violet-light mb-2">
             {eyebrow}
           </div>
         )}

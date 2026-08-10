@@ -133,7 +133,7 @@ export default function BuyCoinsScreen() {
               <CoinIcon size={22} /> Top Up Your VC Coins
             </h2>
             <p className="text-text-muted text-[13px] mt-1.5 max-w-[460px] leading-relaxed">
-              VC Coins fuel everything on VERGR — tip creators, enter tournaments, boost posts, and reward your squad. Convert coins to gems any time to cash out.
+              VC Coins fuel everything on VERGR — tip creators, join memberships, unlock paid streams, boost posts, and reward your squad. Coins are spendable only inside VERGR.
             </p>
           </div>
           <div className="flex flex-wrap gap-4">

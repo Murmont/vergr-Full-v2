@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useUser } from '../../context/UserContext';
 import { useUI } from '../../context/UIContext';
 import { getQuestClaims, getUserPosts, getFollowing, getTransactions } from '../../firebase/firestore';
+import { StackSkeleton } from '../../components/skeletons/GlassSkeletons';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../../firebase/config';
 import TopBar from '../../components/TopBar';
@@ -15,6 +16,7 @@ import WatchToEarnQuest from '../../components/WatchToEarnQuest';
 import { useLayout } from '../../context/LayoutContext';
 import useResponsive from '../../hooks/useResponsive';
 import { PLAN_VP_MULTIPLIER } from '../../utils/vpSystem';
+import { resolveTier } from '../../utils/tierSystem';
 
 // Watch-to-Earn lives ONLY on the Earn screen as a dedicated component
 // (see <WatchToEarnQuest /> below). It is deliberately NOT added as a
@@ -37,11 +39,20 @@ const QUEST_DEFS = {
     { id: 'creator_content', title: 'Creator Content', description: 'Post 10 times with 5+ likes and 5+ comments each', reward: 100, currency: 'vp', target: 10, oneTime: true },
     { id: 'first_squad', title: 'Join a Squad', description: 'Join or create your first squad', reward: 50, currency: 'vp', target: 1, oneTime: true },
     { id: 'first_tournament', title: 'Enter a Tournament', description: 'Compete in your first tournament', reward: 100, currency: 'vp', target: 1, oneTime: true },
+    // Profile-completion rewards (founder-approved 2026-07-09). Server
+    // verifies the data exists (avatar set, bio length, etc.) and locks the
+    // amount — claiming without the data returns a friendly error toast.
+    { id: 'profile_avatar', title: 'Add a Profile Picture', description: 'Upload an avatar so gamers recognise you', reward: 500, currency: 'vp', target: 1, oneTime: true },
+    { id: 'profile_banner', title: 'Add a Profile Banner', description: 'Give your profile header some art', reward: 300, currency: 'vp', target: 1, oneTime: true },
+    { id: 'profile_bio', title: 'Write Your Bio', description: 'At least 20 characters about you', reward: 200, currency: 'vp', target: 1, oneTime: true },
+    { id: 'profile_interests', title: 'Pick Your Interests', description: 'Choose 3+ game genres in onboarding or Edit Profile', reward: 200, currency: 'vp', target: 1, oneTime: true },
+    { id: 'first_follow_5', title: 'Follow 5 Gamers', description: 'Fill your feed with people worth watching', reward: 300, currency: 'vp', target: 1, oneTime: true },
+    { id: 'profile_gaming_link', title: 'Connect a Gaming Account', description: 'Link Twitch, Discord or Steam (Settings → Linked accounts), then claim', reward: 500, currency: 'vp', target: 1, oneTime: true },
     // Refer-a-Friend: reward is 5000 VP to the referrer, 3000 VP to the
     // invitee. Unlocks when the invitee (a) signed up via the referrer's
     // link, (b) added their phone number, and (c) either joined a squad or
     // subscribed to Lite/Pro. See claimQuestReward in functions/index.js.
-    { id: 'refer_friend', title: 'Refer a Friend', description: 'Friend joins via your link, adds phone, and joins a squad or subscribes — you earn 5000 VP, they earn 3000 VP', reward: 5000, currency: 'vp', target: 1, requiresFriend: true, external: true, externalRoute: '/earn/refer', externalLabel: 'Manage' },
+    { id: 'refer_friend', title: 'Refer a Friend', description: 'Friend joins via your link and verifies a phone number — you earn 5000 VP, they earn 3000 VP', reward: 5000, currency: 'vp', target: 1, requiresFriend: true, external: true, externalRoute: '/earn/refer', externalLabel: 'Manage' },
     // Rewarded via the dedicated `savePhoneNumber` callable (functions/index.js).
     // The quest-claim doc key is `${uid}_add_phone` so the grid below can
     // detect it as already-claimed just like the other oneTime quests.
@@ -59,7 +70,7 @@ export default function EarnCoinsScreen() {
 
   const { currentUser } = useAuth();
   const { wallet, profile } = useUser();
-  const plan = profile?.tier || 'free';
+  const plan = resolveTier(profile);
   const vpMultiplier = PLAN_VP_MULTIPLIER[plan] || 1;
   const { showToast } = useUI();
   const navigate = useNavigate();
@@ -155,13 +166,13 @@ export default function EarnCoinsScreen() {
   const quests = QUEST_DEFS[activeTab] || [];
 
   const EARN_METHODS = [
-    { icon: 'star', title: 'Daily Quests', desc: 'Complete tasks for VP', reward: '15-30 VP/day', color: 'text-brand-violet', action: () => setActiveTab('daily') },
-    { icon: 'login', title: '5-Day Streak', desc: 'Log in 5 days straight', reward: '5 coins + 50 VP', color: 'text-brand-gold', action: () => navigate('/') },
-    { icon: 'phone', title: 'Add Phone Number', desc: 'Unlock contact invites', reward: '1000 VP', color: 'text-brand-cyan', action: () => navigate('/messages/new') },
-    { icon: 'emoji_events', title: 'Win Tournaments', desc: 'Win gems from prize pools', reward: 'Gems + VP', color: 'text-brand-ember', action: () => navigate('/tournaments') },
-    { icon: 'person_add', title: 'Refer Friends', desc: 'Invite a friend who sets up properly', reward: '3000 VP (+5000 VP for them)', color: 'text-brand-pink', action: () => setActiveTab('special') },
-    { icon: 'trending_up', title: 'Level Up', desc: '30% → 10% commission, up to 20% coin discount', reward: 'Ranks 1–100', color: 'text-brand-gold', action: () => navigate('/settings/ranks') },
-    { icon: 'workspace_premium', title: 'Lite / Pro Plans', desc: '1.5×/2× VP + monthly VP & coins', reward: '+1k–3k VP / mo', color: 'text-brand-violet', action: () => navigate('/settings/subscription') },
+    { img: '/brand/earn/quest-daily.webp', bg: '/brand/earn/bg-daily.webp', icon: 'star', title: 'Daily Quests', desc: 'Complete tasks for VP', reward: '15-30 VP/day', color: 'text-brand-violet', action: () => setActiveTab('daily') },
+    { img: '/brand/earn/quest-streak.webp', bg: '/brand/earn/bg-streak.webp', icon: 'login', title: '5-Day Streak', desc: 'Log in 5 days straight', reward: '5 coins + 50 VP', color: 'text-brand-gold', action: () => navigate('/') },
+    { img: '/brand/earn/quest-phone.webp', bg: '/brand/earn/bg-phone.webp', icon: 'phone', title: 'Add Phone Number', desc: 'Unlock contact invites', reward: '1000 VP', color: 'text-brand-violet-light', action: () => navigate('/messages/new') },
+    { img: '/brand/earn/quest-tournaments.webp', bg: '/brand/earn/bg-tournaments.webp', icon: 'emoji_events', title: 'Win Tournaments', desc: 'Win coins from prize pools', reward: 'Coins + VP', color: 'text-brand-ember', action: () => navigate('/tournaments') },
+    { img: '/brand/earn/quest-refer.webp', bg: '/brand/earn/bg-refer.webp', icon: 'person_add', title: 'Refer Friends', desc: 'Invite a friend who sets up properly', reward: '5000 VP (+3000 VP for them)', color: 'text-brand-pink', action: () => setActiveTab('special') },
+    { img: '/brand/earn/quest-levelup.webp', bg: '/brand/earn/bg-levelup.webp', icon: 'trending_up', title: 'Level Up', desc: 'Lower commission as you rank up: 30% → 10%', reward: 'Ranks 1–100', color: 'text-brand-gold', action: () => navigate('/settings/ranks') },
+    { bg: '/brand/earn/bg-liteplans.webp', icon: 'workspace_premium', title: 'Lite / Pro Plans', desc: '1.5×/2× VP + monthly VP & coins', reward: '+1k–3k VP / mo', color: 'text-brand-violet', action: () => navigate('/settings/subscription') },
   ];
 
   return (
@@ -192,7 +203,7 @@ export default function EarnCoinsScreen() {
             </div>
             <div className="p-3 rounded-xl bg-surface-2/50 text-center">
               <div className="mx-auto mb-1 w-fit"><VPIcon size={20} /></div>
-              <p className="text-brand-cyan text-lg font-black font-dmmono">{wallet?.gems || 0}</p>
+              <p className="text-brand-violet-light text-lg font-black font-dmmono">{wallet?.gems || 0}</p>
               <p className="text-text-secondary text-[9px]">Gems (cashable)</p>
             </div>
             <div className="p-3 rounded-xl bg-surface-2/50 text-center">
@@ -201,11 +212,11 @@ export default function EarnCoinsScreen() {
               <p className="text-text-secondary text-[9px]">Coins (spendable)</p>
             </div>
           </div>
-          <p className="text-text-primary text-[10px] mt-3 text-center">Quests earn VP · Tournaments earn gems · Referrals earn VP for both of you</p>
+          <p className="text-text-primary text-[10px] mt-3 text-center">Quests earn VP · Tournaments earn coins · Referrals earn VP for both of you</p>
           {vpMultiplier > 1 && (
             <button
               onClick={() => navigate('/settings/subscription')}
-              className="mt-3 w-full flex items-center justify-center gap-2 text-[11px] font-semibold py-1.5 rounded-full bg-brand-cyan/15 border border-brand-cyan/30 text-brand-cyan"
+              className="mt-3 w-full flex items-center justify-center gap-2 text-[11px] font-semibold py-1.5 rounded-full bg-brand-violet/15 border border-brand-violet/30 text-brand-violet-light"
             >
               <Icon name="bolt" size={14} />
               {plan.toUpperCase()} active — {vpMultiplier}× VP on every action
@@ -214,10 +225,21 @@ export default function EarnCoinsScreen() {
           {vpMultiplier === 1 && (
             <button
               onClick={() => navigate('/settings/subscription')}
-              className="mt-3 w-full flex items-center justify-center gap-2 text-[11px] font-semibold py-1.5 rounded-full bg-brand-violet/15 border border-brand-violet/30 text-brand-violet"
+              className="mt-3 w-full relative overflow-hidden rounded-xl border border-brand-violet/40 hover:border-brand-violet/70 transition-colors group"
+              style={{ background: 'linear-gradient(90deg, #2b1052 0%, #1c0b33 32%, #1a0a2f 68%, #3a0f3f 100%)' }}
             >
-              <Icon name="workspace_premium" size={14} />
-              Upgrade to Lite / Pro for 1.5× / 2× VP
+              {/* Side art rendered at full height (never cropped); hidden on narrow screens */}
+              <img src="/brand/earn/cta-left.webp" alt="" className="hidden sm:block absolute left-0 inset-y-0 h-full w-auto pointer-events-none select-none" draggable={false}
+                style={{ maskImage: 'linear-gradient(to right, black 55%, transparent 100%)', WebkitMaskImage: 'linear-gradient(to right, black 55%, transparent 100%)' }} />
+              <img src="/brand/earn/cta-right.webp" alt="" className="hidden sm:block absolute right-0 inset-y-0 h-full w-auto pointer-events-none select-none" draggable={false}
+                style={{ maskImage: 'linear-gradient(to left, black 55%, transparent 100%)', WebkitMaskImage: 'linear-gradient(to left, black 55%, transparent 100%)' }} />
+              <div className="relative z-10 flex flex-col items-center justify-center py-4 px-16">
+                <p className="text-white text-sm font-syne font-bold flex items-center gap-1.5 drop-shadow-[0_1px_4px_rgba(0,0,0,0.8)]">
+                  <Icon name="workspace_premium" size={16} className="text-brand-violet-light" />
+                  Upgrade to Lite / Pro
+                </p>
+                <p className="text-white/85 text-[10px] mt-0.5 drop-shadow-[0_1px_3px_rgba(0,0,0,0.8)]">1.5× / 2× VP on every action you take</p>
+              </div>
             </button>
           )}
         </div>
@@ -227,8 +249,8 @@ export default function EarnCoinsScreen() {
       <WatchToEarnQuest />
 
       <div className="mx-4 lg:mx-6 mt-3">
-        <InfoTooltip id="earn_intro" icon="diamond" color="#4DFFD4" title="Earning real money on VERGR">
-          Win tournaments to earn <strong>gems</strong> — these can be cashed out.
+        <InfoTooltip id="earn_intro" icon="diamond" color="#B44FFF" title="Earning real money on VERGR" rightImage="/brand/earn/icon-real-money.webp">
+          Win tournaments to earn <strong>coins</strong>, then convert coins to <strong>gems</strong> — gems are the cashable currency.
           Complete quests, refer friends, and level up to earn <strong>VP</strong> — this levels up your profile and lowers your commission rate, meaning you keep more from every cash-out.
         </InfoTooltip>
       </div>
@@ -241,11 +263,18 @@ export default function EarnCoinsScreen() {
             <h3 className="font-syne font-bold text-lg mb-3">Ways to Earn</h3>
             <div className="grid grid-cols-2 gap-3">
               {EARN_METHODS.map((method, i) => (
-                <button key={i} onClick={method.action} className="p-3 rounded-2xl border border-white/[0.06] bg-surface-1 text-left hover:border-white/[0.12] transition-colors">
-                  <Icon name={method.icon} filled size={24} className={method.color} />
-                  <p className="text-text-primary text-sm font-semibold mt-2">{method.title}</p>
-                  <p className="text-text-muted text-xs mt-0.5">{method.desc}</p>
-                  <p className="text-brand-gold text-xs font-dmmono mt-2">{method.reward}</p>
+                <button key={i} onClick={method.action}
+                  className="relative overflow-hidden p-3 rounded-2xl border border-white/[0.08] bg-surface-1 text-left hover:border-white/[0.16] transition-colors"
+                  style={{ backgroundImage: `url('${method.bg}')`, backgroundSize: 'auto 100%', backgroundPosition: 'right center', backgroundRepeat: 'no-repeat' }}>
+                  <div className="absolute inset-0 bg-gradient-to-t from-[#0B0B14]/95 via-[#0B0B14]/70 to-[#0B0B14]/35" />
+                  <div className="relative z-10">
+                    {method.img
+                      ? <img src={method.img} alt="" className="w-11 h-11 drop-shadow-[0_2px_6px_rgba(0,0,0,0.6)] pointer-events-none select-none" draggable={false} />
+                      : <div className="w-11 h-11 rounded-xl bg-white/[0.08] border border-white/[0.1] flex items-center justify-center"><Icon name={method.icon} filled size={24} className={method.color} /></div>}
+                    <p className="text-text-primary text-sm font-semibold mt-2 drop-shadow-[0_1px_3px_rgba(0,0,0,0.8)]">{method.title}</p>
+                    <p className="text-white/65 text-xs mt-0.5 drop-shadow-[0_1px_3px_rgba(0,0,0,0.8)]">{method.desc}</p>
+                    <p className="text-brand-gold text-xs font-dmmono mt-2 drop-shadow-[0_1px_3px_rgba(0,0,0,0.8)]">{method.reward}</p>
+                  </div>
                 </button>
               ))}
             </div>
@@ -257,16 +286,14 @@ export default function EarnCoinsScreen() {
               {['daily', 'weekly', 'special'].map(tab => (
                 <button key={tab} onClick={() => setActiveTab(tab)}
                   className={`px-3.5 py-1.5 rounded-full text-xs font-semibold capitalize transition-all ${
-                    activeTab === tab ? 'bg-brand-cyan text-bg-dark' : 'bg-surface-2 text-text-secondary'
+                    activeTab === tab ? 'bg-brand-violet text-white' : 'bg-surface-2 text-text-secondary'
                   }`}>
                   {tab}
                 </button>
               ))}
             </div>
             {loading ? (
-              <div className="flex justify-center py-8">
-                <div className="w-6 h-6 border-2 border-surface-3 border-t-brand-cyan rounded-full animate-spin" />
-              </div>
+              <StackSkeleton rows={3} height={56} />
             ) : (
               <div className="space-y-3">
                 {quests.map(quest => {
@@ -276,9 +303,9 @@ export default function EarnCoinsScreen() {
 
                   return (
                     <div key={quest.id} className="flex items-center gap-3 p-4 rounded-2xl border border-white/[0.06] bg-surface-1">
-                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${completed ? 'bg-brand-cyan/10' : 'bg-surface-3'}`}>
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${completed ? 'bg-brand-violet/10' : 'bg-surface-3'}`}>
                         <Icon name={completed ? 'check_circle' : 'radio_button_unchecked'} filled={completed} size={22}
-                          className={completed ? 'text-brand-cyan' : 'text-text-muted'} />
+                          className={completed ? 'text-brand-violet-light' : 'text-text-muted'} />
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-semibold text-text-primary">{quest.title}</p>
@@ -286,7 +313,7 @@ export default function EarnCoinsScreen() {
                         {!completed && (
                           <>
                             <div className="w-full h-1.5 bg-surface-3 rounded-full mt-2 overflow-hidden">
-                              <div className="h-full bg-brand-cyan rounded-full transition-all" style={{ width: `${Math.min((progress / quest.target) * 100, 100)}%` }} />
+                              <div className="h-full bg-brand-violet rounded-full transition-all" style={{ width: `${Math.min((progress / quest.target) * 100, 100)}%` }} />
                             </div>
                             <p className="text-xs text-text-muted font-dmmono mt-1">{progress}/{quest.target}</p>
                           </>
@@ -302,7 +329,7 @@ export default function EarnCoinsScreen() {
                             {claiming === quest.id ? '...' : 'Claim'}
                           </button>
                         )}
-                        {claimed && <span className="text-brand-cyan text-xs font-semibold">Claimed ✓</span>}
+                        {claimed && <span className="text-brand-violet-light text-xs font-semibold">Claimed ✓</span>}
                       </div>
                     </div>
                   );
@@ -312,20 +339,26 @@ export default function EarnCoinsScreen() {
           </div>
         </>
       ) : (
-        // Desktop: two columns with full width
-        <div className="px-4 lg:px-6 mt-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
+        // Desktop: two columns with full width — both columns stretch to the
+        // same height (cards/quest rows flex-grow to fill the grid row)
+        <div className="px-4 lg:px-6 mt-6 grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
           {/* Left column: Ways to Earn */}
-          <div className="lg:col-span-1">
-            <h3 className="font-syne font-bold text-lg mb-3">Ways to Earn</h3>
-            <div className="space-y-3">
+          <div className="lg:col-span-1 flex flex-col">
+            <h3 className="font-syne font-bold text-lg mb-3 shrink-0">Ways to Earn</h3>
+            <div className="flex-1 flex flex-col gap-3">
               {EARN_METHODS.map((method, i) => (
-                <button key={i} onClick={method.action} className="w-full p-4 rounded-2xl border border-white/[0.06] bg-surface-1 text-left hover:border-white/[0.12] transition-colors">
-                  <div className="flex items-center gap-3">
-                    <Icon name={method.icon} filled size={28} className={method.color} />
-                    <div>
-                      <p className="text-text-primary text-base font-semibold">{method.title}</p>
-                      <p className="text-text-muted text-xs mt-0.5">{method.desc}</p>
-                      <p className="text-brand-gold text-xs font-dmmono mt-2">{method.reward}</p>
+                <button key={i} onClick={method.action}
+                  className="w-full flex-1 min-h-[84px] relative overflow-hidden px-4 py-3 rounded-2xl border border-white/[0.08] bg-surface-1 text-left hover:border-white/[0.16] transition-colors"
+                  style={{ backgroundImage: `url('${method.bg}')`, backgroundSize: 'auto 100%', backgroundPosition: 'right center', backgroundRepeat: 'no-repeat' }}>
+                  <div className="absolute inset-0 bg-gradient-to-r from-[#0B0B14]/95 via-[#0B0B14]/60 to-[#0B0B14]/10" />
+                  <div className="relative z-10 flex items-center gap-3 h-full">
+                    {method.img
+                      ? <img src={method.img} alt="" className="w-12 h-12 shrink-0 drop-shadow-[0_2px_6px_rgba(0,0,0,0.6)] pointer-events-none select-none" draggable={false} />
+                      : <div className="w-12 h-12 rounded-xl bg-white/[0.08] border border-white/[0.1] flex items-center justify-center shrink-0"><Icon name={method.icon} filled size={26} className={method.color} /></div>}
+                    <div className="min-w-0">
+                      <p className="text-text-primary text-base font-semibold drop-shadow-[0_1px_3px_rgba(0,0,0,0.8)]">{method.title}</p>
+                      <p className="text-white/65 text-xs mt-0.5 drop-shadow-[0_1px_3px_rgba(0,0,0,0.8)]">{method.desc}</p>
+                      <p className="text-brand-gold text-xs font-dmmono mt-1.5 drop-shadow-[0_1px_3px_rgba(0,0,0,0.8)]">{method.reward}</p>
                     </div>
                   </div>
                 </button>
@@ -334,34 +367,32 @@ export default function EarnCoinsScreen() {
           </div>
 
           {/* Right column: Active Quests */}
-          <div className="lg:col-span-2">
-            <h3 className="font-syne font-bold text-lg mb-3">Active Quests</h3>
-            <div className="flex gap-2 mb-4">
+          <div className="lg:col-span-2 flex flex-col">
+            <h3 className="font-syne font-bold text-lg mb-3 shrink-0">Active Quests</h3>
+            <div className="flex gap-2 mb-4 shrink-0">
               {['daily', 'weekly', 'special'].map(tab => (
                 <button key={tab} onClick={() => setActiveTab(tab)}
                   className={`px-4 py-2 rounded-full text-xs font-semibold capitalize transition-all ${
-                    activeTab === tab ? 'bg-brand-cyan text-bg-dark' : 'bg-surface-2 text-text-secondary'
+                    activeTab === tab ? 'bg-brand-violet text-white' : 'bg-surface-2 text-text-secondary'
                   }`}>
                   {tab}
                 </button>
               ))}
             </div>
             {loading ? (
-              <div className="flex justify-center py-8">
-                <div className="w-6 h-6 border-2 border-surface-3 border-t-brand-cyan rounded-full animate-spin" />
-              </div>
+              <StackSkeleton rows={3} height={56} />
             ) : (
-              <div className="space-y-4">
+              <div className="flex-1 flex flex-col gap-4">
                 {quests.map(quest => {
                   const progress = userActivity[quest.id] || 0;
                   const completed = progress >= quest.target || quest.checkAuto;
                   const claimed = claimedIds.includes(quest.id);
 
                   return (
-                    <div key={quest.id} className="flex items-center gap-4 p-4 rounded-2xl border border-white/[0.06] bg-surface-1">
-                      <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${completed ? 'bg-brand-cyan/10' : 'bg-surface-3'}`}>
+                    <div key={quest.id} className="flex-1 min-h-[96px] flex items-center gap-4 p-4 rounded-2xl border border-white/[0.06] bg-surface-1">
+                      <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${completed ? 'bg-brand-violet/10' : 'bg-surface-3'}`}>
                         <Icon name={completed ? 'check_circle' : 'radio_button_unchecked'} filled={completed} size={26}
-                          className={completed ? 'text-brand-cyan' : 'text-text-muted'} />
+                          className={completed ? 'text-brand-violet-light' : 'text-text-muted'} />
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-base font-semibold text-text-primary">{quest.title}</p>
@@ -369,7 +400,7 @@ export default function EarnCoinsScreen() {
                         {!completed && (
                           <>
                             <div className="w-full h-2 bg-surface-3 rounded-full mt-3 overflow-hidden">
-                              <div className="h-full bg-brand-cyan rounded-full transition-all" style={{ width: `${Math.min((progress / quest.target) * 100, 100)}%` }} />
+                              <div className="h-full bg-brand-violet rounded-full transition-all" style={{ width: `${Math.min((progress / quest.target) * 100, 100)}%` }} />
                             </div>
                             <p className="text-xs text-text-muted font-dmmono mt-1">{progress}/{quest.target}</p>
                           </>
@@ -380,7 +411,7 @@ export default function EarnCoinsScreen() {
                         {quest.external && !claimed && (
                           <button
                             onClick={() => navigate(quest.externalRoute || '/messages/new')}
-                            className="mt-2 px-4 py-1.5 rounded-full bg-brand-cyan text-bg-dark text-xs font-bold hover:brightness-110 active:scale-95 transition-all">
+                            className="mt-2 px-4 py-1.5 rounded-full bg-brand-violet text-white text-xs font-bold hover:brightness-110 active:scale-95 transition-all">
                             {quest.externalLabel || 'Open'}
                           </button>
                         )}
@@ -392,13 +423,30 @@ export default function EarnCoinsScreen() {
                             {claiming === quest.id ? '...' : 'Claim'}
                           </button>
                         )}
-                        {claimed && <span className="text-brand-cyan text-xs font-semibold">Claimed ✓</span>}
+                        {claimed && <span className="text-brand-violet-light text-xs font-semibold">Claimed ✓</span>}
                       </div>
                     </div>
                   );
                 })}
               </div>
             )}
+            <div className="mt-4 shrink-0 p-4 rounded-2xl border border-white/[0.06] bg-surface-1 grid grid-cols-3 gap-3">
+              <div className="flex flex-col items-center text-center gap-1.5">
+                <div className="w-10 h-10 rounded-xl bg-brand-violet/15 flex items-center justify-center"><Icon name="trending_up" size={20} className="text-brand-violet-light" /></div>
+                <p className="text-text-primary text-xs font-semibold">Earn More</p>
+                <p className="text-text-muted text-[10px] leading-snug">Level up to unlock higher rewards</p>
+              </div>
+              <div className="flex flex-col items-center text-center gap-1.5">
+                <div className="w-10 h-10 rounded-xl bg-brand-violet/15 flex items-center justify-center"><Icon name="diamond" size={20} className="text-brand-violet-light" /></div>
+                <p className="text-text-primary text-xs font-semibold">Cash Out</p>
+                <p className="text-text-muted text-[10px] leading-snug">Convert gems to real money</p>
+              </div>
+              <div className="flex flex-col items-center text-center gap-1.5">
+                <div className="w-10 h-10 rounded-xl bg-brand-gold/15 flex items-center justify-center"><Icon name="verified_user" size={20} className="text-brand-gold" /></div>
+                <p className="text-text-primary text-xs font-semibold">Trusted & Secure</p>
+                <p className="text-text-muted text-[10px] leading-snug">Verified platform. Fair play always.</p>
+              </div>
+            </div>
           </div>
         </div>
       )}

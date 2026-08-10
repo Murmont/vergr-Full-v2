@@ -4,6 +4,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { StackSkeleton } from '../../components/skeletons/GlassSkeletons';
 import { useUser } from '../../context/UserContext';
 import { getTransactions } from '../../firebase/firestore';
 import CreatorLayout from '../../components/creator/CreatorLayout';
@@ -124,7 +125,7 @@ export default function CreatorCommunityScreen() {
   const iconForKind = (k) => ({
     tip:     { name: 'paid',           color: 'text-amber-400',  bg: 'bg-amber-500/10' },
     follow:  { name: 'person_add',     color: 'text-emerald-400', bg: 'bg-emerald-500/10' },
-    comment: { name: 'chat_bubble',    color: 'text-brand-cyan', bg: 'bg-cyan-500/10' },
+    comment: { name: 'chat_bubble',    color: 'text-brand-violet-light', bg: 'bg-cyan-500/10' },
     mention: { name: 'alternate_email', color: 'text-brand-violet', bg: 'bg-violet-500/10' },
     share:   { name: 'share',          color: 'text-brand-pink', bg: 'bg-pink-500/10' },
   }[k] || { name: 'circle', color: 'text-text-muted', bg: 'bg-white/[0.04]' });
@@ -132,16 +133,14 @@ export default function CreatorCommunityScreen() {
   return (
     <CreatorLayout page="community" title="Community" subtitle="Stay connected with your fans">
       {loading ? (
-        <div className="flex items-center justify-center py-24">
-          <div className="w-8 h-8 rounded-full border-2 border-white/10 border-t-brand-cyan animate-spin" />
-        </div>
+        <StackSkeleton rows={5} height={88} />
       ) : (
         <>
           {/* KPIs */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 mb-6">
             <KpiCard label="Active supporters" value={uniqueContributors} icon="favorite" iconColor="text-brand-pink" />
             <KpiCard label="New supporters" value={newContributors} icon="person_add" iconColor="text-emerald-400" deltaLabel="last 30d" />
-            <KpiCard label="Replies needed" value={repliesNeeded.length} icon="mark_unread_chat_alt" iconColor="text-brand-cyan" />
+            <KpiCard label="Replies needed" value={repliesNeeded.length} icon="mark_unread_chat_alt" iconColor="text-brand-violet-light" />
             <KpiCard label="Sentiment" value={`${sentiment[0].value}%`} icon="mood" iconColor="text-emerald-400" deltaLabel="positive" />
           </div>
 
@@ -158,7 +157,7 @@ export default function CreatorCommunityScreen() {
                   onChange={(e) => setAnnouncement(e.target.value)}
                   placeholder="What's the word? Drop an update, plan a meetup, tease a stream…"
                   rows={3}
-                  className="w-full bg-white/[0.03] border border-white/[0.06] rounded-xl p-3 text-sm text-white placeholder:text-text-muted focus:outline-none focus:border-brand-cyan/40 resize-none"
+                  className="w-full bg-white/[0.03] border border-white/[0.06] rounded-xl p-3 text-sm text-white placeholder:text-text-muted focus:outline-none focus:border-brand-violet/40 resize-none"
                 />
                 <div className="flex items-center justify-between mt-2">
                   <div className="flex items-center gap-1 text-text-muted">
@@ -169,7 +168,7 @@ export default function CreatorCommunityScreen() {
                   <button
                     disabled={!announcement.trim()}
                     onClick={() => { /* wire to post creation later */ setAnnouncement(''); }}
-                    className="h-9 px-4 rounded-xl bg-gradient-to-r from-brand-cyan to-brand-violet text-bg-dark font-extrabold text-xs hover:brightness-110 transition-all disabled:opacity-40 disabled:cursor-not-allowed">
+                    className="h-9 px-4 rounded-xl bg-gradient-to-r from-brand-violet to-brand-violet text-bg-dark font-extrabold text-xs hover:brightness-110 transition-all disabled:opacity-40 disabled:cursor-not-allowed">
                     Post update
                   </button>
                 </div>
@@ -235,7 +234,7 @@ export default function CreatorCommunityScreen() {
                       <p className="text-sm text-text-secondary leading-snug">{r.text}</p>
                       <div className="flex items-center justify-between mt-2 pt-2 border-t border-white/[0.04]">
                         <span className="text-[11px] text-text-muted truncate">on {r.post}</span>
-                        <button className="h-7 px-3 rounded-lg bg-brand-cyan/10 hover:bg-brand-cyan/20 border border-brand-cyan/30 text-brand-cyan text-[11px] font-bold">
+                        <button className="h-7 px-3 rounded-lg bg-brand-violet/10 hover:bg-brand-violet/20 border border-brand-violet/30 text-brand-violet-light text-[11px] font-bold">
                           Reply
                         </button>
                       </div>
@@ -277,7 +276,7 @@ export default function CreatorCommunityScreen() {
             title="COMMUNITY TIP"
             body="Pin a welcome post for first-time visitors. Creators who pin a welcome gain 2.3× more follow conversions on average."
             cta="Create welcome post"
-            onCta={() => navigate('/create')}
+            onCta={() => window.dispatchEvent(new CustomEvent('vergr:open-composer'))}
             icon="campaign"
           />
         </>

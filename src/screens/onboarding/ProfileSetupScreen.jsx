@@ -74,11 +74,11 @@ export default function ProfileSetupScreen() {
               )}
               {uploading && (
                 <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-                  <div className="w-6 h-6 border-2 border-brand-cyan border-t-transparent animate-spin rounded-full"></div>
+                  <div className="w-6 h-6 border-2 border-brand-violet border-t-transparent animate-spin rounded-full"></div>
                 </div>
               )}
             </div>
-            <button className="absolute -bottom-1 -right-1 w-8 h-8 rounded-full bg-brand-cyan flex items-center justify-center">
+            <button className="absolute -bottom-1 -right-1 w-8 h-8 rounded-full bg-brand-violet flex items-center justify-center">
               <Icon name="edit" size={16} className="text-bg-dark" />
             </button>
           </div>
@@ -92,7 +92,7 @@ export default function ProfileSetupScreen() {
           <textarea
             value={bio} onChange={e => setBio(e.target.value)} maxLength={150}
             placeholder="Tell gamers about yourself..."
-            className="w-full bg-surface-2 border border-white/[0.06] rounded-2xl p-4 text-text-primary placeholder:text-text-muted focus:border-brand-cyan focus:ring-1 focus:ring-brand-cyan focus:outline-none transition-all h-28 resize-none text-sm"
+            className="w-full bg-surface-2 border border-white/[0.06] rounded-2xl p-4 text-text-primary placeholder:text-text-muted focus:border-brand-violet focus:ring-1 focus:ring-brand-violet focus:outline-none transition-all h-28 resize-none text-sm"
           />
           <p className="text-text-muted text-xs text-right mt-1">{bio.length}/150</p>
         </div>
@@ -105,17 +105,17 @@ export default function ProfileSetupScreen() {
             Phone number <span className="text-text-muted">(optional — earn +1000 VP)</span>
           </label>
           {phoneSaved ? (
-            <div className="flex items-center gap-2 bg-brand-cyan/10 border border-brand-cyan/30 rounded-2xl px-4 py-3">
-              <Icon name="check_circle" size={18} className="text-brand-cyan" />
-              <p className="text-brand-cyan text-sm font-bold">Phone saved — +1000 VP added to your wallet.</p>
+            <div className="flex items-center gap-2 bg-brand-violet/10 border border-brand-violet/30 rounded-2xl px-4 py-3">
+              <Icon name="check_circle" size={18} className="text-brand-violet-light" />
+              <p className="text-brand-violet-light text-sm font-bold">Phone saved — +1000 VP added to your wallet.</p>
             </div>
           ) : (
             <button
               type="button"
               onClick={() => setPhoneModalOpen(true)}
-              className="w-full flex items-center gap-3 p-3 rounded-2xl bg-surface-2 border border-white/[0.06] hover:border-brand-cyan/30 transition-all"
+              className="w-full flex items-center gap-3 p-3 rounded-2xl bg-surface-2 border border-white/[0.06] hover:border-brand-violet/30 transition-all"
             >
-              <div className="w-10 h-10 rounded-full bg-brand-cyan/15 text-brand-cyan flex items-center justify-center shrink-0">
+              <div className="w-10 h-10 rounded-full bg-brand-violet/15 text-brand-violet-light flex items-center justify-center shrink-0">
                 <Icon name="phone" size={18} />
               </div>
               <div className="flex-1 text-left">
@@ -149,7 +149,7 @@ export default function ProfileSetupScreen() {
                 <span className="text-xl" style={{ color: platform.color }}>{platform.icon}</span>
                 <span className="text-text-primary text-sm font-medium">{platform.name}</span>
               </div>
-              <span className="text-brand-cyan text-sm font-semibold">Connect</span>
+              <span className="text-brand-violet-light text-sm font-semibold">Connect</span>
             </button>
           ))}
         </div>

@@ -69,8 +69,8 @@ export default function ConsentSheet() {
     <div className="fixed inset-0 z-[80] bg-black/70 backdrop-blur-sm flex items-end md:items-center justify-center p-0 md:p-6">
       <div className="w-full md:max-w-lg bg-[#0b0e15] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden shadow-[0_20px_80px_-10px_rgba(0,0,0,0.8)]">
         <div className="p-6 md:p-8">
-          <div className="w-12 h-12 rounded-2xl bg-brand-cyan/10 border border-brand-cyan/30 flex items-center justify-center mb-4">
-            <Icon name="privacy_tip" size={24} filled className="text-brand-cyan" />
+          <div className="w-12 h-12 rounded-2xl bg-brand-violet/10 border border-brand-violet/30 flex items-center justify-center mb-4">
+            <Icon name="privacy_tip" size={24} filled className="text-brand-violet-light" />
           </div>
           <h2 className="font-syne font-extrabold text-white text-2xl leading-tight mb-2">Your privacy, your choice</h2>
           <p className="text-text-secondary text-sm leading-relaxed mb-5">
@@ -93,11 +93,11 @@ export default function ConsentSheet() {
 
           <div className="mt-6 flex flex-col gap-2">
             <button onClick={save} disabled={saving}
-              className="w-full h-12 rounded-xl bg-gradient-to-r from-brand-cyan to-brand-violet text-bg-dark font-extrabold text-sm hover:brightness-110 transition disabled:opacity-50">
+              className="w-full h-12 rounded-xl bg-gradient-to-r from-brand-violet to-brand-violet text-bg-dark font-extrabold text-sm hover:brightness-110 transition disabled:opacity-50">
               {saving ? 'Saving…' : 'Save my choices'}
             </button>
             <p className="text-[11px] text-text-muted text-center">
-              By continuing you acknowledge our <a href="#/settings/privacy-policy" className="text-brand-cyan underline">Privacy Policy</a>.
+              By continuing you acknowledge our <a href="/settings/privacy-policy" className="text-brand-violet-light underline">Privacy Policy</a>.
             </p>
           </div>
         </div>
@@ -116,8 +116,8 @@ function ConsentToggle({ title, body, value, onChange }) {
         </div>
         <button onClick={() => onChange(!value)}
           aria-pressed={value}
-          className={`relative w-11 h-6 rounded-full transition-colors shrink-0 mt-0.5 ${value ? 'bg-brand-cyan' : 'bg-white/10'}`}>
-          <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${value ? 'translate-x-[22px]' : 'translate-x-0.5'}`} />
+          className={`relative w-11 h-6 rounded-full transition-colors shrink-0 mt-0.5 ${value ? 'bg-brand-violet' : 'bg-white/10'}`}>
+          <span className={`absolute top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-white shadow transition-[left] ${value ? 'left-[22px]' : 'left-[2px]'}`} />
         </button>
       </div>
     </div>

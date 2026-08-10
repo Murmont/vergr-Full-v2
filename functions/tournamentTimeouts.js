@@ -24,14 +24,25 @@
 
 const functions = require('firebase-functions/v2');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
+const defer = (_opts, fn) => fn; // cron-consolidation shim (see index.js cron5Min)
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 
 const REGION = 'europe-west1';
 const db = getFirestore('vgrdb');
 
-const DEFAULT_TIMEOUT_MS = 48 * 60 * 60 * 1000;
+// Two separate windows (tournaments are scheduled, synchronous events —
+// scheduledStart is required at create — so 48h-class limits made brackets
+// unrunnable in practice):
+//   - NO-SHOW window: from match creation, a side that never engages
+//     (verify / self-attest) forfeits. 15 min default.
+//   - RESULT window: from the match going live (bothVerifiedAt), no result
+//     reported → disputed for a mod. 90 min default (covers a long Bo3).
+// Hosts override via tournaments/{id}.noShowTimeoutMs / matchTimeoutMs.
+// Legacy docs with an old huge matchTimeoutMs still honour it.
+const DEFAULT_NO_SHOW_MS = 15 * 60 * 1000;
+const DEFAULT_RESULT_MS = 90 * 60 * 1000;
 
-exports.detectMatchTimeouts = onSchedule(
+exports.detectMatchTimeouts = defer(
   { region: REGION, schedule: 'every 30 minutes', timeZone: 'UTC' },
   async () => {
     const tSnap = await db.collection('tournaments').where('status', '==', 'active').limit(200).get();
@@ -40,22 +51,41 @@ exports.detectMatchTimeouts = onSchedule(
 
     for (const td of tSnap.docs) {
       const t = td.data();
-      const timeoutMs = t.matchTimeoutMs || DEFAULT_TIMEOUT_MS;
+      const resultTimeoutMs = t.matchTimeoutMs || DEFAULT_RESULT_MS;
+      const noShowTimeoutMs = t.noShowTimeoutMs || Math.min(DEFAULT_NO_SHOW_MS, resultTimeoutMs);
 
+      // 'in_progress' = both sides engaged + match live (set by
+      // pingBothIfReady). Those matches time out too — the old pending-only
+      // query stopped seeing a match the moment it went live.
       const matchesSnap = await td.ref.collection('matches')
-        .where('status', '==', 'pending').get();
+        .where('status', 'in', ['pending', 'in_progress']).get();
       for (const md of matchesSnap.docs) {
         const m = md.data();
         // NT2 — both players agreed to delay this match; don't auto-forfeit
         // until the agreed time passes.
         if (m.rescheduledUntil && m.rescheduledUntil > now) continue;
-        const openedAtMs = m.bothVerifiedAt?.toMillis?.() || m.createdAt?.toMillis?.() || 0;
-        if (!openedAtMs) continue;
-        if (now - openedAtMs < timeoutMs) continue;
 
+        // "Engaged" (verified OR self_attested) counts as showed-up. A player
+        // who attested and played must never be branded a no-show just
+        // because no OCR stream / mod upgraded them to 'verified'.
         const vs = m.verifyState || {};
-        const p1Verified = vs[m.player1]?.status === 'verified';
-        const p2Verified = vs[m.player2]?.status === 'verified';
+        const engagedStatus = (uid) => {
+          const st = vs[uid]?.status;
+          return st === 'verified' || st === 'self_attested';
+        };
+        const p1Verified = engagedStatus(m.player1);
+        const p2Verified = engagedStatus(m.player2);
+
+        // Pick the window: both engaged → RESULT window from go-live;
+        // otherwise → NO-SHOW window from match creation.
+        const createdAtMs = m.createdAt?.toMillis?.() || 0;
+        const liveAtMs = m.bothVerifiedAt?.toMillis?.() || 0;
+        if (p1Verified && p2Verified) {
+          const base = liveAtMs || createdAtMs;
+          if (!base || now - base < resultTimeoutMs) continue;
+        } else {
+          if (!createdAtMs || now - createdAtMs < noShowTimeoutMs) continue;
+        }
 
         if (p1Verified && p2Verified) {
           // Both showed up, no result reported — mod must rule.
@@ -89,13 +119,13 @@ exports.detectMatchTimeouts = onSchedule(
               forfeitReason: 'opponent_no_show',
             });
             const loserId = winnerId === m.player1 ? m.player2 : m.player1;
-            const hours = Math.round(timeoutMs / 3_600_000);
+            const mins = Math.max(1, Math.round(noShowTimeoutMs / 60_000));
             await notifyOne(td.id, md.id, winnerId, 'tournament_match_forfeit',
               `${t.name || 'Tournament'} — you advance`,
               'Your opponent did not check in within the time limit. You win this match by forfeit and advance.');
             await notifyOne(td.id, md.id, loserId, 'tournament_match_disqualified',
               `${t.name || 'Tournament'} — you were disqualified`,
-              `You didn't check in / verify the lobby code within the ${hours}h time limit, so you forfeited this match. Your opponent advances.`);
+              `You didn't verify the lobby code within the ${mins}-minute window, so you forfeited this match. Your opponent advances.`);
           } catch (err) {
             console.warn('forfeit dispatch failed', td.id, md.id, err);
           }
@@ -116,6 +146,58 @@ exports.detectMatchTimeouts = onSchedule(
           await notifyOne(td.id, md.id, uid, 'tournament_match_double_no_show',
             `${t.name || 'Tournament'} — you were disqualified`,
             'Neither player checked in within the time limit, so this match was cancelled and the bracket slot will skip on the next advance.');
+        }
+      }
+    }
+  },
+);
+
+// ─── autoConfirmMatchResults — cron every 1 min ──────────────────────────
+// One player reported a result (status awaiting_confirmation) and the
+// opponent was pinged with a confirm deadline. Past the deadline with no
+// counter-report, the claimed result stands and the bracket advances. This
+// is what keeps results near-instant: silence is acceptance, disputes are
+// the only thing that waits on a human.
+const DEFAULT_CONFIRM_WINDOW_MS = 3 * 60 * 1000;
+
+exports.autoConfirmMatchResults = defer(
+  { region: REGION, schedule: 'every 1 minutes', timeZone: 'UTC' },
+  async () => {
+    const tSnap = await db.collection('tournaments').where('status', '==', 'active').limit(200).get();
+    const now = Date.now();
+    const tournaments = require('./tournaments');
+
+    for (const td of tSnap.docs) {
+      const t = td.data();
+      const matchesSnap = await td.ref.collection('matches')
+        .where('status', '==', 'awaiting_confirmation').get();
+      for (const md of matchesSnap.docs) {
+        const m = md.data();
+        if (!m.firstReportedWinner || !m.firstReporter) continue;
+        const deadline = Number(m.confirmDeadlineMs)
+          || ((m.firstReportedAt?.toMillis?.() || 0) + (Number(t.confirmWindowMs) || DEFAULT_CONFIRM_WINDOW_MS));
+        if (!deadline || now < deadline) continue;
+
+        try {
+          await tournaments._internal_recordMatchResult({
+            tournamentId: td.id, matchId: md.id,
+            winnerId: m.firstReportedWinner,
+            reporterUid: 'system_autoconfirm',
+            source: 'admin',
+          });
+          await md.ref.update({ completedBy: 'auto_confirm' });
+          const winnerId = m.firstReportedWinner;
+          const loserId = winnerId === m.player1 ? m.player2 : m.player1;
+          await notifyOne(td.id, md.id, winnerId, 'tournament_result_confirmed',
+            `${t.name || 'Tournament'} — result confirmed`,
+            'Your reported win is confirmed. The bracket has advanced.');
+          if (loserId) {
+            await notifyOne(td.id, md.id, loserId, 'tournament_result_confirmed',
+              `${t.name || 'Tournament'} — result recorded`,
+              'The reported result stood unchallenged and was recorded. If it was wrong, contact a moderator from the match screen.');
+          }
+        } catch (err) {
+          console.warn('autoConfirm failed', td.id, md.id, err?.message || err);
         }
       }
     }

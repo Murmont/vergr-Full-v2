@@ -4,13 +4,16 @@ import { useAuth } from '../../context/AuthContext';
 import { useUI } from '../../context/UIContext';
 import VergrLogo from '../../components/VergrLogo';
 import Icon from '../../components/Icon';
+import AuthShell from '../../components/auth/AuthShell';
+import { authErrorMessage } from '../../utils/authErrors';
+import { IS_HUAWEI_BUILD } from '../../utils/platform';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const { login, loginWithGoogle } = useAuth();
+  const { login, loginWithGoogle, signInAsGuest } = useAuth();
   const { showToast } = useUI();
   const navigate = useNavigate();
 
@@ -22,7 +25,7 @@ export default function LoginScreen() {
       await login(email, password);
       navigate('/', { replace: true });
     } catch (err) {
-      showToast(err.message || 'Login failed', 'error');
+      showToast(authErrorMessage(err, 'Login failed. Please try again.'), 'error');
     }
     setLoading(false);
   };
@@ -32,30 +35,41 @@ export default function LoginScreen() {
       await loginWithGoogle();
       navigate('/', { replace: true });
     } catch (err) {
-      showToast(err.message || 'Google login failed', 'error');
+      showToast(authErrorMessage(err, 'Google login failed. Please try again.'), 'error');
     }
   };
 
+  const handleGuestBrowse = async () => {
+    setLoading(true);
+    try {
+      await signInAsGuest();
+      navigate('/', { replace: true });
+    } catch (err) {
+      showToast(err?.message || 'Could not start guest session', 'error');
+    }
+    setLoading(false);
+  };
+
   return (
-    <div className="screen-container items-center justify-center p-6 min-h-screen">
-      <div className="w-full max-w-[400px] flex flex-col h-full justify-between min-h-[700px]">
-        <div className="flex flex-col flex-1 mt-10">
-          <div className="flex justify-center mb-10">
-            <VergrLogo size={48} />
+    <AuthShell>
+      <div className="w-full flex flex-col">
+        <div className="flex flex-col">
+          <div className="flex justify-center mb-8 lg:hidden">
+            <VergrLogo size={64} />
           </div>
-          <div className="mb-10 px-2">
+          <div className="mb-8 px-2">
             <h1 className="font-syne text-text-primary tracking-tight text-[32px] font-extrabold leading-tight text-center mb-2">Welcome back</h1>
             <p className="text-text-muted text-sm text-center">Sign in to continue</p>
           </div>
           <form onSubmit={handleLogin} className="flex flex-col gap-4 px-1">
             <label className="block relative group">
-              <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-text-muted group-focus-within:text-brand-cyan transition-colors">
+              <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-text-muted group-focus-within:text-brand-violet-light transition-colors">
                 <Icon name="mail" size={20} />
               </div>
               <input type="email" placeholder="Email address" value={email} onChange={(e) => setEmail(e.target.value)} className="input-with-icon" autoComplete="email" />
             </label>
             <label className="block relative group">
-              <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-text-muted group-focus-within:text-brand-cyan transition-colors">
+              <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-text-muted group-focus-within:text-brand-violet-light transition-colors">
                 <Icon name="lock" size={20} />
               </div>
               <input type={showPassword ? 'text' : 'password'} placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} className="input-with-icon pr-12" autoComplete="current-password" />
@@ -70,6 +84,11 @@ export default function LoginScreen() {
               {loading ? (<div className="w-5 h-5 border-2 border-bg-dark/30 border-t-bg-dark rounded-full animate-spin" />) : ('Sign In')}
             </button>
           </form>
+          {/* Google sign-in needs Google Play Services, which Huawei devices do
+              not ship. On the AppGallery build the button could only ever fail,
+              so it is removed — along with the "or" divider, since Google is the
+              only thing under it and a lone divider reads as a broken layout. */}
+          {!IS_HUAWEI_BUILD && (<>
           <div className="flex items-center gap-4 my-8 px-1">
             <div className="flex-1 h-px bg-white/[0.06]" />
             <span className="text-text-muted text-xs">or</span>
@@ -81,14 +100,26 @@ export default function LoginScreen() {
               <span className="text-text-primary text-sm font-medium">Google</span>
             </button>
           </div>
+          </>)}
         </div>
-        <div className="text-center py-6">
+        <div className="text-center py-6 space-y-3">
           <p className="text-text-muted text-sm">
             {"Don't have an account? "}
-            <Link to="/signup" className="text-text-primary font-semibold hover:text-brand-cyan transition-colors">Sign Up</Link>
+            <Link to="/signup" className="text-text-primary font-semibold hover:text-brand-violet-light transition-colors">Sign Up</Link>
           </p>
+          {/* Guest mode — anonymous browsing for reviewers and curious
+              visitors. Restricted to read-only inside the app; upgrade
+              via Sign Up preserves the uid. */}
+          <button
+            type="button"
+            onClick={handleGuestBrowse}
+            disabled={loading}
+            className="text-text-muted text-xs underline underline-offset-4 hover:text-text-primary transition-colors disabled:opacity-50"
+          >
+            Continue as guest — browse without signing up
+          </button>
         </div>
       </div>
-    </div>
+    </AuthShell>
   );
 }

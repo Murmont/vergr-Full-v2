@@ -14,7 +14,10 @@ export default function BackgroundPreviewModal({ isOpen, onClose, onApply, bgId,
 
   if (!isOpen) return null;
 
-  const bgStyle = getChatBgStyle(bgId, customImageUrl);
+  // Modal renders on both mobile + desktop — use viewport width to pick
+  // the right variant so the preview matches what'll actually render.
+  const isDesktopPreview = typeof window !== 'undefined' && window.innerWidth >= 1024;
+  const bgStyle = getChatBgStyle(bgId, customImageUrl, { isDesktop: isDesktopPreview });
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80" onClick={onClose}>
@@ -45,7 +48,7 @@ export default function BackgroundPreviewModal({ isOpen, onClose, onApply, bgId,
               </div>
             </div>
             <div className="flex justify-end">
-              <div className="max-w-[70%] bg-brand-cyan rounded-2xl rounded-br-none px-4 py-2">
+              <div className="max-w-[70%] bg-brand-violet rounded-2xl rounded-br-none px-4 py-2">
                 <p className="text-sm text-bg-dark/90">Looks great!</p>
                 <span className="text-[9px] text-bg-dark/40 float-right mt-1">12:35</span>
               </div>
@@ -69,7 +72,7 @@ export default function BackgroundPreviewModal({ isOpen, onClose, onApply, bgId,
               </button>
               <button
                 onClick={() => { onApply(); onClose(); }}
-                className="flex-1 py-2 rounded-full bg-brand-cyan text-bg-dark text-sm font-semibold"
+                className="flex-1 py-2 rounded-full bg-brand-violet text-white text-sm font-semibold"
               >
                 Apply
               </button>

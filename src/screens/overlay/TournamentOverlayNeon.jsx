@@ -10,12 +10,10 @@
 // Live data slots populated reactively:
 //   - currentMatchSeriesScore  (always — derived from match.seriesScore)
 //   - currentMatchPlayer1.liveScore / liveScoreSource  (when OCR/GSI lands)
-//   - picksPool                (from match.bettingPools[player1Uid|player2Uid])
 //   - modPresent               (from match.vanguardPresent or assignment)
 //   - aiScanStatus             (from match.cheatFlagPass or activity)
 //
-// Empty states are graceful — score boxes show "—" when no live data,
-// picks bar shows 50/50 grey when pool is empty.
+// Empty states are graceful — score boxes show "—" when no live data.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
@@ -118,24 +116,7 @@ html.tneon-host, body.tneon-host { margin:0; padding:0; background: transparent 
 .tneon .dot { width: 22px; height: 5px; border-radius: 3px; background: rgba(255,255,255,.14); }
 .tneon .dot.a { background: var(--brand-cyan); box-shadow: 0 0 12px var(--brand-cyan); }
 .tneon .dot.b { background: var(--brand-pink); box-shadow: 0 0 12px var(--brand-pink); }
-.tneon .picks-bar { position: absolute; left: 48px; right: 48px; bottom: 26px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
-.tneon .picks-kicker { display: inline-flex; align-items: center; gap: 8px; font: 700 11px/1 "DM Mono", monospace; letter-spacing: .32em; color: var(--text-secondary); text-transform: uppercase; }
-.tneon .picks-kicker::before, .tneon .picks-kicker::after { content: ""; width: 24px; height: 1px; background: rgba(255,255,255,.18); display: inline-block; }
-.tneon .picks-row { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 16px; width: 100%; }
-.tneon .picks-side { display: inline-flex; align-items: baseline; gap: 4px; font-family: "DM Mono", monospace; font-variant-numeric: tabular-nums; }
-.tneon .picks-side.a { justify-content: flex-end; color: var(--brand-cyan); text-shadow: 0 0 12px color-mix(in oklab, var(--brand-cyan) 50%, transparent); }
-.tneon .picks-side.b { justify-content: flex-start; color: var(--brand-pink); text-shadow: 0 0 12px color-mix(in oklab, var(--brand-pink) 50%, transparent); }
-.tneon .picks-amount { font: 700 22px/1 "DM Mono", monospace; }
-.tneon .picks-unit { font: 700 12px/1 "DM Mono", monospace; opacity: .65; letter-spacing: .14em; text-transform: uppercase; }
-.tneon .picks-track { position: relative; width: clamp(360px, 38vw, 600px); height: 12px; border-radius: 6px; background: rgba(255,255,255,.06); overflow: hidden; box-shadow: 0 0 0 1px rgba(255,255,255,.06) inset, 0 2px 12px rgba(0,0,0,.5); }
-.tneon .picks-fill-a { position: absolute; top: 0; bottom: 0; left: 0; width: 50%; background: linear-gradient(90deg, color-mix(in oklab, var(--brand-cyan) 50%, transparent) 0%, var(--brand-cyan) 100%); box-shadow: 0 0 18px color-mix(in oklab, var(--brand-cyan) 70%, transparent); transition: width 700ms cubic-bezier(.22,.8,.2,1); }
-.tneon .picks-fill-b { position: absolute; top: 0; bottom: 0; right: 0; width: 50%; background: linear-gradient(270deg, color-mix(in oklab, var(--brand-pink) 50%, transparent) 0%, var(--brand-pink) 100%); box-shadow: 0 0 18px color-mix(in oklab, var(--brand-pink) 70%, transparent); transition: width 700ms cubic-bezier(.22,.8,.2,1); }
-.tneon .picks-pivot { position: absolute; top: -6px; bottom: -6px; left: 50%; width: 4px; background: #fff; transform: translateX(-50%); border-radius: 3px; box-shadow: 0 0 14px rgba(255,255,255,.9), 0 0 28px rgba(255,255,255,.5); transition: left 700ms cubic-bezier(.22,.8,.2,1); }
-.tneon .picks-pivot::after { content: ""; position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); width: 14px; height: 14px; border-radius: 50%; background: rgba(255,255,255,0); box-shadow: 0 0 0 2px rgba(255,255,255,.4); animation: tneon-pivot 1.6s ease-in-out infinite; }
-.tneon .picks-bar.empty .picks-fill-a, .tneon .picks-bar.empty .picks-fill-b { background: rgba(255,255,255,.04); box-shadow: none; }
-.tneon .picks-bar.empty .picks-side { color: var(--text-muted); text-shadow: none; }
 @keyframes tneon-pulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: .55; transform: scale(.82); } }
-@keyframes tneon-pivot { 0%,100% { box-shadow: 0 0 0 2px rgba(255,255,255,.4); opacity: 1; } 50% { box-shadow: 0 0 0 6px rgba(255,255,255,0); opacity: .6; } }
 @media (prefers-reduced-motion: reduce) { .tneon *, .tneon *::before, .tneon *::after { animation: none !important; transition: none !important; } }
 `;
 
@@ -286,13 +267,6 @@ export default function TournamentOverlayNeon() {
     return () => { cancelled = true; };
   }, [modUids]);
 
-  // Derive picks pool from match.bettingPools (already aggregated server-side
-  // by placeMatchBet → tx.update). Falls back to 0/0 when no picks placed.
-  const picksA = (match?.bettingPools?.[match?.player1] || 0);
-  const picksB = (match?.bettingPools?.[match?.player2] || 0);
-  const picksTotal = picksA + picksB;
-  const picksPctA = picksTotal === 0 ? 50 : (picksA / picksTotal) * 100;
-
   // Live score plumbing — slots present even when no source has populated
   // them yet. OCR pipeline (when wired) will write match.liveScore.{uid} +
   // match.liveScoreSource.{uid}; GSI does the same with source='gsi'.
@@ -388,25 +362,6 @@ export default function TournamentOverlayNeon() {
             <PlayerCell user={p2} side="right" score={score2} source={source2} flag={flagFor(p2)} tag={tagFor(p2)} />
           </div>
 
-          {/* ─── PREDICTIONS TUG-OF-WAR BAR ─── */}
-          <div className={`picks-bar ${picksTotal === 0 ? 'empty' : ''}`}>
-            <span className="picks-kicker">Predictions</span>
-            <div className="picks-row">
-              <span className="picks-side a">
-                <RollingNumber value={picksA} />
-                <span className="picks-unit">c</span>
-              </span>
-              <div className="picks-track">
-                <div className="picks-fill-a" style={{ width: `${picksPctA}%` }} />
-                <div className="picks-fill-b" style={{ width: `${100 - picksPctA}%` }} />
-                <div className="picks-pivot" style={{ left: `${picksPctA}%` }} />
-              </div>
-              <span className="picks-side b">
-                <RollingNumber value={picksB} />
-                <span className="picks-unit">c</span>
-              </span>
-            </div>
-          </div>
         </div>
       </div>
     </div>
@@ -441,30 +396,6 @@ function PlayerCell({ user, side, score, source, flag, tag }) {
       </div>
     </div>
   );
-}
-
-// Animates the displayed number toward `value` over 600ms with a cubic ease.
-// Compact-formats the output so any size renders cleanly (4.2K / 1.2M / 4.5B).
-function RollingNumber({ value }) {
-  const [shown, setShown] = useState(value || 0);
-  const fromRef = useRef(value || 0);
-  useEffect(() => {
-    const from = fromRef.current;
-    const to = value || 0;
-    if (from === to) { setShown(to); return; }
-    const start = performance.now();
-    let raf = 0;
-    const tick = (t) => {
-      const p = Math.min(1, (t - start) / 600);
-      const eased = 1 - Math.pow(1 - p, 3);
-      setShown(Math.round(from + (to - from) * eased));
-      if (p < 1) raf = requestAnimationFrame(tick);
-      else fromRef.current = to;
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [value]);
-  return <span className="picks-amount">{fmtCompact(shown)}</span>;
 }
 
 function roundLabel(match) {

@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.vergr.desktop",
+      "sha256_cert_fingerprints": [
+        "EC:26:E2:EE:09:5D:D0:D8:AA:14:A2:26:19:20:03:98:0A:CB:50:02:DB:59:A7:54:4F:AC:3F:D6:61:6A:A0:CF"
+      ]
+    }
+  }
+]

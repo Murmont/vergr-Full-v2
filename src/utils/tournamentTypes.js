@@ -153,70 +153,19 @@ export const BRACKET_TYPE_LIST = Object.values(BRACKET_TYPES);
 // Percentages are of the gross pool. Mod cut is taken first, then winners are
 // paid from the remainder. Squad treasury is skimmed from each winner's share.
 
+// Winner-takes-all (minus 5% mod cut) for every bracket type. Solo = winner's
+// wallet; squad = winning squad's treasury (handled in finalizeInternal via
+// `isSquadMode`). The multi-place idea lives only in Tournament Points (TP)
+// awarded to every participant in `finalizeInternal` for the global
+// leaderboard; coins are single-winner.
 export const PRIZE_DISTRIBUTION = {
-  single_elim: {
-    splits: [
-      { place: 1, pct: 60, label: '1st' },
-      { place: 2, pct: 25, label: '2nd' },
-      { place: 3, pct: 7.5, label: '3rd' },
-      { place: 4, pct: 7.5, label: '4th' },
-    ],
-    modCut: 5,
-    squadTreasuryPct: 10,
-  },
-  double_elim: {
-    splits: [
-      { place: 1, pct: 55, label: '1st' },
-      { place: 2, pct: 25, label: '2nd' },
-      { place: 3, pct: 10, label: '3rd' },
-      { place: 4, pct: 5, label: '4th' },
-    ],
-    modCut: 5,
-    squadTreasuryPct: 10,
-  },
-  squad_single_elim: {
-    splits: [
-      { place: 1, pct: 60, label: '1st' },
-      { place: 2, pct: 25, label: '2nd' },
-      { place: 3, pct: 7.5, label: '3rd' },
-      { place: 4, pct: 7.5, label: '4th' },
-    ],
-    modCut: 5,
-    squadTreasuryPct: 100, // goes directly to squad treasury
-  },
-  squad_round_robin: {
-    splits: [
-      { place: 1, pct: 50, label: '1st' },
-      { place: 2, pct: 30, label: '2nd' },
-      { place: 3, pct: 20, label: '3rd' },
-    ],
-    modCut: 5,
-    squadTreasuryPct: 10,
-  },
-  battle_royale: {
-    splits: [
-      { place: 1, pct: 40, label: '1st' },
-      { place: 2, pct: 25, label: '2nd' },
-      { place: 3, pct: 15, label: '3rd' },
-    ],
-    modCut: 5,
-    squadTreasuryPct: 10,
-  },
-  swiss: {
-    splits: [
-      { place: 1, pct: 50, label: '1st' },
-      { place: 2, pct: 30, label: '2nd' },
-      { place: 3, pct: 20, label: '3rd' },
-    ],
-    modCut: 5,
-    squadTreasuryPct: 10,
-  },
-  invitational: {
-    splits: [], // custom
-    modCut: 0,
-    squadTreasuryPct: 0,
-    custom: true,
-  },
+  single_elim:       { splits: [{ place: 1, pct: 100, label: 'Winner' }], modCut: 5, squadTreasuryPct: 0 },
+  double_elim:       { splits: [{ place: 1, pct: 100, label: 'Winner' }], modCut: 5, squadTreasuryPct: 0 },
+  squad_single_elim: { splits: [{ place: 1, pct: 100, label: 'Winner' }], modCut: 5, squadTreasuryPct: 100 },
+  squad_round_robin: { splits: [{ place: 1, pct: 100, label: 'Winner' }], modCut: 5, squadTreasuryPct: 100 },
+  battle_royale:     { splits: [{ place: 1, pct: 100, label: 'Winner' }], modCut: 5, squadTreasuryPct: 0 },
+  swiss:             { splits: [{ place: 1, pct: 100, label: 'Winner' }], modCut: 5, squadTreasuryPct: 0 },
+  invitational:      { splits: [{ place: 1, pct: 100, label: 'Winner' }], modCut: 5, squadTreasuryPct: 0 },
 };
 
 /**

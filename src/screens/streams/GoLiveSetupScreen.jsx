@@ -1,16 +1,23 @@
 // Go Live setup — redesigned per Claude Design.
 // Preview area + device controls + numbered config sections + right side panel.
 // Note: actual stream startup is unchanged (toast + navigate). Wire to real backend later.
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { SUPPORTED_LANGS, LANG_LABELS, languageForCountry } from '../../utils/localePrefs';
 import { useNavigate } from 'react-router-dom';
+import { getFunctions, httpsCallable } from 'firebase/functions';
+import { doc, updateDoc, serverTimestamp, addDoc, collection } from 'firebase/firestore';
+import { db } from '../../firebase/config';
+import { useAuth } from '../../context/AuthContext';
 import { useUser } from '../../context/UserContext';
 import { useUI } from '../../context/UIContext';
 import { useLayout } from '../../context/LayoutContext';
 import useResponsive from '../../hooks/useResponsive';
 import TopBar from '../../components/TopBar';
-import Icon from '../../components/Icon';
-import BroadcasterScreen from './BroadcasterScreen';
-import ViewerStreamScreen from './ViewerStreamScreen';
+import EventPickerModal from '../../components/tournament/EventPickerModal';
+import { browserCanIngest } from '../../utils/streamIngest';
+import { uploadToR2 } from '../../utils/r2Storage';
+import { compressMedia } from '../../utils/mediaCompression';
+import { resolveTier } from '../../utils/tierSystem';
 
 const C = {
   bg: '#09090f',
@@ -24,27 +31,16 @@ const C = {
   purple: '#7B1FFF',
   purpleLight: '#b44fff',
   purpleSoft: 'rgba(123,31,255,0.15)',
-  cyan: '#4DFFD4',
+  gemBlue: '#3D7FFF',
   green: '#22c55e',
   red: '#ef4444',
   amber: '#f59e0b',
   divider: 'rgba(255,255,255,0.06)',
 };
 
-const GAME_OPTIONS = [
-  { name: 'VALORANT', short: 'VAL' },
-  { name: 'Apex Legends', short: 'APX' },
-  { name: 'Fortnite', short: 'FN' },
-  { name: 'CS2', short: 'CS2' },
-  { name: 'League of Legends', short: 'LOL' },
-  { name: 'Overwatch 2', short: 'OW2' },
-  { name: 'Elden Ring', short: 'ELD' },
-];
-
-const RESOLUTIONS = ['720p', '1080p', '1440p', '4K'];
-
 export default function GoLiveSetupScreen() {
   const navigate = useNavigate();
+  const { currentUser } = useAuth();
   const { profile } = useUser();
   const { showToast } = useUI();
   const { isDesktop, isMobile } = useResponsive();
@@ -56,29 +52,394 @@ export default function GoLiveSetupScreen() {
     return () => { setRightPanel(null); setContentAlign('center'); };
   }, [setRightPanel, setContentAlign, isDesktop]);
 
+  // Hydrate from the host's last-used stream defaults (persisted on every
+  // successful go-live). Runs once when the profile arrives, only filling fields
+  // the user hasn't already touched, so the common case is "title -> Go Live".
+  const hydratedRef = useRef(false);
+  useEffect(() => {
+    if (hydratedRef.current || !profile?.streamDefaults) return;
+    hydratedRef.current = true;
+    const d = profile.streamDefaults;
+    if (Array.isArray(d.coverHistory)) setCoverHistory(d.coverHistory.slice(0, 6));
+    setTitle((t) => t || d.title || '');
+    setTags((t) => (t.length ? t : (Array.isArray(d.tags) ? d.tags.slice(0, 12) : [])));
+    if (d.coverUrl) setCoverUrl((c) => c || d.coverUrl);
+    if (d.language) setStreamLang((l) => l || d.language);
+    if (d.ingestMode && browserCanIngest()) setIngestMode(d.ingestMode);
+    if (d.tipGoalOn) {
+      setTipGoalOn(true);
+      if (d.tipGoalCoins) setTipGoalCoins(d.tipGoalCoins);
+      if (d.tipGoalReason) setTipGoalReason(d.tipGoalReason);
+    }
+  }, [profile?.streamDefaults]);
+
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [tags, setTags] = useState(['Valorant', 'Ranked']);
+  const [tags, setTags] = useState([]);
   const [tagInput, setTagInput] = useState('');
-  const [audience, setAudience] = useState('public'); // public | friends | squad
-  const [game, setGame] = useState(GAME_OPTIONS[0]);
-  const [autoDetect, setAutoDetect] = useState(true);
-  const [resolution, setResolution] = useState('1080p');
-  const [bitrate, setBitrate] = useState(6000);
-  const [monetize, setMonetize] = useState(true);
-  const [entryFee, setEntryFee] = useState(0);
-  const [tournamentMode, setTournamentMode] = useState(false);
-  const [activeDevice, setActiveDevice] = useState('mic'); // mic | camera | screen | game | audio
-  const [showGameMenu, setShowGameMenu] = useState(false);
-  const [previewMode, setPreviewMode] = useState(null); // 'broadcaster' | 'viewer' | null
+  // Everything except the preview + title + Go Live lives under "Advanced", so
+  // the common case is title -> Go Live (defaults are remembered, see below).
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  // Recently-used cover images (one-tap "use again" chips), newest first.
+  const [coverHistory, setCoverHistory] = useState([]);
+  // Audience knob = visibility within a public stream (everyone / followers-only / friends-only).
+  // Squad streams are NOT started here — they're squad-dashboard only.
+  const [audience, setAudience] = useState('public'); // public | followers | friends | ticketed
+  const [ticketedEventId, setTicketedEventId] = useState(null);
+  const [ticketedEventName, setTicketedEventName] = useState('');
+  const [showEventPicker, setShowEventPicker] = useState(false);
+  // Promote a ticketed event on a NON-ticketed (public/followers) stream so
+  // viewers can buy a ticket to it while watching. Independent of the gate.
+  const [promotedEventId, setPromotedEventId] = useState(null);
+  const [promotedEventName, setPromotedEventName] = useState('');
+  const [showPromotePicker, setShowPromotePicker] = useState(false);
+  // Spoken language of the broadcast — drives locality discovery (viewers can
+  // filter/rank streams by language). Defaults from the host's country.
+  const [streamLang, setStreamLang] = useState(() => languageForCountry(profile?.country));
+  const [notifyFollowers, setNotifyFollowers] = useState(true);
+  const [coverUrl, setCoverUrl] = useState('');
+  const [coverBusy, setCoverBusy] = useState(false);
+  const coverInputRef = useRef(null);
 
-  const goLive = () => {
+  // Streaming is single-rendition and tier-capped (LOCKED spec). The output
+  // resolution/bitrate are NOT user-choosable — show the real cap per plan
+  // instead of a fake picker that the rtmp watchdog would just disconnect.
+  const streamTier = resolveTier(profile);
+  const RENDITIONS = {
+    free: { label: '480p · 30fps', kbps: 3000, planLabel: 'Free' },
+    lite: { label: '720p · 60fps', kbps: 4500, planLabel: 'Lite' },
+    pro:  { label: '1080p · 60fps', kbps: 6500, planLabel: 'Pro' },
+  };
+  const rendition = RENDITIONS[streamTier] || RENDITIONS.free;
+  // Live streams earn TIPS (+ an optional tip goal). There is NO entry fee for a
+  // stream — entry fees are a tournament-only concept.
+  const [tipGoalOn, setTipGoalOn] = useState(false);
+  const [tipGoalCoins, setTipGoalCoins] = useState(0);
+  const [tipGoalReason, setTipGoalReason] = useState('');
+  // (Tournament streams are a separate flow, started from the tournament screen.)
+  // Ingest mode: 'browser' (fMP4 → vergr-ingest, default if supported) or 'rtmp' (OBS).
+  const [ingestMode, setIngestMode] = useState(() => (browserCanIngest() ? 'browser' : 'rtmp'));
+  // "Stream to both": relay the OBS feed to the streamer's Twitch too (the
+  // backend has supported this since 2026-05-30 — createStreamSession
+  // twitchMirror:true — but it never had a UI entry point until now).
+  const twitchLinked = !!profile?.linkedAccounts?.twitch;
+  const [mirrorToTwitch, setMirrorToTwitch] = useState(false);
+  // Owner-configured chat-bridge nudge: a periodic message in the streamer's
+  // OWN Twitch chat linking their Vergr channel. OFF by default, conservative
+  // 20-minute interval (their channel + their message = within Twitch rules).
+  const [twitchNudgeOn, setTwitchNudgeOn] = useState(false);
+  const [twitchNudgeText, setTwitchNudgeText] = useState('');
+  const [starting, setStarting] = useState(false);
+  const [scheduleOn, setScheduleOn] = useState(false);
+  const [scheduledAt, setScheduledAt] = useState(''); // datetime-local string
+  const [scheduling, setScheduling] = useState(false);
+
+  // ── Real local preview (camera/screen + live mic meter) ──────────────────────
+  const videoRef = useRef(null);
+  const camStreamRef = useRef(null);
+  const screenStreamRef = useRef(null);
+  const audioCtxRef = useRef(null);
+  const meterRafRef = useRef(0);
+  const [camOn, setCamOn] = useState(true);
+  const [micOn, setMicOn] = useState(true);
+  const [screenSharing, setScreenSharing] = useState(false);
+  const [micLevel, setMicLevel] = useState(0); // 0..100 real RMS
+  const [previewReady, setPreviewReady] = useState(false);
+  const [previewError, setPreviewError] = useState(null);
+  // Camera/mic are opt-in: we do NOT grab devices just because the page loaded.
+  // The user enables the preview explicitly (and it's released on leave).
+  const [previewStarted, setPreviewStarted] = useState(false);
+  // Device selection (which camera / which mic). Labels only populate after the
+  // first getUserMedia grant, so we enumerate lazily once the preview starts.
+  const [videoDevices, setVideoDevices] = useState([]);
+  const [audioDevices, setAudioDevices] = useState([]);
+  const [camDeviceId, setCamDeviceId] = useState('');
+  const [micDeviceId, setMicDeviceId] = useState('');
+
+  const refreshDevices = useCallback(async () => {
+    try {
+      const list = await navigator.mediaDevices.enumerateDevices();
+      setVideoDevices(list.filter(d => d.kind === 'videoinput'));
+      setAudioDevices(list.filter(d => d.kind === 'audioinput'));
+    } catch { /* ignore */ }
+  }, []);
+
+  const attachMeter = useCallback((mediaStream) => {
+    cancelAnimationFrame(meterRafRef.current);
+    try { audioCtxRef.current?.close(); } catch {}
+    if (!mediaStream || mediaStream.getAudioTracks().length === 0) { setMicLevel(0); return; }
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    const ctx = new Ctx();
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 1024;
+    ctx.createMediaStreamSource(mediaStream).connect(analyser);
+    audioCtxRef.current = ctx;
+    const buf = new Uint8Array(analyser.fftSize);
+    const tick = () => {
+      analyser.getByteTimeDomainData(buf);
+      let sumSq = 0;
+      for (let i = 0; i < buf.length; i++) { const v = (buf[i] - 128) / 128; sumSq += v * v; }
+      const rms = Math.sqrt(sumSq / buf.length);
+      setMicLevel(micOn ? Math.min(100, Math.round(rms * 100 * 2.2)) : 0);
+      meterRafRef.current = requestAnimationFrame(tick);
+    };
+    meterRafRef.current = requestAnimationFrame(tick);
+  }, [micOn]);
+
+  const acquireCamera = useCallback(async () => {
+    setPreviewError(null);
+    try {
+      camStreamRef.current?.getTracks().forEach(t => t.stop());
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: camDeviceId
+          ? { deviceId: { exact: camDeviceId }, width: { ideal: 1280 }, height: { ideal: 720 } }
+          : { width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: {
+          ...(micDeviceId ? { deviceId: { exact: micDeviceId } } : {}),
+          echoCancellation: true, noiseSuppression: true,
+        },
+      });
+      camStreamRef.current = stream;
+      stream.getVideoTracks().forEach(t => (t.enabled = camOn));
+      stream.getAudioTracks().forEach(t => (t.enabled = micOn));
+      if (videoRef.current && !screenSharing) videoRef.current.srcObject = stream;
+      setPreviewReady(true);
+      setPreviewStarted(true);
+      refreshDevices();
+      if (!screenSharing) attachMeter(stream);
+    } catch (err) {
+      console.warn('preview getUserMedia failed:', err);
+      setPreviewReady(false);
+      setPreviewError('Camera/mic blocked. Allow access in your browser, or broadcast via OBS below.');
+    }
+  }, [camOn, micOn, screenSharing, attachMeter, camDeviceId, micDeviceId, refreshDevices]);
+
+  // Re-acquire when the user picks a different camera/mic (preview already on).
+  const prevDevicesRef = useRef('');
+  useEffect(() => {
+    const key = `${camDeviceId}|${micDeviceId}`;
+    if (previewStarted && !screenSharing && prevDevicesRef.current && prevDevicesRef.current !== key) {
+      acquireCamera();
+    }
+    prevDevicesRef.current = key;
+  }, [camDeviceId, micDeviceId, previewStarted, screenSharing, acquireCamera]);
+
+  // Release ALL devices when leaving the screen (do NOT auto-acquire on mount —
+  // the camera only turns on when the user explicitly enables the preview).
+  const stopAllDevices = useCallback(() => {
+    cancelAnimationFrame(meterRafRef.current);
+    try { audioCtxRef.current?.close(); } catch {}
+    audioCtxRef.current = null;
+    camStreamRef.current?.getTracks().forEach(t => t.stop());
+    camStreamRef.current = null;
+    screenStreamRef.current?.getTracks().forEach(t => t.stop());
+    screenStreamRef.current = null;
+    if (videoRef.current) videoRef.current.srcObject = null;
+    setMicLevel(0);
+    setPreviewReady(false);
+    setScreenSharing(false);
+    setPreviewStarted(false);
+  }, []);
+
+  useEffect(() => stopAllDevices, [stopAllDevices]);
+
+  const toggleMic = () => {
+    if (!previewStarted) { setMicOn(true); acquireCamera(); return; }
+    const next = !micOn;
+    setMicOn(next);
+    camStreamRef.current?.getAudioTracks().forEach(t => (t.enabled = next));
+    if (!next) setMicLevel(0);
+  };
+  const toggleCam = () => {
+    if (!previewStarted) { setCamOn(true); acquireCamera(); return; }
+    const next = !camOn;
+    setCamOn(next);
+    camStreamRef.current?.getVideoTracks().forEach(t => (t.enabled = next));
+  };
+  const toggleScreen = async () => {
+    if (screenSharing) {
+      screenStreamRef.current?.getTracks().forEach(t => t.stop());
+      screenStreamRef.current = null;
+      setScreenSharing(false);
+      if (videoRef.current) videoRef.current.srcObject = camStreamRef.current;
+      attachMeter(camStreamRef.current);
+      return;
+    }
+    try {
+      const s = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+      screenStreamRef.current = s;
+      setScreenSharing(true);
+      setPreviewStarted(true);
+      setPreviewReady(true);
+      if (videoRef.current) videoRef.current.srcObject = s;
+      attachMeter(s.getAudioTracks().length ? s : camStreamRef.current);
+      // When the user stops sharing via the browser chrome, fall back to camera.
+      s.getVideoTracks()[0]?.addEventListener('ended', () => {
+        screenStreamRef.current = null;
+        setScreenSharing(false);
+        if (videoRef.current) videoRef.current.srcObject = camStreamRef.current;
+        attachMeter(camStreamRef.current);
+      });
+    } catch (err) {
+      console.warn('getDisplayMedia failed:', err);
+    }
+  };
+
+  // Save the host's stream setup so the next go-live is prefilled. coverHistory
+  // keeps the last 6 covers (deduped, newest first) for one-tap reuse.
+  const persistStreamDefaults = useCallback(() => {
+    if (!currentUser?.uid) return;
+    const history = (() => {
+      if (!coverUrl) return coverHistory.slice(0, 6);
+      return [coverUrl, ...coverHistory.filter((u) => u !== coverUrl)].slice(0, 6);
+    })();
+    updateDoc(doc(db, 'users', currentUser.uid), {
+      streamDefaults: {
+        coverUrl: coverUrl || null,
+        coverHistory: history,
+        title: title.trim() || null,
+        tags: tags.slice(0, 12),
+        language: streamLang || null,
+        ingestMode,
+        tipGoalOn: !!tipGoalOn,
+        tipGoalCoins: Math.max(0, tipGoalCoins | 0),
+        tipGoalReason: tipGoalReason.trim().slice(0, 80) || null,
+      },
+    }).catch((e) => console.warn('streamDefaults save failed (non-fatal):', e));
+  }, [currentUser?.uid, coverUrl, coverHistory, title, tags, streamLang, ingestMode, tipGoalOn, tipGoalCoins, tipGoalReason]);
+
+  // Public live streaming (every audience started here is `kind:'public'`) is
+  // gated to 100 followers for FREE accounts — admins + paid plans bypass.
+  // Surfaced up front (banner + button state) so a new user is never left
+  // staring at a silently-disabled button wondering why (the exact thing that
+  // made a blind tester give up and ask the founder).
+  const STREAM_FOLLOWER_GATE = 100;
+  const isAdmin = profile?.role === 'admin' || (currentUser?.email || '').toLowerCase() === 'vergenerd@gmail.com';
+  const planTier = resolveTier(profile);
+  const followerCount = profile?.followerCount || 0;
+  const followerGated = !isAdmin && planTier === 'free' && followerCount < STREAM_FOLLOWER_GATE;
+  const followersToGo = Math.max(0, STREAM_FOLLOWER_GATE - followerCount);
+
+  const goLive = async () => {
+    if (starting) return;
+    if (followerGated) {
+      showToast(`You need ${STREAM_FOLLOWER_GATE} followers to go live publicly — you have ${followerCount}. Squad streams are free.`, 'error');
+      return;
+    }
     if (!title.trim()) {
       showToast('Add a title', 'error');
       return;
     }
-    showToast("You're now LIVE! 🔴", 'success');
-    navigate('/');
+    if (audience === 'ticketed' && !ticketedEventId) {
+      showToast('Pick the ticketed event this stream is for', 'error');
+      return;
+    }
+    setStarting(true);
+    try {
+      const callable = httpsCallable(
+        getFunctions(undefined, 'europe-west1'),
+        'createStreamSession',
+      );
+      // Detect orientation from the live preview so discovery can split
+      // desktop (landscape) vs mobile (portrait) streams.
+      const vw = videoRef.current?.videoWidth || 0;
+      const vh = videoRef.current?.videoHeight || 0;
+      const orientation = vh > vw && vw > 0 ? 'portrait' : 'landscape';
+      const { data } = await callable({
+        kind: 'public',
+        mode: ingestMode,
+        title: title.trim(),
+        game: null, // game selection removed from the live-stream flow (tournament streams set their own)
+        boost: null, // server defaults: free=true, paid=false
+        orientation,
+        language: streamLang || null,
+        audience, // server sets discoverable/unlisted from this (honest enforcement)
+        tournamentId: audience === 'ticketed' ? ticketedEventId : null, // ticket-gate target
+        // "Stream to both" — server validates the RTMP path + mirror secrets.
+        twitchMirror: mirrorToTwitch && ingestMode === 'rtmp' && twitchLinked,
+      });
+      // Persist setup-only metadata the callable doesn't capture.
+      try {
+        await updateDoc(doc(db, 'streams', data.streamId), {
+          description: description.trim().slice(0, 280) || null,
+          tags: tags.slice(0, 12),
+          coverUrl: coverUrl || null,
+          audience,
+          notifyFollowers: !!notifyFollowers,
+          // Ticket-selling on the stream: ticketed streams sell their own gated
+          // event; other streams can promote a chosen ticketed event.
+          promotedEventId: audience === 'ticketed' ? ticketedEventId : (promotedEventId || null),
+          requestedResolution: rendition.label,
+          requestedBitrateKbps: rendition.kbps,
+          // Live streams monetize via TIPS (flat 10% fee) + an optional tip goal.
+          // No entry fee (that's tournaments only).
+          goal: (tipGoalOn && tipGoalCoins > 0)
+            ? { active: true, scope: 'stream', targetCoins: Math.max(0, tipGoalCoins | 0), reason: tipGoalReason.trim().slice(0, 80) || null, currentCoins: 0 }
+            : null,
+          // Chat-bridge nudge (owner-configured, off by default): the relay
+          // posts this in the streamer's OWN Twitch chat every 20 minutes
+          // while the mirror runs.
+          twitchNudge: (mirrorToTwitch && ingestMode === 'rtmp' && twitchNudgeOn && twitchNudgeText.trim())
+            ? { enabled: true, intervalMin: 20, text: twitchNudgeText.trim().slice(0, 200) }
+            : null,
+          setupCompletedAt: serverTimestamp(),
+        });
+      } catch (e) {
+        console.warn('stream metadata update failed (non-fatal):', e);
+      }
+      // Remember these settings for next time (one-tap re-go-live).
+      persistStreamDefaults();
+      showToast(data.boosted ? 'Boost charged · stream ready' : 'Stream ready', 'success');
+      navigate(`/broadcast/${data.streamId}`);
+    } catch (err) {
+      const msg = err?.message || 'Could not start stream';
+      showToast(msg, 'error');
+    } finally {
+      setStarting(false);
+    }
+  };
+
+  // Schedule for later: create a scheduled_streams doc (NO session/streamKey/
+  // boost yet — that happens when the host actually goes live at the time). The
+  // notifyScheduledStreams cron reminds the host + followers ~10 min before.
+  const scheduleStream = async () => {
+    if (scheduling) return;
+    if (followerGated) { showToast(`You need ${STREAM_FOLLOWER_GATE} followers to stream publicly — you have ${followerCount}.`, 'error'); return; }
+    if (!title.trim()) { showToast('Add a title', 'error'); return; }
+    const startMs = scheduledAt ? new Date(scheduledAt).getTime() : 0;
+    if (!startMs || Number.isNaN(startMs)) { showToast('Pick a date & time', 'error'); return; }
+    if (startMs < Date.now() + 60_000) { showToast('Pick a time at least a minute from now', 'error'); return; }
+    if (startMs > Date.now() + 30 * 24 * 3600_000) { showToast('Schedule within the next 30 days', 'error'); return; }
+    if (!currentUser?.uid) { showToast('Sign in required', 'error'); return; }
+    setScheduling(true);
+    try {
+      await addDoc(collection(db, 'scheduled_streams'), {
+        hostUid: currentUser.uid,
+        hostUsername: profile?.username || profile?.displayName || null,
+        hostAvatar: profile?.avatar || null,
+        title: title.trim(),
+        description: description.trim().slice(0, 280) || null,
+        coverUrl: coverUrl || null,
+        tags: tags.slice(0, 12),
+        audience,
+        notifyFollowers: !!notifyFollowers,
+        language: streamLang || null,
+        scheduledStart: startMs,
+        goal: (tipGoalOn && tipGoalCoins > 0)
+          ? { active: true, scope: 'stream', targetCoins: Math.max(0, tipGoalCoins | 0), reason: tipGoalReason.trim().slice(0, 80) || null }
+          : null,
+        status: 'scheduled',
+        createdAt: serverTimestamp(),
+      });
+      persistStreamDefaults();
+      showToast('Stream scheduled — we\'ll remind you and your followers.', 'success');
+      navigate('/');
+    } catch (err) {
+      showToast(err?.message || 'Could not schedule', 'error');
+    } finally {
+      setScheduling(false);
+    }
   };
 
   const addTag = () => {
@@ -88,33 +449,25 @@ export default function GoLiveSetupScreen() {
     setTagInput('');
   };
 
-  // Inline preview overlays
-  if (previewMode === 'broadcaster') {
-    return (
-      <div className="relative">
-        <button
-          onClick={() => setPreviewMode(null)}
-          className="fixed top-4 right-4 z-50 px-3 py-2 rounded-full bg-brand-ember text-white text-xs font-bold flex items-center gap-1.5 shadow-lg"
-        >
-          <Icon name="close" size={14} /> Exit Preview
-        </button>
-        <BroadcasterScreen />
-      </div>
-    );
-  }
-  if (previewMode === 'viewer') {
-    return (
-      <div className="relative">
-        <button
-          onClick={() => setPreviewMode(null)}
-          className="fixed top-4 right-4 z-50 px-3 py-2 rounded-full bg-brand-ember text-white text-xs font-bold flex items-center gap-1.5 shadow-lg"
-        >
-          <Icon name="close" size={14} /> Exit Preview
-        </button>
-        <ViewerStreamScreen />
-      </div>
-    );
-  }
+  const handleCoverFile = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || coverBusy) return;
+    if (!file.type.startsWith('image/')) { showToast('Pick an image for your cover', 'error'); return; }
+    setCoverBusy(true);
+    try {
+      const tier = resolveTier(profile);
+      const compressed = await compressMedia(file, tier, 'post');
+      const { url } = await uploadToR2(compressed, 'banner');
+      setCoverUrl(url);
+      setCoverHistory((h) => [url, ...h.filter((u) => u !== url)].slice(0, 6));
+      showToast('Cover added', 'success');
+    } catch (err) {
+      showToast(err?.message || 'Cover upload failed', 'error');
+    } finally {
+      setCoverBusy(false);
+    }
+  };
 
   return (
     <div style={{
@@ -141,30 +494,179 @@ export default function GoLiveSetupScreen() {
             Broadcast to the world or your squad. You're live in seconds.
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        {followerGated && (
+          <div style={{
+            margin: '0 0 4px', padding: '14px 16px', borderRadius: 14,
+            background: 'rgba(245,158,11,0.10)', border: `1px solid ${C.amber}55`,
+            display: 'flex', gap: 12, alignItems: 'flex-start',
+          }}>
+            <span className="material-symbols-outlined" style={{ fontSize: 22, color: C.amber, flex: 'none' }}>lock</span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: C.text }}>
+                Public live streaming unlocks at {STREAM_FOLLOWER_GATE} followers
+              </div>
+              <div style={{ fontSize: 12.5, color: C.textDim, marginTop: 3, lineHeight: 1.5 }}>
+                You have <b style={{ color: C.text }}>{followerCount}</b> — {followersToGo} to go. This keeps brand-new
+                accounts from spamming live. In the meantime you can host a <b style={{ color: C.text }}>free Squad stream</b> to your crew.
+              </div>
+              <div style={{ marginTop: 9, height: 6, borderRadius: 999, background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
+                <div style={{ height: '100%', width: `${Math.min(100, (followerCount / STREAM_FOLLOWER_GATE) * 100)}%`, background: C.amber, borderRadius: 999 }} />
+              </div>
+              <div style={{ display: 'flex', gap: 8, marginTop: 11, flexWrap: 'wrap' }}>
+                <button type="button" onClick={() => navigate('/squads')}
+                  style={{ background: C.amber, color: '#1a1205', border: 'none', borderRadius: 9, padding: '7px 13px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
+                  Stream to my Squad
+                </button>
+                <button type="button" onClick={() => navigate('/explore')}
+                  style={{ background: 'transparent', color: C.textDim, border: `1px solid ${C.border}`, borderRadius: 9, padding: '7px 13px', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
+                  Find people to follow
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
           <button
             type="button"
-            onClick={() => setPreviewMode('broadcaster')}
+            onClick={acquireCamera}
             style={btnOutline}
+            title="Re-check camera and mic"
           >
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-              <circle cx="8" cy="8" r="7" stroke="currentColor" strokeWidth="1.5"/>
-              <circle cx="8" cy="8" r="3" fill="currentColor" opacity="0.5"/>
-            </svg>
-            Test Stream
+            <span className="material-symbols-outlined" style={{ fontSize: 14 }}>refresh</span>
+            Test Devices
           </button>
           <button
             type="button"
-            onClick={goLive}
-            style={btnPrimary}
+            onClick={() => setScheduleOn(v => !v)}
+            style={{ ...btnOutline, borderColor: scheduleOn ? C.purpleLight : C.border, color: scheduleOn ? C.purpleLight : C.textDim }}
+            title="Schedule this stream for later"
           >
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-              <circle cx="8" cy="8" r="7" stroke="white" strokeWidth="1.5"/>
-              <circle cx="8" cy="8" r="3" fill="white"/>
-            </svg>
-            Go Live
+            <span className="material-symbols-outlined" style={{ fontSize: 14 }}>{scheduleOn ? 'event_available' : 'schedule'}</span>
+            {scheduleOn ? 'Scheduling' : 'Later'}
           </button>
+          {scheduleOn && (
+            <input
+              type="datetime-local"
+              value={scheduledAt}
+              onChange={(e) => setScheduledAt(e.target.value)}
+              min={new Date(Date.now() + 60_000).toISOString().slice(0, 16)}
+              style={{
+                background: C.cardSoft, border: `1px solid ${C.border}`, borderRadius: 10,
+                color: C.text, padding: '8px 10px', fontSize: 13, colorScheme: 'dark',
+              }}
+            />
+          )}
+          {scheduleOn ? (
+            <button
+              type="button"
+              onClick={scheduleStream}
+              disabled={scheduling || followerGated}
+              title={followerGated ? `Reach ${STREAM_FOLLOWER_GATE} followers to stream publicly` : undefined}
+              style={{ ...btnPrimary, opacity: (scheduling || followerGated) ? 0.5 : 1, cursor: followerGated ? 'not-allowed' : (scheduling ? 'wait' : 'pointer') }}
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: 14 }}>{followerGated ? 'lock' : 'event'}</span>
+              {followerGated ? `${followersToGo} followers to go` : (scheduling ? 'Scheduling…' : 'Schedule')}
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={goLive}
+              disabled={starting || followerGated}
+              title={followerGated ? `Reach ${STREAM_FOLLOWER_GATE} followers to stream publicly` : undefined}
+              style={{ ...btnPrimary, opacity: (starting || followerGated) ? 0.5 : 1, cursor: followerGated ? 'not-allowed' : (starting ? 'wait' : 'pointer') }}
+            >
+              {followerGated ? (
+                <span className="material-symbols-outlined" style={{ fontSize: 15 }}>lock</span>
+              ) : (
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                  <circle cx="8" cy="8" r="7" stroke="white" strokeWidth="1.5"/>
+                  <circle cx="8" cy="8" r="3" fill="white"/>
+                </svg>
+              )}
+              {followerGated ? `${followersToGo} followers to go live` : (starting ? 'Starting…' : 'Go Live')}
+            </button>
+          )}
         </div>
+      </div>
+
+      {/* Twitch: not linked → connect banner; linked → the "Stream to both"
+          mirror toggle (the relay-out has existed since May but had no UI). */}
+      <div style={{ padding: '0 24px 12px' }}>
+        {!twitchLinked ? (
+          <button
+            type="button"
+            onClick={() => navigate('/settings/linked')}
+            style={{
+              width: '100%', display: 'flex', alignItems: 'center', gap: 12,
+              padding: '12px 14px', borderRadius: 12, cursor: 'pointer', textAlign: 'left',
+              background: 'rgba(145,70,255,0.10)', border: '1px solid rgba(145,70,255,0.35)',
+            }}
+          >
+            <span style={{
+              width: 32, height: 32, borderRadius: 8, background: '#9146FF', color: '#fff',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, flexShrink: 0,
+            }}>T</span>
+            <span style={{ flex: 1, minWidth: 0 }}>
+              <span style={{ display: 'block', fontSize: 13, fontWeight: 700, color: C.text }}>Already stream on Twitch?</span>
+              <span style={{ display: 'block', fontSize: 11.5, color: C.textDim }}>
+                Connect Twitch once and your Twitch streams appear live on VERGR automatically, chat synced. No OBS changes.
+              </span>
+            </span>
+            <span className="material-symbols-outlined" style={{ fontSize: 18, color: '#B44FFF' }}>chevron_right</span>
+          </button>
+        ) : (
+          <div style={{
+            borderRadius: 12, padding: '12px 14px',
+            background: 'rgba(145,70,255,0.10)', border: '1px solid rgba(145,70,255,0.35)',
+          }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }}>
+              <span style={{
+                width: 32, height: 32, borderRadius: 8, background: '#9146FF', color: '#fff',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, flexShrink: 0,
+              }}>T</span>
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <span style={{ display: 'block', fontSize: 13, fontWeight: 700, color: C.text }}>Stream to both</span>
+                <span style={{ display: 'block', fontSize: 11.5, color: C.textDim }}>
+                  Relay this broadcast to your Twitch channel too — your Twitch audience sees no change while your Vergr channel grows.
+                  {ingestMode !== 'rtmp' && mirrorToTwitch ? ' Needs the OBS / RTMP source (switch below).' : ''}
+                </span>
+              </span>
+              <input type="checkbox" checked={mirrorToTwitch}
+                onChange={(e) => {
+                  setMirrorToTwitch(e.target.checked);
+                  if (e.target.checked && !twitchNudgeText) {
+                    setTwitchNudgeText(`I'm also live on Vergr — same stream, and tips pay me 90%: https://vergr.app/user/${currentUser?.uid}?ref=${currentUser?.uid}`);
+                  }
+                }}
+                style={{ width: 18, height: 18, accentColor: '#9146FF', flexShrink: 0 }} />
+            </label>
+            {mirrorToTwitch && (
+              <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid rgba(145,70,255,0.25)' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={twitchNudgeOn} onChange={(e) => setTwitchNudgeOn(e.target.checked)}
+                    style={{ width: 15, height: 15, accentColor: '#9146FF', flexShrink: 0 }} />
+                  <span style={{ fontSize: 12, color: C.text, fontWeight: 600 }}>
+                    Post a reminder in my Twitch chat every 20 min
+                  </span>
+                </label>
+                {twitchNudgeOn && (
+                  <textarea
+                    value={twitchNudgeText}
+                    onChange={(e) => setTwitchNudgeText(e.target.value.slice(0, 200))}
+                    rows={2}
+                    style={{
+                      width: '100%', marginTop: 8, borderRadius: 8, padding: '8px 10px',
+                      fontSize: 12, color: C.text, background: 'rgba(0,0,0,0.3)',
+                      border: '1px solid rgba(145,70,255,0.3)', outline: 'none', resize: 'vertical',
+                    }} />
+                )}
+                <p style={{ margin: '8px 0 0', fontSize: 10.5, color: C.textDim }}>
+                  Posted as YOU, in YOUR channel only. Off by default; keep it friendly.
+                </p>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Body */}
@@ -178,33 +680,62 @@ export default function GoLiveSetupScreen() {
           {/* Preview */}
           <div style={{
             position: 'relative', aspectRatio: '16/9', width: '100%',
-            background: 'radial-gradient(circle at 50% 60%, #2a1850 0%, #0a0a14 70%)',
+            background: '#000',
             borderRadius: 12, overflow: 'hidden', marginBottom: 12,
             border: `1px solid ${C.border}`,
           }}>
-            <div style={{
-              position: 'absolute', inset: 0,
-              backgroundImage: 'linear-gradient(180deg, transparent 60%, rgba(123,31,255,0.15) 100%)',
-            }}/>
-            <div style={{
-              position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
-              fontSize: 64, fontWeight: 900, letterSpacing: 2,
-              background: 'linear-gradient(135deg, #fff, #b44fff)',
-              WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
-              opacity: 0.4,
-            }}>VC</div>
+            <video
+              ref={videoRef}
+              autoPlay muted playsInline
+              style={{
+                position: 'absolute', inset: 0, width: '100%', height: '100%',
+                objectFit: 'contain', background: '#000',
+                opacity: (previewReady && (camOn || screenSharing)) ? 1 : 0,
+                transform: screenSharing ? 'none' : 'scaleX(-1)', // mirror selfie cam only
+              }}
+            />
+            {/* Empty / blocked / opt-in states */}
+            {(!previewReady || (!camOn && !screenSharing)) && (
+              <div style={{
+                position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
+                alignItems: 'center', justifyContent: 'center', gap: 10, textAlign: 'center', padding: 24,
+                background: 'radial-gradient(circle at 50% 60%, #1a1030 0%, #0a0a14 70%)',
+              }}>
+                <span className="material-symbols-outlined" style={{ fontSize: 40, color: C.textMuted }}>
+                  {previewError ? 'videocam_off' : (!previewStarted ? 'videocam' : (!camOn && !screenSharing ? 'videocam_off' : 'hourglass_empty'))}
+                </span>
+                <div style={{ fontSize: 12, color: C.textDim, maxWidth: 320, lineHeight: 1.4 }}>
+                  {previewError
+                    ? previewError
+                    : !previewStarted
+                      ? 'Your camera is off. Enable it to preview yourself before going live — nothing is recorded or shared until you go live.'
+                      : (!camOn && !screenSharing)
+                        ? 'Camera off. Turn on Camera or share your Screen to preview.'
+                        : 'Starting preview…'}
+                </div>
+                {(!previewStarted || previewError) && (
+                  <button type="button" onClick={acquireCamera} style={{ ...btnPrimary, marginTop: 2 }}>
+                    <span className="material-symbols-outlined" style={{ fontSize: 16 }}>videocam</span>
+                    {previewError ? 'Retry' : 'Enable camera & mic'}
+                  </button>
+                )}
+              </div>
+            )}
+            {/* LIVE-PREVIEW badge */}
             <div style={{
               position: 'absolute', top: 12, left: 12,
               display: 'flex', alignItems: 'center', gap: 6,
-              padding: '4px 10px', background: 'rgba(0,0,0,0.5)', borderRadius: 4,
+              padding: '4px 10px', background: 'rgba(0,0,0,0.55)', borderRadius: 4,
               fontSize: 11, fontWeight: 700, letterSpacing: '0.08em',
             }}>
-              <div style={{ width: 7, height: 7, borderRadius: '50%', background: C.purpleLight }}/>
-              PREVIEW
+              <div style={{ width: 7, height: 7, borderRadius: '50%', background: previewReady ? C.green : C.textMuted }}/>
+              {screenSharing ? 'SCREEN' : 'PREVIEW'}
             </div>
             <div style={{ position: 'absolute', top: 10, right: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span className="material-symbols-outlined" style={{ fontSize: 16, color: 'rgba(255,255,255,0.6)' }}>videocam</span>
-              <VolumeBars/>
+              <span className="material-symbols-outlined" style={{ fontSize: 16, color: camOn || screenSharing ? '#fff' : C.textMuted }}>
+                {screenSharing ? 'cast' : camOn ? 'videocam' : 'videocam_off'}
+              </span>
+              <MicMeter level={micLevel} muted={!previewStarted || !micOn} />
             </div>
           </div>
 
@@ -215,22 +746,20 @@ export default function GoLiveSetupScreen() {
             marginBottom: 16, flexWrap: 'wrap',
           }}>
             {[
-              { id: 'mic',    label: 'Mic',    icon: 'mic' },
-              { id: 'camera', label: 'Camera', icon: 'videocam' },
-              { id: 'screen', label: 'Screen', icon: 'cast' },
-              { id: 'game',   label: 'Game',   icon: 'sports_esports' },
-              { id: 'audio',  label: 'Audio',  icon: 'graphic_eq' },
+              { id: 'mic',    label: micOn ? 'Mic' : 'Muted',  icon: micOn ? 'mic' : 'mic_off',          on: micOn,        onClick: toggleMic },
+              { id: 'camera', label: 'Camera', icon: camOn ? 'videocam' : 'videocam_off',                on: camOn,        onClick: toggleCam },
+              { id: 'screen', label: screenSharing ? 'Sharing' : 'Screen', icon: 'cast',                 on: screenSharing, onClick: toggleScreen },
             ].map(d => (
               <button
                 key={d.id}
                 type="button"
-                onClick={() => setActiveDevice(d.id)}
+                onClick={d.onClick}
                 style={{
                   display: 'flex', alignItems: 'center', gap: 6,
                   padding: '6px 12px',
-                  background: activeDevice === d.id ? C.purpleSoft : 'transparent',
-                  border: activeDevice === d.id ? `1px solid ${C.purple}` : `1px solid transparent`,
-                  borderRadius: 7, color: activeDevice === d.id ? C.purpleLight : C.textDim,
+                  background: d.on ? C.purpleSoft : 'rgba(255,255,255,0.04)',
+                  border: d.on ? `1px solid ${C.purple}` : `1px solid ${C.borderSoft}`,
+                  borderRadius: 7, color: d.on ? C.purpleLight : C.textDim,
                   fontSize: 12, fontWeight: 600, cursor: 'pointer',
                 }}
               >
@@ -242,20 +771,39 @@ export default function GoLiveSetupScreen() {
               flex: 1, display: 'flex', alignItems: 'center', gap: 8,
               minWidth: 120, marginLeft: 'auto',
             }}>
-              <span className="material-symbols-outlined" style={{ fontSize: 16, color: 'rgba(255,255,255,0.5)' }}>volume_up</span>
-              <VolumeBars/>
+              <span className="material-symbols-outlined" style={{ fontSize: 16, color: micOn ? 'rgba(255,255,255,0.6)' : C.red }}>
+                {micOn ? 'volume_up' : 'volume_off'}
+              </span>
+              <MicMeter level={micLevel} muted={!previewStarted || !micOn} />
             </div>
-            <button type="button" style={{
-              background: 'transparent', border: 'none', color: 'rgba(255,255,255,0.5)',
-              cursor: 'pointer', display: 'flex', alignItems: 'center',
-            }}>
-              <span className="material-symbols-outlined" style={{ fontSize: 18 }}>settings</span>
-            </button>
           </div>
 
-          {/* 1. Basic Info */}
-          <SectionHeader n="1" label="Basic Info"/>
-          <div style={{ marginBottom: 18 }}>
+          {/* Device pickers — appear once the preview is on and labels resolve. */}
+          {previewStarted && (videoDevices.length > 1 || audioDevices.length > 1) && (
+            <div style={{
+              display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 8,
+              marginBottom: 16,
+            }}>
+              {videoDevices.length > 1 && (
+                <DevicePicker
+                  icon="videocam" label="Camera" value={camDeviceId}
+                  devices={videoDevices} fallback="Default camera"
+                  onChange={setCamDeviceId}
+                />
+              )}
+              {audioDevices.length > 1 && (
+                <DevicePicker
+                  icon="mic" label="Microphone" value={micDeviceId}
+                  devices={audioDevices} fallback="Default microphone"
+                  onChange={setMicDeviceId}
+                />
+              )}
+            </div>
+          )}
+
+          {/* Fast path: a title is all you need. Everything else remembers your
+              last stream and hides under Advanced. */}
+          <div style={{ marginBottom: 14 }}>
             <FieldLabel>Title</FieldLabel>
             <input
               value={title}
@@ -264,7 +812,28 @@ export default function GoLiveSetupScreen() {
               style={inputField}
             />
             <CharCount value={title.length} max={140}/>
+          </div>
 
+          {/* Advanced accordion */}
+          <button
+            type="button"
+            onClick={() => setAdvancedOpen(v => !v)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+              padding: '10px 12px', marginBottom: advancedOpen ? 16 : 8,
+              background: C.card, border: `1px solid ${C.border}`, borderRadius: 10,
+              color: C.textDim, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+            }}
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: 16 }}>tune</span>
+            <span style={{ flex: 1, textAlign: 'left' }}>Advanced options (description, tags, cover, audience, quality, tips, source)</span>
+            <span className="material-symbols-outlined" style={{ fontSize: 18, transform: advancedOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>expand_more</span>
+          </button>
+
+          <div style={{ display: advancedOpen ? 'block' : 'none' }}>
+          {/* 1. Basic Info */}
+          <SectionHeader n="1" label="More details"/>
+          <div style={{ marginBottom: 18 }}>
             <FieldLabel>Description</FieldLabel>
             <textarea
               value={description}
@@ -300,17 +869,76 @@ export default function GoLiveSetupScreen() {
                 }}
               />
             </div>
+
+            <FieldLabel>Cover image (shown in discovery)</FieldLabel>
+            <input ref={coverInputRef} type="file" accept="image/*" onChange={handleCoverFile} style={{ display: 'none' }} />
+            {coverUrl ? (
+              <div style={{
+                position: 'relative', width: '100%', aspectRatio: '16/9', maxWidth: 320,
+                borderRadius: 10, overflow: 'hidden', border: `1px solid ${C.border}`,
+              }}>
+                <img src={coverUrl} alt="cover" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                <div style={{ position: 'absolute', top: 6, right: 6, display: 'flex', gap: 6 }}>
+                  <button type="button" onClick={() => coverInputRef.current?.click()} disabled={coverBusy} style={coverChip}>
+                    <span className="material-symbols-outlined" style={{ fontSize: 13 }}>edit</span>
+                  </button>
+                  <button type="button" onClick={() => setCoverUrl('')} style={coverChip}>
+                    <span className="material-symbols-outlined" style={{ fontSize: 13 }}>close</span>
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => coverInputRef.current?.click()}
+                disabled={coverBusy}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  padding: '10px 14px', borderRadius: 8,
+                  background: 'rgba(255,255,255,0.04)', border: `1px dashed ${C.border}`,
+                  color: C.textDim, fontSize: 12, fontWeight: 600, cursor: coverBusy ? 'wait' : 'pointer',
+                }}
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: 16 }}>add_photo_alternate</span>
+                {coverBusy ? 'Uploading…' : 'Add a cover image'}
+              </button>
+            )}
+            {coverHistory.length > 0 && (
+              <div style={{ marginTop: 8 }}>
+                <div style={{ fontSize: 10, color: C.textMuted, marginBottom: 5 }}>Use again</div>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {coverHistory.map((u) => (
+                    <button
+                      key={u}
+                      type="button"
+                      onClick={() => setCoverUrl(u)}
+                      title="Use this cover"
+                      style={{
+                        width: 64, height: 36, borderRadius: 6, overflow: 'hidden', padding: 0, cursor: 'pointer',
+                        border: u === coverUrl ? `2px solid ${C.purpleLight}` : `1px solid ${C.border}`,
+                      }}
+                    >
+                      <img src={u} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div style={{ fontSize: 10, color: C.textMuted, marginTop: 4 }}>
+              Optional. A custom cover makes your stream stand out in the live feed.
+            </div>
           </div>
 
-          {/* 2. Audience + 3. Game */}
-          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 16, marginBottom: 18 }}>
+          {/* 2. Audience (game selection removed from the live-stream flow) */}
+          <div style={{ marginBottom: 18 }}>
             <div>
               <SectionHeader n="2" label="Audience"/>
               <div style={{ display: 'flex', gap: 6 }}>
                 {[
-                  { id: 'public',  label: 'Public',     icon: 'public' },
-                  { id: 'friends', label: 'Friends',    icon: 'group' },
-                  { id: 'squad',   label: 'Squad Only', icon: 'shield' },
+                  { id: 'public',    label: 'Public',    icon: 'public' },
+                  { id: 'followers', label: 'Followers', icon: 'favorite' },
+                  { id: 'friends',   label: 'Friends',   icon: 'group' },
+                  { id: 'ticketed',  label: 'Ticketed',  icon: 'confirmation_number' },
                 ].map(a => (
                   <button
                     key={a.id}
@@ -331,64 +959,66 @@ export default function GoLiveSetupScreen() {
                   </button>
                 ))}
               </div>
-            </div>
-
-            <div>
-              <SectionHeader n="3" label="Game Selection"/>
-              <div style={{ position: 'relative' }}>
-                <button
-                  type="button"
-                  onClick={() => setShowGameMenu(v => !v)}
+              <div style={{ fontSize: 10, color: C.textMuted, marginTop: 6, lineHeight: 1.4 }}>
+                Squad streams start from your squad dashboard, not here.
+              </div>
+              {audience === 'ticketed' && (
+                <button type="button" onClick={() => setShowEventPicker(true)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', marginTop: 10, padding: '10px 12px',
+                    background: ticketedEventId ? C.purpleSoft : 'rgba(255,255,255,0.04)',
+                    border: `1px solid ${ticketedEventId ? C.purple : C.border}`, borderRadius: 8,
+                    color: ticketedEventId ? C.purpleLight : C.textDim, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                  <span className="material-symbols-outlined" style={{ fontSize: 16 }}>confirmation_number</span>
+                  <span style={{ flex: 1, textAlign: 'left' }}>{ticketedEventId ? ticketedEventName : 'Link this stream to a ticketed event'}</span>
+                  <span className="material-symbols-outlined" style={{ fontSize: 16 }}>chevron_right</span>
+                </button>
+              )}
+              <EventPickerModal
+                isOpen={showEventPicker}
+                onClose={() => setShowEventPicker(false)}
+                onSelect={(t) => { setTicketedEventId(t.id); setTicketedEventName(t.name); setShowEventPicker(false); }}
+              />
+              {audience !== 'ticketed' && (
+                <button type="button" onClick={() => setShowPromotePicker(true)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', marginTop: 10, padding: '10px 12px',
+                    background: promotedEventId ? C.purpleSoft : 'rgba(255,255,255,0.04)',
+                    border: `1px solid ${promotedEventId ? C.purple : C.border}`, borderRadius: 8,
+                    color: promotedEventId ? C.purpleLight : C.textDim, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                  <span className="material-symbols-outlined" style={{ fontSize: 16 }}>sell</span>
+                  <span style={{ flex: 1, textAlign: 'left' }}>{promotedEventId ? `Selling tickets: ${promotedEventName}` : 'Sell tickets for an event on this stream (optional)'}</span>
+                  {promotedEventId
+                    ? <span className="material-symbols-outlined" style={{ fontSize: 16 }} onClick={(e) => { e.stopPropagation(); setPromotedEventId(null); setPromotedEventName(''); }}>close</span>
+                    : <span className="material-symbols-outlined" style={{ fontSize: 16 }}>chevron_right</span>}
+                </button>
+              )}
+              <EventPickerModal
+                isOpen={showPromotePicker}
+                onClose={() => setShowPromotePicker(false)}
+                onSelect={(t) => { setPromotedEventId(t.id); setPromotedEventName(t.name); setShowPromotePicker(false); }}
+              />
+              {audience !== 'friends' && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, fontSize: 12, color: C.textDim }}>
+                  <span className="material-symbols-outlined" style={{ fontSize: 16, color: C.purpleLight }}>notifications_active</span>
+                  <span style={{ flex: 1 }}>Notify my followers when I go live</span>
+                  <ToggleSm checked={notifyFollowers} onChange={setNotifyFollowers}/>
+                </div>
+              )}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, fontSize: 12, color: C.textDim }}>
+                <span className="material-symbols-outlined" style={{ fontSize: 16, color: C.purpleLight }}>translate</span>
+                <span style={{ flex: 1 }}>Stream language</span>
+                <select
+                  value={streamLang}
+                  onChange={e => setStreamLang(e.target.value)}
                   style={{
-                    width: '100%', display: 'flex', alignItems: 'center', gap: 10,
-                    padding: '8px 12px', background: 'rgba(255,255,255,0.04)',
-                    border: `1px solid ${C.border}`, borderRadius: 8,
-                    cursor: 'pointer', color: C.text,
+                    padding: '6px 10px', background: 'rgba(255,255,255,0.04)',
+                    border: `1px solid ${C.border}`, borderRadius: 8, color: C.text,
+                    fontSize: 12, fontWeight: 600, cursor: 'pointer',
                   }}
                 >
-                  <div style={{
-                    width: 32, height: 32, borderRadius: 6,
-                    background: 'linear-gradient(135deg,#3d1f7a,#7c3aed)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: 10, fontWeight: 800, color: '#fff',
-                  }}>{game.short}</div>
-                  <div style={{ flex: 1, textAlign: 'left' }}>
-                    <div style={{ fontSize: 13, fontWeight: 700 }}>{game.name}</div>
-                  </div>
-                  <span className="material-symbols-outlined" style={{ fontSize: 14, color: C.textMuted }}>expand_more</span>
-                </button>
-                {showGameMenu && (
-                  <div style={{
-                    position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 20,
-                    marginTop: 4, background: C.card, border: `1px solid ${C.border}`,
-                    borderRadius: 8, overflow: 'hidden', maxHeight: 240, overflowY: 'auto',
-                  }}>
-                    {GAME_OPTIONS.map(g => (
-                      <button
-                        key={g.name}
-                        type="button"
-                        onClick={() => { setGame(g); setShowGameMenu(false); }}
-                        style={{
-                          width: '100%', display: 'flex', alignItems: 'center', gap: 10,
-                          padding: '8px 12px', background: g.name === game.name ? C.purpleSoft : 'transparent',
-                          border: 'none', cursor: 'pointer', color: C.text, fontSize: 13, textAlign: 'left',
-                        }}
-                      >
-                        <div style={{
-                          width: 24, height: 24, borderRadius: 4,
-                          background: 'linear-gradient(135deg,#3d1f7a,#7c3aed)',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          fontSize: 9, fontWeight: 800, color: '#fff',
-                        }}>{g.short}</div>
-                        {g.name}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, fontSize: 12, color: C.textDim }}>
-                <span>Auto-detect game</span>
-                <ToggleSm checked={autoDetect} onChange={setAutoDetect} style={{ marginLeft: 'auto' }}/>
+                  {SUPPORTED_LANGS.map(code => (
+                    <option key={code} value={code}>{LANG_LABELS[code] || code}</option>
+                  ))}
+                </select>
               </div>
             </div>
           </div>
@@ -397,46 +1027,60 @@ export default function GoLiveSetupScreen() {
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 16, marginBottom: 18 }}>
             <div>
               <SectionHeader n="4" label="Stream Quality"/>
-              <div style={{ fontSize: 11, color: C.textDim, marginBottom: 8 }}>Resolution</div>
-              <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
-                {RESOLUTIONS.map(r => (
+              <div style={{
+                padding: 14, borderRadius: 10, background: C.cardSoft,
+                border: `1px solid ${C.border}`,
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span className="material-symbols-outlined" style={{ fontSize: 18, color: C.purpleLight }}>high_quality</span>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 14, fontWeight: 800, color: '#fff' }}>{rendition.label}</div>
+                    <div style={{ fontSize: 11, color: C.textDim }}>
+                      Up to {(rendition.kbps / 1000).toFixed(1)} Mbps · {rendition.planLabel} plan
+                    </div>
+                  </div>
+                </div>
+                {ingestMode === 'rtmp' && (
+                  <div style={{
+                    marginTop: 10, paddingTop: 10, borderTop: `1px solid ${C.divider}`,
+                    fontSize: 11, color: C.textDim, lineHeight: 1.5,
+                  }}>
+                    In OBS, set video bitrate to <strong style={{ color: '#fff' }}>≤ {rendition.kbps.toLocaleString()} kbps</strong>, keyframe interval <strong style={{ color: '#fff' }}>2s</strong>. Higher bitrates are throttled.
+                  </div>
+                )}
+                {streamTier !== 'pro' && (
                   <button
-                    key={r}
                     type="button"
-                    onClick={() => setResolution(r)}
+                    onClick={() => navigate('/settings/subscription')}
                     style={{
-                      padding: '7px 14px',
-                      background: resolution === r ? C.purple : 'rgba(255,255,255,0.04)',
-                      border: resolution === r ? `1px solid ${C.purpleLight}` : `1px solid ${C.border}`,
-                      borderRadius: 7, color: resolution === r ? '#fff' : C.textMuted,
-                      fontSize: 12, fontWeight: resolution === r ? 700 : 600, cursor: 'pointer',
+                      marginTop: 10, width: '100%', padding: '8px', borderRadius: 7, border: 'none',
+                      background: `linear-gradient(135deg, ${C.purple}, ${C.purpleLight})`,
+                      color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer',
                     }}
-                  >{r}</button>
-                ))}
-              </div>
-              <div style={{ fontSize: 11, color: C.textDim, marginBottom: 8 }}>
-                Bitrate: <span style={{ color: '#fff', fontWeight: 700 }}>{bitrate.toLocaleString()} kbps</span>
-              </div>
-              <input
-                type="range" min={1500} max={10000} step={100}
-                value={bitrate} onChange={e => setBitrate(Number(e.target.value))}
-                style={{ width: '100%', accentColor: C.purpleLight }}
-              />
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: C.textDim, marginTop: 2 }}>
-                <span>1500</span><span>6000</span><span>10000</span>
+                  >
+                    Upgrade for {streamTier === 'free' ? '720p / 1080p' : '1080p'}
+                  </button>
+                )}
               </div>
             </div>
 
             <div>
-              <SectionHeader n="5" label="Monetization"/>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                <span style={{ fontSize: 13, fontWeight: 600 }}>Enable Monetization</span>
-                <ToggleSm checked={monetize} onChange={setMonetize}/>
+              <SectionHeader n="5" label="Tips & Goal"/>
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12,
+                fontSize: 11, color: C.textDim, lineHeight: 1.4,
+              }}>
+                <span className="material-symbols-outlined" style={{ fontSize: 16, color: C.purpleLight }}>volunteer_activism</span>
+                Viewers tip you in coins while you're live. A flat 10% platform fee applies to all tips.
               </div>
-              {monetize && (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                <span style={{ fontSize: 13, fontWeight: 600 }}>Set a tip goal</span>
+                <ToggleSm checked={tipGoalOn} onChange={setTipGoalOn}/>
+              </div>
+              {tipGoalOn && (
                 <>
-                  <div style={{ marginBottom: 12 }}>
-                    <div style={{ fontSize: 11, color: C.textDim, marginBottom: 6 }}>Entry Fee (Optional)</div>
+                  <div style={{ marginBottom: 10 }}>
+                    <div style={{ fontSize: 11, color: C.textDim, marginBottom: 6 }}>Goal amount</div>
                     <div style={{
                       display: 'flex', alignItems: 'center', gap: 6,
                       padding: '8px 12px', background: 'rgba(255,255,255,0.04)',
@@ -448,8 +1092,9 @@ export default function GoLiveSetupScreen() {
                       <input
                         type="number"
                         min={0}
-                        value={entryFee}
-                        onChange={e => setEntryFee(Math.max(0, Number(e.target.value)))}
+                        value={tipGoalCoins}
+                        onChange={e => setTipGoalCoins(Math.max(0, Number(e.target.value)))}
+                        placeholder="0"
                         style={{
                           flex: 1, background: 'transparent', border: 'none',
                           color: '#fff', fontSize: 13, fontWeight: 700, outline: 'none',
@@ -457,18 +1102,47 @@ export default function GoLiveSetupScreen() {
                       />
                       <span style={{ fontSize: 11, color: C.textDim }}>coins</span>
                     </div>
-                    <div style={{ fontSize: 10, color: C.textDim, marginTop: 4 }}>
-                      Note: a flat 10% platform fee applies to all tips.
-                    </div>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 12, color: C.textDim }}>
-                    <span>Tournament Mode</span>
-                    <ToggleSm checked={tournamentMode} onChange={setTournamentMode}/>
+                  <div>
+                    <div style={{ fontSize: 11, color: C.textDim, marginBottom: 6 }}>What's it for? (optional)</div>
+                    <input
+                      value={tipGoalReason}
+                      onChange={e => setTipGoalReason(e.target.value.slice(0, 80))}
+                      placeholder="e.g. New mic fund"
+                      style={inputField}
+                    />
+                    <div style={{ fontSize: 10, color: C.textDim, marginTop: 4 }}>
+                      Shows a progress bar on your stream that fills as viewers tip.
+                    </div>
                   </div>
                 </>
               )}
             </div>
           </div>
+
+          {/* 6. Ingest source */}
+          <div style={{ marginBottom: 18 }}>
+            <SectionHeader n="6" label="Broadcast From"/>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 10 }}>
+              <IngestCard
+                active={ingestMode === 'browser'}
+                disabled={!browserCanIngest()}
+                onClick={() => setIngestMode('browser')}
+                icon="captive_portal"
+                title="Browser broadcast"
+                desc="Go live from this tab. Best for quick streams, mobile, just-chatting."
+                note={!browserCanIngest() ? 'Browser unsupported — update Chrome 88+ / Safari 18.4+' : null}
+              />
+              <IngestCard
+                active={ingestMode === 'rtmp'}
+                onClick={() => setIngestMode('rtmp')}
+                icon="cast"
+                title="OBS / RTMP"
+                desc="Push from OBS, Streamlabs, or any RTMP encoder. Best quality + game capture."
+              />
+            </div>
+          </div>
+          </div>{/* end Advanced accordion */}
 
           {/* Footer */}
           <div style={{
@@ -488,7 +1162,7 @@ export default function GoLiveSetupScreen() {
             </div>
             <button
               type="button"
-              onClick={() => setPreviewMode('viewer')}
+              onClick={() => showToast('Viewer preview opens once you go live — your watch page is shareable then.', 'info')}
               style={{
                 display: 'flex', alignItems: 'center', gap: 6,
                 padding: '7px 14px', background: 'transparent',
@@ -516,13 +1190,24 @@ export default function GoLiveSetupScreen() {
               </span>
             </>
           }>
-            <StatusRow k="Status" v={<span style={{ color: C.green, fontWeight: 600 }}>Ready to Stream</span>}/>
-            <StatusRow k="Connection" v={
-              <span style={{ display: 'flex', alignItems: 'center', gap: 6, color: C.green, fontWeight: 600 }}>
-                Excellent <SignalBars/>
+            <StatusRow k="Status" v={
+              <span style={{ color: previewStarted ? C.green : C.amber, fontWeight: 600 }}>
+                {previewStarted ? 'Ready to Stream' : 'Devices off'}
               </span>
             }/>
-            <StatusRow k="Bitrate" v={<span style={{ color: '#fff', fontWeight: 600 }}>0 kbps</span>}/>
+            <StatusRow k="Camera" v={
+              <span style={{ color: !previewStarted ? C.textMuted : screenSharing ? C.purpleLight : camOn ? C.green : C.textMuted, fontWeight: 600 }}>
+                {!previewStarted ? 'Off' : screenSharing ? 'Screen share' : camOn ? 'On' : 'Off'}
+              </span>
+            }/>
+            <StatusRow k="Microphone" v={
+              <span style={{ display: 'flex', alignItems: 'center', gap: 6, color: previewStarted && micOn ? C.green : C.textMuted, fontWeight: 600 }}>
+                {!previewStarted ? 'Off' : micOn ? 'Live' : 'Muted'} <MicMeter level={micLevel} muted={!previewStarted || !micOn} />
+              </span>
+            }/>
+            <StatusRow k="Broadcast via" v={
+              <span style={{ color: '#fff', fontWeight: 600 }}>{ingestMode === 'rtmp' ? 'OBS / RTMP' : 'Browser'}</span>
+            }/>
           </PanelSection>
 
           <PanelSection title={
@@ -548,7 +1233,7 @@ export default function GoLiveSetupScreen() {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
               <Stat label="Coins" value={(profile?.todayCoinsEarned ?? 0).toLocaleString()} color="#fff" iconColor={C.purpleLight}/>
               <Stat label="VP" value={(profile?.todayVPEarned ?? 0).toLocaleString()} color={C.purpleLight}/>
-              <Stat label="Gems" value={(profile?.todayGemsEarned ?? 0).toLocaleString()} color={C.cyan}/>
+              <Stat label="Gems" value={(profile?.todayGemsEarned ?? 0).toLocaleString()} color={C.gemBlue}/>
             </div>
             <div style={{ marginTop: 8, fontSize: 10, color: C.textMuted, lineHeight: 1.4 }}>
               Tips are subject to a flat 10% platform fee. VP→gem conversion uses your tier rate.
@@ -561,8 +1246,7 @@ export default function GoLiveSetupScreen() {
               navigator.clipboard?.writeText(window.location.href);
               showToast('Stream link copied', 'success');
             }}>Share Stream</QAItem>
-            <QAItem icon="emoji_events" onClick={() => navigate('/tournaments')}>Start Tournament Stream</QAItem>
-            <QAItem icon="content_cut" shortcut="Ctrl+K">Clip Moment</QAItem>
+            <QAItem icon="content_cut" onClick={() => showToast('Clip moments while you\'re live — viewers can clip too.', 'info')}>Clip Moment</QAItem>
           </PanelSection>
 
           <div style={{
@@ -678,27 +1362,87 @@ function QAItem({ icon, children, shortcut, onClick }) {
   );
 }
 
-function VolumeBars() {
-  const heights = [6, 9, 12, 10, 7, 11, 8, 5, 4];
-  const colors = [C.green, C.green, C.green, C.green, C.green, C.amber, C.amber, C.red, C.red];
+function IngestCard({ active, disabled, onClick, icon, title, desc, note }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2, height: 14 }}>
-      {heights.map((h, i) => (
-        <div key={i} style={{
-          width: 3, height: h, background: colors[i],
-          opacity: i >= 7 ? 0.4 : 1, borderRadius: 1,
-        }}/>
-      ))}
-    </div>
+    <button
+      type="button"
+      onClick={disabled ? undefined : onClick}
+      disabled={disabled}
+      style={{
+        textAlign: 'left', padding: '12px 14px',
+        background: active ? C.purpleSoft : 'rgba(255,255,255,0.04)',
+        border: active ? `1px solid ${C.purple}` : `1px solid ${C.border}`,
+        borderRadius: 10, color: C.text,
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.55 : 1,
+        display: 'flex', gap: 12, alignItems: 'flex-start',
+      }}
+    >
+      <span className="material-symbols-outlined" style={{
+        fontSize: 22, color: active ? C.purpleLight : C.textDim, marginTop: 2,
+      }}>{icon}</span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 2 }}>{title}</div>
+        <div style={{ fontSize: 11, color: C.textDim, lineHeight: 1.4 }}>{desc}</div>
+        {note && (
+          <div style={{ fontSize: 10, color: C.amber, marginTop: 4 }}>{note}</div>
+        )}
+      </div>
+    </button>
   );
 }
 
-function SignalBars() {
+function DevicePicker({ icon, label, value, devices, fallback, onChange }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2, height: 10 }}>
-      <div style={{ width: 3, height: 4, background: C.green, borderRadius: 1 }}/>
-      <div style={{ width: 3, height: 7, background: C.green, borderRadius: 1 }}/>
-      <div style={{ width: 3, height: 10, background: C.green, borderRadius: 1 }}/>
+    <label style={{ display: 'block' }}>
+      <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: C.textDim, marginBottom: 6 }}>
+        <span className="material-symbols-outlined" style={{ fontSize: 14 }}>{icon}</span>
+        {label}
+      </span>
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 8,
+        background: 'rgba(255,255,255,0.04)', border: `1px solid ${C.border}`,
+        borderRadius: 8, padding: '2px 10px',
+      }}>
+        <select
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          style={{
+            flex: 1, background: 'transparent', border: 'none', outline: 'none',
+            color: C.text, fontSize: 12, padding: '8px 0', cursor: 'pointer',
+            appearance: 'none', WebkitAppearance: 'none',
+          }}
+        >
+          <option value="" style={{ background: C.card }}>{fallback}</option>
+          {devices.map((d, i) => (
+            <option key={d.deviceId || i} value={d.deviceId} style={{ background: C.card }}>
+              {d.label || `${label} ${i + 1}`}
+            </option>
+          ))}
+        </select>
+        <span className="material-symbols-outlined" style={{ fontSize: 14, color: C.textMuted }}>expand_more</span>
+      </div>
+    </label>
+  );
+}
+
+// Real mic level meter — `level` is 0..100 RMS from the live AnalyserNode.
+function MicMeter({ level = 0, muted = false }) {
+  const bars = 9;
+  const lit = muted ? 0 : Math.round((level / 100) * bars);
+  return (
+    <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2, height: 14 }}>
+      {Array.from({ length: bars }).map((_, i) => {
+        const on = i < lit;
+        const color = i >= 7 ? C.red : i >= 5 ? C.amber : C.green;
+        return (
+          <div key={i} style={{
+            width: 3, height: 4 + i * 1.1,
+            background: on ? color : 'rgba(255,255,255,0.12)',
+            borderRadius: 1, transition: 'background 0.06s linear',
+          }}/>
+        );
+      })}
     </div>
   );
 }
@@ -742,6 +1486,11 @@ const inputField = {
   width: '100%', boxSizing: 'border-box',
   background: 'rgba(255,255,255,0.04)', border: `1px solid ${C.border}`,
   borderRadius: 8, padding: '10px 14px', color: C.text, fontSize: 13, outline: 'none',
+};
+const coverChip = {
+  width: 26, height: 26, borderRadius: 6, border: 'none',
+  background: 'rgba(0,0,0,0.6)', color: '#fff',
+  display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
 };
 const tagPill = {
   display: 'flex', alignItems: 'center', gap: 5,

@@ -6,19 +6,19 @@ const slides = [
   {
     icon: 'stadia_controller',
     title: 'Welcome to VERGR',
-    subtitle: 'Where Gamers Converge',
+    subtitle: 'Play. Stream. Earn.',
     description: 'The gaming social platform where you compete, create, earn, and cash out — all in one place.',
-    gradient: 'from-brand-cyan to-brand-violet',
-    bgGlow: 'rgba(77,255,212,0.08)',
+    gradient: 'from-brand-violet to-brand-violet',
+    bgGlow: 'rgba(180,79,255,0.08)',
   },
   {
-    icon: 'emoji_events',
-    title: 'Compete',
-    subtitle: 'Rise Through The Ranks',
-    description: 'Join tournaments, climb leaderboards, and prove yourself against the best gamers worldwide. Win coins and exclusive rewards.',
+    icon: 'live_tv',
+    title: 'Watch',
+    subtitle: 'Always Something Live',
+    description: 'Watch live streams from gamers and creators worldwide, chat in real time, and follow the people you want to keep up with.',
     gradient: 'from-brand-violet to-brand-pink',
     bgGlow: 'rgba(123,111,255,0.08)',
-    features: ['Weekly tournaments', 'Community leaderboards', 'Squad vs squad battles', 'Prize pools'],
+    features: ['Live streams', 'Real-time chat', 'Clips and shorts', 'Community leaderboards'],
   },
   {
     icon: 'paid',
@@ -41,11 +41,11 @@ const slides = [
   {
     icon: 'account_balance_wallet',
     title: 'Monetize',
-    subtitle: 'Turn Gaming Into Income',
-    description: 'Cash out your earned coins to real money. Receive tips from fans, win tournament prizes, and grow your income through gaming.',
+    subtitle: 'Support From Your Audience',
+    description: 'Receive tips from fans, sell memberships and paid streams, and withdraw what you earn. Earnings depend on your own audience.',
     gradient: 'from-brand-ember to-brand-gold',
     bgGlow: 'rgba(255,77,106,0.08)',
-    features: ['Cash out to real money', 'Receive tips & donations', 'Tournament prize pools', 'Creator membership revenue'],
+    features: ['Receive tips & donations', 'Creator memberships', 'Paid live streams', 'Withdraw your earnings'],
   },
 ];
 
@@ -67,7 +67,7 @@ export default function OnboardingScreen() {
       <div className="flex justify-between items-center mb-4">
         <div className="flex gap-1.5">
           {slides.map((_, i) => (
-            <div key={i} className={`h-1 rounded-full transition-all duration-300 ${i === currentSlide ? 'w-8 bg-brand-cyan' : 'w-2 bg-surface-3'}`} />
+            <div key={i} className={`h-1 rounded-full transition-all duration-300 ${i === currentSlide ? 'w-8 bg-brand-violet' : 'w-2 bg-surface-3'}`} />
           ))}
         </div>
         {!isLast && (
@@ -78,7 +78,7 @@ export default function OnboardingScreen() {
       <div className="flex-1 flex flex-col items-center justify-center text-center animate-fade-in" key={currentSlide}>
         {/* Icon */}
         <div className="w-16 h-16 rounded-2xl bg-surface-1 border border-white/[0.06] flex items-center justify-center mb-8">
-          <Icon name={slide.icon} size={32} className="text-brand-cyan" />
+          <Icon name={slide.icon} size={32} className="text-brand-violet-light" />
         </div>
 
         <h1 className="font-syne text-2xl font-extrabold text-text-primary mb-2">{slide.title}</h1>
@@ -90,7 +90,7 @@ export default function OnboardingScreen() {
           <div className="grid grid-cols-2 gap-3 w-full max-w-[340px] mb-8">
             {slide.features.map((feat, i) => (
               <div key={i} className="flex items-center gap-2 bg-surface-2/60 rounded-xl px-3 py-2.5 border border-white/[0.06]">
-                <Icon name="check_circle" filled size={16} className="text-brand-cyan shrink-0" />
+                <Icon name="check_circle" filled size={16} className="text-brand-violet-light shrink-0" />
                 <span className="text-sm text-text-primary">{feat}</span>
               </div>
             ))}

@@ -4,6 +4,8 @@ import VergrLogo from '../../components/VergrLogo';
 import Icon from '../../components/Icon';
 import { useLayout } from '../../context/LayoutContext';
 import useResponsive from '../../hooks/useResponsive';
+import { APP_VERSION, APP_VERSION_CODE } from '../../utils/appVersion';
+import { getPlatform } from '../../utils/platform';
 
 export default function AboutScreen() {
   const { isDesktop } = useResponsive();
@@ -19,9 +21,9 @@ export default function AboutScreen() {
       <TopBar title="About VERGR" showBack />
       <div className="px-4 py-8 flex flex-col items-center">
         <VergrLogo size="lg" showText />
-        <p className="text-text-muted text-sm mt-2 font-dmmono">v1.0.0</p>
+        <p className="text-text-muted text-sm mt-2 font-dmmono">v{APP_VERSION} ({APP_VERSION_CODE}) · {getPlatform()}</p>
         <p className="text-text-secondary text-center text-sm mt-4 leading-relaxed max-w-xs">
-          Where Gamers Converge. Compete, create, earn, and shop in the ultimate gaming social platform.
+          Play. Stream. Earn. Compete, create, earn, and shop in the ultimate gaming social platform.
         </p>
 
         <div className="w-full mt-8 space-y-2">

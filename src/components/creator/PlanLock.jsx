@@ -14,7 +14,7 @@ import Icon from '../Icon';
 const RANK = { free: 0, lite: 1, pro: 2 };
 const LABEL = { lite: 'Lite', pro: 'Pro' };
 const COLOR = {
-  lite: 'from-brand-violet to-brand-cyan',
+  lite: 'from-brand-violet to-brand-violet',
   pro:  'from-brand-gold to-brand-ember',
 };
 const PRICE = { lite: '$9.99/mo', pro: '$24.99/mo' };

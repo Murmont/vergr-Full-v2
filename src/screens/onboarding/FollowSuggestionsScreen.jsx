@@ -63,7 +63,7 @@ export default function FollowSuggestionsScreen() {
         
         {loading ? (
           <div className="flex justify-center pt-10">
-            <div className="w-8 h-8 border-4 border-brand-cyan border-t-transparent animate-spin rounded-full"></div>
+            <div className="w-8 h-8 border-4 border-brand-violet border-t-transparent animate-spin rounded-full"></div>
           </div>
         ) : (
           <div className="space-y-3">
@@ -77,7 +77,7 @@ export default function FollowSuggestionsScreen() {
                       <div className="flex items-center gap-1.5">
                         <span className="font-semibold text-sm truncate">{user.displayName}</span>
                         {user.verificationTier === 'verified' && (
-                          <span className="w-4 h-4 rounded-full bg-brand-cyan flex items-center justify-center shrink-0">
+                          <span className="w-4 h-4 rounded-full bg-brand-violet flex items-center justify-center shrink-0">
                             <Icon name="check" size={10} className="text-bg-dark" />
                           </span>
                         )}
@@ -90,7 +90,7 @@ export default function FollowSuggestionsScreen() {
                       className={`px-4 py-2 rounded-full text-sm font-semibold transition-all ${
                         isFollowed
                           ? 'bg-surface-2 border border-white/[0.06] text-text-secondary'
-                          : 'bg-brand-cyan text-bg-dark hover:brightness-110'
+                          : 'bg-brand-violet text-white hover:brightness-110'
                       }`}
                     >
                       {isFollowed ? 'Following' : 'Follow'}

@@ -21,6 +21,9 @@ import AddPhoneModal from '../../components/AddPhoneModal';
 import { getTier } from '../../utils/helpers';
 import { useLayout } from '../../context/LayoutContext';
 import useResponsive from '../../hooks/useResponsive';
+import { IS_NATIVE_BUILD } from '../../utils/platform';
+import { contactsSupported, pickContacts } from '../../utils/nativeContacts';
+import PermissionDisclosure, { DISCLOSURES } from '../../components/permissions/PermissionDisclosure';
 
 const matchContactHashes = httpsCallable(functions, 'matchContactHashes');
 
@@ -76,12 +79,12 @@ export default function NewMessageScreen() {
   const [loading, setLoading] = useState(false);
   const [debouncing, setDebouncing] = useState(false);
 
-  // Phone contacts (mobile-only, Contact Picker API)
+  // Phone contacts — Contact Picker API on Chrome/Edge Android, the
+  // VergrContacts Kotlin bridge on native (the WebView has no picker API).
   const [contacts, setContacts] = useState([]);
+  const [contactsAsk, setContactsAsk] = useState(false);
   const [contactsLoading, setContactsLoading] = useState(false);
-  const contactsSupported = typeof navigator !== 'undefined'
-    && 'contacts' in navigator
-    && typeof navigator.contacts.select === 'function';
+  const contactsAvailable = contactsSupported();
 
   // 3-dot menu + phone prompt state
   const [menuOpen, setMenuOpen] = useState(false);
@@ -189,22 +192,33 @@ export default function NewMessageScreen() {
   // can split the list into "on VERGR already" vs "needs an invite". The
   // match call requires the caller to have saved their own phone — if they
   // haven't, we prompt with the AddPhoneModal instead of failing silently.
-  const pickContacts = async () => {
+  // Play requires a prominent disclosure BEFORE the contacts permission
+  // prompt, so the button opens the disclosure and only its Continue runs
+  // this. The phone check stays first: asking for contacts and then telling
+  // someone they need a phone number on file is the wrong order.
+  const askContacts = () => {
+    if (!hasPhone) { setPhoneModalOpen(true); return; }
+    setContactsAsk(true);
+  };
+
+  // NOTE: named runContactSync, NOT pickContacts. A local `pickContacts`
+  // shadows the imported one and recurses into itself.
+  const runContactSync = async () => {
     if (!hasPhone) {
       setPhoneModalOpen(true);
       return;
     }
     try {
       setContactsLoading(true);
-      const picked = await navigator.contacts.select(['name', 'tel'], { multiple: true });
+      const picked = await pickContacts();
 
       // Normalize + hash each picked contact. We keep the raw phone only in
       // local state (never sent to the server) so the Invite button still
       // has a working `sms:` target.
       const entries = [];
       for (const c of picked) {
-        const name = (c.name && c.name[0]) || 'Unknown';
-        const rawTel = (c.tel && c.tel[0]) || '';
+        const name = c.name || 'Unknown';
+        const rawTel = c.tel || '';
         const norm = normalizePhone(rawTel);
         if (!norm) {
           // Couldn't normalize (no country code, etc.) — still surface it
@@ -245,8 +259,10 @@ export default function NewMessageScreen() {
   };
 
   const inviteContact = (contact) => {
+    // Canonical domain + the sender's ref: an invited friend who signs up and
+    // verifies a phone pays BOTH sides the referral VP.
     const body = encodeURIComponent(
-      `Hey! Add me on VERGR — the gamer social app. https://vergr-44494.web.app`
+      `Hey! Add me on Vergr — the gamer social app. https://vergr.app/reflink?ref=${auth.currentUser?.uid || ''}`
     );
     // `sms:` with a `body` param opens the native SMS composer on iOS &
     // Android. Desktop falls back to the OS's default handler (usually
@@ -257,10 +273,10 @@ export default function NewMessageScreen() {
   return (
     <div className={isDesktop ? 'min-h-screen bg-bg-dark flex flex-col' : 'screen-container min-h-screen bg-bg-dark flex flex-col'}>
       {/* Header */}
-      <header className="flex items-center gap-4 px-5 pt-12 pb-4 border-b border-white/[0.03] relative">
+      <header className="flex items-center gap-4 px-5 pt-12 pb-4 border-b border-white/[0.03] relative" style={IS_NATIVE_BUILD ? { paddingTop: 'calc(env(safe-area-inset-top, 0px) + 14px)' } : undefined}>
         <button
           onClick={() => navigate(-1)}
-          className="text-white hover:text-brand-cyan transition-colors"
+          className="text-white hover:text-brand-violet-light transition-colors"
         >
           <Icon name="arrow_back" size={24} />
         </button>
@@ -269,7 +285,7 @@ export default function NewMessageScreen() {
         </h1>
         <button
           onClick={() => setMenuOpen((v) => !v)}
-          className="text-white hover:text-brand-cyan transition-colors p-1 -mr-1"
+          className="text-white hover:text-brand-violet-light transition-colors p-1 -mr-1"
           aria-label="More options"
         >
           <Icon name="more_vert" size={22} />
@@ -282,14 +298,14 @@ export default function NewMessageScreen() {
                 onClick={() => { setMenuOpen(false); setPhoneModalOpen(true); }}
                 className="w-full px-4 py-3 text-left text-sm flex items-start gap-3 hover:bg-surface-2 transition-colors"
               >
-                <Icon name={hasPhone ? 'edit' : 'phone'} size={16} className="text-brand-cyan mt-0.5 shrink-0" />
+                <Icon name={hasPhone ? 'edit' : 'phone'} size={16} className="text-brand-violet-light mt-0.5 shrink-0" />
                 <div>
                   <p className="text-white font-semibold">
                     {hasPhone ? 'Update phone number' : 'Add phone number'}
                   </p>
                   {!hasPhone && (
                     <p className="text-text-muted text-[11px] mt-0.5 leading-snug">
-                      Unlock contact invites and earn <span className="text-brand-cyan font-bold">+100 VP</span>.
+                      Unlock contact invites and earn <span className="text-brand-violet-light font-bold">+1000 VP</span>.
                     </p>
                   )}
                 </div>
@@ -301,7 +317,7 @@ export default function NewMessageScreen() {
 
       {/* Search Bar */}
       <div className="px-5 pt-4 pb-3">
-        <div className="flex items-center bg-surface-2 rounded-2xl px-4 py-1 border border-white/[0.06] focus-within:border-brand-cyan transition-all">
+        <div className="flex items-center bg-surface-2 rounded-2xl px-4 py-1 border border-white/[0.06] focus-within:border-brand-violet transition-all">
           <Icon name="search" size={18} className="text-text-muted mr-3" />
           <input
             value={search}
@@ -313,20 +329,20 @@ export default function NewMessageScreen() {
             placeholder="Search username or pick below..."
           />
           {(loading || debouncing) && (
-            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-brand-cyan" />
+            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-brand-violet" />
           )}
         </div>
       </div>
 
       {/* Contacts import (mobile only, supported browsers only) */}
-      {contactsSupported && !isDesktop && (
+      {contactsAvailable && !isDesktop && (
         <div className="px-5 pb-2">
           <button
-            onClick={pickContacts}
+            onClick={askContacts}
             disabled={contactsLoading}
             className="w-full flex items-center gap-3 p-3 rounded-2xl bg-surface-1 hover:bg-surface-2 border border-white/[0.06] transition-all"
           >
-            <div className="w-10 h-10 rounded-full bg-brand-cyan/15 text-brand-cyan flex items-center justify-center">
+            <div className="w-10 h-10 rounded-full bg-brand-violet/15 text-brand-violet-light flex items-center justify-center">
               <Icon name="contacts" size={20} />
             </div>
             <div className="flex-1 text-left">
@@ -365,14 +381,14 @@ export default function NewMessageScreen() {
                   {onVergr ? (
                     <button
                       onClick={() => startConversation(c.match)}
-                      className="px-3 py-1.5 rounded-full bg-brand-cyan text-bg-dark text-xs font-bold hover:brightness-110 transition-all"
+                      className="px-3 py-1.5 rounded-full bg-brand-violet text-white text-xs font-bold hover:brightness-110 transition-all"
                     >
                       Chat
                     </button>
                   ) : (
                     <button
                       onClick={() => inviteContact(c)}
-                      className="px-3 py-1.5 rounded-full bg-surface-2 text-brand-cyan text-xs font-bold border border-brand-cyan/30 hover:bg-brand-cyan/10 transition-all"
+                      className="px-3 py-1.5 rounded-full bg-surface-2 text-brand-violet-light text-xs font-bold border border-brand-violet/30 hover:bg-brand-violet/10 transition-all"
                     >
                       Invite
                     </button>
@@ -384,12 +400,20 @@ export default function NewMessageScreen() {
         </div>
       )}
 
+      {contactsAsk && (
+        <PermissionDisclosure
+          {...DISCLOSURES.contacts}
+          onCancel={() => setContactsAsk(false)}
+          onAllow={() => { setContactsAsk(false); runContactSync(); }}
+        />
+      )}
+
       {phoneModalOpen && (
         <AddPhoneModal
           onClose={() => setPhoneModalOpen(false)}
           onSaved={() => {
             setPhoneModalOpen(false);
-            showToast('Phone saved — +100 VP earned!', 'success');
+            showToast('Phone saved — +1000 VP earned!', 'success');
             // profile.phoneHash will sync in via UserContext's live snapshot;
             // no manual refetch needed.
           }}
@@ -405,7 +429,7 @@ export default function NewMessageScreen() {
 
         {/* Loading shimmer for suggestions on first paint */}
         {suggestionsLoading && suggestions.length === 0 && (
-          <div className="py-6 text-center text-brand-cyan text-[10px] font-bold uppercase tracking-[0.3em] animate-pulse">
+          <div className="py-6 text-center text-brand-violet-light text-[10px] font-bold uppercase tracking-[0.3em] animate-pulse">
             Loading connections...
           </div>
         )}
@@ -438,7 +462,7 @@ export default function NewMessageScreen() {
                 >
                   <UserAvatar src={u.avatar} size={44} tier={tier} />
                   <div className="flex-1 text-left min-w-0">
-                    <p className={`font-bold text-sm truncate ${tier.holographic ? 'text-brand-cyan' : 'text-white'}`}>
+                    <p className={`font-bold text-sm truncate ${tier.holographic ? 'text-brand-violet-light' : 'text-white'}`}>
                       {u.displayName || u.username}
                     </p>
                     <p className="text-text-muted text-xs font-dmmono truncate">@{u.username}</p>
@@ -446,7 +470,7 @@ export default function NewMessageScreen() {
                   <Icon
                     name="chevron_right"
                     size={20}
-                    className="text-text-muted group-hover:text-brand-cyan transition-colors"
+                    className="text-text-muted group-hover:text-brand-violet-light transition-colors"
                   />
                 </button>
               );

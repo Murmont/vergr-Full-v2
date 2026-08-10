@@ -31,22 +31,30 @@ import Icon from '../../components/Icon';
 import UserAvatar from '../../components/UserAvatar';
 import VanguardPresence from '../../components/VanguardPresence';
 import { getPlaybackUrl } from '../../utils/streamConfig';
+import { captureStreamInterest } from '../../utils/feedRank';
 import { getFunctions, httpsCallable } from 'firebase/functions';
-import { followUser, unfollowUser, isFollowing, sendCoins, createPost } from '../../firebase/firestore';
-import { uploadToR2 } from '../../utils/r2Storage';
-import useStreamClipBuffer from '../../hooks/useStreamClipBuffer';
+import { followUser, unfollowUser, isFollowing, sendCoins, getEventTicketStatus, getMembershipTiers, reportStream } from '../../firebase/firestore';
+import SubscribeSheet from '../../components/membership/SubscribeSheet';
+import ReportSheet from '../../components/ReportSheet';
+import { collection as fsCollection, query as fsQuery, orderBy as fsOrderBy, limit as fsLimit } from 'firebase/firestore';
+import useLiveClip from '../../hooks/useLiveClip';
 import JoinAnnouncer from '../../components/streams/JoinAnnouncer';
 import UserQuickSheet from '../../components/streams/UserQuickSheet';
 import ChatPanel from '../../components/streams/ChatPanel';
+import MobileLiveViewer, { ReconnectingOverlay, StreamLoadingCover } from '../../components/streams/MobileLiveViewer';
+import TwitchMirrorPlayer from '../../components/streams/TwitchMirrorPlayer';
+import InStreamTicketWidget from '../../components/streams/InStreamTicketWidget';
+import EventTicketCard from '../../components/tournament/EventTicketCard';
+import { StreamGoalBar, TipAlertOverlay, SubAlertOverlay } from '../../components/streams/StreamGoalAndAlerts';
+import InlineVideoPlayer from '../../components/media/InlineVideoPlayer';
 import TournamentOverlay from '../../components/streams/TournamentOverlay';
-import PiPController from '../../components/streams/PiPController';
 import ReactionsFloor from '../../components/streams/ReactionsFloor';
 import NowPlayingCard from '../../components/streams/NowPlayingCard';
 import HeartBurst from '../../components/primitives/HeartBurst';
 import RollingNumber from '../../components/primitives/RollingNumber';
 import { useStreamJoinEvents } from '../../hooks/useStreamJoinEvents';
 import { haptic } from '../../utils/haptics';
-import * as sfx from '../../utils/sfx';
+import { resolveTier } from '../../utils/tierSystem';
 
 const C = {
   bg: '#0a0a14',
@@ -65,7 +73,17 @@ const C = {
   divider: 'rgba(255,255,255,0.06)',
 };
 
+// Touch phones get the dedicated TikTok-style immersive viewer (MobileLiveViewer,
+// the same component the native app uses). Every mouse-driven viewport — including
+// a narrow desktop window — gets the framed desktop viewer below.
 export default function ViewerStreamScreen() {
+  const isTouchPhone = typeof window !== 'undefined'
+    && window.matchMedia?.('(hover: none) and (pointer: coarse)').matches;
+  if (isTouchPhone) return <MobileLiveViewer />;
+  return <DesktopViewerStreamScreen />;
+}
+
+function DesktopViewerStreamScreen() {
   const { streamId } = useParams();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -99,20 +117,28 @@ export default function ViewerStreamScreen() {
   // Quick-action sheet for inspecting another streamer (Multi-Guest partner,
   // chat message tap, @mention, etc.). { uid, streamId } when open.
   const [quickSheet, setQuickSheet] = useState(null);
-
-  // Heart-burst: double-tap viewport spawns hearts at tap point.
-  const [heartBurst, setHeartBurst] = useState({ tick: 0, x: '50%', y: '50%' });
-  const lastTapRef = useRef(0);
-  // HUD visibility — single tap toggles. While visible we auto-hide after 4s
-  // of inactivity, matching TikTok / native fullscreen video conventions.
-  const [hudVisible, setHudVisible] = useState(true);
-  const hudTimerRef = useRef(0);
-  const bumpHud = (force = null) => {
-    setHudVisible((cur) => force != null ? force : true);
-    clearTimeout(hudTimerRef.current);
-    hudTimerRef.current = setTimeout(() => setHudVisible(false), 4000);
+  const [ticketStatus, setTicketStatus] = useState(null); // ticketed-stream gate
+  const [followChecked, setFollowChecked] = useState(false);
+  const [stalled, setStalled] = useState(false);
+  const [videoStarted, setVideoStarted] = useState(false); // first real frame painted
+  const [replayOpen, setReplayOpen] = useState(false);
+  const [membershipTiers, setMembershipTiers] = useState([]); // creator sub tiers
+  const [showSubscribe, setShowSubscribe] = useState(false);
+  const [showReport, setShowReport] = useState(false);
+  const [topGifters, setTopGifters] = useState([]); // [{ uid, coins, displayName, avatar }]
+  const [nowTick, setNowTick] = useState(Date.now());
+  // Custom control bar visibility (fades in on hover, auto-hides after 2.6s).
+  const [barVisible, setBarVisible] = useState(true);
+  const barTimerRef = useRef(0);
+  const bumpBar = () => {
+    setBarVisible(true);
+    clearTimeout(barTimerRef.current);
+    barTimerRef.current = setTimeout(() => setBarVisible(false), 2600);
   };
-  useEffect(() => () => clearTimeout(hudTimerRef.current), []);
+  useEffect(() => () => clearTimeout(barTimerRef.current), []);
+
+  // Heart-burst: double-click the video frame spawns hearts at the click point.
+  const [heartBurst, setHeartBurst] = useState({ tick: 0, x: '50%', y: '50%' });
   // ESC exits the immersive view (mobile fullscreen, desktop fullscreen).
   useEffect(() => {
     const onKey = (e) => {
@@ -186,6 +212,47 @@ export default function ViewerStreamScreen() {
     return () => { cancelled = true; };
   }, [streamDoc?.hostUid]);
 
+  // Uptime ticker (1s) while live.
+  useEffect(() => {
+    if (streamDoc?.status !== 'live') return;
+    const id = setInterval(() => setNowTick(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [streamDoc?.status]);
+
+  // Watching a stream for a few seconds = a host-affinity signal for For You.
+  useEffect(() => {
+    if (streamDoc?.status !== 'live' || !(streamDoc?.hostUid || streamDoc?.streamerId)) return;
+    const t = setTimeout(() => captureStreamInterest(streamDoc, 1), 5000);
+    return () => clearTimeout(t);
+  }, [streamDoc?.id, streamDoc?.status]);
+
+  // Creator membership tiers → drives the Subscribe button (hidden if none).
+  useEffect(() => {
+    if (!streamDoc?.hostUid) { setMembershipTiers([]); return; }
+    let alive = true;
+    getMembershipTiers(streamDoc.hostUid).then(({ tiers }) => { if (alive) setMembershipTiers(tiers || []); }).catch(() => {});
+    return () => { alive = false; };
+  }, [streamDoc?.hostUid]);
+
+  // Top-gifters leaderboard (server-accumulated per-stream coin totals).
+  const gifterCacheRef = useRef(new Map());
+  useEffect(() => {
+    if (!streamDoc?.id) return;
+    const q = fsQuery(fsCollection(db, 'streams', streamDoc.id, 'gifters'), fsOrderBy('coins', 'desc'), fsLimit(10));
+    return onSnapshot(q, async (snap) => {
+      const rows = snap.docs.map((d) => ({ uid: d.id, coins: d.data().coins || 0 }));
+      const cache = gifterCacheRef.current;
+      await Promise.all(rows.map(async (r) => {
+        if (cache.has(r.uid)) return;
+        try {
+          const u = await getDoc(doc(db, 'users', r.uid));
+          cache.set(r.uid, u.exists() ? { displayName: u.data().displayName || u.data().username || 'Supporter', avatar: u.data().avatar || null } : { displayName: 'Supporter', avatar: null });
+        } catch { cache.set(r.uid, { displayName: 'Supporter', avatar: null }); }
+      }));
+      setTopGifters(rows.map((r) => ({ ...r, ...(cache.get(r.uid) || {}) })));
+    }, () => {});
+  }, [streamDoc?.id]);
+
   useEffect(() => {
     const publisherUids = streamDoc?.coHostUids || [];
     const linkedStreamIds = streamDoc?.linkedStreamIds || [];
@@ -238,14 +305,15 @@ export default function ViewerStreamScreen() {
     if (currentUser.uid === streamDoc.hostUid) return;
     isFollowing(currentUser.uid, streamDoc.hostUid).then(async (isFollower) => {
       setFollowed(isFollower);
+      setFollowChecked(true);
       if (!isFollower || joinAnnouncedRef.current) return;
       joinAnnouncedRef.current = true;
       // Detect a paying subscriber tier from the viewer's own profile.
-      // Subscription doc shape: profile.subscription = { tier: 'lite' | 'pro' } or string.
+      // resolveTier handles every legacy document shape; reading `subscription`
+      // directly here used to miss the `profile.tier` shape entirely.
       let kind = 'follower';
       let tier = null;
-      const sub = profile?.subscription;
-      const subTier = typeof sub === 'string' ? sub : sub?.tier;
+      const subTier = resolveTier(profile);
       if (subTier && subTier !== 'free') {
         // Note: this is the viewer's own subscription, not a per-creator membership.
         // Per-creator memberships will be wired when fanship.js ships.
@@ -322,7 +390,13 @@ export default function ViewerStreamScreen() {
       const desc = finalMessage
         ? `Tip · ${streamDoc.title || 'live'} · "${finalMessage}"`
         : `Tip · ${streamDoc.title || 'live'}`;
-      await sendCoins(currentUser.uid, streamDoc.hostUid, amt, desc);
+      await sendCoins(currentUser.uid, streamDoc.hostUid, amt, desc, { streamId: streamDoc.id });
+      // Feed the on-stream tip alert + tip goal (best-effort, mirrors mobile).
+      try {
+        const patch = { lastTip: { coins: amt, fromName: profile?.displayName || profile?.username || 'Someone', ts: Date.now() } };
+        if (streamDoc.goal?.active) patch['goal.currentCoins'] = fsIncrement(amt);
+        await updateDoc(doc(db, 'streams', streamDoc.id), patch);
+      } catch { /* alert/goal write must never fail the tip */ }
       haptic.success();
       showToast(`Tipped ${amt} coins`, 'success');
       setTipMessage('');
@@ -341,36 +415,17 @@ export default function ViewerStreamScreen() {
     setSourceAspect(el.videoWidth / el.videoHeight);
   };
 
-  // Tap on viewport: single tap toggles HUD; double tap (within 350ms) spawns
-  // a heart burst at the tap point. Hearts increment a stream counter that
-  // becomes part of the host's lifetime `totalLikes` on stream end.
+  // Double-click the video frame → heart burst at the click point + a throttled
+  // hearts increment (feeds the same counter as the mobile viewer's like taps).
   const lastHeartWriteRef = useRef(0);
-  const pendingTapTimerRef = useRef(0);
-  const onViewportTap = (e) => {
+  const onFrameDoubleClick = (e) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    setHeartBurst((hb) => ({ tick: hb.tick + 1, x: e.clientX - rect.left, y: e.clientY - rect.top }));
+    haptic.light();
     const now = Date.now();
-    const since = now - lastTapRef.current;
-    lastTapRef.current = now;
-    if (since > 0 && since < 350) {
-      // Double tap → heart burst.
-      clearTimeout(pendingTapTimerRef.current);
-      const rect = e.currentTarget.getBoundingClientRect();
-      const clientX = e.touches?.[0]?.clientX ?? e.clientX;
-      const clientY = e.touches?.[0]?.clientY ?? e.clientY;
-      const x = clientX != null ? clientX - rect.left : rect.width / 2;
-      const y = clientY != null ? clientY - rect.top : rect.height / 2;
-      setHeartBurst({ tick: heartBurst.tick + 1, x, y });
-      haptic.light();
-      sfx.play('heart', { volume: 0.6 });
-      if (streamDoc?.id && now - lastHeartWriteRef.current > 800) {
-        lastHeartWriteRef.current = now;
-        updateDoc(doc(db, 'streams', streamDoc.id), { hearts: fsIncrement(1) }).catch(() => {});
-      }
-    } else {
-      // Single tap → toggle HUD after a brief delay (so a follow-up tap can
-      // resolve as a double-tap heart instead of HUD flipping in/out).
-      pendingTapTimerRef.current = setTimeout(() => {
-        setHudVisible((v) => !v);
-      }, 360);
+    if (streamDoc?.id && now - lastHeartWriteRef.current > 800) {
+      lastHeartWriteRef.current = now;
+      updateDoc(doc(db, 'streams', streamDoc.id), { hearts: fsIncrement(1) }).catch(() => {});
     }
   };
 
@@ -380,55 +435,93 @@ export default function ViewerStreamScreen() {
   // regardless of how many streamers are visible on screen.
   const playbackUrl = streamDoc?.compositeHlsUrl
     || (streamDoc?.streamKey ? getPlaybackUrl(streamDoc.streamKey) : null);
-
-  // ── In-stream clip capture: rolling buffer → R2 → user-owned clip post ──
-  // Tier gates: Free 30s/3, Lite 60s/5, Pro 90s/unlimited per stream session.
-  const viewerTier = (() => {
-    const sub = profile?.subscription;
-    const t = typeof sub === 'string' ? sub : sub?.tier;
-    return t === 'pro' || t === 'lite' ? t : 'free';
+  const isTwitchMirror = streamDoc?.source === 'twitch' && !!streamDoc?.twitchChannel;
+  const hasVideo = !!playbackUrl || isTwitchMirror;
+  // Source quality label (single-rendition — the viewer receives the source).
+  const qualityLabel = (() => {
+    const plan = streamDoc?.hostPlan;
+    const t = typeof plan === 'string' ? plan : (plan?.tier || 'free');
+    return t === 'pro' ? '1080p60' : t === 'lite' ? '720p60' : '480p';
   })();
-  const CLIP_TIER = { free: { sec: 30, max: 3 }, lite: { sec: 60, max: 5 }, pro: { sec: 90, max: Infinity } };
-  const clipCfg = CLIP_TIER[viewerTier];
-  const { grab: grabClip, isSupported: clipSupported } = useStreamClipBuffer(videoElRef, { enabled: !!playbackUrl });
-  const [clipsUsed, setClipsUsed] = useState(0);
-  const [clipping, setClipping] = useState(false);
+  const startedMs = streamDoc?.startedAt?.toMillis?.() || (typeof streamDoc?.startedAt === 'number' ? streamDoc.startedAt : 0);
+  const uptimeStr = startedMs ? fmtUptime(Math.max(0, nowTick - startedMs)) : null;
 
-  const publishClip = async (url) => {
-    await createPost(currentUser.uid, {
-      content: streamDoc?.title ? `Clip · ${streamDoc.title}` : 'Live clip',
-      type: 'clip',
-      mediaUrls: [url],
-      hashtags: streamDoc?.game ? [String(streamDoc.game).toLowerCase()] : [],
-      visibility: 'public',
-    });
-  };
+  // Ticketed-stream gate: resolve whether this viewer may watch (mirrors mobile).
+  useEffect(() => {
+    if (streamDoc?.audience !== 'ticketed' || !streamDoc?.tournamentId) { setTicketStatus(null); return; }
+    let alive = true;
+    getEventTicketStatus(streamDoc.tournamentId).then((s) => { if (alive) setTicketStatus(s); }).catch(() => {});
+    return () => { alive = false; };
+  }, [streamDoc?.audience, streamDoc?.tournamentId]);
 
-  const handleClip = async () => {
-    if (clipping || !currentUser?.uid) return;
-    if (clipsUsed >= clipCfg.max) { showToast(`Clip limit reached (${clipCfg.max} per stream on ${viewerTier})`, 'info'); return; }
-    setClipping(true);
+  // Stall detection + telemetry: overlay "Reconnecting" on a real stall and bump
+  // streams/{id}.playbackStalls (throttled) so the broadcaster/ops can see it.
+  const lastStallWriteRef = useRef(0);
+  useEffect(() => {
+    const v = videoElRef.current;
+    if (!v) return;
+    let stallTimer = 0;
+    const onWaiting = () => {
+      clearTimeout(stallTimer);
+      stallTimer = setTimeout(() => {
+        setStalled(true);
+        const now = Date.now();
+        if (streamId && now - lastStallWriteRef.current > 30_000) {
+          lastStallWriteRef.current = now;
+          updateDoc(doc(db, 'streams', streamId), { playbackStalls: fsIncrement(1) }).catch(() => {});
+        }
+      }, 3500);
+    };
+    const onResume = () => { clearTimeout(stallTimer); setStalled(false); };
+    v.addEventListener('waiting', onWaiting);
+    v.addEventListener('stalled', onWaiting);
+    v.addEventListener('playing', onResume);
+    v.addEventListener('timeupdate', onResume);
+    v.addEventListener('canplay', onResume);
+    return () => {
+      clearTimeout(stallTimer);
+      v.removeEventListener('waiting', onWaiting);
+      v.removeEventListener('stalled', onWaiting);
+      v.removeEventListener('playing', onResume);
+      v.removeEventListener('timeupdate', onResume);
+      v.removeEventListener('canplay', onResume);
+    };
+  }, [streamDoc?.id, streamDoc?.compositeHlsUrl, streamDoc?.streamKey]);
+
+  // First-frame detection: keep the loading cover up until REAL video paints.
+  useEffect(() => {
+    setVideoStarted(false);
+    if (isTwitchMirror) { setVideoStarted(true); return; }
+    if (!playbackUrl) return;
+    const v = videoElRef.current;
+    if (!v) return;
+    const onFrame = () => { if (v.currentTime > 0 || v.readyState >= 3) setVideoStarted(true); };
+    v.addEventListener('playing', onFrame);
+    v.addEventListener('timeupdate', onFrame);
+    return () => { v.removeEventListener('playing', onFrame); v.removeEventListener('timeupdate', onFrame); };
+  }, [playbackUrl, isTwitchMirror]);
+
+  // Share the watch link (system share sheet where available, else clipboard).
+  const shareStream = async () => {
+    const url = window.location.href;
     try {
-      if (clipSupported()) {
-        // Chromium-class path: assemble locally from the rolling buffer.
-        const blob = grabClip(clipCfg.sec);
-        if (!blob || blob.size < 50_000) { showToast('Need a few more seconds of footage — try again shortly', 'info'); return; }
-        const file = new File([blob], `clip-${Date.now()}.webm`, { type: 'video/webm' });
-        const url = await uploadToR2(file, 'clip');
-        await publishClip(url);
-      } else {
-        // Apple-webview / unsupported path: server-side ffmpeg cut on the box.
-        const fn = httpsCallable(getFunctions(undefined, 'europe-west1'), 'requestStreamClip');
-        const { data } = await fn({ streamId: streamDoc?.id, durationSec: clipCfg.sec });
-        if (!data?.clipUrl) throw new Error('Clip failed');
-        await publishClip(data.clipUrl);
-      }
-      setClipsUsed((n) => n + 1);
-      showToast('Clip saved to your profile', 'success');
-    } catch (err) {
-      showToast(err?.message || 'Clip failed', 'error');
-    } finally { setClipping(false); }
+      if (navigator.share) await navigator.share({ url, title: 'Watch live on VERGR' });
+      else { await navigator.clipboard.writeText(url); showToast('Link copied', 'success'); }
+    } catch { /* user cancelled */ }
   };
+
+  // ── In-stream clip capture ──
+  // The whole flow (tier gate → rolling buffer or server-side cut → R2 → clip
+  // post) lives in useLiveClip, shared with the mobile/native viewer so the two
+  // can't drift. Tier gates: Free 30s/3, Lite 60s/5, Pro 90s/unlimited.
+  const { clip: handleClip, clipping } = useLiveClip({
+    videoRef: videoElRef,
+    streamDoc,
+    currentUser,
+    profile,
+    enabled: !!playbackUrl,
+    showToast,
+  });
 
   // Linked streams (for the tap-to-switch overlay tiles on top of the
   // composite). Each entry resolves to the OTHER streamer's stream id so
@@ -455,185 +548,121 @@ export default function ViewerStreamScreen() {
   // ─────────────────────────────────────────────────────────────
   if (loading) return <Centered label="Loading stream…" />;
   if (!streamDoc) return <Centered label="Stream not found." action={{ label: 'Browse live', onClick: () => navigate('/') }}/>;
+  const isHost = !!currentUser?.uid && streamDoc.hostUid === currentUser.uid;
+  const isAdmin = profile?.role === 'admin' || currentUser?.email === 'vergenerd@gmail.com';
+
   if (streamDoc.status === 'ended') {
-    return <Centered label="This stream has ended." action={{ label: 'Browse live', onClick: () => navigate('/') }}/>;
+    // Replay parity with the mobile viewer: offer the archived VOD when it
+    // exists AND the viewer would have been allowed to watch it live. This
+    // branch returns before the audience/ticket gates below, so without this
+    // check a ticketed event's replay would be free for anyone with the link.
+    const replayAllowed = isHost || isAdmin
+      || (!streamDoc.unlisted && streamDoc.audience !== 'ticketed')
+      || (streamDoc.unlisted && followed)
+      || (streamDoc.audience === 'ticketed'
+        && (ticketStatus?.hasTicket || ticketStatus?.isCompetitor));
+    // A restricted stream's replay url lives in gatedVodUrl, never in
+    // archiveVodUrl — older app builds render archiveVodUrl with no gate at all,
+    // so the server keeps it out of their reach. Only read it once allowed.
+    const replayUrl = replayAllowed
+      ? (streamDoc.archiveVodUrl || streamDoc.gatedVodUrl || streamDoc.vodUrl || null)
+      : null;
+    if (replayOpen && replayUrl) {
+      return (
+        <div style={{ position: 'fixed', inset: 0, background: '#000', zIndex: 95, display: 'flex', flexDirection: 'column' }}>
+          <InlineVideoPlayer src={replayUrl} maxHeightClass="h-full" rounded={false} objectFit="contain" className="flex-1 min-h-0" style={{ width: '100%' }} />
+          <button onClick={() => setReplayOpen(false)} style={{ position: 'absolute', top: 12, left: 12, ...pillBtn }}>
+            <Icon name="arrow_back" size={14} className=""/> Back
+          </button>
+        </div>
+      );
+    }
+    return (
+      <div style={{ minHeight: '100vh', background: `radial-gradient(circle at 50% 0%, #1a1030 0%, ${C.bg} 60%)`, color: C.text, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, fontFamily: '"Inter", system-ui, sans-serif' }}>
+        <div style={{ width: 'min(420px, 100%)', background: C.card, border: `1px solid ${C.border}`, borderRadius: 18, padding: 24, textAlign: 'center' }}>
+          <UserAvatar src={hostInfo?.avatar} size="lg" />
+          <div style={{ fontSize: 17, fontWeight: 800, marginTop: 12 }}>{hostInfo?.displayName || hostInfo?.username || 'The stream'} has ended</div>
+          <div style={{ fontSize: 12, color: C.textDim, marginTop: 4, marginBottom: 18 }}>
+            {replayUrl ? 'Catch the replay or follow for the next one.'
+              : streamDoc.vodPending ? 'The replay is still processing — check back in a few minutes.'
+                : streamDoc.vodExpired ? 'The replay for this stream is no longer available.'
+                  : 'Follow to get notified when they go live again.'}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {replayUrl && (
+              <button onClick={() => setReplayOpen(true)} style={{ padding: 14, borderRadius: 12, border: 'none', background: `linear-gradient(135deg, ${C.purple}, ${C.purpleLight})`, color: '#fff', fontSize: 14, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                <Icon name="play_circle" size={16} className=""/> Watch replay
+              </button>
+            )}
+            {currentUser && currentUser.uid !== streamDoc.hostUid && (
+              <button onClick={toggleFollow} disabled={followBusy} style={{ padding: 14, borderRadius: 12, background: followed ? 'transparent' : `linear-gradient(135deg, ${C.purple}, ${C.purpleLight})`, border: followed ? `1px solid ${C.border}` : 'none', color: followed ? C.textDim : '#fff', fontSize: 14, fontWeight: 800, cursor: 'pointer' }}>
+                {followed ? 'Following' : 'Follow'}
+              </button>
+            )}
+            <button onClick={() => navigate('/')} style={{ padding: 14, borderRadius: 12, border: `1px solid ${C.border}`, background: 'transparent', color: C.text, fontSize: 14, fontWeight: 800, cursor: 'pointer' }}>Browse live</button>
+          </div>
+        </div>
+      </div>
+    );
   }
   if (streamDoc.status === 'created') {
     return <Centered label="Stream hasn't started yet." action={{ label: 'Refresh', onClick: () => window.location.reload() }}/>;
   }
 
-  const isTouchPhone = typeof window !== 'undefined' &&
-    window.matchMedia?.('(hover: none) and (pointer: coarse)').matches;
-  const mobile = !isDesktop || isTouchPhone;
-  // Multi-Guest mode: server-side composite is delivered as a single video.
-  // We just overlay tap-to-switch zones for each linked streamer.
-  const isMultiGuest = linkedStreamDocs.length > 0;
-
-  // ─────────────────────────────────────────────────────────────
-  // Mobile portrait: WYSIWYG with source orientation.
-  // ─────────────────────────────────────────────────────────────
-  if (mobile && !fullscreen) {
-    // Portrait source → fill screen. Landscape → letterbox + blurred backdrop.
-    const sourceIsPortrait = sourceAspect < 1;
+  // Audience gate: followers/friends-only (unlisted) streams only play for the
+  // host, admins, and followers — same rule the mobile viewer enforces.
+  // (isHost/isAdmin are hoisted above the ended branch — the replay needs them.)
+  const audienceGated = !!streamDoc.unlisted && !isHost && !isAdmin && (followChecked ? !followed : !currentUser);
+  if (audienceGated) {
     return (
-      <div style={{
-        position: 'fixed', inset: 0, background: '#000', overflow: 'hidden',
-        color: C.text, fontFamily: '"Inter", system-ui, sans-serif',
-      }}>
-        {!isMultiGuest && !sourceIsPortrait && playbackUrl && (
-          // Solo landscape on portrait phone → blurred backdrop fills dead space.
-          <div style={{
-            position: 'absolute', inset: 0, overflow: 'hidden',
-            filter: 'blur(34px) brightness(0.55)', transform: 'scale(1.2)',
-          }}>
-            <HlsPlayer src={playbackUrl} controls={false} muted autoPlay className="w-full h-full"/>
+      <div style={{ minHeight: '100vh', background: `radial-gradient(circle at 50% 0%, #1a1030 0%, ${C.bg} 60%)`, color: C.text, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, fontFamily: '"Inter", system-ui, sans-serif' }}>
+        <div style={{ width: 'min(420px, 100%)', background: C.card, border: `1px solid ${C.border}`, borderRadius: 18, padding: 24, textAlign: 'center' }}>
+          <UserAvatar src={hostInfo?.avatar} size="lg" />
+          <div style={{ fontSize: 17, fontWeight: 800, marginTop: 12 }}>This stream is for followers</div>
+          <div style={{ fontSize: 12, color: C.textDim, marginTop: 4, marginBottom: 18 }}>
+            {hostInfo?.displayName || hostInfo?.username || 'The host'} made this stream {streamDoc.audience === 'friends' ? 'friends-only' : 'followers-only'}. Follow to watch.
           </div>
-        )}
-        <div onClick={onViewportTap} style={{
-          position: 'absolute', inset: 0,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}>
-          {playbackUrl ? (
-            <HlsPlayerWithMeta
-              src={playbackUrl}
-              controls={false}
-              muted={muted}
-              autoPlay
-              onMeta={onVideoMeta}
-              style={{
-                width: '100%', height: sourceIsPortrait ? '100%' : 'auto',
-                maxHeight: '100%', objectFit: 'contain',
-              }}
-              videoElRef={videoElRef}
-            />
-          ) : (
-            <div style={{ color: C.textDim, fontSize: 12 }}>Waiting for stream…</div>
-          )}
-          <HeartBurst trigger={heartBurst.tick} originX={heartBurst.x} originY={heartBurst.y} />
-          {streamDoc?.hostUid && (
-            <TournamentOverlay hostUid={streamDoc.hostUid} position="top-left" />
-          )}
-          {isMultiGuest && (
-            <MultiGuestOverlay
-              partners={linkedStreamDocs}
-              currentStreamId={streamDoc.id}
-              compositeOwner={streamDoc.compositeOwner}
-              onSwitch={(targetId) => navigate(`/watch/${targetId}`)}
-              onInspect={(partner) => setQuickSheet({ uid: partner.hostUid, streamId: partner.id })}
-            />
-          )}
-        </div>
-
-        {/* Top overlay (HUD — fades out on tap) */}
-        <div style={{
-          position: 'absolute', top: 0, left: 0, right: 0,
-          padding: '10px 12px',
-          background: 'linear-gradient(180deg, rgba(0,0,0,0.7), transparent)',
-          display: 'flex', alignItems: 'center', gap: 8,
-          opacity: hudVisible ? 1 : 0,
-          pointerEvents: hudVisible ? 'auto' : 'none',
-          transition: 'opacity 0.22s ease-out',
-        }}>
-          <button onClick={() => navigate(-1)} style={iconBtn}>
-            <Icon name="arrow_back" size={18} className=""/>
-          </button>
-          <UserAvatar src={hostInfo?.avatar} size="sm"/>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 12, fontWeight: 800, whiteSpace: 'nowrap',
-              overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {hostInfo?.displayName || hostInfo?.username || 'Live'}
-            </div>
-            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.8)' }}>
-              <span style={{ color: C.red, fontWeight: 800 }}>● LIVE</span>
-              {' · '}
-              <RollingNumber value={streamDoc.viewerCount || 0} />
-              {' watching'}
-            </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {currentUser ? (
+              <button onClick={toggleFollow} disabled={followBusy} style={{ padding: 14, borderRadius: 12, border: 'none', background: `linear-gradient(135deg, ${C.purple}, ${C.purpleLight})`, color: '#fff', fontSize: 14, fontWeight: 800, cursor: 'pointer' }}>
+                {followBusy ? 'Following…' : 'Follow'}
+              </button>
+            ) : (
+              <button onClick={() => navigate('/login')} style={{ padding: 14, borderRadius: 12, border: 'none', background: `linear-gradient(135deg, ${C.purple}, ${C.purpleLight})`, color: '#fff', fontSize: 14, fontWeight: 800, cursor: 'pointer' }}>Sign in to follow</button>
+            )}
+            <button onClick={() => navigate('/')} style={{ padding: 14, borderRadius: 12, border: `1px solid ${C.border}`, background: 'transparent', color: C.text, fontSize: 14, fontWeight: 800, cursor: 'pointer' }}>Browse live</button>
           </div>
-          {streamDoc.boosted && (
-            <span style={pillSm({ background: 'rgba(245,158,11,0.85)' })}>BOOSTED</span>
-          )}
         </div>
-        {/* Now-playing card — appears just under the header when host has
-            Spotify connected AND a track is playing. */}
-        {streamDoc.nowPlaying?.title && (
-          <div style={{
-            position: 'absolute', top: 60, left: 12, zIndex: 4,
-            opacity: hudVisible ? 1 : 0,
-            pointerEvents: hudVisible ? 'auto' : 'none',
-            transition: 'opacity 0.22s ease-out',
-          }}>
-            <NowPlayingCard nowPlaying={streamDoc.nowPlaying} compact />
-          </div>
-        )}
-
-        {/* Multi-Guest tiles are rendered inline in the grid above; no
-            separate overlay needed. Each tile is itself tappable to switch. */}
-
-        {/* Right action rail (HUD — fades out on tap) */}
-        <div style={{
-          position: 'absolute', right: 8, bottom: 110,
-          display: 'flex', flexDirection: 'column', gap: 14, alignItems: 'center',
-          opacity: hudVisible ? 1 : 0,
-          pointerEvents: hudVisible ? 'auto' : 'none',
-          transition: 'opacity 0.22s ease-out',
-        }}>
-          <ActionPill icon={muted ? 'volume_off' : 'volume_up'} onClick={() => setMuted((v) => !v)}/>
-          <ActionPill icon="paid" label="Tip" onClick={() => setShowTip(true)}/>
-          <ActionPill icon={followed ? 'check' : 'person_add'} label={followed ? 'Following' : 'Follow'} onClick={toggleFollow} disabled={followBusy}/>
-          <ActionPill icon="chat" onClick={() => showToast('Chat opens with Phase 7 relay', 'info')}/>
-          <ActionPill icon="content_cut" label={clipping ? 'Saving…' : 'Clip'} onClick={handleClip} disabled={clipping}/>
-          <ActionPill icon="share" onClick={() => {
-            navigator.share?.({ url: window.location.href, title: 'Watch live on VERGR' })
-              .catch(() => navigator.clipboard?.writeText(window.location.href).then(() =>
-                showToast('Link copied', 'success')));
-          }}/>
-          <ActionPill icon="fullscreen" onClick={() => setFullscreen(true)}/>
-        </div>
-
-        {/* Bottom title strip (HUD — fades out on tap) */}
-        <div style={{
-          position: 'absolute', left: 0, right: 0, bottom: 0,
-          padding: '12px 64px 18px 12px',
-          background: 'linear-gradient(0deg, rgba(0,0,0,0.8), transparent)',
-          fontSize: 13, fontWeight: 700, lineHeight: 1.4,
-          opacity: hudVisible ? 1 : 0,
-          pointerEvents: hudVisible ? 'auto' : 'none',
-          transition: 'opacity 0.22s ease-out',
-        }}>
-          {streamDoc.title}
-          {streamDoc.game && (
-            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', marginTop: 2 }}>
-              {streamDoc.game}
-            </div>
-          )}
-        </div>
-
-        {showTip && (
-          <TipModal
-            amount={tipAmount}
-            setAmount={setTipAmount}
-            message={tipMessage}
-            setMessage={setTipMessage}
-            onClose={() => setShowTip(false)}
-            onSend={sendTip}
-            sending={tipping}
-            host={hostInfo}
-            tipCatalog={hostInfo?.tipCatalog}
-          />
-        )}
-        <ReactionsFloor events={reactions} onTapEmoji={onReactionTap} position="right" />
-        <JoinAnnouncer events={joinEvents} side="right" />
-        <UserQuickSheet
-          open={!!quickSheet}
-          uid={quickSheet?.uid}
-          watchLiveStreamId={quickSheet?.streamId}
-          onClose={() => setQuickSheet(null)}
-        />
-        <VanguardPresence parentPath={`streams/${streamDoc.id}`} />
       </div>
     );
   }
+
+  // Ticketed watch-gate: only host/admin/competitor/ticket-holder may watch.
+  const ticketGated = streamDoc.audience === 'ticketed' && streamDoc.tournamentId
+    && !isHost && !isAdmin
+    && ticketStatus && !ticketStatus.hasTicket && !ticketStatus.isCompetitor;
+  if (ticketGated) {
+    return (
+      <div style={{ minHeight: '100vh', background: `radial-gradient(circle at 50% 0%, #1a1030 0%, ${C.bg} 60%)`, color: C.text, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, fontFamily: '"Inter", system-ui, sans-serif' }}>
+        <div style={{ width: 'min(420px, 100%)' }}>
+          <div style={{ textAlign: 'center', marginBottom: 16 }}>
+            <div style={{ fontSize: 18, fontWeight: 900 }}>This event is ticketed</div>
+            <div style={{ fontSize: 12, color: C.textDim, marginTop: 6 }}>Buy a ticket to watch live and support the host.</div>
+          </div>
+          <EventTicketCard
+            tournament={{ id: streamDoc.tournamentId, fundingModel: 'ticketed', ticket: {} }}
+            source="gateway"
+            onPurchased={() => setTicketStatus((s) => ({ ...(s || {}), hasTicket: true }))}
+          />
+          <button onClick={() => navigate('/')} style={{ width: '100%', marginTop: 12, padding: 12, borderRadius: 12, border: `1px solid ${C.border}`, background: 'transparent', color: C.text, fontSize: 13, fontWeight: 800, cursor: 'pointer' }}>Browse live</button>
+        </div>
+      </div>
+    );
+  }
+
+  // Multi-Guest mode: server-side composite is delivered as a single video.
+  // We just overlay tap-to-switch zones for each linked streamer.
+  const isMultiGuest = linkedStreamDocs.length > 0;
 
   // ─────────────────────────────────────────────────────────────
   // Fullscreen mode (mobile rotate-to-landscape OR desktop).
@@ -691,7 +720,9 @@ export default function ViewerStreamScreen() {
     }}>
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'minmax(0, 1fr) 340px',
+        // Narrow (mouse-driven) windows stack the chat under the video instead
+        // of squeezing both into a cramped two-column grid.
+        gridTemplateColumns: isDesktop ? 'minmax(0, 1fr) 340px' : 'minmax(0, 1fr)',
         minHeight: 'calc(100vh - 0px)',
       }}>
         {/* MAIN */}
@@ -712,15 +743,17 @@ export default function ViewerStreamScreen() {
                 borderRadius: 4, fontFamily: 'DM Mono, monospace', fontSize: 10 }}>ESC</kbd> to exit
             </span>
           </div>
-          <div style={{
+          <div onDoubleClick={onFrameDoubleClick} onMouseMove={bumpBar} onMouseLeave={() => setBarVisible(false)} style={{
             position: 'relative', background: '#000',
             border: `1px solid ${C.border}`, borderRadius: 12, overflow: 'hidden',
             aspectRatio: '16/9',
           }}>
-            {playbackUrl ? (
+            {isTwitchMirror ? (
+              <TwitchMirrorPlayer username={streamDoc.twitchChannel} autoplay fill />
+            ) : playbackUrl ? (
               <HlsPlayerWithMeta
                 src={playbackUrl}
-                controls
+                controls={false}
                 muted={muted}
                 autoPlay
                 onMeta={onVideoMeta}
@@ -733,11 +766,39 @@ export default function ViewerStreamScreen() {
                 Waiting for stream…
               </div>
             )}
+            {stalled && streamDoc.status === 'live' && <ReconnectingOverlay />}
+            <StreamLoadingCover
+              thumb={streamDoc.thumbnailUrl || streamDoc.coverUrl || null}
+              visible={hasVideo && !isTwitchMirror && !videoStarted && streamDoc.status === 'live'}
+            />
+            <HeartBurst trigger={heartBurst.tick} originX={heartBurst.x} originY={heartBurst.y} />
+            {isMultiGuest && (
+              <MultiGuestOverlay
+                partners={linkedStreamDocs}
+                currentStreamId={streamDoc.id}
+                compositeOwner={streamDoc.compositeOwner}
+                onSwitch={(targetId) => navigate(`/watch/${targetId}`)}
+                onInspect={(partner) => setQuickSheet({ uid: partner.hostUid, streamId: partner.id })}
+              />
+            )}
+            {streamDoc?.hostUid && (
+              <TournamentOverlay hostUid={streamDoc.hostUid} offset={{ top: 52, right: 12 }} />
+            )}
+            {streamDoc.goal?.active && (
+              <div style={{ position: 'absolute', left: 12, right: 12, bottom: 56 }}>
+                <StreamGoalBar goal={streamDoc.goal} compact />
+              </div>
+            )}
+            <TipAlertOverlay lastTip={streamDoc.lastTip} anchor="top" />
+            <SubAlertOverlay lastSub={streamDoc.lastSub} anchor="top" />
+            <ReactionsFloor events={reactions} onTapEmoji={onReactionTap} position="right" />
             <div style={{
               position: 'absolute', top: 12, left: 12,
               display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap',
+              opacity: barVisible ? 1 : 0, transition: 'opacity 0.22s ease',
             }}>
               <span style={pillSm({ background: C.red })}>● LIVE</span>
+              <span style={pillSm({ background: 'rgba(0,0,0,0.6)' })}>{qualityLabel}</span>
               {streamDoc.boosted && <span style={pillSm({ background: C.amber, color: '#000' })}>BOOSTED</span>}
               {streamDoc.nowPlaying?.title && (
                 <NowPlayingCard nowPlaying={streamDoc.nowPlaying} compact />
@@ -748,23 +809,17 @@ export default function ViewerStreamScreen() {
               display: 'flex', alignItems: 'center', gap: 6,
               padding: '3px 10px', background: 'rgba(0,0,0,0.55)', borderRadius: 99,
               fontSize: 11, fontWeight: 700, color: '#fff',
+              opacity: barVisible ? 1 : 0, transition: 'opacity 0.22s ease',
             }}>
               <Icon name="visibility" size={12} className=""/>
               <RollingNumber value={streamDoc.viewerCount || 0} />
             </div>
-            <div style={{
-              position: 'absolute', bottom: 12, right: 12, display: 'flex', gap: 6,
-            }}>
-              <PiPController videoElRef={videoElRef} title={streamDoc.title}/>
-              <button onClick={() => setFullscreen(true)} style={{
-                padding: '5px 10px', borderRadius: 6, border: 'none',
-                background: 'rgba(0,0,0,0.55)', color: '#fff', fontSize: 11, fontWeight: 700,
-                cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4,
-              }}>
-                <Icon name="fullscreen" size={12} className=""/>
-                Fullscreen
-              </button>
-            </div>
+            {!isTwitchMirror && (
+              <VideoControlBar
+                videoElRef={videoElRef} visible={barVisible} muted={muted} setMuted={setMuted}
+                onFullscreen={() => setFullscreen(true)} title={streamDoc.title}
+              />
+            )}
           </div>
 
           {/* Compact "also linked" rail under the grid for desktop —
@@ -803,48 +858,104 @@ export default function ViewerStreamScreen() {
             </div>
           )}
 
-          {/* Host bar */}
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 12,
-            padding: 14, background: C.card, border: `1px solid ${C.border}`, borderRadius: 12,
-          }}>
-            <UserAvatar src={hostInfo?.avatar} size="md"/>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 15, fontWeight: 800 }}>
-                {hostInfo?.displayName || hostInfo?.username || 'Host'}
-              </div>
-              <div style={{ fontSize: 12, color: C.textDim, whiteSpace: 'nowrap',
-                overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {streamDoc.title}{streamDoc.game ? ` · ${streamDoc.game}` : ''}
+          {/* Channel section (Twitch-style): host + title + game/tags + actions */}
+          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
+              <button onClick={() => navigate(`/u/${hostInfo?.username || streamDoc.hostUid}`)}
+                style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left', minWidth: 0 }}>
+                <div style={{ flexShrink: 0, padding: 2, borderRadius: '50%', background: `linear-gradient(135deg, ${C.purple}, ${C.purpleLight})` }}>
+                  <UserAvatar src={hostInfo?.avatar} size="md"/>
+                </div>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <span style={{ fontSize: 17, fontWeight: 800 }}>{hostInfo?.displayName || hostInfo?.username || 'Host'}</span>
+                    {hostInfo?.isVerified && <Icon name="verified" size={15} filled style={{ color: C.purpleLight }} className=""/>}
+                  </div>
+                  <div style={{ fontSize: 12, color: C.textDim }}>Open profile</div>
+                </div>
+              </button>
+              <div style={{ flex: 1, minWidth: 12 }} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <button onClick={toggleFollow} disabled={followBusy || currentUser?.uid === streamDoc.hostUid}
+                  style={pillAction(followed ? 'transparent' : `linear-gradient(135deg, ${C.purple}, ${C.purpleLight})`, followed ? C.textDim : '#fff', followed ? C.border : 'transparent', followBusy)}>
+                  <Icon name={followed ? 'favorite' : 'favorite_border'} size={15} filled={followed} className=""/> {followed ? 'Following' : 'Follow'}
+                </button>
+                {membershipTiers.length > 0 && currentUser?.uid !== streamDoc.hostUid && (
+                  <button onClick={() => setShowSubscribe(true)}
+                    style={pillAction('rgba(245,200,66,0.14)', C.amber, C.amber)}>
+                    <Icon name="star" size={15} filled className=""/> Subscribe
+                  </button>
+                )}
+                <button onClick={() => setShowTip(true)} disabled={currentUser?.uid === streamDoc.hostUid}
+                  style={pillAction('transparent', C.amber, C.amber)}>
+                  <Icon name="paid" size={15} className=""/> Tip
+                </button>
+                <button onClick={handleClip} disabled={clipping} style={pillAction('transparent', C.text, C.border, clipping)}>
+                  <Icon name="content_cut" size={15} className=""/> {clipping ? 'Saving…' : 'Clip'}
+                </button>
+                <button onClick={shareStream} style={pillAction('transparent', C.text, C.border)}>
+                  <Icon name="share" size={15} className=""/> Share
+                </button>
+                {currentUser && currentUser.uid !== streamDoc.hostUid && (
+                  <button onClick={() => setShowReport(true)} title="Report stream"
+                    style={pillAction('transparent', C.textDim, C.border)}>
+                    <Icon name="flag" size={15} className=""/>
+                  </button>
+                )}
               </div>
             </div>
-            <button onClick={toggleFollow} disabled={followBusy || currentUser?.uid === streamDoc.hostUid}
-              style={{
-                padding: '8px 14px', borderRadius: 8,
-                background: followed ? 'transparent' : `linear-gradient(135deg, ${C.purple}, ${C.purpleLight})`,
-                border: followed ? `1px solid ${C.border}` : 'none',
-                color: followed ? C.textDim : '#fff',
-                fontSize: 12, fontWeight: 800, cursor: 'pointer',
-                opacity: followBusy ? 0.6 : 1,
-              }}>
-              {followed ? 'Following' : 'Follow'}
-            </button>
-            <button onClick={() => setShowTip(true)}
-              disabled={currentUser?.uid === streamDoc.hostUid}
-              style={{
-                padding: '8px 14px', borderRadius: 8,
-                background: 'transparent', border: `1px solid ${C.amber}`,
-                color: C.amber, fontSize: 12, fontWeight: 800, cursor: 'pointer',
-              }}>
-              <Icon name="paid" size={14} className=""/> Tip
-            </button>
+            <div style={{ fontSize: 15, fontWeight: 700, lineHeight: 1.4 }}>{streamDoc.title || 'Live stream'}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              {streamDoc.game && <span style={{ fontSize: 13, color: C.purpleLight, fontWeight: 700 }}>{streamDoc.game}</span>}
+              {(streamDoc.tags || []).slice(0, 4).map((t) => (
+                <span key={t} style={{ padding: '3px 9px', borderRadius: 999, background: C.cardSoft, color: C.textDim, fontSize: 12, fontWeight: 600 }}>{t}</span>
+              ))}
+              <div style={{ flex: 1 }} />
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 13, color: C.red, fontWeight: 700 }}>
+                <Icon name="person" size={15} filled className=""/> <RollingNumber value={streamDoc.viewerCount || 0} />
+              </span>
+              {uptimeStr && <span style={{ fontSize: 13, color: C.textDim, fontFamily: 'DM Mono, monospace' }}>{uptimeStr}</span>}
+            </div>
           </div>
+
+          {/* About card */}
+          {(hostInfo?.bio || hostInfo?.followerCount != null) && (
+            <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 10 }}>
+                <span style={{ fontSize: 15, fontWeight: 800 }}>About {hostInfo?.displayName || hostInfo?.username || 'the host'}</span>
+                {hostInfo?.isVerified && <Icon name="verified" size={14} filled style={{ color: C.purpleLight }} className=""/>}
+              </div>
+              <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 4 }}>{compactNum(hostInfo?.followerCount || 0)} followers</div>
+              {hostInfo?.bio && <div style={{ fontSize: 13, color: C.textDim, lineHeight: 1.5 }}>{hostInfo.bio}</div>}
+            </div>
+          )}
         </div>
 
-        {/* RIGHT chat panel */}
-        <ChatPanel streamId={streamDoc.id} layout="side" hostUid={streamDoc.hostUid} />
+        {/* RIGHT chat column: top-gifters strip + live chat (stacks under the
+            video on narrow windows). */}
+        <div style={{ minHeight: 0, height: isDesktop ? 'auto' : 520, display: 'flex', flexDirection: 'column', borderTop: isDesktop ? 'none' : `1px solid ${C.border}`, borderLeft: isDesktop ? `1px solid ${C.border}` : 'none', background: C.cardSoft }}>
+          {topGifters.length > 0 && (
+            <div style={{ display: 'flex', gap: 8, padding: '8px 12px', borderBottom: `1px solid ${C.border}`, overflowX: 'auto', flexShrink: 0 }}>
+              {topGifters.slice(0, 3).map((g, i) => (
+                <span key={g.uid} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 8px', borderRadius: 999, background: C.card, fontSize: 11.5, fontWeight: 700, whiteSpace: 'nowrap' }}>
+                  <Icon name={i === 0 ? 'emoji_events' : 'paid'} size={13} filled={i === 0} style={{ color: C.amber }} className=""/>
+                  <span style={{ maxWidth: 72, overflow: 'hidden', textOverflow: 'ellipsis' }}>{g.displayName}</span>
+                  <span style={{ color: C.amber }}>{compactNum(g.coins)}</span>
+                </span>
+              ))}
+            </div>
+          )}
+          <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+            <ChatPanel
+              streamId={streamDoc.id} layout="side" hostUid={streamDoc.hostUid}
+              slowModeSec={streamDoc.slowModeSec || 0} followersOnly={!!streamDoc.followersOnly}
+              pinnedMessage={streamDoc.pinnedMessage || null}
+            />
+          </div>
+        </div>
       </div>
 
+      {streamDoc.promotedEventId && <InStreamTicketWidget tournamentId={streamDoc.promotedEventId} />}
       <VanguardPresence parentPath={`streams/${streamDoc.id}`} />
       <JoinAnnouncer events={joinEvents} side="right" />
       <UserQuickSheet
@@ -866,6 +977,25 @@ export default function ViewerStreamScreen() {
           host={hostInfo}
           tipCatalog={hostInfo?.tipCatalog}
         />
+      )}
+      <ReportSheet open={showReport} title="Report Stream" onClose={() => setShowReport(false)}
+        onSubmit={(reason) => {
+          setShowReport(false);
+          reportStream(currentUser.uid, streamId, reason)
+            .then(() => showToast('Report submitted — our moderators will review it', 'success'))
+            .catch(() => showToast('Could not submit report', 'error'));
+        }} />
+      {showSubscribe && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 220, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+          onClick={() => setShowSubscribe(false)}>
+          <div onClick={(e) => e.stopPropagation()}>
+            <SubscribeSheet
+              creatorId={streamDoc.hostUid}
+              creatorName={hostInfo?.displayName || hostInfo?.username || 'this creator'}
+              onClose={() => setShowSubscribe(false)}
+            />
+          </div>
+        </div>
       )}
     </div>
   );
@@ -1079,6 +1209,112 @@ function pillSm(extra = {}) {
     letterSpacing: '0.06em', color: '#fff', ...extra,
   };
 }
+
+function pillAction(bg, color, borderColor, disabled = false) {
+  return {
+    display: 'inline-flex', alignItems: 'center', gap: 6,
+    padding: '8px 14px', borderRadius: 8,
+    background: bg, color,
+    border: borderColor && borderColor !== 'transparent' ? `1px solid ${borderColor}` : 'none',
+    fontSize: 12, fontWeight: 800, cursor: disabled ? 'default' : 'pointer',
+    opacity: disabled ? 0.6 : 1, whiteSpace: 'nowrap',
+  };
+}
+
+function compactNum(n) {
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1).replace(/\.0$/, '') + 'M';
+  if (n >= 1_000) return (n / 1_000).toFixed(1).replace(/\.0$/, '') + 'K';
+  return String(n || 0);
+}
+
+function fmtUptime(ms) {
+  const s = Math.floor(ms / 1000);
+  const hh = Math.floor(s / 3600);
+  const mm = Math.floor((s % 3600) / 60);
+  const ss = s % 60;
+  return `${hh ? hh + ':' : ''}${String(mm).padStart(hh ? 2 : 1, '0')}:${String(ss).padStart(2, '0')}`;
+}
+
+// Custom video control bar (replaces the browser's native <video controls> — the
+// Twitch-style bottom bar: play/pause, volume, live latency, PiP, fullscreen).
+function VideoControlBar({ videoElRef, visible, muted, setMuted, onFullscreen, title }) {
+  const [playing, setPlaying] = useState(true);
+  const [volume, setVolume] = useState(1);
+  useEffect(() => {
+    const v = videoElRef?.current;
+    if (!v) return;
+    const onPlay = () => setPlaying(true);
+    const onPause = () => setPlaying(false);
+    const onVol = () => { setVolume(v.muted ? 0 : v.volume); };
+    v.addEventListener('play', onPlay);
+    v.addEventListener('pause', onPause);
+    v.addEventListener('volumechange', onVol);
+    setPlaying(!v.paused);
+    setVolume(v.muted ? 0 : v.volume);
+    return () => {
+      v.removeEventListener('play', onPlay);
+      v.removeEventListener('pause', onPause);
+      v.removeEventListener('volumechange', onVol);
+    };
+  }, [videoElRef]);
+
+  const togglePlay = () => {
+    const v = videoElRef?.current;
+    if (!v) return;
+    if (v.paused) v.play?.().catch(() => {}); else v.pause?.();
+  };
+  const toggleMute = () => {
+    const v = videoElRef?.current;
+    if (!v) return;
+    const next = !v.muted;
+    v.muted = next;
+    setMuted?.(next);
+  };
+  const onVolume = (e) => {
+    const v = videoElRef?.current;
+    const val = parseFloat(e.target.value);
+    if (v) { v.volume = val; v.muted = val === 0; setMuted?.(val === 0); }
+    setVolume(val);
+  };
+  const enterPip = async () => {
+    const v = videoElRef?.current;
+    if (!v) return;
+    try {
+      if (document.pictureInPictureElement) await document.exitPictureInPicture();
+      else await v.requestPictureInPicture?.();
+    } catch { /* PiP may be blocked */ }
+  };
+
+  return (
+    <div style={{
+      position: 'absolute', left: 0, right: 0, bottom: 0,
+      padding: '22px 14px 10px', display: 'flex', alignItems: 'center', gap: 14,
+      background: 'linear-gradient(0deg, rgba(0,0,0,0.78), transparent)',
+      opacity: visible ? 1 : 0, pointerEvents: visible ? 'auto' : 'none',
+      transition: 'opacity 0.22s ease',
+    }}>
+      <button onClick={togglePlay} aria-label={playing ? 'Pause' : 'Play'} style={ctrlBtn}>
+        <Icon name={playing ? 'pause' : 'play_arrow'} size={22} filled className=""/>
+      </button>
+      <button onClick={toggleMute} aria-label="Mute" style={ctrlBtn}>
+        <Icon name={volume === 0 ? 'volume_off' : volume < 0.5 ? 'volume_down' : 'volume_up'} size={20} className=""/>
+      </button>
+      <input type="range" min={0} max={1} step={0.05} value={volume} onChange={onVolume} aria-label="Volume"
+        style={{ width: 84, accentColor: '#b44fff', cursor: 'pointer' }} />
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 800, color: '#fff' }}>
+        <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#ef4444', boxShadow: '0 0 6px #ef4444' }} /> LIVE
+      </span>
+      <div style={{ flex: 1 }} />
+      <button onClick={enterPip} aria-label="Picture in picture" style={ctrlBtn}>
+        <Icon name="picture_in_picture_alt" size={19} className=""/>
+      </button>
+      <button onClick={onFullscreen} aria-label="Fullscreen" style={ctrlBtn}>
+        <Icon name="fullscreen" size={22} className=""/>
+      </button>
+    </div>
+  );
+}
+const ctrlBtn = { background: 'transparent', border: 'none', color: '#fff', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' };
 
 function TipModal({ amount, setAmount, message, setMessage, onClose, onSend, sending, host, tipCatalog }) {
   const PRESETS = [10, 50, 100, 500, 1000];

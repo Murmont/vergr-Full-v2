@@ -69,6 +69,11 @@ exports.selfAttestMatchVerification = functions.https.onCall({ region: REGION },
     [`verifyState.${uid}.at`]: FieldValue.serverTimestamp(),
   });
   await notifyOtherSide(tournamentId, matchId, uid, m, 'attested');
+  // Self-attest counts as "engaged" — if the other side is also engaged
+  // (verified or self_attested), the match goes live. Without this, two
+  // honest players with no OCR stream and no assigned mod could never
+  // reach the play/report phase (the pre-fix deadlock).
+  await pingBothIfReady(tournamentId, matchId);
   return { ok: true };
 });
 
@@ -224,12 +229,26 @@ async function pingBothIfReady(tournamentId, matchId) {
   const mRef = db.collection('tournaments').doc(tournamentId).collection('matches').doc(matchId);
   const m = (await mRef.get()).data();
   if (!m) return;
-  const s = m.verifyState || {};
-  const okP1 = s[m.player1]?.status === 'verified';
-  const okP2 = s[m.player2]?.status === 'verified';
-  if (!okP1 || !okP2) return;
+  // "Engaged" = verified (OCR/mod, high trust) OR self_attested (low trust,
+  // but the result-report path enforces its own gates). Requiring strictly
+  // 'verified' here deadlocked the default case: no OCR stream + no assigned
+  // mod meant bothVerifiedAt never flipped and the play/report UI never showed.
+  const engaged = (uid) => {
+    const st = (m.verifyState || {})[uid]?.status;
+    return st === 'verified' || st === 'self_attested';
+  };
+  if (!engaged(m.player1) || !engaged(m.player2)) return;
   if (m.bothVerifiedAt) return; // idempotent
-  await mRef.update({ bothVerifiedAt: FieldValue.serverTimestamp() });
+  // Flip the match live. `in_progress` is what the live-score OCR loop, the
+  // live cheat sampler, spectator "match started" pushes, and the mod claim
+  // surfaces all query for — leaving matches on 'pending' kept all of that
+  // automation dormant.
+  const update = { bothVerifiedAt: FieldValue.serverTimestamp() };
+  if (!m.status || m.status === 'pending') {
+    update.status = 'in_progress';
+    update.startedAt = FieldValue.serverTimestamp();
+  }
+  await mRef.update(update);
   const batch = db.batch();
   for (const uid of [m.player1, m.player2]) {
     const ref = db.collection('notifications').doc();

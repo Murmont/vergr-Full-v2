@@ -91,7 +91,7 @@ const LocationPickerModal = ({ isOpen, onClose, onConfirm, apiKey }) => {
         <div className="flex-1 relative">
           {loading && (
             <div className="absolute inset-0 flex items-center justify-center bg-surface-2">
-              <div className="w-6 h-6 border-2 border-brand-cyan border-t-transparent rounded-full animate-spin" />
+              <div className="w-6 h-6 border-2 border-brand-violet border-t-transparent rounded-full animate-spin" />
             </div>
           )}
           <div ref={mapRef} className="w-full h-96" style={{ visibility: loading ? 'hidden' : 'visible' }} />
@@ -102,7 +102,7 @@ const LocationPickerModal = ({ isOpen, onClose, onConfirm, apiKey }) => {
             <p className="text-sm text-white break-words">{address}</p>
             <div className="flex justify-end gap-2 mt-4">
               <button onClick={onClose} className="px-4 py-2 rounded-full bg-surface-2 text-text-secondary">Cancel</button>
-              <button onClick={handleConfirm} className="px-4 py-2 rounded-full bg-brand-cyan text-bg-dark">Send</button>
+              <button onClick={handleConfirm} className="px-4 py-2 rounded-full bg-brand-violet text-white">Send</button>
             </div>
           </div>
         )}

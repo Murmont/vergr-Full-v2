@@ -27,7 +27,7 @@ function lobbyCode() {
   return `VERGR-${s}`;
 }
 
-exports.joinBrawlQueue = functions.https.onCall(async (request) => {
+exports.joinBrawlQueue = functions.https.onCall({ secrets: ['VERGR_GEO_TOKEN'] }, async (request) => {
   const uid = request.auth?.uid;
   if (!uid) throw new HttpsError('unauthenticated', 'Sign in required.');
   const { game, stake = 0 } = request.data || {};

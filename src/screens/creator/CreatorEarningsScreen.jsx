@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useUser } from '../../context/UserContext';
+import { StackSkeleton } from '../../components/skeletons/GlassSkeletons';
 import { getTransactions } from '../../firebase/firestore';
 import CreatorLayout from '../../components/creator/CreatorLayout';
 import { Card, KpiCard, SectionHeader, PeriodPicker, StatRow } from '../../components/creator/Widgets';
@@ -22,7 +23,7 @@ function tsMs(t) {
 const SOURCE_DEFS = [
   { key: 'Tips',        match: ['tip', 'gift'],         color: PALETTE.cyan },
   { key: 'Memberships', match: ['member', 'sub'],       color: PALETTE.violet },
-  { key: 'Tournaments', match: ['tournament', 'prize'], color: PALETTE.gold },
+  { key: 'Tournaments', match: ['tournament', 'prize', 'ticket', 'season_pass'], color: PALETTE.gold },
   { key: 'Boosts',      match: ['boost'],               color: PALETTE.emerald },
   { key: 'Other',       match: [],                      color: PALETTE.blue },
 ];
@@ -114,8 +115,8 @@ export default function CreatorEarningsScreen() {
 
   return (
     <CreatorLayout page="earnings" title="Earnings" subtitle="Track your coin revenue and cash out" requiredTier="lite" lockDescription="See revenue breakdowns, supporter lists and payouts. Upgrade to Lite to unlock earnings analytics.">
-      <div className="flex items-center justify-between mb-5">
-        <div>
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
+        <div className="min-w-0">
           <p className="text-text-muted text-xs uppercase tracking-widest font-bold">Total earned</p>
           <p className="font-dmmono font-bold text-white text-4xl tabular-nums mt-1">
             <span className="inline-block mr-1 mb-1 align-middle"><CoinIcon size={28} /></span>
@@ -128,14 +129,12 @@ export default function CreatorEarningsScreen() {
       </div>
 
       {loading ? (
-        <div className="flex items-center justify-center py-24">
-          <div className="w-8 h-8 rounded-full border-2 border-white/10 border-t-amber-400 animate-spin" />
-        </div>
+        <StackSkeleton rows={5} height={88} />
       ) : (
         <>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 mb-6">
             <KpiCard label="Total earned" value={total} unit="c" icon="paid" iconColor="text-amber-400" spark={stackedData.map(d => SOURCE_DEFS.reduce((s, src) => s + (d[src.key] || 0), 0))} sparkColor={PALETTE.gold} />
-            <KpiCard label="Transactions" value={txCount} icon="receipt_long" iconColor="text-brand-cyan" />
+            <KpiCard label="Transactions" value={txCount} icon="receipt_long" iconColor="text-brand-violet-light" />
             <KpiCard label="Avg per tx" value={Math.round(avg)} unit="c" icon="equalizer" iconColor="text-brand-violet" />
             <KpiCard label="Largest tip" value={topTx?.amount || 0} unit="c" icon="emoji_events" iconColor="text-brand-pink" />
           </div>
@@ -219,7 +218,7 @@ export default function CreatorEarningsScreen() {
           </div>
 
           <Card className="p-4 md:p-5">
-            <SectionHeader title="Recent transactions" right={<button onClick={() => navigate('/wallet')} className="text-xs font-bold text-brand-cyan hover:underline">View all</button>} />
+            <SectionHeader title="Recent transactions" right={<button onClick={() => navigate('/wallet')} className="text-xs font-bold text-brand-violet-light hover:underline">View all</button>} />
             {inPeriod.length === 0 ? (
               <div className="py-8 text-center text-text-muted text-sm">No transactions yet in this period.</div>
             ) : (

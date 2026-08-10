@@ -2,8 +2,9 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useUI } from '../../context/UIContext';
-import { getTournament, getTournamentMatches, reportMatchResult, startTournament, distributePrizePool, getUser } from '../../firebase/firestore';
+import { getTournament, getTournamentMatches, reportMatchResultSecure, startTournamentSecure, finalizeTournamentSecure, getUser } from '../../firebase/firestore';
 import { useLayout } from '../../context/LayoutContext';
+import { StackSkeleton } from '../../components/skeletons/GlassSkeletons';
 import useResponsive from '../../hooks/useResponsive';
 import TopBar from '../../components/TopBar';
 import UserAvatar from '../../components/UserAvatar';
@@ -46,7 +47,7 @@ export default function ModeratorMatchControlScreen() {
   const handleStart = async () => {
     setActionLoading('start');
     try {
-      await startTournament(matchId, currentUser.uid);
+      await startTournamentSecure(matchId);
       showToast('Tournament started! Bracket generated.', 'success');
       await loadData();
     } catch (err) { showToast(err.message || 'Failed to start', 'error'); }
@@ -56,7 +57,9 @@ export default function ModeratorMatchControlScreen() {
   const handleReportWinner = async (matchDocId, winnerId) => {
     setActionLoading(matchDocId);
     try {
-      await reportMatchResult(matchId, matchDocId, winnerId);
+      // Host override: 'manual' source — server detects adminId === uid and
+      // advances the bracket without waiting for two-player agreement.
+      await reportMatchResultSecure({ tournamentId: matchId, matchId: matchDocId, winnerId, source: 'manual' });
       showToast('Result recorded', 'success');
       await loadData();
     } catch (err) { showToast(err.message || 'Failed to report', 'error'); }
@@ -67,18 +70,18 @@ export default function ModeratorMatchControlScreen() {
     if (!window.confirm('Distribute prize pool to winners? This cannot be undone.')) return;
     setActionLoading('distribute');
     try {
-      await distributePrizePool(matchId);
+      await finalizeTournamentSecure(matchId);
       showToast('Prizes distributed!', 'success');
       await loadData();
     } catch (err) { showToast(err.message || 'Failed to distribute', 'error'); }
     setActionLoading(null);
   };
 
-  if (loading) return <div className="min-h-screen"><TopBar showBack title="Match Control" /><div className="flex justify-center py-20"><div className="w-8 h-8 border-3 border-brand-cyan border-t-transparent rounded-full animate-spin" /></div></div>;
+  if (loading) return <div className="min-h-screen"><TopBar showBack title="Match Control" /><StackSkeleton rows={4} height={80} /></div>;
   if (!tournament) return <div className="min-h-screen"><TopBar showBack title="Match Control" /><div className="text-center py-20 text-text-muted">Tournament not found</div></div>;
   if (tournament.adminId !== currentUser?.uid) return <div className="min-h-screen"><TopBar showBack title="Match Control" /><div className="text-center py-20 text-text-muted">Admin access only</div></div>;
 
-  const pendingMatches = matches.filter(m => m.status === 'pending');
+  const pendingMatches = matches.filter(m => m.status === 'pending' || m.status === 'in_progress' || m.status === 'awaiting_confirmation');
   const completedMatches = matches.filter(m => m.status === 'completed');
   const allRoundComplete = pendingMatches.length === 0 && matches.length > 0;
 
@@ -107,7 +110,7 @@ export default function ModeratorMatchControlScreen() {
         {/* Start tournament button */}
         {tournament.status === 'open' && (
           <button onClick={handleStart} disabled={actionLoading === 'start' || (tournament.participants?.length || 0) < 2}
-            className="w-full py-4 rounded-2xl bg-brand-cyan text-bg-dark font-bold text-sm mb-4 hover:brightness-110 active:scale-[0.98] transition-all disabled:opacity-30">
+            className="w-full py-4 rounded-2xl bg-brand-violet text-white font-bold text-sm mb-4 hover:brightness-110 active:scale-[0.98] transition-all disabled:opacity-30">
             {actionLoading === 'start' ? 'Generating bracket...' : `Start Tournament (${tournament.participants?.length || 0} players)`}
           </button>
         )}
@@ -125,22 +128,22 @@ export default function ModeratorMatchControlScreen() {
                       <div className="flex items-center gap-2">
                         <button onClick={() => handleReportWinner(match.id, match.player1)}
                           disabled={!!actionLoading}
-                          className="flex-1 flex items-center gap-2 p-3 rounded-xl bg-surface-2 border border-white/[0.06] hover:border-white/[0.12] hover:bg-brand-cyan/5 transition-all group">
+                          className="flex-1 flex items-center gap-2 p-3 rounded-xl bg-surface-2 border border-white/[0.06] hover:border-white/[0.12] hover:bg-brand-violet/5 transition-all group">
                           <UserAvatar src={match.player1Data?.avatar} size={32} />
                           <span className="text-sm font-semibold truncate flex-1 text-left">{match.player1Data?.displayName || 'Player 1'}</span>
-                          <span className="text-[9px] text-text-muted group-hover:text-brand-cyan font-bold uppercase opacity-0 group-hover:opacity-100 transition-opacity">Winner</span>
+                          <span className="text-[9px] text-text-muted group-hover:text-brand-violet-light font-bold uppercase opacity-0 group-hover:opacity-100 transition-opacity">Winner</span>
                         </button>
                         <span className="text-text-muted text-xs font-bold shrink-0">VS</span>
                         <button onClick={() => handleReportWinner(match.id, match.player2)}
                           disabled={!!actionLoading || !match.player2}
-                          className="flex-1 flex items-center gap-2 p-3 rounded-xl bg-surface-2 border border-white/[0.06] hover:border-white/[0.12] hover:bg-brand-cyan/5 transition-all group">
+                          className="flex-1 flex items-center gap-2 p-3 rounded-xl bg-surface-2 border border-white/[0.06] hover:border-white/[0.12] hover:bg-brand-violet/5 transition-all group">
                           <UserAvatar src={match.player2Data?.avatar} size={32} />
                           <span className="text-sm font-semibold truncate flex-1 text-left">{match.player2Data?.displayName || 'BYE'}</span>
-                          <span className="text-[9px] text-text-muted group-hover:text-brand-cyan font-bold uppercase opacity-0 group-hover:opacity-100 transition-opacity">Winner</span>
+                          <span className="text-[9px] text-text-muted group-hover:text-brand-violet-light font-bold uppercase opacity-0 group-hover:opacity-100 transition-opacity">Winner</span>
                         </button>
                       </div>
                       {actionLoading === match.id && (
-                        <div className="flex justify-center mt-2"><div className="w-5 h-5 border-2 border-brand-cyan border-t-transparent rounded-full animate-spin" /></div>
+                        <div className="flex justify-center mt-2"><div className="w-5 h-5 border-2 border-brand-violet border-t-transparent rounded-full animate-spin" /></div>
                       )}
                     </div>
                   ))}
@@ -155,16 +158,16 @@ export default function ModeratorMatchControlScreen() {
                   {completedMatches.map(match => (
                     <div key={match.id} className="p-3 rounded-xl bg-surface-1 border border-white/[0.06] flex items-center gap-3">
                       <span className="text-text-muted text-[10px] font-dmmono w-16 shrink-0">R{match.round} M{match.matchNumber}</span>
-                      <div className={`flex items-center gap-1.5 flex-1 ${match.winner === match.player1 ? 'text-brand-cyan' : 'text-text-muted'}`}>
+                      <div className={`flex items-center gap-1.5 flex-1 ${match.winner === match.player1 ? 'text-brand-violet-light' : 'text-text-muted'}`}>
                         <UserAvatar src={match.player1Data?.avatar} size={24} />
                         <span className="text-xs font-semibold truncate">{match.player1Data?.displayName}</span>
-                        {match.winner === match.player1 && <Icon name="check" size={14} className="text-brand-cyan shrink-0" />}
+                        {match.winner === match.player1 && <Icon name="check" size={14} className="text-brand-violet-light shrink-0" />}
                       </div>
                       <span className="text-text-muted text-[10px]">vs</span>
-                      <div className={`flex items-center gap-1.5 flex-1 ${match.winner === match.player2 ? 'text-brand-cyan' : 'text-text-muted'}`}>
+                      <div className={`flex items-center gap-1.5 flex-1 ${match.winner === match.player2 ? 'text-brand-violet-light' : 'text-text-muted'}`}>
                         <UserAvatar src={match.player2Data?.avatar} size={24} />
                         <span className="text-xs font-semibold truncate">{match.player2Data?.displayName || 'BYE'}</span>
-                        {match.winner === match.player2 && <Icon name="check" size={14} className="text-brand-cyan shrink-0" />}
+                        {match.winner === match.player2 && <Icon name="check" size={14} className="text-brand-violet-light shrink-0" />}
                       </div>
                     </div>
                   ))}
@@ -181,9 +184,9 @@ export default function ModeratorMatchControlScreen() {
             )}
 
             {tournament.prizeDistributed && (
-              <div className="p-4 rounded-2xl bg-brand-cyan/10 border border-brand-cyan/20 text-center">
-                <Icon name="check_circle" size={24} className="text-brand-cyan mx-auto mb-2" />
-                <p className="text-brand-cyan font-bold text-sm">Prizes distributed</p>
+              <div className="p-4 rounded-2xl bg-brand-violet/10 border border-brand-violet/20 text-center">
+                <Icon name="check_circle" size={24} className="text-brand-violet-light mx-auto mb-2" />
+                <p className="text-brand-violet-light font-bold text-sm">Prizes distributed</p>
               </div>
             )}
           </>

@@ -11,7 +11,7 @@ export function SectionCard({ title, action, actionIcon = 'arrow_forward', onAct
           {action && (
             <button
               onClick={onAction}
-              className="flex items-center gap-1 text-[11px] font-dmmono uppercase tracking-[0.1em] text-brand-cyan hover:text-brand-cyan/80"
+              className="flex items-center gap-1 text-[11px] font-dmmono uppercase tracking-[0.1em] text-brand-violet-light hover:text-brand-violet-light/80"
             >
               {action}
               <Icon name={actionIcon} size={14} />
@@ -25,7 +25,7 @@ export function SectionCard({ title, action, actionIcon = 'arrow_forward', onAct
 }
 
 // Small stat tile (Active / Won / Earned style).
-export function StatTile({ icon, iconColor = 'text-brand-cyan', label, value, sub }) {
+export function StatTile({ icon, iconColor = 'text-brand-violet-light', label, value, sub }) {
   return (
     <div className="rounded-xl bg-white/[0.03] border border-white/[0.05] p-3">
       <div className="flex items-center justify-between mb-1.5">

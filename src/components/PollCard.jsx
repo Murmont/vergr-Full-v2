@@ -48,7 +48,7 @@ export default function PollCard({ post }) {
           >
             {hasVoted && (
               <motion.div 
-                className="absolute left-0 top-0 bottom-0 bg-brand-cyan/15"
+                className="absolute left-0 top-0 bottom-0 bg-brand-violet/15"
                 initial={{ width: 0 }}
                 animate={{ width: `${percentage}%` }}
                 transition={{ type: 'spring', stiffness: 120, damping: 20, mass: 1 }}
@@ -61,7 +61,7 @@ export default function PollCard({ post }) {
                   initial={{ opacity: 0, x: 10 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: 0.2 }}
-                  className="text-brand-cyan font-bold text-sm font-dmmono">{percentage}%</motion.span>
+                  className="text-brand-violet-light font-bold text-sm font-dmmono">{percentage}%</motion.span>
               )}
             </div>
           </motion.button>

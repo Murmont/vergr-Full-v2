@@ -1,19 +1,29 @@
 import { useNavigate } from 'react-router-dom';
 import Icon from './Icon';
 import { CoinIcon } from './CoinIcon';
+import { IS_NATIVE_BUILD } from '../utils/platform';
 
-export default function TopBar({ 
-  title, 
-  showBack = false, 
-  actions, 
-  transparent = false, 
-  showWallet = false, 
-  balance = 0 
+export default function TopBar({
+  title,
+  showBack = false,
+  actions,
+  transparent = false,
+  showWallet = false,
+  balance = 0
 }) {
   const navigate = useNavigate();
 
+  // Native top-bar rule (founder): breathing room above so the title doesn't
+  // hug the status bar. The Android status bar overlays the WebView, so add the
+  // safe-area inset + an 8px buffer on the native build (0 on web/desktop).
+  const nativeBarStyle = IS_NATIVE_BUILD
+    ? { minHeight: 'calc(52px + env(safe-area-inset-top, 0px))', paddingTop: 'calc(env(safe-area-inset-top, 0px) + 8px)' }
+    : undefined;
+
   return (
-    <header className={`sticky top-0 z-40 flex items-center justify-between px-4 h-[52px] ${
+    <header
+      style={nativeBarStyle}
+      className={`sticky top-0 z-40 flex items-center justify-between px-4 ${IS_NATIVE_BUILD ? '' : 'h-[52px]'} ${
       transparent ? 'bg-transparent' : 'glass-header'
     }`}>
       <div className="flex items-center gap-3">

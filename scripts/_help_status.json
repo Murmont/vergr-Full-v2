@@ -1,0 +1,633 @@
+[
+ {
+  "c": "getting-started",
+  "done": [
+   "What is VERGR and how does it work?",
+   "How do I get started on VERGR?",
+   "Is VERGR free to use?",
+   "How do I sign up for VERGR?",
+   "What can I do on VERGR?",
+   "How do I make money on VERGR?",
+   "Do I need to be good at games to use VERGR?",
+   "What games can I play on VERGR?",
+   "What devices can I use VERGR on?",
+   "Is VERGR available in my country?",
+   "How old do I have to be to use VERGR?",
+   "What is the difference between a player, a creator, and a streamer on VERGR?",
+   "What are VC, VP, and Gems?",
+   "Is VERGR legit?",
+   "Is VERGR a scam?",
+   "Is playing games for money on VERGR gambling?",
+   "Is VERGR safe to use?",
+   "How does VERGR make money?"
+  ],
+  "rem": []
+ },
+ {
+  "c": "account",
+  "done": [
+   "How do I create an account?",
+   "How do I sign up with Google?",
+   "How do I sign up with my phone number?",
+   "How do I verify my email address?",
+   "How do I verify my phone number?",
+   "What is an account type and which should I pick?",
+   "How do I choose a username?",
+   "Can I change my username later?",
+   "What if my username is already taken?",
+   "How do I set up my profile during onboarding?",
+   "How do I pick my interests and get good recommendations?",
+   "How do I find people to follow when I am new?",
+   "How do I log in?",
+   "I forgot my password, how do I reset it?",
+   "How do I change my password?",
+   "Why do I have to confirm my date of birth?",
+   "How do I connect my gaming accounts?",
+   "Which gaming accounts can I link?",
+   "Why should I link my gaming accounts?",
+   "How do I disconnect a linked account?",
+   "How do I switch accounts?",
+   "Can I have more than one VERGR account?"
+  ],
+  "rem": []
+ },
+ {
+  "c": "profile",
+  "done": [
+   "How do I edit my profile?",
+   "How do I change my profile picture?",
+   "How do I add or change my banner?",
+   "How do I write a good bio?",
+   "How do I add my social media links to my profile?",
+   "How do I set my date of birth and why it matters?",
+   "What is a public profile and what do other people see?",
+   "How do I make my profile private?",
+   "What are prestige levels?",
+   "What is an esports team profile and how do I set one up?",
+   "How do I see who follows me?",
+   "How do I see who I am following?",
+   "How do I follow or unfollow someone?",
+   "How do I find and browse creators?",
+   "What is the gold ring on some avatars?",
+   "What do the badges on a profile mean?",
+   "How do I get verified on VERGR?"
+  ],
+  "rem": []
+ },
+ {
+  "c": "vergrme",
+  "done": [
+   "What is Vergr.me?",
+   "How do I set up my Vergr.me page?",
+   "How do I add links to my Vergr.me page?",
+   "How do I reorder or hide links on Vergr.me?",
+   "How do I customize the look of my Vergr.me page?",
+   "How do I add a tip jar to my Vergr.me page?",
+   "How do I share my Vergr.me link?",
+   "How do I see how many people visited my Vergr.me page?",
+   "What is my Vergr.me handle and can I change it?",
+   "Vergr.me vs Linktree: what is the difference?"
+  ],
+  "rem": []
+ },
+ {
+  "c": "verification",
+  "done": [
+   "Do I need to verify my identity to use VERGR?",
+   "Do I need to be verified to withdraw Gems?",
+   "What is KYC and why does VERGR ask for it?",
+   "How do I complete identity verification?",
+   "What documents do I need for verification?",
+   "What are the verification levels and what does each unlock?",
+   "How long does verification take?",
+   "My verification was rejected, what do I do?",
+   "Is my ID and selfie data safe?",
+   "Why can I not withdraw until I am verified?"
+  ],
+  "rem": []
+ },
+ {
+  "c": "security-privacy",
+  "done": [
+   "Is my VERGR wallet secure?",
+   "How do I set up two-factor authentication?",
+   "How do I set up my wallet PIN?",
+   "I forgot my wallet PIN, what do I do?",
+   "What is a whitelisted withdrawal address and why do I need one?",
+   "How do I add or remove a withdrawal address?",
+   "How do I review my security settings?",
+   "How do I see which devices are logged into my account?",
+   "How do I log out of all devices?",
+   "How does VERGR keep my information private?",
+   "Are my direct messages private?",
+   "Does VERGR store my messages?",
+   "How do I control who can message me?",
+   "How do I control who can see my content?",
+   "How do I block someone?",
+   "How do I unblock someone?",
+   "How do I block words I do not want to see?",
+   "What is the phone allow list?",
+   "How do I download a copy of my data?",
+   "How do I delete my account?",
+   "What happens to my data when I delete my account?",
+   "Does VERGR sell my data?",
+   "Will my profile show up on Google?"
+  ],
+  "rem": []
+ },
+ {
+  "c": "economy",
+  "done": [
+   "What are VC (Coins)?",
+   "What are Gems?",
+   "What is the difference between Coins and Gems?",
+   "What is VP (Vergr Points)?",
+   "How do Coins, Gems, and VP work together?",
+   "Which currency can I withdraw as real money?",
+   "What can I spend Coins on?",
+   "How do I earn VP?",
+   "What does VP actually do for me?",
+   "Do Coins expire?",
+   "Do Gems expire?",
+   "Why does VERGR use Coins instead of just real money?"
+  ],
+  "rem": []
+ },
+ {
+  "c": "buying-coins",
+  "done": [
+   "How do I buy VC (Coins)?",
+   "What payment methods can I use to buy Coins?",
+   "Why can I not pay with Google Pay or Apple Pay?",
+   "Can I buy Coins with cryptocurrency?",
+   "Can I buy Coins with a card?",
+   "What coin packs are available and what do they cost?",
+   "Which coin pack is the best value?",
+   "Is there a discount for my first purchase?",
+   "Is buying Coins secure?",
+   "My payment failed, what do I do?",
+   "I paid but my Coins did not arrive, what do I do?",
+   "Can I get a refund on a Coin purchase?",
+   "What is a chargeback and what happens if I file one?",
+   "What is the minimum amount of Coins I can buy?",
+   "Is there a custom Coin amount?"
+  ],
+  "rem": []
+ },
+ {
+  "c": "wallet",
+  "done": [
+   "How does the VERGR wallet work?",
+   "How do I open my wallet?",
+   "How do I check my Coin and Gem balance?",
+   "How do I see my transaction history?",
+   "How do I filter my transactions?",
+   "How do I view or share a transaction receipt?",
+   "What do the different transaction types mean?",
+   "Why is my wallet asking for a PIN?",
+   "How do I exit the wallet and get back to the app?"
+  ],
+  "rem": []
+ },
+ {
+  "c": "converting",
+  "done": [
+   "How do I convert Coins into Gems?",
+   "What is the conversion commission?",
+   "Why does the conversion rate change with my rank?",
+   "How do I lower my conversion commission?",
+   "What is the conversion rate at each rank?",
+   "Why can I not convert Gems back into Coins?"
+  ],
+  "rem": []
+ },
+ {
+  "c": "withdrawing",
+  "done": [
+   "How do I withdraw my earnings?",
+   "What is the minimum withdrawal?",
+   "How long does a withdrawal take?",
+   "Why is there a hold on my withdrawal?",
+   "What fees apply when I withdraw?",
+   "How do I withdraw to my bank account?",
+   "Can I withdraw in regular money instead of crypto?",
+   "How do I cash out my Gems?",
+   "How do I reduce the commission charged when I withdraw?",
+   "What is a withdrawal address and how do I set it?",
+   "I sent a withdrawal to the wrong address, can I get it back?",
+   "How do I cancel a pending withdrawal?",
+   "Where do I see the status of my withdrawal?",
+   "Why was my withdrawal put under review?"
+  ],
+  "rem": []
+ },
+ {
+  "c": "earning",
+  "done": [
+   "What are all the ways to make money on VERGR?",
+   "Can I make real money on VERGR?",
+   "How much money can I realistically make?",
+   "How do I earn from streaming?",
+   "How do I earn from tournaments?",
+   "How do I earn from my squad?",
+   "How do I earn from memberships?",
+   "How do I earn as a Vanguard moderator?",
+   "How do I earn from referrals?",
+   "How do tips work and how much do I keep?",
+   "Do I keep more money on a paid plan?",
+   "What is the fastest way to start earning as a new user?",
+   "Do I need an audience to make money on VERGR?"
+  ],
+  "rem": []
+ },
+ {
+  "c": "tips",
+  "done": [
+   "How do I tip a creator?",
+   "How do I tip during a live stream?",
+   "What is the fee on a tip?",
+   "How much does the creator actually receive from my tip?",
+   "How do I set up a tip goal on my stream?",
+   "Can I tip from a post or a profile?",
+   "What is the minimum tip?"
+  ],
+  "rem": []
+ },
+ {
+  "c": "vp-ranks",
+  "done": [
+   "What is VP and how do I earn it?",
+   "What are the VERGR ranks?",
+   "How do I rank up?",
+   "What do I unlock at each rank?",
+   "How does rank lower my fees?",
+   "What is the highest rank?",
+   "Do paid plans earn VP faster?",
+   "What are prestige levels and how are they different from VP ranks?",
+   "Why did my VP go up or down?"
+  ],
+  "rem": []
+ },
+ {
+  "c": "posting",
+  "done": [
+   "How do I create a post?",
+   "What types of posts can I make on VERGR?",
+   "How do I post text?",
+   "How do I post a photo?",
+   "How do I post a clip?",
+   "How do I write an article?",
+   "How do I post an achievement?",
+   "What is an LFG post and how do I make one?",
+   "How do I make a tier list?",
+   "How do I quote someone elses post?",
+   "How do I create a poll?",
+   "How do I schedule a post for later?",
+   "Who can see my post?",
+   "How do I add media to a post?",
+   "How do I delete a post?",
+   "How do I edit a post?",
+   "How do I report a post?",
+   "How do likes, comments, and reposts work?",
+   "How do I bookmark or save a post?",
+   "What is the difference between a Clip and a Short?",
+   "Why was my post hidden or removed?"
+  ],
+  "rem": []
+ },
+ {
+  "c": "feed-discovery",
+  "done": [
+   "How does the home feed work?",
+   "What is the For You feed?",
+   "How do I find live streams to watch?",
+   "How do I explore creators, squads, and clips?",
+   "How do I search for a user?",
+   "How do I search by username or handle?",
+   "What are trending hashtags?",
+   "How does the leaderboard work?",
+   "How do I see what is trending?",
+   "Why am I seeing certain posts in my feed?"
+  ],
+  "rem": []
+ },
+ {
+  "c": "clips-shorts",
+  "done": [
+   "How do I watch Shorts?",
+   "How do I create a Short?",
+   "How do I clip a moment from a live stream?",
+   "How long can my clips and Shorts be?",
+   "How do I save a clip to my profile?",
+   "How do I share a clip?",
+   "Why can I not clip on my device?"
+  ],
+  "rem": []
+ },
+ {
+  "c": "streaming",
+  "done": [
+   "How do I go live on VERGR?",
+   "Do I need followers to go live?",
+   "What is a Stream Boost and how does it work?",
+   "How does the Stream Boost pay for itself?",
+   "How do I choose my camera and microphone before going live?",
+   "How do I stream with my camera, screen, or both?",
+   "What streaming quality do I get on my plan?",
+   "How do I stream from OBS?",
+   "How do I stream directly from my browser?",
+   "How do I schedule a stream in advance?",
+   "How do I notify my followers when I go live?",
+   "How do I add a title, game, and tags to my stream?",
+   "How do I add a cover image to my stream?",
+   "How do I set a tip goal for my stream?",
+   "How do I run a poll during my stream?",
+   "How do I co-host a stream with someone else?",
+   "How do I invite a co-host while I am live?",
+   "How do I clip a moment while I am broadcasting?",
+   "How do I moderate my stream chat?",
+   "How do I set banned words for my stream chat?",
+   "How do I end a stream?",
+   "What is in my stream recap?",
+   "Where do I see my stream analytics?",
+   "Do my streams get recorded?",
+   "Why was I disconnected while streaming?",
+   "What internet speed do I need to stream?",
+   "Why does my stream look lower quality than I set?"
+  ],
+  "rem": []
+ },
+ {
+  "c": "watching",
+  "done": [
+   "How do I watch a live stream?",
+   "How do I chat during a stream?",
+   "How do I tip a streamer while watching?",
+   "How do I react during a stream?",
+   "How do I vote in a stream poll?",
+   "How do I follow a streamer?",
+   "How do I clip a moment as a viewer?",
+   "How do I share a stream?",
+   "How do I watch a replay after a stream ends?",
+   "Why does the stream say reconnecting?"
+  ],
+  "rem": []
+ },
+ {
+  "c": "twitch",
+  "done": [
+   "How do I connect my Twitch account so my streams show on VERGR?",
+   "How does the Twitch mirror work?",
+   "Do I need to change my OBS setup to stream on both Twitch and VERGR?",
+   "Does my Twitch chat sync with VERGR?",
+   "Why is my Twitch stream not showing up on VERGR?"
+  ],
+  "rem": []
+ },
+ {
+  "c": "tournaments",
+  "done": [
+   "How do tournaments work on VERGR?",
+   "How do I join a tournament?",
+   "How do I create a tournament?",
+   "What does it cost to enter a tournament?",
+   "What happens to my entry fee?",
+   "What games can I play tournaments in?",
+   "How do the different tournament formats work?",
+   "What is a best-of series (Bo1, Bo3, Bo5)?",
+   "How is the bracket seeded?",
+   "How do I check in for my match?",
+   "What is the lobby code and how do I use it?",
+   "How are match results verified?",
+   "How do I report my match result?",
+   "What happens if my opponent and I disagree on the result?",
+   "How do disputes get resolved?",
+   "What is the anti-cheat scan and why do I have to allow it?",
+   "Why do high-stakes tournaments require a webcam?",
+   "What happens if I do not show up for my match?",
+   "How do I reschedule a match?",
+   "How do I follow a match or a player?",
+   "How do prizes get paid out?",
+   "Where do I see a tournament prize?",
+   "Where do I see the bracket and standings?",
+   "What is a warmup lobby?",
+   "How do I apply to an invite-only tournament?",
+   "How do I see my tournament stats?",
+   "What are Tournament Points (TP)?",
+   "How do I host a tournament with a cash prize?",
+   "Can my squad enter a tournament as a team?",
+   "How do squad tournament winnings get split?",
+   "How do I sponsor a tournament from my squad treasury?",
+   "What is Brawl quickplay and how do I play a quick 1v1?",
+   "What are Champion Picks (predictions) and how do I earn from them?",
+   "How do I report a player for cheating in a tournament?",
+   "I was flagged for review, what does that mean and how do I appeal?",
+   "Do I need to own the game to enter a tournament for it?",
+   "What happens if a tournament is cancelled?"
+  ],
+  "rem": []
+ },
+ {
+  "c": "squads",
+  "done": [
+   "What is a squad?",
+   "How do I create a squad?",
+   "How do I join a squad?",
+   "How do I find squads to join?",
+   "How do I invite members to my squad?",
+   "How do I accept or decline a squad invitation?",
+   "How do squad join requests work?",
+   "What is the squad treasury and how does it work?",
+   "How does the squad earnings split work?",
+   "What are squad roles and permissions?",
+   "How do I manage my squad members?",
+   "How do I run a squad voice hangout or stream?",
+   "How do squad announcements work?",
+   "How do squad events work?",
+   "What are squad challenges?",
+   "How do I see my squad analytics?",
+   "How does the squad leaderboard work?",
+   "How do I share media in my squad?",
+   "How do I pin something in my squad?",
+   "How do I change my squad settings?",
+   "How do I leave a squad?",
+   "How do I delete a squad?",
+   "What are squad rivalries?",
+   "What is the maximum squad size?",
+   "How do squad champion votes work for tournaments?"
+  ],
+  "rem": []
+ },
+ {
+  "c": "creator-studio",
+  "done": [
+   "What is the Creator Studio?",
+   "How do I use the Creator Studio?",
+   "How do I read my creator dashboard?",
+   "How do I see my earnings?",
+   "How do I see my content performance?",
+   "How do I see my audience insights?",
+   "How do I manage my community?",
+   "How do I schedule content?",
+   "What are creator quests and how do I complete them?",
+   "How do I read my monthly analytics?",
+   "How do I set up creator memberships?",
+   "How do members subscribe to me?",
+   "How do I get the creator verification badge?",
+   "Why are creator quests VP-only and not Coins?"
+  ],
+  "rem": []
+ },
+ {
+  "c": "memberships",
+  "done": [
+   "What are the VERGR plans?",
+   "What does each plan include?",
+   "How do I upgrade my plan?",
+   "Can I pay for a plan with Coins?",
+   "How do I cancel my subscription?",
+   "What is the difference between Lite and Pro?",
+   "Do paid plans change the fees I pay?",
+   "What is a creator membership and how is it different from a VERGR plan?",
+   "How do I subscribe to a creator?",
+   "How do I pause or cancel a creator membership?"
+  ],
+  "rem": []
+ },
+ {
+  "c": "messaging",
+  "done": [
+   "How do I send a direct message?",
+   "How do I start a group chat?",
+   "How do I add or remove people from a group chat?",
+   "How do message requests work?",
+   "How do I manage my friends list?",
+   "How do I send a photo, clip, or voice message in chat?",
+   "How do I make a voice or video call?",
+   "How do voice channels work?",
+   "How do I change my chat settings?",
+   "How do I report a message or a conversation?",
+   "How do I leave or delete a conversation?",
+   "Are my messages and calls private?",
+   "Why did I not get a call notification?"
+  ],
+  "rem": []
+ },
+ {
+  "c": "notifications",
+  "done": [
+   "How do I turn notifications on or off?",
+   "How do I choose which notifications I get?",
+   "Why am I not getting push notifications?",
+   "How do I get notified when someone I follow goes live?",
+   "How do I get notifications on my phone?"
+  ],
+  "rem": []
+ },
+ {
+  "c": "status",
+  "done": [
+   "What is a status and how do I post one?",
+   "Who can see my status?"
+  ],
+  "rem": []
+ },
+ {
+  "c": "vanguard",
+  "done": [
+   "What is the Vanguard?",
+   "How do I join the Vanguard?",
+   "What do Vanguard moderators do?",
+   "How do Vanguard moderators get paid?",
+   "What are the Vanguard ranks?",
+   "Is my identity hidden as a Vanguard moderator?",
+   "What are the requirements to become a moderator?"
+  ],
+  "rem": []
+ },
+ {
+  "c": "safety",
+  "done": [
+   "How do I report someone?",
+   "How do I report content?",
+   "What happens after I report something?",
+   "How does VERGR handle reports?",
+   "What is the Code of Conduct?",
+   "What gets you banned on VERGR?",
+   "My account was muted or banned, what do I do?",
+   "How do I appeal a ban or a moderation decision?",
+   "How does VERGR keep tournaments fair?",
+   "How does VERGR detect cheating?",
+   "What content is not allowed on VERGR?",
+   "How do I keep myself safe on VERGR?"
+  ],
+  "rem": []
+ },
+ {
+  "c": "referrals",
+  "done": [
+   "How does the referral program work?",
+   "How do I refer a friend?",
+   "What do I get for referring someone?",
+   "What does my friend get when they sign up with my link?"
+  ],
+  "rem": []
+ },
+ {
+  "c": "apps",
+  "done": [
+   "How do I install the VERGR app on Android?",
+   "How do I install VERGR on my desktop?",
+   "How do I add VERGR to my iPhone home screen?",
+   "How do I update the VERGR app?",
+   "Is there an iOS app?",
+   "Why is VERGR not on the Play Store or App Store?"
+  ],
+  "rem": []
+ },
+ {
+  "c": "settings",
+  "done": [
+   "How do I change my display settings?",
+   "How do I change the app language?",
+   "How do I manage app permissions?",
+   "How do I manage my storage and cache?",
+   "How do I back up my settings?",
+   "How do I manage my linked accounts?",
+   "Where do I find all my account settings?"
+  ],
+  "rem": []
+ },
+ {
+  "c": "troubleshooting",
+  "done": [
+   "I can not go live, what do I do?",
+   "My upload keeps failing, what do I do?",
+   "My payment will not go through, what do I do?",
+   "My video or clip will not play, what do I do?",
+   "I can not log in, what do I do?",
+   "The app looks broken or out of date, how do I refresh it?",
+   "My camera or microphone is not working, what do I do?",
+   "I am not receiving the verification code, what do I do?",
+   "My balance looks wrong, what do I do?",
+   "Icons or text look broken, what do I do?",
+   "The app is slow, what can I do?"
+  ],
+  "rem": []
+ },
+ {
+  "c": "trust",
+  "done": [
+   "Is VERGR gambling?",
+   "Is skill-based gaming for money legal?",
+   "What fees does VERGR charge?",
+   "Where is VERGR available?",
+   "Why do I have to be 18+?",
+   "How does VERGR verify results and prevent cheating?",
+   "What is VERGRs refund policy?",
+   "How is VERGR different from Twitch, TikTok, and other platforms?",
+   "How is VERGR different from Repeat.gg, Players Lounge, and GamerSaloon?"
+  ],
+  "rem": []
+ }
+]

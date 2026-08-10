@@ -2,7 +2,7 @@ import { useState } from 'react';
 import Icon from './Icon';
 
 // Dismissible info box for explaining features
-export default function InfoTooltip({ id, icon = 'info', color = '#4DFFD4', title, children, dismissible = true }) {
+export default function InfoTooltip({ id, icon = 'info', color = '#B44FFF', title, children, dismissible = true, rightImage }) {
   const storageKey = `vergr_tooltip_${id}`;
   const [dismissed, setDismissed] = useState(() => {
     try { return localStorage.getItem(storageKey) === '1'; } catch { return false; }
@@ -25,6 +25,9 @@ export default function InfoTooltip({ id, icon = 'info', color = '#4DFFD4', titl
           {title && <p className="text-text-primary text-xs font-bold mb-0.5">{title}</p>}
           <div className="text-text-secondary text-[11px] leading-relaxed">{children}</div>
         </div>
+        {rightImage && (
+          <img src={rightImage} alt="" className="w-16 sm:w-20 h-auto shrink-0 self-center -my-2 pointer-events-none select-none" draggable={false} />
+        )}
         {dismissible && (
           <button onClick={handleDismiss} className="text-text-muted hover:text-text-secondary p-0.5 shrink-0">
             <Icon name="close" size={14} />
@@ -39,7 +42,7 @@ export default function InfoTooltip({ id, icon = 'info', color = '#4DFFD4', titl
 export function LearnMoreLink({ section, navigate }) {
   return (
     <button onClick={() => navigate('/settings/how-it-works')}
-      className="text-brand-cyan text-[10px] font-bold hover:underline inline-flex items-center gap-0.5">
+      className="text-brand-violet-light text-[10px] font-bold hover:underline inline-flex items-center gap-0.5">
       Learn more <Icon name="arrow_forward" size={10} />
     </button>
   );

@@ -1,0 +1,116 @@
+// chatRelay — WebSocket client for the vergr-chat live-stream chat relay.
+//
+// Connection: wss://chat.vergr.app/stream/<streamId>?token=<firebase-id-token>
+// Auto-reconnects with exponential backoff. Buffers locally-sent messages
+// during reconnect attempts and replays them.
+//
+// Wire format mirrors infra/chat/main.go's Msg struct.
+//
+// Usage:
+//   import { connectChat } from '@/utils/chatRelay';
+//   const c = await connectChat({
+//     streamId, getIdToken,
+//     onHello:   (msg) => {...},
+//     onMessage: (msg) => {...},   // msg.type === 'msg' or 'tip'
+//     onSystem:  (msg) => {...},   // msg.type === 'system' (e.g. join/leave hints)
+//     onReject:  (msg) => {...},   // server refused our send
+//     onState:   (state) => {...}, // 'open' | 'reconnecting' | 'closed'
+//   });
+//   c.send({ type:'msg',  text: '...' });
+//   c.send({ type:'tip',  text: '...' });   // tip text already moderated client-side first
+//   c.report({ id, uid, text });
+//   c.close();
+
+const DEFAULT_BASE =
+  import.meta.env.VITE_CHAT_WS_BASE || 'wss://chat.vergr.app';
+
+const MAX_BACKOFF_MS = 15_000;
+
+export async function connectChat({
+  streamId,
+  getIdToken,
+  onHello = () => {},
+  onMessage = () => {},
+  onSystem = () => {},
+  onReject = () => {},
+  onHide   = () => {},
+  onHeart  = () => {},
+  onState = () => {},
+  baseUrl = DEFAULT_BASE,
+}) {
+  let ws = null;
+  let closed = false;
+  let backoff = 800;
+  const outbox = []; // queued sends while reconnecting
+
+  async function connect() {
+    if (closed) return;
+    onState('reconnecting');
+    let token;
+    try { token = await getIdToken(); } catch { token = null; }
+    if (!token) {
+      // Retry with backoff if we can't get a token right now.
+      setTimeout(connect, backoff);
+      backoff = Math.min(MAX_BACKOFF_MS, backoff * 1.6);
+      return;
+    }
+    const url = `${baseUrl.replace(/\/$/, '')}/stream/${encodeURIComponent(streamId)}?token=${encodeURIComponent(token)}`;
+    ws = new WebSocket(url);
+
+    ws.addEventListener('open', () => {
+      backoff = 800;
+      onState('open');
+      // Drain outbox.
+      while (outbox.length) {
+        const m = outbox.shift();
+        try { ws.send(JSON.stringify(m)); } catch { outbox.unshift(m); break; }
+      }
+    });
+
+    ws.addEventListener('message', (ev) => {
+      let m; try { m = JSON.parse(ev.data); } catch { return; }
+      switch (m.type) {
+        case 'hello':  onHello(m); break;
+        case 'msg':
+        case 'tip':    onMessage(m); break;
+        case 'system': onSystem(m); break;
+        case 'reject': onReject(m); break;
+        case 'hide':   onHide(m);   break;
+        case 'heart':  onHeart(m);  break;
+      }
+    });
+
+    ws.addEventListener('close', () => {
+      if (closed) return;
+      onState('reconnecting');
+      setTimeout(connect, backoff);
+      backoff = Math.min(MAX_BACKOFF_MS, backoff * 1.6);
+    });
+
+    ws.addEventListener('error', () => {
+      // close handler will fire next, drives reconnect
+    });
+  }
+
+  await connect();
+
+  return {
+    send(payload) {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        try { ws.send(JSON.stringify(payload)); return true; }
+        catch { /* fall through */ }
+      }
+      outbox.push(payload);
+      return false;
+    },
+    report({ id, uid, text }) {
+      this.send({ type: 'report', id, uid, text });
+    },
+    close() {
+      closed = true;
+      onState('closed');
+      try { ws?.close(); } catch {}
+    },
+    socket: () => ws,
+  };
+}

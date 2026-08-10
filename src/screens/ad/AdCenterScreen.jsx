@@ -10,6 +10,7 @@ import { useUser } from '../../context/UserContext';
 import { useUI } from '../../context/UIContext';
 import { useLayout } from '../../context/LayoutContext';
 import Icon from '../../components/Icon';
+import { ListSkeleton, StackSkeleton } from '../../components/skeletons/GlassSkeletons';
 import {
   collection, query, where, getDocs, addDoc, updateDoc, deleteDoc, doc,
   serverTimestamp, getDoc,
@@ -166,7 +167,7 @@ export default function AdCenterScreen({ embedded = false }) {
 
   // -------- Verification gate --------
   if (verifStatus === 'loading') {
-    return <div className={embedded ? '' : 'min-h-screen bg-bg-dark'}><div className="flex justify-center py-20"><div className="w-6 h-6 border-2 border-brand-cyan border-t-transparent rounded-full animate-spin"/></div></div>;
+    return <div className={embedded ? '' : 'min-h-screen bg-bg-dark'}><StackSkeleton rows={3} height={64} /></div>;
   }
   if (verifStatus !== 'approved') {
     const pending = verifStatus === 'pending';
@@ -174,8 +175,8 @@ export default function AdCenterScreen({ embedded = false }) {
       <div className={embedded ? '' : 'min-h-screen bg-bg-dark'}>
         <div className="max-w-xl mx-auto mt-6">
           <div className="rounded-2xl border border-white/10 bg-surface-1 p-8 text-center">
-            <div className={`w-16 h-16 rounded-full mx-auto flex items-center justify-center mb-4 ${pending ? 'bg-yellow-500/10' : 'bg-brand-cyan/10'}`}>
-              <Icon name={pending ? 'hourglass_top' : 'verified_user'} filled size={32} className={pending ? 'text-yellow-400' : 'text-brand-cyan'} />
+            <div className={`w-16 h-16 rounded-full mx-auto flex items-center justify-center mb-4 ${pending ? 'bg-yellow-500/10' : 'bg-brand-violet/10'}`}>
+              <Icon name={pending ? 'hourglass_top' : 'verified_user'} filled size={32} className={pending ? 'text-yellow-400' : 'text-brand-violet-light'} />
             </div>
             <h2 className="font-syne font-bold text-white text-xl mb-1">{pending ? 'Verification in review' : 'Verification required'}</h2>
             <p className="text-text-secondary text-sm max-w-sm mx-auto mb-5">
@@ -184,7 +185,7 @@ export default function AdCenterScreen({ embedded = false }) {
                 : 'To run ads on VERGR, we need to verify your identity. This protects advertisers and viewers and keeps the ecosystem trustworthy.'}
             </p>
             {!pending && (
-              <button onClick={() => navigate('/creator/verify')} className="px-6 py-3 rounded-xl bg-brand-cyan text-bg-dark font-bold text-sm hover:brightness-110 transition-all inline-flex items-center gap-2">
+              <button onClick={() => navigate('/creator/verify')} className="px-6 py-3 rounded-xl bg-brand-violet text-white font-bold text-sm hover:brightness-110 transition-all inline-flex items-center gap-2">
                 <Icon name="badge" size={18} /> Start verification
               </button>
             )}
@@ -216,7 +217,7 @@ export default function AdCenterScreen({ embedded = false }) {
           <p className="text-text-muted text-xs uppercase tracking-wider">Campaigns</p>
           <p className="text-white font-syne font-bold text-lg">{ads.length} total</p>
         </div>
-        <button onClick={openCreate} className="bg-brand-cyan text-bg-dark px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider inline-flex items-center gap-1.5 hover:brightness-110">
+        <button onClick={openCreate} className="bg-brand-violet text-white px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider inline-flex items-center gap-1.5 hover:brightness-110">
           <Icon name="add" size={16} filled /> New campaign
         </button>
       </div>
@@ -232,7 +233,7 @@ export default function AdCenterScreen({ embedded = false }) {
       {/* List */}
       <div className="space-y-3 px-4 sm:px-0">
         {loading ? (
-          <div className="flex justify-center py-10"><div className="w-6 h-6 border-2 border-brand-cyan border-t-transparent rounded-full animate-spin" /></div>
+          <ListSkeleton rows={4} />
         ) : ads.length === 0 ? (
           <div className="text-center py-16 border border-dashed border-white/10 rounded-2xl">
             <div className="w-20 h-20 mx-auto rounded-full bg-surface-2 flex items-center justify-center mb-4">
@@ -265,7 +266,7 @@ export default function AdCenterScreen({ embedded = false }) {
 /* ---------- Sub-components ---------- */
 
 function Kpi({ label, value, icon, tone }) {
-  const toneCls = { cyan:'text-brand-cyan', violet:'text-brand-violet', pink:'text-brand-pink', gold:'text-brand-gold' }[tone] || 'text-brand-cyan';
+  const toneCls = { cyan:'text-brand-violet-light', violet:'text-brand-violet', pink:'text-brand-pink', gold:'text-brand-gold' }[tone] || 'text-brand-violet-light';
   return (
     <div className="bg-surface-1 rounded-2xl border border-white/[0.06] p-4 flex items-start justify-between">
       <div>
@@ -307,7 +308,7 @@ function AdRow({ ad, onEdit, onDelete }) {
         </div>
       </div>
       <div className="flex sm:flex-col gap-2 justify-end">
-        <button onClick={onEdit} className="text-brand-cyan p-2 hover:bg-brand-cyan/10 rounded-lg transition-all"><Icon name="edit" size={18} /></button>
+        <button onClick={onEdit} className="text-brand-violet-light p-2 hover:bg-brand-violet/10 rounded-lg transition-all"><Icon name="edit" size={18} /></button>
         <button onClick={onDelete} className="text-brand-ember p-2 hover:bg-brand-ember/10 rounded-lg transition-all"><Icon name="delete" size={18} /></button>
       </div>
     </div>
@@ -316,7 +317,7 @@ function AdRow({ ad, onEdit, onDelete }) {
 
 function AdModal({ form, setForm, editingAd, onClose, onSave, saving, onImageChange, uploading, toggleIn }) {
   const [tab, setTab] = useState('creative');
-  const inputCls = 'w-full bg-surface-2 border border-white/[0.06] rounded-xl px-3 py-2.5 text-white text-sm focus:border-brand-cyan/60 focus:outline-none transition-colors';
+  const inputCls = 'w-full bg-surface-2 border border-white/[0.06] rounded-xl px-3 py-2.5 text-white text-sm focus:border-brand-violet/60 focus:outline-none transition-colors';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4" onClick={onClose}>
@@ -336,7 +337,7 @@ function AdModal({ form, setForm, editingAd, onClose, onSave, saving, onImageCha
             { k: 'budget',   l: 'Budget',   i: 'paid' },
           ].map(t => (
             <button key={t.k} onClick={() => setTab(t.k)}
-              className={`px-4 py-3 text-xs font-bold uppercase tracking-wider inline-flex items-center gap-1.5 border-b-2 transition-all ${tab === t.k ? 'text-brand-cyan border-brand-cyan' : 'text-text-muted border-transparent hover:text-white'}`}>
+              className={`px-4 py-3 text-xs font-bold uppercase tracking-wider inline-flex items-center gap-1.5 border-b-2 transition-all ${tab === t.k ? 'text-brand-violet-light border-brand-violet' : 'text-text-muted border-transparent hover:text-white'}`}>
               <Icon name={t.i} size={14} /> {t.l}
             </button>
           ))}
@@ -391,7 +392,7 @@ function AdModal({ form, setForm, editingAd, onClose, onSave, saving, onImageCha
                 <div className="flex flex-wrap gap-1.5 mb-2">
                   {POPULAR_GAMES.map(g => (
                     <button key={g} onClick={() => toggleIn('targetGames', g)}
-                      className={`px-2.5 py-1 rounded-full text-[11px] font-bold transition-all ${form.targetGames.includes(g) ? 'bg-brand-cyan text-bg-dark' : 'bg-surface-2 text-text-secondary hover:bg-surface-3'}`}>{g}</button>
+                      className={`px-2.5 py-1 rounded-full text-[11px] font-bold transition-all ${form.targetGames.includes(g) ? 'bg-brand-violet text-white' : 'bg-surface-2 text-text-secondary hover:bg-surface-3'}`}>{g}</button>
                   ))}
                 </div>
                 <input type="text" placeholder="Add more (comma-separated): starfield, cod, ..." value={form.gamesInput} onChange={e => setForm(f => ({ ...f, gamesInput: e.target.value }))} className={inputCls} />
@@ -420,7 +421,7 @@ function AdModal({ form, setForm, editingAd, onClose, onSave, saving, onImageCha
                 <div className="flex gap-2">
                   {[{v:'active',l:'Active'},{v:'paused',l:'Paused'}].map(o => (
                     <button key={o.v} onClick={() => setForm(f => ({ ...f, status: o.v }))}
-                      className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all ${form.status === o.v ? 'bg-brand-cyan text-bg-dark' : 'bg-surface-2 text-text-secondary hover:bg-surface-3'}`}>{o.l}</button>
+                      className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all ${form.status === o.v ? 'bg-brand-violet text-white' : 'bg-surface-2 text-text-secondary hover:bg-surface-3'}`}>{o.l}</button>
                   ))}
                 </div>
               </Field>
@@ -430,7 +431,7 @@ function AdModal({ form, setForm, editingAd, onClose, onSave, saving, onImageCha
 
         <div className="px-6 py-4 border-t border-white/[0.06] flex gap-3 bg-surface-1/30">
           <button onClick={onClose} className="flex-1 py-2.5 rounded-xl bg-surface-2 text-white text-sm font-bold hover:bg-surface-3 transition-all">Cancel</button>
-          <button onClick={onSave} disabled={saving} className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all ${saving ? 'bg-surface-2 text-text-muted' : 'bg-brand-cyan text-bg-dark hover:brightness-110'}`}>
+          <button onClick={onSave} disabled={saving} className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all ${saving ? 'bg-surface-2 text-text-muted' : 'bg-brand-violet text-white hover:brightness-110'}`}>
             {saving ? 'Saving…' : editingAd ? 'Update' : 'Launch campaign'}
           </button>
         </div>
@@ -455,7 +456,7 @@ function MultiChip({ label, options, selected, onToggle }) {
       <div className="flex flex-wrap gap-1.5">
         {options.map(o => (
           <button key={o.v} onClick={() => onToggle(o.v)}
-            className={`px-3 py-1.5 rounded-full text-[11px] font-bold transition-all ${selected.includes(o.v) ? 'bg-brand-cyan text-bg-dark' : 'bg-surface-2 text-text-secondary hover:bg-surface-3'}`}>{o.l}</button>
+            className={`px-3 py-1.5 rounded-full text-[11px] font-bold transition-all ${selected.includes(o.v) ? 'bg-brand-violet text-white' : 'bg-surface-2 text-text-secondary hover:bg-surface-3'}`}>{o.l}</button>
         ))}
       </div>
     </div>

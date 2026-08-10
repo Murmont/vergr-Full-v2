@@ -123,6 +123,8 @@ exports.settleMatchBets = async function (tournamentId, matchId, winnerUid) {
     const payout = Math.floor((bd.amount / winningStakes) * totalPool);
     batch.update(db.collection('wallets').doc(bd.uid), {
       balance: FieldValue.increment(payout),
+      // convertible: prediction payout (received value) — see coinLedger.js
+      earnedBalance: FieldValue.increment(payout),
     });
     batch.update(b.ref, { settledAt: FieldValue.serverTimestamp(), payout, outcome: 'correct' });
     // Predictor stats: streak + accuracy counters.

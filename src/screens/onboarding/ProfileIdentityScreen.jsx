@@ -7,6 +7,7 @@ import { useAuth } from '../../context/AuthContext';
 import { updateUser } from '../../firebase/firestore';
 import { useUI } from '../../context/UIContext';
 import Icon from '../../components/Icon';
+import CountrySelect from '../../components/CountrySelect';
 
 const GENDERS = [
   { key: 'male',   label: 'Male' },
@@ -89,7 +90,7 @@ export default function ProfileIdentityScreen() {
             <span className="text-text-secondary text-sm font-semibold mb-2 block">Display name</span>
             <input type="text" value={displayName} onChange={e => setDisplayName(e.target.value)}
               placeholder="How should we call you?"
-              className="w-full bg-surface border border-surface-border rounded-xl px-4 py-4 text-white outline-none focus:border-primary placeholder:text-text-secondary/50" />
+              className="w-full bg-surface-2 border border-border-accent rounded-xl px-4 py-4 text-white outline-none focus:border-brand-violet placeholder:text-text-secondary/50" />
           </label>
 
           {/* DOB — required */}
@@ -99,8 +100,8 @@ export default function ProfileIdentityScreen() {
               {age != null && !dobError && <span className="text-[11px] text-text-muted font-dmmono tabular-nums">{age} yrs</span>}
             </span>
             <input type="date" value={dob} onChange={e => setDob(e.target.value)} max={today}
-              className={`w-full bg-surface border rounded-xl px-4 py-4 text-white outline-none focus:border-primary ${
-                dobError ? 'border-brand-ember' : 'border-surface-border'
+              className={`w-full bg-surface-2 border rounded-xl px-4 py-4 text-white outline-none focus:border-brand-violet ${
+                dobError ? 'border-brand-ember' : 'border-border-accent'
               }`} />
             {dobError && <p className="text-brand-ember text-xs mt-1.5">{dobError}</p>}
             {!dobError && (
@@ -118,8 +119,8 @@ export default function ProfileIdentityScreen() {
                 <button key={g.key} type="button" onClick={() => setGender(g.key)}
                   className={`h-14 px-3 rounded-xl border text-sm font-semibold leading-tight transition-colors ${
                     gender === g.key
-                      ? 'bg-primary/15 border-primary text-white'
-                      : 'bg-surface border-surface-border text-text-secondary hover:border-white/20'
+                      ? 'bg-brand-violet/15 border-brand-violet text-white'
+                      : 'bg-surface-2 border-border-accent text-text-secondary hover:border-white/20'
                   }`}>
                   {g.label}
                 </button>
@@ -131,7 +132,7 @@ export default function ProfileIdentityScreen() {
           <label className="block">
             <span className="text-text-secondary text-sm font-semibold mb-2 block">Pronouns (optional)</span>
             <select value={pronouns} onChange={e => setPronouns(e.target.value)}
-              className="w-full bg-surface border border-surface-border rounded-xl px-4 py-4 text-white outline-none focus:border-primary">
+              className="w-full bg-surface-2 border border-border-accent rounded-xl px-4 py-4 text-white outline-none focus:border-brand-violet [&>option]:bg-surface-2 [&>option]:text-white">
               <option value="">Select</option>
               <option>He/Him</option><option>She/Her</option><option>They/Them</option><option>Other</option>
             </select>
@@ -140,13 +141,12 @@ export default function ProfileIdentityScreen() {
           {/* Country */}
           <label className="block">
             <span className="text-text-secondary text-sm font-semibold mb-2 block">Country / region (optional)</span>
-            <select value={country} onChange={e => setCountry(e.target.value)}
-              className="w-full bg-surface border border-surface-border rounded-xl px-4 py-4 text-white outline-none focus:border-primary">
-              <option value="">Auto-detect</option>
-              <option>South Africa</option><option>United States</option><option>United Kingdom</option>
-              <option>Germany</option><option>Japan</option><option>Brazil</option><option>Australia</option>
-              <option>Other</option>
-            </select>
+            <CountrySelect
+              value={country}
+              onChange={(code) => setCountry(code)}
+              placeholder="Auto-detect"
+              className="w-full bg-surface-2 border border-border-accent rounded-xl px-4 py-4 text-white outline-none focus:border-brand-violet"
+            />
           </label>
         </div>
 

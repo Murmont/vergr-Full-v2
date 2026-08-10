@@ -61,7 +61,7 @@ export default function VotePollCard({ squadId, voteId, isMe }) {
         </div>
         <p className="text-white text-sm font-semibold mb-2">{vote.title}</p>
         {vote.reason && (
-          <div className="bg-black/30 backdrop-blur-sm rounded-lg p-2 mb-4 text-xs text-white/80 border-l-2 border-brand-cyan">
+          <div className="bg-black/30 backdrop-blur-sm rounded-lg p-2 mb-4 text-xs text-white/80 border-l-2 border-brand-violet">
             <span className="font-semibold">Reason: </span>{vote.reason}
           </div>
         )}
@@ -90,7 +90,7 @@ export default function VotePollCard({ squadId, voteId, isMe }) {
                     initial={{ width: 0 }}
                     animate={{ width: `${pct}%` }}
                     transition={{ type: 'spring', stiffness: 120, damping: 20, mass: 1 }}
-                    style={{ backgroundColor: isKickVote ? 'rgba(239,68,68,0.2)' : 'rgba(77,255,212,0.1)' }}
+                    style={{ backgroundColor: isKickVote ? 'rgba(239,68,68,0.2)' : 'rgba(180,79,255,0.1)' }}
                   />
                 )}
                 <div className="relative flex items-center justify-between">

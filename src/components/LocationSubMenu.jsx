@@ -51,8 +51,8 @@ const LocationSubMenu = ({ isOpen, onClose, onCurrentLocation, onChooseOnMap }) 
               }}
               className="flex flex-col items-center gap-2 py-3 rounded-xl hover:bg-surface-2 transition-colors active:scale-95"
             >
-              <div className="w-12 h-12 rounded-full bg-brand-cyan/10 flex items-center justify-center">
-                <Icon name={opt.icon} size={24} className="text-brand-cyan" />
+              <div className="w-12 h-12 rounded-full bg-brand-violet/10 flex items-center justify-center">
+                <Icon name={opt.icon} size={24} className="text-brand-violet-light" />
               </div>
               <span className="text-xs text-text-secondary">{opt.label}</span>
             </button>

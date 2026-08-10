@@ -1,5 +1,14 @@
 import { useEffect, useRef } from 'react';
-import { ADS_CONFIG, isAdZoneReady } from '../config/ads';
+import { ADS_CONFIG, isAdZoneReady, TEST_NATIVE_UNIT_ID } from '../config/ads';
+import useTier from '../hooks/useTier';
+import useAdsTestMode from '../hooks/useAdsTestMode';
+import { IS_NATIVE_BUILD } from '../utils/platform';
+import { attachFeedAd, isNativeFeedAdAvailable } from '../utils/nativeFeedAd';
+
+// Reserved height (CSS px) for the native in-feed ad card. Must match the
+// layout in res/layout/native_feed_ad.xml (icon row + body + 160dp media +
+// CTA + padding) so the overlay lands exactly on the gap the feed leaves.
+const NATIVE_AD_HEIGHT = 300;
 
 // ────────────────────────────────────────────────────────────
 // VergrAd — Google AdSense in-feed ad unit
@@ -37,7 +46,6 @@ function loadAdSenseOnce(publisherId) {
     s.async = true;
     s.crossOrigin = 'anonymous';
     s.src = `https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${encodeURIComponent(publisherId)}`;
-    s.setAttribute('data-cfasync', 'false');
     document.head.appendChild(s);
   } catch (err) {
     // eslint-disable-next-line no-console
@@ -49,7 +57,42 @@ export default function VergrAd({ zone = 'inpage' }) {
   const insRef = useRef(null);
   const pushedRef = useRef(false);
 
-  const ready = isAdZoneReady('adsense-feed');
+  // Ads are a FREE-tier-only experience. Lite/Pro (and admins) never see a
+  // third-party ad anywhere — paying to remove ads is a core paid perk.
+  const { isFree } = useTier();
+
+  // NATIVE: AdSense is a web-pages-only program — it never fills inside the app
+  // shell and running it there risks the account that also serves the website.
+  // The app instead reserves this slot and Kotlin positions a real AdMob NATIVE
+  // ad card over it (utils/nativeFeedAd.js + FeedAdBridge.kt), so the ad sits
+  // BETWEEN feed posts rather than being pinned to the screen edge.
+  const nativeSlotRef = useRef(null);
+  const nativeAdOn = isFree && IS_NATIVE_BUILD && isNativeFeedAdAvailable();
+  // The slot KEEPS its reserved height whether or not an ad fills — the point
+  // of the slot is to earn, so we hold the space and retry rather than hiding
+  // the inventory. The callback exists purely so a no-fill is DIAGNOSABLE:
+  // before this, a blank slot and a broken slot looked identical from the
+  // outside, with no logging anywhere in the chain.
+  // Remote diagnostic switch (app_config/general.adsUseTestIds). Test units
+  // always fill, so flipping it proves whether a blank slot is AdMob having
+  // nothing to serve or our rendering being broken — no rebuild needed.
+  const testAds = useAdsTestMode();
+  useEffect(() => {
+    if (!nativeAdOn || !nativeSlotRef.current) return undefined;
+    return attachFeedAd(
+      nativeSlotRef.current,
+      (filled, code) => {
+        if (filled) return;
+        // eslint-disable-next-line no-console
+        console.warn('[VergrAd] native feed ad did not fill, AdMob code =', code);
+        try { window.__vergrFeedAdLastCode = code; } catch { /* ignore */ }
+      },
+      testAds ? TEST_NATIVE_UNIT_ID : undefined,
+    );
+  }, [nativeAdOn, testAds]);
+
+  // WEB: AdSense in-feed unit.
+  const ready = isFree && !IS_NATIVE_BUILD && isAdZoneReady('adsense-feed');
   const { publisherId, slots } = ADS_CONFIG.adsense;
   const slotId = zone === 'inpage' ? slots.feed : null;
 
@@ -72,6 +115,19 @@ export default function VergrAd({ zone = 'inpage' }) {
     }, 0);
     return () => clearTimeout(t);
   }, [ready, publisherId, slotId]);
+
+  // NATIVE: reserve the gap the Android NativeAdView is positioned over. The
+  // card itself is drawn by the AdMob SDK on top of this space.
+  if (nativeAdOn) {
+    return (
+      <div
+        ref={nativeSlotRef}
+        className="mb-3 rounded-2xl overflow-hidden bg-surface-1 border border-white/[0.06]"
+        style={{ height: NATIVE_AD_HEIGHT }}
+        aria-hidden="true"
+      />
+    );
+  }
 
   // Not configured yet → render nothing. Clean feed during review.
   if (!ready || !slotId) return null;

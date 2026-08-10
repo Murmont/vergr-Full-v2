@@ -98,7 +98,7 @@ export default function PhoneAllowListScreen() {
     <div className={isDesktop ? 'min-h-screen pb-8' : 'screen-container min-h-screen pb-24'}>
       <TopBar title="Allowed Users" showBack right={
         <button onClick={save} disabled={saving}
-          className="px-3 py-1.5 rounded-lg bg-brand-cyan text-bg-dark text-xs font-bold disabled:opacity-50">
+          className="px-3 py-1.5 rounded-lg bg-brand-violet text-white text-xs font-bold disabled:opacity-50">
           {saving ? 'Saving…' : 'Save'}
         </button>
       } />
@@ -135,7 +135,7 @@ export default function PhoneAllowListScreen() {
                     <p className="text-sm font-semibold truncate">{u.displayName || u.username}</p>
                     <p className="text-xs text-text-muted truncate">@{u.username}</p>
                   </div>
-                  <div className={`w-6 h-6 rounded-md flex items-center justify-center ${checked ? 'bg-brand-cyan text-bg-dark' : 'border border-white/20'}`}>
+                  <div className={`w-6 h-6 rounded-md flex items-center justify-center ${checked ? 'bg-brand-violet text-white' : 'border border-white/20'}`}>
                     {checked && <Icon name="check" size={16} />}
                   </div>
                 </button>

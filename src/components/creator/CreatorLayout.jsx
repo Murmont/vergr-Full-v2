@@ -6,11 +6,13 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useUser } from '../../context/UserContext';
 import useResponsive from '../../hooks/useResponsive';
+import { IS_NATIVE_BUILD } from '../../utils/platform';
 import Icon from '../Icon';
 import UserAvatar from '../UserAvatar';
 import CoinDisplay from '../CoinDisplay';
 import PlanLock from './PlanLock';
 import useTier from '../../hooks/useTier';
+import CreateComposer from '../composer/CreateComposer';
 
 // `lock` = minimum tier needed. undefined = free.
 const NAV = [
@@ -52,10 +54,23 @@ export default function CreatorLayout({ children, page = 'home', title, subtitle
     try { return localStorage.getItem('vergr_creator_sidebar_collapsed') === '1'; } catch { return false; }
   });
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [composerOpen, setComposerOpen] = useState(false);
+  const [composerRect, setComposerRect] = useState(null);
 
   useEffect(() => {
     try { localStorage.setItem('vergr_creator_sidebar_collapsed', collapsed ? '1' : '0'); } catch {}
   }, [collapsed]);
+
+  // Any creator screen can open the new post composer via this window event.
+  useEffect(() => {
+    const open = (e) => { setComposerRect(e?.detail?.rect || null); setComposerOpen(true); };
+    window.addEventListener('vergr:open-composer', open);
+    return () => window.removeEventListener('vergr:open-composer', open);
+  }, []);
+
+  const composerNode = composerOpen
+    ? <CreateComposer onClose={() => setComposerOpen(false)} originRect={composerRect} />
+    : null;
 
   const greeting = (() => {
     const h = new Date().getHours();
@@ -79,9 +94,7 @@ export default function CreatorLayout({ children, page = 'home', title, subtitle
           {/* Brand */}
           <button onClick={() => navigate('/')}
             className={`flex items-center gap-3 h-16 px-4 border-b border-white/[0.05] hover:bg-white/[0.02] transition-colors ${collapsed ? 'justify-center' : ''}`}>
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-brand-cyan via-brand-violet to-brand-pink flex items-center justify-center shrink-0 shadow-[0_6px_20px_-4px_rgba(139,92,246,0.55)]">
-              <span className="font-syne font-black text-white text-sm">V</span>
-            </div>
+            <img src="/brand/logo.png" alt="VERGR" className="w-9 h-9 rounded-xl object-contain shrink-0" />
             {!collapsed && (
               <div className="min-w-0">
                 <div className="font-syne font-extrabold text-[13px] tracking-wider text-white leading-none">STUDIO</div>
@@ -99,13 +112,13 @@ export default function CreatorLayout({ children, page = 'home', title, subtitle
                 <button key={item.key} onClick={() => navigate(item.path)}
                   className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all group relative ${
                     active
-                      ? 'bg-gradient-to-r from-brand-violet/20 via-brand-cyan/10 to-transparent text-white border border-white/[0.08]'
+                      ? 'bg-gradient-to-r from-brand-violet/20 via-brand-violet/10 to-transparent text-white border border-white/[0.08]'
                       : 'text-text-muted hover:text-text-primary hover:bg-white/[0.03] border border-transparent'
                   } ${collapsed ? 'justify-center' : ''}`}>
                   {active && (
-                    <span className="absolute left-0 top-2 bottom-2 w-[3px] rounded-r-full bg-gradient-to-b from-brand-cyan to-brand-violet" />
+                    <span className="absolute left-0 top-2 bottom-2 w-[3px] rounded-r-full bg-gradient-to-b from-brand-violet to-brand-violet" />
                   )}
-                  <Icon name={item.icon} filled={active} size={20} className={active ? 'text-brand-cyan' : ''} />
+                  <Icon name={item.icon} filled={active} size={20} className={active ? 'text-brand-violet-light' : ''} />
                   {!collapsed && <span className="text-sm font-semibold flex-1 text-left">{item.label}</span>}
                   {!collapsed && locked && (
                     <span className={`px-1.5 py-0.5 rounded-md text-[8px] font-extrabold uppercase tracking-wider ${item.lock === 'pro' ? 'bg-brand-gold/15 text-brand-gold' : 'bg-brand-violet/15 text-brand-violet'}`}>
@@ -120,11 +133,6 @@ export default function CreatorLayout({ children, page = 'home', title, subtitle
             })}
 
             <div className="pt-3 mt-3 border-t border-white/[0.05]">
-              <button onClick={() => navigate('/creator/verify')}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-text-muted hover:text-text-primary hover:bg-white/[0.03] transition-colors ${collapsed ? 'justify-center' : ''}`}>
-                <Icon name="verified" size={20} />
-                {!collapsed && <span className="text-sm font-semibold">Verification</span>}
-              </button>
               <button onClick={() => navigate('/settings')}
                 className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-text-muted hover:text-text-primary hover:bg-white/[0.03] transition-colors ${collapsed ? 'justify-center' : ''}`}>
                 <Icon name="settings" size={20} />
@@ -183,8 +191,8 @@ export default function CreatorLayout({ children, page = 'home', title, subtitle
               </span>
               Go Live
             </button>
-            <button onClick={() => navigate('/creator/content')}
-              className="hidden md:flex items-center gap-1.5 px-4 h-9 rounded-xl bg-brand-cyan text-bg-dark font-bold text-sm hover:brightness-110 transition-all">
+            <button onClick={(e) => window.dispatchEvent(new CustomEvent('vergr:open-composer', { detail: { rect: e.currentTarget.getBoundingClientRect() } }))}
+              className="hidden md:flex items-center gap-1.5 px-4 h-9 rounded-xl bg-brand-violet text-white font-bold text-sm hover:brightness-110 transition-all">
               <Icon name="add" size={16} /> Create
             </button>
           </header>
@@ -194,6 +202,7 @@ export default function CreatorLayout({ children, page = 'home', title, subtitle
             {body}
           </main>
         </div>
+        {composerNode}
       </div>
     );
   }
@@ -201,8 +210,10 @@ export default function CreatorLayout({ children, page = 'home', title, subtitle
   // ──────────────────────────────── MOBILE ────────────────────────────────
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#07080c] via-[#0a0d14] to-[#07080c] text-text-primary pb-20">
-      {/* Top bar */}
-      <header className="sticky top-0 z-30 bg-[#0a0d14]/85 backdrop-blur-xl border-b border-white/[0.05]">
+      {/* Top bar — the Android status bar overlays the edge-to-edge WebView, so
+          inset the native header below it (web/desktop: env() resolves to 0). */}
+      <header className="sticky top-0 z-30 bg-[#0a0d14]/85 backdrop-blur-xl border-b border-white/[0.05]"
+        style={IS_NATIVE_BUILD ? { paddingTop: 'calc(env(safe-area-inset-top, 0px) + 8px)' } : undefined}>
         <div className="flex items-center gap-3 h-14 px-4">
           <button onClick={() => navigate(-1)} className="w-9 h-9 rounded-full bg-white/[0.04] flex items-center justify-center">
             <Icon name="arrow_back_ios_new" size={14} />
@@ -246,7 +257,7 @@ export default function CreatorLayout({ children, page = 'home', title, subtitle
             };
             return (
               <button key={tab.key} onClick={handle}
-                className={`flex flex-col items-center justify-center gap-0.5 transition-colors ${active ? 'text-brand-cyan' : 'text-text-muted'}`}>
+                className={`flex flex-col items-center justify-center gap-0.5 transition-colors ${active ? 'text-brand-violet-light' : 'text-text-muted'}`}>
                 <Icon name={tab.icon} filled={active} size={20} />
                 <span className="text-[9px] font-bold uppercase tracking-wider">{tab.label}</span>
               </button>
@@ -267,13 +278,12 @@ export default function CreatorLayout({ children, page = 'home', title, subtitle
             <div className="p-4 space-y-1">
               <p className="text-[11px] font-bold uppercase tracking-widest text-text-muted px-2 pb-1">Creator tools</p>
               {NAV.filter(n => !MOBILE_NAV.find(m => m.key === n.key)).concat([
-                { key: 'verify', label: 'Verification', icon: 'verified', path: '/creator/verify' },
                 { key: 'settings', label: 'Settings', icon: 'settings', path: '/settings' },
               ]).map((item) => (
                 <button key={item.key} onClick={() => { setMobileMenuOpen(false); navigate(item.path); }}
                   className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-white/[0.04] text-left">
                   <div className="w-9 h-9 rounded-lg bg-white/[0.04] flex items-center justify-center">
-                    <Icon name={item.icon} size={18} className="text-brand-cyan" />
+                    <Icon name={item.icon} size={18} className="text-brand-violet-light" />
                   </div>
                   <span className="text-sm font-semibold text-text-primary">{item.label}</span>
                   <Icon name="chevron_right" size={14} className="ml-auto text-text-muted" />
@@ -290,6 +300,7 @@ export default function CreatorLayout({ children, page = 'home', title, subtitle
           </div>
         </div>
       )}
+      {composerNode}
     </div>
   );
 }

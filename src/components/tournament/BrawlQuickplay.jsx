@@ -13,7 +13,7 @@ import { TOURNAMENT_GAMES } from '../../utils/tournamentGames';
 const fns = () => getFunctions(undefined, 'europe-west1');
 const C = {
   surface: '#14141F', soft: '#1A1A2A', border: 'rgba(255,255,255,0.10)',
-  text: '#fff', dim: 'rgba(255,255,255,0.65)', cyan: '#4DFFD4', violet: '#7B1FFF',
+  text: '#fff', dim: 'rgba(255,255,255,0.65)', cyan: '#B44FFF', violet: '#7B1FFF',
 };
 
 const GAME_PICKS = ['Counter-Strike 2', 'VALORANT', 'EA Sports FC 25 (FIFA)', 'NBA 2K', 'Rocket League', 'Street Fighter 6', 'Tekken 8']

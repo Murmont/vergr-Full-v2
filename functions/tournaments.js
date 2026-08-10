@@ -35,6 +35,7 @@ const {
   isBracketTypeAllowed,
   validateTournamentLimits,
   computePrizeBreakdown,
+  MAX_ENTRY_FEE_COINS,
   buildSingleElimRound1,
   buildDoubleElimBracket,
   buildRoundRobinSchedule,
@@ -86,7 +87,13 @@ async function requireAdmin(uid) {
 async function getUserPlan(uid) {
   const snap = await db.collection('users').doc(uid).get();
   if (!snap.exists) return 'free';
-  return snap.data().tier || snap.data().plan || 'free';
+  const d = snap.data();
+  // `subscription` (string) is what the purchase flows actually write; `tier`/
+  // `plan` are legacy fallbacks. Reading only the latter treated every paying
+  // user as free, blocking them from creating their plan's tournaments.
+  const s = d.subscription;
+  const t = (typeof s === 'string' ? s : (s && s.tier)) || d.tier || d.plan || 'free';
+  return t === 'lite' || t === 'pro' ? t : 'free';
 }
 
 // Standard match doc id used everywhere.
@@ -100,7 +107,7 @@ const monthKeyForNow = () => {
 };
 
 // ─── 1. createTournamentSecure ────────────────────────────────────────
-exports.createTournamentSecure = functions.https.onCall(async (request) => {
+exports.createTournamentSecure = functions.https.onCall({ secrets: ['VERGR_GEO_TOKEN'] }, async (request) => {
   const uid = requireAuth(request);
 
   // Compliance gates — tournaments require KYC and a supported region.
@@ -116,6 +123,9 @@ exports.createTournamentSecure = functions.https.onCall(async (request) => {
     brGameCount = null, swissRounds = null,
     scheduledStart = null,
     visibility = 'public',
+    category = 'competitive', // cosmetic flavour (competitive/casual/community)
+    titleColor = null, // host-chosen highlight colour (hex) for accented title words
+    accentWords = [], // indices of title words painted with titleColor
     bannerUrl = null,
     invitedUserIds = [],
     // DS2 — optional "hosted by squad" attribution. The host can mark one of
@@ -132,6 +142,13 @@ exports.createTournamentSecure = functions.https.onCall(async (request) => {
     // top-level `type`/`seriesFormat`/`seedingMode` MUST equal stages[0]'s
     // values so existing code that reads tournament.type keeps working.
     stages = null,
+    // Ticketed-event funding model (default). 'ticketed' = fans buy spectator
+    // tickets, competitors register free, purse is host/ticket-funded.
+    // 'prize_pool' = legacy pay-to-enter winner-takes-pool (gated OFF by
+    // default via app_config.entryFeeTournamentsEnabled — see below).
+    fundingModel = 'ticketed',
+    ticket = null,            // { priceCoins, capacity, purseSlicePct, audience, seasonPassEnabled }
+    hostTopUpCoins = 0,       // host pre-funds the purse from their own wallet
   } = request.data || {};
 
   if (typeof name !== 'string' || name.trim().length < 3) {
@@ -151,8 +168,58 @@ exports.createTournamentSecure = functions.https.onCall(async (request) => {
     throw new HttpsError('permission-denied', `${type} requires the ${cfg.minPlan} plan`);
   }
 
-  const limit = validateTournamentLimits({ entryFee, maxParticipants });
-  if (!limit.ok) throw new HttpsError('invalid-argument', limit.error);
+  // ─── Funding model ─────────────────────────────────────────────────
+  // 'ticketed' (default): NO entry fee. Spectators buy tickets; competitors
+  //   register free. Purse comes from a ticket-sale slice + optional host
+  //   top-up. This is the non-gambling path.
+  // 'prize_pool' (legacy): pay-to-enter winner-takes-pool. Gated OFF for
+  //   everyone except admins unless app_config/general.entryFeeTournamentsEnabled
+  //   is true. Code is preserved (never delete a feature) but disabled by default.
+  const model = fundingModel === 'prize_pool' ? 'prize_pool' : 'ticketed';
+  let effectiveEntryFee = Math.floor(entryFee) || 0;
+  let normalizedTicket = null;
+  let topUp = Math.max(0, Math.floor(hostTopUpCoins) || 0);
+
+  if (model === 'prize_pool') {
+    // The user doc was only read for the admin bypass that no longer exists.
+    const cfgSnap = await db.collection('app_config').doc('general').get();
+    const legacyEnabled = cfgSnap.exists && cfgSnap.data()?.entryFeeTournamentsEnabled === true;
+    // NO ADMIN BYPASS. It used to read `!isAdmin && !legacyEnabled`, which meant
+    // any admin could create a pay-to-enter, winner-takes-pool tournament at any
+    // time, silently. Once the app is on Google Play that is a real-money contest
+    // surface, and Play assesses what an app CAN do, not what it usually does —
+    // that category needs per-country gambling licensing we do not have.
+    //
+    // The flag is now the single switch: flipping app_config/general
+    // .entryFeeTournamentsEnabled is a deliberate, auditable act, whereas an
+    // ambient role check is not. The feature is preserved, not deleted.
+    if (!legacyEnabled) {
+      throw new HttpsError('failed-precondition',
+        'Pay-to-enter prize-pool tournaments are disabled. Create a ticketed event instead — fans buy tickets and competitors play free.');
+    }
+    topUp = 0; // legacy model funds the purse from entry fees, not a top-up
+    const limit = validateTournamentLimits({ entryFee: effectiveEntryFee, maxParticipants });
+    if (!limit.ok) throw new HttpsError('invalid-argument', limit.error);
+  } else {
+    // Ticketed: entry fee is meaningless — force to 0 (the legal invariant:
+    // competitors never pay).
+    effectiveEntryFee = 0;
+    const tk = (ticket && typeof ticket === 'object') ? ticket : {};
+    const priceCoins = Math.max(0, Math.floor(tk.priceCoins) || 0);
+    if (priceCoins > MAX_ENTRY_FEE_COINS) {
+      throw new HttpsError('invalid-argument',
+        `Ticket price can't exceed ${MAX_ENTRY_FEE_COINS.toLocaleString()} coins.`);
+    }
+    // Capacity drives concurrent-viewer / server-load planning. Default to a
+    // generous spectator cap; never below 1.
+    const capacity = Math.max(1, Math.min(100000, Math.floor(tk.capacity) || 1000));
+    const purseSlicePct = Math.max(0, Math.min(100, Math.floor(tk.purseSlicePct) || 0));
+    const audience = ['public', 'followers', 'subscribers', 'invite'].includes(tk.audience) ? tk.audience : 'public';
+    normalizedTicket = {
+      priceCoins, capacity, sold: 0, purseSlicePct, audience,
+      seasonPassEnabled: !!tk.seasonPassEnabled,
+    };
+  }
 
   // Phase 1 — series-format + seeding-mode validation.
   const { validateSeriesFormat } = require('./tournamentSeries');
@@ -223,7 +290,7 @@ exports.createTournamentSecure = functions.https.onCall(async (request) => {
   if (needsManualMod) {
     if (!scheduledStart) {
       throw new HttpsError('invalid-argument',
-        `"${game}" requires a scheduled start time so a Vanguard mod can claim the slot. Pick a start time at least ${MIN_SCHEDULING_BUFFER_MIN} minutes ahead.`);
+        `Pick a start time for this tournament. Results for "${game}" are confirmed by a referee, so it needs to be scheduled at least ${MIN_SCHEDULING_BUFFER_MIN} minutes ahead to give one time to join.`);
     }
     const startMs = new Date(scheduledStart).getTime();
     if (!Number.isFinite(startMs)) {
@@ -233,7 +300,7 @@ exports.createTournamentSecure = functions.https.onCall(async (request) => {
     if (startMs < minStart) {
       const minsFromNow = Math.ceil((minStart - Date.now()) / 60_000);
       throw new HttpsError('failed-precondition',
-        `"${game}" needs ${MIN_SCHEDULING_BUFFER_MIN} min lead time for moderator assignment. Pick a start at least ${minsFromNow} minutes from now, or change to an auto-decided game (CS2, Dota 2, Overwatch 2, Apex Legends).`);
+        `Your start time is too soon. A referee confirms results for "${game}" and needs at least ${MIN_SCHEDULING_BUFFER_MIN} minutes to join, so pick a start at least ${minsFromNow} minutes from now. (Games like CS2, Dota 2, Overwatch 2 and Apex Legends confirm results automatically and can start anytime.)`);
     }
   }
 
@@ -257,13 +324,13 @@ exports.createTournamentSecure = functions.https.onCall(async (request) => {
   const overlayToken = require('crypto').randomBytes(32).toString('hex');
 
   const docRef = db.collection('tournaments').doc();
-  await docRef.set({
+  const tournamentDoc = {
     adminId: uid,
     squadId: squadId || null,
     name: name.trim(),
     description: description.trim?.() || '',
     game,
-    entryFee: Math.floor(entryFee) || 0,
+    entryFee: effectiveEntryFee,
     maxParticipants,
     type,
     mode: cfg.mode,
@@ -276,12 +343,22 @@ exports.createTournamentSecure = functions.https.onCall(async (request) => {
     bracketData: null,
     brResults: [],
     visibility: visibility === 'private' ? 'private' : 'public',
+    category: ['competitive', 'casual', 'community'].includes(category) ? category : 'competitive',
+    titleColor: (typeof titleColor === 'string' && /^#[0-9a-fA-F]{6}$/.test(titleColor)) ? titleColor : null,
+    accentWords: Array.isArray(accentWords)
+      ? accentWords.filter(n => Number.isInteger(n) && n >= 0 && n < 40).slice(0, 40)
+      : [],
     bannerUrl: bannerUrl || null,
     hostSquadId: validHostSquadId,
     invitedUserIds: Array.isArray(invitedUserIds) ? invitedUserIds : [],
     scheduledStart: scheduledStart ? new Date(scheduledStart) : null,
     requiresManualMod: needsManualMod,
     overlayToken,
+    // Funding model — 'ticketed' (default) or 'prize_pool' (legacy, gated).
+    fundingModel: model,
+    ticket: normalizedTicket,        // null for prize_pool model
+    declaredPurse: topUp,            // ticketed purse starts at the host top-up
+    hostTopUpCoins: topUp,
     // Phase 1 — series + seeding (defaults preserve old behaviour).
     seriesFormat,
     seriesFormatByRound: seriesFormatByRound || null,
@@ -290,7 +367,33 @@ exports.createTournamentSecure = functions.https.onCall(async (request) => {
     stages: normalizedStages,
     currentStageId: normalizedStages ? normalizedStages[0].id : null,
     createdAt: FieldValue.serverTimestamp(),
-  });
+  };
+
+  // Escrow the host's optional purse top-up inside a transaction so the
+  // doc + wallet debit + ledger row are atomic.
+  if (topUp > 0) {
+    await db.runTransaction(async (tx) => {
+      const wRef = db.collection('wallets').doc(uid);
+      const wSnap = await tx.get(wRef);
+      const bal = wSnap.exists ? (wSnap.data().balance || 0) : 0;
+      if (bal < topUp) {
+        throw new HttpsError('failed-precondition', `Insufficient coins to fund the ${topUp}-coin prize top-up.`);
+      }
+      tx.update(wRef, {
+        balance: FieldValue.increment(-topUp),
+        totalSpent: FieldValue.increment(topUp),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      tx.set(docRef, tournamentDoc);
+      tx.set(db.collection('transactions').doc(), {
+        userId: uid, type: 'tournament_purse_topup', amount: -topUp,
+        description: `Prize top-up: ${tournamentDoc.name}`,
+        tournamentId: docRef.id, createdAt: FieldValue.serverTimestamp(),
+      });
+    });
+  } else {
+    await docRef.set(tournamentDoc);
+  }
 
   return { tournamentId: docRef.id, overlayToken };
 });
@@ -305,7 +408,7 @@ exports.createTournamentSecure = functions.https.onCall(async (request) => {
 //   Tournament System doc). Entry fee is debited from `squads/{squadId}.
 //   treasury` — the doc says "prize pool goes to the squad treasury",
 //   the entry comes from there too.
-exports.joinTournamentSecure = functions.https.onCall(async (request) => {
+exports.joinTournamentSecure = functions.https.onCall({ secrets: ['VERGR_GEO_TOKEN'] }, async (request) => {
   const uid = requireAuth(request);
 
   const { tournamentId, squadId = null, displayCaptureSupported = null } = request.data || {};
@@ -331,12 +434,14 @@ exports.joinTournamentSecure = functions.https.onCall(async (request) => {
   // reject the join up front so the player doesn't escrow coins then fail to
   // claim. NOTE: the hard enforcement remains the proof-feed wall in
   // recordMatchResultInternal — a spoofed `true` just hits that wall later.
-  const { WEBCAM_PRIZE_THRESHOLD } = require('./tournamentRules');
-  if (preFee > WEBCAM_PRIZE_THRESHOLD && displayCaptureSupported === false) {
+  // Phase 2 result engine: ALL paid entries require screen capture (results
+  // are auto-detected from the player's game window; there is no manual
+  // "I won" path on paid events).
+  if (preFee > 0 && displayCaptureSupported === false) {
     throw new HttpsError('failed-precondition',
-      'This high-stakes tournament requires screen capture to claim a win. ' +
-      'Your device/OS does not support it (macOS 13+ or a current browser is needed). ' +
-      'You can still spectate.');
+      'Paid tournaments use automatic result detection, which needs screen capture. ' +
+      'Your device/OS does not support it (use a desktop browser — Chrome/Edge, or macOS 13+). ' +
+      'You can still spectate or join free tournaments.');
   }
 
   return db.runTransaction(async (tx) => {
@@ -347,6 +452,19 @@ exports.joinTournamentSecure = functions.https.onCall(async (request) => {
     if (t.status !== 'open') throw new HttpsError('failed-precondition', 'Registration closed');
     const participants = t.participants || [];
     const fee = Math.floor(t.entryFee || 0);
+
+    // LEGAL INVARIANT (ticketed events): a fan who bought a spectator ticket
+    // can't ALSO be a prize-eligible competitor (that would re-create the
+    // pay-in + chance-to-win combo). Block competitor registration if the
+    // caller holds an active ticket for this event.
+    if (t.fundingModel === 'ticketed') {
+      const tkRef = db.collection('event_tickets').doc(`${tournamentId}_${uid}`);
+      const tkSnap = await tx.get(tkRef);
+      if (tkSnap.exists && tkSnap.data().status === 'active') {
+        throw new HttpsError('failed-precondition',
+          'You hold a spectator ticket for this event, so you can\'t also compete in it.');
+      }
+    }
 
     // Squad-vs-squad path: register the whole squad, not an individual.
     if (t.mode === 'squad') {
@@ -684,12 +802,17 @@ exports.startTournamentSecure = functions.https.onCall(async (request) => {
   const uid = requireAuth(request);
   const { tournamentId } = request.data || {};
   if (!tournamentId) throw new HttpsError('invalid-argument', 'tournamentId required');
+  return startTournamentInternal(tournamentId, { uid });
+});
 
+// Underlying start logic. uid === null = system caller (the auto-start cron)
+// which skips the host check; a real uid must be the host.
+async function startTournamentInternal(tournamentId, { uid = null } = {}) {
   const tRef = db.collection('tournaments').doc(tournamentId);
   const tSnap = await tRef.get();
   if (!tSnap.exists) throw new HttpsError('not-found', 'Tournament not found');
   const t = tSnap.data();
-  if (t.adminId !== uid) throw new HttpsError('permission-denied', 'Only the host can start');
+  if (uid !== null && t.adminId !== uid) throw new HttpsError('permission-denied', 'Only the host can start');
   if (t.status !== 'open') throw new HttpsError('failed-precondition', 'Already started');
   const participants = t.participants || [];
   if (participants.length < 2) throw new HttpsError('failed-precondition', 'Need ≥ 2 participants');
@@ -986,7 +1109,8 @@ exports.startTournamentSecure = functions.https.onCall(async (request) => {
 
   await batch.commit();
   return { ok: true, totalRounds };
-});
+}
+exports._internal_startTournament = startTournamentInternal;
 
 // ─── Phase 2 — multi-stage handoff ────────────────────────────────────
 // Returns true if it advanced the tournament to a next stage (caller
@@ -1459,6 +1583,21 @@ async function recordMatchResultInternal({ tournamentId, matchId, winnerId, repo
       return { ok: true, status: m.status, alreadyReported: true };
     }
 
+    // A host who is ALSO a player in this match does NOT get the trusted
+    // fast-path — they could otherwise declare themselves winner of their own
+    // match with no agreement. They go through the player path like anyone.
+    const hostTrusted = isHost && !isPlayer;
+
+    // ⚠️ Transactions require ALL reads before ANY write — read the other
+    // side's report BEFORE tx.set below. (The old read-after-write here threw
+    // "Firestore transactions require all reads to be executed before all
+    // writes" on EVERY player-path report.)
+    const otherPlayerId = reporterUid === m.player1 ? m.player2 : m.player1;
+    const otherReportRef = matchRef.collection('reports').doc(otherPlayerId);
+    const otherSnap = (!hostTrusted && !trustedSource)
+      ? await tx.get(otherReportRef)
+      : null;
+
     tx.set(reportRef, {
       winnerId,
       reportedBy: reporterUid,
@@ -1467,7 +1606,7 @@ async function recordMatchResultInternal({ tournamentId, matchId, winnerId, repo
       createdAt: FieldValue.serverTimestamp(),
     });
 
-    if (isHost || trustedSource) {
+    if (hostTrusted || trustedSource) {
       const loser = winnerId === m.player1 ? m.player2 : m.player1;
       tx.update(matchRef, {
         winner: winnerId,
@@ -1480,16 +1619,36 @@ async function recordMatchResultInternal({ tournamentId, matchId, winnerId, repo
     }
 
     // Manual player path: needs agreement from the other player.
-    const otherPlayerId = reporterUid === m.player1 ? m.player2 : m.player1;
-    const otherReportRef = matchRef.collection('reports').doc(otherPlayerId);
-    const otherSnap = await tx.get(otherReportRef);
     if (!otherSnap.exists) {
+      // Auto-confirm window: if the opponent neither confirms nor contests
+      // before the deadline, the cron records the claimed result. Keeps
+      // results near-instant instead of waiting on a player who walked away.
+      const confirmWindowMs = Number(t.confirmWindowMs) || (3 * 60 * 1000);
+      const confirmDeadlineMs = Date.now() + confirmWindowMs;
       tx.update(matchRef, {
         status: 'awaiting_confirmation',
         firstReporter: reporterUid,
         firstReportedWinner: winnerId,
         firstReportedAt: FieldValue.serverTimestamp(),
+        confirmDeadlineMs,
       });
+      // Ping the opponent the moment a result is claimed — this was silent
+      // before, which made result latency "whenever they reopen the app".
+      if (otherPlayerId) {
+        const claimedSelf = winnerId === reporterUid;
+        tx.set(db.collection('notifications').doc(), {
+          recipientId: otherPlayerId,
+          type: 'tournament_result_confirm',
+          title: claimedSelf
+            ? 'Opponent reported they won — confirm or contest'
+            : 'Opponent reported YOU won — confirm the result',
+          body: `No response within ${Math.max(1, Math.round(confirmWindowMs / 60000))} minutes accepts the reported result.`,
+          data: { tournamentId, matchId, claimedWinner: winnerId, confirmDeadlineMs: String(confirmDeadlineMs) },
+          actionUrl: `/tournaments/${tournamentId}/match/${matchId}`,
+          read: false,
+          createdAt: FieldValue.serverTimestamp(),
+        });
+      }
       return { ok: true, status: 'awaiting_confirmation' };
     }
     const other = otherSnap.data();
@@ -1532,13 +1691,6 @@ async function recordMatchResultInternal({ tournamentId, matchId, winnerId, repo
     await advanceSwissIfNeeded(tournamentId);
     // Non-single-elim brackets need an explicit check + auto-complete pass.
     await autoCompleteNonSingleElimIfDone(tournamentId);
-    // Settle spectator bets on this match (pari-mutuel; bonus-coin payouts).
-    try {
-      const { settleMatchBets } = require('./tournamentExtras');
-      await settleMatchBets(tournamentId, matchId, winnerId);
-    } catch (err) {
-      console.error('settleMatchBets failed', tournamentId, matchId, err);
-    }
   }
   return result;
 }
@@ -2174,8 +2326,17 @@ async function finalizeInternal(tournamentId, { uid = null } = {}) {
     if (t.status !== 'completed') throw new HttpsError('failed-precondition', 'Tournament not completed');
     if (t.payoutStatus === 'paid') return { ok: true, alreadyPaid: true };
 
-    const breakdown = computePrizeBreakdown(t.prizePool || 0, t.type, {
+    // Ticketed events pay out the declared purse (ticket-sale slice + host
+    // top-up) at 100% — the 10% platform cut was already taken at ticket
+    // sale, so no mod cut here. Legacy prize-pool events pay from the
+    // escrowed entry fees with the standard 5% mod cut.
+    // Only EXPLICITLY-ticketed events pay from declaredPurse. Legacy docs with
+    // no fundingModel field must keep paying from prizePool (entry fees).
+    const isTicketed = t.fundingModel === 'ticketed';
+    const payoutPool = isTicketed ? (t.declaredPurse || 0) : (t.prizePool || 0);
+    const breakdown = computePrizeBreakdown(payoutPool, t.type, {
       squadTreasury: t.mode === 'squad' && !!t.squadId,
+      ...(isTicketed ? { modCutPct: 0 } : {}),
     });
 
     // Fold in computed placements if needed.
@@ -2228,6 +2389,8 @@ async function finalizeInternal(tournamentId, { uid = null } = {}) {
           const wRef = db.collection('wallets').doc(winnerId);
           tx.update(wRef, {
             balance: FieldValue.increment(p.player),
+            // convertible: tournament prize (received value) — see coinLedger.js
+            earnedBalance: FieldValue.increment(p.player),
             totalEarned: FieldValue.increment(p.player),
             updatedAt: FieldValue.serverTimestamp(),
           });
@@ -2548,13 +2711,6 @@ exports.resolveTournamentDispute = functions.https.onCall(async (request) => {
   });
 
   await advanceBracketAfterMatch(tournamentId, matchId);
-  // Settle spectator picks (dispute resolution path — P0 #4).
-  try {
-    const { settleMatchBets } = require('./tournamentExtras');
-    await settleMatchBets(tournamentId, matchId, winnerId);
-  } catch (err) {
-    console.error('settleMatchBets failed (dispute)', tournamentId, matchId, err);
-  }
   return { ok: true };
 });
 

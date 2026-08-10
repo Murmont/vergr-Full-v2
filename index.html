@@ -2,20 +2,207 @@
 <html lang="en" class="dark">
   <head>
     <meta charset="UTF-8" />
+    <!-- Google AdSense is NOT loaded globally here. Loading adsbygoogle.js in
+         <head> ran it for EVERY user on EVERY platform (admin, Lite/Pro, the
+         desktop/native shell) before React mounts, spawning doubleclick.net +
+         google.com ad-network subframes (extra WebView2 processes / memory /
+         tracking) for people who must never see an ad. Serving now happens only
+         via <VergrAd> (loadAdSenseOnce, gated on isFree + content zones).
+         Verification/authorization is covered script-free by /ads.txt. -->
+    <!-- VLINK SHELL GUARD — KEEP THIS THE FIRST SCRIPT IN <head>.
+         =====================================================================
+         `/vlink/**` and `/l/**` are VLink, a separate product served by Cloud
+         Functions behind Hosting rewrites. This file is VERGR's shell. It must
+         never render on one of those URLs, and yet it repeatedly has:
+
+           - Hosting ends with `** -> /index.html`, so ANY path that misses a
+             rewrite serves this file. The router then sends every unknown path
+             to /platform — which sells coins. That is what paused the Shopify
+             submission under requirement 1.2.1, ref 126602.
+           - A cached copy of this file can be served by a service worker long
+             after the server is fixed. `CACHE_NAME` never changing meant the
+             poisoned `/index.html` entry survived every update.
+           - Two workers fight over the root scope (`/sw.js` here on line ~430
+             and `/firebase-messaging-sw.js` from pushNotifications.js, which
+             registers with no scope option and so defaults to `/`). Whichever
+             registered last wins, so a guard living in one of them is not
+             reliably in control.
+
+         Every one of those defences lives somewhere that can be stale, evicted
+         or out-scoped. This one cannot: it is in the HTML itself, runs before
+         any bundle, needs no network, and works from a months-old cache. If
+         this shell is ever served on a VLink URL again, the merchant sees
+         VLink — never Vergr, and never a coin page.
+
+         Pass 1 purges the poisoned shell caches and asks the network again (a
+         bad cache is the usual cause and a real request fixes it). Pass 2, if
+         something is STILL serving this file, stops Vergr booting and paints
+         VLink's own page. The avatar cache is spared — it is bounded, costly
+         to refill, and was never part of this.
+    -->
+    <script>
+      (function () {
+        var p = location.pathname;
+        var q = location.search;
+        var isVLinkPath = /^\/(vlink|l)(\/|$)/.test(p);
+
+        // KEY OFF SHOPIFY'S OWN SIGNAL, NOT OFF A PATH LIST.
+        //
+        // Matching only `/vlink` assumes I know every URL the Shopify admin can
+        // frame. I did not: a live console showed a navigation to
+        // `https://vergr.app/?embedded=1&hmac=...&shop=...&host=...` — the bare
+        // ROOT, carrying Shopify's full embedded parameter set. `/` is Vergr's
+        // real homepage, so no path rule can ever guard it.
+        //
+        // But that parameter set is unforgeable in practice: only the Shopify
+        // admin appends embedded=1 together with shop= and host=. Their presence
+        // means this document is inside the admin's app frame, and Vergr must
+        // never render there whatever the path is.
+        var isShopifyFrame = /[?&]embedded=1(&|$)/.test(q) &&
+                             /[?&]shop=/.test(q) &&
+                             /[?&]host=/.test(q);
+
+        if (!isVLinkPath && !isShopifyFrame) return;
+
+        // Framed by Shopify but not on a VLink path: send the frame to the real
+        // app instead of merely blocking Vergr. The query is carried over intact
+        // because vlinkApp needs shop/host/id_token to serve the admin. This
+        // RECOVERS the merchant rather than showing them an apology card.
+        if (isShopifyFrame && !isVLinkPath) {
+          if (window.stop) window.stop();
+          location.replace('/vlink' + q);
+          return;
+        }
+
+        function purgeShellCaches() {
+          try {
+            if (!window.caches || !caches.keys) return Promise.resolve();
+            return caches.keys().then(function (keys) {
+              return Promise.all(keys
+                .filter(function (k) { return k !== 'vergr-avatars'; })
+                .map(function (k) { return caches.delete(k); }));
+            });
+          } catch (e) { return Promise.resolve(); }
+        }
+
+        var alreadyTried;
+        try { alreadyTried = sessionStorage.getItem('vgr_vlink_shell'); } catch (e) {}
+
+        // window.stop() aborts the pending module-script fetch, so React never
+        // boots and cannot flash /platform while the retry is in flight.
+        if (window.stop) window.stop();
+
+        if (!alreadyTried) {
+          try { sessionStorage.setItem('vgr_vlink_shell', '1'); } catch (e) {}
+          var again = function () { location.replace(p + location.search); };
+          purgeShellCaches().then(again, again);
+          return;
+        }
+
+        // BUILT WITH DOM CALLS, NOT AN HTML STRING, AND THAT IS NOT A STYLE
+        // PREFERENCE. The first version of this assembled the page as a string
+        // containing a literal closing head tag. Vite's HTML transform scans
+        // this file as MARKUP, found that tag inside the JavaScript string
+        // literal, and injected the app's own module script and stylesheet
+        // there — splitting the string across lines (SyntaxError, so the guard
+        // never ran) and, far worse, leaving the REAL head with no bundle at
+        // all. That shipped, and vergr.app served a shell that could not boot.
+        // Prerendered pages still rendered their baked-in text, which is
+        // exactly why it got past a post-deploy check.
+        //
+        // createElement never produces markup for that scanner to find, so this
+        // cannot happen again. Do not "simplify" it back into innerHTML.
+        var html = document.documentElement;
+        while (html.firstChild) html.removeChild(html.firstChild);
+
+        var head = document.createElement('head');
+        var title = document.createElement('title');
+        title.textContent = 'VLink';
+        head.appendChild(title);
+
+        var body = document.createElement('body');
+        body.style.cssText = 'margin:0;background:#f1f1f1;color:#303030;' +
+          'font:14px/1.5 -apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif';
+
+        function el(tag, css, text) {
+          var n = document.createElement(tag);
+          if (css) n.style.cssText = css;
+          if (text) n.textContent = text;
+          return n;
+        }
+
+        var wrap = el('div', 'max-width:520px;margin:0 auto;padding:48px 20px');
+        wrap.appendChild(el('p', 'font-size:20px;font-weight:650;letter-spacing:-.01em;margin:0 0 6px', 'VLink'));
+        wrap.appendChild(el('p', 'color:#616161;margin:0 0 24px;font-size:13px', 'Shop in Bio'));
+
+        var card = el('div', 'background:#fff;border-radius:12px;padding:20px;' +
+          'box-shadow:0 1px 0 rgba(0,0,0,.05),0 0 0 1px rgba(0,0,0,.07)');
+        card.appendChild(el('p', 'margin:0 0 12px', 'This page did not finish loading.'));
+        card.appendChild(el('p', 'margin:0 0 20px;color:#616161',
+          'Your page, products and settings are safe. Reloading usually resolves it.'));
+
+        var btn = el('button', 'appearance:none;border:0;border-radius:8px;padding:10px 16px;' +
+          'font:inherit;font-weight:600;color:#fff;background:#303030;cursor:pointer', 'Reload');
+        btn.onclick = function () {
+          try { sessionStorage.removeItem('vgr_vlink_shell'); } catch (e) {}
+          location.replace(p + location.search);
+        };
+        card.appendChild(btn);
+
+        wrap.appendChild(card);
+        body.appendChild(wrap);
+        html.appendChild(head);
+        html.appendChild(body);
+      })();
+    </script>
+    <!-- Legacy HashRouter compatibility: the app migrated off `#/` to clean
+         BrowserRouter URLs. Any old shared link like vergr.app/#/learn/live is
+         rewritten to the clean path BEFORE the app boots, so existing links and
+         bookmarks never 404. Runs synchronously, first thing in <head>. -->
+    <script>
+      (function () {
+        try {
+          var h = window.location.hash;
+          if (h && h.indexOf('#/') === 0) {
+            // '#/learn/live?x=1' -> '/learn/live?x=1' (hash routing keeps any
+            // query inside the hash, so this single value is the full target).
+            window.location.replace(h.slice(1));
+          }
+        } catch (e) { /* no-op */ }
+      })();
+    </script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <link rel="manifest" href="/manifest.json" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="VERGR" />
-    <link rel="icon" type="image/png" href="/favicon-v2.png" />
+    <!-- Favicon MUST be full-bleed + opaque (no transparent/rounded corners):
+         Google composites favicon transparency onto white and crops to a circle,
+         so any transparent margin shows as a white ring in search results.
+         favicon-v3 is a solid dark square derived from /brand/logo.png. The -v3
+         filename also forces Google + browsers to refetch (favicons cache hard). -->
+    <link rel="icon" type="image/png" sizes="96x96" href="/favicon-v3.png" />
+    <link rel="shortcut icon" type="image/png" href="/favicon-v3.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon-v2.png" />
     <link rel="apple-touch-icon" sizes="192x192" href="/icons/icon-192-v2.png" />
+    <!-- Boot-splash art. These MUST be preloaded here, above the inline <style>:
+         the browser's preload scanner reads raw markup for <link>/<img>, but it
+         does NOT look inside a <style> block, so a CSS url() on .bs-plate was
+         only requested after layout — which is exactly why the splash showed a
+         flat background first and the mark arrived late. Declared as links they
+         are fetched from the very first bytes of the document. On the native
+         shell both files ship inside the APK, so this is a local disk read.
+         The Android launch window paints the same nebula from an APK drawable
+         (res/drawable/vergr_splash.xml) underneath, so the real background is
+         already on screen before the WebView renders anything at all. -->
+    <link rel="preload" as="image" href="/brand/loader-nebula.webp" fetchpriority="high" />
+    <link rel="preload" as="image" href="/icons/icon-512-v2.png" fetchpriority="high" />
     <meta name="theme-color" content="#07080D" />
-    <meta name="description" content="VERGR — Where gamers converge. Compete in skill-based tournaments for real prizes, stream gameplay and earn tips, build a squad with shared treasury. The gaming social platform built for monetisation." />
+    <meta name="description" content="Connect with gamers, live stream in high quality, and compete in tournaments on Vergr. Manage your competitive squad and earn rewards with daily quests." />
     <!-- Cryptomus merchant domain ownership verification. Keep until
          Cryptomus confirms verification, after which it can be removed. -->
     <meta name="cryptomus" content="a3067f24" />
-    <title>VERGR — Where Gamers Converge | Tournaments, Streaming, Squads</title>
+    <title>Vergr | Connect, Stream & Compete in Tournaments</title>
 
     <!-- Structured data for search engines: Organization + WebSite. Helps
          Google understand VERGR is a software product / community, not a
@@ -45,7 +232,7 @@
           "description": "Compete in skill-based gaming tournaments, stream gameplay, build squads, and earn real money. Crypto and card payments supported.",
           "potentialAction": {
             "@type": "SearchAction",
-            "target": "https://vergr.app/#/help?q={search_term_string}",
+            "target": "https://vergr.app/platform/help?q={search_term_string}",
             "query-input": "required name=search_term_string"
           }
         }
@@ -57,19 +244,39 @@
          get the right title + image + description for shared URLs. -->
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="VERGR" />
-    <meta property="og:title" content="VERGR — Where Gamers Make Money | Tournaments, Streaming, Squads" />
-    <meta property="og:description" content="Turn your gaming skill into real money. Skill-based tournaments with cash prizes, live streaming with tips, squad communities with shared treasuries. Crypto and card supported." />
-    <meta property="og:image" content="https://vergr.app/icons/icon-512.png" />
+    <meta property="og:title" content="Vergr | Connect, Stream & Compete in Tournaments" />
+    <meta property="og:description" content="Connect with gamers, live stream in high quality, and compete in tournaments on Vergr. Manage your competitive squad and earn rewards with daily quests." />
+    <meta property="og:image" content="https://vergr.app/og/share-poster.jpg" />
+    <meta property="og:image:width" content="1280" />
+    <meta property="og:image:height" content="644" />
+    <meta property="og:image:alt" content="VERGR — Ready, Player." />
     <meta property="og:url" content="https://vergr.app" />
+    <!-- og:video: Discord, Telegram, Facebook play this inline. WhatsApp/iMessage fall back to og:image above. -->
+    <meta property="og:video" content="https://vergr.app/og/share.mp4" />
+    <meta property="og:video:secure_url" content="https://vergr.app/og/share.mp4" />
+    <meta property="og:video:type" content="video/mp4" />
+    <meta property="og:video:width" content="1280" />
+    <meta property="og:video:height" content="644" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="VERGR — Where Gamers Make Money" />
-    <meta name="twitter:description" content="Skill-based tournaments, live streaming, squads. Turn your gaming into earnings — no ads, flat 10% tip fee, crypto cash-out." />
-    <meta name="twitter:image" content="https://vergr.app/icons/icon-512.png" />
+    <meta name="twitter:title" content="Vergr | Connect, Stream & Compete in Tournaments" />
+    <meta name="twitter:description" content="Connect with gamers, live stream in high quality, and compete in tournaments on Vergr. Manage your competitive squad and earn rewards with daily quests." />
+    <meta name="twitter:image" content="https://vergr.app/og/share-poster.jpg" />
     <link rel="canonical" href="https://vergr.app/" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
-    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap" rel="stylesheet" />
+    <!-- Non-render-blocking: a cold WebView (native app cold-start) otherwise
+         waits on this cross-origin stylesheet before its FIRST paint, which
+         delayed the boot splash by a few hundred ms (visible as a black gap
+         after the OS icon splash). Load it async (media=print → all onload) so
+         the splash paints immediately; fonts swap in when ready (already
+         display=swap). <noscript> keeps it blocking where JS is off. -->
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap" media="print" onload="this.media='all'" />
+    <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap" /></noscript>
+    <!-- Material Symbols is SELF-HOSTED only (see @font-face below). The gstatic
+         css2 <link> was REMOVED 2026-05-31: it declared a competing variable
+         face (weight 100..700) that the cascade selected over the self-hosted
+         face, and when gstatic was slow/blocked (e.g. Ukraine) that face errored
+         → icons rendered as raw ligature text. One self-hosted face = no race. -->
     <style>
       /* Material Symbols — SELF-HOSTED first so icons never fall back to raw
          ligature text (offline, CSP, CDN-404, or slow network). The bundled
@@ -83,6 +290,34 @@
         font-display: block;
         src: url(/fonts/material-symbols-outlined.woff2) format('woff2'),
              url(https://fonts.gstatic.com/s/materialsymbolsoutlined/v341/kJEhBvYX7BgnkSrUwT8OhrdQw4oELdPIeeII9v6oFsI.woff2) format('woff2');
+      }
+      /* NUMBER FONT: every monospace font (DM Mono included) deliberately marks
+         its zero with a slash or centre dot to tell 0 from O. There is NO
+         monospace face that keeps DM Mono's look with a plain zero, and a
+         per-glyph swap looks incoherent (donor zero vs. neighbouring digits).
+         Founder decision: ALL numbers use DM Sans (the app's own font, plain
+         zero). DM Mono is referenced in ~100 places (Tailwind font-dmmono,
+         squad.css, inline styles, canvas share cards) for BOTH numbers and
+         styled labels, so rather than chase every call site we redefine the
+         'DM Mono' FAMILY itself to render the self-hosted DM Sans variable
+         font. Declared after the Google Fonts <link> + DM Mono dropped from
+         that link, so this is the only 'DM Mono' face. Variable weight range
+         (100..1000) keeps the bold/800 label weights true, not synthesised. */
+      @font-face {
+        font-family: 'DM Mono';
+        font-style: normal;
+        font-weight: 100 1000;
+        font-display: swap;
+        src: url(/fonts/dmsans-latin.woff2) format('woff2');
+        unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+      }
+      @font-face {
+        font-family: 'DM Mono';
+        font-style: normal;
+        font-weight: 100 1000;
+        font-display: swap;
+        src: url(/fonts/dmsans-latinext.woff2) format('woff2');
+        unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
       }
       .material-symbols-outlined {
         font-family: 'Material Symbols Outlined';
@@ -111,13 +346,180 @@
       .animate-shimmer { background: linear-gradient(90deg, transparent 0%, rgba(81,251,217,0.05) 50%, transparent 100%); background-size: 200% 100%; animation: shimmer 1.5s infinite; }
       /* Safe area padding for notched phones */
       .safe-top { padding-top: env(safe-area-inset-top, 0px); }
+      /* Native app: add breathing room below the status bar so top bars/titles
+         don't sit flush against it. Scoped to .vergr-native so web is unchanged. */
+      .vergr-native .safe-top { padding-top: calc(env(safe-area-inset-top, 0px) + 8px); }
+      /* Auth/onboarding screens use a top <header> with a fixed pt-12 (48px) that
+         ignores the status-bar inset, so the back arrow hugged the status bar on
+         native. Add the safe-area inset to any top-of-screen header.pt-12. */
+      .vergr-native header.pt-12 { padding-top: calc(env(safe-area-inset-top, 0px) + 2.25rem) !important; }
       .safe-bottom { padding-bottom: env(safe-area-inset-bottom, 0px); }
       .gold-text { background: linear-gradient(135deg, #F5C542 0%, #D4A017 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
       input:-webkit-autofill { -webkit-box-shadow: 0 0 0 30px #161922 inset !important; -webkit-text-fill-color: #ECEFFE !important; }
+
+      /* ── Instant boot splash ────────────────────────────────────────────
+         Painted from static HTML the moment the WebView shows index.html, so
+         the cold-open goes OS-icon-splash → this nebula frame with NO blank
+         gap in between (the native Android WebView otherwise flashed the empty
+         dark #root before React mounted). React's createRoot() clears #root on
+         first paint, so #boot-splash is removed exactly when the JS
+         LoadingScreen (same nebula look) takes over — one continuous screen.
+         Uses only bundled/precached assets (loader-nebula.webp + app icon) so
+         it renders offline / on first launch with zero network. */
+      #boot-splash {
+        position: fixed; inset: 0; z-index: 2147483000; overflow: hidden;
+        background: #07080D; display: flex; align-items: center; justify-content: center;
+      }
+      /* background-size:100% 100% + inset:0 + a drift that STARTS at scale(1)
+         so this is pixel-for-pixel the same framing the Android launch window
+         already painted from the APK drawable. Any zoom/crop mismatch here
+         would show up as a jump at the OS -> WebView handoff. */
+      #boot-splash .bs-plate {
+        position: absolute; inset: 0;
+        background: url("/brand/loader-nebula.webp") center/100% 100% no-repeat;
+        animation: bs-drift 24s ease-in-out infinite;
+      }
+      @keyframes bs-drift { 0%,100%{transform:scale(1)} 50%{transform:scale(1.04) translate(0.6%,-0.5%)} }
+      #boot-splash .bs-breath {
+        position: absolute; inset: 0; mix-blend-mode: screen;
+        background:
+          radial-gradient(60% 50% at 18% 24%, rgba(180, 79, 255, 0.18), transparent 70%),
+          radial-gradient(50% 50% at 88% 22%, rgba(200,127,255,0.20), transparent 70%),
+          radial-gradient(45% 60% at 50% 90%, rgba(123,111,255,0.18), transparent 70%);
+        animation: bs-breath 5.2s ease-in-out infinite;
+      }
+      @keyframes bs-breath { 0%,100%{opacity:.7} 50%{opacity:1} }
+      #boot-splash .bs-vignette {
+        position: absolute; inset: 0;
+        background: radial-gradient(110% 80% at 50% 50%, transparent 30%, rgba(7,8,13,0.55) 100%);
+      }
+      #boot-splash .bs-chip {
+        position: absolute; top: calc(22px + env(safe-area-inset-top, 0px)); left: 50%;
+        transform: translateX(-50%); display: inline-flex; align-items: center; gap: 8px;
+        padding: 6px 12px 6px 8px; background: rgba(15,17,24,0.45);
+        border: 1px solid rgba(255,255,255,0.08); border-radius: 999px;
+        font-size: 10px; letter-spacing: 0.12em; color: rgba(242,244,250,0.65); text-transform: uppercase;
+      }
+      #boot-splash .bs-chip img { width: 20px; height: 20px; border-radius: 5px; display: block; }
+      #boot-splash .bs-center { position: relative; display: flex; flex-direction: column; align-items: center; gap: 28px; }
+      #boot-splash .bs-icon-stage {
+        position: relative; width: 156px; height: 156px;
+        display: flex; align-items: center; justify-content: center;
+        animation: bs-float 4s ease-in-out infinite;
+      }
+      @keyframes bs-float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-4px)} }
+      /* The ONLY treatment behind the mark (the dashed ring is gone). Carries a
+         28px radius so it echoes the icon's own rounded-square silhouette rather
+         than fighting it with a circle. Pure CSS, so it is on screen from the
+         first frame with nothing to load. */
+      #boot-splash .bs-glow {
+        position: absolute; inset: -26%; border-radius: 30%; filter: blur(26px);
+        background:
+          radial-gradient(50% 50% at 32% 30%, rgba(180, 79, 255,0.55), transparent 70%),
+          radial-gradient(50% 50% at 70% 78%, rgba(200,127,255,0.55), transparent 70%);
+        animation: bs-glow 4s ease-in-out infinite;
+      }
+      #boot-splash .bs-glow-core {
+        position: absolute; inset: -6%; border-radius: 34px; filter: blur(14px);
+        background: linear-gradient(135deg, rgba(180, 79, 255,0.30), rgba(123,111,255,0.34) 55%, rgba(200,127,255,0.30));
+        animation: bs-glow 4s ease-in-out infinite reverse;
+      }
+      @keyframes bs-glow { 0%,100%{opacity:.7;transform:scale(1)} 50%{opacity:1;transform:scale(1.08)} }
+      #boot-splash .bs-icon {
+        position: relative; z-index: 2; width: 124px; height: 124px; border-radius: 28px; display: block;
+        filter: drop-shadow(0 12px 32px rgba(0,0,0,0.5)) drop-shadow(0 0 24px rgba(180, 79, 255,0.25));
+      }
+      #boot-splash .bs-progress {
+        position: relative; width: 220px; height: 4px; border-radius: 999px;
+        background: rgba(255,255,255,0.08); overflow: hidden;
+      }
+      #boot-splash .bs-bar {
+        position: absolute; inset: 0; width: 40%; border-radius: inherit;
+        background: linear-gradient(90deg, transparent 0%, #B44FFF 30%, #7B6FFF 55%, #C87FFF 80%, transparent 100%);
+        box-shadow: 0 0 10px rgba(180, 79, 255,0.5);
+        animation: bs-bar 1.8s cubic-bezier(0.65,0,0.35,1) infinite;
+      }
+      @keyframes bs-bar { 0%{transform:translateX(-100%)} 100%{transform:translateX(350%)} }
+      /* NO RING. There used to be a dashed rotating CIRCLE around the mark, which
+         was wrong twice over: a dashed circle framing a rounded-SQUARE icon reads
+         as cheap, and being inline SVG it painted instantly while the icon bitmap
+         did not — so the first thing on screen was an empty dashed ring with
+         nothing inside it. The glow below is the whole treatment. Do not
+         reintroduce a ring here or in LoadingScreen.css (.vl-icon-ring). */
+      /* Microcopy line (matches .vl-microcopy) */
+      #boot-splash .bs-microcopy {
+        font-size: 12px; letter-spacing: 0.04em; color: rgba(242,244,250,0.72);
+        min-height: 1.4em; display: inline-flex; align-items: center; gap: 8px;
+        text-shadow: 0 0 12px rgba(7,8,13,0.6);
+      }
+      #boot-splash .bs-dot {
+        width: 5px; height: 5px; border-radius: 50%; background: #B44FFF;
+        box-shadow: 0 0 6px #B44FFF; animation: bs-dot 1.2s ease-in-out infinite;
+      }
+      @keyframes bs-dot { 0%,100%{opacity:.4;transform:scale(.85)} 50%{opacity:1;transform:scale(1.1)} }
+      /* Tip card (matches .vl-tip) */
+      #boot-splash .bs-tip {
+        position: relative; max-width: 320px; width: 100%; padding: 10px 14px 10px 12px;
+        border-radius: 12px; background: rgba(15,17,24,0.55);
+        backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+        border: 1px solid rgba(255,255,255,0.08); display: flex; align-items: center; gap: 10px;
+        font-size: 11px; color: rgba(242,244,250,0.7);
+      }
+      #boot-splash .bs-tip-label {
+        flex-shrink: 0; font-size: 9px; letter-spacing: 0.14em; color: #B44FFF; text-transform: uppercase;
+        padding: 3px 6px; border-radius: 4px; background: rgba(180, 79, 255,0.10); border: 1px solid rgba(180, 79, 255,0.25);
+      }
+      #boot-splash .bs-tip-body { line-height: 1.4; text-align: left; }
+      #boot-splash .bs-chip { backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
+      #boot-splash .bs-tagline {
+        position: relative; font-size: 10px; letter-spacing: 0.28em; text-transform: uppercase;
+        color: rgba(242,244,250,0.32); white-space: nowrap;
+      }
+      /* ── Entrance ────────────────────────────────────────────────────────
+         THE BACKGROUND LAYERS DO NOT FADE IN. They used to carry
+         `bs-fadein .55s`, which meant that even once the nebula had decoded the
+         user still watched it rise out of black for half a second — a
+         self-inflicted "wrong background first" on top of the loading delay.
+         The nebula, its wash and the vignette are now on screen at full opacity
+         on the first painted frame, matching the Android launch window exactly.
+         Only the secondary chrome (progress bar, microcopy, tip, tagline) is
+         staggered, because that is copy arriving, not the brand backdrop. */
+      @keyframes bs-fadein { from { opacity: 0; } to { opacity: 1; } }
+      @keyframes bs-settle { from { transform: scale(1.14); } to { transform: scale(1); } }
+      #boot-splash .bs-icon     { animation: bs-settle .5s cubic-bezier(.2,.7,.2,1) both; }
+      #boot-splash .bs-progress { animation: bs-fadein .5s ease-out .28s both; }
+      #boot-splash .bs-microcopy{ animation: bs-fadein .5s ease-out .36s both; }
+      #boot-splash .bs-chip     { animation: bs-fadein .5s ease-out .18s both; }
+      #boot-splash .bs-tip      { animation: bs-fadein .5s ease-out .46s both; }
+      #boot-splash .bs-tagline  { animation: bs-fadein .5s ease-out .5s both; }
+      #boot-splash .bs-bottom {
+        position: absolute; left: 0; right: 0;
+        bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+        display: flex; flex-direction: column; align-items: center; gap: 18px;
+        padding: 0 24px;
+      }
+      #boot-splash .bs-tip-body {
+        display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+      }
+      /* NATIVE: the boot splash is KOTLIN now (SplashController + the
+         vergr_splash_view layout), painted before the WebView exists and held
+         until the app reports a real frame. This HTML splash must NOT also
+         render there — two splashes drawing the same brand screen is how the
+         mark ended up changing shape mid-boot. Web/PWA has no native layer, so
+         it keeps this one. */
+      html.vergr-native #boot-splash { display: none !important; }
+      @media (prefers-reduced-motion: reduce) {
+        #boot-splash .bs-plate, #boot-splash .bs-breath, #boot-splash .bs-vignette,
+        #boot-splash .bs-icon, #boot-splash .bs-icon-stage, #boot-splash .bs-glow,
+        #boot-splash .bs-glow-core, #boot-splash .bs-bar,
+        #boot-splash .bs-dot, #boot-splash .bs-progress, #boot-splash .bs-microcopy,
+        #boot-splash .bs-chip, #boot-splash .bs-tip, #boot-splash .bs-tagline { animation: none; }
+        #boot-splash .bs-bar { width: 60%; opacity: .6; }
+      }
     </style>
-    <!-- Tebex.js — inline checkout modal for the Headless API integration.
-         Loaded async; src/utils/tebexCheckout.js calls window.Tebex once available. -->
-    <script src="https://js.tebex.io/v/1.js" async></script>
+    <!-- Tag the native mobile shell early (before React) so .vergr-native CSS
+         applies with no flash. Mirrors isMobileApp() in src/utils/platform.js. -->
+    <script>try{if(window.__TAURI_INTERNALS__&&/android|iphone|ipad|ipod/i.test(navigator.userAgent||'')){document.documentElement.classList.add('vergr-native');}}catch(e){}</script>
   </head>
   <body>
     <script>
@@ -136,7 +538,32 @@
         }
       })();
     </script>
-    <div id="root"></div>
+    <div id="root">
+      <!-- Static boot splash (removed automatically when React mounts into #root).
+           Matches src/components/LoadingScreen.jsx so the handoff is seamless. -->
+      <div id="boot-splash" aria-hidden="true">
+        <div class="bs-plate"></div>
+        <div class="bs-breath"></div>
+        <div class="bs-vignette"></div>
+        <div class="bs-chip"><img src="/icons/icon-512-v2.png" alt="" /><span>VERGR</span></div>
+        <div class="bs-center">
+          <div class="bs-icon-stage">
+            <div class="bs-glow"></div>
+            <div class="bs-glow-core"></div>
+            <img class="bs-icon" src="/icons/icon-512-v2.png" alt="VERGR" fetchpriority="high" decoding="sync" />
+          </div>
+          <div class="bs-progress"><div class="bs-bar"></div></div>
+          <div class="bs-microcopy"><span class="bs-dot"></span><span>respawning your feed</span></div>
+        </div>
+        <div class="bs-bottom">
+          <div class="bs-tip">
+          <span class="bs-tip-label">PRO TIP</span>
+          <span class="bs-tip-body">Pin your vergr.me link in chat to convert viewers into followers.</span>
+        </div>
+          <div class="bs-tagline">Play. Stream. Earn.</div>
+        </div>
+      </div>
+    </div>
     <script type="module" src="/src/main.jsx"></script>
   <script>if("serviceWorker" in navigator){navigator.serviceWorker.register("/sw.js").then(reg=>{reg.update();});}</script>
   </body>

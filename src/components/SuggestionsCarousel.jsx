@@ -140,7 +140,7 @@ export default function SuggestionsCarousel() {
     <div className="py-4 border-b border-white/[0.04]">
       <div className="flex items-center justify-between px-4 mb-3">
         <h3 className="text-sm font-syne font-bold text-text-primary">Who to Follow</h3>
-        <button onClick={() => navigate('/browse-creators')} className="text-brand-cyan text-xs">Show all</button>
+        <button onClick={() => navigate('/browse-creators')} className="text-brand-violet-light text-xs">Show all</button>
       </div>
       <div className="flex overflow-x-auto no-scrollbar gap-3 px-4">
         {users.map(user => {
@@ -157,7 +157,7 @@ export default function SuggestionsCarousel() {
                 className={`px-3 py-0.5 rounded-full text-[9px] font-bold transition-colors ${
                   isFollowed
                     ? 'bg-surface-2 border border-white/[0.06] text-text-secondary'
-                    : 'bg-brand-cyan/10 text-brand-cyan'
+                    : 'bg-brand-violet/10 text-brand-violet-light'
                 }`}
               >
                 {isFollowed ? 'Following' : 'Follow'}

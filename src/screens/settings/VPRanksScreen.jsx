@@ -10,9 +10,12 @@ import { useUser } from '../../context/UserContext';
 import useResponsive from '../../hooks/useResponsive';
 import {
   VP_LEVELS, RANK_TIERS, MAX_VP_LEVEL, TOTAL_VP_TO_MAX,
-  getVPLevel, getVPProgress, getNextVPLevel,
+  getVPLevel, getVPProgress, getNextVPLevel, getCommission,
   PRESTIGE_REWARDS, PRESTIGE_MAX, PLAN_VP_MULTIPLIER,
 } from '../../utils/vpSystem';
+import { resolveTier } from '../../utils/tierSystem';
+import RankCrest from '../../components/prestige/RankCrest';
+import { RANK_VIEWS } from '../../components/prestige/prestigeData';
 
 export default function VPRanksScreen() {
   const navigate = useNavigate();
@@ -28,7 +31,7 @@ export default function VPRanksScreen() {
   }, [setRightPanel, setContentAlign]);
 
   const totalVP = wallet?.vp || 0;
-  const plan = profile?.tier || 'free';
+  const plan = resolveTier(profile);
   const currentLevel = getVPLevel(totalVP);
   const nextLevel = getNextVPLevel(totalVP);
   const progress = getVPProgress(totalVP);
@@ -36,10 +39,16 @@ export default function VPRanksScreen() {
 
   // Group 100 levels by rank
   const groupedRanks = useMemo(() => {
-    return RANK_TIERS.map(rank => ({
-      ...rank,
-      levels: VP_LEVELS.filter(l => l.level >= rank.min && l.level <= rank.max),
-    }));
+    return RANK_TIERS.map(rank => {
+      const view = RANK_VIEWS.find(v => v.name === rank.name);
+      const badges = view?.badges || [];
+      return {
+        ...rank,
+        levels: VP_LEVELS.filter(l => l.level >= rank.min && l.level <= rank.max),
+        // Highest crest of the band = the rank's emblem.
+        badgeArt: badges.length ? badges[badges.length - 1].art : null,
+      };
+    });
   }, []);
 
   const fmt = (n) => n.toLocaleString();
@@ -56,7 +65,8 @@ export default function VPRanksScreen() {
         </header>
       )}
 
-      <main className={`flex-1 px-4 lg:px-6 ${isDesktop ? 'max-w-3xl' : ''}`}>
+      <main className={`flex-1 px-4 lg:px-6 ${isDesktop ? 'max-w-6xl' : ''}`}>
+        <div className="lg:grid lg:grid-cols-2 lg:gap-4 lg:items-start">
         {/* Current status */}
         <div className="mb-6 p-5 rounded-2xl border border-white/[0.08] bg-surface-1">
           <div className="flex items-center gap-3 mb-3">
@@ -69,7 +79,7 @@ export default function VPRanksScreen() {
             <div className="flex-1 min-w-0">
               <p className="text-white font-bold text-lg">{currentLevel.name}</p>
               <p className="text-text-secondary text-xs">
-                Level {currentLevel.level}{prestige > 0 ? ` · Prestige ${prestige}` : ''} · {Math.round(currentLevel.commission * 100)}% commission · {Math.round(currentLevel.discount * 100)}% coin discount
+                Level {currentLevel.level}{prestige > 0 ? ` · Prestige ${prestige}` : ''} · {Math.round(getCommission(totalVP) * 100)}% conversion commission
               </p>
             </div>
           </div>
@@ -88,7 +98,7 @@ export default function VPRanksScreen() {
           </div>
 
           {plan !== 'free' && (
-            <div className="mt-3 flex items-center gap-2 text-xs text-brand-cyan">
+            <div className="mt-3 flex items-center gap-2 text-xs text-brand-violet-light">
               <Icon name="bolt" size={14} />
               <span>{plan.toUpperCase()} plan active — earning VP at {PLAN_VP_MULTIPLIER[plan]}× speed</span>
             </div>
@@ -99,16 +109,17 @@ export default function VPRanksScreen() {
         <div className="mb-6 p-4 rounded-2xl border border-white/[0.06] bg-surface-1 text-xs text-text-secondary leading-relaxed">
           <p className="text-white font-semibold text-sm mb-1">How leveling works</p>
           <p>
-            100 levels across 11 ranks. Each level costs 2,000 VP at the start, rising by 1,000 every 10 levels — 11,000 per level from L91–100. Reaching L100 takes {fmt(TOTAL_VP_TO_MAX)} VP total. Commission scales smoothly from 30% at L1 to 10% at L100.
+            100 levels across 11 ranks. Each level costs 2,000 VP at the start, rising by 1,000 every 10 levels (11,000 per level from L91 to L100). Reaching L100 takes {fmt(TOTAL_VP_TO_MAX)} VP total. Your coin-to-gem conversion commission steps down as VP grows, from 30% to a 15% floor at 100,000 VP.
           </p>
           <p className="mt-2">
             Earn VP from daily logins, quests, likes received, tournament wins, streaming, referrals, and more. Pro/Lite plans multiply all VP earnings (1.5× / 2×) so you rank up faster.
           </p>
         </div>
+        </div>
 
         {/* Rank groups */}
         <p className="text-text-secondary text-xs uppercase tracking-wider font-bold mb-3">The 11 ranks</p>
-        <div className="space-y-2 mb-8">
+        <div className="space-y-2 mb-8 lg:grid lg:grid-cols-2 lg:gap-3 lg:space-y-0 lg:items-start">
           {groupedRanks.map((rank) => {
             const firstLvl = rank.levels[0];
             const lastLvl = rank.levels[rank.levels.length - 1];
@@ -126,16 +137,25 @@ export default function VPRanksScreen() {
                   onClick={() => setOpenRank(isOpen ? null : rank.name)}
                   className="w-full flex items-center gap-3 p-4 hover:bg-white/[0.02] transition-colors"
                 >
-                  <div
-                    className="w-10 h-10 rounded-full shrink-0 flex items-center justify-center"
-                    style={{
-                      background: `${rank.ringColor}20`,
-                      border: `2px solid ${isUnlocked ? rank.ringColor : 'rgba(255,255,255,0.1)'}`,
-                      opacity: isUnlocked ? 1 : 0.5,
-                    }}
-                  >
-                    <Icon name={isUnlocked ? 'verified' : 'lock'} size={18} style={{ color: isUnlocked ? rank.ringColor : '#ffffff66' }} />
-                  </div>
+                  {rank.badgeArt ? (
+                    <div className="relative shrink-0">
+                      <RankCrest art={rank.badgeArt} ringColor={rank.ringColor} size={46} locked={!isUnlocked} />
+                      {!isUnlocked && (
+                        <Icon name="lock" size={13} className="absolute -bottom-0.5 -right-0.5 text-white/70 bg-bg-dark rounded-full p-0.5" />
+                      )}
+                    </div>
+                  ) : (
+                    <div
+                      className="w-10 h-10 rounded-full shrink-0 flex items-center justify-center"
+                      style={{
+                        background: `${rank.ringColor}20`,
+                        border: `2px solid ${isUnlocked ? rank.ringColor : 'rgba(255,255,255,0.1)'}`,
+                        opacity: isUnlocked ? 1 : 0.5,
+                      }}
+                    >
+                      <Icon name={isUnlocked ? 'verified' : 'lock'} size={18} style={{ color: isUnlocked ? rank.ringColor : '#ffffff66' }} />
+                    </div>
+                  )}
                   <div className="flex-1 min-w-0 text-left">
                     <p className="text-white font-bold text-sm">{rank.name}</p>
                     <p className="text-text-secondary text-[11px]">
@@ -152,11 +172,10 @@ export default function VPRanksScreen() {
 
                 {isOpen && (
                   <div className="border-t border-white/[0.06]">
-                    <div className="grid grid-cols-[0.6fr_1fr_1fr_1fr] px-4 py-2 text-[10px] uppercase tracking-wider text-text-muted font-bold border-b border-white/[0.04]">
+                    <div className="grid grid-cols-[0.6fr_1fr_1fr] px-4 py-2 text-[10px] uppercase tracking-wider text-text-muted font-bold border-b border-white/[0.04]">
                       <span>Lvl</span>
                       <span className="text-right">VP to reach</span>
                       <span className="text-right">Commission</span>
-                      <span className="text-right">Discount</span>
                     </div>
                     {rank.levels.map((lvl) => {
                       const isCurrent = lvl.level === currentLevel.level;
@@ -164,7 +183,7 @@ export default function VPRanksScreen() {
                       return (
                         <div
                           key={lvl.level}
-                          className={`grid grid-cols-[0.6fr_1fr_1fr_1fr] px-4 py-2 text-xs border-b border-white/[0.03] last:border-b-0 ${
+                          className={`grid grid-cols-[0.6fr_1fr_1fr] px-4 py-2 text-xs border-b border-white/[0.03] last:border-b-0 ${
                             isCurrent ? 'bg-white/[0.04]' : ''
                           }`}
                         >
@@ -175,7 +194,6 @@ export default function VPRanksScreen() {
                             {fmt(lvl.vpRequired)}
                           </span>
                           <span className="text-right text-text-primary">{Math.round(lvl.commission * 100)}%</span>
-                          <span className="text-right text-text-primary">{Math.round(lvl.discount * 100)}%</span>
                         </div>
                       );
                     })}
@@ -210,7 +228,7 @@ export default function VPRanksScreen() {
         <div className="flex gap-2">
           <button
             onClick={() => navigate('/earn')}
-            className="flex-1 py-3 rounded-xl bg-brand-cyan text-bg-dark font-bold text-sm"
+            className="flex-1 py-3 rounded-xl bg-brand-violet text-white font-bold text-sm"
           >
             Earn VP
           </button>

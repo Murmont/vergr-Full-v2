@@ -30,13 +30,13 @@ export default function TransactionFiltersScreen() {
           <button onClick={() => navigate(-1)} className="text-white/80 hover:text-white transition-colors" aria-label="Go back">
             <Icon name="arrow_back" size={24} />
           </button>
-          <button onClick={() => navigate(-1)} className="text-brand-cyan font-semibold text-sm">Apply</button>
+          <button onClick={() => navigate(-1)} className="text-brand-violet-light font-semibold text-sm">Apply</button>
         </div>
       )}
       {isMobile && (
         <header className="flex items-center gap-3 px-5 pt-4 pb-4">
           <h1 className="text-white font-syne font-bold text-lg flex-1">Filters</h1>
-          <button onClick={() => navigate(-1)} className="text-brand-cyan font-semibold text-sm">Apply</button>
+          <button onClick={() => navigate(-1)} className="text-brand-violet-light font-semibold text-sm">Apply</button>
         </header>
       )}
       <main className="flex-1 px-5 pb-8">
@@ -46,7 +46,7 @@ export default function TransactionFiltersScreen() {
             <button
               key={t}
               onClick={() => setType(t)}
-              className={`px-4 py-2 rounded-full text-sm font-bold ${type === t ? 'bg-brand-cyan text-bg-dark' : 'bg-surface-2 text-text-secondary'}`}
+              className={`px-4 py-2 rounded-full text-sm font-bold ${type === t ? 'bg-brand-violet text-white' : 'bg-surface-2 text-text-secondary'}`}
             >
               {t.charAt(0).toUpperCase() + t.slice(1)}
             </button>
@@ -58,7 +58,7 @@ export default function TransactionFiltersScreen() {
             <button
               key={k}
               onClick={() => setPeriod(k)}
-              className={`px-4 py-2 rounded-full text-sm font-bold ${period === k ? 'bg-brand-cyan text-bg-dark' : 'bg-surface-2 text-text-secondary'}`}
+              className={`px-4 py-2 rounded-full text-sm font-bold ${period === k ? 'bg-brand-violet text-white' : 'bg-surface-2 text-text-secondary'}`}
             >
               {l}
             </button>

@@ -72,7 +72,7 @@ export default function CreatePollScreen() {
           <button 
             onClick={handlePost} 
             disabled={loading}
-            className="text-brand-cyan font-semibold text-sm disabled:opacity-50"
+            className="text-brand-violet-light font-semibold text-sm disabled:opacity-50"
           >
             {loading ? 'Posting...' : 'Post'}
           </button>
@@ -89,7 +89,7 @@ export default function CreatePollScreen() {
           <button
             onClick={handlePost}
             disabled={loading}
-            className="text-brand-cyan font-semibold text-sm disabled:opacity-50"
+            className="text-brand-violet-light font-semibold text-sm disabled:opacity-50"
           >
             {loading ? 'Posting...' : 'Post'}
           </button>
@@ -107,7 +107,7 @@ export default function CreatePollScreen() {
               onChange={e => setQuestion(e.target.value)}
               rows={2}
               placeholder="Ask a question..."
-              className="w-full bg-surface-2 border border-white/[0.06] rounded-xl px-4 py-3 text-white outline-none focus:border-brand-cyan resize-none text-lg"
+              className="w-full bg-surface-2 border border-white/[0.06] rounded-xl px-4 py-3 text-white outline-none focus:border-brand-violet resize-none text-lg"
             />
           </div>
 
@@ -135,7 +135,7 @@ export default function CreatePollScreen() {
               ))}
             </div>
             {options.length < 6 && (
-              <button onClick={addOption} className="flex items-center gap-2 text-brand-cyan text-sm font-semibold mt-3">
+              <button onClick={addOption} className="flex items-center gap-2 text-brand-violet-light text-sm font-semibold mt-3">
                 <Icon name="add" size={16} /> Add Option
               </button>
             )}
@@ -151,7 +151,7 @@ export default function CreatePollScreen() {
                   onClick={() => setDuration(d)}
                   className={`px-4 py-2 rounded-xl border text-sm font-bold transition ${
                     duration === d
-                      ? 'border-brand-cyan bg-brand-cyan/10 text-brand-cyan'
+                      ? 'border-brand-violet bg-brand-violet/10 text-brand-violet-light'
                       : 'border-white/[0.06] text-text-muted hover:border-white/[0.12]'
                   }`}
                 >

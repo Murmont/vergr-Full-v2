@@ -23,15 +23,18 @@
 
 import { GoogleAuthProvider, signInWithCredential } from 'firebase/auth';
 import { auth } from '../firebase/config';
-import { isTauri } from './platform';
+import { isDesktopApp } from './platform';
 
-// Dynamically import Tauri APIs only when in desktop context
+// Dynamically import Tauri APIs only when in desktop context. The OAuth
+// localhost bridge (start_oauth_listener) is a desktop-only command, so this
+// must gate on the DESKTOP shell, not just any Tauri runtime (mobile also
+// reports Tauri but has no such command).
 let invoke = null;
 let listen = null;
 let openShell = null;
 
 async function loadTauriAPIs() {
-  if (!isTauri()) return;
+  if (!isDesktopApp()) return;
   try {
     const core = await import('@tauri-apps/api/core');
     const event = await import('@tauri-apps/api/event');

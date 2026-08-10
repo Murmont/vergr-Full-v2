@@ -16,7 +16,9 @@
 // Brand palette (matches Claude Design wallet/profile mocks):
 //   brand-violet         #7B1FFF   →  primary brand, active states
 //   brand-violet-light   #B44FFF   →  light violet for accents/hover/badges
-//   brand-cyan           #4DFFD4   →  chat / fresh accent (kept for legacy + chat)
+//   brand-cyan           DEPRECATED — aliased to brand-violet-light. Teal is not a
+//                        brand colour. Kept only so any missed usage renders violet
+//                        instead of teal. Do not use in new code.
 //   brand-pink           #C87FFF   →  highlight / mixed gradients
 //   brand-gold           #F0A500   →  coins / earnings
 //   brand-gold-light     #F5C842   →  bright coin accents (numbers, glow)
@@ -34,7 +36,7 @@ export default {
     extend: {
       colors: {
         // ── Brand ──
-        'brand-cyan':         '#4DFFD4',
+        'brand-cyan':         '#B44FFF', // deprecated alias, see note above
         'brand-violet':       '#7B1FFF',
         'brand-violet-light': '#B44FFF',
         'brand-pink':         '#C87FFF',
@@ -51,10 +53,21 @@ export default {
         'surface-3':     '#1E1E2E',
         'border-accent': '#2A2A3E',
 
+        // ── Legacy auth/onboarding design-kit aliases ──
+        // These screens were authored against `bg-surface`, `border-surface-border`
+        // and `primary`, which never existed in this config — inputs rendered
+        // white (white-on-white text) and accents lost their colour. Define them
+        // so the whole kit themes correctly instead of patching each file.
+        'surface':        '#1A1A2A',
+        'surface-border': '#2A2A3E',
+        'primary':        '#7B1FFF',
+
         // ── Text ──
+        // Secondary/muted brightened 2026-07-07 (founder: dim grey body text was
+        // hard to read on every screen). Kept below white so hierarchy holds.
         'text-primary':   '#FFFFFF',
-        'text-secondary': '#9CA3AF',
-        'text-muted':     '#6B7280',
+        'text-secondary': '#C9CFDA',
+        'text-muted':     '#9AA2B1',
 
         // ── Social ──
         'discord': '#5865F2',
@@ -69,7 +82,7 @@ export default {
       },
       backgroundImage: {
         // Gradients used throughout the app — adjusted to match the new violet-forward palette.
-        'brand-gradient':   'linear-gradient(135deg, #4DFFD4 0%, #7B1FFF 50%, #C87FFF 100%)',
+        'brand-gradient':   'linear-gradient(135deg, #B44FFF 0%, #7B1FFF 50%, #C87FFF 100%)',
         'cta-gradient':     'linear-gradient(135deg, #6D28D9 0%, #7C3AED 100%)',  // primary buttons (Go Live etc.)
         'gold-gradient':    'linear-gradient(135deg, #F5C842 0%, #F0A500 100%)',
         'ember-gradient':   'linear-gradient(135deg, #F04060 0%, #FF2D55 100%)',
@@ -77,7 +90,7 @@ export default {
         'dark-gradient':    'linear-gradient(180deg, #0B0B14 0%, #14141F 100%)',
         'card-gradient':    'linear-gradient(135deg, rgba(123,31,255,0.08) 0%, rgba(180,79,255,0.06) 100%)',
         'banner-gradient':  'linear-gradient(135deg, #0d0820 0%, #1a0a3a 30%, #2d0a5a 60%, #1a0a30 100%)',
-        'holographic':      'linear-gradient(135deg, #4DFFD4 0%, #7B1FFF 25%, #C87FFF 50%, #F5C842 75%, #4DFFD4 100%)',
+        'holographic':      'linear-gradient(135deg, #B44FFF 0%, #7B1FFF 25%, #C87FFF 50%, #F5C842 75%, #B44FFF 100%)',
       },
       borderRadius: { custom: '14px' },
       animation: {

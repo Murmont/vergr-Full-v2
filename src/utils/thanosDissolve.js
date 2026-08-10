@@ -1,187 +1,190 @@
 /**
- * Google Thanos-Snap dissolve — exact algorithm from the VERGR brief.
+ * Google Thanos-Snap dissolve.
  *
- * html2canvas is dynamically imported so the 400KB cost is only paid the
- * first time a user deletes a message (not on initial app load).
+ * html2canvas is dynamically imported so its cost is only paid the first time
+ * a user deletes a message (not on initial app load).
+ *
+ * Design notes (why it looks the way it does):
+ *  - The raster snapshot, the pixel bucketing, and the dust-canvas creation all
+ *    happen while the ORIGINAL element is still fully visible. Only in the final
+ *    synchronous step do we append the dust AND hide the original in the same
+ *    frame — so there's no "element blinks invisible, THEN dust appears" gap.
+ *  - Scale is capped (not raw devicePixelRatio) so the Android System WebView
+ *    doesn't choke on a huge canvas × many buckets, which made the effect fail
+ *    silently on native (message just vanished with no animation).
+ *  - dissolveElement returns a boolean: true if the dust animation is running,
+ *    false if the raster path failed — the caller then plays a CSS fallback so
+ *    native never degrades to an instant disappear.
  */
 
-const CANVAS_COUNT = 40;
+const CANVAS_COUNT = 24;      // fewer buckets = faster + lighter on mobile
+const MAX_SNAPSHOT_PX = 900;  // clamp the longest edge of the raster snapshot
 
 /**
- * Weighted random distribution — same formula as the Google Thanos snap.
- * Returns a canvas index biased toward `peak`, creating the "crumble from
- * one side" effect rather than uniform scattering.
+ * Weighted random distribution — the Google Thanos snap formula. Biases a
+ * pixel toward `peak`, giving the "crumble from one side" sweep.
  */
 function weightedRandomDistrib(peak) {
   const prob = [];
-  const seq = [];
   for (let i = 0; i < CANVAS_COUNT; i++) {
     prob.push(Math.pow(CANVAS_COUNT - Math.abs(peak - i), 3));
-    seq.push(i);
   }
   const total = prob.reduce((a, b) => a + b, 0);
   let r = Math.random() * total;
-  for (let i = 0; i < seq.length; i++) {
-    r -= prob[i];
-    if (r <= 0) return seq[i];
-  }
-  return seq[seq.length - 1];
-}
-
-function createBlankImageDatas(sourceImageData) {
-  const result = [];
   for (let i = 0; i < CANVAS_COUNT; i++) {
-    result.push(new Uint8ClampedArray(sourceImageData.data.length));
+    r -= prob[i];
+    if (r <= 0) return i;
   }
-  return result;
+  return CANVAS_COUNT - 1;
 }
 
 function newCanvasFromImageData(pixelArray, w, h) {
   const canvas = document.createElement('canvas');
   canvas.width = w;
   canvas.height = h;
-  const ctx = canvas.getContext('2d');
-  ctx.putImageData(new ImageData(pixelArray, w, h), 0, 0);
+  canvas.getContext('2d').putImageData(new ImageData(pixelArray, w, h), 0, 0);
   return canvas;
 }
 
 function animateDustCanvas(canvas, index) {
-  const tx = 60 + Math.random() * 80;               // always drift right
-  const ty = -50 + Math.random() * 100;             // random vertical
-  const rot = -25 + Math.random() * 50;             // slight rotation
-  const delay = index * 10;                          // stagger: 10ms per layer
-  const duration = 500 + index * 18;                 // max ~1.2s for final layer
+  const tx = 55 + Math.random() * 75;               // drift right
+  const ty = -45 + Math.random() * 90;              // random vertical
+  const rot = -22 + Math.random() * 44;             // slight rotation
+  const delay = index * 9;                          // stagger per layer
+  const duration = 420 + index * 14;                // ~750ms for the last layer
 
-  canvas.style.cssText += `
-    transition: transform ${duration}ms cubic-bezier(0.4, 0, 1, 1) ${delay}ms,
-                opacity   ${duration}ms ease-in                      ${delay}ms;
-    will-change: transform, opacity;
-  `;
-
-  // Force reflow so the transition registers before we change the values
-  canvas.getBoundingClientRect();
-
+  canvas.style.transition =
+    `transform ${duration}ms cubic-bezier(0.4,0,1,1) ${delay}ms, opacity ${duration}ms ease-in ${delay}ms`;
+  canvas.getBoundingClientRect(); // force reflow so the transition registers
   canvas.style.transform = `rotate(${rot}deg) translate(${tx}px, ${ty}px)`;
   canvas.style.opacity = '0';
 
-  return new Promise(resolve => {
-    setTimeout(() => {
-      canvas.remove();
-      resolve();
-    }, delay + duration + 50);
+  return new Promise((resolve) => {
+    setTimeout(() => { canvas.remove(); resolve(); }, delay + duration + 40);
   });
 }
 
-// Cache the html2canvas module so we only load it once
 let html2canvasPromise = null;
 function loadHtml2canvas() {
   if (!html2canvasPromise) {
-    html2canvasPromise = import('html2canvas').then(m => m.default || m);
+    html2canvasPromise = import('html2canvas').then((m) => m.default || m);
   }
   return html2canvasPromise;
 }
 
 /**
- * Kick off the html2canvas dynamic import ahead of time so the first
- * delete doesn't eat the 400KB load cost. Safe to call multiple times.
- * Call from any screen that might trigger a dissolve.
+ * Warm the html2canvas import ahead of the first delete. Safe to call often.
  */
 export function preloadThanosDissolve() {
-  loadHtml2canvas().catch(() => { /* will retry on actual use */ });
+  loadHtml2canvas().catch(() => { html2canvasPromise = null; });
 }
 
 /**
- * Dissolve a DOM element using the Google Thanos-snap algorithm.
- *
- * Resolves AS SOON AS the 40 dust canvases are in the DOM and hiding the
- * original element — at that point the caller can safely unmount the
- * element (via state update). The returned promise's `.finished` property
- * settles once the dust animation completes, if you need it.
+ * CSS-only fallback: a smooth "crumble away" (fade + blur + shrink + rise).
+ * Used when the raster snapshot can't run (some WebViews) so a delete is never
+ * a jarring instant blip. Resolves when the animation finishes.
+ */
+export function cssShatterFallback(el) {
+  if (!el || !el.animate) return Promise.resolve();
+  try {
+    const anim = el.animate(
+      [
+        { opacity: 1, filter: 'blur(0px)', transform: 'scale(1) translateY(0)' },
+        { opacity: 0, filter: 'blur(7px)', transform: 'scale(0.72) translateY(-16px)' },
+      ],
+      { duration: 380, easing: 'cubic-bezier(0.4,0,1,1)', fill: 'forwards' }
+    );
+    return anim.finished.catch(() => {});
+  } catch {
+    el.style.opacity = '0';
+    return Promise.resolve();
+  }
+}
+
+/**
+ * Dissolve a DOM element using the Thanos-snap algorithm.
  *
  * @param {HTMLElement} el
- * @returns {Promise<void>} resolves when the snapshot is live on screen.
+ * @returns {Promise<boolean>} true if the dust animation is live on screen,
+ *   false if the raster path failed (caller should run cssShatterFallback).
  */
 export async function dissolveElement(el) {
-  if (!el || !el.getBoundingClientRect) return;
+  if (!el || !el.getBoundingClientRect) return false;
 
-  const html2canvas = await loadHtml2canvas();
+  let html2canvas;
+  try {
+    html2canvas = await loadHtml2canvas();
+  } catch {
+    html2canvasPromise = null;
+    return false;
+  }
+
   const rect = el.getBoundingClientRect();
+  if (!rect.width || !rect.height) return false;
 
-  // 1. Snapshot the element
+  // Cap the raster resolution: enough to look sharp, small enough that the
+  // WebView can allocate CANVAS_COUNT copies without stalling or OOMing.
+  const longest = Math.max(rect.width, rect.height);
+  const scale = Math.min(window.devicePixelRatio || 1, 1.5, MAX_SNAPSHOT_PX / longest);
+
   let snapshot;
   try {
     snapshot = await html2canvas(el, {
-      scale: window.devicePixelRatio || 1,
+      scale,
       useCORS: true,
       backgroundColor: null,
       logging: false,
+      imageTimeout: 1500,
     });
-  } catch (err) {
-    console.warn('Thanos dissolve snapshot failed:', err);
-    return;
+  } catch {
+    return false; // caller runs the CSS fallback
   }
+  if (!snapshot || !snapshot.width || !snapshot.height) return false;
 
   const w = snapshot.width;
   const h = snapshot.height;
 
-  // 2. Hide original element immediately
+  let rawPixels;
+  try {
+    rawPixels = snapshot.getContext('2d').getImageData(0, 0, w, h).data;
+  } catch {
+    return false;
+  }
+
+  // Distribute pixels across the buckets (all work done while `el` is visible).
+  const buckets = [];
+  for (let i = 0; i < CANVAS_COUNT; i++) buckets.push(new Uint8ClampedArray(rawPixels.length));
+  for (let i = 0; i < rawPixels.length; i += 4) {
+    const peak = Math.floor((i / rawPixels.length) * CANVAS_COUNT);
+    const b = buckets[weightedRandomDistrib(peak)];
+    b[i] = rawPixels[i]; b[i + 1] = rawPixels[i + 1]; b[i + 2] = rawPixels[i + 2]; b[i + 3] = rawPixels[i + 3];
+  }
+
+  // Viewport-clamped stage (fixed + contain:strict) so the transformed dust
+  // canvases can't extend the document scroll area / scroll-anchor the page.
+  const stage = document.createElement('div');
+  stage.style.cssText = 'position:fixed;inset:0;overflow:hidden;pointer-events:none;z-index:9999;contain:strict;';
+
+  const dust = [];
+  for (let i = 0; i < CANVAS_COUNT; i++) {
+    const c = newCanvasFromImageData(buckets[i], w, h);
+    c.style.cssText =
+      `position:absolute;left:${rect.left}px;top:${rect.top}px;width:${rect.width}px;height:${rect.height}px;` +
+      'pointer-events:none;opacity:1;transform:none;will-change:transform,opacity;';
+    stage.appendChild(c);
+    dust.push(c);
+  }
+
+  // FINAL synchronous step: reveal the dust AND hide the original together so
+  // there is no visible gap (the "blink then dust" bug).
+  document.body.appendChild(stage);
   el.style.opacity = '0';
   el.style.pointerEvents = 'none';
 
-  // 3. Get raw pixel data
-  const ctx = snapshot.getContext('2d');
-  const imageData = ctx.getImageData(0, 0, w, h);
-  const rawPixels = imageData.data;
+  // Drift + fade runs in the background; the stage self-cleans when done.
+  Promise.all(dust.map((c, i) => animateDustCanvas(c, i)))
+    .then(() => stage.remove())
+    .catch(() => stage.remove());
 
-  // 4. Distribute pixels across CANVAS_COUNT buckets (Thanos algorithm)
-  const pixelBuckets = createBlankImageDatas(imageData);
-  for (let i = 0; i < rawPixels.length; i += 4) {
-    const peak = Math.floor((i / rawPixels.length) * CANVAS_COUNT);
-    const targetBucket = weightedRandomDistrib(peak);
-    const bucket = pixelBuckets[targetBucket];
-    bucket[i]     = rawPixels[i];
-    bucket[i + 1] = rawPixels[i + 1];
-    bucket[i + 2] = rawPixels[i + 2];
-    bucket[i + 3] = rawPixels[i + 3];
-  }
-
-  // 5. Create a viewport-clamped stage so the canvases can't extend the
-  //    document's scroll area. Without this, mobile WebKit treats the
-  //    transforms on the `position: fixed` canvases as contributing to
-  //    document layout for ~1-2 seconds and scroll-anchors the whole page,
-  //    which was pushing the chat header off-screen post-delete.
-  const stage = document.createElement('div');
-  stage.style.cssText = `
-    position: fixed;
-    inset: 0;
-    overflow: hidden;
-    pointer-events: none;
-    z-index: 9999;
-    contain: strict;
-  `;
-  document.body.appendChild(stage);
-
-  const dustCanvases = [];
-  for (let i = 0; i < CANVAS_COUNT; i++) {
-    const dustCanvas = newCanvasFromImageData(pixelBuckets[i], w, h);
-    dustCanvas.style.cssText = `
-      position: absolute;
-      left: ${rect.left}px;
-      top: ${rect.top}px;
-      width: ${rect.width}px;
-      height: ${rect.height}px;
-      pointer-events: none;
-      opacity: 1;
-      transform: none;
-    `;
-    stage.appendChild(dustCanvas);
-    dustCanvases.push(dustCanvas);
-  }
-
-  // 6. Kick off the drift+fade animation in the background. We DO NOT await
-  //    it — the caller wants to unmount the source element the moment the
-  //    canvases are live, so the layout can collapse. The stage cleans
-  //    itself up once every canvas has finished.
-  const animations = dustCanvases.map((canvas, i) => animateDustCanvas(canvas, i));
-  Promise.all(animations).then(() => stage.remove()).catch(() => stage.remove());
+  return true;
 }

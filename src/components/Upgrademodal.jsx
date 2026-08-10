@@ -10,7 +10,7 @@ export default function UpgradeModal({ isOpen, onClose, feature = 'this feature'
       <p className="text-text-secondary text-sm mb-5">Upgrade to Lite or Pro to access {feature}.</p>
       <div className="flex gap-2">
         <button onClick={onClose} className="flex-1 py-2.5 rounded-xl bg-surface-2 text-text-secondary text-sm font-bold">Later</button>
-        <button onClick={() => { onClose(); navigate('/settings/subscription'); }} className="flex-1 py-2.5 rounded-xl bg-brand-cyan text-bg-dark text-sm font-bold">Upgrade</button>
+        <button onClick={() => { onClose(); navigate('/settings/subscription'); }} className="flex-1 py-2.5 rounded-xl bg-brand-violet text-white text-sm font-bold">Upgrade</button>
       </div>
     </div>
   </div>);

@@ -1,753 +1,413 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { auth, db } from '../firebase/config';
-import { uploadToR2 } from '../utils/r2Storage';
+import { StackSkeleton } from '../components/skeletons/GlassSkeletons';
 import { doc, getDoc } from 'firebase/firestore';
-import {
-  useMyVergrMe,
-  initVergrMePage,
-  saveVergrMePage,
-  addVergrMeLink,
-  removeVergrMeLink,
-} from '../hooks/useVergrMe';
+import { useMyVergrMe, initVergrMePage, saveVergrMeDraft, publishVergrMePage, newBlock } from '../hooks/useVergrMe';
 import { useUser } from '../context/UserContext';
+import { useUI } from '../context/UIContext';
 import useTier from '../hooks/useTier';
 import UpgradeModal from '../components/UpgradeModal';
 import Icon from '../components/Icon';
-import { THEMES, ACCENT_PRESETS, SOCIAL_META } from '../utils/vergrMeThemes';
+import { vergrMeUrl, vergrMeDisplayUrl } from '../utils/vergrMeUrl';
+import EditorSidebar, { SECTIONS } from '../components/vergrme/EditorSidebar';
+import PhonePreview from '../components/vergrme/PhonePreview';
+import ContentTab from '../components/vergrme/ContentTab';
+import DesignTab from '../components/vergrme/DesignTab';
+import DashboardPanel from '../components/vergrme/DashboardPanel';
+import MediaPanel from '../components/vergrme/MediaPanel';
+import IntegrationsPanel from '../components/vergrme/IntegrationsPanel';
+import ProductsPointer from '../components/vergrme/ProductsPointer';
+import SettingsPanel from '../components/vergrme/SettingsPanel';
+import { ProfileCard, PopupsCard } from '../components/vergrme/AppearanceExtras';
+import { StatTile } from '../components/vergrme/EditorUI';
+
+const META = {
+  dashboard:    { title: 'Dashboard', sub: 'Your page at a glance' },
+  appearance:   { title: 'Appearance', sub: 'Customize your page design and style' },
+  links:        { title: 'Links & Blocks', sub: 'Add, edit and reorder your content' },
+  media:        { title: 'Media', sub: 'Images, galleries and video' },
+  products:     { title: 'Products', sub: 'Sell digital downloads — keep 92%, paid in gems' },
+  analytics:    { title: 'Analytics', sub: 'See how your page performs' },
+  integrations: { title: 'Integrations', sub: 'Socials and connected accounts' },
+  settings:     { title: 'Settings', sub: 'Visibility, branding and domain' },
+};
 
 export default function VergrMeEditorScreen() {
   const navigate = useNavigate();
   const { profile } = useUser();
   const { page, loading } = useMyVergrMe();
   const { tier } = useTier();
+  const { showToast } = useUI();
   const isPro = tier === 'pro';
 
   const [form, setForm] = useState(null);
-  const [saving, setSaving] = useState(false);
-  const [activeTab, setActiveTab] = useState('display');
-  const [showLinkForm, setShowLinkForm] = useState(false);
-  const [newLink, setNewLink] = useState({
-    title: '',
-    url: '',
-    icon: '🔗',
-    subtitle: '',
-    type: 'link',
-  });
+  const [publishing, setPublishing] = useState(false);
+  const [draftStatus, setDraftStatus] = useState('saved'); // 'saved' | 'saving'
+  const [hasUnpublished, setHasUnpublished] = useState(false);
+  const [section, setSection] = useState('dashboard');
+  const [navOpen, setNavOpen] = useState(false);
   const [upgradeModal, setUpgradeModal] = useState({ open: false, message: '' });
   const [copied, setCopied] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
+  const skipAutosave = useRef(true); // don't autosave the load-set form
+  const autosaveTimer = useRef(null);
 
   useEffect(() => {
-    if (loading) return;
-    if (page) {
-      setForm({ ...page });
-    } else if (profile) {
-      initVergrMePage(auth.currentUser.uid, profile).then((defaults) =>
-        setForm({ ...defaults })
-      );
-    }
-  }, [page, loading, profile]);
+    if (loading || form) return; // init once; never clobber an edited form
+    if (profile) initVergrMePage(auth.currentUser.uid, profile).then((d) => {
+      setForm({ ...d });
+      setHasUnpublished(!!d.hasUnpublishedChanges);
+      skipAutosave.current = true;
+    });
+  }, [page, loading, profile, form]);
 
+  // Debounced draft autosave on every edit (live page stays as last-published).
+  useEffect(() => {
+    if (!form) return;
+    if (skipAutosave.current) { skipAutosave.current = false; return; }
+    setHasUnpublished(true);
+    setDraftStatus('saving');
+    clearTimeout(autosaveTimer.current);
+    autosaveTimer.current = setTimeout(async () => {
+      try { await saveVergrMeDraft(form); setDraftStatus('saved'); }
+      catch (err) { console.error('vergr.me autosave failed', err); }
+    }, 1200);
+    return () => clearTimeout(autosaveTimer.current);
+  }, [form]);
+
+  const patch = (obj) => setForm((f) => ({ ...f, ...obj }));
   const up = (key, val) => setForm((f) => ({ ...f, [key]: val }));
-  const upSocial = (key, val) =>
-    setForm((f) => ({ ...f, socials: { ...f.socials, [key]: val } }));
+  const username = profile?.username;
 
-  const handleSave = async () => {
-    setSaving(true);
+  const handlePublish = async () => {
+    clearTimeout(autosaveTimer.current);
+    setPublishing(true);
     try {
-      await saveVergrMePage(form);
+      await publishVergrMePage(form);
+      setHasUnpublished(false);
+      setDraftStatus('saved');
+      showToast('Published — your page is live', 'success');
     } catch (err) {
-      console.error(err);
+      console.error('vergr.me publish failed', err);
+      showToast(err?.message || 'Publish failed — please try again', 'error');
     } finally {
-      setSaving(false);
+      setPublishing(false);
     }
-  };
-
-  const handleAvatarUpload = async (file) => {
-    const { url } = await uploadToR2(file, 'avatar');
-    up('customAvatarUrl', url);
-    up('useProfileAvatar', false);
-  };
-
-  const handleBannerUpload = async (file) => {
-    const { url } = await uploadToR2(file, 'banner');
-    up('bannerUrl', url);
-    up('bannerStyle', 'image');
-  };
-
-  const handleAddLink = async () => {
-    if (!newLink.title || !newLink.url) return;
-    await addVergrMeLink(newLink);
-    setNewLink({ title: '', url: '', icon: '🔗', subtitle: '', type: 'link' });
-    setShowLinkForm(false);
-    const snap = await getDoc(doc(db, 'users', auth.currentUser.uid, 'vergrMe', 'page'));
-    if (snap.exists()) setForm((f) => ({ ...f, links: snap.data().links }));
   };
 
   const copyUrl = () => {
-    navigator.clipboard.writeText(`vergr.me/${profile?.username}`);
+    navigator.clipboard.writeText(vergrMeDisplayUrl(username));
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
+  const openPage = () => window.open(`/u/${username}`, '_blank');
+  const sharePage = async () => {
+    const url = vergrMeUrl(username);
+    try { if (navigator.share) await navigator.share({ title: form.displayName, url }); else { await navigator.clipboard.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 2000); } }
+    catch { /* cancelled */ }
+  };
+  const proGate = (msg) => setUpgradeModal({ open: true, message: msg });
 
-  const proGate = (msg) => {
-    if (!isPro) {
-      setUpgradeModal({ open: true, message: msg });
-      return false;
-    }
-    return true;
+  // Apply a starter template: swap in its blocks + design, keep identity
+  // (name/bio/avatar/socials handles) untouched.
+  const applyTemplate = (tpl) => {
+    const blocks = (tpl.blocks || []).map((b, i) => newBlock(b.type, { ...b, order: i }));
+    patch({ ...(tpl.patch || {}), blocks });
+    setSection('links');
+    showToast(`${tpl.label} template applied — make it yours`, 'success');
   };
 
   if (loading || !form) {
-    return (
-      <div className="flex items-center justify-center h-screen bg-bg-dark">
-        <div className="w-8 h-8 border-2 border-brand-cyan border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
+    return <div className="h-screen bg-bg-dark"><StackSkeleton rows={5} height={72} /></div>;
   }
 
-  const tabs = [
-    { id: 'display', label: 'Display' },
-    { id: 'links', label: 'Links' },
-    { id: 'appearance', label: 'Style' },
-    { id: 'settings', label: 'Settings' },
-    { id: 'analytics', label: 'Stats' },
-  ];
+  const blocks = form.blocks || [];
+  const setBlocks = (b) => up('blocks', b);
+
+  const previewAvatar = form.useProfileAvatar ? (profile?.avatar || profile?.photoURL || null) : form.customAvatarUrl;
+  const previewData = { ...form, username: form.username || username, followerCount: profile?.followerCount || 0 };
+
+  const meta = META[section];
 
   return (
-    <div className="flex flex-col h-screen bg-bg-dark text-text-primary">
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-white/5 shrink-0">
-        <button
-          onClick={() => navigate(-1)}
-          className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-surface-1"
-        >
-          <Icon name="arrow_back" size={18} className="text-text-secondary" />
-        </button>
-        <div className="flex flex-col items-center">
-          <span className="text-sm font-medium">My Vergr.me</span>
-          <span className="text-[10px] text-brand-cyan font-mono">
-            vergr.me/{profile?.username}
-          </span>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={copyUrl}
-            className="px-3 py-1.5 text-[11px] border border-white/10 rounded-full text-text-secondary hover:text-text-primary"
-          >
-            {copied ? 'Copied!' : 'Copy link'}
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="px-4 py-1.5 text-[11px] font-semibold bg-brand-cyan text-bg-dark rounded-full disabled:opacity-50"
-          >
-            {saving ? 'Saving…' : 'Save'}
-          </button>
-        </div>
-      </div>
+    <div className="flex h-screen bg-bg-dark text-text-primary overflow-hidden">
+      <EditorSidebar active={section} onSelect={setSection} isPro={isPro} open={navOpen} onClose={() => setNavOpen(false)} />
 
-      {/* Tabs */}
-      <div className="flex border-b border-white/5 overflow-x-auto shrink-0 scrollbar-none">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={`px-4 py-2.5 text-[11px] font-semibold whitespace-nowrap border-b-2 transition-colors ${
-              activeTab === tab.id
-                ? 'text-brand-cyan border-brand-cyan'
-                : 'text-text-muted border-transparent hover:text-text-secondary'
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto p-4 max-w-lg mx-auto w-full">
-        {activeTab === 'display' && (
-          <div className="flex flex-col gap-4">
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[11px] text-text-muted font-semibold uppercase tracking-wider">
-                Your URL
-              </label>
-              <div className="flex items-center gap-2 px-3 py-2.5 bg-surface-1 rounded-xl border border-white/5">
-                <span className="text-xs text-text-muted">vergr.me/</span>
-                <span className="text-sm text-brand-cyan font-mono">
-                  {profile?.username}
-                </span>
-                <Icon name="lock" size={12} className="text-text-muted ml-auto" />
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-2">
-              <label className="text-[11px] text-text-muted font-semibold uppercase tracking-wider">
-                Photo
-              </label>
-              <div className="flex gap-3">
-                <button
-                  onClick={() => up('useProfileAvatar', true)}
-                  className={`flex-1 py-2.5 rounded-xl text-xs font-medium border ${
-                    form.useProfileAvatar
-                      ? 'border-brand-cyan text-brand-cyan bg-brand-cyan/10'
-                      : 'border-white/10 text-text-muted bg-surface-1'
-                  }`}
-                >
-                  Use my profile photo
-                </button>
-                <label
-                  className={`flex-1 py-2.5 rounded-xl text-xs font-medium border text-center cursor-pointer ${
-                    !form.useProfileAvatar
-                      ? 'border-brand-cyan text-brand-cyan bg-brand-cyan/10'
-                      : 'border-white/10 text-text-muted bg-surface-1'
-                  }`}
-                >
-                  Upload different photo
-                  <input
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={(e) =>
-                      e.target.files[0] && handleAvatarUpload(e.target.files[0])
-                    }
-                  />
-                </label>
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[11px] text-text-muted font-semibold uppercase tracking-wider">
-                Display name
-              </label>
-              <input
-                value={form.displayName || ''}
-                onChange={(e) => up('displayName', e.target.value)}
-                className="input-field"
-              />
-            </div>
-
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[11px] text-text-muted font-semibold uppercase tracking-wider">
-                Bio{' '}
-                <span className="text-text-muted/40 normal-case">
-                  ({(form.bio || '').length}/200)
-                </span>
-              </label>
-              <textarea
-                value={form.bio || ''}
-                onChange={(e) => up('bio', e.target.value.slice(0, 200))}
-                rows={3}
-                className="input-field resize-none"
-              />
-            </div>
-
-            <div className="flex flex-col gap-2">
-              <label className="text-[11px] text-text-muted font-semibold uppercase tracking-wider">
-                Social handles
-              </label>
-              {Object.keys(SOCIAL_META).map((key) => (
-                <div
-                  key={key}
-                  className="flex items-center gap-2 px-3 py-2.5 bg-surface-1 rounded-xl border border-white/5"
-                >
-                  <span className="text-[11px] text-text-muted w-16 font-medium capitalize">
-                    {key}
-                  </span>
-                  <span className="text-[11px] text-text-muted/30">@</span>
-                  <input
-                    value={form.socials?.[key] || ''}
-                    onChange={(e) => upSocial(key, e.target.value)}
-                    placeholder={`your${key}handle`}
-                    className="flex-1 bg-transparent text-sm text-text-primary outline-none"
-                  />
-                </div>
-              ))}
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* Header bar */}
+        <div className="flex items-center justify-between gap-3 px-4 sm:px-6 py-3.5 border-b border-white/5 shrink-0">
+          <div className="flex items-center gap-3 min-w-0">
+            <button onClick={() => setNavOpen(true)} className="lg:hidden w-9 h-9 flex items-center justify-center rounded-lg hover:bg-surface-1 shrink-0"><Icon name="menu" size={20} /></button>
+            <div className="min-w-0">
+              <h1 className="font-syne font-bold text-base sm:text-lg leading-tight truncate">{meta.title}</h1>
+              <p className="text-xs text-text-muted truncate">{meta.sub}</p>
             </div>
           </div>
-        )}
-
-        {activeTab === 'links' && (
-          <div className="flex flex-col gap-3">
-            <div className="flex items-center justify-between">
-              <p className="text-xs text-text-muted">
-                {(form.links || []).length} links
-              </p>
-              <button
-                onClick={() => setShowLinkForm((p) => !p)}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-brand-cyan/10 text-brand-cyan text-xs font-semibold rounded-full border border-brand-cyan/20"
-              >
-                <Icon name="add" size={14} /> Add link
-              </button>
-            </div>
-
-            {showLinkForm && (
-              <div className="p-3 bg-surface-1 rounded-xl border border-white/5 flex flex-col gap-2">
-                <div className="flex gap-2">
-                  <input
-                    value={newLink.icon}
-                    onChange={(e) =>
-                      setNewLink((p) => ({ ...p, icon: e.target.value }))
-                    }
-                    className="w-12 text-center py-2 bg-surface-2 rounded-lg border border-white/5 text-xl outline-none"
-                  />
-                  <input
-                    value={newLink.title}
-                    onChange={(e) =>
-                      setNewLink((p) => ({ ...p, title: e.target.value }))
-                    }
-                    placeholder="Link title"
-                    className="flex-1 px-3 py-2 bg-surface-2 rounded-lg border border-white/5 text-sm outline-none"
-                  />
-                </div>
-                <input
-                  value={newLink.url}
-                  onChange={(e) =>
-                    setNewLink((p) => ({ ...p, url: e.target.value }))
-                  }
-                  placeholder="https://..."
-                  type="url"
-                  className="px-3 py-2 bg-surface-2 rounded-lg border border-white/5 text-sm outline-none"
-                />
-                <input
-                  value={newLink.subtitle}
-                  onChange={(e) =>
-                    setNewLink((p) => ({ ...p, subtitle: e.target.value }))
-                  }
-                  placeholder="Subtitle (optional)"
-                  className="px-3 py-2 bg-surface-2 rounded-lg border border-white/5 text-sm outline-none"
-                />
-                <div className="flex gap-2 pt-1">
-                  <button
-                    onClick={() => setShowLinkForm(false)}
-                    className="flex-1 py-2 text-xs text-text-muted border border-white/5 rounded-lg"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleAddLink}
-                    className="flex-1 py-2 text-xs font-semibold bg-brand-cyan text-bg-dark rounded-lg"
-                  >
-                    Add
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {(form.links || [])
-              .sort((a, b) => a.order - b.order)
-              .map((link) => (
-                <div
-                  key={link.id}
-                  className="flex items-center gap-3 p-3 bg-surface-1 rounded-xl border border-white/5"
-                >
-                  <div className="text-xl shrink-0">{link.icon}</div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{link.title}</p>
-                    <p className="text-xs text-text-muted truncate">
-                      {link.subtitle || link.url}
-                    </p>
-                    <p className="text-[10px] text-text-muted/40 mt-0.5">
-                      {link.clicks} clicks
-                    </p>
-                  </div>
-                  <button
-                    onClick={() =>
-                      up(
-                        'links',
-                        (form.links || []).map((l) =>
-                          l.id === link.id ? { ...l, enabled: !l.enabled } : l
-                        )
-                      )
-                    }
-                    className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                      link.enabled ? 'text-brand-cyan' : 'text-text-muted'
-                    }`}
-                  >
-                    <Icon
-                      name={link.enabled ? 'visibility' : 'visibility_off'}
-                      size={16}
-                    />
-                  </button>
-                  <button
-                    onClick={() => {
-                      removeVergrMeLink(link.id);
-                      up(
-                        'links',
-                        (form.links || []).filter((l) => l.id !== link.id)
-                      );
-                    }}
-                    className="w-8 h-8 rounded-full flex items-center justify-center text-text-muted hover:text-red-400"
-                  >
-                    <Icon name="delete" size={16} />
-                  </button>
-                </div>
-              ))}
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="hidden md:flex items-center gap-1.5 text-[11px] text-text-muted">
+              {draftStatus === 'saving'
+                ? (<><Icon name="cloud_sync" size={13} className="animate-pulse" /> Saving draft…</>)
+                : hasUnpublished
+                  ? (<><span className="w-1.5 h-1.5 rounded-full bg-brand-gold" /> Unpublished changes</>)
+                  : (<><Icon name="check_circle" size={13} className="text-brand-violet-light" /> Draft saved</>)}
+            </span>
+            <button onClick={() => setShowPreview(true)} className="lg:hidden flex items-center gap-1.5 px-3 py-2 text-xs border border-white/10 rounded-lg text-text-secondary"><Icon name="visibility" size={14} /> Preview</button>
+            <button onClick={openPage} className="hidden sm:flex items-center gap-1.5 px-3 py-2 text-xs border border-white/10 rounded-lg text-text-secondary hover:text-text-primary"><Icon name="open_in_new" size={14} /> View live</button>
+            <button onClick={handlePublish} disabled={publishing || (!hasUnpublished && draftStatus === 'saved')} className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-lg text-white disabled:opacity-50" style={{ background: 'linear-gradient(135deg, #7B1FFF, #B44FFF)' }}>
+              <Icon name="publish" size={14} /> {publishing ? 'Publishing…' : 'Publish'}
+            </button>
           </div>
-        )}
+        </div>
 
-        {activeTab === 'appearance' && (
-          <div className="flex flex-col gap-5">
-            <div className="flex flex-col gap-2">
-              <label className="text-[11px] text-text-muted font-semibold uppercase tracking-wider">
-                Theme
-              </label>
-              <div className="grid grid-cols-3 gap-2">
-                {Object.keys(THEMES).map((name) => (
-                  <button
-                    key={name}
-                    onClick={() => {
-                      if (name !== 'dark' && !proGate('Custom themes are Pro only.'))
-                        return;
-                      up('theme', name);
-                    }}
-                    className={`py-2.5 rounded-xl text-xs font-semibold capitalize border relative ${
-                      form.theme === name
-                        ? 'border-brand-cyan text-brand-cyan bg-brand-cyan/10'
-                        : 'border-white/10 text-text-muted bg-surface-1'
-                    }`}
-                  >
-                    {!isPro && name !== 'dark' && (
-                      <span className="absolute top-1 right-1 text-[9px]">⭐</span>
-                    )}
-                    {name}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-2">
-              <label className="text-[11px] text-text-muted font-semibold uppercase tracking-wider">
-                Accent colour
-              </label>
-              <div className="flex gap-3 flex-wrap items-center">
-                {ACCENT_PRESETS.map((color) => (
-                  <button
-                    key={color}
-                    onClick={() => {
-                      if (
-                        color !== '#00e5ff' &&
-                        !proGate('Custom accent colours are Pro only.')
-                      )
-                        return;
-                      up('accentColor', color);
-                    }}
-                    style={{
-                      background: color,
-                      transform: form.accentColor === color ? 'scale(1.2)' : 'scale(1)',
-                    }}
-                    className="w-6 h-6 rounded-full border-2 transition-transform relative"
-                  >
-                    {!isPro && color !== '#00e5ff' && (
-                      <span className="absolute inset-0 flex items-center justify-center text-[8px]">
-                        ⭐
-                      </span>
-                    )}
-                  </button>
-                ))}
-                {isPro && (
-                  <label className="w-6 h-6 rounded-full border border-dashed border-white/20 flex items-center justify-center cursor-pointer">
-                    <Icon name="colorize" size={12} className="text-text-muted" />
-                    <input
-                      type="color"
-                      value={form.accentColor || '#00e5ff'}
-                      onChange={(e) => up('accentColor', e.target.value)}
-                      className="sr-only"
-                    />
-                  </label>
-                )}
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-2">
-              <label className="text-[11px] text-text-muted font-semibold uppercase tracking-wider">
-                Banner
-              </label>
-              <div className="grid grid-cols-2 gap-2">
-                {['gradient', 'mesh', 'image', 'none'].map((style) => (
-                  <button
-                    key={style}
-                    onClick={() => {
-                      if (style !== 'none' && !proGate('Custom banners are Pro only.'))
-                        return;
-                      up('bannerStyle', style);
-                    }}
-                    className={`py-2.5 rounded-xl text-xs font-semibold capitalize border ${
-                      form.bannerStyle === style
-                        ? 'border-brand-cyan text-brand-cyan bg-brand-cyan/10'
-                        : 'border-white/10 text-text-muted bg-surface-1'
-                    }`}
-                  >
-                    {style}
-                  </button>
-                ))}
-              </div>
-              {form.bannerStyle === 'image' && (
-                <label className="flex items-center justify-center gap-2 py-3 border border-dashed border-white/10 rounded-xl text-xs text-text-muted cursor-pointer hover:text-text-secondary">
-                  <Icon name="upload" size={14} /> Upload banner image
-                  <input
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={(e) =>
-                      e.target.files[0] && handleBannerUpload(e.target.files[0])
-                    }
-                  />
-                </label>
+        {/* Body */}
+        <div className="flex-1 flex min-h-0 overflow-hidden">
+          <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-5">
+            <div className="max-w-2xl mx-auto w-full flex flex-col gap-4">
+              {section === 'dashboard' && (
+                <DashboardPanel form={form} username={username} uid={auth.currentUser?.uid} isPro={isPro} onSelect={setSection} onCopy={copyUrl} copied={copied} onOpen={openPage} onShare={sharePage} onApplyTemplate={applyTemplate} />
+              )}
+              {section === 'appearance' && (
+                <>
+                  <ProfileCard form={form} patch={patch} profile={profile} username={username} />
+                  <DesignTab form={form} patch={patch} isPro={isPro} onProGate={proGate} />
+                  <PopupsCard form={form} patch={patch} />
+                </>
+              )}
+              {section === 'links' && (
+                <ContentTab blocks={blocks} setBlocks={setBlocks} isPro={isPro} onProGate={proGate} />
+              )}
+              {section === 'media' && (
+                <MediaPanel form={form} patch={patch} blocks={blocks} setBlocks={setBlocks} onSelect={setSection} />
+              )}
+              {section === 'products' && (
+                <ProductsPointer uid={auth.currentUser?.uid} onGoToBlocks={() => setSection('links')} />
+              )}
+              {section === 'integrations' && (
+                <IntegrationsPanel blocks={blocks} setBlocks={setBlocks} />
+              )}
+              {section === 'settings' && (
+                <SettingsPanel form={form} up={up} patch={patch} isPro={isPro} canHideBranding={tier !== 'free'} onProGate={proGate} copyUrl={copyUrl} copied={copied} onOpen={openPage} username={username} uid={auth.currentUser?.uid} />
+              )}
+              {section === 'analytics' && (
+                <VergrMeAnalytics uid={auth.currentUser?.uid} blocks={blocks} isPro={isPro} onProGate={proGate} />
               )}
             </div>
-
-            <div className="flex flex-col gap-2">
-              <label className="text-[11px] text-text-muted font-semibold uppercase tracking-wider">
-                Button style
-              </label>
-              <div className="grid grid-cols-2 gap-2">
-                {['card', 'pill', 'outline', 'shadow'].map((style) => (
-                  <button
-                    key={style}
-                    onClick={() => {
-                      if (style !== 'card' && !proGate('Custom button styles are Pro only.'))
-                        return;
-                      up('buttonStyle', style);
-                    }}
-                    className={`py-2.5 rounded-xl text-xs font-semibold capitalize border ${
-                      form.buttonStyle === style
-                        ? 'border-brand-cyan text-brand-cyan bg-brand-cyan/10'
-                        : 'border-white/10 text-text-muted bg-surface-1'
-                    }`}
-                  >
-                    {style}
-                  </button>
-                ))}
-              </div>
-            </div>
           </div>
-        )}
 
-        {activeTab === 'settings' && (
-          <div className="flex flex-col gap-3">
-            {[
-              {
-                key: 'showMessageBtn',
-                label: '"Message on Vergr" button',
-                sub: 'Let visitors start a chat',
-              },
-              {
-                key: 'showFollowers',
-                label: 'Show follower count',
-                sub: 'Display your follower count',
-              },
-              {
-                key: 'showSocials',
-                label: 'Show social icons',
-                sub: 'Display social links',
-              },
-              {
-                key: 'isPublic',
-                label: 'Public page',
-                sub: 'Anyone with link can view',
-              },
-            ].map((item) => (
-              <div
-                key={item.key}
-                className="flex items-center justify-between py-3 px-4 bg-surface-1 rounded-xl border border-white/5"
-              >
-                <div>
-                  <p className="text-sm">{item.label}</p>
-                  <p className="text-xs text-text-muted mt-0.5">{item.sub}</p>
-                </div>
-                <button
-                  onClick={() => up(item.key, !form[item.key])}
-                  className={`w-10 h-6 rounded-full transition-colors relative ${
-                    form[item.key] ? 'bg-brand-cyan' : 'bg-surface-2'
-                  }`}
-                >
-                  <span
-                    className={`absolute top-0.5 w-5 h-5 bg-white rounded-full transition-transform ${
-                      form[item.key] ? 'translate-x-4' : 'translate-x-0.5'
-                    }`}
-                  />
-                </button>
-              </div>
-            ))}
-
-            <div className="flex items-center justify-between py-3 px-4 bg-surface-1 rounded-xl border border-white/5">
-              <div>
-                <p className="text-sm">Email contact</p>
-                <p className="text-xs text-text-muted mt-0.5">
-                  Show "Connect with me" button
-                </p>
-              </div>
-              <button
-                onClick={() => up('showEmail', !form.showEmail)}
-                className={`w-10 h-6 rounded-full transition-colors relative ${
-                  form.showEmail ? 'bg-brand-cyan' : 'bg-surface-2'
-                }`}
-              >
-                <span
-                  className={`absolute top-0.5 w-5 h-5 bg-white rounded-full transition-transform ${
-                    form.showEmail ? 'translate-x-4' : 'translate-x-0.5'
-                  }`}
-                />
-              </button>
-            </div>
-            {form.showEmail && (
-              <input
-                value={form.contactEmail || ''}
-                onChange={(e) => up('contactEmail', e.target.value)}
-                placeholder="your@email.com"
-                type="email"
-                className="input-field"
-              />
-            )}
-
-            <div className="flex items-center justify-between py-3 px-4 bg-surface-1 rounded-xl border border-white/5">
-              <div>
-                <p className="text-sm">Tip jar</p>
-                <p className="text-xs text-text-muted mt-0.5">Accept tips (15% fee)</p>
-              </div>
-              <button
-                onClick={() => up('tipJarEnabled', !form.tipJarEnabled)}
-                className={`w-10 h-6 rounded-full transition-colors relative ${
-                  form.tipJarEnabled ? 'bg-brand-cyan' : 'bg-surface-2'
-                }`}
-              >
-                <span
-                  className={`absolute top-0.5 w-5 h-5 bg-white rounded-full transition-transform ${
-                    form.tipJarEnabled ? 'translate-x-4' : 'translate-x-0.5'
-                  }`}
-                />
-              </button>
-            </div>
-            {form.tipJarEnabled && (
-              <input
-                value={form.tipJarLabel || ''}
-                onChange={(e) => up('tipJarLabel', e.target.value)}
-                placeholder="Buy me a coffee"
-                className="input-field"
-              />
-            )}
-
-            <div className="mt-2 p-4 bg-surface-1 rounded-xl border border-white/5 flex flex-col gap-3">
-              <p className="text-xs font-semibold text-text-muted uppercase tracking-wider">
-                Your link
-              </p>
-              <p className="text-sm text-brand-cyan font-mono">
-                vergr.me/{profile?.username}
-              </p>
-              <div className="flex gap-2">
-                <button
-                  onClick={copyUrl}
-                  className="flex-1 py-2 text-xs border border-white/10 rounded-lg text-text-secondary hover:text-text-primary"
-                >
-                  {copied ? 'Copied!' : 'Copy link'}
-                </button>
-                <button
-                  onClick={() => window.open(`/u/${profile?.username}`, '_blank')}
-                  className="flex-1 py-2 text-xs border border-white/10 rounded-lg text-text-secondary hover:text-text-primary"
-                >
-                  Preview
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'analytics' &&
-          (isPro ? (
-            <VergrMeAnalytics uid={auth.currentUser?.uid} />
-          ) : (
-            <div className="flex flex-col items-center justify-center py-12 gap-4 text-center">
-              <Icon name="bar_chart" size={40} className="text-text-muted/30" />
-              <p className="font-medium">Analytics is Pro only</p>
-              <p className="text-sm text-text-muted max-w-xs">
-                See views, link clicks, and message taps.
-              </p>
-              <button
-                onClick={() =>
-                  setUpgradeModal({
-                    open: true,
-                    message: 'Upgrade to Pro to unlock analytics.',
-                  })
-                }
-                className="px-6 py-2.5 bg-brand-cyan text-bg-dark text-sm font-semibold rounded-full"
-              >
-                Upgrade to Pro
-              </button>
-            </div>
-          ))}
+          {/* Desktop sticky preview */}
+          <aside className="hidden xl:flex flex-col items-center justify-center gap-3 w-[400px] border-l border-white/5 bg-black/20 p-6 shrink-0">
+            <PhonePreview data={previewData} avatarUrl={previewAvatar} />
+            <button onClick={openPage} className="text-[11px] text-brand-violet-light hover:underline mt-2">Open public page ↗</button>
+          </aside>
+        </div>
       </div>
 
-      <UpgradeModal
-        isOpen={upgradeModal.open}
-        onClose={() => setUpgradeModal({ open: false, message: '' })}
-        requiredTier="pro"
-        message={upgradeModal.message}
-      />
+      {/* Mobile full-screen preview */}
+      {showPreview && (
+        <div className="xl:hidden fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex flex-col items-center">
+          <div className="w-full max-w-md flex items-center justify-between px-4 py-3">
+            <span className="text-sm font-medium text-white">Live preview</span>
+            <button onClick={() => setShowPreview(false)} className="w-9 h-9 flex items-center justify-center rounded-full bg-white/10 text-white"><Icon name="close" size={18} /></button>
+          </div>
+          <div className="flex-1 flex items-start justify-center pt-2 overflow-y-auto">
+            <PhonePreview data={previewData} avatarUrl={previewAvatar} floating={false} />
+          </div>
+        </div>
+      )}
+
+      <UpgradeModal isOpen={upgradeModal.open} onClose={() => setUpgradeModal({ open: false, message: '' })} requiredTier="pro" message={upgradeModal.message} />
+      <FirstRunTour onGo={(s) => setSection(s)} />
     </div>
   );
 }
 
-function VergrMeAnalytics({ uid }) {
-  const [stats, setStats] = useState(null);
+// One-time 3-step coach for new editors (the builder is deep; three pointers
+// beat a manual). Dismissal persists per device.
+const TOUR_KEY = 'vergr_me_tour_done';
+const TOUR_STEPS = [
+  { icon: 'palette', title: 'Make it yours', body: 'Pick a design system, colors, fonts and background in Appearance.', section: 'appearance', cta: 'Open Appearance' },
+  { icon: 'add_link', title: 'Add your blocks', body: 'Links, media, music, products, tips and live Vergr content: 18+ block types.', section: 'links', cta: 'Open Links & Blocks' },
+  { icon: 'publish', title: 'Publish when ready', body: 'Edits autosave as a draft. Hit Publish (top right) to push them live on your public page.', section: null, cta: 'Got it' },
+];
 
+function FirstRunTour({ onGo }) {
+  const [step, setStep] = useState(() => {
+    try { return localStorage.getItem(TOUR_KEY) ? -1 : 0; } catch { return -1; }
+  });
+  if (step < 0) return null;
+  const s = TOUR_STEPS[step];
+  const done = () => { try { localStorage.setItem(TOUR_KEY, '1'); } catch {} setStep(-1); };
+  const next = () => {
+    if (s.section) onGo(s.section);
+    if (step >= TOUR_STEPS.length - 1) done();
+    else setStep(step + 1);
+  };
+  return (
+    <div className="fixed inset-x-0 bottom-4 z-[60] flex justify-center px-4 pointer-events-none">
+      <div className="pointer-events-auto w-full max-w-sm rounded-2xl border border-white/10 bg-surface-1/95 backdrop-blur-xl p-4 shadow-2xl">
+        <div className="flex items-start gap-3">
+          <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 text-white" style={{ background: 'linear-gradient(135deg, #7B1FFF, #B44FFF)' }}>
+            <Icon name={s.icon} size={18} />
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold">{s.title}</p>
+            <p className="text-xs text-text-secondary mt-0.5">{s.body}</p>
+          </div>
+        </div>
+        <div className="flex items-center justify-between mt-3">
+          <div className="flex items-center gap-1.5">
+            {TOUR_STEPS.map((_, i) => (
+              <span key={i} className={`w-1.5 h-1.5 rounded-full ${i === step ? 'bg-brand-violet-light' : 'bg-white/15'}`} />
+            ))}
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={done} className="px-3 py-1.5 text-xs text-text-muted hover:text-text-secondary">Skip</button>
+            <button onClick={next} className="px-3.5 py-1.5 text-xs font-semibold rounded-lg text-white" style={{ background: 'linear-gradient(135deg, #7B1FFF, #B44FFF)' }}>{s.cta}</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function VergrMeAnalytics({ uid, blocks, isPro, onProGate }) {
+  const [stats, setStats] = useState(null);
   useEffect(() => {
     if (!uid) return;
-    const days = Array.from({ length: 30 }, (_, i) => {
-      const d = new Date();
-      d.setDate(d.getDate() - i);
-      return d.toISOString().slice(0, 10);
-    });
-    Promise.all(
-      days.map(async (day) => {
-        const snap = await getDoc(doc(db, 'users', uid, 'vergrMeViews', day));
-        return snap.exists() ? snap.data() : null;
-      })
-    ).then((results) => {
-      const valid = results.filter(Boolean);
-      setStats({
-        views: valid.reduce((s, d) => s + (d.views || 0), 0),
-        clicks: valid.reduce(
-          (s, d) =>
-            s + Object.values(d.linkClicks || {}).reduce((a, b) => a + b, 0),
-          0
-        ),
-        messageTaps: valid.reduce((s, d) => s + (d.messageTaps || 0), 0),
-        emailTaps: valid.reduce((s, d) => s + (d.emailTaps || 0), 0),
-        tipTaps: valid.reduce((s, d) => s + (d.tipTaps || 0), 0),
+    const days = Array.from({ length: 30 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() - i); return d.toISOString().slice(0, 10); });
+    Promise.all(days.map(async (day) => { const s = await getDoc(doc(db, 'users', uid, 'vergrMeViews', day)); return s.exists() ? s.data() : null; }))
+      .then((results) => {
+        const valid = results.filter(Boolean);
+        const clickMap = {}; const devices = {}; const referrers = {};
+        valid.forEach((d) => {
+          Object.entries(d.blockClicks || d.linkClicks || {}).forEach(([k, v]) => { clickMap[k] = (clickMap[k] || 0) + v; });
+          Object.entries(d.devices || {}).forEach(([k, v]) => { devices[k] = (devices[k] || 0) + v; });
+          Object.entries(d.referrers || {}).forEach(([k, v]) => { referrers[k] = (referrers[k] || 0) + v; });
+        });
+        setStats({
+          views: valid.reduce((s, d) => s + (d.views || 0), 0),
+          clicks: Object.values(clickMap).reduce((a, b) => a + b, 0),
+          messageTaps: valid.reduce((s, d) => s + (d.messageTaps || 0), 0),
+          emailTaps: valid.reduce((s, d) => s + (d.emailTaps || 0), 0),
+          tipTaps: valid.reduce((s, d) => s + (d.tipTaps || 0), 0),
+          clickMap, devices, referrers,
+          // Oldest -> newest daily view counts for the sparkline.
+          series: [...days].reverse().map((day, i) => results[days.length - 1 - i]?.views || 0),
+        });
       });
-    });
   }, [uid]);
 
-  if (!stats)
-    return (
-      <div className="flex justify-center p-8">
-        <div className="w-6 h-6 border-2 border-brand-cyan border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
+  if (!stats) return <StackSkeleton rows={3} height={56} />;
 
-  const cards = [
-    { label: 'Page views', value: stats.views },
-    { label: 'Link clicks', value: stats.clicks },
+  // Basic analytics (views + block clicks + top blocks) are FREE; the deeper
+  // engagement breakdown (message/email/tip taps) stays Pro. (§5 decision 1.)
+  const ctr = stats.views > 0 ? `${Math.round((stats.clicks / stats.views) * 100)}%` : '—';
+  const basicCards = [
+    { label: 'Page views', value: stats.views.toLocaleString() },
+    { label: 'Block clicks', value: stats.clicks.toLocaleString() },
+    { label: 'Click-through rate', value: ctr },
+  ];
+  const proCards = [
     { label: 'Message taps', value: stats.messageTaps },
     { label: 'Email taps', value: stats.emailTaps },
     { label: 'Tip taps', value: stats.tipTaps },
   ];
+  const topBlocks = (blocks || []).map((b) => ({ b, n: stats.clickMap[b.id] || 0 })).filter((x) => x.n > 0).sort((a, b) => b.n - a.n).slice(0, 8);
 
   return (
     <div className="flex flex-col gap-4">
-      <p className="text-xs text-text-muted text-center">Last 30 days</p>
+      <p className="text-xs text-text-muted">Last 30 days</p>
+      <Sparkline series={stats.series} />
       <div className="grid grid-cols-3 gap-3">
-        {cards.map((c) => (
-          <div
-            key={c.label}
-            className="bg-surface-1 rounded-xl p-3 border border-white/5"
-          >
-            <p className="text-xl font-semibold">{c.value.toLocaleString()}</p>
-            <p className="text-[10px] text-text-muted mt-1">{c.label}</p>
-          </div>
-        ))}
+        {basicCards.map((c) => <StatTile key={c.label} value={c.value} label={c.label} />)}
       </div>
+
+      <div className="flex items-center gap-2 mt-1">
+        <p className="text-[11px] text-text-muted font-semibold uppercase tracking-wider">Engagement</p>
+        {!isPro && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-brand-gold-light/15 text-brand-gold-light font-semibold">Pro</span>}
+      </div>
+      {isPro ? (
+        <>
+          <div className="grid grid-cols-3 gap-3">
+            {proCards.map((c) => <StatTile key={c.label} value={c.value.toLocaleString()} label={c.label} />)}
+          </div>
+          <AudienceCard devices={stats.devices} referrers={stats.referrers} />
+        </>
+      ) : (
+        <button onClick={() => onProGate('Upgrade to Pro for engagement analytics (message, email and tip taps) plus device and traffic-source breakdowns.')}
+          className="grid grid-cols-3 gap-3 text-left">
+          {proCards.map((c) => (
+            <div key={c.label} className="relative px-3 py-4 bg-surface-1/70 rounded-xl border border-white/5 overflow-hidden">
+              <div className="blur-[5px] select-none"><StatTile value="•••" label={c.label} /></div>
+              <Icon name="lock" size={14} className="absolute top-2 right-2 text-brand-gold-light" />
+            </div>
+          ))}
+        </button>
+      )}
+
+      {topBlocks.length > 0 && (
+        <div className="flex flex-col gap-2">
+          <p className="text-[11px] text-text-muted font-semibold uppercase tracking-wider">Top blocks</p>
+          {topBlocks.map(({ b, n }) => (
+            <div key={b.id} className="flex items-center justify-between px-4 py-2.5 bg-surface-1/70 rounded-xl border border-white/5">
+              <span className="text-sm truncate">{b.title || b.label || b.text || b.type}</span>
+              <span className="text-xs font-dmmono tabular-nums text-brand-violet-light">{n.toLocaleString()}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// 30-day views sparkline (pure SVG, no chart lib on this screen).
+function Sparkline({ series = [] }) {
+  const max = Math.max(1, ...series);
+  const W = 600, H = 64;
+  const pts = series.map((v, i) => `${(i / Math.max(1, series.length - 1)) * W},${H - (v / max) * (H - 6) - 3}`).join(' ');
+  return (
+    <div className="px-4 py-3 bg-surface-1/70 rounded-xl border border-white/5">
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-16" preserveAspectRatio="none">
+        <polyline points={`0,${H} ${pts} ${W},${H}`} fill="rgba(123,31,255,0.14)" stroke="none" />
+        <polyline points={pts} fill="none" stroke="#B44FFF" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
+      </svg>
+      <p className="text-[10px] text-text-muted mt-1">Daily views · last 30 days</p>
+    </div>
+  );
+}
+
+// Pro audience breakdown: device split + top traffic sources.
+function AudienceCard({ devices = {}, referrers = {} }) {
+  const mob = devices.mobile || 0, desk = devices.desktop || 0, tot = mob + desk;
+  const topRefs = Object.entries(referrers)
+    .sort((a, b) => b[1] - a[1]).slice(0, 6);
+  return (
+    <div className="flex flex-col gap-3">
+      <p className="text-[11px] text-text-muted font-semibold uppercase tracking-wider">Audience</p>
+      {tot > 0 && (
+        <div className="px-4 py-3 bg-surface-1/70 rounded-xl border border-white/5">
+          <div className="flex justify-between text-[11px] text-text-secondary mb-1.5">
+            <span>Mobile {Math.round((mob / tot) * 100)}%</span>
+            <span>Desktop {Math.round((desk / tot) * 100)}%</span>
+          </div>
+          <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
+            <div className="h-full rounded-full" style={{ width: `${(mob / tot) * 100}%`, background: 'linear-gradient(90deg, #7B1FFF, #B44FFF)' }} />
+          </div>
+        </div>
+      )}
+      {topRefs.length > 0 ? (
+        <div className="flex flex-col gap-1.5">
+          {topRefs.map(([host, n]) => (
+            <div key={host} className="flex items-center justify-between px-4 py-2 bg-surface-1/70 rounded-xl border border-white/5">
+              <span className="text-xs truncate text-text-secondary">{host === 'direct' ? 'Direct / unknown' : host.replace(/_/g, '.')}</span>
+              <span className="text-xs font-dmmono tabular-nums text-brand-violet-light">{n.toLocaleString()}</span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="text-xs text-text-muted px-1">Traffic sources appear here as visitors arrive.</p>
+      )}
     </div>
   );
 }

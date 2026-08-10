@@ -50,9 +50,12 @@ export function Sparkline({ data, color = PALETTE.cyan, height = 44 }) {
   if (!data?.length) {
     return <div style={{ height }} className="w-full rounded-lg bg-white/[0.02]" />;
   }
-  const chartData = data.map((v, i) => ({ i, v }));
-  const first = data[0] ?? 0;
-  const last  = data[data.length - 1] ?? 0;
+  const min = Math.min(...data);
+  const max = Math.max(...data);
+  // A perfectly flat series (e.g. 0 followers) plots at the bottom edge and reads
+  // as "invisible". Render it as a visible centered baseline instead.
+  const flat = min === max;
+  const chartData = data.map((v, i) => ({ i, v: flat ? 0.5 : v }));
   const gradientId = `sparkGrad-${color.replace('#','')}`;
   return (
     <ResponsiveContainer width="100%" height={height}>

@@ -23,9 +23,8 @@
 //
 //   3. The notification `data` object is stringified into the click
 //      handler's `event.notification.data` — we use it to route the user
-//      straight to the relevant post / chat / squad / profile via a
-//      HashRouter URL (the SPA uses HashRouter, so all in-app routes
-//      live under `/#/...`).
+//      straight to the relevant post / chat / squad / profile. The SPA uses
+//      BrowserRouter (real paths), so routes are `/post/...` NOT `/#/post/...`.
 
 importScripts('https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/10.14.1/firebase-messaging-compat.js');
@@ -42,6 +41,20 @@ firebase.initializeApp({
 const messaging = firebase.messaging();
 
 // ──────────────────────────────────────────────────────────────
+// Force this SW to take over immediately on update.
+// Without skipWaiting, an INSTALLED app (PWA / home-screen) keeps
+// running the OLD cached copy of this file until every window is
+// fully closed — which is why a badge/click-handler change here
+// never reached the user's phone. skipWaiting + clients.claim make
+// a freshly fetched version activate and control open clients at
+// once, so future fixes land on the next app launch (not "never").
+// ──────────────────────────────────────────────────────────────
+self.addEventListener('install', () => self.skipWaiting());
+self.addEventListener('activate', (event) => {
+  event.waitUntil(self.clients.claim());
+});
+
+// ──────────────────────────────────────────────────────────────
 // Background push handler
 // ──────────────────────────────────────────────────────────────
 messaging.onBackgroundMessage((payload) => {
@@ -55,6 +68,11 @@ messaging.onBackgroundMessage((payload) => {
     });
     return;
   }
+
+  // If FCM included a top-level `notification` field, Chrome has ALREADY
+  // auto-displayed the notification before this handler ran. Calling
+  // showNotification again would produce a duplicate. Bail.
+  if (payload.notification) return;
 
   // Title + body come from the data payload (see design note #1).
   // Fallback chain: explicit title → displayName → legacy notification.title
@@ -78,11 +96,24 @@ messaging.onBackgroundMessage((payload) => {
   // monochrome badge in the status bar always stays as the VERGR logo.
   const senderAvatar = data.senderAvatar || data.avatar || null;
 
+  // Message-class pushes (DM / group / squad relay, legacy message) should
+  // look like a chat notification: the SENDER's avatar as the big left icon,
+  // and NO large `image` preview (a stray image renders as the black square
+  // on the right that doesn't belong on a message). Non-message types (e.g.
+  // a post with media) may still carry a hero image.
+  const t = String(data.type || '').toLowerCase();
+  const isMessageClass =
+    t.includes('relay') || t.includes('message') || t.includes('chat') || t.startsWith('dm');
+
   const options = {
     body: body || title,
-    icon: senderAvatar || '/icons/icon-192.png',
-    badge: '/icons/icon-192.png',
-    image: data.image || undefined,
+    icon: senderAvatar || '/icons/icon-192-v2.png',
+    // `badge` is the small monochrome status-bar/pulldown glyph. Android masks
+    // it by ALPHA and tints it, so it MUST be a transparent silhouette — a
+    // solid square (like the app icon) renders as a plain white square. This
+    // is a transparent PNG containing only the white "V".
+    badge: '/icons/badge-v.png',
+    image: isMessageClass ? undefined : (data.image || undefined),
     data, // preserved so notificationclick can route the user
     // `tag` collapses successive notifications from the same chat /
     // notif id into one bubble instead of stacking dozens of them.
@@ -117,29 +148,46 @@ self.addEventListener('notificationclick', (event) => {
   else if (data.chatId) targetHash = `/chat/${data.chatId}`;
   else if (data.squadId) targetHash = `/squads/${data.squadId}`;
   else if (data.orderId) targetHash = `/orders/${data.orderId}`;
+  // actionUrl must win over the generic senderId fallback — e.g. an
+  // incoming_call push carries BOTH senderId (caller) and actionUrl
+  // (/call/...); without this, taps opened the caller's profile instead of
+  // answering. Specific ids above still take priority over a generic actionUrl.
+  else if (data.actionUrl) targetHash = data.actionUrl;
   else if (data.type === 'follow' && data.senderId) targetHash = `/user/${data.senderId}`;
   else if (data.senderId) targetHash = `/user/${data.senderId}`;
-  else if (data.actionUrl) targetHash = data.actionUrl;
 
-  const targetUrl = `${self.location.origin}/#${targetHash}`;
+  // The app is on BrowserRouter (real paths), NOT HashRouter. Build a clean
+  // path URL — the old `/#${targetHash}` form sent every tap to the home feed
+  // because BrowserRouter ignores the hash fragment.
+  const targetUrl = `${self.location.origin}${targetHash}`;
 
   event.waitUntil(
     clients
       .matchAll({ type: 'window', includeUncontrolled: true })
       .then((clientList) => {
-        // If a VERGR tab is already open, focus it and tell it to
-        // navigate via postMessage (the SPA listens for this).
+        // If a VERGR window is already open, focus it AND drive it to the
+        // target route ourselves. We do NOT rely solely on postMessage:
+        // a backgrounded app that only gets re-focused never reloads, so
+        // stale in-memory app code can silently ignore the message (this
+        // is why taps were landing on the home feed). `client.navigate()`
+        // forces the route (hash-only change = no reload, SPA just routes);
+        // the postMessage is kept as a belt-and-suspenders fallback for
+        // browsers that restrict navigate().
         for (const client of clientList) {
-          if (client.url.includes(self.location.origin) && 'focus' in client) {
-            client.postMessage({
-              type: 'notification-click',
-              targetHash,
-              data,
-            });
-            return client.focus();
+          if (client.url.includes(self.location.origin)) {
+            client.postMessage({ type: 'notification-click', targetHash, data });
+            if ('focus' in client) {
+              const focused = client.focus();
+              if ('navigate' in client) {
+                return Promise.resolve(focused)
+                  .then(() => client.navigate(targetUrl).catch(() => client))
+                  .catch(() => client);
+              }
+              return focused;
+            }
           }
         }
-        // Otherwise, open a new tab at the target route directly.
+        // Otherwise, open a new window at the target route directly.
         return clients.openWindow(targetUrl);
       })
   );

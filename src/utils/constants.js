@@ -7,6 +7,19 @@ export const GAMING_INTERESTS = [
   'Retro Gaming', 'Mobile Gaming', 'VR Gaming', 'Streaming', 'Game Dev',
 ];
 
+// Broad content taxonomy — Vergr is a general social platform, not everything is
+// gaming. These are the declared-interest topics (signup + Edit Profile) and the
+// scoring-time topic buckets for the For You feed. Gaming is ONE topic here; the
+// ranking is behavioral-first (author + hashtag affinity) so untagged/non-gaming
+// posts still personalize. Keep this list stable — changing labels breaks stored
+// interests.
+export const CONTENT_TOPICS = [
+  'Gaming', 'Esports', 'Just Chatting', 'IRL', 'Music', 'Art & Creative',
+  'Tech', 'Memes & Comedy', 'Sports', 'Anime & Manga', 'Movies & TV',
+  'Lifestyle', 'Food & Cooking', 'Fitness & Health', 'Fashion & Beauty',
+  'Science & Education', 'News', 'Cars & Motors', 'Travel', 'Crypto & Finance',
+];
+
 export const GAMING_PLATFORMS = [
   'PC', 'PlayStation', 'Xbox', 'Nintendo Switch', 'Mobile',
 ];

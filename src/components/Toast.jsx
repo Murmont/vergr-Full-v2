@@ -2,7 +2,7 @@ import { useUI } from '../context/UIContext';
 import Icon from './Icon';
 
 const TOAST_STYLES = {
-  success: { bg: 'bg-brand-cyan/10 border-brand-cyan/30', icon: 'check_circle', iconColor: 'text-brand-cyan' },
+  success: { bg: 'bg-brand-violet/10 border-brand-violet/30', icon: 'check_circle', iconColor: 'text-brand-violet-light' },
   error: { bg: 'bg-brand-ember/10 border-brand-ember/30', icon: 'error', iconColor: 'text-brand-ember' },
   info: { bg: 'bg-brand-violet/10 border-brand-violet/30', icon: 'info', iconColor: 'text-brand-violet' },
   coins: { bg: 'bg-brand-gold/10 border-brand-gold/30', icon: 'monetization_on', iconColor: 'text-brand-gold' },

@@ -6,11 +6,12 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
+import { ListSkeleton } from '../../components/skeletons/GlassSkeletons';
 import { useAuth } from '../../context/AuthContext';
 import { useUser } from '../../context/UserContext';
 import { useUI } from '../../context/UIContext';
 import { getTransactions, getCoinPackages, sendCoins, searchUsers } from '../../firebase/firestore';
-import { getVPLevel, getGemRate } from '../../utils/vpSystem';
+import { getVPLevel, getGemRate, getCommission } from '../../utils/vpSystem';
 import TopBar from '../../components/TopBar';
 import Icon from '../../components/Icon';
 import { CoinIcon, VPIcon, GemIcon } from '../../components/CoinIcon';
@@ -32,9 +33,7 @@ function WalletRightRail({ profile, wallet, transactions }) {
   const gemsEUR = gems * 0.01;
   const totalEUR = coinsEUR + gemsEUR;
   const vpLevel = (typeof getVPLevel === 'function') ? getVPLevel(vp) : null;
-  const commissionPct = vpLevel?.commission != null
-    ? Math.round(vpLevel.commission * 100)
-    : null;
+  const commissionPct = vpLevel != null ? Math.round(getCommission(vp) * 100) : null;
 
   // Donut math — money only
   const total = Math.max(totalEUR, 0.0001);
@@ -323,14 +322,14 @@ export default function WalletScreen() {
       case 'tip_sent':           return { icon: 'send', color: 'text-brand-violet', bg: 'bg-brand-violet/10' };
       case 'purchase':           return { icon: 'shopping_bag', color: 'text-brand-gold', bg: 'bg-brand-gold/10' };
       case 'payout':
-      case 'gem_cashout':        return { icon: 'diamond', color: 'text-brand-cyan', bg: 'bg-brand-cyan/10' };
+      case 'gem_cashout':        return { icon: 'diamond', color: 'text-brand-violet-light', bg: 'bg-brand-violet/10' };
       case 'tournament_entry':   return { icon: 'confirmation_number', color: 'text-brand-pink', bg: 'bg-brand-pink/10' };
       case 'tournament_prize':
       case 'tournament_win':     return { icon: 'emoji_events', color: 'text-brand-gold', bg: 'bg-brand-gold/10' };
       case 'squad_contribution': return { icon: 'groups', color: 'text-brand-violet', bg: 'bg-brand-violet/10' };
       case 'boost':              return { icon: 'trending_up', color: 'text-brand-pink', bg: 'bg-brand-pink/10' };
       case 'membership':         return { icon: 'card_membership', color: 'text-brand-pink', bg: 'bg-brand-pink/10' };
-      case 'referral':           return { icon: 'person_add', color: 'text-brand-cyan', bg: 'bg-brand-cyan/10' };
+      case 'referral':           return { icon: 'person_add', color: 'text-brand-violet-light', bg: 'bg-brand-violet/10' };
       default:                   return { icon: 'swap_vert', color: 'text-text-muted', bg: 'bg-surface-3' };
     }
   };
@@ -490,9 +489,7 @@ export default function WalletScreen() {
         </button>
       </div>
       {loading ? (
-        <div className="flex justify-center py-8">
-          <div className="w-6 h-6 border-2 border-surface-3 border-t-brand-cyan rounded-full animate-spin" />
-        </div>
+        <ListSkeleton rows={4} />
       ) : transactions.length === 0 ? (
         <div className="text-center py-8">
           <Icon name="receipt_long" size={40} className="text-text-muted/20 mx-auto mb-3" />
@@ -586,7 +583,7 @@ export default function WalletScreen() {
               )}
               {/* Pack PNG, bare with drop-shadow — no container behind it */}
               <img
-                src={`/brand/packs/${slug}.png`}
+                src={`/brand/packs/${slug}.webp`}
                 alt={p.name}
                 className="w-12 h-12 object-contain shrink-0"
                 style={{ filter: `drop-shadow(0 0 10px ${glow})` }}
@@ -670,7 +667,7 @@ export default function WalletScreen() {
                   {activeTab === tab && (
                     <motion.div
                       layoutId="walletTabPill"
-                      className="absolute inset-0 bg-brand-cyan rounded-full"
+                      className="absolute inset-0 bg-brand-violet rounded-full"
                       transition={{ type: 'spring', stiffness: 500, damping: 35 }}
                     />
                   )}
@@ -693,7 +690,7 @@ export default function WalletScreen() {
               value={sendSearch}
               onChange={(e) => handleSendSearch(e.target.value)}
               placeholder="Search by username..."
-              className="w-full bg-surface-2 border border-white/[0.06] rounded-xl py-3 px-4 text-sm text-text-primary placeholder:text-text-muted focus:border-brand-cyan focus:outline-none"
+              className="w-full bg-surface-2 border border-white/[0.06] rounded-xl py-3 px-4 text-sm text-text-primary placeholder:text-text-muted focus:border-brand-violet focus:outline-none"
               autoFocus
             />
             <div className="mt-3 space-y-2 max-h-60 overflow-y-auto">
@@ -730,7 +727,7 @@ export default function WalletScreen() {
               value={sendAmount}
               onChange={(e) => setSendAmount(e.target.value)}
               placeholder="0"
-              className="w-full bg-surface-2 border border-white/[0.06] rounded-xl py-3 px-4 text-2xl font-dmmono text-text-primary placeholder:text-text-muted focus:border-brand-cyan focus:outline-none text-center mb-2"
+              className="w-full bg-surface-2 border border-white/[0.06] rounded-xl py-3 px-4 text-2xl font-dmmono text-text-primary placeholder:text-text-muted focus:border-brand-violet focus:outline-none text-center mb-2"
               autoFocus
             />
             <p className="text-text-muted text-xs text-center mb-4">
@@ -741,7 +738,7 @@ export default function WalletScreen() {
               disabled={!sendAmount || parseInt(sendAmount, 10) <= 0 || parseInt(sendAmount, 10) > (wallet?.balance || 0) || sending}
               className={`w-full py-3.5 rounded-xl font-bold text-sm transition-all ${
                 sendAmount && parseInt(sendAmount, 10) > 0 && parseInt(sendAmount, 10) <= (wallet?.balance || 0) && !sending
-                  ? 'bg-brand-cyan text-bg-dark'
+                  ? 'bg-brand-violet text-white'
                   : 'bg-surface-3 text-text-muted'
               }`}>
               {sending ? 'Sending...' : `Send ${sendAmount || 0} Coins`}

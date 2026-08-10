@@ -43,7 +43,7 @@ export default function EsportsTeamScreen() {
     load();
   }, [teamId]);
 
-  if (loading) return <div className={isDesktop ? "min-h-screen" : "screen-container min-h-screen"}><TopBar showBack title="Team" /><div className="flex justify-center py-20"><div className="w-6 h-6 border-2 border-surface-3 border-t-brand-cyan rounded-full animate-spin" /></div></div>;
+  if (loading) return <div className={isDesktop ? "min-h-screen" : "screen-container min-h-screen"}><TopBar showBack title="Team" /><div className="flex justify-center py-20"><div className="w-6 h-6 border-2 border-surface-3 border-t-brand-violet-light rounded-full animate-spin" /></div></div>;
   if (!team) return <div className={isDesktop ? "min-h-screen" : "screen-container min-h-screen"}><TopBar showBack title="Team" /><div className="text-center py-20"><p className="text-text-muted">Team not found</p></div></div>;
 
   return (
@@ -52,7 +52,7 @@ export default function EsportsTeamScreen() {
       <div className="px-4 py-4">
         <div className="p-5 rounded-2xl bg-surface-1 border border-white/[0.06] mb-4">
           <div className="flex items-center gap-3 mb-3">
-            <div className="w-14 h-14 rounded-2xl bg-brand-cyan flex items-center justify-center text-2xl font-black text-bg-dark">{team.tag || '?'}</div>
+            <div className="w-14 h-14 rounded-2xl bg-brand-violet-light flex items-center justify-center text-2xl font-black text-white">{team.tag || '?'}</div>
             <div>
               <h2 className="font-syne text-xl font-bold">{team.name}</h2>
               <p className="text-text-muted text-xs">{team.game} · {team.region}</p>
@@ -61,7 +61,7 @@ export default function EsportsTeamScreen() {
           <div className="flex gap-4">
             <div><p className="text-[10px] text-text-muted uppercase">Wins</p><p className="font-dmmono font-bold text-green-500">{team.wins || 0}</p></div>
             <div><p className="text-[10px] text-text-muted uppercase">Losses</p><p className="font-dmmono font-bold text-brand-ember">{team.losses || 0}</p></div>
-            <div><p className="text-[10px] text-text-muted uppercase">Team XP</p><p className="font-dmmono font-bold text-brand-cyan">{team.teamXP || 0}</p></div>
+            <div><p className="text-[10px] text-text-muted uppercase">Team XP</p><p className="font-dmmono font-bold text-brand-violet-light">{team.teamXP || 0}</p></div>
           </div>
         </div>
 

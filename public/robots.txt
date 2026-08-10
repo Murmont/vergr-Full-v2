@@ -1,0 +1,57 @@
+User-agent: *
+Allow: /
+
+# AI crawler policy (deliberate, not accidental): all AI search/citation
+# crawlers (OAI-SearchBot, ChatGPT-User, PerplexityBot, ClaudeBot,
+# Claude-SearchBot, Claude-User, Google-Extended, Bingbot) AND training
+# crawlers (GPTBot, CCBot) are ALLOWED via the wildcard group above,
+# subject to the same private-route Disallows below. They surface VERGR
+# in AI answers and send referral traffic. Do NOT add bare per-bot
+# "Allow: /" groups — a named group REPLACES the * group for that bot
+# and would strip the private-route Disallows.
+
+# Machine-readable site summary for AI assistants:
+#   https://vergr.app/llms.txt
+
+# Public, indexable surfaces:
+#   /platform/*  — marketing + info pages
+#   /u/*         — public user profiles (vergr.me)
+#   /post/*, /clip/*, /user/* — public user content (when opened to logged-out view)
+
+# Private / login-walled app surfaces — keep out of the index
+Disallow: /wallet
+Disallow: /messages
+Disallow: /chat
+Disallow: /call
+Disallow: /tournaments
+Disallow: /squads
+Disallow: /creator
+Disallow: /settings
+Disallow: /admin
+Disallow: /vanguard
+Disallow: /moderators
+Disallow: /mod
+Disallow: /hud
+Disallow: /create
+Disallow: /edit-profile
+Disallow: /notifications
+Disallow: /earn
+Disallow: /onboarding
+Disallow: /login
+Disallow: /signup
+Disallow: /2fa-setup
+Disallow: /2fa-login
+Disallow: /verify-email
+Disallow: /verify
+Disallow: /phone-entry
+Disallow: /phone-otp
+Disallow: /new-password
+Disallow: /reset-success
+Disallow: /social-login
+Disallow: /account-type
+Disallow: /connect-gaming
+Disallow: /prize-receipt
+Disallow: /overlay
+
+Sitemap: https://vergr.app/sitemap.xml
+Sitemap: https://vergr.app/sitemap-ugc.xml

@@ -4,6 +4,7 @@ import { useUser } from '../../context/UserContext';
 import { getUserPosts, getTransactions, getFollowers } from '../../firebase/firestore';
 import TopBar from '../../components/TopBar';
 import CoinDisplay from '../../components/CoinDisplay';
+import { StackSkeleton } from '../../components/skeletons/GlassSkeletons';
 import Icon from '../../components/Icon';
 import { useLayout } from '../../context/LayoutContext';
 import useResponsive from '../../hooks/useResponsive';
@@ -61,7 +62,7 @@ export default function MonthlyAnalyticsScreen({ embedded = false }) {
 
         setStats({
           revenue: periodEarnings,
-          newFollowers: followers.length, // Simplified
+          followers: followers.length,
           engagement,
           postsCreated: periodPosts.length,
           totalViews,
@@ -91,7 +92,7 @@ export default function MonthlyAnalyticsScreen({ embedded = false }) {
         {['7d', '30d', '90d'].map(p => (
           <button key={p} onClick={() => setPeriod(p)}
             className={`px-4 py-2 rounded-full text-xs font-semibold transition-all ${
-              period === p ? 'bg-brand-cyan text-bg-dark' : 'bg-surface-2 text-text-muted'
+              period === p ? 'bg-brand-violet text-white' : 'bg-surface-2 text-text-muted'
             }`}>
             {p === '7d' ? 'Last 7 days' : p === '30d' ? 'Last 30 days' : 'Last 90 days'}
           </button>
@@ -99,16 +100,14 @@ export default function MonthlyAnalyticsScreen({ embedded = false }) {
       </div>
 
       {loading ? (
-        <div className="flex justify-center py-16">
-          <div className="w-6 h-6 border-2 border-surface-3 border-t-brand-cyan rounded-full animate-spin" />
-        </div>
+        <StackSkeleton rows={5} height={88} />
       ) : stats ? (
         <div>
           {/* Summary cards */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
             {[
               { label: 'Revenue', value: stats.revenue, icon: 'paid', color: 'text-brand-gold', bg: 'bg-brand-gold/10', prefix: '' },
-              { label: 'New Followers', value: `+${formatNum(stats.newFollowers)}`, icon: 'group', color: 'text-brand-cyan', bg: 'bg-brand-cyan/10' },
+              { label: 'Followers', value: formatNum(stats.followers), icon: 'group', color: 'text-brand-violet-light', bg: 'bg-brand-violet/10' },
               { label: 'Engagement', value: `${stats.engagement}%`, icon: 'trending_up', color: 'text-brand-pink', bg: 'bg-brand-pink/10' },
               { label: 'Posts Created', value: stats.postsCreated, icon: 'edit', color: 'text-brand-violet', bg: 'bg-brand-violet/10' },
             ].map(stat => (
@@ -132,7 +131,7 @@ export default function MonthlyAnalyticsScreen({ embedded = false }) {
             {[
               { label: 'Views', value: stats.totalViews, icon: 'visibility', color: 'text-brand-violet' },
               { label: 'Likes', value: stats.totalLikes, icon: 'favorite', color: 'text-brand-ember' },
-              { label: 'Comments', value: stats.totalComments, icon: 'chat_bubble', color: 'text-brand-cyan' },
+              { label: 'Comments', value: stats.totalComments, icon: 'chat_bubble', color: 'text-brand-violet-light' },
             ].map(item => (
               <div key={item.label} className="flex items-center justify-between">
                 <div className="flex items-center gap-2">

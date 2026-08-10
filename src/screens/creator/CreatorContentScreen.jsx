@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { getUserPosts } from '../../firebase/firestore';
+import { CardGridSkeleton } from '../../components/skeletons/GlassSkeletons';
 import CreatorLayout from '../../components/creator/CreatorLayout';
 import { Card, KpiCard, SectionHeader } from '../../components/creator/Widgets';
 import { VerticalBarChart, PALETTE, compactNum } from '../../components/creator/charts';
@@ -52,7 +53,11 @@ export default function CreatorContentScreen() {
     (async () => {
       setLoading(true);
       try {
-        const p = await getUserPosts(currentUser.uid, 200);
+        // The author's OWN content library, so it keeps showing scheduled posts.
+        // getUserPosts filters to published by default now, because it is also
+        // used for other people's public profiles where an unpublished post must
+        // not appear. This is the one place the opt-in is correct.
+        const p = await getUserPosts(currentUser.uid, 200, { includeUnpublished: true });
         if (alive) setPosts(p || []);
       } catch (e) { console.error(e); }
       if (alive) setLoading(false);
@@ -105,13 +110,11 @@ export default function CreatorContentScreen() {
   return (
     <CreatorLayout page="content" title="Content library" subtitle="Every post you've ever made">
       {loading ? (
-        <div className="flex items-center justify-center py-24">
-          <div className="w-8 h-8 rounded-full border-2 border-white/10 border-t-brand-cyan animate-spin" />
-        </div>
+        <CardGridSkeleton count={9} columns={3} aspect="1/1" />
       ) : (
         <>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 mb-6">
-            <KpiCard label="Posts"    value={totals.posts}    icon="photo_library" iconColor="text-brand-cyan" />
+            <KpiCard label="Posts"    value={totals.posts}    icon="photo_library" iconColor="text-brand-violet-light" />
             <KpiCard label="Views"    value={totals.views}    icon="visibility"    iconColor="text-brand-violet" />
             <KpiCard label="Likes"    value={totals.likes}    icon="favorite"      iconColor="text-brand-pink" />
             <KpiCard label="Comments" value={totals.comments} icon="chat_bubble"   iconColor="text-emerald-400" />
@@ -143,8 +146,8 @@ export default function CreatorContentScreen() {
                 className="h-10 px-3 rounded-xl bg-white/[0.03] border border-white/[0.06] text-sm text-text-primary outline-none">
                 {SORTS.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
               </select>
-              <button onClick={() => navigate('/create')}
-                className="h-10 px-4 rounded-xl bg-brand-cyan text-bg-dark font-bold text-sm flex items-center gap-1.5 hover:brightness-110 transition-all">
+              <button onClick={() => window.dispatchEvent(new CustomEvent('vergr:open-composer'))}
+                className="h-10 px-4 rounded-xl bg-brand-violet text-white font-bold text-sm flex items-center gap-1.5 hover:brightness-110 transition-all">
                 <Icon name="add" size={16} /> New post
               </button>
             </div>
@@ -153,7 +156,7 @@ export default function CreatorContentScreen() {
               {TYPES.map(t => (
                 <button key={t.key} onClick={() => setType(t.key)}
                   className={`flex items-center gap-1.5 px-3 h-8 rounded-lg text-[11px] font-bold whitespace-nowrap transition-all ${
-                    type === t.key ? 'bg-brand-cyan/15 text-brand-cyan border border-brand-cyan/30' : 'bg-white/[0.03] text-text-muted border border-white/[0.04] hover:text-text-primary'
+                    type === t.key ? 'bg-brand-violet/15 text-brand-violet-light border border-brand-violet/30' : 'bg-white/[0.03] text-text-muted border border-white/[0.04] hover:text-text-primary'
                   }`}>
                   <Icon name={t.icon} size={12} /> {t.label}
                 </button>
@@ -173,7 +176,7 @@ export default function CreatorContentScreen() {
                     <button key={p.id} onClick={() => navigate(`/post/${p.id}`)}
                       className="text-left p-3 rounded-xl bg-white/[0.02] hover:bg-white/[0.04] border border-white/[0.04] hover:border-white/[0.12] transition-all">
                       <div className="flex items-center gap-2 mb-2">
-                        <span className="text-[10px] uppercase tracking-widest font-bold text-brand-cyan">{p.type || 'post'}</span>
+                        <span className="text-[10px] uppercase tracking-widest font-bold text-brand-violet-light">{p.type || 'post'}</span>
                         <span className="text-[10px] text-text-muted">·</span>
                         <span className="text-[10px] text-text-muted">{new Date(tsMs(p.createdAt)).toLocaleDateString()}</span>
                       </div>

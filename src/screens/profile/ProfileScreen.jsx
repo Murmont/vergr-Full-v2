@@ -12,23 +12,35 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { CardGridSkeleton } from '../../components/skeletons/GlassSkeletons';
 import { useUser } from '../../context/UserContext';
 import { useUI } from '../../context/UIContext';
 import { useLayout } from '../../context/LayoutContext';
 import useResponsive from '../../hooks/useResponsive';
-import { getUserPosts, getBookmarks, getFollowers, getFollowing } from '../../firebase/firestore';
+import { IS_NATIVE_BUILD } from '../../utils/platform';
+import { getUserPosts, getBookmarks, getFollowers, getFollowing, getLikedPosts, getUserSquads, getTaggedPosts, getPost } from '../../firebase/firestore';
+import NameAudioButton from '../../components/profile/NameAudioButton';
+import useHeaderCollapse from '../../hooks/useHeaderCollapse';
+import { bannerGradient, CountUpNumber, MiniDockHeader } from '../../components/profile/profilePolish';
 import { getVPLevel, getVPProgress, getNextVPLevel } from '../../utils/vpSystem';
+import { compactNum } from '../../components/creator/charts';
 import BadgesShowcase from '../../components/BadgesShowcase';
 import TwitchMirrorPlayer from '../../components/streams/TwitchMirrorPlayer';
 import UserAvatar from '../../components/UserAvatar';
+import CachedImg from '../../components/CachedImg';
 import Icon from '../../components/Icon';
+import MyQrModal from '../../components/messages/MyQrModal';
+import { presenceVisible } from '../../utils/presence';
 import PostCard from '../../components/PostCard';
 import { VPIcon } from '../../components/CoinIcon';
+import CreateComposer from '../../components/composer/CreateComposer';
+import ProfileCompletionCard from '../../components/profile/ProfileCompletionCard';
+import { shareImOnVergrCard } from '../../utils/shareCard';
 
-const PROFILE_TABS = ['Posts', 'Media', 'Clips', 'Likes', 'Bookmarks'];
+const PROFILE_TABS = ['Posts', 'Media', 'Clips', 'Likes', 'Bookmarks', 'Tagged'];
 
 export default function ProfileScreen() {
-  const { currentUser } = useAuth();
+  const { currentUser, logout } = useAuth();
   const { profile, wallet } = useUser();
   const { showToast } = useUI();
   const navigate = useNavigate();
@@ -39,9 +51,19 @@ export default function ProfileScreen() {
   const [posts, setPosts] = useState([]);
   const [loadingPosts, setLoadingPosts] = useState(false);
   const [bookmarks, setBookmarks] = useState([]);
+  const [likedPosts, setLikedPosts] = useState([]);
+  const [taggedPosts, setTaggedPosts] = useState([]);
+  const [mySquads, setMySquads] = useState([]);
+  const { bannerRef, docked } = useHeaderCollapse();
   const [followerCount, setFollowerCount] = useState(0);
   const [followingCount, setFollowingCount] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [showQr, setShowQr] = useState(false);
+  const [sortBy, setSortBy] = useState('latest'); // latest | likes | views
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [createOrigin, setCreateOrigin] = useState(null);
+  const openCreate = (e) => { try { setCreateOrigin(e.currentTarget.getBoundingClientRect()); } catch { setCreateOrigin(null); } setShowCreateModal(true); };
+  const [sortOpen, setSortOpen] = useState(false);
 
   const vp = wallet?.vp || 0;
   const vpLevel = getVPLevel?.(vp);
@@ -51,10 +73,10 @@ export default function ProfileScreen() {
 
   // Right panel
   useEffect(() => {
-    setRightPanel(<OwnerRightPanel posts={posts} navigate={navigate} profile={profile} />);
+    setRightPanel(<OwnerRightPanel posts={posts} navigate={navigate} profile={profile} squads={mySquads} />);
     setContentAlign('left');
     return () => { setRightPanel(null); setContentAlign('center'); };
-  }, [setRightPanel, setContentAlign, posts, navigate, profile]);
+  }, [setRightPanel, setContentAlign, posts, navigate, profile, mySquads]);
 
   useEffect(() => {
     if (!currentUser?.uid) return;
@@ -66,7 +88,23 @@ export default function ProfileScreen() {
     getFollowers(currentUser.uid).then(r => setFollowerCount(r?.length || 0)).catch(() => {});
     getFollowing(currentUser.uid).then(r => setFollowingCount(r?.length || 0)).catch(() => {});
     getBookmarks(currentUser.uid).then(setBookmarks).catch(() => {});
+    getLikedPosts(currentUser.uid, 40).then(setLikedPosts).catch(() => {});
+    getTaggedPosts(currentUser.uid, 30).then(setTaggedPosts).catch(() => {});
+    getUserSquads(currentUser.uid).then(setMySquads).catch(() => {});
   }, [currentUser?.uid]);
+
+  // Pinned posts — live off the profile snapshot so PostCard pin/unpin
+  // reflects immediately. Deleted posts silently drop out.
+  const [pinnedPosts, setPinnedPosts] = useState([]);
+  const pinnedKey = (profile?.pinnedPostIds || []).join(',');
+  useEffect(() => {
+    const ids = (profile?.pinnedPostIds || []).slice(0, 3);
+    if (!ids.length) { setPinnedPosts([]); return; }
+    let live = true;
+    Promise.all(ids.map(pid => getPost(pid).catch(() => null)))
+      .then(list => { if (live) setPinnedPosts(list.filter(Boolean)); });
+    return () => { live = false; };
+  }, [pinnedKey]);
 
   // Close 3-dot menu on outside click
   useEffect(() => {
@@ -77,13 +115,23 @@ export default function ProfileScreen() {
   }, [menuOpen]);
 
   const filteredPosts = useMemo(() => {
-    if (activeTab === 'Posts') return posts;
-    if (activeTab === 'Media') return posts.filter(p => p.imageUrl || p.videoUrl);
-    if (activeTab === 'Clips') return posts.filter(p => p.type === 'clip');
-    if (activeTab === 'Likes') return posts.filter(p => p.likedByMe);
-    if (activeTab === 'Bookmarks') return bookmarks;
-    return posts;
-  }, [activeTab, posts, bookmarks]);
+    let list;
+    if (activeTab === 'Media') list = posts.filter(p => p.imageUrl || p.videoUrl);
+    else if (activeTab === 'Clips') list = posts.filter(p => p.type === 'clip');
+    else if (activeTab === 'Likes') list = likedPosts;       // posts the user liked (any author)
+    else if (activeTab === 'Bookmarks') list = bookmarks;
+    else if (activeTab === 'Tagged') list = taggedPosts;     // posts where you were @mentioned (any author)
+    else {
+      // Posts tab: pinned render in their own row above, so drop them here.
+      const pinnedIds = new Set(pinnedPosts.map(p => p.id));
+      list = posts.filter(p => !pinnedIds.has(p.id));
+    }
+    const sorted = [...list];
+    if (sortBy === 'likes') sorted.sort((a, b) => (b.likeCount || 0) - (a.likeCount || 0));
+    else if (sortBy === 'views') sorted.sort((a, b) => (b.viewCount || 0) - (a.viewCount || 0));
+    // 'latest' keeps the source order (already newest-first from the queries).
+    return sorted;
+  }, [activeTab, posts, bookmarks, likedPosts, taggedPosts, sortBy, pinnedPosts]);
 
   const displayName = profile?.displayName || profile?.username || 'You';
   const handle = profile?.username ? `@${profile.username}` : '';
@@ -94,25 +142,37 @@ export default function ProfileScreen() {
     : '';
 
   return (
-    <div className="pb-10" style={{ background: '#0B0B14' }}>
-      {/* BANNER */}
+    <div className="pb-10 overflow-x-hidden" style={{ background: '#0B0B14' }}>
+      {/* Docked mini-header — fades in when the banner scrolls away (B8.1). */}
+      <MiniDockHeader show={docked} avatar={profile?.avatar} name={displayName} />
+      {/* BANNER — inner wrapper carries the parallax so the overlaid buttons
+          never move or blur with it. */}
       <div className="relative h-[220px] overflow-hidden">
-        <div className="absolute inset-0"
-             style={{
-               background: 'linear-gradient(135deg,#0d0820 0%,#1a0a3a 30%,#2d0a5a 60%,#1a0a30 100%)',
-             }}>
+        <div ref={bannerRef} className="absolute inset-0 will-change-transform">
+          {/* Bannerless fallback: deterministic per-uid brand gradient (B8.4). */}
           <div className="absolute inset-0"
                style={{
-                 background: 'radial-gradient(ellipse at 70% 50%,rgba(123,31,255,0.4) 0%,transparent 65%), radial-gradient(ellipse at 90% 30%,rgba(61,127,255,0.2) 0%,transparent 50%)',
-               }} />
+                 background: profile?.banner
+                   ? 'linear-gradient(135deg,#0d0820 0%,#1a0a3a 30%,#2d0a5a 60%,#1a0a30 100%)'
+                   : bannerGradient(currentUser?.uid),
+               }}>
+            <div className="absolute inset-0"
+                 style={{
+                   background: 'radial-gradient(ellipse at 70% 50%,rgba(123,31,255,0.25) 0%,transparent 65%), radial-gradient(ellipse at 90% 30%,rgba(61,127,255,0.15) 0%,transparent 50%)',
+                 }} />
+          </div>
+          {/* User-uploaded banner overrides the gradient */}
+          {profile?.banner && (
+            <CachedImg src={profile.banner} permanent alt="" className="absolute inset-0 w-full h-full object-cover" />
+          )}
+          {/* Username faded watermark */}
+          <span
+            className="absolute right-5 bottom-4 font-syne font-black tracking-widest uppercase select-none pointer-events-none leading-none"
+            style={{ fontSize: 64, color: 'rgba(255,255,255,0.05)' }}
+          >
+            {(profile?.username || 'VERGR').toUpperCase()}
+          </span>
         </div>
-        {/* Username faded watermark */}
-        <span
-          className="absolute right-5 bottom-4 font-syne font-black tracking-widest uppercase select-none pointer-events-none leading-none"
-          style={{ fontSize: 64, color: 'rgba(255,255,255,0.05)' }}
-        >
-          {(profile?.username || 'VERGR').toUpperCase()}
-        </span>
 
         {/* Top-right actions */}
         <div className="absolute top-3.5 right-3.5 flex items-center gap-2">
@@ -126,6 +186,16 @@ export default function ProfileScreen() {
           >
             <Icon name="share" size={13} /> Share Profile
           </button>
+          {/* Direct settings entry — the only way to reach /settings on mobile
+              since the desktop left-nav "You" dropdown isn't present. */}
+          <button
+            onClick={() => navigate('/settings')}
+            aria-label="Settings"
+            className="w-[34px] h-[34px] flex items-center justify-center rounded-lg text-white"
+            style={{ background: 'rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.15)', backdropFilter: 'blur(8px)' }}
+          >
+            <Icon name="settings" size={16} />
+          </button>
           <div className="relative">
             <button
               onClick={(e) => { e.stopPropagation(); setMenuOpen(o => !o); }}
@@ -136,47 +206,94 @@ export default function ProfileScreen() {
             </button>
             {menuOpen && (
               <div
-                className="absolute top-[calc(100%+6px)] right-0 min-w-[180px] rounded-[10px] p-1.5 z-30"
+                className="absolute top-[calc(100%+6px)] right-0 min-w-[220px] rounded-[10px] p-1.5 z-30 max-h-[75vh] overflow-y-auto"
                 style={{ background: '#1a1a2e', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 8px 32px rgba(0,0,0,0.5)' }}
                 onClick={(e) => e.stopPropagation()}
               >
+                {/* Profile + share */}
                 <DropdownItem icon="edit" label="Edit Profile" onClick={() => { setMenuOpen(false); navigate('/edit-profile'); }} />
+                <DropdownItem icon="qr_code_2" label="My QR code" onClick={() => { setMenuOpen(false); setShowQr(true); }} />
                 <DropdownItem icon="share" label="Share Profile" onClick={() => { setMenuOpen(false); navigator.clipboard?.writeText(window.location.href); showToast?.('Link copied', 'success'); }} />
+                <DropdownItem icon="campaign" label={'Share "I\'m on Vergr" card'} onClick={async () => {
+                  setMenuOpen(false);
+                  const r = await shareImOnVergrCard({ profile, uid: currentUser?.uid });
+                  if (r === 'copied') showToast?.('Announcement copied — paste it anywhere', 'success');
+                }} />
+                <DropdownItem icon="link" label="Vergr.me" onClick={() => { setMenuOpen(false); navigate('/vergrme/edit'); }} />
                 <div className="h-px my-1" style={{ background: '#1E1E2E' }} />
-                <DropdownItem icon="analytics" label="View Analytics" onClick={() => { setMenuOpen(false); navigate('/creator/dashboard'); }} />
+                {/* Surfaces the mobile bottom-nav doesn't cover */}
+                <DropdownItem icon="account_balance_wallet" label="Wallet" onClick={() => { setMenuOpen(false); navigate('/wallet'); }} />
+                <DropdownItem icon="emoji_events" label="Tournaments" onClick={() => { setMenuOpen(false); navigate('/tournaments'); }} />
+                <DropdownItem icon="groups" label="Squads" onClick={() => { setMenuOpen(false); navigate('/squads'); }} />
+                <DropdownItem icon="notifications" label="Notifications" onClick={() => { setMenuOpen(false); navigate('/notifications'); }} />
+                <DropdownItem icon="workspace_premium" label="Subscription" onClick={() => { setMenuOpen(false); navigate('/settings/subscription'); }} />
+                <DropdownItem icon="loyalty" label="My Memberships" onClick={() => { setMenuOpen(false); navigate('/memberships'); }} />
+                <DropdownItem icon="storefront" label="My Shop" onClick={() => { setMenuOpen(false); navigate('/shop'); }} />
+                <DropdownItem icon="download_for_offline" label="My Downloads" onClick={() => { setMenuOpen(false); navigate('/purchases'); }} />
+                <DropdownItem icon="verified_user" label="Verify (KYC)" onClick={() => { setMenuOpen(false); navigate('/creator/verify'); }} />
+                <div className="h-px my-1" style={{ background: '#1E1E2E' }} />
+                {/* Creator Studio + analytics */}
+                <DropdownItem icon="dashboard" label="Creator Studio" onClick={() => { setMenuOpen(false); navigate('/creator/dashboard'); }} />
+                <DropdownItem icon="analytics" label="Analytics" onClick={() => { setMenuOpen(false); navigate('/creator/analytics'); }} />
                 <DropdownItem icon="history" label="Activity Log" onClick={() => { setMenuOpen(false); navigate('/transactions/filter'); }} />
+                <div className="h-px my-1" style={{ background: '#1E1E2E' }} />
+                {/* Settings + help + sign out */}
+                <DropdownItem icon="settings" label="Settings" onClick={() => { setMenuOpen(false); navigate('/settings'); }} />
+                <DropdownItem icon="help" label="Help Center" onClick={() => { setMenuOpen(false); navigate('/help'); }} />
+                <DropdownItem icon="logout" label="Sign out" onClick={async () => { setMenuOpen(false); try { await logout(); } catch {} navigate('/login'); }} />
               </div>
             )}
           </div>
         </div>
       </div>
 
-      {/* PROFILE HEADER */}
-      <div className="px-5">
+      {/* PROFILE HEADER — relative z-10 so the avatar/username/rank paint ABOVE
+          the positioned banner in the -mt-11 overlap zone (without this the
+          banner renders on top and hides them). Mirrors PublicProfileScreen. */}
+      <div className="px-5 relative z-10">
         <div className="flex items-end gap-4 -mt-11 mb-3">
           <div
-            className="w-[88px] h-[88px] rounded-full flex items-center justify-center font-syne font-black text-[30px] relative shrink-0 overflow-hidden"
+            className="w-[88px] h-[88px] rounded-full flex items-center justify-center font-syne font-black text-[30px] relative shrink-0"
             style={{
               background: 'linear-gradient(135deg,#7b1fff,#3b82f6)',
               border: '3px solid #B44FFF',
               boxShadow: '0 0 0 3px #0B0B14, 0 0 20px rgba(180,79,255,0.5)',
             }}
           >
-            {profile?.avatar
-              ? <img src={profile.avatar} alt={displayName} className="w-full h-full object-cover" />
-              : initial}
-            <span className="absolute bottom-1 right-1 w-3.5 h-3.5 rounded-full border-2"
-                  style={{ background: '#22D17E', borderColor: '#0B0B14' }} />
+            {/* overflow-hidden lives on the inner image wrapper, NOT the
+                parent — otherwise the presence dot below gets clipped. */}
+            <div className="w-full h-full rounded-full overflow-hidden flex items-center justify-center">
+              {profile?.avatar
+                ? <img src={profile.avatar} alt={displayName} className="w-full h-full object-cover" />
+                : initial}
+            </div>
+            {/* Presence dot. The user viewing their own profile is
+                definitionally online — but if they've turned off "Show
+                online status" in privacy settings, we hide the dot so
+                the screenshot of their own profile matches what other
+                users see. */}
+            {presenceVisible(profile) && (
+              <span
+                className="absolute bottom-1 right-1 w-4 h-4 rounded-full"
+                style={{
+                  background: '#22D17E',
+                  border: '3px solid #0B0B14',
+                  boxShadow: '0 0 8px rgba(34,209,126,0.55)',
+                }}
+                title="Online"
+              />
+            )}
           </div>
           <div className="flex-1 pb-1">
             <div className="flex items-center gap-2 mb-0.5">
               <span className="text-[22px] font-extrabold text-text-primary">{displayName}</span>
+              <NameAudioButton url={profile?.nameAudioUrl} />
               {profile?.verified && (
-                <div className="w-5 h-5 rounded-full flex items-center justify-center" style={{ background: '#7B1FFF' }}>
+                <div className="w-5 h-5 rounded-full flex items-center justify-center shrink-0" style={{ background: '#7B1FFF' }}>
                   <Icon name="check" size={11} className="text-white" />
                 </div>
               )}
-              <span className="px-2 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase"
+              <span className="px-2 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase shrink-0"
                     style={{ background: 'rgba(123,31,255,0.20)', color: '#B44FFF', border: '1px solid rgba(180,79,255,0.30)' }}>
                 {vpLevel?.name || 'Rookie'}
               </span>
@@ -206,14 +323,14 @@ export default function ProfileScreen() {
       </div>
 
       {/* STATS BAR */}
-      <div className="flex items-center gap-0 px-5 py-2.5 border-b" style={{ borderColor: '#1E1E2E' }}>
-        <Stat icon="person" label="Followers" value={followerCount.toLocaleString()} onClick={() => navigate('/profile/followers')} />
+      <div className="flex flex-wrap items-center gap-y-2 px-5 py-2.5 border-b" style={{ borderColor: '#1E1E2E' }}>
+        <Stat icon="person" label="Followers" value={<CountUpNumber value={followerCount} format={compactNum} />} onClick={() => navigate(`/connections/${currentUser.uid}/followers`)} />
         <div className="border-r mr-6 self-stretch" style={{ borderColor: '#1E1E2E' }} />
-        <Stat icon="group" label="Following" value={followingCount.toLocaleString()} onClick={() => navigate('/profile/following')} />
-        <div className="border-r mr-6 self-stretch" style={{ borderColor: '#1E1E2E' }} />
+        <Stat icon="group" label="Following" value={<CountUpNumber value={followingCount} format={compactNum} />} onClick={() => navigate(`/connections/${currentUser.uid}/following`)} />
+        <div className={`border-r mr-6 self-stretch ${IS_NATIVE_BUILD ? 'hidden' : 'hidden md:block'}`} style={{ borderColor: '#1E1E2E' }} />
         <button
           onClick={() => navigate('/prestige')}
-          className="flex-1 flex items-center gap-3 p-3 rounded-xl text-left hover:brightness-110 transition-all"
+          className={`flex items-center gap-3 p-3 rounded-xl text-left hover:brightness-110 transition-all ${IS_NATIVE_BUILD ? 'w-full mt-1' : 'w-full md:w-auto md:flex-1'}`}
           style={{ background: 'rgba(123,31,255,0.08)', border: '1px solid rgba(180,79,255,0.20)' }}
         >
           <div className="flex-1 min-w-0">
@@ -222,7 +339,7 @@ export default function ProfileScreen() {
               {vp.toLocaleString()} <span className="text-[13px]" style={{ color: '#B44FFF' }}>VP</span>
             </p>
             <div className="h-[3px] rounded mt-1.5" style={{ background: 'rgba(255,255,255,0.08)' }}>
-              <div className="h-full rounded" style={{ width: `${Math.min(100, vpProgress * 100)}%`, background: 'linear-gradient(90deg,#7B1FFF,#B44FFF)' }} />
+              <div className="h-full rounded" style={{ width: `${Math.min(100, vpProgress)}%`, background: 'linear-gradient(90deg,#7B1FFF,#B44FFF)' }} />
             </div>
             <p className="text-[10px] text-text-muted mt-1">
               {vpNext ? `${vpToNext.toLocaleString()} VP to Lvl ${vpNext.level}` : 'Max level reached'}
@@ -239,13 +356,19 @@ export default function ProfileScreen() {
         </button>
       </div>
 
+      {/* Complete-your-profile checklist (hides itself when everything is
+          done + claimed; pays the founder-approved profile-completion VP). */}
+      <div className="px-5 pt-4">
+        <ProfileCompletionCard />
+      </div>
+
       {/* TABS */}
-      <div className="flex items-center justify-between px-5 border-b" style={{ borderColor: '#1E1E2E' }}>
-        <div className="flex">
+      <div className="flex items-center justify-between gap-2 px-5 border-b" style={{ borderColor: '#1E1E2E' }}>
+        <div className="flex flex-1 overflow-x-auto no-scrollbar">
           {PROFILE_TABS.map(t => (
             <button key={t}
               onClick={() => setActiveTab(t)}
-              className="px-4 py-3 text-[13px] font-semibold transition-colors"
+              className="shrink-0 whitespace-nowrap px-4 py-3 text-[13px] font-semibold transition-colors"
               style={activeTab === t
                 ? { color: '#fff', borderBottom: '2px solid #B44FFF' }
                 : { color: '#6B7280', borderBottom: '2px solid transparent' }}>
@@ -253,24 +376,50 @@ export default function ProfileScreen() {
             </button>
           ))}
         </div>
-        <div className="flex items-center gap-2.5">
-          <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] font-semibold text-text-muted hover:text-white"
+        <div className={`${IS_NATIVE_BUILD ? 'hidden' : 'hidden md:flex'} items-center gap-2.5 relative`}>
+          <button onClick={(e) => { e.stopPropagation(); setSortOpen(o => !o); }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] font-semibold text-text-muted hover:text-white"
                   style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid #1E1E2E' }}>
-            Latest <Icon name="expand_more" size={12} />
+            {sortBy === 'likes' ? 'Most liked' : sortBy === 'views' ? 'Most viewed' : 'Latest'} <Icon name="expand_more" size={12} />
           </button>
+          {sortOpen && (
+            <>
+              <div className="fixed inset-0 z-20" onClick={() => setSortOpen(false)} />
+              <div className="absolute top-[calc(100%+4px)] right-0 z-30 min-w-[150px] rounded-lg p-1"
+                   style={{ background: '#1a1a2e', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}>
+                {[['latest', 'Latest'], ['likes', 'Most liked'], ['views', 'Most viewed']].map(([k, label]) => (
+                  <button key={k} onClick={() => { setSortBy(k); setSortOpen(false); }}
+                    className="w-full text-left px-3 py-2 rounded-md text-[12px] hover:bg-purple-700/15"
+                    style={{ color: sortBy === k ? '#B44FFF' : '#9CA3AF' }}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
         </div>
       </div>
 
-      {/* POSTS GRID */}
+      {/* POSTS GRID — responsive: 1 column on mobile, 2 columns on desktop */}
       <div className="px-5 py-4">
+        {activeTab === 'Posts' && pinnedPosts.length > 0 && (
+          <div className="mb-4">
+            <p className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-text-secondary mb-2.5">
+              <Icon name="push_pin" size={13} style={{ color: '#B44FFF' }} /> Pinned
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+              {pinnedPosts.map(p => <PostCard key={`pin-${p.id}`} post={p} compact />)}
+            </div>
+          </div>
+        )}
         {loadingPosts ? (
-          <div className="flex justify-center py-16"><div className="w-6 h-6 border-2 border-surface-3 border-t-brand-cyan rounded-full animate-spin" /></div>
+          <CardGridSkeleton count={9} columns={3} aspect="1/1" />
         ) : filteredPosts.length === 0 ? (
           <div className="text-center py-16">
             <Icon name="inbox" size={48} className="text-text-muted/20 mx-auto mb-3" />
             <p className="text-text-muted">No {activeTab.toLowerCase()} yet</p>
             {activeTab === 'Posts' && (
-              <button onClick={() => navigate('/create')}
+              <button onClick={openCreate}
                       className="mt-4 px-5 py-2 rounded-lg text-[13px] font-bold"
                       style={{ background: 'rgba(180,79,255,0.15)', color: '#B44FFF', border: '1px solid rgba(180,79,255,0.40)' }}>
                 Create your first post
@@ -278,11 +427,13 @@ export default function ProfileScreen() {
             )}
           </div>
         ) : (
-          <div className="grid gap-3.5" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))' }}>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
             {filteredPosts.map(p => <PostCard key={p.id} post={p} compact />)}
           </div>
         )}
       </div>
+      {showCreateModal && <CreateComposer onClose={() => setShowCreateModal(false)} originRect={createOrigin} />}
+      <MyQrModal open={showQr} onClose={() => setShowQr(false)} />
     </div>
   );
 }
@@ -337,8 +488,9 @@ function socialIcon(platform) {
 
 // ─── Right rail ────────────────────────────────────────────────────
 
-function OwnerRightPanel({ posts, navigate, profile }) {
+function OwnerRightPanel({ posts, navigate, profile, squads = [] }) {
   const totalLikes  = posts.reduce((s, p) => s + (p.likeCount || 0), 0);
+  const totalViews  = posts.reduce((s, p) => s + (p.viewCount || 0), 0);
   const totalClips  = posts.filter(p => p.type === 'clip').length;
   const topClips    = [...posts].filter(p => p.type === 'clip')
                         .sort((a, b) => (b.likeCount || 0) - (a.likeCount || 0))
@@ -367,10 +519,10 @@ function OwnerRightPanel({ posts, navigate, profile }) {
           </button>
         </div>
         <div className="grid grid-cols-2 gap-2">
-          <OvCard icon="visibility"        label="Total Views" value={posts.reduce((s, p) => s + (p.viewCount || 0), 0).toLocaleString()} />
-          <OvCard icon="movie"             label="Total Clips" value={totalClips.toLocaleString()} />
-          <OvCard icon="cell_tower"        label="Streams"     value={String(0)} />
-          <OvCard icon="favorite"          label="Total Likes" value={totalLikes.toLocaleString()} />
+          <OvCard icon="visibility"        label="Total Views" value={compactNum(totalViews)} />
+          <OvCard icon="movie"             label="Total Clips" value={compactNum(totalClips)} />
+          <OvCard icon="cell_tower"        label="Streams"     value={compactNum(0)} />
+          <OvCard icon="favorite"          label="Total Likes" value={compactNum(totalLikes)} />
         </div>
       </div>
 
@@ -411,7 +563,24 @@ function OwnerRightPanel({ posts, navigate, profile }) {
           <p className="text-[13px] font-bold text-text-primary">Your Squads</p>
           <button onClick={() => navigate('/squads')} className="text-[11px] font-semibold" style={{ color: '#B44FFF' }}>View All</button>
         </div>
-        <p className="text-[11px] text-text-muted">No squads yet</p>
+        {squads.length === 0 ? (
+          <p className="text-[11px] text-text-muted">No squads yet</p>
+        ) : (
+          squads.slice(0, 4).map(sq => (
+            <button key={sq.id} onClick={() => navigate(`/squads/${sq.id}`)}
+              className="flex items-center gap-2.5 py-2 w-full text-left border-b last:border-0" style={{ borderColor: '#1E1E2E' }}>
+              {sq.avatar
+                ? <img src={sq.avatar} alt="" className="w-8 h-8 rounded-lg object-cover shrink-0" />
+                : <div className="w-8 h-8 rounded-lg shrink-0 flex items-center justify-center" style={{ background: 'rgba(123,31,255,0.18)' }}>
+                    <Icon name="shield" size={15} className="text-brand-violet-light" />
+                  </div>}
+              <div className="flex-1 min-w-0">
+                <p className="text-[12px] font-semibold text-text-primary truncate">{sq.name || sq.tag || 'Squad'}</p>
+                <p className="text-[10px] text-text-muted">{compactNum(sq.memberCount || sq.memberIds?.length || 0)} members</p>
+              </div>
+            </button>
+          ))
+        )}
       </div>
     </div>
   );

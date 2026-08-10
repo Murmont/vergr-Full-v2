@@ -103,7 +103,7 @@ const CameraCaptureModal = ({ isOpen, onClose, onCapture }) => {
             <img src={capturedImage} alt="Captured" className="w-full h-full object-cover" />
             <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-4">
               <button onClick={retake} className="px-4 py-2 rounded-full bg-surface-2 text-white">Retake</button>
-              <button onClick={sendPhoto} className="px-4 py-2 rounded-full bg-brand-cyan text-bg-dark">Send</button>
+              <button onClick={sendPhoto} className="px-4 py-2 rounded-full bg-brand-violet text-white">Send</button>
             </div>
           </div>
         )}

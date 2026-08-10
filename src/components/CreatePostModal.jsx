@@ -101,7 +101,7 @@ export default function CreatePostModal({ onClose }) {
         <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.04]">
           <button onClick={onClose} className="text-text-muted hover:text-white"><Icon name="close" size={24} /></button>
           <span className="text-white font-semibold">Create post</span>
-          <button onClick={handlePost} disabled={loading || (!content.trim() && mediaFiles.length === 0 && !linkPreview)} className="bg-brand-cyan text-bg-dark px-4 py-1.5 rounded-full text-xs font-black uppercase disabled:opacity-50">
+          <button onClick={handlePost} disabled={loading || (!content.trim() && mediaFiles.length === 0 && !linkPreview)} className="bg-brand-violet text-white px-4 py-1.5 rounded-full text-xs font-black uppercase disabled:opacity-50">
             {loading ? 'Posting...' : 'Post'}
           </button>
         </div>
@@ -140,7 +140,7 @@ export default function CreatePostModal({ onClose }) {
           </div>
         </div>
         <div className="border-t border-white/[0.04] p-2 flex gap-3">
-          <button onClick={() => fileInputRef.current.click()} className="p-2 text-brand-cyan hover:bg-surface-2 rounded-full"><Icon name="image" size={22} /></button>
+          <button onClick={() => fileInputRef.current.click()} className="p-2 text-brand-violet-light hover:bg-surface-2 rounded-full"><Icon name="image" size={22} /></button>
           <button onClick={() => { setShowMediaPanel('gifs'); setShowEmoji(false); }} className="p-2 text-brand-violet hover:bg-surface-2 rounded-full"><Icon name="gif_box" size={22} /></button>
           <button onClick={() => { setShowMediaPanel('stickers'); setShowEmoji(false); }} className="p-2 text-brand-pink hover:bg-surface-2 rounded-full"><Icon name="sticky_note_2" size={22} /></button>
           <button onClick={() => { setShowMediaPanel('clips'); setShowEmoji(false); }} className="p-2 text-brand-gold hover:bg-surface-2 rounded-full"><Icon name="movie" size={22} /></button>

@@ -11,6 +11,7 @@ import { useUser } from '../../context/UserContext';
 import { useLayout } from '../../context/LayoutContext';
 import useResponsive from '../../hooks/useResponsive';
 import TopBar from '../../components/TopBar';
+import { StackSkeleton } from '../../components/skeletons/GlassSkeletons';
 import {
   getTournamentApplications,
   getUserTournaments,
@@ -148,7 +149,7 @@ export default function TournamentApplicationsScreen() {
               return (
                 <button key={tab.key} onClick={() => setStatus(tab.key)}
                   className={`relative px-4 py-3 text-[13px] font-semibold flex items-center gap-2 transition-colors ${active ? 'text-text-primary' : 'text-text-muted hover:text-text-secondary'}`}>
-                  <Icon name={tab.icon} size={16} className={active ? 'text-brand-cyan' : 'text-text-muted'} />
+                  <Icon name={tab.icon} size={16} className={active ? 'text-brand-violet-light' : 'text-text-muted'} />
                   {tab.label}
                   <span className={`font-dmmono text-[10px] tabular-nums px-1.5 py-0.5 rounded ${active ? 'bg-brand-violet/25 text-brand-pink' : 'bg-white/[0.05] text-text-muted'}`}>{counts[tab.key]}</span>
                   {active && <span className="absolute left-3 right-3 -bottom-px h-[2px] bg-gradient-to-r from-brand-violet to-brand-pink" />}
@@ -179,7 +180,7 @@ function FilterChip({ on, onClick, label }) {
 }
 
 function Spinner() {
-  return <div className="py-16 flex justify-center"><div className="w-6 h-6 border-2 border-surface-3 border-t-brand-cyan rounded-full animate-spin" /></div>;
+  return <StackSkeleton rows={4} height={72} />;
 }
 
 function EmptyApps({ status }) {
@@ -235,7 +236,7 @@ function ApplicationCard({ app, hosted, onResolve }) {
             <button
               onClick={() => resolve('approved')}
               disabled={busy}
-              className="px-4 py-2 rounded-lg bg-gradient-to-r from-brand-cyan to-[#1F8A6B] text-black text-[12px] font-extrabold flex items-center gap-1.5 disabled:opacity-50 hover:brightness-110"
+              className="px-4 py-2 rounded-lg bg-gradient-to-r from-brand-violet to-[#1F8A6B] text-black text-[12px] font-extrabold flex items-center gap-1.5 disabled:opacity-50 hover:brightness-110"
             >
               <Icon name="check" size={14} /> {busy ? 'Working…' : 'Approve'}
             </button>
@@ -249,7 +250,7 @@ function ApplicationCard({ app, hosted, onResolve }) {
           </>
         )}
         {app.status === 'approved' && (
-          <span className="text-[11px] text-brand-cyan font-dmmono flex items-center gap-1.5">
+          <span className="text-[11px] text-brand-violet-light font-dmmono flex items-center gap-1.5">
             <Icon name="check_circle" size={13} /> Approved
           </span>
         )}

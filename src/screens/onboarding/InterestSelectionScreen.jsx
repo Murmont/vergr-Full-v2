@@ -25,7 +25,7 @@ export default function InterestSelectionScreen() {
       <TopBar title="Your Interests" showBack />
       <div className="flex-1 px-4 pb-32">
         <p className="text-text-secondary mb-1">Pick at least 3 to personalize your feed</p>
-        <p className="text-brand-cyan text-sm font-dmmono mb-6">{selected.length} selected</p>
+        <p className="text-brand-violet-light text-sm font-dmmono mb-6">{selected.length} selected</p>
 
         <div className="grid grid-cols-2 gap-3">
           {GAMING_INTERESTS.map(interest => {
@@ -36,13 +36,13 @@ export default function InterestSelectionScreen() {
                 onClick={() => toggle(interest)}
                 className={`flex items-center gap-3 px-4 py-3.5 rounded-2xl border transition-all duration-200 ${
                   isSelected
-                    ? 'border-brand-cyan bg-brand-cyan/10 '
+                    ? 'border-brand-violet bg-brand-violet/10 '
                     : 'border-white/[0.06] bg-surface-2 hover:border-text-muted'
                 }`}
               >
                 <span className="text-xl">{INTEREST_ICONS[interest] || '🎮'}</span>
-                <span className={`text-sm font-medium ${isSelected ? 'text-brand-cyan' : 'text-text-primary'}`}>{interest}</span>
-                {isSelected && <Icon name="check_circle" filled size={16} className="text-brand-cyan ml-auto" />}
+                <span className={`text-sm font-medium ${isSelected ? 'text-brand-violet-light' : 'text-text-primary'}`}>{interest}</span>
+                {isSelected && <Icon name="check_circle" filled size={16} className="text-brand-violet-light ml-auto" />}
               </button>
             );
           })}

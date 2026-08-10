@@ -27,7 +27,7 @@ export default function SearchResultsStreamsScreen() {
     <div className={isDesktop ? "min-h-screen pb-8" : "screen-container min-h-screen pb-8"}>
       <TopBar title="Live Streams" showBack />
       <div className="px-4 py-4">
-        {loading ? <div className="flex justify-center py-16"><div className="w-6 h-6 border-2 border-surface-3 border-t-brand-cyan rounded-full animate-spin" /></div>
+        {loading ? <div className="flex justify-center py-16"><div className="w-6 h-6 border-2 border-surface-3 border-t-brand-violet rounded-full animate-spin" /></div>
         : streams.length === 0 ? (
           <div className="text-center py-16">
             <Icon name="live_tv" size={48} className="text-text-muted/30 mx-auto mb-3" />

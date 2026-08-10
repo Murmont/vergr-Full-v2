@@ -26,7 +26,7 @@ export default function StreakTracker({ currentStreak = 0, weekDays = [] }) {
           <div key={i} className="flex-1 flex flex-col items-center gap-1">
             <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-semibold transition-colors ${
               d.completed
-                ? 'bg-brand-cyan/15 text-brand-cyan'
+                ? 'bg-brand-violet/15 text-brand-violet-light'
                 : 'bg-surface-2/50 text-text-muted'
             }`}>
               {d.completed ? '✓' : d.day}

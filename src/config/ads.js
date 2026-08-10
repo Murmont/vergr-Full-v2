@@ -18,15 +18,80 @@
 // stay blank and the in-feed component renders nothing (no ugly empty
 // placeholders). Set the values from the AdSense dashboard to go live.
 
+// Google's official TEST native-advanced unit. It ALWAYS fills, which makes it
+// the only reliable way to tell "AdMob has no ad to serve" apart from "our
+// rendering path is broken". Used when app_config/general.adsUseTestIds is
+// true (see hooks/useAdsTestMode.js). Test ads earn nothing — diagnosis only.
+export const TEST_NATIVE_UNIT_ID = 'ca-app-pub-3940256099942544/2247696110';
+
 export const ADS_CONFIG = {
   // ── Google AdSense (non-incentivised display) ──────────────────────
   adsense: {
     // From AdSense → Account information. Format: ca-pub-XXXXXXXXXXXXXXXX
-    publisherId: '',
+    publisherId: 'ca-pub-6563780861093445',
     slots: {
       // From AdSense → Ads → By ad unit → In-feed ads
-      feed: '',
+      feed: '6484617485',
     },
+  },
+
+  // ── Google AdMob (NATIVE app only) ─────────────────────────────────
+  // AdSense is for web; embedding it in the native app violates AdSense
+  // policy. The Android shell uses AdMob via the AdMobBridge Kotlin class.
+  // Today we use ONE format: Rewarded ads → server-side-verified COINS
+  // (watch-to-earn). Inline native feed/comment ads are NOT possible
+  // cleanly inside a WebView under AdMob policy — they await the eventual
+  // native rewrite.
+  //
+  // These default to Google's official TEST IDs so a test APK works
+  // end-to-end. Swap in the real AdMob App ID + Rewarded unit ID before a
+  // production APK, and set the SSV callback URL in the AdMob console to the
+  // admobSsvCallback Cloud Function. The App ID also lives in
+  // AndroidManifest.xml meta-data (must match) — update both.
+  // PETAL ADS (HUAWEI Ads Kit) — the AppGallery build only.
+  //
+  // Huawei devices ship without Google Play Services, so AdMob can never fill
+  // there. The Huawei build registers HuaweiAdsBridge under the same
+  // `window.VergrAds` name and reads the slot IDs below instead of the AdMob
+  // unit IDs.
+  //
+  // The `test*` values are HUAWEI's own published test slots: they always fill,
+  // and they earn nothing. Replace each with a real slot from Petal Publisher
+  // Center once the publisher account is approved (Petal Publisher Center →
+  // Monetise → Ad Slots). Leave them as test IDs until then — a real slot that
+  // does not exist yet returns a load error, which is indistinguishable from a
+  // broken integration.
+  petal: {
+    useTestSlots: true,
+    rewardedSlotId: 'testx9dtjwj8hp',
+    bannerSlotId: 'testw6vs28auh3',
+    nativeFeedSlotId: 'testu7m3hc4gvm',
+  },
+
+  admob: {
+    // ca-app-pub-XXXXXXXXXXXXXXXX~YYYYYYYYYY  (also in AndroidManifest.xml)
+    appId: 'ca-app-pub-4584066602378782~6999622802',
+    rewardedUnitId: 'ca-app-pub-4584066602378782/8267596734',
+    // Anchored adaptive banner shown above the bottom nav on native. AdSense is
+    // a web-pages-only program, so it must not render inside the app shell —
+    // AdMob is the sanctioned way to monetise the native feed, and it is the
+    // same account already serving the rewarded ads.
+    //
+    // FOUNDER: create a Banner unit in AdMob (Apps → VERGR → Ad units → Banner)
+    // and paste its id here. Until then bannerUnitId stays null and the native
+    // banner simply doesn't mount — no blank space, no policy risk.
+    bannerUnitId: null,
+    // TRUE IN-FEED ad: an AdMob "Native advanced" unit. The feed reserves a
+    // slot and FeedAdBridge.kt positions a real NativeAdView over it, so the
+    // ad sits BETWEEN posts instead of being pinned above the nav. Native
+    // assets must be rendered by the SDK (impression/click tracking + policy),
+    // which is why this is an Android view and not HTML.
+    //
+    // Native advanced unit, created 2026-07-23. Media type: image + video,
+    // eCPM floor "All prices" (maximise fill while volume is low — a floor
+    // makes "no fill" indistinguishable from "integration broken").
+    nativeFeedUnitId: 'ca-app-pub-4584066602378782/4328450757',
+    useTestIds: false,
   },
 
   // ── Monetag ────────────────────────────────────────────────────────
@@ -51,8 +116,12 @@ export const ADS_CONFIG = {
   // ── Tunable knobs ──────────────────────────────────────────────────
 
   // Feed posts between in-feed AdSense placements. AdSense requires a
-  // healthy content-to-ad ratio; 6 is a safe floor.
-  feedAdInterval: 6,
+  // healthy content-to-ad ratio; one ad per 10 posts.
+  feedAdInterval: 10,
+
+  // Comments between in-thread AdSense placements (X-style ads in replies).
+  // Threads are shorter than feeds, so a tighter interval; still policy-safe.
+  commentAdInterval: 6,
 
   // Watch-to-Earn (Earn screen only)
   watchToEarnSeconds: 30,

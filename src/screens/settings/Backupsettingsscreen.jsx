@@ -125,8 +125,8 @@ export default function BackupSettingsScreen() {
           <h3 className="text-text-muted text-xs font-semibold uppercase tracking-wider mb-2 px-1">Local Storage</h3>
           <div className="rounded-2xl border border-white/[0.06] bg-surface-1 p-4">
             <div className="flex items-center gap-3 mb-3">
-              <div className="w-10 h-10 rounded-xl bg-brand-cyan/10 flex items-center justify-center">
-                <Icon name="storage" size={22} className="text-brand-cyan" />
+              <div className="w-10 h-10 rounded-xl bg-brand-violet/10 flex items-center justify-center">
+                <Icon name="storage" size={22} className="text-brand-violet-light" />
               </div>
               <div className="flex-1">
                 <p className="text-sm text-white font-semibold">{storageInfo ? formatBytes(storageInfo.usageBytes) : '...'} used</p>
@@ -137,7 +137,7 @@ export default function BackupSettingsScreen() {
             </div>
             {storageInfo?.quotaBytes > 0 && (
               <div className="w-full h-1.5 bg-surface-2 rounded-full overflow-hidden">
-                <div className="h-full bg-brand-cyan rounded-full transition-all" style={{ width: `${Math.min((storageInfo.usageBytes / storageInfo.quotaBytes) * 100, 100)}%` }} />
+                <div className="h-full bg-brand-violet rounded-full transition-all" style={{ width: `${Math.min((storageInfo.usageBytes / storageInfo.quotaBytes) * 100, 100)}%` }} />
               </div>
             )}
             <p className="text-[10px] text-text-muted mt-2">Messages and media are stored on your device. VERGR doesn't keep your chats on our servers.</p>
@@ -150,7 +150,7 @@ export default function BackupSettingsScreen() {
           <div className="rounded-2xl border border-white/[0.06] bg-surface-1 overflow-hidden">
             <button onClick={handleExport} disabled={exporting}
               className="w-full flex items-center gap-3 px-4 py-3.5 hover:bg-surface-2 transition-colors text-left disabled:opacity-50">
-              <Icon name="cloud_download" size={22} className="text-brand-cyan" />
+              <Icon name="cloud_download" size={22} className="text-brand-violet-light" />
               <div className="flex-1">
                 <span className="text-sm text-text-primary font-medium">{exporting ? 'Exporting...' : 'Export Backup Now'}</span>
                 <p className="text-[10px] text-text-muted">Last backup: {formatLastBackup()}</p>
@@ -181,7 +181,7 @@ export default function BackupSettingsScreen() {
               <button key={s.value} onClick={() => handleScheduleChange(s.value)}
                 className={`w-full flex items-center gap-3 px-4 py-3.5 hover:bg-surface-2 transition-colors text-left ${i > 0 ? 'border-t border-white/[0.04]' : ''}`}>
                 <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${
-                  schedule === s.value ? 'border-brand-cyan bg-brand-cyan' : 'border-text-muted/30'
+                  schedule === s.value ? 'border-brand-violet bg-brand-violet' : 'border-text-muted/30'
                 }`}>
                   {schedule === s.value && <div className="w-2 h-2 bg-bg-dark rounded-full" />}
                 </div>

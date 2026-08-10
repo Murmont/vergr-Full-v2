@@ -1,195 +1,275 @@
-// src/screens/squads/SquadChatThreadScreen.jsx
-import { useState, useEffect, useRef } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
-import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, doc, updateDoc, arrayUnion, deleteDoc, getDocs, where, setDoc, writeBatch, deleteField } from 'firebase/firestore';
+// SquadChatThreadScreen — Discord-style squad chat, rebuilt on the .sqd
+// design system. Renders inside <SquadShell mode="squad"> with <SquadInfoRail>
+// as the right rail. Wire-for-wire feature parity with the old bubble UI:
+// realtime messages, reactions, replies, edit, pin, delete, forward, search,
+// polls, voice messages, image/video/link/tournament embeds, markdown +
+// ||spoiler||, typing indicator.
+
+import { useState, useEffect, useRef, useMemo } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import {
+  collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, doc,
+  updateDoc, arrayUnion, arrayRemove, deleteDoc, getDocs, where, setDoc, writeBatch, deleteField,
+} from 'firebase/firestore';
 import { db, auth } from '../../firebase/config';
 import { startVoiceRecording, uploadMediaFile, getYouTubeID } from '../../utils/mediaHelpers';
-import Icon from '../../components/Icon';
-import UserAvatar from '../../components/UserAvatar';
-import MediaPanel from '../../components/MediaPanel';
-import UpgradeModal from '../../components/UpgradeModal';
-import SquadPollComponent from '../../components/SquadPollComponent';
-import TopBar from '../../components/TopBar';
+import { createSquadVote } from '../../firebase/firestore';
+import { getSquadMembers, getUserTournaments } from '../../firebase/firestore';
 import useResponsive from '../../hooks/useResponsive';
 import useTier from '../../hooks/useTier';
 import useTyping from '../../hooks/useTyping';
-import { createSquadVote, setSquadChatBackground } from '../../firebase/firestore';
-import VotePollCard from '../../components/VotePollCard';
-import Modal from '../../components/Modal';
-import EmojiPicker from '../../components/EmojiPicker';
-import { ReactionBubbles, MessageContextMenu } from '../../components/MessageContextMenu';
-import { extractUrl } from '../../components/LinkPreview';
-import LinkPreviewCard from '../../components/LinkPreview';
-import TypingIndicator from '../../components/TypingIndicator';
-import { motion, AnimatePresence } from 'framer-motion';
-import BackgroundPickerModal from '../../components/BackgroundPickerModal';
+import { useUser } from '../../context/UserContext';
+import { applyVanguardMask } from '../../utils/vanguard';
+import VanguardBadge from '../../components/VanguardBadge';
+import TranslationSheet from '../../components/TranslationSheet';
+import { isTauri } from '../../utils/platform';
+import { useUI } from '../../context/UIContext';
+import { isGallerySaveSupported, saveMediaToGallery } from '../../utils/saveToGallery';
+import { markSquadRead, getSquadReadMap } from '../../utils/navBadges';
 import ReactMarkdown from 'react-markdown';
+import SquadShell from '../../components/squad/SquadShell';
+import SquadInfoRail from '../../components/squad/SquadInfoRail';
+import { roleMeta, avatarClass, initials } from '../../components/squad/squadHelpers';
+import MediaPanel from '../../components/MediaPanel';
+import EmojiPicker from '../../components/EmojiPicker';
+import UpgradeModal from '../../components/UpgradeModal';
+import Modal from '../../components/Modal';
+import SquadPollComponent from '../../components/SquadPollComponent';
+import VotePollCard from '../../components/VotePollCard';
+import BackgroundPickerModal from '../../components/BackgroundPickerModal';
+import { extractUrl } from '../../components/LinkPreview';
+import Icon from '../../components/Icon';
+import InlineVideoPlayer from '../../components/media/InlineVideoPlayer';
+import usePresenceMap from '../../hooks/usePresenceMap';
+import { presenceVisible } from '../../utils/presence';
+import EventTicketCard from '../../components/tournament/EventTicketCard';
+import { dissolveElement, preloadThanosDissolve } from '../../utils/thanosDissolve';
+import { MessageContextMenu, ReactionBubbles } from '../../components/MessageContextMenu';
+import ReactorsSheet from '../../components/messages/ReactorsSheet';
+import MediaLightbox from '../../components/MediaLightbox';
 
-// Helper to format time
 const formatTime = (date) => {
   if (!date) return '';
   const d = date.toDate ? date.toDate() : new Date(date);
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 };
-
-// Read receipts – inline with time
-const ReadReceipts = ({ isMe, readBy, senderId, memberCount }) => {
-  if (!isMe) return null;
-  const readCount = readBy ? readBy.filter(uid => uid !== senderId).length : 0;
-  const totalOthers = (memberCount || 0) - 1;
-  const allRead = readCount >= totalOthers && totalOthers > 0;
-  return (
-    <span className="ml-1 inline-block align-middle">
-      {allRead ? (
-        <Icon name="done_all" size={12} className="text-brand-cyan" />
-      ) : readCount > 0 ? (
-        <Icon name="done_all" size={12} className="text-white/50" />
-      ) : (
-        <Icon name="done" size={12} className="text-white/50" />
-      )}
-    </span>
-  );
+const dayLabel = (date) => {
+  if (!date) return '';
+  const d = date.toDate ? date.toDate() : new Date(date);
+  const today = new Date();
+  const yest = new Date(); yest.setDate(today.getDate() - 1);
+  const same = (a, b) => a.toDateString() === b.toDateString();
+  if (same(d, today)) return 'Today · ' + d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  if (same(d, yest)) return 'Yesterday · ' + d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  return d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+};
+const dayKey = (date) => {
+  if (!date) return 'x';
+  const d = date.toDate ? date.toDate() : new Date(date);
+  return d.toDateString();
 };
 
-// Audio player (unchanged)
-const AudioPlayer = ({ url, isMe, label }) => {
-  const audioRef = useRef(null);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [duration, setDuration] = useState(0);
-  const barsRef = useRef([]);
-
-  useEffect(() => {
-    let seed = 0;
-    for (let i = 0; i < (url || '').length; i++) seed = ((seed << 5) - seed + (url || '').charCodeAt(i)) | 0;
-    const sr = (s) => { s = Math.sin(s) * 10000; return s - Math.floor(s); };
-    barsRef.current = Array.from({ length: 36 }, (_, i) => 0.15 + sr(seed + i) * 0.85);
-  }, [url]);
-
-  const togglePlay = () => {
-    if (!audioRef.current) return;
-    if (isPlaying) audioRef.current.pause(); else audioRef.current.play().catch(() => {});
-    setIsPlaying(!isPlaying);
-  };
-  const onTimeUpdate = () => { if (!audioRef.current) return; const c = audioRef.current.currentTime, t = audioRef.current.duration; if (t > 0) setProgress((c / t) * 100); };
-  const onLoadedMetadata = () => { if (audioRef.current) setDuration(audioRef.current.duration); };
-  const seekTo = (e) => { const rect = e.currentTarget.getBoundingClientRect(); const x = (e.clientX || e.touches?.[0]?.clientX) - rect.left; const pct = Math.max(0, Math.min(1, x / rect.width)); if (audioRef.current?.duration) { audioRef.current.currentTime = pct * audioRef.current.duration; setProgress(pct * 100); } };
-  const fmt = (t) => { if (isNaN(t)) return '0:00'; return `${Math.floor(t/60)}:${Math.floor(t%60).toString().padStart(2,'0')}`; };
-
-  return (
-    <div className={`flex flex-col p-3 min-w-[240px] ${isMe ? 'text-white' : 'text-white'}`}>
-      {label && <p className={`text-[10px] font-bold uppercase tracking-wider mb-2 truncate ${isMe ? 'text-white/50' : 'text-text-muted'}`}><Icon name="audio_file" size={12} className="inline mr-1" />{label}</p>}
-      <div className="flex items-center gap-3">
-        <button onClick={togglePlay} className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 transition-transform active:scale-90 ${isMe ? 'bg-white/20 text-white' : 'bg-brand-cyan/20 text-brand-cyan'}`}>
-          <Icon name={isPlaying ? 'pause' : 'play_arrow'} size={28} />
-        </button>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-end gap-[2px] h-7 cursor-pointer" onClick={seekTo}>
-            {barsRef.current.map((h, i) => (<div key={i} className={`flex-1 rounded-full transition-colors duration-75 ${isMe ? ((i / barsRef.current.length) * 100 < progress ? 'bg-white/70' : 'bg-white/20') : ((i / barsRef.current.length) * 100 < progress ? 'bg-brand-cyan' : 'bg-white/15')}`} style={{ height: `${h * 100}%`, minWidth: 2 }} />))}
-          </div>
-          <div className="flex justify-between items-center mt-1 px-0.5">
-            <span className="text-[10px] font-bold opacity-60">{isPlaying ? fmt(audioRef.current?.currentTime) : fmt(duration)}</span>
-            <Icon name="graphic_eq" size={14} className="opacity-40" />
-          </div>
-        </div>
-      </div>
-      <audio ref={audioRef} src={url} preload="metadata" onTimeUpdate={onTimeUpdate} onLoadedMetadata={onLoadedMetadata} onEnded={() => { setIsPlaying(false); setProgress(0); }} />
-    </div>
-  );
-};
-
-// Quoted Reply Bar
-const QuotedReply = ({ replyTo, isMe }) => {
-  if (!replyTo) return null;
-  const scrollToMsg = () => {
-    const el = document.getElementById(`msg-${replyTo.id}`);
-    if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.classList.add('ring-2', 'ring-brand-cyan/50'); setTimeout(() => el.classList.remove('ring-2', 'ring-brand-cyan/50'), 2000); }
-  };
-  return (
-    <div onClick={scrollToMsg} className={`mx-3 mt-2 mb-1 pl-3 border-l-2 rounded-r-lg py-1.5 pr-3 cursor-pointer active:opacity-70 ${isMe ? 'border-white/30 bg-white/10' : 'border-brand-cyan/50 bg-brand-cyan/5'}`}>
-      <p className={`text-[10px] font-bold ${isMe ? 'text-white/70' : 'text-brand-cyan'}`}>{replyTo.senderName || 'User'}</p>
-      <p className={`text-[11px] truncate ${isMe ? 'text-white/50' : 'text-text-muted'}`}>{replyTo.text || 'Media'}</p>
-    </div>
-  );
-};
-
-// Forward Modal (supports multiple messages)
-const ForwardModal = ({ messages, onClose }) => {
-  const [convos, setConvos] = useState([]);
-  const [sending, setSending] = useState(null);
-
-  useEffect(() => {
-    if (!auth.currentUser) return;
-    const q = query(collection(db, 'conversations'), where('participants', 'array-contains', auth.currentUser.uid), where('status', '==', 'active'), orderBy('lastMessageAt', 'desc'));
-    const unsub = onSnapshot(q, (snap) => setConvos(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
-    return () => unsub();
-  }, []);
-
-  const forwardTo = async (convoId) => {
-    setSending(convoId);
-    try {
-      const batch = writeBatch(db);
-      for (const msg of messages) {
-        const msgRef = doc(collection(db, 'conversations', convoId, 'messages'));
-        batch.set(msgRef, {
-          senderId: auth.currentUser.uid, createdAt: serverTimestamp(),
-          type: msg.type || 'text', text: msg.text || '', contentUrl: msg.contentUrl || '',
-          forwarded: true, forwardedFrom: msg.senderId,
-        });
-      }
-      await batch.commit();
-      await updateDoc(doc(db, 'conversations', convoId), {
-        lastMessageText: `Forwarded ${messages.length} message(s)`,
-        lastMessageAt: serverTimestamp(), lastMessageSenderId: auth.currentUser.uid,
-      });
-      onClose();
-    } catch (err) { console.error('Forward error:', err); setSending(null); }
-  };
-
-  return (
-    <div className="fixed inset-0 z-[100] bg-black/80 flex items-end sm:items-center justify-center animate-fade-in" onClick={onClose}>
-      <div className="bg-surface-1 w-full max-w-md max-h-[70vh] rounded-t-2xl sm:rounded-2xl border border-white/[0.06] overflow-hidden" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between p-4 border-b border-white/[0.04]">
-          <h3 className="text-white font-bold text-sm">Forward {messages.length} message(s) to...</h3>
-          <button onClick={onClose} className="text-text-muted"><Icon name="close" size={20} /></button>
-        </div>
-        <div className="overflow-y-auto max-h-[50vh]">
-          {convos.map(c => {
-            const otherId = c.participants?.find(id => id !== auth.currentUser.uid);
-            const name = c.isGroup ? c.groupName : c.metadata?.[otherId]?.name || 'Chat';
-            return (
-              <button key={c.id} onClick={() => forwardTo(c.id)} disabled={sending === c.id}
-                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-surface-2/50 text-left transition-colors disabled:opacity-50">
-                <UserAvatar src={c.isGroup ? c.groupIcon : c.metadata?.[otherId]?.avatar} size={40} />
-                <span className="text-sm text-text-primary font-medium flex-1 truncate">{name}</span>
-                {sending === c.id && <div className="w-4 h-4 border-2 border-brand-cyan border-t-transparent rounded-full animate-spin" />}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// Custom markdown components with spoiler
-const MarkdownComponents = {
-  p: ({ node, ...props }) => <p className="text-sm leading-relaxed whitespace-pre-wrap break-words inline" {...props} />,
-  strong: ({ node, ...props }) => <strong className="font-bold" {...props} />,
-  em: ({ node, ...props }) => <em className="italic" {...props} />,
-  code: ({ node, ...props }) => <code className="bg-black/20 rounded px-1 font-mono text-xs" {...props} />,
-  span: ({ node, className, ...props }) => {
-    if (className === 'spoiler') {
-      return <span className="spoiler" {...props} />;
+// ── Reaction model: squads are migrating to the DM shape ────────────────────
+// LEGACY squad shape: { uid: emoji }  — one reaction per person, keyed by uid.
+// DM shape (target):  { emoji: [uid] } — many reactions per person, keyed by
+// emoji. The DM shape is what the shared ReactionBubbles / ReactorsSheet
+// components speak, and it's the only one that can express "who reacted".
+//
+// We DUAL-READ: every message is normalised to the DM shape for rendering, so
+// reactions written before this change keep working untouched, with no
+// migration script and no backfill. New writes always use the DM shape.
+// Telling the two apart is unambiguous: a legacy value is a string (the emoji),
+// a DM value is an array of uids. A message can hold both at once mid-migration
+// and still renders correctly, because we merge them.
+const toDmReactions = (reactions) => {
+  const out = {};
+  for (const [key, val] of Object.entries(reactions || {})) {
+    if (typeof val === 'string') {
+      // legacy: key is a uid, val is the emoji they picked
+      (out[val] ||= []).push(key);
+    } else if (Array.isArray(val)) {
+      out[key] = [...(out[key] || []), ...val];
     }
-    return <span {...props} />;
-  },
+  }
+  // Drop emojis nobody is left on, so an empty array doesn't render a 0-chip.
+  for (const k of Object.keys(out)) if (out[k].length === 0) delete out[k];
+  return out;
 };
 
-// Pre‑process spoilers: replace ||text|| with <span class="spoiler">text</span>
-const processSpoilers = (text) => {
-  return text.replace(/\|\|(.*?)\|\|/g, (_, match) => `<span class="spoiler">${match}</span>`);
+// Split a string on ||spoiler|| markers and return an array of React nodes.
+// Plain text is rendered through ReactMarkdown; spoiler segments wrap in a
+// click-to-reveal span. We do the split BEFORE ReactMarkdown because RM escapes
+// raw HTML by default.
+const SpoilerText = ({ text }) => {
+  const parts = [];
+  const re = /\|\|(.*?)\|\|/g;
+  let last = 0;
+  let m;
+  let i = 0;
+  while ((m = re.exec(text || '')) !== null) {
+    if (m.index > last) parts.push({ type: 'md', value: text.slice(last, m.index), key: i++ });
+    parts.push({ type: 'spoiler', value: m[1], key: i++ });
+    last = m.index + m[0].length;
+  }
+  if (last < (text || '').length) parts.push({ type: 'md', value: text.slice(last), key: i++ });
+  return (
+    <>
+      {parts.map((p) => p.type === 'spoiler'
+        ? <span key={p.key} className="spoiler" onClick={(e) => e.currentTarget.classList.add('revealed')}>{p.value}</span>
+        : <ReactMarkdown key={p.key} components={MarkdownComponents}>{p.value}</ReactMarkdown>
+      )}
+    </>
+  );
 };
+const MarkdownComponents = {
+  p: (p) => <span {...p} />,
+  strong: (p) => <strong {...p} />,
+  em: (p) => <em {...p} />,
+  code: (p) => <code {...p} />,
+  a: (p) => <a className="link" target="_blank" rel="noopener noreferrer" {...p} />,
+};
+
+// ── Tournament card embed ─────────────────────────────────────────────
+// Renders a rich tournament card inside chat (banner / title / format pill /
+// dates / prize pool / View button). The message stores the snapshot under
+// `m.tournament` so we don't refetch on every render.
+function TournamentEmbed({ data }) {
+  if (!data) return null;
+  const banner = data.bannerUrl;
+  const start = data.startDate ? new Date(typeof data.startDate === 'number' ? data.startDate : data.startDate) : null;
+  const end = data.endDate ? new Date(typeof data.endDate === 'number' ? data.endDate : data.endDate) : null;
+  const fmtDate = (d) => d ? d.toLocaleDateString([], { month: 'short', day: 'numeric' }) : '';
+  const dateLine = start && end
+    ? `${fmtDate(start)} – ${fmtDate(end)}`
+    : start ? fmtDate(start) : '';
+  return (
+    <a
+      href={`/match/${data.tournamentId}`}
+      style={{
+        marginTop: 6, display: 'block', borderRadius: 14, overflow: 'hidden',
+        border: '1px solid rgba(180,79,255,.22)',
+        background: 'linear-gradient(135deg,rgba(123,31,255,.10),rgba(200,127,255,.06))',
+        maxWidth: 480,
+        textDecoration: 'none', color: 'inherit',
+      }}
+    >
+      {banner && (
+        <div style={{ width: '100%', aspectRatio: '21/9', background: `url(${banner}) center/cover, #1A1A2A` }} />
+      )}
+      <div style={{ padding: 14, display: 'flex', gap: 14, alignItems: 'center' }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+            <span className="material-symbols-outlined" style={{ fontSize: 16, color: 'var(--violet-light)' }}>emoji_events</span>
+            <span style={{ fontFamily: 'DM Mono', fontSize: 10, textTransform: 'uppercase', letterSpacing: '.12em', color: 'var(--violet-light)' }}>
+              {data.game || 'Tournament'}
+            </span>
+            {data.type && (
+              <span style={{ fontFamily: 'DM Mono', fontSize: 9.5, textTransform: 'uppercase', letterSpacing: '.08em', padding: '2px 6px', borderRadius: 4, background: 'rgba(255,255,255,.06)', color: 'var(--t2)' }}>
+                {data.type}
+              </span>
+            )}
+          </div>
+          <div style={{ fontFamily: 'Syne', fontWeight: 800, fontSize: 16, color: '#fff', lineHeight: 1.2 }}>
+            {data.name || 'Tournament'}
+          </div>
+          {dateLine && (
+            <div style={{ marginTop: 4, fontFamily: 'DM Mono', fontSize: 11, color: 'var(--t2)' }}>
+              {dateLine}
+            </div>
+          )}
+          {(data.entryFee != null || data.prizePool != null) && (
+            <div style={{ marginTop: 8, display: 'flex', gap: 12, fontFamily: 'DM Mono', fontSize: 11, color: 'var(--t2)' }}>
+              {data.prizePool != null && (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                  <span className="coin" />
+                  <strong style={{ color: 'var(--gold-light)' }}>{data.prizePool.toLocaleString()}</strong> pool
+                </span>
+              )}
+              {data.entryFee != null && (
+                <span>
+                  <span className="coin" />
+                  <strong style={{ color: '#fff' }}>{data.entryFee.toLocaleString()}</strong> entry
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+        <span className="btn primary sm" style={{ flexShrink: 0 }}>
+          View
+        </span>
+      </div>
+    </a>
+  );
+}
+
+// ── Waveform voice embed ──────────────────────────────────────────────
+function VoiceEmbed({ url }) {
+  const audioRef = useRef(null);
+  const [playing, setPlaying] = useState(false);
+  const [pct, setPct] = useState(0);
+  const [dur, setDur] = useState(0);
+  const bars = useMemo(() => {
+    let seed = 0;
+    for (let i = 0; i < (url || '').length; i++) seed = ((seed << 5) - seed + url.charCodeAt(i)) | 0;
+    const sr = (s) => { s = Math.sin(s) * 10000; return s - Math.floor(s); };
+    return Array.from({ length: 40 }, (_, i) => 0.2 + sr(seed + i) * 0.8);
+  }, [url]);
+  const toggle = () => {
+    if (!audioRef.current) return;
+    if (playing) audioRef.current.pause(); else audioRef.current.play().catch(() => {});
+    setPlaying(!playing);
+  };
+  const fmt = (t) => isNaN(t) ? '0:00' : `${Math.floor(t / 60)}:${Math.floor(t % 60).toString().padStart(2, '0')}`;
+  return (
+    <div className="voice-embed">
+      <div className="voice-play" onClick={toggle}>
+        <span className="material-symbols-outlined mi-fill">{playing ? 'pause' : 'play_arrow'}</span>
+      </div>
+      <div className="waveform">
+        {bars.map((h, i) => (
+          <div key={i} className={`bar${(i / bars.length) * 100 < pct ? ' played' : ''}`} style={{ height: `${h * 100}%` }} />
+        ))}
+      </div>
+      <div className="voice-time">{playing ? fmt(audioRef.current?.currentTime) : fmt(dur)}</div>
+      <audio
+        ref={audioRef} src={url} preload="metadata"
+        onTimeUpdate={() => { const a = audioRef.current; if (a?.duration) setPct((a.currentTime / a.duration) * 100); }}
+        onLoadedMetadata={() => setDur(audioRef.current?.duration || 0)}
+        onEnded={() => { setPlaying(false); setPct(0); }}
+      />
+    </div>
+  );
+}
+
+// ── Save-to-gallery overlay button (native Android only) ──────────────
+// Squad chat has no shared context menu / lightbox (unlike DMs), and the
+// hover action toolbar is mouse-only, so touch users need a real tap target.
+// This corner button on each media embed calls the same Kotlin MediaStore
+// bridge the DMs use (window.VergrGallery, shipped 1.0.94).
+function SquadSaveMediaBtn({ url, isVideo, onSave }) {
+  const [state, setState] = useState('idle'); // idle | saving | saved
+  const icon = state === 'saving' ? 'hourglass_empty' : state === 'saved' ? 'download_done' : 'download';
+  return (
+    <button
+      title="Save to gallery"
+      onClick={async (e) => {
+        e.stopPropagation();
+        if (state === 'saving') return;
+        setState('saving');
+        const ok = await onSave(url, isVideo);
+        setState(ok ? 'saved' : 'idle');
+      }}
+      style={{
+        position: 'absolute', top: 8, right: 8, zIndex: 3, width: 34, height: 34,
+        borderRadius: 999, border: 'none', cursor: 'pointer', color: '#fff',
+        background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)',
+        display: 'grid', placeItems: 'center',
+      }}
+    >
+      <span className="material-symbols-outlined" style={{ fontSize: 18 }}>{icon}</span>
+    </button>
+  );
+}
 
 export default function SquadChatThreadScreen() {
   const { squadId } = useParams();
@@ -199,870 +279,1051 @@ export default function SquadChatThreadScreen() {
   const inputRef = useRef(null);
   const { isMobile } = useResponsive();
   const { tier, tierConfig, checkFileSize } = useTier();
-  const { typingUsers, setTyping, clearTyping } = useTyping(squadId, 'squad');
+  const { typingUsers, clearTyping } = useTyping(squadId, 'squad');
+  const { profile } = useUser();
+  const { showToast } = useUI();
 
-  // State
+  const myUid = auth.currentUser?.uid;
+
+  // Native-only: save a squad chat photo/video to the phone gallery (VERGR album).
+  const canSaveToGallery = isGallerySaveSupported();
+  const saveSquadMedia = async (url, isVideo) => {
+    if (!url) return false;
+    const res = await saveMediaToGallery(url, { isVideo });
+    if (res.ok) showToast?.(isVideo ? 'Video saved to gallery' : 'Photo saved to gallery', 'success');
+    else if (res.error !== 'unsupported') showToast?.('Could not save to gallery', 'error');
+    return res.ok;
+  };
+
   const [messages, setMessages] = useState([]);
+  const [squadInfo, setSquadInfo] = useState(null);
+  const [members, setMembers] = useState([]);
+  const memberPresence = usePresenceMap(members.map((m) => m.id));
+  const [userRole, setUserRole] = useState(null);
   const [input, setInput] = useState('');
+  const [replyTo, setReplyTo] = useState(null);
+  const [editingMsg, setEditingMsg] = useState(null);
+  const [translateMsg, setTranslateMsg] = useState(null);
   const [showMedia, setShowMedia] = useState(null);
   const [showEmoji, setShowEmoji] = useState(false);
+  const [reactToMsgId, setReactToMsgId] = useState(null);
+  const [contextMenu, setContextMenu] = useState(null);   // { msgId, x, y }
+  const [reactorsView, setReactorsView] = useState(null); // { reactions, emoji }
+  const [lightbox, setLightbox] = useState(null);         // { index }
+
+  // ── Unread divider + jump-to-bottom ───────────────────────────────────
+  // The read cutoff must be captured ONCE, on entry: the messages snapshot
+  // calls markSquadRead on every fire, so reading it later would always come
+  // back as "just now" and the divider would never appear.
+  const entryCutoffRef = useRef(null);
+  if (entryCutoffRef.current === null) {
+    entryCutoffRef.current = getSquadReadMap()[squadId] || 0;
+  }
+  const atBottomRef = useRef(true);
+  const lastSeenIdRef = useRef(null);
+  const [newBelow, setNewBelow] = useState(0);   // new messages while scrolled up
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const [isRecording, setIsRecording] = useState(false);
   const [recorder, setRecorder] = useState(null);
-  const [upgradeModal, setUpgradeModal] = useState({ open: false, requiredTier: 'lite', message: '' });
-  const [squadInfo, setSquadInfo] = useState(null);
-  const [showHeaderMenu, setShowHeaderMenu] = useState(false);
-  const [userRole, setUserRole] = useState(null);
+  const [recordingCancel, setRecordingCancel] = useState(false);
   const [showPollModal, setShowPollModal] = useState(false);
   const [pollTitle, setPollTitle] = useState('');
   const [pollOptions, setPollOptions] = useState(['', '']);
-  const [pinnedVote, setPinnedVote] = useState(null);
-  const [replyTo, setReplyTo] = useState(null);
-  const [editingMsg, setEditingMsg] = useState(null);
-  const [showSearch, setShowSearch] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchIndex, setSearchIndex] = useState(0);
-  const [contextMenuMsgId, setContextMenuMsgId] = useState(null);
-  const [forwardMsg, setForwardMsg] = useState(null);
-  const [showScrollButton, setShowScrollButton] = useState(false);
-  const [reactToMsgId, setReactToMsgId] = useState(null);
-  const [selectionMode, setSelectionMode] = useState(false);
-  const [selectedMessages, setSelectedMessages] = useState(new Set());
   const [showBackgroundModal, setShowBackgroundModal] = useState(false);
-  const [recordingLocked, setRecordingLocked] = useState(false);
-  const [recordingCancel, setRecordingCancel] = useState(false);
-  const [newMessagesCount, setNewMessagesCount] = useState(0);
-  const [showFormatToolbar, setShowFormatToolbar] = useState(false);
+  const [upgradeModal, setUpgradeModal] = useState({ open: false, requiredTier: 'lite', message: '' });
+  const [showTournamentModal, setShowTournamentModal] = useState(false);
+  const [myTournaments, setMyTournaments] = useState([]);
+  const [tournamentsLoading, setTournamentsLoading] = useState(false);
 
   const isAdminRole = userRole === 'president' || userRole === 'vice_president';
-  const lastTap = useRef(0);
+  const roleByUid = useMemo(() => Object.fromEntries(members.map((m) => [m.id, m.role])), [members]);
+  // Look up each sender's live user doc (loaded with getSquadMembers) so we
+  // render their real avatar + display name. The `senderAvatar` field stored
+  // on the message doc comes from auth.currentUser.photoURL which is usually
+  // empty — VERGR keeps avatars on the Firestore profile doc, not the Auth
+  // record. Falling back to senderAvatar if no member match (e.g. old
+  // messages from someone who has since left the squad).
+  const userByUid = useMemo(() => Object.fromEntries(members.map((m) => [m.id, m.user])), [members]);
 
-  // Background style — default to neon gaming icons wallpaper
-  const bgStyle = squadInfo?.chatBackground === 'color'
-    ? { backgroundColor: squadInfo.chatBackgroundValue }
-    : squadInfo?.chatBackground === 'image'
-      ? { backgroundImage: `url(${squadInfo.chatBackgroundValue})`, backgroundSize: 'cover', backgroundPosition: 'center' }
-      : { backgroundImage: 'url(/backgrounds/static/bg_1.png)', backgroundSize: 'cover', backgroundPosition: 'center' };
+  // Preload the Thanos-dissolve html2canvas bundle so the first delete doesn't
+  // eat the 400KB load cost. Safe to call multiple times.
+  useEffect(() => { preloadThanosDissolve(); }, []);
 
-  // Load squad info
+  // Squad doc (realtime — chat background, name, pinned)
   useEffect(() => {
     if (!squadId) return;
-    const unsub = onSnapshot(doc(db, 'squads', squadId), (snap) => {
-      if (snap.exists()) setSquadInfo({ id: snap.id, ...snap.data() });
+    return onSnapshot(doc(db, 'squads', squadId), (s) => {
+      if (s.exists()) setSquadInfo({ id: s.id, ...s.data() });
     });
-    return () => unsub();
   }, [squadId]);
 
-  // Load user role
+  // Members (role pills + right rail)
   useEffect(() => {
-    if (!squadId || !auth.currentUser) return;
-    const memberRef = doc(db, 'squads', squadId, 'members', auth.currentUser.uid);
-    const unsub = onSnapshot(memberRef, (snap) => {
-      if (snap.exists()) setUserRole(snap.data().role);
-      else setUserRole(null);
-    });
-    return () => unsub();
+    if (!squadId) return;
+    let alive = true;
+    getSquadMembers(squadId).then((m) => { if (alive) setMembers(m); }).catch(() => {});
+    return () => { alive = false; };
   }, [squadId]);
 
-  // Load messages
+  // My role
   useEffect(() => {
+    if (!squadId || !myUid) return;
+    return onSnapshot(doc(db, 'squads', squadId, 'members', myUid), (s) => {
+      setUserRole(s.exists() ? s.data().role : null);
+    });
+  }, [squadId, myUid]);
+
+  // Messages (realtime)
+  const [msgError, setMsgError] = useState(null);
+  useEffect(() => {
+    if (!squadId) return;
+    setMsgError(null);
     const q = query(collection(db, 'squads', squadId, 'messages'), orderBy('createdAt', 'asc'));
-    const unsub = onSnapshot(q, (snap) => {
-      const msgs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      setMessages(msgs);
-      // Mark as read
-      msgs.forEach(m => {
-        if (!m.readBy?.includes(auth.currentUser?.uid)) {
-          updateDoc(doc(db, 'squads', squadId, 'messages', m.id), {
-            readBy: arrayUnion(auth.currentUser?.uid)
-          });
+    return onSnapshot(
+      q,
+      (snap) => {
+        const msgs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        setMessages(msgs);
+        markSquadRead(squadId); // viewing this chat clears its nav badge
+        msgs.forEach((m) => {
+          if (myUid && !m.readBy?.includes(myUid)) {
+            updateDoc(doc(db, 'squads', squadId, 'messages', m.id), { readBy: arrayUnion(myUid) }).catch(() => {});
+          }
+        });
+        // Only follow the bottom if the reader is already there. Yanking someone
+        // back down while they're reading history is the single most annoying
+        // thing a chat can do — and it's what this used to do on every snapshot.
+        if (atBottomRef.current) {
+          setTimeout(() => scrollRef.current?.scrollIntoView({ behavior: 'smooth' }), 80);
+        } else {
+          const last = msgs[msgs.length - 1];
+          if (last && last.id !== lastSeenIdRef.current && last.senderId !== myUid) {
+            setNewBelow((n) => n + 1);
+          }
         }
-      });
-      // New messages badge
-      const container = containerRef.current;
-      if (container && container.scrollHeight - container.scrollTop - container.clientHeight > 100) {
-        setNewMessagesCount(prev => prev + 1);
-      }
-      setTimeout(() => scrollRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
-    });
-    return () => unsub();
-  }, [squadId]);
-
-  // Load pinned votes (active kick votes)
-  useEffect(() => {
-    if (!squadId) return;
-    const q = query(
-      collection(db, 'squads', squadId, 'pinned'),
-      where('type', '==', 'vote'),
-      orderBy('createdAt', 'desc')
+        if (msgs.length) lastSeenIdRef.current = msgs[msgs.length - 1].id;
+      },
+      (err) => {
+        console.error('[SquadChat] messages snapshot error:', err);
+        setMsgError(err?.code === 'permission-denied'
+          ? 'You don\'t have permission to read this chat. Are you a member of this squad?'
+          : (err?.message || 'Failed to load messages.'));
+      },
     );
-    const unsub = onSnapshot(q, (snap) => {
-      const votes = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      const now = new Date();
-      const activeVotes = votes.filter(v => !v.expiresAt || v.expiresAt.toDate() > now);
-      setPinnedVote(activeVotes[0] || null);
-    });
-    return () => unsub();
-  }, [squadId]);
+  }, [squadId, myUid]);
 
-  // Auto-scroll
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-    const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
-    if (isNearBottom) {
-      setTimeout(() => scrollRef.current?.scrollIntoView({ behavior: 'smooth' }), 120);
-      setNewMessagesCount(0);
-    }
-    setShowScrollButton(!isNearBottom);
-  }, [messages.length]);
-
-  // Send message
+  // ── Actions ──────────────────────────────────────────────────────────
   const sendMsg = async (payload) => {
-    if (!auth.currentUser) return;
-    const msgData = {
-      ...payload,
-      senderId: auth.currentUser.uid,
-      senderName: auth.currentUser.displayName || 'Anonymous',
-      senderAvatar: auth.currentUser.photoURL || '',
-      createdAt: serverTimestamp(),
-      readBy: [auth.currentUser.uid],
-      reactions: {}
-    };
-    if (replyTo) {
-      msgData.replyTo = {
-        id: replyTo.id,
-        text: (replyTo.text || '').slice(0, 100),
-        senderName: replyTo.senderName,
-        senderId: replyTo.senderId
-      };
-    }
+    if (!myUid) return;
     if (editingMsg) {
       await updateDoc(doc(db, 'squads', squadId, 'messages', editingMsg.id), {
-        text: input.trim(),
-        editedAt: serverTimestamp()
+        text: input.trim(), editedAt: serverTimestamp(),
       });
-      setEditingMsg(null);
-      setInput('');
+      setEditingMsg(null); setInput('');
       return;
     }
-    await addDoc(collection(db, 'squads', squadId, 'messages'), msgData);
+    const data = {
+      ...payload,
+      senderId: myUid,
+      // Use the Firestore profile (real source of truth for display name +
+      // avatar). Auth's photoURL / displayName are usually empty on VERGR.
+      senderName: profile?.displayName || profile?.username || auth.currentUser.displayName || 'Anonymous',
+      senderAvatar: profile?.avatar || auth.currentUser.photoURL || '',
+      createdAt: serverTimestamp(),
+      readBy: [myUid],
+      reactions: {},
+    };
+    if (replyTo) {
+      data.replyTo = {
+        id: replyTo.id, text: (replyTo.text || '').slice(0, 100),
+        senderName: replyTo.senderName, senderId: replyTo.senderId,
+      };
+    }
+    await addDoc(collection(db, 'squads', squadId, 'messages'), data);
+    // Stamp the squad doc so members' side-nav badge can detect new activity
+    // cheaply (no per-message scan). Best-effort — never block the send.
+    updateDoc(doc(db, 'squads', squadId), {
+      lastMessageAt: serverTimestamp(),
+      lastMessageSenderId: myUid,
+    }).catch(() => {});
+    markSquadRead(squadId); // my own send is already read for me
     setReplyTo(null);
     clearTyping();
   };
 
-  // Rich text formatting
-  const applyFormat = (format) => {
-    const textarea = inputRef.current;
-    const start = textarea.selectionStart;
-    const end = textarea.selectionEnd;
-    const selectedText = input.substring(start, end);
-    let formatted = '';
-    switch (format) {
-      case 'bold': formatted = `**${selectedText}**`; break;
-      case 'italic': formatted = `_${selectedText}_`; break;
-      case 'code': formatted = `\`${selectedText}\``; break;
-      case 'spoiler': formatted = `||${selectedText}||`; break;
-      default: return;
-    }
-    const newInput = input.substring(0, start) + formatted + input.substring(end);
-    setInput(newInput);
-    setTimeout(() => {
-      textarea.focus();
-      textarea.setSelectionRange(start + formatted.length, start + formatted.length);
-    }, 0);
+  const submitText = async () => {
+    const trimmed = input.trim();
+    if (!trimmed) return;
+    if (trimmed === '/vote') { await handleVoteCommand(); setInput(''); return; }
+    await sendMsg({ text: trimmed, type: 'text' });
+    setInput('');
   };
 
-  // Reactions
-  const addReaction = async (msgId, emoji) => {
-    const msgRef = doc(db, 'squads', squadId, 'messages', msgId);
-    const currentUser = auth.currentUser.uid;
-    await updateDoc(msgRef, {
-      [`reactions.${currentUser}`]: emoji
-    });
-  };
-
-  const removeReaction = async (msgId) => {
-    const msgRef = doc(db, 'squads', squadId, 'messages', msgId);
-    const currentUser = auth.currentUser.uid;
-    await updateDoc(msgRef, {
-      [`reactions.${currentUser}`]: deleteField()
-    });
-  };
-
-  const handleReact = (msg) => {
-    setReactToMsgId(msg.id);
-  };
-
-  const handleReactionSelect = (emoji) => {
-    if (reactToMsgId) {
-      addReaction(reactToMsgId, emoji);
-      setReactToMsgId(null);
-    }
-  };
-
-  // Message selection
-  const toggleMessageSelection = (msgId) => {
-    setSelectedMessages(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(msgId)) newSet.delete(msgId);
-      else newSet.add(msgId);
-      if (newSet.size === 0) setSelectionMode(false);
-      return newSet;
-    });
-  };
-
-  const enterSelectionMode = (msgId) => {
-    setSelectionMode(true);
-    setSelectedMessages(new Set([msgId]));
-  };
-
-  const deleteSelected = async () => {
-    if (!window.confirm(`Delete ${selectedMessages.size} message(s)?`)) return;
-    const batch = writeBatch(db);
-    for (const id of selectedMessages) {
-      batch.delete(doc(db, 'squads', squadId, 'messages', id));
-    }
-    await batch.commit();
-    setSelectionMode(false);
-    setSelectedMessages(new Set());
-  };
-
-  const forwardSelected = () => {
-    const selectedMsgs = messages.filter(m => selectedMessages.has(m.id));
-    setForwardMsg(selectedMsgs);
-    setSelectionMode(false);
-  };
-
-  // Handle /vote command
   const handleVoteCommand = async () => {
-    if (!squadInfo || !squadInfo.memberCount) return;
-    const userId = auth.currentUser.uid;
-    const intentRef = doc(db, 'squads', squadId, 'vote_intents', userId);
-    await setDoc(intentRef, { timestamp: serverTimestamp() }, { merge: true });
-    const twelveHoursAgo = new Date(Date.now() - 12 * 60 * 60 * 1000);
-    const q = query(collection(db, 'squads', squadId, 'vote_intents'), where('timestamp', '>', twelveHoursAgo));
-    const snap = await getDocs(q);
-    const intentCount = snap.size;
-    const halfMembers = Math.ceil(squadInfo.memberCount / 2);
-    if (intentCount >= halfMembers) {
-      try {
-        await createSquadVote(squadId, userId, {
-          title: 'Election for President',
-          type: 'elect_role',
-          options: ['Yes', 'No'],
-          targetUserId: null,
-          targetRole: 'president',
-          duration: 48,
-        });
-        await sendMsg({ type: 'text', text: '🚨 A vote for President has been triggered by members! 🚨' });
-      } catch (err) {
-        console.error('Failed to start vote:', err);
-      }
+    if (!squadInfo?.memberCount || !myUid) return;
+    await setDoc(doc(db, 'squads', squadId, 'vote_intents', myUid), { timestamp: serverTimestamp() }, { merge: true });
+    const since = new Date(Date.now() - 12 * 60 * 60 * 1000);
+    const snap = await getDocs(query(collection(db, 'squads', squadId, 'vote_intents'), where('timestamp', '>', since)));
+    if (snap.size >= Math.ceil(squadInfo.memberCount / 2)) {
+      await createSquadVote(squadId, myUid, {
+        title: 'Election for President', type: 'elect_role',
+        options: ['Yes', 'No'], targetUserId: null, targetRole: 'president', duration: 48,
+      });
+      await sendMsg({ type: 'text', text: 'A vote for President has been triggered by members.' });
+    }
+  };
+
+  const applyFormat = (fmt) => {
+    const ta = inputRef.current;
+    if (!ta) return;
+    const { selectionStart: s, selectionEnd: e } = ta;
+    const sel = input.substring(s, e);
+    const wrap = { bold: '**', italic: '_', strike: '~~', code: '`', spoiler: '||' }[fmt];
+    if (!wrap) return;
+    const next = input.substring(0, s) + wrap + sel + wrap + input.substring(e);
+    setInput(next);
+    setTimeout(() => { ta.focus(); ta.setSelectionRange(s + wrap.length, s + wrap.length + sel.length); }, 0);
+  };
+
+  // Writes the DM shape ({ emoji: [uids] }) so squad chat can use the shared
+  // reaction components. Removal also clears the caller's LEGACY entry when
+  // that's how their reaction was stored, otherwise toggling an old reaction
+  // off would appear to do nothing (the legacy key would still be there and
+  // the dual-read would keep rendering it).
+  const toggleReaction = (m, emoji) => {
+    if (!myUid) return;
+    const r = m.reactions || {};
+    const ref = doc(db, 'squads', squadId, 'messages', m.id);
+    const updates = {};
+    const inNew = Array.isArray(r[emoji]) && r[emoji].includes(myUid);
+    const inLegacy = r[myUid] === emoji;
+
+    if (inNew || inLegacy) {
+      if (inNew) updates[`reactions.${emoji}`] = arrayRemove(myUid);
+      if (inLegacy) updates[`reactions.${myUid}`] = deleteField();
+    } else {
+      updates[`reactions.${emoji}`] = arrayUnion(myUid);
+    }
+    return updateDoc(ref, updates);
+  };
+
+  // Track whether the reader is pinned to the bottom (drives auto-scroll + FAB).
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return undefined;
+    const onScroll = () => {
+      const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+      atBottomRef.current = atBottom;
+      if (atBottom) setNewBelow(0);
+    };
+    onScroll();
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => el.removeEventListener('scroll', onScroll);
+  }, [containerRef.current]);
+
+  const jumpToBottom = () => {
+    setNewBelow(0);
+    atBottomRef.current = true;
+    scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  // First message the reader hasn't seen — anchors the "New messages" divider.
+  // Only counts OTHER people's messages: your own send is read by definition.
+  const firstUnreadId = useMemo(() => {
+    const cutoff = entryCutoffRef.current;
+    if (!cutoff) return null;
+    const hit = messages.find((m) => {
+      const ms = m.createdAt?.toMillis?.() ?? 0;
+      return ms > cutoff && m.senderId !== myUid;
+    });
+    return hit?.id || null;
+  }, [messages, myUid]);
+
+  // Who-reacted sheet: uid → display identity. Goes through applyVanguardMask
+  // for the same reason every other name in this thread does — a masked mod must
+  // not be unmasked just because they reacted to something.
+  const resolveReactor = (uid) => {
+    const live = userByUid[uid];
+    const masked = applyVanguardMask(live, profile);
+    return {
+      uid,
+      displayName: masked?.displayName || masked?.username || 'Member',
+      username: masked?.username,
+      avatar: masked?.avatar,
+    };
+  };
+
+  // ── Shared context menu (same component DMs use) ──────────────────────
+  // Right-click on desktop, long-press on touch. Deliberately NOT tap-to-open
+  // like DMs: a squad message can be a poll, a video or a link preview, so a
+  // plain tap has to keep reaching those. The hover toolbar stays for mouse.
+  const pressTimer = useRef(null);
+  const pressed = useRef(false);
+
+  const openMsgMenu = (m, e) => {
+    setContextMenu({ msgId: m.id, x: e.clientX, y: e.clientY });
+  };
+  const startMsgPress = (m, e) => {
+    if (e.pointerType === 'mouse') return; // mouse uses right-click
+    pressed.current = false;
+    const { clientX, clientY } = e;
+    pressTimer.current = setTimeout(() => {
+      pressed.current = true;
+      try { navigator.vibrate?.(10); } catch { /* not supported */ }
+      setContextMenu({ msgId: m.id, x: clientX, y: clientY });
+    }, 420);
+  };
+  const endMsgPress = () => {
+    if (pressTimer.current) { clearTimeout(pressTimer.current); pressTimer.current = null; }
+  };
+
+  const handleReply = (m) => {
+    setReplyTo({
+      id: m.id, senderId: m.senderId,
+      senderName: m.senderId === myUid ? 'You' : m.senderName || 'User',
+      text: m.text || (m.type === 'image' ? 'Photo' : 'Media'),
+    });
+    setEditingMsg(null);
+    inputRef.current?.focus();
+  };
+  const handleEdit = (m) => {
+    if (m.senderId !== myUid || m.type !== 'text') return;
+    setEditingMsg({ id: m.id, text: m.text });
+    setInput(m.text || '');
+    setReplyTo(null);
+    inputRef.current?.focus();
+  };
+  const handlePin = async (m) => {
+    await updateDoc(doc(db, 'squads', squadId, 'messages', m.id), { pinned: !m.pinned });
+    await updateDoc(doc(db, 'squads', squadId), { pinnedMessageId: m.pinned ? null : m.id });
+  };
+  // Thanos-snap delete. Same timing model as the 1-to-1 chat:
+  //   1. Confirm ("Delete for everyone?" — squad chat is shared, every delete
+  //      is a delete-for-everyone).
+  //   2. Await dissolveElement — it resolves the moment the dust canvases are
+  //      live on the screen (the original is now opacity:0).
+  //   3. Remove the message from local state SYNCHRONOUSLY so the layout
+  //      collapses in lockstep with the dust drifting away. If we waited for
+  //      onSnapshot to fire the 'removed' event (~200-500ms network RTT),
+  //      the message slot would sit invisible-but-laid-out and the fixed-
+  //      position dust canvases would end up visually misaligned.
+  //   4. Delete the Firestore doc in the background. onSnapshot's later
+  //      'removed' event is a no-op because the message is already gone
+  //      from local state.
+  const deleteMsg = async (m) => {
+    const canDelete = isAdminRole || m.senderId === myUid;
+    if (!canDelete) return;
+    const ok = window.confirm(
+      m.senderId === myUid
+        ? 'Delete this message for everyone in the squad? This cannot be undone.'
+        : 'Remove this member\'s message for everyone in the squad? This cannot be undone.'
+    );
+    if (!ok) return;
+    const el = document.getElementById(`msg-${m.id}`);
+    if (el) {
+      try { await dissolveElement(el); } catch (err) { console.warn('Dissolve failed:', err); }
+    }
+    // Collapse the layout immediately — matches the dust's fixed-position
+    // anchor before the chat scrolls or shifts.
+    setMessages((prev) => prev.filter((x) => x.id !== m.id));
+    try {
+      await deleteDoc(doc(db, 'squads', squadId, 'messages', m.id));
+    } catch (err) {
+      console.error('Delete failed:', err);
     }
   };
 
   const handleMediaSelect = (type, url) => {
-    if (type === 'gifs') sendMsg({ type: 'gif', contentUrl: url });
-    else if (type === 'stickers') sendMsg({ type: 'sticker', contentUrl: url });
-    else if (type === 'clips') sendMsg({ type: 'clip', contentUrl: url });
-    else if (type === 'memes') sendMsg({ type: 'meme', contentUrl: url });
+    const map = { gifs: 'gif', stickers: 'sticker', clips: 'clip', memes: 'meme' };
+    if (map[type]) sendMsg({ type: map[type], contentUrl: url });
     setShowMedia(null);
   };
 
-  const handleVoiceStop = async (rec) => {
+  const sendPoll = () => {
+    if (!pollTitle.trim()) return;
+    const options = pollOptions.filter((o) => o.trim());
+    if (options.length < 2) return;
+    sendMsg({ type: 'poll', pollData: { title: pollTitle.trim(), options, votes: {}, totalVotes: 0, voters: [], createdAt: serverTimestamp() } });
+    setShowPollModal(false); setPollTitle(''); setPollOptions(['', '']);
+  };
+  const handlePollVote = (msgId, idx) =>
+    updateDoc(doc(db, 'squads', squadId, 'messages', msgId), {
+      [`pollData.votes.${idx}`]: serverTimestamp(), 'pollData.voters': arrayUnion(myUid),
+    });
+
+  // Load the user's tournaments when they open the share modal. Lazy — we
+  // don't fetch on chat mount because the modal is rarely used.
+  const openTournamentShare = async () => {
+    setShowTournamentModal(true);
+    if (myTournaments.length > 0 || !myUid) return;
+    setTournamentsLoading(true);
+    try {
+      const list = await getUserTournaments(myUid, 30);
+      setMyTournaments(list || []);
+    } catch (err) {
+      console.warn('Failed to load tournaments:', err);
+    }
+    setTournamentsLoading(false);
+  };
+
+  // Snapshot the tournament's display fields onto the message so the embed
+  // renders even if the tournament doc is later edited or deleted.
+  const shareTournament = (t) => {
+    // Ticketed events post an interactive rally ticket card (fans buy in to
+    // support the squad). Legacy/prize-pool events keep the plain embed.
+    if (t.fundingModel === 'ticketed') {
+      sendMsg({
+        type: 'event_ticket',
+        text: `🎟 ${t.name}`,
+        eventTicket: {
+          tournamentId: t.id, name: t.name || 'Event', game: t.game || '',
+          bannerUrl: t.bannerUrl || null,
+          priceCoins: t.ticket?.priceCoins || 0, capacity: t.ticket?.capacity || 0, sold: t.ticket?.sold || 0,
+        },
+      });
+      setShowTournamentModal(false);
+      return;
+    }
+    const tsToMs = (v) => v?.toDate ? v.toDate().getTime() : (v?.seconds ? v.seconds * 1000 : (typeof v === 'number' ? v : null));
+    sendMsg({
+      type: 'tournament',
+      tournament: {
+        tournamentId: t.id,
+        name: t.name || 'Tournament',
+        game: t.game || null,
+        type: t.type || null,
+        bannerUrl: t.bannerUrl || null,
+        startDate: tsToMs(t.startDate),
+        endDate: tsToMs(t.endDate),
+        prizePool: typeof t.prizePool === 'number' ? t.prizePool : null,
+        entryFee: typeof t.entryFee === 'number' ? t.entryFee : null,
+      },
+    });
+    setShowTournamentModal(false);
+  };
+
+  // Voice (press-and-hold the mic)
+  const startVoice = async (e) => {
+    e.preventDefault();
+    setIsRecording(true); setRecordingCancel(false);
+    setRecorder(await startVoiceRecording());
+  };
+  const endVoice = async () => {
+    if (!isRecording || !recorder) { setIsRecording(false); return; }
     setIsRecording(false);
-    setRecordingLocked(false);
-    setRecordingCancel(false);
-    const audioBlob = await rec.stop().getBlob();
-    if (!recordingCancel && audioBlob.size > 0) {
-      const url = await uploadMediaFile(audioBlob, 'squad_voice');
+    const blob = await recorder.stop().getBlob();
+    if (!recordingCancel && blob.size > 0) {
+      const url = await uploadMediaFile(blob, 'squad_voice');
       sendMsg({ type: 'voice', contentUrl: url });
     }
     setRecorder(null);
   };
 
-  const deleteMsg = async (msgId) => {
-    const canDelete = userRole === 'president' || userRole === 'vice_president' || (messages.find(m => m.id === msgId)?.senderId === auth.currentUser?.uid);
-    if (!canDelete) return;
-    await deleteDoc(doc(db, 'squads', squadId, 'messages', msgId));
+  const uploadAndSend = async (file, folder, type) => {
+    const check = checkFileSize(file.size);
+    if (!check.allowed) { setUpgradeModal({ open: true, requiredTier: check.requiredTier, message: check.message }); return; }
+    const url = await uploadMediaFile(file, folder, tier, tierConfig.mediaRetentionDays);
+    sendMsg({ type, contentUrl: url });
   };
 
-  const handlePollVote = async (msgId, optionIndex) => {
-    const msgRef = doc(db, 'squads', squadId, 'messages', msgId);
-    await updateDoc(msgRef, {
-      [`pollData.votes.${optionIndex}`]: serverTimestamp(),
-      'pollData.voters': arrayUnion(auth.currentUser.uid)
-    });
-  };
+  // ── Derived ──────────────────────────────────────────────────────────
+  const pinnedMessage = messages.find((m) => m.pinned);
+  const searchResults = searchQuery
+    ? messages.filter((m) => m.text?.toLowerCase().includes(searchQuery.toLowerCase()))
+    : [];
+  const onlineCount = members.filter((m) => presenceVisible(m.user) && memberPresence[m.id]).length;
 
-  const sendPoll = () => {
-    if (!pollTitle.trim()) {
-      alert('Please enter a title');
-      return;
-    }
-    const options = pollOptions.filter(opt => opt.trim());
-    if (options.length < 2) {
-      alert('At least two options required');
-      return;
-    }
-    const pollData = {
-      title: pollTitle.trim(),
-      options: options,
-      votes: {},
-      totalVotes: 0,
-      voters: [],
-      createdAt: serverTimestamp(),
-    };
-    sendMsg({ type: 'poll', pollData });
-    setShowPollModal(false);
-    setPollTitle('');
-    setPollOptions(['', '']);
-  };
+  const bgStyle = squadInfo?.chatBackground === 'color'
+    ? { backgroundColor: squadInfo.chatBackgroundValue }
+    : squadInfo?.chatBackground === 'image'
+      ? { backgroundImage: `url(${squadInfo.chatBackgroundValue})`, backgroundSize: 'cover', backgroundPosition: 'center' }
+      : undefined;
 
-  // Context menu actions
-  const handleReply = (msg) => {
-    const senderName = msg.senderId === auth.currentUser?.uid ? 'You' : msg.senderName || 'User';
-    setReplyTo({ id: msg.id, text: msg.text || (msg.type === 'image' ? '📷 Photo' : 'Media'), senderName, senderId: msg.senderId });
-    setEditingMsg(null);
-    inputRef.current?.focus();
-    setContextMenuMsgId(null);
-  };
-
-  const handleEdit = (msg) => {
-    if (msg.senderId !== auth.currentUser?.uid || msg.type !== 'text') return;
-    setEditingMsg({ id: msg.id, text: msg.text });
-    setInput(msg.text || '');
-    setReplyTo(null);
-    inputRef.current?.focus();
-    setContextMenuMsgId(null);
-  };
-
-  const handlePin = async (msg) => {
-    const isPinned = msg.pinned;
-    await updateDoc(doc(db, 'squads', squadId, 'messages', msg.id), {
-      pinned: !isPinned
-    });
-    if (!isPinned) {
-      await updateDoc(doc(db, 'squads', squadId), {
-        pinnedMessageId: msg.id
-      });
-    } else {
-      await updateDoc(doc(db, 'squads', squadId), {
-        pinnedMessageId: null
-      });
-    }
-    setContextMenuMsgId(null);
-  };
-
-  const handleForward = (msg) => {
-    setForwardMsg([msg]);
-    setContextMenuMsgId(null);
-  };
-
-  // Double‑tap reaction (mobile only)
-  const handleDoubleTap = (msgId) => {
-    if (isMobile) {
-      addReaction(msgId, '👍');
+  const jumpTo = (msgId) => {
+    const el = document.getElementById(`msg-${msgId}`);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.classList.add('msg-flash');
+      setTimeout(() => el.classList.remove('msg-flash'), 1600);
     }
   };
 
-  // Voice recording gesture
-  const startVoiceRecordingWithGesture = async (e) => {
-    e.preventDefault();
-    setIsRecording(true);
-    setRecordingLocked(false);
-    setRecordingCancel(false);
-    const rec = await startVoiceRecording();
-    setRecorder(rec);
+  // ── Embeds + body ────────────────────────────────────────────────────
+  // Every media message in the thread, in order — so the lightbox can page
+  // between them exactly like it does in a DM.
+  const lightboxItems = useMemo(() => messages
+    .filter((m) => !m.deleted && m.contentUrl && ['image', 'meme', 'gif', 'giphy', 'sticker', 'video', 'clip'].includes(m.type))
+    .map((m) => ({
+      msgId: m.id,
+      url: m.contentUrl,
+      type: (m.type === 'video' || m.type === 'clip') ? 'video' : 'image',
+      poster: m.posterUrl || m.thumbnailUrl,
+    })), [messages]);
+
+  const openLightbox = (msgId) => {
+    const idx = lightboxItems.findIndex((it) => it.msgId === msgId);
+    if (idx >= 0) setLightbox({ index: idx });
   };
 
-  const handleVoiceMove = (e) => {
-    if (!isRecording) return;
-    const touch = e.touches[0];
-    const moveY = touch.clientY - (e.target.getBoundingClientRect().y + 50);
-    const moveX = touch.clientX - (e.target.getBoundingClientRect().x + 25);
-    if (moveY < -50 && !recordingLocked) setRecordingLocked(true);
-    if (moveX < -100 && !recordingCancel) setRecordingCancel(true);
-  };
-
-  const handleVoiceEnd = async () => {
-    if (!isRecording) return;
-    if (recordingCancel) {
-      if (recorder) await recorder.stop();
-      setIsRecording(false);
-      setRecordingLocked(false);
-      setRecordingCancel(false);
-      setRecorder(null);
-      return;
-    }
-    if (recordingLocked) return; // wait for "Send" button
-    await handleVoiceStop(recorder);
-  };
-
-  // Render message content
-  const renderMessageContent = (m, isMe) => {
-    const time = formatTime(m.createdAt);
-    const isEdited = !!m.editedAt;
-
-    if (m.type === 'vote') {
-      return <VotePollCard squadId={squadId} voteId={m.voteId} isMe={isMe} />;
-    }
-    if (m.type === 'poll') {
-      return <SquadPollComponent pollData={m.pollData} onVote={(index) => handlePollVote(m.id, index)} />;
-    }
-    const ytId = m.type === 'text' ? getYouTubeID(m.text) : null;
-    if (m.type === 'gif' || m.type === 'giphy') return <img src={m.contentUrl} alt="gif" className="rounded-xl max-w-[200px]" />;
-    if (m.type === 'sticker') return <img src={m.contentUrl} alt="sticker" className="w-32 h-32 object-contain" />;
-    if (m.type === 'meme') return <img src={m.contentUrl} alt="meme" className="rounded-xl max-w-[250px]" />;
-    if (m.type === 'clip') return <video src={m.contentUrl} controls loop className="rounded-xl max-w-[250px]" />;
-    if (m.type === 'image') return <img src={m.contentUrl} alt="upload" className="rounded-xl max-w-[250px]" />;
-    if (m.type === 'video') return <video src={m.contentUrl} controls className="rounded-xl max-w-[250px]" />;
-    if (m.type === 'voice') return <AudioPlayer url={m.contentUrl} isMe={isMe} />;
-    if (m.type === 'audio') return <AudioPlayer url={m.contentUrl} isMe={isMe} label={m.fileName} />;
-    if (m.type === 'file') {
+  const renderEmbed = (m) => {
+    if (m.type === 'tournament') return <TournamentEmbed data={m.tournament} />;
+    if (m.type === 'event_ticket') {
+      const et = m.eventTicket || {};
       return (
-        <a href={m.contentUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 px-3 py-2 hover:opacity-80 transition-opacity min-w-[200px]">
-          <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${isMe ? 'bg-white/15' : 'bg-brand-cyan/10'}`}><Icon name="description" size={18} className={isMe ? 'text-white/70' : 'text-brand-cyan'} /></div>
-          <div className="min-w-0 flex-1"><p className="text-sm font-medium truncate">{m.fileName || m.text || 'File'}</p>{m.fileSize && <p className={`text-[10px] ${isMe ? 'text-white/50' : 'text-text-muted'}`}>{m.fileSize < 1048576 ? `${(m.fileSize / 1024).toFixed(1)} KB` : `${(m.fileSize / 1048576).toFixed(1)} MB`}</p>}</div>
-          <Icon name="download" size={16} className={isMe ? 'text-white/40' : 'text-text-muted'} />
-        </a>
+        <EventTicketCard
+          variant="chat" source="squad"
+          tournament={{ id: et.tournamentId, fundingModel: 'ticketed', ticket: { priceCoins: et.priceCoins, capacity: et.capacity, sold: et.sold } }}
+          meta={et}
+          onView={() => navigate(`/e/${et.tournamentId}`)}
+        />
       );
     }
-    // Text message
-    const linkUrl = extractUrl(m.text);
-    const processedText = processSpoilers(m.text);
-    return (
-      <div>
-        <QuotedReply replyTo={m.replyTo} isMe={isMe} />
-        <div className="inline">
-          <ReactMarkdown components={MarkdownComponents}>
-            {processedText}
-          </ReactMarkdown>
+    if (m.type === 'vote') return <VotePollCard squadId={squadId} voteId={m.voteId} />;
+    if (m.type === 'poll') return <SquadPollComponent pollData={m.pollData} onVote={(i) => handlePollVote(m.id, i)} />;
+    if (m.type === 'voice' || m.type === 'audio') return <VoiceEmbed url={m.contentUrl} />;
+    if (m.type === 'gif' || m.type === 'giphy' || m.type === 'meme')
+      return (
+        <div className="image-embed" style={{ position: 'relative' }}>
+          <img src={m.contentUrl} alt="" style={{ cursor: 'zoom-in' }} onClick={() => openLightbox(m.id)} />
+          {canSaveToGallery && <SquadSaveMediaBtn url={m.contentUrl} isVideo={false} onSave={saveSquadMedia} />}
         </div>
-        <div className="inline-flex items-center gap-1 float-right ml-2">
-          {isEdited && <span className="text-[9px] text-white/40 italic">edited</span>}
-          <span className="text-[9px] text-white/40">{time}</span>
-          <ReadReceipts isMe={isMe} readBy={m.readBy} senderId={m.senderId} memberCount={squadInfo?.memberCount} />
-        </div>
+      );
+    if (m.type === 'sticker') return (
+      <div style={{ position: 'relative', width: 120, marginTop: 6 }}>
+        <img src={m.contentUrl} alt="sticker" style={{ width: 120, height: 120, objectFit: 'contain' }} />
+        {canSaveToGallery && <SquadSaveMediaBtn url={m.contentUrl} isVideo={false} onSave={saveSquadMedia} />}
       </div>
     );
-  };
-
-  // Menu items
-  const baseMenu = [
-    { icon: 'info', label: 'Squad Info', path: `/squads/${squadId}` },
-    { icon: 'group', label: 'Members', path: `/squads/${squadId}/members` },
-    { icon: 'leaderboard', label: 'Leaderboard', path: `/squads/${squadId}/leaderboard` },
-    { icon: 'campaign', label: 'Announcements', path: `/squads/${squadId}/announcements` },
-    { icon: 'photo_library', label: 'Media', path: `/squads/${squadId}/media` },
-    { icon: 'push_pin', label: 'Pinned', path: `/squads/${squadId}/pinned` },
-    { icon: 'event', label: 'Events', path: `/squads/${squadId}/events` },
-    { icon: 'emoji_events', label: 'Challenges', path: `/squads/${squadId}/challenges` },
-  ];
-  const adminMenu = [
-    { icon: 'settings', label: 'Settings', path: `/squads/${squadId}/settings` },
-    { icon: 'how_to_vote', label: 'Roles', path: `/squads/${squadId}/roles` },
-    { icon: 'person_add', label: 'Join Requests', path: `/squads/${squadId}/requests` },
-    { icon: 'wallpaper', label: 'Chat Background', action: () => setShowBackgroundModal(true) },
-  ];
-  const headerMenuItems = isAdminRole ? [...baseMenu, ...adminMenu] : baseMenu;
-
-  // Search
-  const searchResults = searchQuery ? messages.filter(m => m.text && m.text.toLowerCase().includes(searchQuery.toLowerCase())) : [];
-  const scrollToSearchResult = (idx) => {
-    const msg = searchResults[idx];
-    if (msg) {
-      const el = document.getElementById(`msg-${msg.id}`);
-      if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.classList.add('ring-2', 'ring-brand-cyan/50'); setTimeout(() => el.classList.remove('ring-2', 'ring-brand-cyan/50'), 2000); }
-    }
-  };
-
-  // Scroll to pinned
-  const scrollToVote = () => {
-    if (!pinnedVote) return;
-    const element = document.querySelector(`[data-message-id="${pinnedVote.messageId}"]`);
-    if (element) {
-      element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      element.classList.add('ring-2', 'ring-brand-cyan');
-      setTimeout(() => element.classList.remove('ring-2', 'ring-brand-cyan'), 2000);
-    } else {
-      scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }
-  };
-
-  const pinnedMessage = messages.find(m => m.pinned === true);
-  const scrollToPinned = () => {
-    if (pinnedMessage) {
-      const el = document.getElementById(`msg-${pinnedMessage.id}`);
-      if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.classList.add('ring-2', 'ring-brand-cyan/50'); setTimeout(() => el.classList.remove('ring-2', 'ring-brand-cyan/50'), 2000); }
-    }
-  };
-
-  // Long press
-  const longPressTimer = useRef(null);
-  const handleMsgLongPress = (msgId) => {
-    longPressTimer.current = setTimeout(() => enterSelectionMode(msgId), 400);
-  };
-  const cancelLongPress = () => clearTimeout(longPressTimer.current);
-
-  // Swipe for reply
-  const swipeRef = useRef({ startX: 0, startY: 0, msgId: null, swiping: false, el: null });
-  const handleSwipeStart = (e, msg) => {
-    const touch = e.touches[0];
-    swipeRef.current = { startX: touch.clientX, startY: touch.clientY, msgId: msg.id, msg, swiping: false, el: e.currentTarget };
-  };
-  const handleSwipeMove = (e) => {
-    const sw = swipeRef.current;
-    if (!sw.msgId) return;
-    const touch = e.touches[0];
-    const dx = touch.clientX - sw.startX;
-    const dy = Math.abs(touch.clientY - sw.startY);
-    if (dy > 30 && !sw.swiping) { sw.msgId = null; return; }
-    if (dx > 15) {
-      sw.swiping = true;
-      const offset = Math.min(dx - 15, 80);
-      if (sw.el) sw.el.style.transform = `translateX(${offset}px)`;
-      if (sw.el) sw.el.style.transition = 'none';
-    }
-  };
-  const handleSwipeEnd = () => {
-    const sw = swipeRef.current;
-    if (sw.el) { sw.el.style.transform = ''; sw.el.style.transition = 'transform 0.2s'; }
-    if (sw.swiping && sw.msg) {
-      const senderName = sw.msg.senderId === auth.currentUser?.uid ? 'You' : sw.msg.senderName || 'User';
-      setReplyTo({ id: sw.msg.id, text: sw.msg.text || 'Media', senderName, senderId: sw.msg.senderId });
-      inputRef.current?.focus();
-    }
-    swipeRef.current = { startX: 0, startY: 0, msgId: null, swiping: false };
-  };
-
-  return (
-    <div className="flex flex-col h-full text-white">
-      {/* Header */}
-      <div className="relative z-20 glass-header">
-        {isMobile ? (
-          <TopBar
-            showBack
-            title={squadInfo?.name || 'Squad Chat'}
-            actions={
-              <button onClick={() => setShowHeaderMenu(!showHeaderMenu)} className="p-1.5">
-                <Icon name="more_vert" size={20} />
-              </button>
-            }
-          />
-        ) : (
-          <div className="flex items-center gap-3 px-4 py-3 border-b border-white/[0.04]">
-            <button onClick={() => navigate(-1)} className="shrink-0"><Icon name="arrow_back" size={24} /></button>
-            <div className="relative shrink-0 cursor-pointer" onClick={() => navigate(`/squads/${squadId}`)}>
-              <UserAvatar src={squadInfo?.avatar} size={40} />
-            </div>
-            <div className="flex-1 min-w-0 cursor-pointer group" onClick={() => navigate(`/squads/${squadId}`)}>
-              <h2 className="text-white font-bold text-sm truncate group-hover:text-brand-cyan transition-colors">{squadInfo?.name || 'Squad Chat'}</h2>
-              <p className="text-[10px] font-bold uppercase tracking-tighter text-text-muted">{squadInfo?.memberCount || 0} members</p>
-            </div>
-            <div className="flex items-center gap-1">
-              <button onClick={() => setShowSearch(s => !s)} className="text-text-muted hover:text-white transition-colors p-1.5"><Icon name="search" size={20} /></button>
-              <button onClick={() => setShowHeaderMenu(!showHeaderMenu)} className="text-text-muted hover:text-white transition-colors p-1.5"><Icon name="more_vert" size={20} /></button>
-            </div>
-          </div>
-        )}
+    if (m.type === 'image') return (
+      <div className="image-embed" style={{ position: 'relative' }}>
+        <img src={m.contentUrl} alt="" style={{ cursor: 'zoom-in' }} onClick={() => openLightbox(m.id)} />
+        {canSaveToGallery && <SquadSaveMediaBtn url={m.contentUrl} isVideo={false} onSave={saveSquadMedia} />}
       </div>
-
-      {/* Header dropdown */}
-      {showHeaderMenu && <div className="fixed inset-0 z-30" onClick={() => setShowHeaderMenu(false)} />}
-      {showHeaderMenu && (
-        <div className="absolute right-4 top-14 z-40 w-52 bg-surface-1 border border-white/[0.06] rounded-2xl shadow-2xl overflow-hidden animate-fade-in">
-          {headerMenuItems.map((item, i) => (
-            <button
-              key={item.label}
-              onClick={() => { if (item.action) item.action(); else navigate(item.path); setShowHeaderMenu(false); }}
-              className={`w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-surface-2 transition-colors ${i > 0 ? 'border-t border-white/[0.03]' : ''}`}
-            >
-              <Icon name={item.icon} size={18} className="text-text-secondary" />
-              <span className="text-sm text-text-primary">{item.label}</span>
-            </button>
-          ))}
+    );
+    if (m.type === 'clip' || m.type === 'video')
+      return (
+        <div className="image-embed" style={{ position: 'relative' }}>
+          <InlineVideoPlayer src={m.contentUrl} maxHeightClass="max-h-72" objectFit="contain" />
+          {canSaveToGallery && <SquadSaveMediaBtn url={m.contentUrl} isVideo onSave={saveSquadMedia} />}
         </div>
-      )}
+      );
+    if (m.type === 'file')
+      return (
+        <a className="link-preview" href={m.contentUrl} target="_blank" rel="noopener noreferrer">
+          <div className="lp-thumb"><span className="material-symbols-outlined">description</span></div>
+          <div className="lp-meta">
+            <div className="lp-site">Attachment</div>
+            <div className="lp-title">{m.fileName || 'File'}</div>
+          </div>
+        </a>
+      );
+    return null;
+  };
 
-      {/* Search bar */}
-      {showSearch && (
-        <div className="flex items-center gap-2 px-3 py-2 bg-surface-1 border-b border-white/[0.04] animate-slide-down">
-          <Icon name="search" size={18} className="text-text-muted shrink-0" />
-          <input autoFocus value={searchQuery} onChange={e => { setSearchQuery(e.target.value); setSearchIndex(0); }} placeholder="Search in chat..." className="flex-1 bg-transparent text-sm text-white outline-none placeholder:text-text-muted/60" />
-          {searchQuery && searchResults.length > 0 && (
-            <div className="flex items-center gap-1 shrink-0">
-              <span className="text-[10px] text-text-muted">{searchIndex + 1}/{searchResults.length}</span>
-              <button onClick={() => { const next = (searchIndex - 1 + searchResults.length) % searchResults.length; setSearchIndex(next); scrollToSearchResult(next); }} className="text-text-muted hover:text-white p-0.5"><Icon name="keyboard_arrow_up" size={18} /></button>
-              <button onClick={() => { const next = (searchIndex + 1) % searchResults.length; setSearchIndex(next); scrollToSearchResult(next); }} className="text-text-muted hover:text-white p-0.5"><Icon name="keyboard_arrow_down" size={18} /></button>
+  const renderBody = (m) => {
+    if (m.type === 'text') {
+      const yt = getYouTubeID(m.text);
+      const link = !yt && extractUrl(m.text);
+      return (
+        <>
+          <div className="msg-text" onClick={() => { if (isTauri() && m.text) setTranslateMsg(m); }}>
+            <SpoilerText text={m.text} />
+            {m.editedAt && <span className="msg-edited">edited</span>}
+          </div>
+          {yt && (
+            <div className="image-embed">
+              <iframe
+                title="yt" width="420" height="236" style={{ display: 'block', border: 0 }}
+                src={`https://www.youtube.com/embed/${yt}`} allowFullScreen
+              />
             </div>
           )}
-          {searchQuery && searchResults.length === 0 && <span className="text-[10px] text-text-muted shrink-0">No results</span>}
-          <button onClick={() => { setShowSearch(false); setSearchQuery(''); }} className="text-text-muted hover:text-white"><Icon name="close" size={18} /></button>
-        </div>
-      )}
-
-      {/* Pinned message bar */}
-      {pinnedMessage && (
-        <div className="flex items-center gap-2 px-4 py-2 bg-surface-2/80 border-b border-white/[0.03] cursor-pointer hover:bg-surface-2 transition-colors" onClick={scrollToPinned}>
-          <Icon name="push_pin" size={16} className="text-brand-cyan shrink-0" />
-          <div className="flex-1 min-w-0"><p className="text-[10px] text-brand-cyan font-bold">Pinned Message</p><p className="text-xs text-text-muted truncate">{pinnedMessage.text || 'Media'}</p></div>
-        </div>
-      )}
-
-      {/* Active kick vote bar */}
-      {pinnedVote && (
-        <div onClick={scrollToVote} className="flex items-center gap-2 px-4 py-2 bg-red-950/60 border-b border-red-500/30 cursor-pointer hover:bg-red-950/80 transition-colors">
-          <Icon name="push_pin" size={16} className="text-red-400" />
-          <span className="text-xs font-semibold text-white/90 flex-1 truncate">Active kick vote: {pinnedVote.title}</span>
-          <Icon name="arrow_downward" size={16} className="text-red-400" />
-        </div>
-      )}
-
-      {/* Messages container */}
-      <main ref={containerRef} className="flex-1 overflow-y-auto no-scrollbar relative" style={bgStyle}>
-        {squadInfo?.chatBackground === 'image' && <div className="absolute inset-0 bg-bg-dark/60 pointer-events-none" />}
-        <div className="relative p-4 space-y-1 min-h-full flex flex-col justify-end">
-          <AnimatePresence initial={false}>
-            {messages.map((m, i) => {
-              const isMe = m.senderId === auth.currentUser?.uid;
-              const isHighlighted = searchQuery && m.text?.toLowerCase().includes(searchQuery.toLowerCase());
-              const showAvatar = i === 0 || messages[i-1].senderId !== m.senderId;
-              const isSelected = selectedMessages.has(m.id);
-              return (
-                <motion.div
-                  key={m.id}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: 10, transition: { duration: 0.2 } }}
-                  transition={{ duration: 0.2 }}
-                  className={`flex items-start gap-3 ${isMe ? 'flex-row-reverse' : ''} ${isHighlighted ? 'bg-brand-cyan/5 -mx-2 px-2 rounded-lg' : ''} ${isSelected ? 'bg-brand-cyan/10 rounded-lg' : ''}`}
-                  onDoubleClick={() => handleDoubleTap(m.id)}
-                >
-                  {!isMe && showAvatar && <img src={m.senderAvatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${m.senderId}`} className="w-8 h-8 rounded-full bg-surface-2" />}
-                  {!isMe && !showAvatar && <div className="w-8" />}
-                  <div
-                    className={`group relative max-w-[80%] ${isMe ? 'items-end' : 'items-start'} flex flex-col gap-1`}
-                    onContextMenu={(e) => { e.preventDefault(); setContextMenuMsgId(prev => prev === m.id ? null : m.id); }}
-                    onTouchStart={(e) => { if (!selectionMode) handleSwipeStart(e, m); }}
-                    onTouchMove={(e) => { if (!selectionMode) handleSwipeMove(e); }}
-                    onTouchEnd={() => { if (!selectionMode) handleSwipeEnd(); }}
-                    onMouseDown={() => { if (!selectionMode) handleMsgLongPress(m.id); else toggleMessageSelection(m.id); }}
-                    onMouseUp={cancelLongPress}
-                    onMouseLeave={cancelLongPress}
-                    onClick={() => { if (selectionMode) toggleMessageSelection(m.id); }}
-                  >
-                    <div
-                      className={`px-3 py-2 rounded-2xl ${isMe ? 'text-white rounded-tr-none' : 'bg-surface-2 text-white rounded-tl-none border border-white/[0.06]'}`}
-                      style={isMe ? { background: '#1a6b5a' } : undefined}
-                    >
-                      {renderMessageContent(m, isMe)}
-                    </div>
-                    {m.reactions && Object.keys(m.reactions).length > 0 && (
-                      <ReactionBubbles
-                        reactions={m.reactions}
-                        chatId={squadId}
-                        messageId={m.id}
-                        isMe={isMe}
-                        type="squad"
-                        onReact={() => handleReact(m)}
-                      />
-                    )}
-                    {contextMenuMsgId === m.id && (
-                      <MessageContextMenu
-                        chatId={squadId}
-                        messageId={m.id}
-                        message={m}
-                        isMe={isMe}
-                        onClose={() => setContextMenuMsgId(null)}
-                        onReply={() => handleReply(m)}
-                        onEdit={() => handleEdit(m)}
-                        onPin={() => handlePin(m)}
-                        onForward={() => handleForward(m)}
-                        onDelete={() => deleteMsg(m.id)}
-                        onReact={() => handleReact(m)}
-                        type="squad"
-                      />
-                    )}
-                  </div>
-                </motion.div>
-              );
-            })}
-          </AnimatePresence>
-
-          {/* Typing indicator */}
-          {typingUsers.length > 0 && (
-            <div className="flex justify-start">
-              <div className="flex gap-2 items-end">
-                <div className="w-8 shrink-0"><UserAvatar user={typingUsers[0]} size="xs" /></div>
-                <TypingIndicator />
+          {link && (
+            <a className="link-preview" href={link} target="_blank" rel="noopener noreferrer">
+              <div className="lp-thumb"><span className="material-symbols-outlined">link</span></div>
+              <div className="lp-meta">
+                <div className="lp-site">{(() => { try { return new URL(link).hostname; } catch { return 'link'; } })()}</div>
+                <div className="lp-title">{link}</div>
               </div>
-            </div>
+            </a>
           )}
-          <div ref={scrollRef} />
-        </div>
-      </main>
+        </>
+      );
+    }
+    return renderEmbed(m);
+  };
 
-      {/* Floating scroll button */}
-      {showScrollButton && (
-        <button
-          onClick={() => scrollRef.current?.scrollIntoView({ behavior: 'smooth' })}
-          className="fixed bottom-20 right-4 z-50 w-9 h-9 rounded-full bg-surface-1 border border-white/[0.06] text-text-secondary flex items-center justify-center hover:text-text-primary active:scale-95 transition-all animate-fade-in"
-        >
-          {newMessagesCount > 0 ? (
-            <div className="relative">
-              <Icon name="arrow_downward" size={24} />
-              <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[8px] font-bold rounded-full w-4 h-4 flex items-center justify-center">{newMessagesCount > 9 ? '9+' : newMessagesCount}</span>
+  // ── Render ───────────────────────────────────────────────────────────
+  let lastDay = null;
+  let lastSender = null;
+
+  const main = (
+    // position:relative so the jump-to-bottom FAB anchors to the chat column
+    // rather than escaping to the page (.sqd .main is static in squad.css).
+    <main className="main" style={{ position: 'relative' }}>
+      {/* Channel header */}
+      <header className="channel-header">
+        <div className="channel-title">
+          <span className="channel-hash">#</span>
+          <span className="channel-name">{squadInfo?.name || 'Squad'}</span>
+          {squadInfo?.description && (
+            <>
+              <span className="channel-divider" />
+              <span className="channel-desc">{squadInfo.description}</span>
+            </>
+          )}
+        </div>
+        <div className="header-actions">
+          <div className="member-count-chip">
+            <span className="dot-online" />
+            <span>{onlineCount} / {squadInfo?.memberCount || members.length} online</span>
+          </div>
+          {showSearch ? (
+            <div className="search-input">
+              <span className="material-symbols-outlined">search</span>
+              <input
+                autoFocus value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search messages"
+              />
+              <button className="icon-btn" onClick={() => { setShowSearch(false); setSearchQuery(''); }}>
+                <span className="material-symbols-outlined">close</span>
+              </button>
             </div>
           ) : (
-            <Icon name="arrow_downward" size={24} />
+            <button className="icon-btn" title="Search" onClick={() => setShowSearch(true)}>
+              <span className="material-symbols-outlined">search</span>
+            </button>
           )}
+          {isAdminRole && (
+            <button className="icon-btn" title="Chat background" onClick={() => setShowBackgroundModal(true)}>
+              <span className="material-symbols-outlined">wallpaper</span>
+            </button>
+          )}
+        </div>
+      </header>
+
+      {/* Pinned strip */}
+      {pinnedMessage && (
+        <div className="pinned-bar" onClick={() => jumpTo(pinnedMessage.id)}>
+          <span className="material-symbols-outlined">push_pin</span>
+          <span className="pin-label">Pinned</span>
+          <span className="pin-text">
+            {pinnedMessage.senderName}: {pinnedMessage.text || 'Media'}
+          </span>
+          <span className="pin-jump">Jump →</span>
+        </div>
+      )}
+
+      {/* Messages */}
+      <section className="messages" ref={containerRef} style={bgStyle}>
+        {msgError && (
+          <div className="day-divider" style={{ marginTop: 24 }}>
+            <div className="line" />
+            <div className="label" style={{ color: 'var(--ember)', background: 'rgba(240,64,96,.08)', borderColor: 'rgba(240,64,96,.25)' }}>
+              {msgError}
+            </div>
+            <div className="line" />
+          </div>
+        )}
+        {!msgError && messages.length === 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', minHeight: 200, color: 'var(--t3)', textAlign: 'center', gap: 12, padding: 24 }}>
+            <span className="material-symbols-outlined" style={{ fontSize: 48, opacity: .45 }}>forum</span>
+            <div style={{ fontFamily: 'Syne', fontWeight: 700, fontSize: 16, color: 'var(--t2)' }}>No messages yet</div>
+            <div style={{ fontSize: 13, maxWidth: 320 }}>Be the first to say hi in #{squadInfo?.name || 'squad'}. Drop a message below to get the conversation going.</div>
+          </div>
+        )}
+        {messages.map((m) => {
+          // System messages
+          if (m.type === 'system') {
+            lastSender = null;
+            return (
+              <div className="sys-msg" key={m.id}>
+                <span className="sys-pill">
+                  <span className="material-symbols-outlined">info</span>{m.text}
+                </span>
+                <span className="sys-time">{formatTime(m.createdAt)}</span>
+              </div>
+            );
+          }
+
+          const dk = dayKey(m.createdAt);
+          const showDay = dk !== lastDay;
+          if (showDay) lastDay = dk;
+          // Discord-style "grouped" collapse removed — every message renders
+          // its full header (avatar + name + role + time) so the founder's
+          // expectation that "every message has an avatar" holds. lastSender
+          // tracking kept for future grouping if we ever revisit this.
+          lastSender = m.senderId;
+
+          const meta = roleMeta(roleByUid[m.senderId]);
+          const isMatch = searchQuery && m.text?.toLowerCase().includes(searchQuery.toLowerCase());
+          const dmReactions = toDmReactions(m.reactions);
+          const hasReactions = Object.keys(dmReactions).length > 0;
+          const canEdit = m.senderId === myUid && m.type === 'text';
+          const canDelete = isAdminRole || m.senderId === myUid;
+          const isMine = m.senderId === myUid;
+
+          return (
+            <div key={m.id}>
+              {showDay && (
+                <div className="day-divider">
+                  <div className="line" /><div className="label">{dayLabel(m.createdAt)}</div><div className="line" />
+                </div>
+              )}
+              {m.id === firstUnreadId && (
+                <div className="day-divider" style={{ '--line': '#F04060' }}>
+                  <div className="line" style={{ background: 'rgba(240,64,96,0.5)' }} />
+                  <div className="label" style={{ color: '#F04060', borderColor: 'rgba(240,64,96,0.4)' }}>New messages</div>
+                  <div className="line" style={{ background: 'rgba(240,64,96,0.5)' }} />
+                </div>
+              )}
+              <article
+                id={`msg-${m.id}`}
+                className="msg"
+                style={isMatch ? { background: 'rgba(180,79,255,.06)' } : undefined}
+                onContextMenu={(e) => { e.preventDefault(); openMsgMenu(m, e); }}
+                onPointerDown={(e) => startMsgPress(m, e)}
+                onPointerUp={endMsgPress}
+                onPointerLeave={endMsgPress}
+                onPointerCancel={endMsgPress}
+              >
+                <div className="msg-avatar-slot">
+                  <div className={`msg-avatar ${avatarClass(m.senderId)}`}>
+                    {(() => {
+                      const live = userByUid[m.senderId];
+                      // Apply Vanguard mask. Inside the Vanguard squad chat,
+                      // members see each other's real identities (allies).
+                      // In any other squad, non-Vanguard viewers see the
+                      // persona — same rule as elsewhere in the app.
+                      const masked = applyVanguardMask(live, profile);
+                      const url = masked?.avatar || m.senderAvatar;
+                      const name = masked?.displayName || masked?.username || m.senderName;
+                      return url ? <img src={url} alt="" /> : initials(name);
+                    })()}
+                  </div>
+                </div>
+                <div className="msg-time-hover">{formatTime(m.createdAt)}</div>
+                <div className="msg-body">
+                  {m.replyTo && (
+                    <div className="quoted" onClick={() => jumpTo(m.replyTo.id)}>
+                      <div className="arr" />
+                      <span className="who">{m.replyTo.senderName}</span>
+                      <span className="body">{m.replyTo.text || 'Media'}</span>
+                    </div>
+                  )}
+                  <div className="msg-meta">
+                    {(() => {
+                      const live = userByUid[m.senderId];
+                      const masked = applyVanguardMask(live, profile);
+                      const vanguardRank = live?.vanguard?.rank;
+                      return (
+                        <>
+                          <span className={`msg-name ${meta.name}`}>
+                            {masked?.displayName || masked?.username || m.senderName || 'User'}
+                          </span>
+                          {vanguardRank && <VanguardBadge rank={vanguardRank} size={14} />}
+                          <span className={`role-pill ${meta.pill}`}>
+                            {meta.icon && <span className="material-symbols-outlined">{meta.icon}</span>}
+                            {meta.label}
+                          </span>
+                          <span className="msg-time">{formatTime(m.createdAt)}</span>
+                        </>
+                      );
+                    })()}
+                  </div>
+                  {renderBody(m)}
+                  {hasReactions && (
+                    <div className="flex items-center gap-1">
+                      <ReactionBubbles
+                        reactions={dmReactions}
+                        chatId={squadId}
+                        messageId={m.id}
+                        isMe={false}
+                        onToggle={(emoji) => toggleReaction(m, emoji)}
+                        onShowReactors={(emoji) => setReactorsView({ reactions: dmReactions, emoji })}
+                      />
+                      <div className="react-add" onClick={() => setReactToMsgId(m.id)}>
+                        <span className="material-symbols-outlined">add_reaction</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {contextMenu?.msgId === m.id && (
+                  <MessageContextMenu
+                    chatId={squadId} messageId={m.id} message={m} isMe={isMine}
+                    anchorX={contextMenu.x} anchorY={contextMenu.y}
+                    onClose={() => setContextMenu(null)}
+                    onReact={(emoji) => toggleReaction(m, emoji)}
+                    onReply={handleReply}
+                    onEdit={canEdit ? handleEdit : undefined}
+                    onPin={handlePin}
+                    onDelete={canDelete ? deleteMsg : undefined}
+                    onTranslate={m.text ? (msg) => setTranslateMsg(msg) : undefined}
+                    onSaveMedia={canSaveToGallery && m.contentUrl
+                      ? () => saveSquadMedia(m.contentUrl, m.type === 'clip' || m.type === 'video')
+                      : undefined}
+                  />
+                )}
+
+                {/* Hover actions */}
+                <div className="msg-actions">
+                  <button title="React" onClick={() => setReactToMsgId(m.id)}>
+                    <span className="material-symbols-outlined">add_reaction</span>
+                  </button>
+                  <button title="Reply" onClick={() => handleReply(m)}>
+                    <span className="material-symbols-outlined">reply</span>
+                  </button>
+                  <div className="sep" />
+                  {canEdit && (
+                    <button title="Edit" onClick={() => handleEdit(m)}>
+                      <span className="material-symbols-outlined">edit</span>
+                    </button>
+                  )}
+                  <button title={m.pinned ? 'Unpin' : 'Pin'} onClick={() => handlePin(m)}>
+                    <span className="material-symbols-outlined">push_pin</span>
+                  </button>
+                  {canDelete && (
+                    <button title="Delete" onClick={() => deleteMsg(m)}>
+                      <span className="material-symbols-outlined">delete</span>
+                    </button>
+                  )}
+                </div>
+              </article>
+            </div>
+          );
+        })}
+        <div ref={scrollRef} />
+      </section>
+
+      {/* Jump to bottom — shows a count when messages arrived while you were
+          reading back. Same affordance the DM thread has. */}
+      {newBelow > 0 && (
+        <button
+          onClick={jumpToBottom}
+          style={{
+            position: 'absolute', right: 20, bottom: 104, zIndex: 20,
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+            padding: '8px 12px', borderRadius: 999, border: 'none', cursor: 'pointer',
+            background: 'linear-gradient(135deg, #7B1FFF, #B44FFF)', color: '#fff',
+            fontSize: 12, fontWeight: 800,
+            boxShadow: '0 8px 24px rgba(0,0,0,0.45)',
+          }}
+        >
+          <span className="material-symbols-outlined" style={{ fontSize: 16 }}>arrow_downward</span>
+          {newBelow} new
         </button>
       )}
 
-      {/* Selection mode toolbar (top) */}
-      {selectionMode && (
-        <div className="fixed top-0 left-0 right-0 z-50 bg-surface-1 border-b border-white/[0.04] py-2 px-4 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <button onClick={() => { setSelectionMode(false); setSelectedMessages(new Set()); }}><Icon name="close" size={20} className="text-text-muted" /></button>
-            <span className="text-sm font-semibold text-white">{selectedMessages.size}</span>
-          </div>
-          <div className="flex items-center gap-3">
-            <button onClick={forwardSelected}><Icon name="forward" size={20} className="text-brand-cyan" /></button>
-            <button onClick={deleteSelected}><Icon name="delete" size={20} className="text-brand-ember" /></button>
-          </div>
+      {/* Typing line */}
+      {typingUsers.length > 0 && (
+        <div className="typing-line">
+          <span className="typing-dots"><span /><span /><span /></span>
+          <span>
+            <strong style={{ color: 'var(--t2)', fontWeight: 600 }}>
+              {typingUsers[0]?.displayName || typingUsers[0]?.username || 'Someone'}
+            </strong> is typing…
+          </span>
         </div>
       )}
 
-      {/* Media panel */}
-      {showMedia && <MediaPanel defaultTab={showMedia} onSelect={handleMediaSelect} onClose={() => setShowMedia(null)} />}
-
-      {/* Emoji picker for input */}
-      {showEmoji && !reactToMsgId && <EmojiPicker onSelect={(emoji) => setInput(prev => prev + emoji)} onClose={() => setShowEmoji(false)} />}
-
-      {/* Emoji picker for reactions */}
-      {reactToMsgId && <EmojiPicker onSelect={handleReactionSelect} onClose={() => setReactToMsgId(null)} />}
-
-      {/* Reply / edit bar */}
-      {(replyTo || editingMsg) && (
-        <div className="flex items-center gap-3 px-4 py-2 bg-surface-2/80 border-t border-white/[0.03]">
-          <div className={`w-1 h-8 rounded-full ${editingMsg ? 'bg-brand-gold' : 'bg-brand-cyan'}`} />
-          <div className="flex-1 min-w-0">
-            <p className={`text-[10px] font-bold ${editingMsg ? 'text-brand-gold' : 'text-brand-cyan'}`}>{editingMsg ? 'Editing' : `Reply to ${replyTo?.senderName}`}</p>
-            <p className="text-xs text-text-muted truncate">{editingMsg?.text || replyTo?.text}</p>
-          </div>
-          <button onClick={() => { setReplyTo(null); setEditingMsg(null); setInput(''); }} className="text-text-muted hover:text-white shrink-0"><Icon name="close" size={18} /></button>
-        </div>
-      )}
-
-      {/* Input footer */}
-      <div className="p-4 bg-surface-1/50 backdrop-blur-xl border-t border-white/[0.04]">
-        {/* Format toolbar toggle */}
-        <div className="flex items-center justify-between mb-2 px-2">
-          <button onClick={() => setShowFormatToolbar(!showFormatToolbar)} className="p-1 rounded-lg hover:bg-white/10">
-            <Icon name="format_bold" size={18} className="text-text-muted" />
-          </button>
-          <button onClick={() => setShowPollModal(true)} className="p-1 rounded-lg hover:bg-white/10">
-            <Icon name="poll" size={18} className="text-text-muted" />
-          </button>
-        </div>
-        {showFormatToolbar && (
-          <div className="flex items-center gap-1 mb-2 px-2">
-            <button onClick={() => applyFormat('bold')} className="p-1.5 rounded-lg hover:bg-white/10"><Icon name="format_bold" size={18} className="text-text-muted" /></button>
-            <button onClick={() => applyFormat('italic')} className="p-1.5 rounded-lg hover:bg-white/10"><Icon name="format_italic" size={18} className="text-text-muted" /></button>
-            <button onClick={() => applyFormat('code')} className="p-1.5 rounded-lg hover:bg-white/10"><Icon name="code" size={18} className="text-text-muted" /></button>
-            <button onClick={() => applyFormat('spoiler')} className="p-1.5 rounded-lg hover:bg-white/10"><Icon name="visibility_off" size={18} className="text-text-muted" /></button>
+      {/* Composer */}
+      <div className="composer">
+        {(replyTo || editingMsg) && (
+          <div className="reply-bar">
+            <span className="material-symbols-outlined">{editingMsg ? 'edit' : 'reply'}</span>
+            <span className="who">{editingMsg ? 'Editing message' : `Replying to ${replyTo?.senderName}`}</span>
+            <span className="what">{editingMsg?.text || replyTo?.text}</span>
+            <button className="close" onClick={() => { setReplyTo(null); setEditingMsg(null); setInput(''); }}>
+              <span className="material-symbols-outlined" style={{ fontSize: 14 }}>close</span>
+            </button>
           </div>
         )}
-        <div className="flex items-center gap-2">
-          {!isRecording ? (
-            <>
-              <button onClick={() => setShowMedia(showMedia ? null : 'gifs')} className={`p-2 rounded-full ${showMedia ? 'text-brand-cyan' : 'text-text-muted'}`}><Icon name="gif_box" size={24} /></button>
-              <button onClick={() => { setShowEmoji(!showEmoji); if (showMedia) setShowMedia(null); }} className="p-2"><Icon name="sentiment_satisfied" size={22} className={showEmoji ? 'text-brand-cyan' : 'text-text-muted'} /></button>
-              <div className="flex-1 bg-surface-2 rounded-full px-4 py-2 flex items-center border border-white/[0.04] focus-within:border-brand-cyan/50 transition-all">
-                <input
-                  ref={inputRef}
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={async (e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      const trimmed = input.trim();
-                      if (trimmed === '/vote') {
-                        await handleVoteCommand();
-                        setInput('');
-                      } else if (trimmed) {
-                        sendMsg({ text: trimmed, type: 'text' });
-                        setInput('');
-                      }
-                    }
-                  }}
-                  placeholder={editingMsg ? 'Edit message...' : 'Type a message...'}
-                  className="flex-1 bg-transparent outline-none text-sm"
-                />
-                <input type="file" id="img-up" accept="image/*" hidden onChange={async e => {
-                  if (!e.target.files[0]) return;
-                  const file = e.target.files[0]; e.target.value = '';
-                  const sizeCheck = checkFileSize(file.size);
-                  if (!sizeCheck.allowed) { setUpgradeModal({ open: true, requiredTier: sizeCheck.requiredTier, message: sizeCheck.message }); return; }
-                  const url = await uploadMediaFile(file, 'squad_images', tier, tierConfig.mediaRetentionDays);
-                  sendMsg({ type: 'image', contentUrl: url });
-                }} />
-                <label htmlFor="img-up" className="cursor-pointer"><Icon name="image" size={20} className="text-text-muted ml-2" /></label>
-                <input type="file" id="vid-up" accept="video/*" hidden onChange={async e => {
-                  if (!e.target.files[0]) return;
-                  const file = e.target.files[0]; e.target.value = '';
-                  const sizeCheck = checkFileSize(file.size);
-                  if (!sizeCheck.allowed) { setUpgradeModal({ open: true, requiredTier: sizeCheck.requiredTier, message: sizeCheck.message }); return; }
-                  const url = await uploadMediaFile(file, 'squad_videos', tier, tierConfig.mediaRetentionDays);
-                  sendMsg({ type: 'video', contentUrl: url });
-                }} />
-                <label htmlFor="vid-up" className="cursor-pointer"><Icon name="videocam" size={20} className="text-text-muted ml-2" /></label>
-              </div>
-              {input.trim() ? (
-                <button onClick={() => { sendMsg({ text: input, type: 'text' }); setInput(''); }} className="bg-brand-cyan p-2.5 rounded-full text-bg-dark"><Icon name="send" size={18} /></button>
-              ) : (
-                <button
-                  onMouseDown={startVoiceRecordingWithGesture}
-                  onMouseMove={handleVoiceMove}
-                  onMouseUp={handleVoiceEnd}
-                  onTouchStart={startVoiceRecordingWithGesture}
-                  onTouchMove={handleVoiceMove}
-                  onTouchEnd={handleVoiceEnd}
-                  className="bg-surface-2 p-2.5 rounded-full text-white active:bg-brand-cyan active:text-bg-dark transition-all duration-200"
-                >
-                  <Icon name="mic" size={18} />
-                </button>
-              )}
-            </>
-          ) : (
-            <div className="flex-1 flex items-center gap-4 bg-red-500/10 rounded-full px-5 py-2 border border-red-500/30">
-              <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
-              <span className="text-brand-cyan text-sm font-bold flex-1">{recordingLocked ? '🔒 Recording locked' : recordingCancel ? '✖️ Cancel' : '🎤 Recording...'}</span>
-              {!recordingLocked && <button onClick={() => setRecordingCancel(true)} className="text-red-500 text-xs font-bold">Cancel</button>}
-              {recordingLocked && <button onClick={handleVoiceEnd} className="text-green-500 text-xs font-bold">Send</button>}
+        <div className="compose-wrap">
+          <div className="format-bar">
+            <button className="fmt-btn" title="Bold" onClick={() => applyFormat('bold')}><span className="material-symbols-outlined">format_bold</span></button>
+            <button className="fmt-btn" title="Italic" onClick={() => applyFormat('italic')}><span className="material-symbols-outlined">format_italic</span></button>
+            <button className="fmt-btn" title="Strike" onClick={() => applyFormat('strike')}><span className="material-symbols-outlined">format_strikethrough</span></button>
+            <div className="fmt-sep" />
+            <button className="fmt-btn" title="Code" onClick={() => applyFormat('code')}><span className="material-symbols-outlined">code</span></button>
+            <button className="fmt-btn" title="Spoiler" onClick={() => applyFormat('spoiler')}><span className="material-symbols-outlined">visibility_off</span></button>
+            <span className="fmt-hint"><kbd>Markdown</kbd> · <kbd>||spoiler||</kbd></span>
+          </div>
+          <div className="compose-row">
+            <label className="compose-attach" title="Attach image">
+              <span className="material-symbols-outlined">add</span>
+              <input
+                type="file" accept="image/*" hidden
+                onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) uploadAndSend(f, 'squad_images', 'image'); }}
+              />
+            </label>
+            <input
+              ref={inputRef}
+              className="compose-input"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitText(); } }}
+              placeholder={editingMsg ? 'Edit message…' : `Message #${squadInfo?.name || 'squad'}`}
+            />
+            <div className="compose-tools">
+              <button className="tool-btn" title="GIF" onClick={() => setShowMedia(showMedia ? null : 'gifs')}>
+                <span className="material-symbols-outlined">gif_box</span>
+              </button>
+              <button className="tool-btn" title="Emoji" onClick={() => setShowEmoji((v) => !v)}>
+                <span className="material-symbols-outlined">sentiment_satisfied</span>
+              </button>
+              <button className="tool-btn" title="Poll" onClick={() => setShowPollModal(true)}>
+                <span className="material-symbols-outlined">how_to_vote</span>
+              </button>
+              <button className="tool-btn" title="Share tournament" onClick={openTournamentShare}>
+                <span className="material-symbols-outlined">emoji_events</span>
+              </button>
+              <button
+                className="tool-btn" title="Voice message"
+                onMouseDown={startVoice} onMouseUp={endVoice} onMouseLeave={() => isRecording && endVoice()}
+                onTouchStart={startVoice} onTouchEnd={endVoice}
+                style={isRecording ? { color: 'var(--ember)' } : undefined}
+              >
+                <span className="material-symbols-outlined">{isRecording ? 'fiber_manual_record' : 'mic'}</span>
+              </button>
             </div>
-          )}
+            <button className="send-btn" title="Send" onClick={submitText}>
+              <span className="material-symbols-outlined">send</span>
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Poll modal */}
+      {/* Overlays */}
+      {showMedia && <MediaPanel defaultTab={showMedia} onSelect={handleMediaSelect} onClose={() => setShowMedia(null)} />}
+      {showEmoji && !reactToMsgId && (
+        <EmojiPicker onSelect={(emoji) => setInput((p) => p + emoji)} onClose={() => setShowEmoji(false)} />
+      )}
+      {/* React with any emoji — the SAME picker DMs use (animated Noto, skin
+          tones, recents, search), replacing the old hard-coded 6-emoji row. */}
+      {reactToMsgId && (
+        <EmojiPicker
+          onSelect={(emoji) => {
+            const msg = messages.find((x) => x.id === reactToMsgId);
+            if (msg) toggleReaction(msg, emoji);
+            setReactToMsgId(null);
+          }}
+          onClose={() => setReactToMsgId(null)}
+        />
+      )}
+
+      {reactorsView && (
+        <ReactorsSheet
+          reactions={reactorsView.reactions}
+          activeEmoji={reactorsView.emoji}
+          resolveUser={resolveReactor}
+          onClose={() => setReactorsView(null)}
+        />
+      )}
+
+      {lightbox && (
+        <MediaLightbox
+          items={lightboxItems}
+          startIndex={lightbox.index}
+          onClose={() => setLightbox(null)}
+        />
+      )}
+
       <Modal isOpen={showPollModal} onClose={() => setShowPollModal(false)} title="Create a Poll">
         <div className="space-y-4">
-          <input type="text" value={pollTitle} onChange={(e) => setPollTitle(e.target.value)} placeholder="Poll question" className="w-full bg-surface-2 border border-white/[0.06] rounded-xl p-3 text-sm text-text-primary focus:border-brand-cyan focus:outline-none" />
+          <input
+            type="text" value={pollTitle} onChange={(e) => setPollTitle(e.target.value)}
+            placeholder="Poll question"
+            className="w-full bg-surface-2 border border-white/[0.06] rounded-xl p-3 text-sm text-text-primary focus:border-brand-violet-light focus:outline-none"
+          />
           <div className="space-y-2">
             {pollOptions.map((opt, idx) => (
-              <input key={idx} type="text" value={opt} onChange={(e) => { const newOpts = [...pollOptions]; newOpts[idx] = e.target.value; setPollOptions(newOpts); }} placeholder={`Option ${idx + 1}`} className="w-full bg-surface-2 border border-white/[0.06] rounded-xl p-3 text-sm text-text-primary focus:border-brand-cyan focus:outline-none" />
+              <input
+                key={idx} type="text" value={opt}
+                onChange={(e) => { const n = [...pollOptions]; n[idx] = e.target.value; setPollOptions(n); }}
+                placeholder={`Option ${idx + 1}`}
+                className="w-full bg-surface-2 border border-white/[0.06] rounded-xl p-3 text-sm text-text-primary focus:border-brand-violet-light focus:outline-none"
+              />
             ))}
-            <button onClick={() => setPollOptions([...pollOptions, ''])} className="text-brand-cyan text-sm font-semibold flex items-center gap-1"><Icon name="add" size={16} /> Add option</button>
+            <button onClick={() => setPollOptions([...pollOptions, ''])} className="text-brand-violet-light text-sm font-semibold flex items-center gap-1">
+              <Icon name="add" size={16} /> Add option
+            </button>
           </div>
-          <button onClick={sendPoll} className="w-full py-3 rounded-xl bg-brand-cyan text-bg-dark font-bold text-sm">Create Poll</button>
+          <button onClick={sendPoll} className="w-full py-3 rounded-xl bg-brand-violet-light text-bg-dark font-bold text-sm">Create Poll</button>
         </div>
       </Modal>
 
-      <UpgradeModal isOpen={upgradeModal.open} onClose={() => setUpgradeModal({ open: false, requiredTier: 'lite', message: '' })} requiredTier={upgradeModal.requiredTier} message={upgradeModal.message} />
-      {forwardMsg && <ForwardModal messages={forwardMsg} onClose={() => setForwardMsg(null)} />}
-      <BackgroundPickerModal isOpen={showBackgroundModal} onClose={() => setShowBackgroundModal(false)} squadId={squadId} currentBackground={squadInfo?.chatBackground} currentValue={squadInfo?.chatBackgroundValue} />
-    </div>
+      <UpgradeModal
+        isOpen={upgradeModal.open}
+        onClose={() => setUpgradeModal({ open: false, requiredTier: 'lite', message: '' })}
+        requiredTier={upgradeModal.requiredTier}
+        message={upgradeModal.message}
+      />
+      <BackgroundPickerModal
+        isOpen={showBackgroundModal}
+        onClose={() => setShowBackgroundModal(false)}
+        squadId={squadId}
+        currentBackground={squadInfo?.chatBackground}
+        currentValue={squadInfo?.chatBackgroundValue}
+      />
+
+      {/* Share Tournament picker */}
+      <Modal isOpen={showTournamentModal} onClose={() => setShowTournamentModal(false)} title="Share a Tournament">
+        {tournamentsLoading ? (
+          <div style={{ textAlign: 'center', padding: 40, color: 'var(--t3)' }}>Loading…</div>
+        ) : myTournaments.length === 0 ? (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, padding: '32px 24px', color: 'var(--t3)', textAlign: 'center' }}>
+            <span className="material-symbols-outlined" style={{ fontSize: 44, opacity: .45 }}>emoji_events</span>
+            <div style={{ fontFamily: 'Syne', fontWeight: 700, fontSize: 15, color: 'var(--t1)' }}>You aren't in any tournaments</div>
+            <div style={{ fontSize: 12.5, maxWidth: 320 }}>Host a tournament or join one — then come back to share it with your squad.</div>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 420, overflowY: 'auto' }}>
+            {myTournaments.map((t) => (
+              <button
+                key={t.id}
+                onClick={() => shareTournament(t)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 12, padding: 12, borderRadius: 12,
+                  background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.06)',
+                  textAlign: 'left', cursor: 'pointer', transition: 'border-color .12s, background .12s',
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'rgba(180,79,255,.35)'; e.currentTarget.style.background = 'rgba(180,79,255,.06)'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'rgba(255,255,255,.06)'; e.currentTarget.style.background = 'rgba(255,255,255,.03)'; }}
+              >
+                <div style={{ width: 52, height: 52, borderRadius: 10, flexShrink: 0, background: t.bannerUrl ? `url(${t.bannerUrl}) center/cover` : 'linear-gradient(135deg,#2d0a5a,#7B1FFF)', display: 'grid', placeItems: 'center' }}>
+                  {!t.bannerUrl && <span className="material-symbols-outlined" style={{ color: '#fff', fontSize: 22 }}>emoji_events</span>}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontFamily: 'Syne', fontWeight: 700, color: '#fff', fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {t.name || 'Tournament'}
+                  </div>
+                  <div style={{ fontFamily: 'DM Mono', fontSize: 10.5, color: 'var(--t3)', textTransform: 'uppercase', letterSpacing: '.08em', marginTop: 2 }}>
+                    {t.game || 'Multi-game'}
+                    {t._hosting && <span style={{ color: 'var(--gold-light)', marginLeft: 6 }}>• Hosting</span>}
+                    {!t._hosting && t._joined && <span style={{ color: 'var(--violet-light)', marginLeft: 6 }}>• Joined</span>}
+                  </div>
+                </div>
+                <span className="material-symbols-outlined" style={{ color: 'var(--violet-light)', fontSize: 18 }}>arrow_forward</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </Modal>
+    </main>
+  );
+
+  return (
+    <SquadShell
+      mode="squad"
+      activeId="chat"
+      squadId={squadId}
+      rightRail={<SquadInfoRail squad={squadInfo} members={members} />}
+    >
+      {main}
+      {translateMsg && <TranslationSheet text={translateMsg.text} kind="message" onClose={() => setTranslateMsg(null)} />}
+    </SquadShell>
   );
 }

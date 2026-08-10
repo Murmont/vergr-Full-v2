@@ -21,13 +21,14 @@ import { useUI } from '../../context/UIContext';
 import TopBar from '../../components/TopBar';
 import Icon from '../../components/Icon';
 import UserAvatar from '../../components/UserAvatar';
+import { IS_NATIVE_BUILD } from '../../utils/platform';
 import TrustBadge from '../../components/tournament/TrustBadge';
 
 const C = {
   bg: '#0B0B14', surface: '#14141F',
   border: 'rgba(255,255,255,0.10)',
   text: '#fff', dim: 'rgba(255,255,255,0.65)', mute: 'rgba(255,255,255,0.45)',
-  gold: '#F0A500', cyan: '#4DFFD4', green: '#22c55e', red: '#ef4444',
+  gold: '#F0A500', cyan: '#B44FFF', green: '#22c55e', red: '#ef4444',
 };
 
 export default function TournamentStatsScreen() {
@@ -151,7 +152,7 @@ export default function TournamentStatsScreen() {
               No suggestions yet — they appear here after your matches are archived.
             </div>
           ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: IS_NATIVE_BUILD ? 'repeat(2, minmax(0, 1fr))' : 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12 }}>
               {highlights.map((h) => <HighlightCard key={h.key} clip={h} uid={uid} showToast={showToast} />)}
             </div>
           )}

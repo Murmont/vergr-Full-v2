@@ -34,17 +34,17 @@ export default function CreatePollModal({ onClose, onConfirm }) {
         
         <div className="space-y-4">
           <div>
-            <label className="text-[10px] font-bold uppercase tracking-widest text-brand-cyan mb-1.5 block">Question</label>
+            <label className="text-[10px] font-bold uppercase tracking-widest text-brand-violet-light mb-1.5 block">Question</label>
             <input 
               value={question} 
               onChange={(e) => setQuestion(e.target.value)}
               placeholder="What are we voting on?" 
-              className="w-full bg-bg-dark border border-white/[0.06] rounded-xl p-3.5 text-sm text-white focus:border-brand-cyan outline-none transition-colors"
+              className="w-full bg-bg-dark border border-white/[0.06] rounded-xl p-3.5 text-sm text-white focus:border-brand-violet outline-none transition-colors"
             />
           </div>
 
           <div>
-            <label className="text-[10px] font-bold uppercase tracking-widest text-brand-cyan mb-1.5 block">Options</label>
+            <label className="text-[10px] font-bold uppercase tracking-widest text-brand-violet-light mb-1.5 block">Options</label>
             <div className="space-y-2">
               {options.map((opt, i) => (
                 <input 
@@ -52,11 +52,11 @@ export default function CreatePollModal({ onClose, onConfirm }) {
                   value={opt}
                   onChange={(e) => updateOption(i, e.target.value)}
                   placeholder={`Option ${i + 1}`}
-                  className="w-full bg-bg-dark border border-white/[0.06] rounded-xl p-3 text-sm text-white focus:border-brand-cyan outline-none"
+                  className="w-full bg-bg-dark border border-white/[0.06] rounded-xl p-3 text-sm text-white focus:border-brand-violet outline-none"
                 />
               ))}
             </div>
-            <button onClick={addOption} className="text-brand-cyan text-xs font-bold flex items-center gap-1 mt-3 hover:opacity-80 transition-opacity">
+            <button onClick={addOption} className="text-brand-violet-light text-xs font-bold flex items-center gap-1 mt-3 hover:opacity-80 transition-opacity">
               <Icon name="add" size={14} /> Add Option
             </button>
           </div>
@@ -67,7 +67,7 @@ export default function CreatePollModal({ onClose, onConfirm }) {
           <button 
             onClick={handleCreate} 
             disabled={!question.trim() || options.filter(o => o.trim()).length < 2}
-            className="flex-1 py-3 rounded-xl bg-brand-cyan text-bg-dark font-bold text-sm hover:brightness-110 disabled:opacity-50 transition-all"
+            className="flex-1 py-3 rounded-xl bg-brand-violet text-white font-bold text-sm hover:brightness-110 disabled:opacity-50 transition-all"
           >
             Create Poll
           </button>

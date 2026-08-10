@@ -27,7 +27,8 @@ function tsMs(t) {
   return 0;
 }
 
-exports.cheatSignaturesHealthCron = onSchedule(
+const defer = (_opts, fn) => fn; // cron-consolidation shim (see index.js cronMonthly)
+exports.cheatSignaturesHealthCron = defer(
   { region: REGION, schedule: '0 6 1 * *', timeZone: 'UTC' },
   async () => {
     const snap = await db.collection('cheat_signatures').get();

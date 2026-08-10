@@ -10,6 +10,8 @@
 
 const functions = require('firebase-functions/v2');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
+// Cron-consolidation shim (see index.js cronMinute): exports raw handler, same cadence.
+const defer = (_opts, fn) => fn;
 const { onDocumentWritten } = require('firebase-functions/v2/firestore');
 const { defineSecret } = require('firebase-functions/params');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
@@ -64,7 +66,7 @@ exports.tournamentOfTheDayCron = onSchedule(
 // ─── Starting-soon push notifications ────────────────────────────────────
 // Every 1 min, find tournaments starting in 5-6 min and push to every
 // follower of each participant. De-duped per (uid, tournamentId).
-exports.startingSoonPushCron = onSchedule(
+exports.startingSoonPushCron = defer(
   { region: REGION, schedule: 'every 1 minutes', timeZone: 'UTC' },
   async () => {
     const now = Date.now();
@@ -139,7 +141,7 @@ exports.startingSoonPushCron = onSchedule(
 // set. Runs a single Gemini multimodal call asking for impossible-stat
 // heuristics. Stamps the match doc and notifies the assigned mod.
 exports.aiCheatFlagVod = onDocumentWritten(
-  { region: REGION, document: 'tournaments/{tId}/matches/{mId}',
+  { region: REGION, document: 'tournaments/{tId}/matches/{mId}', database: 'vgrdb',
     secrets: [GEMINI_POST_VIDEO_KEY] },
   async (event) => {
     const before = event.data?.before?.data();
@@ -150,7 +152,7 @@ exports.aiCheatFlagVod = onDocumentWritten(
     if (before && before.archiveVodUrl === after.archiveVodUrl && before.cheatFlagPass) return;
     try {
       const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${GEMINI_POST_VIDEO_KEY.value()}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${GEMINI_POST_VIDEO_KEY.value()}`,
         {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -214,7 +216,7 @@ exports.autoCutVodHighlights = onSchedule(
       if (!m.archiveVodUrl) continue;
       try {
         const res = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_POST_VIDEO_KEY.value()}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${GEMINI_POST_VIDEO_KEY.value()}`,
           {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -253,7 +255,7 @@ exports.autoCutVodHighlights = onSchedule(
 // Notification docs are written with pushable types (see index.js allowlist);
 // onNotificationCreated fans out the FCM push.
 exports.tournamentMatchFollowerPush = onDocumentWritten(
-  { region: REGION, document: 'tournaments/{tId}/matches/{mId}' },
+  { region: REGION, document: 'tournaments/{tId}/matches/{mId}', database: 'vgrdb' },
   async (event) => {
     const before = event.data?.before?.data();
     const after = event.data?.after?.data();

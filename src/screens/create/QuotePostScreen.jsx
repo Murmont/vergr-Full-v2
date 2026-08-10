@@ -57,7 +57,7 @@ export default function QuotePostScreen() {
 
   const remaining = MAX_CHARS - content.length;
   const pct = (content.length / MAX_CHARS) * 100;
-  const ringColor = remaining < 0 ? 'text-brand-ember' : remaining < 50 ? 'text-brand-gold' : 'text-brand-cyan';
+  const ringColor = remaining < 0 ? 'text-brand-ember' : remaining < 50 ? 'text-brand-gold' : 'text-brand-violet-light';
 
   return (
     <div className="min-h-screen flex flex-col bg-bg-dark">
@@ -79,7 +79,7 @@ export default function QuotePostScreen() {
               )}
             </div>
             <button onClick={handlePost} disabled={loading || !content.trim() || remaining < 0}
-              className="bg-brand-cyan text-bg-dark px-6 py-2 rounded-full font-bold text-sm disabled:opacity-30 hover:brightness-110 active:scale-[0.97] transition-all ">
+              className="bg-brand-violet text-white px-6 py-2 rounded-full font-bold text-sm disabled:opacity-30 hover:brightness-110 active:scale-[0.97] transition-all ">
               {loading ? <div className="w-4 h-4 border-2 border-bg-dark/30 border-t-bg-dark rounded-full animate-spin" /> : 'Post'}
             </button>
           </div>
@@ -94,7 +94,7 @@ export default function QuotePostScreen() {
             <UserAvatar src={profile?.avatar || profile?.photoURL} size={44} />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-brand-cyan text-xs font-dmmono mb-2">@{profile?.username || 'you'}</p>
+            <p className="text-brand-violet-light text-xs font-dmmono mb-2">@{profile?.username || 'you'}</p>
             <textarea
               autoFocus
               value={content}
@@ -109,7 +109,7 @@ export default function QuotePostScreen() {
         {/* Embedded original post preview */}
         {loadingPost ? (
           <div className="rounded-2xl border border-white/[0.06] bg-surface-1/50 p-6 flex justify-center">
-            <div className="w-5 h-5 border-2 border-surface-3 border-t-brand-cyan rounded-full animate-spin" />
+            <div className="w-5 h-5 border-2 border-surface-3 border-t-brand-violet rounded-full animate-spin" />
           </div>
         ) : originalPost ? (
           <div className="rounded-2xl border border-white/[0.06] bg-surface-1/30 p-4 ml-12">

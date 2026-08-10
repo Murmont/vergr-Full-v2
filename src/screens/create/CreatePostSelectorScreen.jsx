@@ -9,17 +9,17 @@ const POST_TYPES = [
   {
     id: 'short', title: 'Short', desc: 'Quick vertical video',
     icon: 'slow_motion_video', route: '/create/short',
-    gradient: 'from-brand-cyan/20 to-brand-violet/20',
-    border: 'border-brand-cyan/20 hover:border-brand-cyan/40',
-    iconBg: 'bg-brand-cyan/15', iconColor: 'text-brand-cyan',
+    gradient: 'from-brand-violet/20 to-brand-violet/20',
+    border: 'border-brand-violet/20 hover:border-brand-violet/40',
+    iconBg: 'bg-brand-violet/15', iconColor: 'text-brand-violet-light',
     badge: 'NEW',
   },
   {
     id: 'text', title: 'Text', desc: 'Quick thoughts & updates',
     icon: 'edit_note', route: '/create/text',
-    gradient: 'from-brand-cyan/10 to-transparent',
-    border: 'border-white/[0.06] hover:border-brand-cyan/30',
-    iconBg: 'bg-brand-cyan/10', iconColor: 'text-brand-cyan',
+    gradient: 'from-brand-violet/10 to-transparent',
+    border: 'border-white/[0.06] hover:border-brand-violet/30',
+    iconBg: 'bg-brand-violet/10', iconColor: 'text-brand-violet-light',
   },
   {
     id: 'photo', title: 'Photo', desc: 'Screenshots & carousel',
@@ -109,23 +109,23 @@ export default function CreatePostSelectorScreen() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3, ease: [0.25, 0.1, 0.25, 1] }}
           whileTap={{ scale: 0.98 }}
-          className="w-full relative overflow-hidden rounded-2xl border border-brand-cyan/20 bg-gradient-to-r from-brand-cyan/[0.08] via-brand-violet/[0.06] to-brand-cyan/[0.04] p-5 text-left group hover:border-brand-cyan/40 transition-all"
+          className="w-full relative overflow-hidden rounded-2xl border border-brand-violet/20 bg-gradient-to-r from-brand-violet/[0.08] via-brand-violet/[0.06] to-brand-violet/[0.04] p-5 text-left group hover:border-brand-violet/40 transition-all"
         >
           <div className="flex items-center gap-4">
-            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-brand-cyan/20 to-brand-violet/20 border border-white/[0.08] flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-              <Icon name="slow_motion_video" size={28} className="text-brand-cyan" />
+            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-brand-violet/20 to-brand-violet/20 border border-white/[0.08] flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+              <Icon name="slow_motion_video" size={28} className="text-brand-violet-light" />
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 mb-0.5">
                 <h3 className="font-syne font-bold text-white text-base">Create a Short</h3>
-                <span className="px-1.5 py-0.5 rounded-md bg-brand-cyan/15 text-brand-cyan text-[9px] font-black uppercase tracking-wider">New</span>
+                <span className="px-1.5 py-0.5 rounded-md bg-brand-violet/15 text-brand-violet-light text-[9px] font-black uppercase tracking-wider">New</span>
               </div>
               <p className="text-text-muted text-xs">Record or upload a vertical video clip · Auto-compressed for mobile</p>
             </div>
-            <Icon name="arrow_forward" size={20} className="text-text-muted group-hover:text-brand-cyan transition-colors shrink-0" />
+            <Icon name="arrow_forward" size={20} className="text-text-muted group-hover:text-brand-violet-light transition-colors shrink-0" />
           </div>
           {/* Decorative glow */}
-          <div className="absolute -top-12 -right-12 w-32 h-32 rounded-full bg-brand-cyan/[0.06] blur-2xl pointer-events-none" />
+          <div className="absolute -top-12 -right-12 w-32 h-32 rounded-full bg-brand-violet/[0.06] blur-2xl pointer-events-none" />
         </motion.button>
       </div>
 
@@ -147,7 +147,7 @@ export default function CreatePostSelectorScreen() {
             <h3 className="font-semibold text-text-primary text-sm tracking-tight mb-0.5">{type.title}</h3>
             <p className="text-text-muted text-[11px] leading-relaxed">{type.desc}</p>
             {type.badge && (
-              <span className="absolute top-3 right-3 px-1.5 py-0.5 rounded-md bg-brand-cyan/15 text-brand-cyan text-[8px] font-black uppercase">{type.badge}</span>
+              <span className="absolute top-3 right-3 px-1.5 py-0.5 rounded-md bg-brand-violet/15 text-brand-violet-light text-[8px] font-black uppercase">{type.badge}</span>
             )}
           </motion.button>
         ))}

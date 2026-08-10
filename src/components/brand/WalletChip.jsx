@@ -1,7 +1,7 @@
 // Wallet chip — VC coins or VP gems. Uses the brand PNG icons.
 // Size: "sm" (compact header chip) or "md" (stat tile).
 export default function WalletChip({ type = 'vc', amount = 0, size = 'sm', onClick }) {
-  const src = type === 'vp' ? '/brand/vp-gem.png' : '/brand/vc-coin.png';
+  const src = type === 'vp' ? '/brand/vp-gem.webp' : '/brand/vc-coin.webp';
   const label = type === 'vp' ? 'VP' : 'VC';
   const color = type === 'vp' ? 'text-brand-violet' : 'text-brand-gold';
   const ring = type === 'vp' ? 'ring-brand-violet/30' : 'ring-brand-gold/30';

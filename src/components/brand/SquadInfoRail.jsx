@@ -52,7 +52,7 @@ export default function SquadInfoRail({
       <div className="rounded-2xl bg-white/[0.03] border border-white/[0.05] p-3">
         <div className="flex items-center justify-between px-1 pb-2">
           <span className="text-[9px] font-dmmono uppercase tracking-[0.18em] text-text-muted">Members — {memberList.length}</span>
-          <span className="text-[9px] font-dmmono text-brand-cyan">{online} online</span>
+          <span className="text-[9px] font-dmmono text-brand-violet-light">{online} online</span>
         </div>
         <div className="space-y-0.5">
           {memberList.map(m => (
@@ -87,11 +87,11 @@ export default function SquadInfoRail({
         </div>
         <div className="flex items-center gap-3 mb-3">
           <div className="flex items-center gap-1.5">
-            <img src="/brand/vc-coin.png" alt="VC" className="w-6 h-6" />
+            <img src="/brand/vc-coin.webp" alt="VC" className="w-6 h-6" />
             <span className="font-dmmono font-bold text-brand-gold tabular-nums text-base">{treasury.vc.toLocaleString()}</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <img src="/brand/vp-gem.png" alt="VP" className="w-6 h-6" />
+            <img src="/brand/vp-gem.webp" alt="VP" className="w-6 h-6" />
             <span className="font-dmmono font-bold text-brand-violet tabular-nums text-base">{treasury.vp.toLocaleString()}</span>
           </div>
         </div>

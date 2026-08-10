@@ -2,9 +2,10 @@ import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db, auth } from '../../firebase/config';
-import { getUser } from '../../firebase/firestore';
+import { getUser, logCallEnd } from '../../firebase/firestore';
 import { createPeerConnection, createOffer, answerCall, endCallCleanup, getMediaStream } from '../../utils/webrtc';
 import Icon from '../../components/Icon';
+import { IS_NATIVE_BUILD, safeReload } from '../../utils/platform';
 import UserAvatar from '../../components/UserAvatar';
 
 export default function CallScreen() {
@@ -28,6 +29,12 @@ export default function CallScreen() {
   const remoteVideoRef = useRef(null);
   const timerRef = useRef(null);
   const cleanupRef = useRef(null);
+  // Call-history bookkeeping: call doc meta, whether it ever connected,
+  // elapsed seconds, and a one-shot guard so we log exactly once.
+  const callMetaRef = useRef(null);
+  const everActiveRef = useRef(false);
+  const elapsedRef = useRef(0);
+  const loggedRef = useRef(false);
 
   // Load other user's info
   useEffect(() => {
@@ -107,6 +114,7 @@ export default function CallScreen() {
     const unsub = onSnapshot(doc(db, 'calls', chatId), (snap) => {
       if (!snap.exists()) { handleEnd(); return; }
       const data = snap.data();
+      callMetaRef.current = data;
       if (data.status === 'ended') handleEnd();
       if (data.status === 'active' && status === 'ringing') setStatus('active');
     });
@@ -116,7 +124,8 @@ export default function CallScreen() {
   // Call timer
   useEffect(() => {
     if (status === 'active') {
-      timerRef.current = setInterval(() => setElapsed(e => e + 1), 1000);
+      everActiveRef.current = true;
+      timerRef.current = setInterval(() => setElapsed(e => { elapsedRef.current = e + 1; return e + 1; }), 1000);
     }
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [status]);
@@ -131,8 +140,26 @@ export default function CallScreen() {
   const handleEnd = async () => {
     if (timerRef.current) clearInterval(timerRef.current);
     if (cleanupRef.current) cleanupRef.current();
+    // Log to call history exactly once. Deterministic doc id (chatId +
+    // start ms) means the other side's write merges into the same entry.
+    if (!loggedRef.current) {
+      loggedRef.current = true;
+      const meta = callMetaRef.current;
+      const startedAtMs = meta?.createdAt?.toMillis?.() || (Date.now() - elapsedRef.current * 1000);
+      logCallEnd({
+        chatId,
+        callerId: meta?.callerId,
+        type: callType,
+        startedAtMs,
+        answered: everActiveRef.current,
+        durationSec: elapsedRef.current,
+      });
+    }
     await endCallCleanup(chatId, pcRef.current, localStreamRef.current);
-    navigate(-1);
+    // Always land back in Messages (not navigate(-1), which returned to whatever
+    // screen launched the call — squads/feed/etc). `replace` drops the dead call
+    // screen from history so Back doesn't return to it.
+    navigate('/messages', { replace: true });
   };
 
   const toggleMute = () => {
@@ -171,7 +198,7 @@ export default function CallScreen() {
                 <div className="text-center">
                   <UserAvatar src={otherUser?.avatar} size={96} />
                   <p className="text-white font-syne text-xl font-bold mt-4">{otherUser?.displayName || 'Connecting...'}</p>
-                  <p className="text-brand-cyan text-sm mt-2 animate-pulse">
+                  <p className="text-brand-violet-light text-sm mt-2 animate-pulse">
                     {status === 'ringing' ? 'Ringing...' : status === 'failed' ? 'Connection failed' : 'Connecting...'}
                   </p>
                 </div>
@@ -191,7 +218,8 @@ export default function CallScreen() {
           </div>
 
           {/* Top bar — fades with controls */}
-          <div className={`absolute top-0 left-0 right-0 px-5 pt-5 pb-12 bg-gradient-to-b from-black/70 to-transparent z-20 transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+          <div className={`absolute top-0 left-0 right-0 px-5 pt-5 pb-12 bg-gradient-to-b from-black/70 to-transparent z-20 transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+               style={IS_NATIVE_BUILD ? { paddingTop: 'calc(env(safe-area-inset-top, 0px) + 20px)' } : undefined}>
             <div className="flex items-center gap-3">
               <div className="w-2 h-2 rounded-full bg-green-500 " />
               <div className="flex-1">
@@ -209,13 +237,13 @@ export default function CallScreen() {
         <div className="flex-1 flex flex-col items-center justify-center px-8 relative">
           {/* Ambient background */}
           <div className="absolute inset-0 overflow-hidden">
-            <div className="absolute top-1/4 left-1/4 w-64 h-64 bg-brand-cyan/5 rounded-full blur-3xl" />
+            <div className="absolute top-1/4 left-1/4 w-64 h-64 bg-brand-violet/5 rounded-full blur-3xl" />
             <div className="absolute bottom-1/4 right-1/4 w-48 h-48 bg-brand-violet/5 rounded-full blur-3xl" />
           </div>
 
           {/* Encrypted badge */}
           <div className="absolute top-8 left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-3 py-1 rounded-full bg-surface-2/50 border border-white/[0.04]">
-            <Icon name="lock" size={10} className="text-brand-cyan" />
+            <Icon name="lock" size={10} className="text-brand-violet-light" />
             <span className="text-[9px] text-text-muted font-dmmono uppercase tracking-widest">P2P Encrypted</span>
           </div>
 
@@ -223,12 +251,12 @@ export default function CallScreen() {
           <div className="relative mb-8 z-10">
             {status === 'ringing' && (
               <>
-                <div className="absolute inset-0 w-40 h-40 -m-6 rounded-full border-2 border-brand-cyan/20 animate-ping" style={{ animationDuration: '2s' }} />
-                <div className="absolute inset-0 w-36 h-36 -m-4 rounded-full border border-brand-cyan/10 animate-ping" style={{ animationDuration: '3s' }} />
+                <div className="absolute inset-0 w-40 h-40 -m-6 rounded-full border-2 border-brand-violet/20 animate-ping" style={{ animationDuration: '2s' }} />
+                <div className="absolute inset-0 w-36 h-36 -m-4 rounded-full border border-brand-violet/10 animate-ping" style={{ animationDuration: '3s' }} />
               </>
             )}
             {status === 'active' && (
-              <div className="absolute inset-0 w-32 h-32 -m-2 rounded-full border-2 border-brand-cyan/30 animate-pulse" />
+              <div className="absolute inset-0 w-32 h-32 -m-2 rounded-full border-2 border-brand-violet/30 animate-pulse" />
             )}
             <UserAvatar src={otherUser?.avatar} size={112} />
           </div>
@@ -240,7 +268,7 @@ export default function CallScreen() {
           {status === 'active' ? (
             <div className="flex items-center gap-2 z-10">
               <div className="w-2 h-2 rounded-full bg-green-500 " />
-              <p className="text-brand-cyan text-lg font-dmmono font-bold">{formatTime(elapsed)}</p>
+              <p className="text-brand-violet-light text-lg font-dmmono font-bold">{formatTime(elapsed)}</p>
             </div>
           ) : (
             <p className={`text-sm z-10 ${status === 'failed' ? 'text-brand-ember' : 'text-text-muted animate-pulse'}`}>
@@ -281,8 +309,8 @@ export default function CallScreen() {
             {/* Speaker (audio calls only) */}
             {!isVideo && (
               <button onClick={() => setSpeakerOn(!speakerOn)}
-                className={`w-14 h-14 rounded-full flex items-center justify-center transition-all ${speakerOn ? 'bg-brand-cyan/20' : 'bg-surface-2/80 backdrop-blur'}`}>
-                <Icon name={speakerOn ? 'volume_up' : 'volume_down'} size={24} className={speakerOn ? 'text-brand-cyan' : 'text-white'} />
+                className={`w-14 h-14 rounded-full flex items-center justify-center transition-all ${speakerOn ? 'bg-brand-violet/20' : 'bg-surface-2/80 backdrop-blur'}`}>
+                <Icon name={speakerOn ? 'volume_up' : 'volume_down'} size={24} className={speakerOn ? 'text-brand-violet-light' : 'text-white'} />
               </button>
             )}
 
@@ -299,7 +327,7 @@ export default function CallScreen() {
       {/* Failed state — retry button */}
       {status === 'failed' && (
         <div className="absolute bottom-32 left-1/2 -translate-x-1/2 z-30">
-          <button onClick={() => window.location.reload()} className="px-6 py-3 rounded-full bg-brand-cyan text-bg-dark font-bold text-sm flex items-center gap-2">
+          <button onClick={() => safeReload()} className="px-6 py-3 rounded-full bg-brand-violet text-bg-dark font-bold text-sm flex items-center gap-2">
             <Icon name="refresh" size={18} /> Retry
           </button>
         </div>

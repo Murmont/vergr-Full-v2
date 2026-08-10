@@ -8,7 +8,7 @@ export default function LevelUpCelebration({ show = false, level = 1, tierName =
     Platinum: '#E5E4E2',
     Diamond: '#B9F2FF',
   };
-  const color = tierColors[tierName] || '#4DFFD4';
+  const color = tierColors[tierName] || '#B44FFF';
 
   return (
     <AnimatePresence>

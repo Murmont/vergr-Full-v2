@@ -132,7 +132,7 @@ export default function EmbedVideoPlayer({ videoId, videoUrl, platform, thumbnai
           <div className="absolute inset-0 bg-black/40" />
           {/* Play button */}
           <div className="absolute inset-0 flex items-center justify-center">
-            <button className="w-16 h-16 rounded-full bg-brand-cyan/90 flex items-center justify-center shadow-lg shadow-brand-cyan/30 hover:bg-brand-cyan hover:scale-105 transition-all">
+            <button className="w-16 h-16 rounded-full bg-brand-violet/90 flex items-center justify-center shadow-lg shadow-brand-violet/30 hover:bg-brand-violet hover:scale-105 transition-all">
               <Icon name="play_arrow" size={36} className="text-bg-dark ml-1" />
             </button>
           </div>

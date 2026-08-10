@@ -35,7 +35,7 @@ export default function AppHeader({ title, subtitle, actions, showSearch = true 
       {actions}
 
       {showSearch && (
-        <div className="hidden md:flex items-center gap-2 w-64 px-3 py-2 rounded-xl bg-white/[0.04] border border-white/[0.06] focus-within:border-brand-cyan/40 transition-colors">
+        <div className="hidden md:flex items-center gap-2 w-64 px-3 py-2 rounded-xl bg-white/[0.04] border border-white/[0.06] focus-within:border-brand-violet/40 transition-colors">
           <Icon name="search" size={16} className="text-text-muted" />
           <input
             type="text"

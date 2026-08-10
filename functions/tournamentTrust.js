@@ -157,7 +157,7 @@ exports.enrollOrCheckFingerprint = functions.https.onCall({ region: REGION }, as
 //   uidA, uidB, matches, lastMetAt, wins: { [uid]: count }
 // }
 exports.recordRivalryOnMatchComplete = onDocumentWritten(
-  { region: REGION, document: 'tournaments/{tId}/matches/{mId}' },
+  { region: REGION, document: 'tournaments/{tId}/matches/{mId}', database: 'vgrdb' },
   async (event) => {
     const before = event.data?.before?.data();
     const after  = event.data?.after?.data();
@@ -262,7 +262,7 @@ async function runGeminiVodSummary({ vodUrl, lobbyCode, players, apiKey }) {
   }
   try {
     const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${apiKey}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -315,7 +315,11 @@ exports.routeSportsmanshipBonus = functions.https.onCall({ region: REGION }, asy
       throw new functions.https.HttpsError('failed-precondition', 'Insufficient balance.');
     }
     tx.update(wRef, { balance: FieldValue.increment(-prizePerWinner) });
-    tx.update(rRef, { balance: FieldValue.increment(prizePerWinner) });
+    // convertible: a prize is received value, so it may convert to gems — see coinLedger.js
+    tx.update(rRef, {
+      balance: FieldValue.increment(prizePerWinner),
+      earnedBalance: FieldValue.increment(prizePerWinner),
+    });
     tx.update(mRef, {
       sportsmanshipSentAt: FieldValue.serverTimestamp(),
       sportsmanshipAmount: prizePerWinner,

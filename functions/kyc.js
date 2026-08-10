@@ -196,7 +196,8 @@ async function purgeKycForUser(uid) {
 exports.purgeKycForUser = purgeKycForUser;
 
 // ── Scheduled retention enforcement (belt-and-braces TTL backup) ───────
-exports.scheduledKycRetention = functions.scheduler.onSchedule('0 3 * * *', async () => {
+const defer = (_opts, fn) => fn; // cron-consolidation shim (see index.js cronDaily)
+exports.scheduledKycRetention = defer('0 3 * * *', async () => {
   const cutoff = admin.firestore.Timestamp.fromDate(new Date(Date.now() - 90 * 86400 * 1000));
   const snap = await db.collection('verification_applications')
     .where('status', 'in', ['approved', 'rejected'])

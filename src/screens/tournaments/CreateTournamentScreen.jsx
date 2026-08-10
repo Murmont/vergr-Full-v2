@@ -416,13 +416,13 @@ export default function CreateTournamentScreen() {
                     onClick={() => s.id < step && setStep(s.id)}
                     className={`flex items-center gap-2 px-3 py-2 rounded-xl flex-1 border transition-colors ${
                       active ? 'border-brand-violet bg-brand-violet/10' :
-                      done   ? 'border-brand-cyan/30 bg-brand-cyan/5 hover:bg-brand-cyan/10' :
+                      done   ? 'border-brand-violet/30 bg-brand-violet/5 hover:bg-brand-violet/10' :
                                'border-white/[0.06] bg-white/[0.03] opacity-60'
                     }`}
                   >
                     <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-dmmono font-bold ${
                       active ? 'bg-brand-violet text-white' :
-                      done   ? 'bg-brand-cyan text-bg-dark' :
+                      done   ? 'bg-brand-violet text-white' :
                                'bg-white/[0.06] text-text-muted'
                     }`}>
                       {done ? <Icon name="check" size={14}/> : s.id}
@@ -462,7 +462,7 @@ export default function CreateTournamentScreen() {
                             soon
                               ? 'bg-brand-ember/5 border border-brand-ember/50 text-brand-ember/80 cursor-not-allowed'
                               : selected
-                                ? 'bg-brand-cyan/15 border border-brand-cyan/40 text-brand-cyan'
+                                ? 'bg-brand-violet/15 border border-brand-violet/40 text-brand-violet-light'
                                 : 'bg-white/[0.04] border border-white/[0.06] text-text-muted hover:text-text-secondary'
                           }`}>
                           <span>{g}</span>
@@ -539,15 +539,15 @@ export default function CreateTournamentScreen() {
                   </div>
                   {visibility === 'private' && (
                     <button onClick={() => setShowInviteModal(true)}
-                      className="mt-3 w-full p-3 rounded-xl border border-brand-cyan/30 bg-brand-cyan/5 flex items-center gap-3">
-                      <Icon name="group_add" size={18} className="text-brand-cyan" />
+                      className="mt-3 w-full p-3 rounded-xl border border-brand-violet/30 bg-brand-violet/5 flex items-center gap-3">
+                      <Icon name="group_add" size={18} className="text-brand-violet-light" />
                       <div className="flex-1 text-left">
                         <p className="text-text-primary text-sm font-bold">Invite Players</p>
                         <p className="text-text-muted text-[11px]">
                           {invitedUsers.length === 0 ? 'No invites yet — open to add' : `${invitedUsers.length} invited`}
                         </p>
                       </div>
-                      <span className="text-brand-cyan text-xs font-bold">{invitedUsers.length === 0 ? 'Open' : 'Edit'}</span>
+                      <span className="text-brand-violet-light text-xs font-bold">{invitedUsers.length === 0 ? 'Open' : 'Edit'}</span>
                     </button>
                   )}
                 </Field>
@@ -590,7 +590,7 @@ export default function CreateTournamentScreen() {
                                 <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-brand-gold/15 text-brand-gold">{t.minPlan}</span>
                               )}
                               {!supplyOk && (
-                                <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-brand-cyan/15 text-brand-cyan">
+                                <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-brand-violet/15 text-brand-violet-light">
                                   Unlocks at {minSquadsNeeded} squads
                                 </span>
                               )}
@@ -601,7 +601,7 @@ export default function CreateTournamentScreen() {
                             <p className="text-text-muted text-[11px] mt-0.5">
                               {t.description}
                               {!supplyOk && (
-                                <span className="block mt-1 text-brand-cyan/80">
+                                <span className="block mt-1 text-brand-violet-light/80">
                                   Only {eligibleSquadCount ?? 0} eligible squads on the platform — needs {minSquadsNeeded}+.
                                 </span>
                               )}
@@ -727,7 +727,7 @@ export default function CreateTournamentScreen() {
                         <button key={opt.id} onClick={() => setSeedingMode(opt.id)}
                           className={`flex-1 py-2.5 px-2 rounded-lg text-left transition-all ${
                             seedingMode === opt.id
-                              ? 'bg-brand-cyan/15 border border-brand-cyan/40 text-brand-cyan'
+                              ? 'bg-brand-violet/15 border border-brand-violet/40 text-brand-violet-light'
                               : 'bg-white/[0.04] border border-white/[0.06] text-text-muted'
                           }`}>
                           <div className="text-sm font-bold">{opt.label}</div>
@@ -806,14 +806,14 @@ export default function CreateTournamentScreen() {
                     {squads.length === 0 ? (
                       <div className="p-4 rounded-xl bg-white/[0.03] border border-white/[0.06] text-center">
                         <p className="text-text-muted text-sm mb-2">You need to be in a squad to host a squad tournament</p>
-                        <button onClick={() => navigate('/squads')} className="text-brand-cyan text-sm font-bold">Browse Squads</button>
+                        <button onClick={() => navigate('/squads')} className="text-brand-violet-light text-sm font-bold">Browse Squads</button>
                       </div>
                     ) : (
                       <div className="space-y-2">
                         {squads.map(s => (
                           <button key={s.id} onClick={() => setSquadId(s.id)}
                             className={`w-full p-3.5 rounded-xl border text-left transition-all flex items-center gap-3 ${
-                              squadId === s.id ? 'border-brand-cyan bg-brand-cyan/5' : 'border-white/[0.06] bg-white/[0.03] hover:border-white/10'
+                              squadId === s.id ? 'border-brand-violet bg-brand-violet/5' : 'border-white/[0.06] bg-white/[0.03] hover:border-white/10'
                             }`}>
                             <div className="w-10 h-10 rounded-xl bg-white/[0.04] border border-white/[0.06] flex items-center justify-center text-text-muted">
                               <Icon name="shield" size={18} />
@@ -822,7 +822,7 @@ export default function CreateTournamentScreen() {
                               <p className="text-text-primary text-sm font-bold">{s.name}</p>
                               <p className="text-text-muted text-[10px]">{s.memberCount || 0} members</p>
                             </div>
-                            {squadId === s.id && <Icon name="check_circle" size={20} className="text-brand-cyan" />}
+                            {squadId === s.id && <Icon name="check_circle" size={20} className="text-brand-violet-light" />}
                           </button>
                         ))}
                       </div>
@@ -864,13 +864,13 @@ export default function CreateTournamentScreen() {
                   chance-based mechanics. Entry fees are pooled into a prize
                   fund and paid to winners; VERGR retains a 5% organizing fee.{' '}
                   <a href="#/learn/tournament-rules" target="_blank" rel="noopener noreferrer"
-                     className="text-brand-cyan hover:underline">Read the Tournament Rules</a>.
+                     className="text-brand-violet-light hover:underline">Read the Tournament Rules</a>.
                 </p>
                 <button type="button"
                   onClick={() => setAgreedToSkillTerms(v => !v)}
                   className="flex items-start gap-2.5 text-left">
                   <span className={`mt-0.5 w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
-                    agreedToSkillTerms ? 'bg-brand-cyan border-brand-cyan' : 'border-white/[0.15] bg-surface-2'
+                    agreedToSkillTerms ? 'bg-brand-violet border-brand-violet' : 'border-white/[0.15] bg-surface-2'
                   }`}>
                     {agreedToSkillTerms && <Icon name="check" size={14} className="text-bg-dark" />}
                   </span>
@@ -907,7 +907,7 @@ export default function CreateTournamentScreen() {
         {/* Right rail */}
         <AppRightRail>
           <div className="rounded-2xl bg-white/[0.03] border border-white/[0.06] overflow-hidden">
-            <div className="h-20 bg-gradient-to-br from-brand-violet/40 via-brand-pink/20 to-brand-cyan/20 flex items-center justify-center">
+            <div className="h-20 bg-gradient-to-br from-brand-violet/40 via-brand-pink/20 to-brand-violet/20 flex items-center justify-center">
               <Icon name="emoji_events" size={36} className="text-white/80" />
             </div>
             <div className="p-4 space-y-2">
@@ -925,7 +925,7 @@ export default function CreateTournamentScreen() {
 
           <div className="rounded-2xl bg-white/[0.03] border border-white/[0.06] p-4">
             <div className="flex items-center gap-2 mb-2">
-              <Icon name="help" size={16} className="text-brand-cyan" />
+              <Icon name="help" size={16} className="text-brand-violet-light" />
               <div className="text-[10px] font-dmmono uppercase tracking-[0.14em] text-text-muted">Need Help?</div>
             </div>
             <p className="text-text-secondary text-[12px] leading-snug mb-3">
@@ -947,7 +947,7 @@ export default function CreateTournamentScreen() {
               <ul className="space-y-1.5">
                 {RULES_CHECKLIST.map((r, i) => (
                   <li key={i} className="flex items-start gap-2 text-[12px] text-text-secondary">
-                    <Icon name="check_circle" size={14} className="text-brand-cyan mt-0.5 shrink-0" />
+                    <Icon name="check_circle" size={14} className="text-brand-violet-light mt-0.5 shrink-0" />
                     <span>{r}</span>
                   </li>
                 ))}
@@ -987,7 +987,7 @@ export default function CreateTournamentScreen() {
           font-size: 14px;
           outline: none;
         }
-        .input:focus { border-color: rgba(77,255,212,0.4); }
+        .input:focus { border-color: rgba(180,79,255,0.4); }
         .input::placeholder { color: rgba(255,255,255,0.35); }
       `}</style>
     </div>
@@ -1014,7 +1014,7 @@ function BannerPicker({ game, bannerUrl, setBannerUrl, uploading, onFile }) {
           <div className="grid grid-cols-3 gap-2">
             {presets.map((src, i) => (
               <button key={i} onClick={() => setBannerUrl(src)}
-                className={`rounded-lg overflow-hidden border ${bannerUrl === src ? 'border-brand-cyan ring-2 ring-brand-cyan/40' : 'border-white/[0.08]'}`}
+                className={`rounded-lg overflow-hidden border ${bannerUrl === src ? 'border-brand-violet ring-2 ring-brand-violet/40' : 'border-white/[0.08]'}`}
                 style={{ aspectRatio: '3 / 1' }}>
                 <img src={src} alt="" className="w-full h-full object-cover"
                   onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.parentElement.style.background = 'linear-gradient(135deg,#7B6FFF22,#C87FFF22)'; }} />
@@ -1261,7 +1261,7 @@ function MobileWizard(props) {
                   <button key={g} onClick={() => props.pickGame(g)}
                     className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 ${
                       soon ? 'bg-brand-ember/5 border border-brand-ember/50 text-brand-ember/80'
-                      : selected ? 'bg-brand-cyan/15 border border-brand-cyan/40 text-brand-cyan'
+                      : selected ? 'bg-brand-violet/15 border border-brand-violet/40 text-brand-violet-light'
                       : 'bg-white/[0.04] border border-white/[0.06] text-text-muted'
                     }`}>
                     <span>{g}</span>
@@ -1321,8 +1321,8 @@ function MobileWizard(props) {
             </div>
             {props.visibility === 'private' && (
               <button onClick={() => props.setShowInviteModal(true)}
-                className="mt-3 w-full p-3 rounded-xl border border-brand-cyan/30 bg-brand-cyan/5 flex items-center gap-2">
-                <Icon name="group_add" size={16} className="text-brand-cyan" />
+                className="mt-3 w-full p-3 rounded-xl border border-brand-violet/30 bg-brand-violet/5 flex items-center gap-2">
+                <Icon name="group_add" size={16} className="text-brand-violet-light" />
                 <span className="flex-1 text-left text-text-primary text-xs font-bold">
                   {props.invitedUsers.length === 0 ? 'Invite Players' : `${props.invitedUsers.length} invited — edit`}
                 </span>
@@ -1356,7 +1356,7 @@ function MobileWizard(props) {
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <p className="text-text-primary text-sm font-bold">{t.label}</p>
                         {!supplyOk && (
-                          <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-brand-cyan/15 text-brand-cyan">
+                          <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-brand-violet/15 text-brand-violet-light">
                             Unlocks at {minSquadsNeeded} squads
                           </span>
                         )}
@@ -1457,7 +1457,7 @@ function MobileWizard(props) {
                   <button key={opt.id} onClick={() => setSeedingMode(opt.id)}
                     className={`flex-1 py-2.5 rounded-lg text-sm font-bold ${
                       seedingMode === opt.id
-                        ? 'bg-brand-cyan/15 border border-brand-cyan/40 text-brand-cyan'
+                        ? 'bg-brand-violet/15 border border-brand-violet/40 text-brand-violet-light'
                         : 'bg-white/[0.04] border border-white/[0.06] text-text-muted'
                     }`}>{opt.label}</button>
                 ))}
@@ -1515,7 +1515,7 @@ function MobileWizard(props) {
                   {squads.map(s => (
                     <button key={s.id} onClick={() => setSquadId(s.id)}
                       className={`w-full p-3 rounded-xl border flex items-center gap-3 ${
-                        squadId === s.id ? 'border-brand-cyan bg-brand-cyan/5' : 'border-white/[0.06] bg-white/[0.03]'
+                        squadId === s.id ? 'border-brand-violet bg-brand-violet/5' : 'border-white/[0.06] bg-white/[0.03]'
                       }`}>
                       <Icon name="shield" size={16} className="text-text-muted" />
                       <p className="flex-1 text-left text-text-primary text-sm font-bold">{s.name}</p>
@@ -1556,7 +1556,7 @@ function MobileWizard(props) {
 
       <style>{`
         .input { width:100%; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.06); border-radius:12px; padding:12px 14px; color:#fff; font-size:14px; outline:none; }
-        .input:focus { border-color:rgba(77,255,212,0.4); }
+        .input:focus { border-color:rgba(180,79,255,0.4); }
         .input::placeholder { color:rgba(255,255,255,0.35); }
       `}</style>
     </div>

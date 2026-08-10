@@ -32,12 +32,10 @@ import TrustBadge from '../../components/tournament/TrustBadge';
 import DisputeTimeline from '../../components/tournament/DisputeTimeline';
 import MatchCardShare from '../../components/tournament/MatchCardShare';
 import {
-  WarmupLobby, DoubleOrNothingButton, DoubleOrNothingPrompt,
-  ReplayOnDemandButton, SchedulingDmButton,
+  WarmupLobby, ReplayOnDemandButton, SchedulingDmButton,
   RescheduleControls, DisputeEvidenceUpload, AppealReviewButton, FollowMatchButton,
   ReportOpponentButton, ModThankYou, MatchChat,
 } from '../../components/tournament/MatchFlowExtras';
-import { SpectatorBetPanel, TipUnderdogButton } from '../../components/tournament/SpectatorPanels';
 import { isTauri, openHud, closeHud, scanProcesses, emitHudMatch, emitHudClear } from '../../utils/tauriHud';
 import AntiCheatConsentModal, { SCAN_SCOPE_VERSION } from '../../components/tournament/AntiCheatConsentModal';
 import TwoCameraProofRecorder from '../../components/tournament/TwoCameraProofRecorder';
@@ -46,6 +44,7 @@ import HighStakesProofExplainerModal from '../../components/tournament/HighStake
 import CheatFlagShareList from '../../components/tournament/CheatFlagShareList';
 import NextMatchHint from '../../components/tournament/NextMatchHint';
 import { MatchClaimButton, AiSuggestionBanner, BackupChampionsRow } from '../../components/tournament/MatchClaimAndAi';
+import AutoResultWatcher from '../../components/tournament/AutoResultWatcher';
 import SeriesScoreboard from '../../components/tournament/SeriesScoreboard';
 import { motion, AnimatePresence } from 'framer-motion';
 import { isVanguard } from '../../utils/vanguard';
@@ -57,7 +56,7 @@ const C = {
   border: 'rgba(255,255,255,0.10)',
   text: '#fff', dim: 'rgba(255,255,255,0.65)', mute: 'rgba(255,255,255,0.45)',
   gold: '#F0A500', goldLight: '#F5C842',
-  green: '#22c55e', red: '#ef4444', amber: '#f59e0b', cyan: '#4DFFD4',
+  green: '#22c55e', red: '#ef4444', amber: '#f59e0b', cyan: '#B44FFF',
 };
 
 // Per-verifyMethod risk warning. Some games TOS-prohibit changing the
@@ -463,6 +462,18 @@ export default function TournamentMatchScreen() {
           </div>
         )}
 
+        {/* Phase 2 — automatic result detection. The player picks their game
+            window once: the lobby code on their own screen auto-verifies them,
+            and the end screen auto-records the result. Required on paid
+            entries (manual report buttons are hidden there). */}
+        {iAmPlayer && match.status !== 'completed' && match.status !== 'cancelled' && (
+          <AutoResultWatcher
+            tournamentId={tournamentId} matchId={matchId}
+            match={match} myUid={myUid}
+            required={(tournament?.entryFee || 0) > 0}
+          />
+        )}
+
         {/* My verification row */}
         {iAmPlayer && !bothVerified && (
           <div style={{ padding: 14, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14 }}>
@@ -470,17 +481,20 @@ export default function TournamentMatchScreen() {
               Your verification: <strong style={{ color: statusColor(myState.status) }}>{statusText(myState.status)}</strong>
               {myState.source && <span style={{ color: C.mute }}> · via {myState.source}</span>}
             </div>
-            <button onClick={handleSelfAttest} disabled={busy || myState.status === 'verified'}
+            <button onClick={handleSelfAttest}
+              disabled={busy || myState.status === 'verified' || myState.status === 'self_attested'}
               style={{ width: '100%', padding: 12, borderRadius: 10, border: 'none',
-                background: myState.status === 'verified'
+                background: (myState.status === 'verified' || myState.status === 'self_attested')
                   ? C.green
                   : `linear-gradient(135deg, ${C.gold}, ${C.goldLight})`,
                 color: '#000', fontSize: 14, fontWeight: 900, cursor: 'pointer',
                 opacity: busy ? 0.6 : 1 }}>
-              {myState.status === 'verified' ? "You're verified" : "I've displayed the code"}
+              {myState.status === 'verified' ? "You're verified"
+                : myState.status === 'self_attested' ? "You're checked in — waiting on opponent"
+                : "I've displayed the code"}
             </button>
             <div style={{ fontSize: 10, color: C.mute, marginTop: 8, lineHeight: 1.5 }}>
-              Lower-trust than OCR/mod. A Vanguard mod or OCR signal must still confirm.
+              The match goes live once both sides check in. Streaming on VERGR upgrades you to OCR-verified automatically.
             </div>
           </div>
         )}
@@ -498,23 +512,52 @@ export default function TournamentMatchScreen() {
           />
         )}
 
-        {/* Both-verified play CTAs — Bo1 only (Bo3/Bo5 uses SeriesScoreboard above). */}
-        {iAmPlayer && bothVerified && match.status !== 'completed'
+        {/* Result claimed — confirm/contest banner with the auto-confirm
+            countdown. Silence past the deadline accepts the claimed result
+            (the autoConfirmMatchResults cron records it), so the opponent
+            always knows the clock is running. */}
+        {iAmPlayer && match.status === 'awaiting_confirmation' && (
+          <ConfirmResultBanner
+            match={match} myUid={myUid}
+            p1={p1} p2={p2}
+            busy={busy}
+            onConfirm={() => handleReport(match.firstReportedWinner)}
+            onContest={() => handleReport(
+              match.firstReportedWinner === match.player1 ? match.player2 : match.player1,
+            )}
+          />
+        )}
+
+        {/* Both-verified play CTAs — Bo1 only (Bo3/Bo5 uses SeriesScoreboard
+            above). PAID events hide the manual buttons entirely: the result
+            engine reads the end screen; the confirm banner handles the rest. */}
+        {iAmPlayer && bothVerified && match.status !== 'completed' && match.status !== 'awaiting_confirmation'
           && (!match.seriesFormat || match.seriesFormat === 'bo1') && (
-          <div style={{ padding: 14, background: C.surface, border: `1px solid ${C.green}55`, borderRadius: 14 }}>
-            <div style={{ fontSize: 13, fontWeight: 800, color: C.green, marginBottom: 4 }}>
-              Both sides verified. Play your match.
+          (tournament?.entryFee || 0) > 0 ? (
+            <div style={{ padding: 14, background: C.surface, border: `1px solid ${C.green}55`, borderRadius: 14 }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: C.green, marginBottom: 4 }}>
+                Both sides verified. Play your match.
+              </div>
+              <div style={{ fontSize: 12, color: C.dim }}>
+                Keep auto-detection running — the result records itself from your end screen. No reporting needed.
+              </div>
             </div>
-            <div style={{ fontSize: 12, color: C.dim, marginBottom: 12 }}>
-              After it ends, report who won.
+          ) : (
+            <div style={{ padding: 14, background: C.surface, border: `1px solid ${C.green}55`, borderRadius: 14 }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: C.green, marginBottom: 4 }}>
+                Both sides verified. Play your match.
+              </div>
+              <div style={{ fontSize: 12, color: C.dim, marginBottom: 12 }}>
+                Auto-detection records the result for you; you can also report it manually.
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={() => handleReport(myUid)} disabled={busy}
+                  style={ctaPrimary}>I won</button>
+                <button onClick={() => handleReport(opponentUid)} disabled={busy}
+                  style={ctaSecondary}>They won</button>
+              </div>
             </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button onClick={() => handleReport(myUid)} disabled={busy}
-                style={ctaPrimary}>I won</button>
-              <button onClick={() => handleReport(opponentUid)} disabled={busy}
-                style={ctaSecondary}>They won</button>
-            </div>
-          </div>
+          )
         )}
 
         {/* Match completed */}
@@ -571,17 +614,6 @@ export default function TournamentMatchScreen() {
                 />
               </div>
             )}
-            {/* GR6 — coaching CTA for the player who lost. */}
-            {iAmPlayer && match.winner && match.winner !== myUid && (
-              <button
-                onClick={() => navigate(`/coaching?game=${encodeURIComponent(tournament?.game || '')}`)}
-                className="mt-3 w-full p-3 rounded-xl bg-brand-violet/10 border border-brand-violet/30 flex items-center gap-3 hover:bg-brand-violet/20 transition-colors"
-              >
-                <Icon name="school" size={18} className="text-brand-violet-light" />
-                <span className="flex-1 text-left text-sm font-bold text-brand-violet-light">Want pro coaching for {tournament?.game || 'this game'}?</span>
-                <Icon name="chevron_right" size={18} className="text-text-muted" />
-              </button>
-            )}
           </div>
         )}
 
@@ -621,37 +653,14 @@ export default function TournamentMatchScreen() {
           />
         )}
 
-        {/* Double-or-nothing: prompt to winner, button for loser */}
-        {iAmPlayer && match.status === 'completed' && match.winner === myUid
-          && match.doubleOrNothing?.status === 'pending' && (
-          <DoubleOrNothingPrompt
-            tournamentId={tournamentId} matchId={matchId}
-            cost={match.doubleOrNothing.cost}
-            onResolved={() => {}}
-          />
-        )}
-        {iAmPlayer && match.status === 'completed' && match.winner === opponentUid
-          && !match.doubleOrNothing && (
-          <DoubleOrNothingButton tournamentId={tournamentId} matchId={matchId} />
-        )}
-
-        {/* Spectator view — non-player sees follow + betting + tip-underdog */}
+        {/* Spectator view — non-player sees the follow-match control */}
         {!iAmPlayer && match.status !== 'completed' && (
-          <>
-            <div style={{ display: 'flex', justifyContent: 'center' }}>
-              <FollowMatchButton
-                tournamentId={tournamentId} matchId={matchId}
-                match={match} myUid={myUid}
-              />
-            </div>
-            <SpectatorBetPanel tournamentId={tournamentId} matchId={matchId} />
-            <div style={{ display: 'flex', justifyContent: 'center' }}>
-              <TipUnderdogButton
-                tournamentId={tournamentId} matchId={matchId}
-                underdogUid={match.player2} underdogUsername={p2?.username}
-              />
-            </div>
-          </>
+          <div style={{ display: 'flex', justifyContent: 'center' }}>
+            <FollowMatchButton
+              tournamentId={tournamentId} matchId={matchId}
+              match={match} myUid={myUid}
+            />
+          </div>
         )}
 
         {match.status === 'disputed' && iAmPlayer && (
@@ -790,6 +799,65 @@ function PlayerCell({ user, state, side }) {
 
       <TrustBadge uid={user?.id} size="sm" showLabel={false} />
     </div>
+  );
+}
+
+// Result-claimed banner. Non-reporter: big Confirm / Contest CTAs + live
+// countdown to the auto-confirm deadline. Reporter: "waiting on opponent"
+// with the same countdown so they know exactly when the win locks in.
+function ConfirmResultBanner({ match, myUid, p1, p2, busy, onConfirm, onContest }) {
+  const [, forceTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => forceTick((n) => n + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
+  const deadline = Number(match.confirmDeadlineMs) || 0;
+  const remainMs = Math.max(0, deadline - Date.now());
+  const mm = Math.floor(remainMs / 60000);
+  const ss = String(Math.floor((remainMs % 60000) / 1000)).padStart(2, '0');
+  const iAmReporter = match.firstReporter === myUid;
+  const claimedName = match.firstReportedWinner === match.player1 ? p1?.username : p2?.username;
+  const claimedIsMe = match.firstReportedWinner === myUid;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+      style={{ padding: 16, background: `linear-gradient(135deg, ${C.gold}14, ${C.surface})`,
+        border: `1px solid ${C.gold}66`, borderRadius: 14 }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <Icon name="sports_score" size={18} style={{ color: C.gold }} />
+        <div style={{ flex: 1, fontSize: 13, fontWeight: 800, color: C.text }}>
+          {iAmReporter
+            ? 'Result reported — waiting on your opponent'
+            : `Result claimed: ${claimedName || 'opponent'} won`}
+        </div>
+        {deadline > 0 && (
+          <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, fontWeight: 900,
+            color: remainMs < 30_000 ? C.amber : C.gold, padding: '3px 9px',
+            border: `1px solid ${C.gold}55`, borderRadius: 8 }}>
+            {mm}:{ss}
+          </div>
+        )}
+      </div>
+      <div style={{ fontSize: 11, color: C.dim, marginTop: 6, lineHeight: 1.5 }}>
+        {iAmReporter
+          ? 'If they don\'t respond before the timer ends, your reported result is recorded automatically.'
+          : claimedIsMe
+            ? 'Your opponent says YOU won. Confirm to lock it in now, or it confirms automatically when the timer ends.'
+            : 'Confirm if that\'s right. Contest if it isn\'t — a moderator will resolve it. No response = the claimed result stands.'}
+      </div>
+      {!iAmReporter && (
+        <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+          <button onClick={onConfirm} disabled={busy} style={{ ...ctaPrimary, background: C.green, opacity: busy ? 0.6 : 1 }}>
+            Confirm result
+          </button>
+          <button onClick={onContest} disabled={busy} style={{ ...ctaSecondary, borderColor: `${C.red}66`, color: C.red, opacity: busy ? 0.6 : 1 }}>
+            Contest
+          </button>
+        </div>
+      )}
+    </motion.div>
   );
 }
 

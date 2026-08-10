@@ -35,6 +35,7 @@ import {
   loadTesseract, loadFaceApi, loadFaceMesh, runOcr, crossCheckOcr,
 } from '../../utils/kycLoaders';
 import { analyzeLandmarks, createLivenessController } from '../../utils/kycLiveness';
+import { safeReload } from '../../utils/platform';
 
 const COUNTRIES = ['US','CA','GB','IE','DE','FR','ES','IT','NL','SE','NO','DK','FI','PL','PT','AU','NZ','JP','KR','SG','BR','MX','AR','ZA','AE','IN','Other'];
 const ID_TYPES = [
@@ -187,8 +188,8 @@ export default function KycWizard({ onComplete }) {
 
       <div className="bg-surface-1 border border-white/[0.06] rounded-2xl p-6">
         <div className="flex items-center gap-3 mb-5">
-          <div className="w-9 h-9 rounded-xl bg-brand-cyan/10 flex items-center justify-center">
-            <Icon name={STEPS[step].icon} size={18} className="text-brand-cyan" />
+          <div className="w-9 h-9 rounded-xl bg-brand-violet/10 flex items-center justify-center">
+            <Icon name={STEPS[step].icon} size={18} className="text-brand-violet-light" />
           </div>
           <div>
             <h2 className="font-syne font-bold text-white text-lg">{STEPS[step].title}</h2>
@@ -216,12 +217,12 @@ export default function KycWizard({ onComplete }) {
         )}
         {step < STEPS.length - 1 ? (
           <button onClick={goNext} disabled={!canAdvance}
-            className={`flex-1 py-3 rounded-xl font-bold text-sm transition-all ${canAdvance ? 'bg-brand-cyan text-bg-dark hover:brightness-110' : 'bg-surface-2 text-text-muted cursor-not-allowed'}`}>
+            className={`flex-1 py-3 rounded-xl font-bold text-sm transition-all ${canAdvance ? 'bg-brand-violet text-white hover:brightness-110' : 'bg-surface-2 text-text-muted cursor-not-allowed'}`}>
             Continue
           </button>
         ) : (
           <button onClick={submit} disabled={!canAdvance || submitting}
-            className={`flex-1 py-3 rounded-xl font-bold text-sm transition-all ${canAdvance && !submitting ? 'bg-brand-cyan text-bg-dark hover:brightness-110' : 'bg-surface-2 text-text-muted cursor-not-allowed'}`}>
+            className={`flex-1 py-3 rounded-xl font-bold text-sm transition-all ${canAdvance && !submitting ? 'bg-brand-violet text-white hover:brightness-110' : 'bg-surface-2 text-text-muted cursor-not-allowed'}`}>
             {submitting ? 'Encrypting & submitting…' : 'Submit for review'}
           </button>
         )}
@@ -239,14 +240,14 @@ function Progress({ step, total }) {
         <span>{STEPS[step].title}</span>
       </div>
       <div className="h-1.5 rounded-full bg-surface-2 overflow-hidden">
-        <div className="h-full bg-gradient-to-r from-brand-cyan to-brand-violet transition-all duration-500" style={{ width: `${((step + 1) / total) * 100}%` }} />
+        <div className="h-full bg-gradient-to-r from-brand-violet to-brand-violet transition-all duration-500" style={{ width: `${((step + 1) / total) * 100}%` }} />
       </div>
     </div>
   );
 }
 
 /* ───────── Shared field primitives ───────── */
-const inputCls = 'w-full bg-surface-2 border border-white/[0.06] rounded-xl px-3 py-2.5 text-white text-sm focus:border-brand-cyan/60 focus:outline-none transition-colors';
+const inputCls = 'w-full bg-surface-2 border border-white/[0.06] rounded-xl px-3 py-2.5 text-white text-sm focus:border-brand-violet/60 focus:outline-none transition-colors';
 const Field = ({ label, children, hint }) => (
   <label className="block">
     <span className="block text-[11px] font-bold uppercase tracking-wider text-text-muted mb-1.5">{label}</span>
@@ -262,7 +263,7 @@ function StepConsent({ consent, setConsent }) {
     <div className="space-y-4 text-sm text-text-secondary">
       <p>
         VERGR needs to verify your identity before you can run ad campaigns, offer paid memberships or receive payouts.
-        Your data is processed in the EU (<span className="text-brand-cyan font-bold">europe-west1</span>), encrypted end-to-end,
+        Your data is processed in the EU (<span className="text-brand-violet-light font-bold">europe-west1</span>), encrypted end-to-end,
         and automatically deleted 90 days after a decision is made.
       </p>
 
@@ -287,7 +288,7 @@ function StepConsent({ consent, setConsent }) {
 function ConsentCheckbox({ checked, onChange, title, body }) {
   return (
     <label className="flex items-start gap-3 cursor-pointer p-3 rounded-xl border border-white/10 bg-surface-2/50 hover:bg-surface-2 transition-colors">
-      <input type="checkbox" checked={checked} onChange={e => onChange(e.target.checked)} className="mt-1 w-4 h-4 accent-brand-cyan" />
+      <input type="checkbox" checked={checked} onChange={e => onChange(e.target.checked)} className="mt-1 w-4 h-4 accent-brand-violet" />
       <div className="flex-1">
         <p className="text-white font-bold text-xs">{title}</p>
         <p className="text-text-muted text-[11px] mt-0.5 leading-relaxed">{body}</p>
@@ -389,7 +390,7 @@ function StepDocument({ idType, setIdType, docs, setDocs, ocrResult, setOcrResul
         <div className="grid grid-cols-3 gap-2">
           {ID_TYPES.map(t => (
             <button key={t.v} onClick={() => setIdType(t.v)}
-              className={`p-3 rounded-xl border transition-all flex flex-col items-center gap-1 ${idType === t.v ? 'border-brand-cyan bg-brand-cyan/10 text-brand-cyan' : 'border-white/10 bg-surface-2 text-text-secondary hover:bg-surface-3'}`}>
+              className={`p-3 rounded-xl border transition-all flex flex-col items-center gap-1 ${idType === t.v ? 'border-brand-violet bg-brand-violet/10 text-brand-violet-light' : 'border-white/10 bg-surface-2 text-text-secondary hover:bg-surface-3'}`}>
               <Icon name={t.icon} size={22} />
               <span className="text-[11px] font-bold">{t.l}</span>
             </button>
@@ -408,7 +409,7 @@ function StepDocument({ idType, setIdType, docs, setDocs, ocrResult, setOcrResul
       {ocrBusy && (
         <div className="rounded-xl border border-white/10 bg-surface-2 p-3 text-xs text-text-secondary">
           <div className="flex items-center gap-2">
-            <div className="w-3 h-3 border-2 border-brand-cyan border-t-transparent rounded-full animate-spin" />
+            <div className="w-3 h-3 border-2 border-brand-violet border-t-transparent rounded-full animate-spin" />
             {ocrProgress?.label || 'Reading document…'}
             {ocrProgress?.percent != null && <span className="text-text-muted font-dmmono">{ocrProgress.percent}%</span>}
           </div>
@@ -438,7 +439,7 @@ function DocSlot({ label, blob, onCapture, onClear }) {
   return (
     <Field label={label}>
       {blob ? (
-        <div className="flex items-center gap-3 p-2 rounded-xl border border-brand-cyan/30 bg-brand-cyan/5">
+        <div className="flex items-center gap-3 p-2 rounded-xl border border-brand-violet/30 bg-brand-violet/5">
           <img src={url} alt="" className="w-20 h-14 object-cover rounded-lg" />
           <div className="flex-1">
             <p className="text-xs text-white font-bold">Captured</p>
@@ -582,7 +583,7 @@ function StepLiveness({ docs, setDocs, faceMatch, setFaceMatch }) {
     return <div className="text-center py-8">
       <Icon name="error" filled size={32} className="text-brand-ember mx-auto mb-2" />
       <p className="text-white text-sm">{error}</p>
-      <button onClick={() => { setError(null); setPreparing(true); setStarted(false); location.reload(); }} className="mt-4 px-4 py-2 rounded-xl bg-brand-cyan text-bg-dark text-xs font-bold">Retry</button>
+      <button onClick={() => { setError(null); setPreparing(true); setStarted(false); safeReload(); }} className="mt-4 px-4 py-2 rounded-xl bg-brand-violet text-white text-xs font-bold">Retry</button>
     </div>;
   }
   if (docs.selfie && faceMatch) {
@@ -597,7 +598,7 @@ function StepLiveness({ docs, setDocs, faceMatch, setFaceMatch }) {
       <p className="text-text-secondary text-sm mt-1 max-w-sm mx-auto">
         We'll ask you to complete 3 quick challenges (blink, turn head) to make sure it's really you. Takes about 10 seconds.
       </p>
-      <button onClick={start} className="mt-5 px-6 py-3 rounded-xl bg-brand-cyan text-bg-dark font-bold text-sm hover:brightness-110 inline-flex items-center gap-2">
+      <button onClick={start} className="mt-5 px-6 py-3 rounded-xl bg-brand-violet text-white font-bold text-sm hover:brightness-110 inline-flex items-center gap-2">
         <Icon name="videocam" size={18} /> Start camera
       </button>
     </div>;
@@ -607,7 +608,7 @@ function StepLiveness({ docs, setDocs, faceMatch, setFaceMatch }) {
       <div className="relative rounded-2xl overflow-hidden bg-black aspect-[4/3]">
         <video ref={videoRef} playsInline muted className="absolute inset-0 w-full h-full object-cover scale-x-[-1]" />
         <canvas ref={canvasRef} className="hidden" />
-        <div className="absolute inset-6 rounded-[50%] border-4 border-brand-cyan/60 pointer-events-none" />
+        <div className="absolute inset-6 rounded-[50%] border-4 border-brand-violet/60 pointer-events-none" />
         {matching && <div className="absolute inset-0 bg-black/60 flex items-center justify-center text-white text-sm font-bold">Matching faces…</div>}
       </div>
       <div className="rounded-xl bg-surface-2 p-4 text-center">
@@ -615,7 +616,7 @@ function StepLiveness({ docs, setDocs, faceMatch, setFaceMatch }) {
         <p className="text-white font-syne font-bold text-lg">{challenge?.message || 'Prepare…'}</p>
         <div className="flex justify-center gap-1.5 mt-3">
           {Array.from({ length: challenge?.total ?? 3 }).map((_, i) => (
-            <span key={i} className={`w-2 h-2 rounded-full ${i < passes.length ? 'bg-brand-cyan' : 'bg-white/10'}`} />
+            <span key={i} className={`w-2 h-2 rounded-full ${i < passes.length ? 'bg-brand-violet' : 'bg-white/10'}`} />
           ))}
         </div>
       </div>
@@ -684,13 +685,13 @@ function ReviewRow({ label, value, tone }) {
 function Preparing({ progress }) {
   return (
     <div className="text-center py-8">
-      <div className="w-16 h-16 mx-auto rounded-full bg-brand-cyan/10 flex items-center justify-center mb-4">
-        <div className="w-8 h-8 border-2 border-brand-cyan border-t-transparent rounded-full animate-spin" />
+      <div className="w-16 h-16 mx-auto rounded-full bg-brand-violet/10 flex items-center justify-center mb-4">
+        <div className="w-8 h-8 border-2 border-brand-violet border-t-transparent rounded-full animate-spin" />
       </div>
       <p className="text-white font-bold text-sm">{progress?.label || 'Preparing camera…'}</p>
       <p className="text-text-muted text-xs mt-1">Downloading verification models (~15 MB, first time only)</p>
       <div className="mt-4 max-w-xs mx-auto h-1.5 rounded-full bg-surface-2 overflow-hidden">
-        <div className="h-full bg-brand-cyan transition-all duration-300" style={{ width: `${progress?.percent || 0}%` }} />
+        <div className="h-full bg-brand-violet transition-all duration-300" style={{ width: `${progress?.percent || 0}%` }} />
       </div>
     </div>
   );
@@ -735,7 +736,7 @@ function CameraCapture({ facingMode, guideLabel, aspect = 1.58, onCaptured, onCa
       <div className="relative rounded-2xl overflow-hidden bg-black" style={{ aspectRatio: aspect }}>
         <video ref={videoRef} playsInline muted className="absolute inset-0 w-full h-full object-cover" />
         {ready && (
-          <div className="absolute inset-4 border-2 border-brand-cyan/70 rounded-xl pointer-events-none flex items-end justify-center pb-2">
+          <div className="absolute inset-4 border-2 border-brand-violet/70 rounded-xl pointer-events-none flex items-end justify-center pb-2">
             <span className="text-[10px] font-bold uppercase tracking-wider text-white bg-black/60 px-2 py-1 rounded-full">{guideLabel}</span>
           </div>
         )}
@@ -743,7 +744,7 @@ function CameraCapture({ facingMode, guideLabel, aspect = 1.58, onCaptured, onCa
       </div>
       <div className="flex gap-2">
         <button onClick={onCancel} className="flex-1 py-3 rounded-xl bg-surface-2 text-white font-bold text-sm">Cancel</button>
-        <button onClick={snap} disabled={!ready} className={`flex-1 py-3 rounded-xl font-bold text-sm ${ready ? 'bg-brand-cyan text-bg-dark' : 'bg-surface-3 text-text-muted'}`}>Capture</button>
+        <button onClick={snap} disabled={!ready} className={`flex-1 py-3 rounded-xl font-bold text-sm ${ready ? 'bg-brand-violet text-white' : 'bg-surface-3 text-text-muted'}`}>Capture</button>
       </div>
     </div>
   );

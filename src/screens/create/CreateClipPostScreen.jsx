@@ -6,13 +6,12 @@ import { auth } from '../../firebase/config';
 import { createPost, uploadPostMedia } from '../../firebase/firestore';
 import { useLayout } from '../../context/LayoutContext';
 import useResponsive from '../../hooks/useResponsive';
-import { getTierConfig, checkFileSizeAccess } from '../../utils/tierSystem';
+import { getTierConfig, checkFileSizeAccess, resolveTier } from '../../utils/tierSystem';
 import { compressForTier, formatMB } from '../../utils/videoCompress';
 import UserAvatar from '../../components/UserAvatar';
 import Icon from '../../components/Icon';
 import EmbedVideoPlayer, { parseVideoUrl, getThumbnailUrl } from '../../components/EmbedVideoPlayer';
 
-const DURATION_LIMITS = { free: 60, lite: 180, pro: 600 };
 
 export default function CreateClipPostScreen() {
   const [content, setContent] = useState('');
@@ -31,9 +30,9 @@ export default function CreateClipPostScreen() {
   const navigate = useNavigate();
   const { setRightPanel, setContentAlign } = useLayout();
   const { isDesktop } = useResponsive();
-  const userTier = profile?.tier || 'free';
+  const userTier = resolveTier(profile);
   const tierConfig = getTierConfig(userTier);
-  const maxDuration = DURATION_LIMITS[userTier] || 60;
+  // Length is deliberately unlimited — see SHORTS_LIMITS in mediaCompression.js.
   const nextTier = userTier === 'free' ? 'lite' : userTier === 'lite' ? 'pro' : null;
 
   useEffect(() => { setRightPanel(null); setContentAlign(isDesktop ? 'left' : 'center'); return () => { setRightPanel(null); setContentAlign('center'); }; }, [setRightPanel, setContentAlign, isDesktop]);
@@ -49,11 +48,7 @@ export default function CreateClipPostScreen() {
     const v = document.createElement('video');
     v.preload = 'metadata';
     v.onloadedmetadata = () => {
-      if (v.duration > maxDuration) {
-        URL.revokeObjectURL(url);
-        showToast(`Video is ${fmt(v.duration)} — max ${fmt(maxDuration)}${nextTier ? `. Upgrade to ${nextTier} for longer clips.` : ''}`, 'error');
-        return;
-      }
+      // No length limit — the plan's size cap above is the only ceiling.
       setVideoDuration(v.duration);
       setVideoFile({ file, preview: url });
     };
@@ -137,14 +132,14 @@ export default function CreateClipPostScreen() {
             <div>
               <h1 className="font-syne font-bold text-base text-white">Video Clip</h1>
               <p className="text-text-muted text-[10px] font-dmmono">
-                {mode === 'embed' ? 'Paste a video URL' : `Max ${fmt(maxDuration)} · ${tierConfig.videoMaxHeight === Infinity ? '4K' : `${tierConfig.videoMaxHeight}p`}`}
+                {mode === 'embed' ? 'Paste a video URL' : `Any length · ${tierConfig.videoMaxHeight === Infinity ? '4K' : `${tierConfig.videoMaxHeight}p`}`}
               </p>
             </div>
           </div>
           <button
             onClick={handlePost}
             disabled={loading || !canPost}
-            className="bg-brand-cyan text-bg-dark px-6 py-2 rounded-full font-bold text-sm disabled:opacity-30 hover:brightness-110 active:scale-[0.97] transition-all"
+            className="bg-brand-violet text-white px-6 py-2 rounded-full font-bold text-sm disabled:opacity-30 hover:brightness-110 active:scale-[0.97] transition-all"
           >
             {loading ? (
               <span className="flex items-center gap-2">
@@ -168,7 +163,7 @@ export default function CreateClipPostScreen() {
           <div className="flex gap-3">
             <UserAvatar src={profile?.avatar} size={40} />
             <div className="flex-1">
-              <p className="text-brand-cyan text-xs font-dmmono mb-1">@{profile?.username || 'you'}</p>
+              <p className="text-brand-violet-light text-xs font-dmmono mb-1">@{profile?.username || 'you'}</p>
               <textarea
                 value={content}
                 onChange={e => setContent(e.target.value)}
@@ -204,12 +199,12 @@ export default function CreateClipPostScreen() {
               <p className="text-text-muted text-[10px] uppercase tracking-wider font-bold mb-3">Your limits</p>
               <div className="space-y-2.5">
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2"><Icon name="timer" size={14} className="text-text-muted" /><span className="text-text-secondary text-xs">Duration</span></div>
-                  <span className="text-brand-cyan text-xs font-dmmono font-bold">{fmt(maxDuration)}</span>
+                  <div className="flex items-center gap-2"><Icon name="timer" size={14} className="text-text-muted" /><span className="text-text-secondary text-xs">Length</span></div>
+                  <span className="text-brand-violet-light text-xs font-dmmono font-bold">Unlimited</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2"><Icon name="hd" size={14} className="text-text-muted" /><span className="text-text-secondary text-xs">Quality</span></div>
-                  <span className="text-brand-cyan text-xs font-dmmono font-bold">{tierConfig.videoMaxHeight === Infinity ? '4K' : `${tierConfig.videoMaxHeight}p`}</span>
+                  <span className="text-brand-violet-light text-xs font-dmmono font-bold">{tierConfig.videoMaxHeight === Infinity ? '4K' : `${tierConfig.videoMaxHeight}p`}</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2"><Icon name="cloud_upload" size={14} className="text-text-muted" /><span className="text-text-secondary text-xs">Max size</span></div>
@@ -217,7 +212,7 @@ export default function CreateClipPostScreen() {
                 </div>
               </div>
               {nextTier && (
-                <button onClick={() => navigate('/settings/subscription')} className="w-full mt-3 py-2 rounded-xl bg-brand-cyan/[0.06] border border-brand-cyan/20 text-brand-cyan text-[11px] font-bold hover:bg-brand-cyan/10 transition-colors">
+                <button onClick={() => navigate('/settings/subscription')} className="w-full mt-3 py-2 rounded-xl bg-brand-violet/[0.06] border border-brand-violet/20 text-brand-violet-light text-[11px] font-bold hover:bg-brand-violet/10 transition-colors">
                   Upgrade for more
                 </button>
               )}
@@ -264,7 +259,7 @@ export default function CreateClipPostScreen() {
                 </div>
                 <div className="text-center">
                   <p className="text-text-primary font-syne font-bold">Upload a Clip</p>
-                  <p className="text-text-muted text-xs mt-1">Up to {fmt(maxDuration)} · {tierConfig.videoMaxHeight === Infinity ? '4K' : `${tierConfig.videoMaxHeight}p`} · {tierConfig.maxFileUploadMB}MB max</p>
+                  <p className="text-text-muted text-xs mt-1">Any length · {tierConfig.videoMaxHeight === Infinity ? '4K' : `${tierConfig.videoMaxHeight}p`} · {tierConfig.maxFileUploadMB}MB max</p>
                 </div>
               </button>
             )

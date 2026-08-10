@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { collection, query, where, orderBy, limit, getDocs, setDoc, doc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../firebase/config';
@@ -9,8 +9,10 @@ import Icon from '../../components/Icon';
 import UserAvatar from '../../components/UserAvatar';
 import TopBar from '../../components/TopBar';
 import { useLayout } from '../../context/LayoutContext';
+import { useUI } from '../../context/UIContext';
 import useResponsive from '../../hooks/useResponsive';
 import { timeAgo } from '../../utils/helpers';
+import { markCallsSeen } from '../../utils/navBadges';
 
 export default function CallsScreen() {
   const [search, setSearch] = useState('');
@@ -24,10 +26,25 @@ export default function CallsScreen() {
   const navigate = useNavigate();
   const { isDesktop } = useResponsive();
   const { setRightPanel, setContentAlign } = useLayout();
+  const { showToast } = useUI();
+  const searchRef = useRef(null);
+
+  // "New call" used to only set activePanel, which just restyled a card — the
+  // button read as dead. Starting a call means picking someone, so it drops the
+  // cursor into the people search that already drives startCall().
+  const startNewCall = () => {
+    setActivePanel('start');
+    const el = searchRef.current;
+    if (!el) return;
+    el.focus();
+    el.select();
+    el.scrollIntoView({ block: 'nearest' });
+  };
 
   useEffect(() => {
     setRightPanel(null);
     setContentAlign('left');
+    markCallsSeen(); // opening the calls view clears the missed-call badge/feed
     return () => { setRightPanel(null); setContentAlign('center'); };
   }, [setRightPanel, setContentAlign]);
 
@@ -97,14 +114,20 @@ export default function CallsScreen() {
     } catch (err) { console.error('Call init failed:', err); }
   };
 
-  const generateCallLink = () => {
-    const link = `${window.location.origin}/#/call/join/${crypto.randomUUID?.() || Date.now()}`;
-    navigator.clipboard?.writeText(link);
-    return link;
+  // NOTE: this used to mint `/call/join/<uuid>` and copy it. There is no
+  // `/call/join` route and no join-by-link backend, so every link a user shared
+  // 404'd for the person who received it. Until that exists, say so instead of
+  // handing out a dead link. The button stays — only the false promise goes.
+  const copyCallLink = () => {
+    setActivePanel('link');
+    showToast('Call links are coming soon — search for someone to call them now', 'info');
   };
 
   const CALL_TYPE_ICONS = { audio: 'call', video: 'videocam', missed: 'call_missed', incoming: 'call_received', outgoing: 'call_made' };
-  const CALL_TYPE_COLORS = { audio: 'text-brand-cyan', video: 'text-brand-violet', missed: 'text-brand-ember', incoming: 'text-green-500', outgoing: 'text-brand-cyan' };
+  // These are a MEANING ladder, not decoration: audio vs video and incoming vs
+  // outgoing must stay visually distinct. De-cyaning to violet would have
+  // collided audio with video, so audio/outgoing move to gem-blue instead.
+  const CALL_TYPE_COLORS = { audio: 'text-gem-blue', video: 'text-brand-violet', missed: 'text-brand-ember', incoming: 'text-green-500', outgoing: 'text-gem-blue' };
 
   // Left panel content
   const leftPanel = (
@@ -112,8 +135,8 @@ export default function CallsScreen() {
       {/* Header */}
       <div className="px-4 pt-4 pb-2 flex items-center justify-between">
         <h2 className="font-syne text-xl font-bold">Calls</h2>
-        <button onClick={() => setActivePanel('start')} className="w-9 h-9 rounded-full bg-brand-cyan/10 flex items-center justify-center hover:bg-brand-cyan/20 transition-colors" title="New call">
-          <Icon name="add_call" size={20} className="text-brand-cyan" />
+        <button onClick={startNewCall} className="w-9 h-9 rounded-full bg-brand-violet/10 flex items-center justify-center hover:bg-brand-violet/20 transition-colors" title="New call">
+          <Icon name="add_call" size={20} className="text-brand-violet" />
         </button>
       </div>
 
@@ -121,8 +144,8 @@ export default function CallsScreen() {
       <div className="px-4 mt-1">
         <div className="relative">
           <Icon name="search" size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
-          <input type="text" placeholder="Search by name or username..." value={search} onChange={e => setSearch(e.target.value)}
-            className="w-full bg-surface-2 border border-white/[0.06] rounded-xl py-2.5 pl-9 pr-3 text-sm text-text-primary focus:border-brand-cyan outline-none" />
+          <input ref={searchRef} type="text" placeholder="Search by name or username..." value={search} onChange={e => setSearch(e.target.value)}
+            className="w-full bg-surface-2 border border-white/[0.06] rounded-xl py-2.5 pl-9 pr-3 text-sm text-text-primary focus:border-brand-violet outline-none" />
         </div>
       </div>
 
@@ -136,8 +159,8 @@ export default function CallsScreen() {
                 <p className="text-sm font-semibold text-text-primary truncate">{user.displayName}</p>
                 <p className="text-[10px] text-text-muted font-dmmono">@{user.username}</p>
               </div>
-              <button onClick={() => startCall(user.id, 'audio')} className="p-2 rounded-full hover:bg-brand-cyan/10" title="Audio call">
-                <Icon name="call" size={18} className="text-brand-cyan" />
+              <button onClick={() => startCall(user.id, 'audio')} className="p-2 rounded-full hover:bg-gem-blue/10" title="Audio call">
+                <Icon name="call" size={18} className="text-gem-blue" />
               </button>
               <button onClick={() => startCall(user.id, 'video')} className="p-2 rounded-full hover:bg-brand-violet/10" title="Video call">
                 <Icon name="videocam" size={18} className="text-brand-violet" />
@@ -172,7 +195,7 @@ export default function CallsScreen() {
       <div className="flex-1 px-4 mt-4 overflow-y-auto">
         <p className="text-[10px] text-text-muted uppercase font-bold tracking-wider mb-2">Recent</p>
         {loading ? (
-          <div className="flex justify-center py-8"><div className="w-6 h-6 border-2 border-surface-3 border-t-brand-cyan rounded-full animate-spin" /></div>
+          <div className="flex justify-center py-8"><div className="w-6 h-6 border-2 border-surface-3 border-t-brand-violet rounded-full animate-spin" /></div>
         ) : recentCalls.length === 0 ? (
           <div className="text-center py-10">
             <Icon name="call" size={40} className="text-text-muted/20 mx-auto mb-2" />
@@ -215,25 +238,21 @@ export default function CallsScreen() {
   // Right panel content (desktop only)
   const rightContent = (
     <div className="flex flex-col items-center justify-center h-full px-8 text-center">
-      <div className="w-20 h-20 rounded-3xl bg-brand-cyan/10 flex items-center justify-center mb-6">
-        <Icon name="call" size={40} className="text-brand-cyan" />
+      <div className="w-20 h-20 rounded-3xl bg-brand-violet/10 flex items-center justify-center mb-6">
+        <Icon name="call" size={40} className="text-brand-violet" />
       </div>
 
       <div className="space-y-3 w-full max-w-xs">
-        <button onClick={() => setActivePanel('start')}
-          className={`w-full flex items-center gap-3 p-4 rounded-2xl border transition-all text-left ${activePanel === 'start' ? 'bg-brand-cyan/10 border-brand-cyan/30' : 'bg-surface-1 border-white/[0.04] hover:border-white/[0.12]'}`}>
-          <Icon name="call" size={22} className="text-brand-cyan" />
+        <button onClick={startNewCall}
+          className={`w-full flex items-center gap-3 p-4 rounded-2xl border transition-all text-left ${activePanel === 'start' ? 'bg-brand-violet/10 border-brand-violet/30' : 'bg-surface-1 border-white/[0.04] hover:border-white/[0.12]'}`}>
+          <Icon name="call" size={22} className="text-brand-violet" />
           <div>
             <p className="text-sm font-bold text-text-primary">Start a Call</p>
             <p className="text-[10px] text-text-muted">Search and call someone directly</p>
           </div>
         </button>
 
-        <button onClick={() => {
-          const link = generateCallLink();
-          setActivePanel('link');
-          alert(`Call link copied: ${link}`);
-        }}
+        <button onClick={copyCallLink}
           className={`w-full flex items-center gap-3 p-4 rounded-2xl border transition-all text-left ${activePanel === 'link' ? 'bg-brand-violet/10 border-brand-violet/30' : 'bg-surface-1 border-white/[0.04] hover:border-brand-violet/20'}`}>
           <Icon name="link" size={22} className="text-brand-violet" />
           <div>
@@ -242,7 +261,7 @@ export default function CallsScreen() {
           </div>
         </button>
 
-        <button onClick={() => setActivePanel('schedule')}
+        <button onClick={() => { setActivePanel('schedule'); showToast('Scheduled calls are coming soon', 'info'); }}
           className={`w-full flex items-center gap-3 p-4 rounded-2xl border transition-all text-left ${activePanel === 'schedule' ? 'bg-brand-gold/10 border-brand-gold/30' : 'bg-surface-1 border-white/[0.04] hover:border-brand-gold/20'}`}>
           <Icon name="event" size={22} className="text-brand-gold" />
           <div>
@@ -262,7 +281,7 @@ export default function CallsScreen() {
     return (
       <div className="min-h-screen pb-20">
         <TopBar title="Calls" showBack actions={
-          <button onClick={() => setActivePanel('start')} className="p-2"><Icon name="add_call" size={22} className="text-brand-cyan" /></button>
+          <button onClick={startNewCall} className="p-2"><Icon name="add_call" size={22} className="text-brand-violet" /></button>
         } />
         {leftPanel}
       </div>
