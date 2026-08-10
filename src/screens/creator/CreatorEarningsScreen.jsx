@@ -23,7 +23,7 @@ function tsMs(t) {
 const SOURCE_DEFS = [
   { key: 'Tips',        match: ['tip', 'gift'],         color: PALETTE.cyan },
   { key: 'Memberships', match: ['member', 'sub'],       color: PALETTE.violet },
-  { key: 'Tournaments', match: ['tournament', 'prize', 'ticket', 'season_pass'], color: PALETTE.gold },
+  { key: 'Paid access', match: ['stream_unlock', 'paid_stream', 'ticket', 'season_pass'], color: PALETTE.gold },
   { key: 'Boosts',      match: ['boost'],               color: PALETTE.emerald },
   { key: 'Other',       match: [],                      color: PALETTE.blue },
 ];

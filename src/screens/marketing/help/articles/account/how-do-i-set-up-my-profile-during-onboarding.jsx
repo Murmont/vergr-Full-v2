@@ -10,7 +10,7 @@ export default {
       "Bio: a short description of who you are. Mention your games or what you do.",
       "Interests: pick the games and content types you care about to calibrate your feed.",
       "Who to follow: VERGR suggests creators and players based on your interests.",
-      "Gaming accounts: link Steam, Twitch, or others to unlock tournament matching."
+      "Gaming accounts: link Steam, Twitch, or others so your platforms show on your profile."
     ]},
     { h2: "Skipping steps" },
     { p: "Every step is optional except your username and date of birth, which you already confirmed. Tap Skip on any screen and come back to it from Settings or your profile page." },

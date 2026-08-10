@@ -5,7 +5,7 @@
 // Top-level: summary (1-2 sentences, answer-first), updated (YYYY-MM-DD), body [].
 
 export default {
-  summary: "Sign up free, pick a username, link the games you play, and follow a few people. From there you can jump into a tournament, watch a stream and tip, or post your first clip. It takes about an hour.",
+  summary: "Sign up free, pick a username, link the games you play, and follow a few people. From there you can go live, watch a stream and tip, or post your first clip. It takes about an hour.",
   updated: "2026-06-06",
   body: [
     {
@@ -19,7 +19,7 @@ export default {
         "Sign up with email, Google, or your phone number.",
         "Pick a username. This is your handle, so choose something you want to keep.",
         "Add a profile photo and a short bio so people know who they are dealing with.",
-        "Link the gaming accounts you actually use. It makes tournaments and matching smoother."
+        "Link the gaming accounts you actually use. It puts your real stats on your profile."
       ]
     },
     {
@@ -33,7 +33,7 @@ export default {
     },
     {
       list: [
-        "Jump into a free tournament to see how matches and result verification work.",
+        "Go live for twenty minutes to see how streaming, chat, and tips work.",
         "Watch a live stream and tip a creator you like.",
         "Post your first clip or a quick text post.",
         "Find a squad and team up."

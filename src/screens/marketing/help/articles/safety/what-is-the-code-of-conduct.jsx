@@ -26,7 +26,7 @@ export default {
       h2: "What happens when it is broken"
     },
     {
-      p: "Consequences scale with the offence: content removal, feature restrictions, temporary mutes, temporary or permanent bans, voided tournament results, and forfeited balances for economy abuse. Serious criminal matters are referred to law enforcement. Every enforcement decision can be appealed."
+      p: "Consequences scale with the offence: content removal, feature restrictions, temporary mutes, temporary or permanent bans, and forfeited balances for economy abuse. Serious criminal matters are referred to law enforcement. Every enforcement decision can be appealed."
     },
     {
       cta: [

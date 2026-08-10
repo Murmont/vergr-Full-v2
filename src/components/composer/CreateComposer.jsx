@@ -5,6 +5,8 @@ import { useUser } from '../../context/UserContext';
 import { useUI } from '../../context/UIContext';
 import { auth } from '../../firebase/config';
 import { createPost, createPoll, getAudienceActivity, searchUsers, getFollowing, getTrendingHashtags, searchHashtags, editPost } from '../../firebase/firestore';
+import { getLockedUploadUrl, createLockedPost, putSignedUpload, makeBlurredPreview } from '../../firebase/firestore';
+import PriceSheet from '../monetization/PriceSheet';
 import { compressVideo, compressMedia, getMediaDimensions } from '../../utils/mediaCompression';
 import { uploadToR2 } from '../../utils/r2Storage';
 import { httpsCallable } from 'firebase/functions';
@@ -584,6 +586,12 @@ export default function CreateComposer({ onClose, originRect, editingPost = null
   const [activeChip, setActiveChip] = useState(null);
   const [visibility, setVisibility] = useState('public');
   const [visMenu, setVisMenu] = useState(false);
+  // Locked post: 0 = an ordinary post. Locking is a CREATE-TIME choice and
+  // cannot be applied later, because an existing post's media is already on a
+  // public immutable CDN URL and "locking" it would hide it in the UI while
+  // leaving the bytes exactly as reachable (functions/lockedPosts.js).
+  const [lockPrice, setLockPrice] = useState(0);
+  const [lockSheet, setLockSheet] = useState(false);
   const [media, setMedia] = useState([]);
   // B8: per-media upload state (id → { phase:'optimizing'|'uploading'|'error', pct }).
   // Drives the progress bar / retry chip on each media thumb.
@@ -837,8 +845,62 @@ export default function CreateComposer({ onClose, originRect, editingPost = null
     return `Upload failed: ${msg || 'something went wrong'}`;
   };
 
+  /**
+   * Post a LOCKED post: one media file, private prefix, no public URL anywhere.
+   *
+   * A separate path from handlePostNow rather than a flag inside it, because
+   * almost nothing is shared: the upload is presigned by `getLockedUploadUrl`
+   * into `locked/{uid}/` (not the public prefix `uploadToR2` uses), a blurred
+   * preview is generated here on the sender's device and uploaded alongside,
+   * and the post document is written by a callable so the private object key
+   * never touches the client's Firestore write.
+   */
+  const handlePostLocked = async () => {
+    if (loading) return;
+    const item = media[0];
+    if (!item?.file) { showToast('Add a photo or video to lock', 'error'); return; }
+    setLoading(true);
+    const trimmed = (richRef.current?.getMarkup() ?? text).trim();
+    try {
+      // R2's CORS exact-matches the content type, so a MediaRecorder type
+      // carrying ";codecs=" fails the signature silently. Strip it.
+      const contentType = (item.file.type || 'image/jpeg').split(';')[0];
+      const isVideo = item.type === 'video';
+
+      const signed = await getLockedUploadUrl({ contentType, sizeBytes: item.file.size });
+      await putSignedUpload(signed.mediaUploadUrl, item.file, contentType, signed.cacheControl);
+
+      // Destroyed on THIS device before upload. Never blur on the viewer's side:
+      // that is a CSS filter over bytes they already downloaded.
+      const previewBlob = await makeBlurredPreview(item.file).catch(() => null);
+      let previewUrl = '';
+      if (previewBlob) {
+        await putSignedUpload(signed.previewUploadUrl, previewBlob, 'image/jpeg', signed.cacheControl);
+        previewUrl = signed.previewUrl;
+      }
+
+      await createLockedPost({
+        mediaKey: signed.mediaKey,
+        previewUrl,
+        caption: trimmed,
+        priceCoins: lockPrice,
+        isVideo,
+        audience: visibility === 'followers' ? 'followers' : 'public',
+      });
+
+      media.forEach(m => { try { URL.revokeObjectURL(m.preview); } catch {} });
+      showToast('Locked post published', 'success');
+      onClose?.();
+    } catch (e) {
+      showToast(e?.message || 'Could not publish the locked post', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handlePostNow = async () => {
     if (loading) return;
+    if (lockPrice > 0) { handlePostLocked(); return; }
     const trimmed = (richRef.current?.getMarkup() ?? text).trim();
     if (!trimmed && media.length === 0) { showToast('Add some text or media first', 'error'); return; }
     setLoading(true);
@@ -1057,6 +1119,26 @@ export default function CreateComposer({ onClose, originRect, editingPost = null
           </div>
         )}
       </div>
+      {!isEditing && (
+        <button
+          type="button"
+          onClick={() => setLockSheet(true)}
+          title={media.length === 0 ? 'Add a photo or video first' : 'Charge coins to unlock this post'}
+          disabled={media.length === 0}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px',
+            borderRadius: 999, cursor: media.length === 0 ? 'not-allowed' : 'pointer',
+            opacity: media.length === 0 ? 0.45 : 1,
+            border: lockPrice > 0 ? '1px solid var(--gold, #F0A500)' : '1px solid var(--stroke, rgba(255,255,255,.12))',
+            background: lockPrice > 0 ? 'rgba(240,165,0,.15)' : 'transparent',
+            color: lockPrice > 0 ? 'var(--gold, #F0A500)' : 'var(--text-3)',
+            font: 'inherit', fontSize: 13, fontWeight: 600,
+          }}
+        >
+          <CIcon name="lock" size={16} />
+          {lockPrice > 0 ? `${lockPrice.toLocaleString()}c` : 'Lock'}
+        </button>
+      )}
       {canAnnounce && !isEditing && (
         <button type="button" onClick={() => setAsAnnouncement(v => !v)}
           title="Pin to every feed + push to all devices"
@@ -1407,6 +1489,17 @@ export default function CreateComposer({ onClose, originRect, editingPost = null
           </motion.div>
         )}
       </AnimatePresence>
+
+      <PriceSheet
+        open={lockSheet}
+        onClose={() => setLockSheet(false)}
+        onConfirm={({ isPaid, priceCoins }) => { setLockPrice(isPaid ? priceCoins : 0); setLockSheet(false); }}
+        title="Lock this post"
+        subtitle="Followers see a blurred preview and pay coins to unlock the real thing. Only the first photo or video is included, and a post cannot be locked after it goes out."
+        confirmLabel="Set"
+        initialPaid={lockPrice > 0}
+        initialPrice={lockPrice > 0 ? lockPrice : 100}
+      />
     </div>
   );
 }

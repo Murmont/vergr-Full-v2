@@ -151,11 +151,30 @@ exports.createStreamSession = functions.https.onCall({ region: REGION }, async (
   // Audience visibility within a public stream: 'public' (discoverable to all),
   // 'followers', or 'friends' (both = unlisted, gated on the watch page). Server
   // is the source of truth so discovery queries can trust a single boolean.
-  const audienceVal = ['public', 'followers', 'friends', 'ticketed'].includes(audience) ? audience : 'public';
+  // 'unlisted' is the 1:1 / link-only case: no relationship gate at all, but
+  // absent from every discovery query, so possession of the link is the entire
+  // access model. It is NOT a synonym for 'friends' (which additionally checks a
+  // relationship) and must stay a distinct value, because the fallback for an
+  // unknown audience is 'public' and a 1:1 that silently became public would be
+  // the worst possible failure of this feature.
+  const audienceVal = ['public', 'followers', 'friends', 'ticketed', 'unlisted'].includes(audience) ? audience : 'public';
+
+  // A 1:1 SESSION IS A DIFFERENT THING FROM A BROADCAST, AND THE DIFFERENCE IS
+  // ENFORCED HERE RATHER THAN DESCRIBED IN A LABEL.
+  //
+  // Policy treats a 1:1 session and a paid broadcast differently (Terms 10A vs
+  // 10, AUP sections 2 vs 3). If the only difference between them were a flag
+  // the client sets, the category would be a costume: a host could mark a
+  // 500-viewer broadcast as a "1:1" and claim the private-surface reading.
+  //
+  // So a 1:1 is capped at ONE concurrent viewer by the server, forced unlisted,
+  // and stamped on the document so moderation and support can tell the two
+  // apart after the fact. If it can hold an audience, it is not a 1:1.
+  const isOneToOne = req.data?.sessionType === 'one_to_one';
   // 'ticketed' streams stay DISCOVERABLE (so fans can find them and buy a
   // ticket) but the watch page gates playback on ticket ownership. Only
   // followers/friends are unlisted (hidden from discovery + follow-gated).
-  const isUnlisted = audienceVal === 'followers' || audienceVal === 'friends';
+  const isUnlisted = isOneToOne || audienceVal === 'followers' || audienceVal === 'friends' || audienceVal === 'unlisted';
   // Ticketed streams must be tied to the ticketed event so the watch gate can
   // check ticket ownership against that tournament.
   if (audienceVal === 'ticketed' && !tournamentId) {
@@ -353,7 +372,31 @@ exports.createStreamSession = functions.https.onCall({ region: REGION }, async (
         : { mode: 'free', priceCoins: 0, unlockCount: 0 },
       unlisted: isUnlisted,
       discoverable: !isUnlisted,
-      streamKey,
+      // Terms 10A. Stamped so moderation, support and the viewer screen can tell
+      // a private session from a paid broadcast without guessing from audience.
+      sessionType: isOneToOne ? 'one_to_one' : 'broadcast',
+      // THE STREAM KEY IS NOT ON THIS DOCUMENT.
+      //
+      // `streams/{id}` is `allow read: if true`, and the stream key is a
+      // PUBLISH CREDENTIAL: `src/utils/streamIngest.js` sends it as
+      // `Authorization: Bearer <streamKey>` to the browser-ingest endpoint, and
+      // it is the RTMP key an OBS user types in. Publishing it on a
+      // world-readable document let any reader inject frames into someone
+      // else's broadcast.
+      //
+      // It also defeated paid streams: the HLS path is
+      // `cdn.vergr.app/streams/<streamKey>/index.m3u8`, so a viewer who read
+      // the key could rebuild the playback URL by hand and skip the paywall
+      // that withholding `hlsUrl` was supposed to create.
+      //
+      // It now lives in `stream_keys/{streamKey}` (rules deny every client),
+      // which vergr-rtmp-auth looks up by document id. The host receives it in
+      // this callable's return value and can re-fetch it from
+      // `getStreamIngest`, which checks they are the host.
+      //
+      // Viewers do not need it: free streams carry `hlsUrl` on this document
+      // and paid streams get their URL from `getAccess`.
+      thumbUrl: `${getHlsBase()}/${streamKey}/thumb.jpg`,
       ingestUrl,
       nodeId,                                       // which ingest box packaged this stream (for load accounting + ops)
       ingestType: mode,                             // 'rtmp' | 'browser' — used by vergr-ingest auth + UI gating
@@ -373,7 +416,8 @@ exports.createStreamSession = functions.https.onCall({ region: REGION }, async (
       boostRefunded: false,
       tipsReceivedDuringStream: 0,
       maxViewerRenditionForViewers: planRules.maxViewerRendition,
-      maxConcurrentViewers: kindRules.maxConcurrentViewers[plan] || 50,
+      // One means one. This is the line between Terms 10A and Terms 10.
+      maxConcurrentViewers: isOneToOne ? 1 : (kindRules.maxConcurrentViewers[plan] || 50),
       hostPlan: plan,
       hostFollowerCount: followerCount,
       orientation: orientation === 'portrait' ? 'portrait' : 'landscape', // desktop/mobile split in discovery
@@ -397,6 +441,27 @@ exports.createStreamSession = functions.https.onCall({ region: REGION }, async (
         createdAt: FieldValue.serverTimestamp(),
       });
     }
+
+    // The publish credential, keyed BY the credential so vergr-rtmp-auth can
+    // resolve it with a document get instead of the collection query it used to
+    // run against `streams` (cheaper, and it stops needing the key to be a
+    // field on a public document). Rules deny this collection to every client.
+    tx.set(db.collection('stream_keys').doc(streamKey), {
+      streamId,
+      hostUid: uid,
+      hostPlan: plan,
+      createdAt: FieldValue.serverTimestamp(),
+    });
+
+    // The host's own copy, for a reload of the broadcaster screen. Under
+    // `private/`, which rules deny to clients, so it is reachable only through
+    // getStreamIngest below.
+    tx.set(db.collection('streams').doc(streamId).collection('private').doc('ingest'), {
+      streamKey,
+      ingestUrl,
+      ingestType: mode,
+      createdAt: FieldValue.serverTimestamp(),
+    });
   });
 
   return {
@@ -479,8 +544,50 @@ exports.endStreamSession = functions.https.onCall({ region: REGION }, async (req
       compositeOwner: FieldValue.delete(),
     });
 
+    // Retire the publish credential with the stream. Leaving it resolvable
+    // would let anyone who had somehow obtained the key start publishing to an
+    // ended broadcast, and the lookup collection would grow without bound.
+    if (stream.streamKey) tx.delete(db.collection('stream_keys').doc(stream.streamKey));
+
     return { ok: true, refunded, alreadyEnded: false };
   });
+});
+
+/**
+ * Hand the host back their own publish credential.
+ *
+ * The broadcaster screen gets `streamKey` in `createStreamSession`'s return, but
+ * a reload loses it, and it is deliberately no longer on the stream document for
+ * anyone to read. Only the host (or an admin) can call this.
+ */
+exports.getStreamIngest = functions.https.onCall({ region: REGION, cors: true }, async (req) => {
+  if (!req.auth) throw new functions.https.HttpsError('unauthenticated', 'Sign in required.');
+  const uid = req.auth.uid;
+  const streamId = String(req.data?.streamId || '');
+  if (!streamId) throw new functions.https.HttpsError('invalid-argument', 'streamId required.');
+
+  const snap = await db.collection('streams').doc(streamId).get();
+  if (!snap.exists) throw new functions.https.HttpsError('not-found', 'Stream not found.');
+
+  const s = snap.data();
+  if (s.hostUid !== uid) {
+    const me = await db.collection('users').doc(uid).get();
+    if (!me.exists || me.data().role !== 'admin') {
+      throw new functions.https.HttpsError('permission-denied', 'Not your stream.');
+    }
+  }
+
+  const priv = await db.collection('streams').doc(streamId).collection('private').doc('ingest').get();
+  if (!priv.exists) {
+    // Streams created before the key moved off the public document still carry
+    // it there. Read it back rather than breaking an in-flight broadcast.
+    if (s.streamKey) {
+      return { streamKey: s.streamKey, ingestUrl: s.ingestUrl || null, ingestType: s.ingestType || null };
+    }
+    throw new functions.https.HttpsError('not-found', 'No ingest details for this stream.');
+  }
+  const d = priv.data();
+  return { streamKey: d.streamKey, ingestUrl: d.ingestUrl || null, ingestType: d.ingestType || null };
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -5,7 +5,7 @@
 // Top-level: summary (1-2 sentences, answer-first), updated (YYYY-MM-DD), body [].
 
 export default {
-  summary: "Browse squads in the Squads section or Explore, open one you like, and request to join or accept an invite. Some squads approve requests, others invite directly. Once you are in, you get the squad chat, voice hangouts, team tournaments, and a share of the squad's success.",
+  summary: "Browse squads in the Squads section or Explore, open one you like, and request to join or accept an invite. Some squads approve requests, others invite directly. Once you are in, you get the squad chat, voice hangouts, squad streams, and a share of the squad's success.",
   updated: "2026-06-06",
   body: [
     {
@@ -31,7 +31,7 @@ export default {
       h2: "What you get as a member"
     },
     {
-      p: "Access to the squad chat, voice hangouts and streams, the ability to play in team tournaments, and a share of what the squad earns together. Squads are capped at 100 members, so they stay tight enough to feel like a real team."
+      p: "Access to the squad chat, voice hangouts and squad streams, and a share of what the squad earns together. Squads are capped at 100 members, so they stay tight enough to feel like a real team."
     },
     {
       cta: [

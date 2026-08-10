@@ -29,7 +29,7 @@ export default {
       p: "The refund and the reach work together. While the boost is active, your stream is amplified in discovery and you are more likely to be shown to viewers who actually tip. That is the whole point: the boost does not just sit there, it actively helps you reach the tips that pay it back."
     },
     {
-      note: "Tips are not the only way a stream earns. They are just the source the boost refunds from. Tournaments, squad winnings, and tips on your posts and clips earn separately."
+      note: "Tips are not the only way a stream earns. They are just the source the boost refunds from. Paid access, memberships, and tips on your posts and clips earn separately."
     },
     {
       faq: [

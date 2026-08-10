@@ -33,13 +33,13 @@ export default {
       p: "Streaming with your squad is separate from public streaming. You can run a squad hangout or stream with your crew without hitting the 100-follower mark, which makes it a great way to get comfortable on camera before you go fully public."
     },
     {
-      note: "Followers are not the only path to earning. Tournaments, squad winnings, and tips on your posts and clips have no follower requirement at all, so you can start building Coins while your following grows."
+      note: "Followers are not the only path to earning. Squad earnings, referrals, and tips on your posts and clips have no follower requirement at all, so you can start building Coins while your following grows."
     },
     {
       faq: [
         [
           "How do I get to 100 followers faster?",
-          "Post clips and shorts consistently, join squads, enter free tournaments, and tip and engage with other creators. An active profile gets followed far quicker than a quiet one."
+          "Post clips and shorts consistently, join squads, and tip and engage with other creators. An active profile gets followed far quicker than a quiet one."
         ],
         [
           "Does the 50-coin boost really come back?",

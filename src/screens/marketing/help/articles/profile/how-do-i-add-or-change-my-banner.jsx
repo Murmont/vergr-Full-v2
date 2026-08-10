@@ -17,7 +17,7 @@ export default {
       "A screenshot from your favourite game with you in it.",
       "Custom artwork or a logo if you have one.",
       "A landscape photo that represents your brand or style.",
-      "A tournament highlight or a clip thumbnail."
+      "A stream highlight or a clip thumbnail."
     ]},
     { h2: "Recommended dimensions" },
     { p: "Aim for an image at least 1200 pixels wide. A 3:1 width-to-height ratio (for example, 1500 x 500) fits the banner slot cleanly on both desktop and mobile." },

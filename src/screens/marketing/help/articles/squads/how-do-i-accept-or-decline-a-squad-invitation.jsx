@@ -10,7 +10,7 @@ export default {
     {
       steps: [
         "You get a notification when someone invites you. The invitation also sits in your squad invitations list, so there is no rush.",
-        "Before deciding, visit the squad's page: members, announcements, events, and tournament history tell you what you would be joining.",
+        "Before deciding, visit the squad's page: members, announcements, and events tell you what you would be joining.",
         "Accept, and you are in immediately as a member: squad chat, events, and everything else opens up.",
         "Decline, and the invitation closes quietly. The squad is not notified with any drama, and nothing else changes."
       ]
@@ -21,12 +21,12 @@ export default {
     {
       list: [
         "Activity: is the squad alive? Recent announcements and events are the pulse.",
-        "Fit: competitive squads expect tournament participation; social squads expect hanging out. The page usually makes the culture obvious.",
+        "Fit: competitive squads expect you to turn up for scrims; social squads expect hanging out. The page usually makes the culture obvious.",
         "Your capacity: you can be in multiple squads, but every squad deserves a member who actually shows up."
       ]
     },
     {
-      note: "Joining a squad also makes you eligible for its side of things: squad tournaments, treasury-funded events, and, if you signed up through a referral link, completing your friend's referral requirements."
+      note: "Joining a squad also makes you eligible for its side of things: squad streams, treasury-funded events, and, if you signed up through a referral link, completing your friend's referral requirements."
     },
     {
       cta: [

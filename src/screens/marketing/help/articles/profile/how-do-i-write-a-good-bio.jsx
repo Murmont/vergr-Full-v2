@@ -7,13 +7,13 @@ export default {
     { list: [
       "Your main game or games.",
       "What kind of content you make or play: competitive, casual, streaming, funny clips.",
-      "Any notable achievements: tournament wins, rank, or squad name.",
+      "Any notable achievements: your rank, a milestone, or your squad name.",
       "A personality note or your schedule if you stream regularly."
     ]},
     { h2: "Examples" },
     { p: "\"FC 25 pro and content creator. Top 100 Ultimate Team. Streams every Tuesday and Thursday.\"" },
     { p: "\"Casual CoD and Apex player. Here for the laughs and the squad. Ask me anything about controller settings.\"" },
-    { p: "\"Vanguard-verified tournament mod and CS2 grinder. DMs open for squad tryouts.\"" },
+    { p: "\"Vanguard moderator and CS2 grinder. Live most evenings. DMs open for squad tryouts.\"" },
     { h2: "How to update your bio" },
     { steps: [
       "Go to your profile.",

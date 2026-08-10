@@ -42,7 +42,7 @@ import BannedWordsEditor from '../../components/streams/BannedWordsEditor';
 import useStreamClipBuffer from '../../hooks/useStreamClipBuffer';
 import { useStreamJoinEvents } from '../../hooks/useStreamJoinEvents';
 import { uploadToR2 } from '../../utils/r2Storage';
-import { createPost } from '../../firebase/firestore';
+import { createPost, getStreamIngest } from '../../firebase/firestore';
 import { renderShareCard } from '../../utils/shareCard';
 import { resolveTier } from '../../utils/tierSystem';
 
@@ -151,6 +151,9 @@ export default function BroadcasterScreen() {
 
   // ── Stream doc ──
   const [streamDoc, setStreamDoc] = useState(null);
+  // Guards the one-shot host-only fetch of the publish key (see the snapshot
+  // handler below). A ref, not state, so it cannot retrigger the effect.
+  const ingestFetchedRef = useRef(false);
   const [streamLoading, setStreamLoading] = useState(true);
   const [buffering, setBuffering] = useState(false);
 
@@ -244,6 +247,16 @@ export default function BroadcasterScreen() {
       if (!snap.exists()) { setStreamDoc(null); return; }
       const data = { id: snap.id, ...snap.data() };
       setStreamDoc(data);
+      // The publish key is no longer a field on this document: it authorises
+      // publishing, and the document is world-readable. Only the host can fetch
+      // it, and only from the server. Merged onto streamDoc so every existing
+      // `streamDoc.streamKey` read below keeps working unchanged.
+      if (!data.streamKey && !ingestFetchedRef.current) {
+        ingestFetchedRef.current = true;
+        getStreamIngest(streamId)
+          .then((ing) => { if (ing?.streamKey) setStreamDoc((d) => (d ? { ...d, ...ing } : d)); })
+          .catch(() => { ingestFetchedRef.current = false; });
+      }
       const sc = data.playbackStalls || 0;
       if (stallCountRef.current < 0) stallCountRef.current = sc;
       else if (sc > stallCountRef.current) { stallCountRef.current = sc; setBuffering(true); }

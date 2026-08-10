@@ -16,7 +16,7 @@ export default {
     {
       list: [
         "A clean record: no bans, mutes, or a history of rejected reports against you.",
-        "Real activity: playing tournaments, streaming, being present in the community long enough to be known.",
+        "Real activity: streaming, posting, being present in the community long enough to be known.",
         "Good judgement in public: fair reports, sensible dispute behaviour, no drama-farming.",
         "Reliability: moderation is paid work with real consequences, so consistency matters more than volume."
       ]
@@ -25,7 +25,7 @@ export default {
       h2: "What happens after you accept"
     },
     {
-      p: "You start as a Recruit: you shadow the moderation queue and tournament rooms, learn how decisions are made, and take no live actions yet. Promotion to full Vanguard comes through demonstrated work, and from there the rank ladder is driven by the VP you earn moderating."
+      p: "You start as a Recruit: you shadow the moderation queue, learn how decisions are made, and take no live actions yet. Promotion to full Vanguard comes through demonstrated work, and from there the rank ladder is driven by the VP you earn moderating."
     },
     {
       cta: [

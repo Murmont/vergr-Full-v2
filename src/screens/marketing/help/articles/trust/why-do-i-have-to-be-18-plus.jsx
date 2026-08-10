@@ -1,7 +1,7 @@
 // Help center article: Why do I have to be 18+?
 
 export default {
-  summary: "Because VERGR involves real money: cash-prize tournaments, a purchasable coin economy, and withdrawals. Nearly every country sets 18 as the legal age for real-money competition and payouts, and VERGR enforces it with a date-of-birth check at identity verification. It is a hard rule with no exceptions.",
+  summary: "Because VERGR involves real money: a purchasable coin economy, creator earnings, and withdrawals. Nearly every country sets 18 as the legal age for buying and cashing out, and VERGR enforces it with a date-of-birth check at identity verification. It is a hard rule with no exceptions.",
   updated: "2026-07-02",
   body: [
     {
@@ -13,7 +13,7 @@ export default {
     {
       list: [
         "At sign-up you confirm your date of birth.",
-        "Before any money feature unlocks (wallet, tournaments, payouts), identity verification checks the date of birth on your government ID. An ID showing under 18 is declined automatically, and that decision cannot be appealed or retried.",
+        "Before any money feature unlocks (wallet, earnings, payouts), identity verification checks the date of birth on your government ID. An ID showing under 18 is declined automatically, and that decision cannot be appealed or retried.",
         "The age requirement applies to everyone, in every country VERGR operates in."
       ]
     },
@@ -21,7 +21,7 @@ export default {
       h2: "Why not just gate the money features?"
     },
     {
-      p: "The money runs through the whole platform: tips in streams, prize tournaments, paid memberships, the creator economy. Splitting VERGR into an under-18 half and an adult half would either cripple the experience or leak real-money exposure to minors. Eighteen and over, platform-wide, is the honest version."
+      p: "The money runs through the whole platform: tips in streams, paid memberships, paid stream access, the creator economy. Splitting VERGR into an under-18 half and an adult half would either cripple the experience or leak real-money exposure to minors. Eighteen and over, platform-wide, is the honest version."
     },
     {
       cta: [

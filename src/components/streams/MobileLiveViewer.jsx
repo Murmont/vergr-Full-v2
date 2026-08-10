@@ -505,7 +505,9 @@ export default function MobileLiveViewer() {
   };
   const behind = drift > 6;
 
-  const playbackUrl = streamDoc?.compositeHlsUrl || (streamDoc?.streamKey ? getPlaybackUrl(streamDoc.streamKey) : null);
+  // hlsUrl is written by createStreamSession for free streams. It is null on a
+  // paid one by design; the paid path resolves through getAccess.
+  const playbackUrl = streamDoc?.compositeHlsUrl || streamDoc?.hlsUrl || null;
   const isTwitchMirror = streamDoc?.source === 'twitch' && !!streamDoc?.twitchChannel;
   const hasVideo = !!playbackUrl || isTwitchMirror;
 

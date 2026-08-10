@@ -209,12 +209,12 @@ async function main() {
     const catLinks = catsWithContent.map((c) => `<li><a href="/platform/help/category/${c.id}">${esc(c.label)}</a></li>`).join('');
     const artLinks = pub.map((a) => `<li><a href="/platform/help/${a.slug}">${esc(a.title)}</a></li>`).join('');
     const bodyHtml = `<main><h1>VERGR Help Center</h1>`
-      + `<p>Guides and answers for tournaments, streaming, the coin economy, payouts, squads, and more.</p>`
+      + `<p>Guides and answers for streaming, the coin economy, payouts, squads, and more.</p>`
       + `<h2>Browse by topic</h2><ul>${catLinks}</ul>`
       + `<h2>All guides</h2><ul>${artLinks}</ul></main>`;
     let html = applyHead(shell, {
       title: 'Help Center | VERGR',
-      description: 'Guides and answers for VERGR: tournaments, streaming, coins, gems, payouts, squads, and account help.',
+      description: 'Guides and answers for VERGR: streaming, coins, gems, payouts, squads, and account help.',
       canonical: `${SITE}/platform/help`,
       jsonld: graph([breadcrumbSchema(crumbs)]),
     });
@@ -245,7 +245,13 @@ async function main() {
     return out.join('\n');
   };
   const growthFaq = (page) => page.sections.flatMap((s) => s.blocks.filter((b) => Array.isArray(b.faq)).flatMap((b) => b.faq));
-  for (const page of growth.ALL_GROWTH_PAGES) {
+  // The growth funnel (Make Money Gaming pillar, the "Is VERGR Legit?" hub and
+  // the per-game /platform/play/* pages) is retired: an earnings-claim page, a
+  // page arguing our own legitimacy, and per-game money pages all read badly to
+  // a payment underwriter. The content module is kept; delete this guard to
+  // bring the pages back.
+  const GROWTH_PRERENDER_DISABLED = true;
+  for (const page of (GROWTH_PRERENDER_DISABLED ? [] : growth.ALL_GROWTH_PAGES)) {
     const isGame = !!page.game;
     const crumbs = [
       { name: 'Home', path: '/platform' },
@@ -282,12 +288,12 @@ async function main() {
   // clients and non-rendering crawlers see real content). The first ten mirror
   // the useSeo() calls in PublicMarketingScreens.jsx — keep them in sync.
   const MARKETING_PAGES = [
-    { path: '/platform', h1: 'Connect, Stream & Compete in Tournaments',
-      title: 'Vergr | Connect, Stream & Compete in Tournaments',
-      description: 'Connect with gamers, live stream in high quality, and compete in tournaments on Vergr. Manage your competitive squad and earn rewards with daily quests.' },
+    { path: '/platform', h1: 'Live Streaming for Gamers & Creators',
+      title: 'Vergr | Live Streaming for Gamers & Creators',
+      description: 'Connect with gamers, live stream in high quality, and share clips on Vergr. Build your squad, follow creators, and support them with tips and memberships.' },
     { path: '/platform/store', h1: 'Shop — Buy VC Coins',
       title: 'Shop — Buy VC Coins | VERGR',
-      description: 'Buy VC Coins to tip streamers, enter tournaments, subscribe to squads, and boost your reach. Eight pack sizes from €0.99 to €224.99. Pay with cryptocurrency or card.' },
+      description: 'Buy VC Coins to tip streamers, join creator memberships, unlock paid streams, and boost your reach. Eight pack sizes from €0.99 to €224.99. Pay with cryptocurrency or card.' },
     { path: '/platform/contact', h1: 'Contact VERGR',
       title: 'Contact — Get in Touch with VERGR',
       description: 'Send the VERGR team a message about support, privacy, legal, abuse, copyright, press, or partnerships. We reply within two business days.' },
@@ -302,30 +308,24 @@ async function main() {
       description: 'VERGR takes a flat 10% on tips and memberships — you keep 90% from day one, no points program, no tier ladder. Mirror your stream to Twitch while you grow here. Trying it costs nothing.' },
     { path: '/platform/monetization', h1: 'Make Money Gaming',
       title: 'Make Money Gaming — VERGR Creator Monetisation',
-      description: 'Five ways to earn on VERGR: tips, memberships, tournament prizes, Stream Boost amplification, and squad treasury shares. Flat 10% tip fee. Your conversion commission drops 30% → 10% as you climb the rank ladder.' },
+      description: 'Ways to earn on VERGR: tips, memberships, paid streams, and Stream Boost amplification. Flat 10% tip fee. Your conversion commission drops 30% → 10% as you climb the rank ladder.' },
     { path: '/platform/learn/live', h1: 'Stream Gameplay & Earn',
       title: 'Stream Gameplay & Earn — Live Streaming on VERGR',
-      description: 'Go live in 30 seconds from your browser, no install. Earn real tips while you play, build memberships, and stream tournaments with 720p60 (Lite) or 1080p60 (Pro). The Twitch alternative built for gamer monetisation.' },
-    { path: '/platform/learn/tournaments', h1: 'Online Gaming Tournaments',
-      title: 'Online Gaming Tournaments — Cash Prizes for Skill | VERGR',
-      description: 'Compete in CS2, Apex Legends, Overwatch 2, Dota 2 and 60+ supported games. Real brackets, verified results, instant prize payouts. Auto-detected wins via Steam GSI + game APIs. Solo or squad.' },
+      description: 'Go live in 30 seconds from your browser, no install. Earn real tips while you play, build memberships, and co-stream with a guest at 720p60 (Lite) or 1080p60 (Pro). The Twitch alternative built for gamer monetisation.' },
     { path: '/platform/learn/squads', h1: 'Squads — Gaming Crews with Shared Treasuries',
       title: 'Squads — Gaming Crews with Shared Treasuries | VERGR',
-      description: 'Up to 100 members. Voice + video hangouts built in. Monthly elections, real roles (President, Vice President, Treasury), and 10% of every tournament win auto-routed to the squad treasury. Discord meets esports team.' },
+      description: 'Up to 100 members. Voice + video hangouts built in. Monthly elections, real roles (President, Vice President, Treasury), and a shared squad treasury. Discord meets gaming crew.' },
     { path: '/platform/learn/clips', h1: 'Gaming Clips — Upload, Share, Earn',
       title: 'Gaming Clips — Upload, Share, Earn | VERGR',
       description: 'Upload your clutch moments or embed YouTube/Twitch clips. Up to 60s (Free), 3min (Lite), or 10min (Pro). Earn VP from views and tips. Discover clips from squads and the global feed.' },
     { path: '/platform/learn/coins', h1: 'VC Coins — Gaming Currency You Can Cash Out',
       title: 'VC Coins — Gaming Currency You Can Cash Out | VERGR',
-      description: 'Buy coins from €0.99 to €224.99 with crypto or card. Tip streamers, enter tournaments, boost streams. Earn coins from your audience and convert to gems for crypto cash-out.' },
+      description: 'Buy coins from €0.99 to €224.99 with crypto or card. Tip streamers, join memberships, unlock paid streams. Coins are spendable only inside VERGR; creators convert earnings to gems and withdraw.' },
     { path: '/linkinbio', h1: 'Get Your Free Link in Bio',
       title: 'Vergr.me | Get Your Free Link in Bio',
       description: 'Claim your free vergr.me link in bio page: unlimited links, 18+ block types, real design systems, analytics, QR codes and live stream integration. Free forever, no credit card.' },
     // Pages below have no useSeo() in their screens (shell canonical applied even
     // at runtime) — titles/descriptions authored here, self-canonical is the fix.
-    { path: '/platform/learn/tournament-rules', h1: 'Tournament Rules',
-      title: 'Tournament Rules — Fair Play, Results & Payouts | VERGR',
-      description: 'The official VERGR tournament rules: entry and tickets, brackets, result verification, disputes, refunds, and prize payouts.' },
     { path: '/platform/streamer', h1: 'For Streamers',
       title: 'For Streamers — Go Live & Get Paid | VERGR',
       description: 'Stream from your browser or OBS, earn tips with a flat 10% fee, build channel memberships, and mirror to Twitch. Built for gamer monetisation.' },
@@ -334,10 +334,10 @@ async function main() {
       description: 'VERGR creator studio: stream overlays, clip tools, scheduling, analytics, and monetisation controls in one dashboard.' },
     { path: '/platform/partners', h1: 'Partners',
       title: 'Partners — Work with VERGR',
-      description: 'Partner with VERGR: creator programs, tournament organisers, and brand collaborations on the social esports platform.' },
+      description: 'Partner with VERGR: creator programs and brand collaborations on the live streaming platform.' },
     { path: '/platform/about', h1: 'About VERGR',
-      title: 'About VERGR — The Social Esports Platform',
-      description: 'VERGR combines live streaming, tournaments with real prizes, squads with shared treasuries, and creator monetisation in one platform.' },
+      title: 'About VERGR — The Live Streaming Platform',
+      description: 'VERGR combines live streaming, clips, squads with shared treasuries, and creator monetisation in one platform.' },
     { path: '/platform/code-of-conduct', h1: 'Code of Conduct',
       title: 'Code of Conduct | VERGR',
       description: 'The VERGR community code of conduct: fair play, respectful behaviour, anti-cheat rules, and enforcement.' },
@@ -346,13 +346,13 @@ async function main() {
       description: 'Get VERGR on any device: Windows desktop app, Android APK, iPhone home-screen app, or straight in your browser.' },
     { path: '/platform/careers', h1: 'Careers',
       title: 'Careers at VERGR',
-      description: 'Join the team building the social esports platform: streaming, tournaments, squads, and creator monetisation.' },
+      description: 'Join the team building the live streaming platform: streaming, clips, squads, and creator monetisation.' },
     { path: '/platform/forums', h1: 'Forums',
       title: 'Forums — VERGR Community',
-      description: 'The VERGR community forums: announcements, feedback, tournament discussion, and squad recruitment.' },
+      description: 'The VERGR community forums: announcements, feedback, creator discussion, and squad recruitment.' },
     { path: '/platform/terms', h1: 'Terms of Service',
       title: 'Terms of Service | VERGR',
-      description: 'The VERGR terms of service covering accounts, coins and gems, tournaments, streaming, and payouts.' },
+      description: 'The VERGR terms of service covering accounts, coins and gems, streaming, and payouts.' },
     { path: '/platform/privacy', h1: 'Privacy Policy',
       title: 'Privacy Policy | VERGR',
       description: 'How VERGR collects, uses, and protects your data, and the controls you have over it.' },
@@ -362,6 +362,11 @@ async function main() {
     { path: '/platform/cookies', h1: 'Cookie Policy',
       title: 'Cookie Policy | VERGR',
       description: 'How VERGR uses cookies and similar technologies, and how to manage them.' },
+    // Payment providers expect a refund policy reachable without reading the
+    // full Terms. Prerendered so it resolves even if the SPA bundle fails.
+    { path: '/platform/refunds', h1: 'Refund and Cancellation Policy',
+      title: 'Refund & Cancellation Policy | VERGR',
+      description: 'When a VERGR purchase can be refunded, how to cancel a subscription, what happens if a paid stream is cancelled, and how to contact us about a charge.' },
     // Google Play's Child Safety Standards policy requires this URL to load
     // without error and to name the app or developer. Prerendering it means a
     // Play crawler gets real content, not the empty SPA shell.
@@ -375,7 +380,7 @@ async function main() {
       bodyHtml: legalDocHtml(CHILD_SAFETY_STANDARDS) },
   ];
   // Short crumb label for a marketing page: the h1 is a full sentence
-  // ("Connect, Stream & Compete in Tournaments"), which reads badly in a
+  // ("Live Streaming for Gamers & Creators"), which reads badly in a
   // breadcrumb, so derive from the slug and override only where that loses
   // meaning.
   const CRUMB_OVERRIDES = {
@@ -392,8 +397,6 @@ async function main() {
     '/platform/code-of-conduct': 'Code of Conduct',
     '/platform/acceptable-use': 'Acceptable Use',
     '/platform/child-safety': 'Child Safety',
-    '/platform/make-money-gaming': 'Make Money Gaming',
-    '/platform/learn/tournament-rules': 'Tournament Rules',
   };
   const crumbLabel = (path) => CRUMB_OVERRIDES[path]
     || path.split('/').filter(Boolean).pop()
@@ -443,8 +446,8 @@ async function main() {
   {
     const children = MARKETING_PAGES.filter((p) => p.path.startsWith('/platform/learn/'));
     const crumbs = [{ name: 'Home', path: '/platform' }, { name: 'Learn', path: '/platform/learn' }];
-    const title = 'Learn VERGR — Streaming, Tournaments, Squads, Clips & Coins';
-    const description = 'Guides to everything on VERGR: live streaming, online tournaments with cash prizes, squads with shared treasuries, gaming clips, and the VC coin economy.';
+    const title = 'Learn VERGR — Live Streaming, Squads, Clips & Coins';
+    const description = 'Guides to everything on VERGR: live streaming, squads with shared treasuries, gaming clips, and the VC coin economy.';
     const items = [
       { '@type': 'WebPage', name: title, description, url: `${SITE}/platform/learn` },
       breadcrumbSchema(crumbs),

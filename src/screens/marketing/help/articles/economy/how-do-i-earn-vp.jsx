@@ -5,7 +5,7 @@
 // Top-level: summary (1-2 sentences, answer-first), updated (YYYY-MM-DD), body [].
 
 export default {
-  summary: "You earn VP (Vergr Points) by being active: competing in tournaments, completing creator quests, and referring friends. VP raises your rank, and a higher rank lowers the commission you pay when converting Coins to Gems. Paid plans earn VP faster, so they climb sooner.",
+  summary: "You earn VP (Vergr Points) by being active: streaming, posting, completing creator quests, and referring friends. VP raises your rank, and a higher rank lowers the commission you pay when converting Coins to Gems. Paid plans earn VP faster, so they climb sooner.",
   updated: "2026-06-06",
   body: [
     {
@@ -16,7 +16,7 @@ export default {
     },
     {
       list: [
-        "Compete in tournaments. Entering and placing in tournaments awards VP, with more for stronger finishes and bigger events.",
+        "Go live and post. Streaming sessions and published content award VP, with more for content people actually watch.",
         "Complete creator quests. The Creator Studio has quests that pay out in VP (never Coins).",
         "Refer friends. When someone signs up with your referral link, you both get a VP boost.",
         "Stay active. Regular participation across the platform keeps your VP growing."

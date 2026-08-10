@@ -2,7 +2,7 @@ export default {
   summary: "LFG means 'looking for group'. An LFG post advertises that you want teammates — set the game, what you are looking for, and any requirements, and other players can respond. Create one from the create menu by choosing LFG.",
   updated: "2026-06-07",
   body: [
-    { p: "LFG posts are how you find people to play with on VERGR — squad tryouts, ranked duos, tournament teammates, or just a group for the night." },
+    { p: "LFG posts are how you find people to play with on VERGR — squad tryouts, ranked duos, co-stream partners, or just a group for the night." },
     { h2: "Making an LFG post" },
     { steps: [
       "Tap create and choose LFG.",

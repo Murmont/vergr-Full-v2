@@ -43,11 +43,10 @@ export const MAIN_NAV = {
       ],
     },
     {
-      header: 'Compete',
+      header: 'Watch',
       items: [
-        { icon: 'emoji_events', label: 'Tournaments', path: '/tournaments' },
-        { icon: 'leaderboard', label: 'Leaderboard', path: '/leaderboard' },
         { icon: 'live_tv', label: 'Live Streams', path: '/streams' },
+        { icon: 'leaderboard', label: 'Leaderboard', path: '/leaderboard' },
       ],
     },
     {
@@ -188,8 +187,8 @@ export const SETTINGS_NAV = {
 // nav. If you add one here you'll re-introduce the double-rail bug.
 const RESOLVERS = [
   { prefix: '/creator', nav: CREATOR_NAV },
-  { prefix: '/tournaments', nav: TOURNAMENTS_NAV },
-  { prefix: '/create-tournament', nav: TOURNAMENTS_NAV },
+  // Tournaments are retired from navigation. TOURNAMENTS_NAV is kept above so
+  // the section can be restored by re-adding these two resolver entries.
   { prefix: '/messages', nav: MESSAGING_NAV },
   { prefix: '/settings', nav: SETTINGS_NAV },
 ];

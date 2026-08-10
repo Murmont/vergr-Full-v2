@@ -49,6 +49,7 @@ const functions = require('firebase-functions/v2');
 const axios = require('axios');
 const crypto = require('node:crypto');
 const { creditReferralPurchaseBonus } = require('./referralRevenue');
+const { regionalPrice } = require('./geoPricing');
 
 const db = getFirestore('vgrdb');
 const REGION = 'europe-west1';
@@ -170,7 +171,7 @@ exports.createPayramPayment = onCall({ region: REGION, secrets: SECRETS }, async
   }
 
   // Resolve order — a fixed pack, a custom coin amount, or a subscription.
-  const { packSku, customCoins, subscriptionTier, gemQuoteId } = request.data || {};
+  const { packSku, customCoins, subscriptionTier, gemQuoteId, cart } = request.data || {};
   let order; // { kind, sku, coins, vpBonus, priceEUR, tier? }
   if (gemQuoteId) {
     // Buy-and-send: gems are never sold as a standing balance, only as payment
@@ -181,6 +182,34 @@ exports.createPayramPayment = onCall({ region: REGION, secrets: SECRETS }, async
     order = {
       kind: 'gem_send', sku: 'gem_send', coins: 0, vpBonus: 0,
       priceEUR: q.eurTotal, gemQuote: q,
+    };
+  } else if (Array.isArray(cart) && cart.length) {
+    // CART CHECKOUT. The client sends WHAT, never HOW MUCH: a list of
+    // { sku, qty } and nothing else. Every line is re-priced from COIN_PACKS
+    // here, which is the same rule the single-pack path has always followed and
+    // the only reason a cart is safe to accept at all.
+    //
+    // One payment for the whole basket rather than one per line: PayRam charges
+    // per invoice, and three redirects to buy three packs is not a checkout,
+    // it is an obstacle course.
+    let coins = 0;
+    let vpBonus = 0;
+    let priceEUR = 0;
+    const lines = [];
+    for (const raw of cart.slice(0, 20)) {
+      const sku = String(raw?.sku || '');
+      const qty = Math.min(99, Math.max(1, Math.floor(Number(raw?.qty) || 0)));
+      const pack = COIN_PACKS[sku];
+      if (!pack) throw new HttpsError('invalid-argument', `Unknown pack: ${sku}`);
+      coins    += pack.coins   * qty;
+      vpBonus  += pack.vpBonus * qty;
+      priceEUR += pack.priceEUR * qty;
+      lines.push({ sku, qty, coins: pack.coins * qty, priceEUR: +(pack.priceEUR * qty).toFixed(2) });
+    }
+    if (!coins) throw new HttpsError('invalid-argument', 'Cart is empty.');
+    order = {
+      kind: 'coins', sku: 'cart', coins, vpBonus,
+      priceEUR: +priceEUR.toFixed(2), lines,
     };
   } else if (subscriptionTier) {
     const priceEUR = TIER_EUR_PRICE[subscriptionTier];
@@ -205,6 +234,30 @@ exports.createPayramPayment = onCall({ region: REGION, secrets: SECRETS }, async
       placeholder: true,
       message: 'PayRam is not configured. Set PAYRAM_API_KEY + PAYRAM_NODE_URL to enable.',
     };
+  }
+
+  // REGIONAL PRICING — SUBSCRIPTIONS ONLY. NEVER COINS.
+  //
+  // A coin has a FIXED value on the way out: it converts to Gems and withdraws
+  // at a rate that does not care where it was bought. Discount the price a coin
+  // is SOLD at and you have created an arbitrage, not a promotion. Buy 100
+  // coins for EUR 0.36 in a discount region, tip them to a creator, and that
+  // creator withdraws against the full EUR 0.0090 per coin. Vergr funds the
+  // gap on every single transaction, and anyone willing to set a VPN and a
+  // profile country turns it into a pump aimed at the treasury.
+  //
+  // Regional pricing is only ever safe on something that cannot be converted
+  // back into money. A subscription is consumed, not redeemed, so Lite and Pro
+  // can be priced regionally exactly as Spotify and Netflix price them.
+  //
+  // Affordability in cheaper markets comes from SMALLER PACKS at the same
+  // per-coin rate, never from a cheaper coin. See docs + the pack ladder in
+  // src/utils/vpSystem.js.
+  if (order.kind === 'subscription') {
+    const geo = await regionalPrice(uid, order.priceEUR);
+    order.baseEUR = order.priceEUR;
+    order.priceEUR = geo.priceEUR;
+    order.geo = { country: geo.country, tier: geo.tier, multiplier: geo.multiplier };
   }
 
   // Pricing is server-authoritative — never trust a client-sent amount.
@@ -606,3 +659,101 @@ exports._settlePayramOrder = settlePayramOrder;
 // safety buffer as every other purchase. A second FX path would drift from this
 // one and be the thing that silently undercharges.
 exports._priceEurToUsd = priceEurToUsd;
+
+/**
+ * What will this actually cost me, in the currency I will actually be charged.
+ *
+ * The buy screen used to show a EUR figure with "billed in USD/USDT" beneath
+ * it, which meant the number on the button was never the number on the card
+ * statement. That is the exact thing a payment processor objects to at
+ * underwriting, and it is also just bad manners.
+ *
+ * So this runs the SAME two steps the payment path runs, in the same order,
+ * against the same live rate: regional price first, FX second. The client
+ * renders what comes back. There is no second calculation anywhere that could
+ * drift from this one.
+ *
+ * Fails closed on FX exactly like the payment does: if no trustworthy rate is
+ * available the quote errors rather than guessing, because a quote that
+ * disagreed with the charge would be worse than no quote at all.
+ */
+exports.getCoinPriceQuote = onCall(
+  { region: REGION, cors: true, secrets: [PAYRAM_API_KEY, PAYRAM_NODE_URL] },
+  async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) throw new HttpsError('unauthenticated', 'Sign in required.');
+
+    const { packSku, customCoins, subscriptionTier, all, cart } = request.data || {};
+
+    // The whole ladder in ONE call. The buy screen shows eight packs, and eight
+    // round trips to price a single screen is how you make a wallet feel slow.
+    // Region and FX are resolved once and applied across the ladder.
+    if (all) {
+      // No regional multiplier here. Coins are sold at ONE global per-coin rate
+      // because they redeem at one global rate; see the note on the payment
+      // path. This call exists to convert EUR to the USD the buyer is charged,
+      // nothing more.
+      const entries = await Promise.all(Object.entries(COIN_PACKS).map(async ([sku, pack]) => {
+        const { amountUSD } = await priceEurToUsd(pack.priceEUR);
+        return [sku, { coins: pack.coins, priceEUR: pack.priceEUR, amountUSD }];
+      }));
+      return { currency: 'USD', packs: Object.fromEntries(entries) };
+    }
+
+    // CART TOTAL. Same server-side re-pricing as the payment path: the client
+    // names packs and quantities, never an amount. One quote for the basket, so
+    // the total on the cart button is the total on the statement.
+    if (Array.isArray(cart) && cart.length) {
+      let coinsTotal = 0;
+      let eurTotal = 0;
+      const lines = [];
+      for (const raw of cart.slice(0, 20)) {
+        const sku = String(raw?.sku || '');
+        const qty = Math.min(99, Math.max(1, Math.floor(Number(raw?.qty) || 0)));
+        const pack = COIN_PACKS[sku];
+        if (!pack) continue;
+        coinsTotal += pack.coins * qty;
+        eurTotal   += pack.priceEUR * qty;
+        lines.push({ sku, qty, coins: pack.coins * qty, priceEUR: +(pack.priceEUR * qty).toFixed(2) });
+      }
+      if (!coinsTotal) throw new HttpsError('invalid-argument', 'Cart is empty.');
+      const eur = +eurTotal.toFixed(2);
+      const { amountUSD: cartUSD, rate: cartRate } = await priceEurToUsd(eur);
+      return { coins: coinsTotal, priceEUR: eur, amountUSD: cartUSD, currency: 'USD', fxRate: cartRate, lines };
+    }
+
+    let baseEUR = 0;
+    let coins = 0;
+    if (subscriptionTier) {
+      baseEUR = TIER_EUR_PRICE[subscriptionTier];
+      if (!baseEUR) throw new HttpsError('invalid-argument', 'Unknown subscription tier');
+    } else if (packSku && packSku !== 'custom') {
+      const pack = COIN_PACKS[packSku];
+      if (!pack) throw new HttpsError('invalid-argument', 'Unknown pack');
+      baseEUR = pack.priceEUR;
+      coins = pack.coins;
+    } else {
+      coins = Math.floor(Number(customCoins) || 0);
+      baseEUR = +(coins * CUSTOM_COIN_PRICE_EUR).toFixed(2);
+      if (!coins || baseEUR < CUSTOM_MIN_EUR) {
+        throw new HttpsError('invalid-argument', `Minimum is EUR ${CUSTOM_MIN_EUR}.`);
+      }
+    }
+
+    // Subscriptions may be priced regionally; coins never are. Same rule, and
+    // the same reason, as the payment path.
+    const priceEUR = subscriptionTier
+      ? (await regionalPrice(uid, baseEUR)).priceEUR
+      : baseEUR;
+    const { amountUSD, rate } = await priceEurToUsd(priceEUR);
+
+    return {
+      coins,
+      priceEUR,
+      // THE NUMBER ON THE CARD STATEMENT.
+      amountUSD,
+      currency: 'USD',
+      fxRate: rate,
+    };
+  },
+);

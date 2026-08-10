@@ -5,42 +5,42 @@
 // Top-level: summary (1-2 sentences, answer-first), updated (YYYY-MM-DD), body [].
 
 export default {
-  summary: "VERGR supports a wide range of competitive PC and console titles for tournaments, including FC, CS2, NBA 2K, Warzone, Apex Legends, Rocket League, and many more. You can also stream and post about any game you like, even ones without a tournament mode.",
-  updated: "2026-06-06",
+  summary: "Any of them. VERGR does not restrict what you can stream, clip, or post about, so whether it is FC, CS2, NBA 2K, Warzone, Apex Legends, Rocket League, a single-player campaign, or something nobody has heard of, it belongs here.",
+  updated: "2026-08-09",
   body: [
     {
-      p: "There are two answers here, because VERGR has a competitive side and a social side, and they cover different sets of games."
+      p: "There is no approved-games list on VERGR. Streaming, clips, posts, and squads work with every title, so the honest answer to what you can play is: whatever you actually play."
     },
     {
-      h2: "Games you can compete in"
+      h2: "Streaming and clips"
     },
     {
-      p: "Tournaments run on real competitive titles across PC and console. The lineup includes sports and fighting games, shooters, and team games like FC, CS2, NBA 2K, Warzone, Apex Legends, and Rocket League, among others. When you create or browse a tournament, you pick from the supported list, and each game has its own way of verifying results so prizes stay fair."
+      p: "Go live with any game, on PC or console. Tag the game so it shows in the right part of Explore and reaches people browsing for it. Shooters, sports titles, MMOs, indie games, retro, single-player story games, all of it works the same way."
     },
     {
-      h2: "Games you can stream and post about"
+      h2: "Finding your audience"
     },
     {
-      p: "For streaming, clips, posts, and squads, you are not limited to the tournament list. Play and broadcast whatever you want. The social and creator side of VERGR works with any game, so you can build an audience around a title even if it does not have a competitive tournament mode yet."
+      p: "Tagging matters more than the game itself. A stream tagged with the right title, language, and vibe gets surfaced to people browsing for exactly that, and a smaller game with an engaged audience often out-earns a huge one you are lost inside."
     },
     {
-      h2: "Do not see your game?"
+      h2: "Not just games"
     },
     {
-      p: "The supported tournament list grows over time. If a game you want to compete in is not there yet, you can still stream it, post clips, and run squad scrims around it while the competitive list expands."
+      p: "Plenty of VERGR streams are not gameplay at all: just chatting, watch-alongs, music, creative work, or a squad hanging out in voice. The platform is built around gamers, but it does not require a game to be on screen."
     },
     {
-      note: "You need to own and be able to run a game to compete in a tournament for it. Check before you register so you do not forfeit at the lobby."
+      note: "The one thing that does not change per game is the rules. Whatever you play, the Acceptable Use Policy applies to what appears on your stream."
     },
     {
       cta: [
         {
-          to: "/platform/help/how-do-i-join-a-tournament",
-          label: "Join a tournament"
-        },
-        {
           to: "/platform/help/how-do-i-go-live-on-vergr",
           label: "Stream any game"
+        },
+        {
+          to: "/platform/help/how-do-i-add-a-title-game-and-tags-to-my-stream",
+          label: "Titles, games and tags"
         }
       ]
     }

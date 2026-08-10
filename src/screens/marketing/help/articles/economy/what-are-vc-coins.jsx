@@ -5,7 +5,7 @@
 // Top-level: summary (1-2 sentences, answer-first), updated (YYYY-MM-DD), body [].
 
 export default {
-  summary: "VC Coins are the in-app currency on VERGR. You use them to tip creators, enter tournaments, subscribe to squads and creators, and boost your reach. You can buy them or earn them.",
+  summary: "VC Coins are the in-app currency on VERGR. You use them to tip creators, buy access to paid streams, subscribe to squads and creators, and boost your reach. You can buy them or earn them.",
   updated: "2026-06-06",
   body: [
     {
@@ -17,7 +17,7 @@ export default {
     {
       list: [
         "Tip a creator on a stream, a post, or their profile.",
-        "Enter paid tournaments, where your entry goes toward the prize.",
+        "Buy a pass to a paid live stream, or a creator membership.",
         "Subscribe to a creator membership or a squad.",
         "Boost a stream or a post for more reach."
       ]
@@ -28,7 +28,7 @@ export default {
     {
       list: [
         "Buy them in the Shop with a card or crypto.",
-        "Win them in tournaments.",
+        "Earn them from paid streams and memberships.",
         "Get tipped while you stream or post.",
         "Earn your share of squad winnings."
       ]

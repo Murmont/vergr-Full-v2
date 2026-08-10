@@ -38,7 +38,7 @@ const QUEST_DEFS = {
   special: [
     { id: 'creator_content', title: 'Creator Content', description: 'Post 10 times with 5+ likes and 5+ comments each', reward: 100, currency: 'vp', target: 10, oneTime: true },
     { id: 'first_squad', title: 'Join a Squad', description: 'Join or create your first squad', reward: 50, currency: 'vp', target: 1, oneTime: true },
-    { id: 'first_tournament', title: 'Enter a Tournament', description: 'Compete in your first tournament', reward: 100, currency: 'vp', target: 1, oneTime: true },
+    { id: 'first_stream', title: 'Go Live', description: 'Broadcast your first live stream', reward: 100, currency: 'vp', target: 1, oneTime: true },
     // Profile-completion rewards (founder-approved 2026-07-09). Server
     // verifies the data exists (avatar set, bio length, etc.) and locks the
     // amount — claiming without the data returns a friendly error toast.
@@ -134,7 +134,7 @@ export default function EarnCoinsScreen() {
           weekly_streak: 1,
           refer_friend: 0,
           first_squad: 0,
-          first_tournament: 0,
+          first_stream: 0,
         });
       } catch (err) {
         console.error('Failed to load earn data:', err);
@@ -169,7 +169,7 @@ export default function EarnCoinsScreen() {
     { img: '/brand/earn/quest-daily.webp', bg: '/brand/earn/bg-daily.webp', icon: 'star', title: 'Daily Quests', desc: 'Complete tasks for VP', reward: '15-30 VP/day', color: 'text-brand-violet', action: () => setActiveTab('daily') },
     { img: '/brand/earn/quest-streak.webp', bg: '/brand/earn/bg-streak.webp', icon: 'login', title: '5-Day Streak', desc: 'Log in 5 days straight', reward: '5 coins + 50 VP', color: 'text-brand-gold', action: () => navigate('/') },
     { img: '/brand/earn/quest-phone.webp', bg: '/brand/earn/bg-phone.webp', icon: 'phone', title: 'Add Phone Number', desc: 'Unlock contact invites', reward: '1000 VP', color: 'text-brand-violet-light', action: () => navigate('/messages/new') },
-    { img: '/brand/earn/quest-tournaments.webp', bg: '/brand/earn/bg-tournaments.webp', icon: 'emoji_events', title: 'Win Tournaments', desc: 'Win coins from prize pools', reward: 'Coins + VP', color: 'text-brand-ember', action: () => navigate('/tournaments') },
+    { img: '/brand/earn/quest-tournaments.webp', bg: '/brand/earn/bg-tournaments.webp', icon: 'live_tv', title: 'Go Live', desc: 'Stream and receive tips from viewers', reward: 'Coins + VP', color: 'text-brand-ember', action: () => navigate('/go-live') },
     { img: '/brand/earn/quest-refer.webp', bg: '/brand/earn/bg-refer.webp', icon: 'person_add', title: 'Refer Friends', desc: 'Invite a friend who sets up properly', reward: '5000 VP (+3000 VP for them)', color: 'text-brand-pink', action: () => setActiveTab('special') },
     { img: '/brand/earn/quest-levelup.webp', bg: '/brand/earn/bg-levelup.webp', icon: 'trending_up', title: 'Level Up', desc: 'Lower commission as you rank up: 30% → 10%', reward: 'Ranks 1–100', color: 'text-brand-gold', action: () => navigate('/settings/ranks') },
     { bg: '/brand/earn/bg-liteplans.webp', icon: 'workspace_premium', title: 'Lite / Pro Plans', desc: '1.5×/2× VP + monthly VP & coins', reward: '+1k–3k VP / mo', color: 'text-brand-violet', action: () => navigate('/settings/subscription') },
@@ -212,7 +212,7 @@ export default function EarnCoinsScreen() {
               <p className="text-text-secondary text-[9px]">Coins (spendable)</p>
             </div>
           </div>
-          <p className="text-text-primary text-[10px] mt-3 text-center">Quests earn VP · Tournaments earn coins · Referrals earn VP for both of you</p>
+          <p className="text-text-primary text-[10px] mt-3 text-center">Quests earn VP · Tips and memberships earn coins · Referrals earn VP for both of you</p>
           {vpMultiplier > 1 && (
             <button
               onClick={() => navigate('/settings/subscription')}
@@ -250,7 +250,7 @@ export default function EarnCoinsScreen() {
 
       <div className="mx-4 lg:mx-6 mt-3">
         <InfoTooltip id="earn_intro" icon="diamond" color="#B44FFF" title="Earning real money on VERGR" rightImage="/brand/earn/icon-real-money.webp">
-          Win tournaments to earn <strong>coins</strong>, then convert coins to <strong>gems</strong> — gems are the cashable currency.
+          Receive tips, memberships, and paid-stream access to earn <strong>coins</strong>, then convert coins to <strong>gems</strong> — gems are the cashable currency.
           Complete quests, refer friends, and level up to earn <strong>VP</strong> — this levels up your profile and lowers your commission rate, meaning you keep more from every cash-out.
         </InfoTooltip>
       </div>

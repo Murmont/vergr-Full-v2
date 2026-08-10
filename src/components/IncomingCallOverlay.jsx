@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { collection, query, where, onSnapshot, updateDoc, doc, deleteField } from 'firebase/firestore';
 import { db, auth } from '../firebase/config';
-import { getUser } from '../firebase/firestore';
+import { getUser, purchaseContentAccess } from '../firebase/firestore';
 import { useAuth } from '../context/AuthContext';
 import Icon from './Icon';
 import UserAvatar from './UserAvatar';
@@ -11,6 +11,7 @@ import { SHARE_IN_KEY, setSharedMedia, setSharedFile } from '../utils/shareIn';
 export default function IncomingCallOverlay() {
   const [incomingCall, setIncomingCall] = useState(null);
   const [caller, setCaller] = useState(null);
+  const [joining, setJoining] = useState(false);
   const [declining, setDeclining] = useState(false);
   const navigate = useNavigate();
   const { currentUser } = useAuth();
@@ -208,8 +209,28 @@ export default function IncomingCallOverlay() {
   }, [navigate, incomingCall]);
 
   // Group calls run on the SFU (/group-call); 1:1 stays raw WebRTC P2P (/call).
-  const handleAccept = () => {
-    if (!incomingCall) return;
+  //
+  // A PAID session is bought HERE, before connecting. The price is written on
+  // the call doc but is not trusted: purchaseAccess re-reads it server-side, and
+  // the deterministic entitlement id means answering twice cannot charge twice.
+  const handleAccept = async () => {
+    if (!incomingCall || joining) return;
+    const price = Math.floor(incomingCall.priceCoins || 0);
+
+    if (price > 0 && incomingCall.callerId !== auth.currentUser?.uid) {
+      setJoining(true);
+      try {
+        await purchaseContentAccess('call', incomingCall.id);
+      } catch (err) {
+        setJoining(false);
+        // Do NOT connect on a failed payment. The caller set a price; joining
+        // anyway hands the session away for nothing.
+        alert(err?.message || 'Could not pay to join this session.');
+        return;
+      }
+      setJoining(false);
+    }
+
     navigate(incomingCall.isGroup
       ? `/group-call/${incomingCall.id}`
       : `/call/${incomingCall.id}/${incomingCall.type || 'audio'}?role=callee`);
@@ -294,7 +315,11 @@ export default function IncomingCallOverlay() {
               className="w-16 h-16 rounded-full bg-green-500 flex items-center justify-center  hover:scale-105 active:scale-95 transition-all">
               <Icon name={isVideo ? 'videocam' : 'call'} size={28} className="text-white" />
             </button>
-            <span className="text-text-muted text-xs font-semibold">Accept</span>
+            <span className="text-text-muted text-xs font-semibold">
+              {joining ? 'Joining…' : (incomingCall?.priceCoins > 0 && incomingCall?.callerId !== auth.currentUser?.uid
+                ? `Join · ${Number(incomingCall.priceCoins).toLocaleString()}c`
+                : 'Accept')}
+            </span>
           </div>
         </div>
 

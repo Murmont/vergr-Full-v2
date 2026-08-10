@@ -1,7 +1,7 @@
 // Help center article: How do I invite members to my squad?
 
 export default {
-  summary: "From your squad, open Invite Members and pick people to invite: they get a notification and the invitation waits for their accept or decline. You can also browse players to recruit. Invites are the pull; your squad's public page, events, and tournament presence are the push that makes people say yes.",
+  summary: "From your squad, open Invite Members and pick people to invite: they get a notification and the invitation waits for their accept or decline. You can also browse players to recruit. Invites are the pull; your squad's public page, events, and stream presence are the push that makes people say yes.",
   updated: "2026-07-02",
   body: [
     {
@@ -20,7 +20,7 @@ export default {
     },
     {
       list: [
-        "Invite from shared experience: someone you just played a tournament with converts far better than a cold invite.",
+        "Invite from shared experience: someone you just played a session with converts far better than a cold invite.",
         "Make the squad page worth joining: fresh announcements, upcoming events, and a trophy case do the selling for you.",
         "Mind your open slots: squads cap at 100 members, so a big squad should invite deliberately.",
         "Respect the no: repeated invites to someone who declined is a fast way to get your squad a bad name."

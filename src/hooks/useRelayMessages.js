@@ -382,7 +382,10 @@ export default function useRelayMessages(chatId, messageLimit = 80) {
     if (!chatId || !auth.currentUser) return null;
     const p = typeof payload === 'string' ? { text: payload, type: 'text' } : (payload || {});
     const meUid = auth.currentUser.uid;
-    const id = genId();
+    // A caller may supply the id. Locked media needs this: its price and its
+    // private object key are filed server-side against `chatId:messageId`
+    // BEFORE the frame goes out, so both sides must name the same message.
+    const id = p.id || genId();
     const now = Date.now();
 
     // Optimistic.
@@ -420,7 +423,12 @@ export default function useRelayMessages(chatId, messageLimit = 80) {
       // row (e.g. "X set messages to disappear after 1 day") has no media and
       // still must arrive AS a system row — otherwise the peer renders it as a
       // normal text bubble from the sender instead of a centered pill.
-      mediaKind: p.contentUrl ? (p.type || 'file') : (p.type === 'system' ? 'system' : ''),
+      // An explicit mediaKind wins. Deriving it from `contentUrl` breaks any
+      // type that legitimately has no media URL: a locked message whose blurred
+      // preview failed to generate (every video does this) would arrive with an
+      // empty mediaKind, be rebuilt as `text`, and render as an empty bubble.
+      mediaKind: p.mediaKind
+        || (p.contentUrl ? (p.type || 'file') : (p.type === 'system' ? 'system' : '')),
       hasMedia: !!p.contentUrl,
       replyToId: localRow.replyToId,
     };

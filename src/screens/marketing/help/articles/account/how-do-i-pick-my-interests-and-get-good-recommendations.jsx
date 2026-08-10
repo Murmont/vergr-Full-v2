@@ -1,5 +1,5 @@
 export default {
-  summary: "During onboarding, or from Settings at any time, you can pick the games and content types you enjoy. VERGR uses your interests to show you relevant streams, players, squads, and tournaments in your feed.",
+  summary: "During onboarding, or from Settings at any time, you can pick the games and content types you enjoy. VERGR uses your interests to show you relevant streams, players, squads, and clips in your feed.",
   updated: "2026-06-06",
   body: [
     { p: "Your interests tell the app what you actually want to see. Without them, your feed starts generic. With even a handful picked, it becomes useful quickly." },
@@ -13,7 +13,7 @@ export default {
     { h2: "What interests affect" },
     { list: [
       "Your For You feed: posts, clips, and streams related to your games appear first.",
-      "Tournament suggestions: you see tournaments for games you play.",
+      "Stream suggestions: you see live broadcasts for the games you play.",
       "Squad recommendations: squads built around your interests float to the top.",
       "Creator suggestions: streamers and players in your game categories are shown first."
     ]},

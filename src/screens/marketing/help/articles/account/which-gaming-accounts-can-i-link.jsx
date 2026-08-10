@@ -16,7 +16,7 @@ export default {
     },
     {
       list: [
-        "Steam, for PC game identity and tournament verification.",
+        "Steam, for PC game identity and your library on your profile.",
         "Twitch, so your Twitch streams can show on VERGR with chat and tips bridged.",
         "YouTube, to link your channel and content.",
         "Discord, to connect your community presence.",

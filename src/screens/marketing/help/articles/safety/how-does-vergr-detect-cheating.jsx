@@ -12,7 +12,7 @@ export default {
         "Automated footage screening: recorded match video is analysed for the visual fingerprints of known cheats (aim assistance, wallhack-style behaviour) and suspicious sequences are flagged for human review. The signature list is kept current.",
         "Game-data sanity checks: for games with direct data feeds, the numbers themselves are checked, and performances that do not add up get attention.",
         "Human referees: paid matches in games without automatic result detection have a moderator watching, which is also a cheating check.",
-        "Player reports: reporting a player for cheating in a tournament routes to moderators with the match evidence attached."
+        "User reports: reporting a stream, post, or profile routes it to moderators with the content attached."
       ]
     },
     {
@@ -34,7 +34,7 @@ export default {
     },
     {
       cta: [
-        { to: "/platform/help/how-do-i-report-a-player-for-cheating-in-a-tournament", label: "Reporting a cheater" },
+        { to: "/platform/help/how-do-i-report-someone", label: "Reporting someone" },
         { to: "/platform/help/i-was-flagged-for-review-what-does-that-mean-and-how-do-i-appeal", label: "If you were flagged" }
       ]
     }

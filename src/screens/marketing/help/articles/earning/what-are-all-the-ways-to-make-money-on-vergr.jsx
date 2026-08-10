@@ -5,17 +5,17 @@
 // Top-level: summary (1-2 sentences, answer-first), updated (YYYY-MM-DD), body [].
 
 export default {
-  summary: "Five main ways: win tournaments for Coins, get tipped while streaming or posting, split your squad winnings, sell memberships to fans, and earn as a Vanguard moderator. Most people mix a few.",
-  updated: "2026-06-06",
+  summary: "Five main ways: get tipped while streaming or posting, charge for access to a stream, sell memberships to fans, share in your squad's treasury, and earn as a Vanguard moderator. Most people mix a few.",
+  updated: "2026-08-09",
   body: [
     {
       p: "There is no single way to earn on VERGR. Most people stack a couple of these. Here is the full list."
     },
     {
-      h2: "Tournaments"
+      h2: "Paid streams"
     },
     {
-      p: "Compete in skill-based tournaments and win the prize in Coins. Winner takes all. There are free tournaments to learn on and paid ones with bigger prizes."
+      p: "You can charge for access to a stream: viewers either buy a one-off pass for that broadcast, or their creator membership covers it. You set the price. The platform takes a flat 10% and you keep the rest."
     },
     {
       h2: "Streaming tips"
@@ -27,7 +27,7 @@ export default {
       h2: "Squads"
     },
     {
-      p: "Team up in a squad and share what you earn together. Squad tournament winnings go into a shared treasury that gets split with your crew."
+      p: "Team up in a squad and share what you earn together. Members pool Coins into a shared treasury, squad streams can be tipped into it, and it gets split with your crew."
     },
     {
       h2: "Memberships"
@@ -39,7 +39,7 @@ export default {
       h2: "Vanguard moderation"
     },
     {
-      p: "Experienced, trusted players can join the Vanguard, the moderator program, and get paid for helping keep competition fair."
+      p: "Experienced, trusted members can join the Vanguard, the moderator program, and get paid for helping keep the platform safe."
     },
     {
       note: "Referring friends earns you VP, which ranks you up and lowers your fees. It is not a direct payout, but it makes everything else more profitable."

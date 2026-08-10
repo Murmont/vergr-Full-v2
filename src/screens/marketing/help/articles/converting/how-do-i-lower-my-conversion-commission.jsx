@@ -5,7 +5,7 @@
 // Top-level: summary (1-2 sentences, answer-first), updated (YYYY-MM-DD), body [].
 
 export default {
-  summary: "Earn more VP. The conversion commission is set entirely by your lifetime VP, stepping down from 30% to a 15% floor at 100,000 VP, so the way to lower it is to keep earning VP. Compete in tournaments, complete creator quests, refer friends, and stay active. Paid plans earn VP faster, so they reach the lower rates sooner.",
+  summary: "Earn more VP. The conversion commission is set entirely by your lifetime VP, stepping down from 30% to a 15% floor at 100,000 VP, so the way to lower it is to keep earning VP. Stream, post, complete creator quests, refer friends, and stay active. Paid plans earn VP faster, so they reach the lower rates sooner.",
   updated: "2026-06-06",
   body: [
     {
@@ -16,7 +16,7 @@ export default {
     },
     {
       list: [
-        "Compete in tournaments. Entering and placing awards VP, more for stronger finishes and bigger events.",
+        "Go live. Streaming regularly awards VP, and longer sessions with real viewers award more.",
         "Complete creator quests in the Creator Studio. They pay out in VP.",
         "Refer friends. You both get a VP boost when they sign up with your link.",
         "Stay active. Consistent participation keeps your VP climbing."

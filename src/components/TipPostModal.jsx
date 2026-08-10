@@ -1,10 +1,10 @@
 // Tip modal opened from a post's Tip button.
 // Shows quick-pick amounts + custom input, sends coins to the post author,
 // then records a tip on the post so the creator sees it in their dashboard.
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Modal from './Modal';
 import { CoinIcon } from './CoinIcon';
-import { sendCoins } from '../firebase/firestore';
+import { sendCoins, getUser } from '../firebase/firestore';
 import { useAuth } from '../context/AuthContext';
 import { useUser } from '../context/UserContext';
 import { useUI } from '../context/UIContext';
@@ -19,12 +19,34 @@ export default function TipPostModal({ isOpen, onClose, post }) {
   const [amount, setAmount] = useState(500);
   const [custom, setCustom] = useState('');
   const [sending, setSending] = useState(false);
+  // Resolved on demand when the post itself does not carry the author's name
+  // and avatar. Feed posts usually do; a post opened from a permalink, a
+  // notification, a repost wrapper or a search result frequently does not, and
+  // the sheet was rendering a grey circle labelled "Creator" — which reads as
+  // broken, and is a bad thing to look at while deciding to send someone money.
+  const [resolved, setResolved] = useState(null);
+
+  const authorId  = post?.authorId || post?.userId || post?.ownerId || post?.author?.id;
+  const rawName   = post?.authorName || post?.authorDisplayName || post?.author?.displayName
+                    || post?.author?.username || post?.username;
+  const rawAvatar = post?.authorAvatar || post?.avatar || post?.author?.avatar;
+
+  useEffect(() => {
+    // Only when the sheet is open AND something is actually missing, so the
+    // common case costs nothing.
+    if (!isOpen || !authorId || (rawName && rawAvatar)) { setResolved(null); return undefined; }
+    let alive = true;
+    getUser(authorId)
+      .then((u) => { if (alive && u) setResolved(u); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [isOpen, authorId, rawName, rawAvatar]);
 
   if (!post) return null;
 
-  const authorId      = post.authorId || post.userId || post.ownerId;
-  const authorName    = post.authorName || post.authorDisplayName || post.username || 'Creator';
-  const authorAvatar  = post.authorAvatar || post.avatar;
+  const authorName   = rawName || resolved?.displayName || resolved?.username || 'Creator';
+  const authorAvatar = rawAvatar || resolved?.avatar;
+  const authorHandle = post?.authorUsername || post?.author?.username || resolved?.username || null;
   const balance       = wallet?.balance || 0;
 
   const finalAmount = custom ? parseInt(custom, 10) : amount;
@@ -52,7 +74,9 @@ export default function TipPostModal({ isOpen, onClose, post }) {
         <UserAvatar src={authorAvatar} size={40} />
         <div className="flex-1 min-w-0">
           <p className="text-sm font-bold text-text-primary truncate">{authorName}</p>
-          <p className="text-xs text-text-muted truncate">Your tip goes directly to the creator</p>
+          <p className="text-xs text-text-muted truncate">
+            {authorHandle ? `@${authorHandle} · goes directly to them` : 'Your tip goes directly to the creator'}
+          </p>
         </div>
       </div>
 

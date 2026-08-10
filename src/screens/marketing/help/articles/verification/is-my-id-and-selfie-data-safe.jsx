@@ -8,7 +8,7 @@ export default {
       p: "Handing over an ID photo is a big ask, so here is exactly how it is treated."
     },
     {
-      h2: "The standard verification (wallet, tournaments, payouts)"
+      h2: "The standard verification (wallet, earnings, payouts)"
     },
     {
       list: [

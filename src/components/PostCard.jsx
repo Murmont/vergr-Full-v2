@@ -23,6 +23,7 @@ import InlineVideoPlayer from './media/InlineVideoPlayer';
 import TipPostModal from './TipPostModal';
 import CreateComposer from './composer/CreateComposer';
 import { CoinIcon } from './CoinIcon';
+import LockedMedia from './monetization/LockedMedia';
 import { timeAgo } from '../utils/helpers';
 import { withRef } from '../utils/shareRef';
 import { trackEvent } from '../utils/trackEvent';
@@ -135,6 +136,24 @@ function MediaContent({ post, onImageClick, onDoubleTapLike }) {
   // rather than a broken picture.
   const [imgFailed, setImgFailed] = useState(false);
   const rawUrls = post.mediaUrls?.length > 0 ? post.mediaUrls : (post.mediaUrl ? [post.mediaUrl] : []);
+
+  // A locked post carries NO mediaUrl by design (functions/lockedPosts.js): the
+  // real bytes sit on a private R2 prefix and the only route to them is a signed
+  // URL minted after purchase. So the paywall is checked before the url list,
+  // and a locked post can never fall through to a normal <img>.
+  if (post.locked?.priceCoins > 0) {
+    return (
+      <div className="mt-3" onClick={(e) => e.stopPropagation()}>
+        <LockedMedia
+          resourceType="post"
+          resourceId={post.id}
+          locked={post.locked}
+          className="aspect-[4/5] max-h-[520px]"
+        />
+      </div>
+    );
+  }
+
   if (rawUrls.length === 0) return null;
 
   // Aspect placeholder (B11-4): if the post stored per-image dimensions at

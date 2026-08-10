@@ -1,11 +1,11 @@
 export default {
-  summary: "No. Unlike platforms where income depends on follower count, VERGR's biggest earning paths — tournaments and Brawl 1v1s — pay out on results, not popularity. An audience helps with tips and memberships, but you can earn from day one with zero followers.",
+  summary: "Not much of one. You can be tipped on your very first clip or post, and squad earnings and referrals do not depend on followers at all. An audience makes tips and memberships far bigger, but nothing stops you earning on day one.",
   updated: "2026-06-07",
   body: [
     { p: "This is one of the core differences between VERGR and a typical creator platform. You compete, you win, you get paid — no audience needed." },
     { h2: "Earning without an audience" },
     { list: [
-      "Tournaments: winner-takes-all Coin prizes, decided by skill.",
+      "Tips on posts and clips: anyone who sees your content can tip it, follower or not.",
       "Brawl quickplay: instant 1v1s for the pot.",
       "Champion Picks: earn by predicting match outcomes.",
     ]},

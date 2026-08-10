@@ -23,7 +23,7 @@ export default {
         "Growth over time: the trend lines, so a good or bad week shows in context.",
         "Engagement heatmap: when your audience is actually active, by day and hour. Post and go live inside the hot zones.",
         "Top performing posts: ranked by engagement, this is your recipe book, make more of what is at the top.",
-        "Where your coins came from: the revenue mix (tips, memberships, tournament winnings, boosts), so you know which pillar feeds you.",
+        "Where your coins came from: the revenue mix (tips, memberships, paid streams, boosts), so you know which pillar feeds you.",
         "AI coach: reads your numbers and suggests what to try next."
       ]
     },

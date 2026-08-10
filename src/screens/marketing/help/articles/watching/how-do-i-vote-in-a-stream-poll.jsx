@@ -31,7 +31,7 @@ export default {
       ]
     },
     {
-      note: "Stream polls are separate from Champion Picks in tournaments. Polls are just for fun and input during a stream. Champion Picks are predictions tied to tournament outcomes that can earn rewards."
+      note: "Polls are just for fun and input during a stream. Nothing is staked on the outcome and nothing is paid out, so there is no reason to vote strategically."
     },
     {
       faq: [
@@ -52,8 +52,8 @@ export default {
           label: "Chat during a stream"
         },
         {
-          to: "/platform/help/what-are-champion-picks-predictions-and-how-do-i-earn-from-them",
-          label: "What are Champion Picks?"
+          to: "/platform/help/how-do-i-tip-a-streamer",
+          label: "Tipping a streamer"
         }
       ]
     }

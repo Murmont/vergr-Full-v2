@@ -5,7 +5,7 @@
 // Top-level: summary (1-2 sentences, answer-first), updated (YYYY-MM-DD), body [].
 
 export default {
-  summary: "The Vanguard is invite-only. You cannot apply with a form, you earn an invitation by being an active, trustworthy, experienced member of the community. Strong tournament history, a clean record, and being helpful are what get you noticed. Invitations are extended by the program.",
+  summary: "The Vanguard is invite-only. You cannot apply with a form, you earn an invitation by being an active, trustworthy, experienced member of the community. A clean record, real time in the community, and being consistently helpful are what get you noticed. Invitations are extended by the program.",
   updated: "2026-06-06",
   body: [
     {
@@ -24,7 +24,7 @@ export default {
       list: [
         "An active, consistent presence on the platform.",
         "A clean record, with no history of cheating or rule-breaking.",
-        "Real tournament experience, so you understand how matches and disputes work.",
+        "Real time on the platform, so you understand how streams, squads, and disputes actually work.",
         "Being genuinely helpful to other players."
       ]
     },

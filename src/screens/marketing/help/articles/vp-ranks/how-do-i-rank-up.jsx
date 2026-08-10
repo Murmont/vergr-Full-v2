@@ -5,7 +5,7 @@
 // Top-level: summary (1-2 sentences, answer-first), updated (YYYY-MM-DD), body [].
 
 export default {
-  summary: "Rank up by earning VP. Every level you gain raises your rank, and you reach the next level by accumulating more VP through competing in tournaments, completing creator quests, and referring friends. There are 100 levels across 11 ranks, and each rank covers a band of levels.",
+  summary: "Rank up by earning VP. Every level you gain raises your rank, and you reach the next level by accumulating more VP through streaming, posting, completing creator quests, and referring friends. There are 100 levels across 11 ranks, and each rank covers a band of levels.",
   updated: "2026-06-06",
   body: [
     {
@@ -16,7 +16,7 @@ export default {
     },
     {
       list: [
-        "Tournaments. Entering and placing awards VP, with bigger rewards for stronger finishes and larger events.",
+        "Streaming and posting. Going live and publishing content awards VP, with more for content people actually watch.",
         "Creator quests. The Creator Studio offers quests that pay out in VP.",
         "Referrals. You and a friend both get a VP boost when they join with your link.",
         "Activity. Staying engaged across the platform keeps VP ticking up."

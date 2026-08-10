@@ -3,6 +3,7 @@
 // Every section reads from Firestore. Empty sections render a short
 // "nothing here yet" message instead of dummy content.
 import { useEffect, useState } from 'react';
+import { isDiscoverableStream } from '../../utils/streamVisibility';
 import CachedImg from '../CachedImg';
 import { useNavigate } from 'react-router-dom';
 import { collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
@@ -21,9 +22,8 @@ export default function HomeFeedRail() {
   const [liveStreams, setLiveStreams] = useState([]);
   const [hashtags, setHashtags] = useState([]);
   const [creators, setCreators] = useState([]);
-  const [tournaments, setTournaments] = useState([]);
   const [squads, setSquads] = useState([]);
-  const [loaded, setLoaded] = useState({ live: false, tags: false, creators: false, cups: false, squads: false });
+  const [loaded, setLoaded] = useState({ live: false, tags: false, creators: false, squads: false });
 
   useEffect(() => {
     let alive = true;
@@ -39,7 +39,7 @@ export default function HomeFeedRail() {
           limit(3),
         );
         const snap = await getDocs(q);
-        if (alive) setLiveStreams(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        if (alive) setLiveStreams(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(isDiscoverableStream));
       } catch (err) {
         console.warn('Live streams query failed (likely composite index missing)', err.message);
       } finally { mark('live'); }
@@ -70,22 +70,6 @@ export default function HomeFeedRail() {
         })));
       } catch {}
       finally { mark('creators'); }
-    })();
-
-    // Upcoming tournaments.
-    (async () => {
-      try {
-        const q = query(
-          collection(db, 'tournaments'),
-          where('status', '==', 'open'),
-          orderBy('prizePool', 'desc'),
-          limit(3),
-        );
-        const snap = await getDocs(q);
-        if (alive) setTournaments(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-      } catch (err) {
-        console.warn('Upcoming cups query failed (likely composite index missing)', err.message);
-      } finally { mark('cups'); }
     })();
 
     // Active public squads sorted by member count.
@@ -209,39 +193,6 @@ export default function HomeFeedRail() {
             </div>
           )}
       </Card>
-
-      {/* Upcoming tournaments */}
-      <div className="rounded-2xl bg-gradient-to-br from-brand-gold/10 via-transparent to-transparent border border-brand-gold/20 p-3.5">
-        <Header
-          icon="emoji_events" color="text-brand-gold" label="Upcoming Cups"
-          action={{ label: 'All', onClick: () => navigate('/tournaments') }}
-        />
-        {!loaded.cups ? <SkeletonRows count={2} />
-          : tournaments.length === 0 ? (
-            <EmptyHint icon="emoji_events" text="No tournaments open right now." />
-          ) : (
-            <div className="space-y-2">
-              {tournaments.map(t => (
-                <button key={t.id} onClick={() => navigate(`/match/${t.id}`)}
-                  className="w-full flex items-center gap-2.5 p-2 rounded-lg bg-white/[0.03] hover:bg-white/[0.06] text-left">
-                  <div className="w-8 h-8 rounded-lg bg-brand-gold/20 flex items-center justify-center shrink-0">
-                    <Icon name="sports_esports" size={14} className="text-brand-gold" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-[12px] font-semibold text-text-primary truncate">{t.name}</div>
-                    <div className="text-[10px] text-text-muted font-dmmono truncate">{t.game || ''}</div>
-                  </div>
-                  <span className="text-[10px] font-dmmono font-bold text-brand-gold tabular-nums shrink-0">{compact(t.prizePool || 0)}c</span>
-                </button>
-              ))}
-            </div>
-          )}
-        <button
-          onClick={() => navigate('/create-tournament')}
-          className="w-full mt-3 py-1.5 rounded-lg bg-gradient-to-r from-brand-gold/30 to-brand-ember/20 hover:brightness-110 text-brand-gold text-[11px] font-bold">
-          Host a cup
-        </button>
-      </div>
 
       {/* Active Squads */}
       <Card>

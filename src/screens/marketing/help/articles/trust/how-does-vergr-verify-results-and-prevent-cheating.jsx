@@ -14,7 +14,7 @@ export default {
       h2: "Layer 2: human referees for everything else"
     },
     {
-      p: "Games without a reliable data feed (VALORANT, FIFA, Fortnite, fighting games, and so on) are refereed. A moderator from the Vanguard, VERGR's paid moderation team, is assigned to the match, watches the evidence, and confirms the winner. That is also why tournaments in these games need a scheduled start time: a referee has to be there. No prize moves until the result is confirmed."
+      p: "Moderation is handled by the Vanguard, VERGR's paid moderation team. Reports are picked up from a shared queue, reviewed against the Acceptable Use Policy, and actioned, and moderators can act on a live stream while it is still running rather than waiting for it to end."
     },
     {
       h2: "Layer 3: anti-cheat and enforcement"

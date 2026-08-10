@@ -17,16 +17,16 @@ export default {
     {
       list: [
         "How much you play and create, consistency beats one-off effort.",
-        "How good you are, skill wins tournaments and tournaments pay.",
+        "How watchable you are, the streams and clips people stay for are the ones that get tipped.",
         "The audience you build, more viewers means more tips and memberships.",
-        "How many earning paths you stack, most earners combine tips, tournaments, and a squad."
+        "How many earning paths you stack, most earners combine tips, memberships, and a squad."
       ]
     },
     {
       h2: "A realistic picture"
     },
     {
-      p: "Plenty of people earn modest amounts, pocket money from tips, small tournament wins, the occasional membership, and treat it as a fun bonus on top of playing. Dedicated competitors and creators who show up consistently, win, and grow a following earn meaningfully more. The ceiling is set by you, not by a fixed payout."
+      p: "Plenty of people earn modest amounts, pocket money from tips, the occasional membership, and treat it as a fun bonus on top of playing. Creators who show up consistently and grow a following earn meaningfully more. The ceiling is set by you, not by a fixed payout."
     },
     {
       h2: "The fairer side"

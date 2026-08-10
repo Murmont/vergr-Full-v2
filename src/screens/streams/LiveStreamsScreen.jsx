@@ -32,7 +32,7 @@ export default function LiveStreamsScreen() {
       creator: h.name || h.hostUid?.slice(0, 6) || 'creator',
       viewers: h.viewerCount || 0,
       boosted: !!h.boosted,
-      coverUrl: h.coverUrl || thumbFor(h.streamKey),
+      coverUrl: h.coverUrl || h.thumbUrl || thumbFor(h.streamKey),
       orientation: h.orientation || 'landscape',
     }))
     .sort((a, b) => b.viewers - a.viewers)

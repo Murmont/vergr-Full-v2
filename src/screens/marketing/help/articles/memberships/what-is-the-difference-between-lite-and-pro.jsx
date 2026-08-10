@@ -5,7 +5,7 @@
 // Top-level: summary (1-2 sentences, answer-first), updated (YYYY-MM-DD), body [].
 
 export default {
-  summary: "Lite (€4.99/mo) removes the streaming follower gate, gives 720p streaming, faster VP, 1GB uploads, and creator extras. Pro (€9.99/mo) adds 1080p streaming, co-streaming, the biggest tournaments with every format, a custom Vergr.me domain, advanced analytics, 5GB uploads, and priority support. Neither changes the tip fee.",
+  summary: "Lite (€4.99/mo) removes the streaming follower gate, gives 720p streaming, faster VP, 1GB uploads, and creator extras. Pro (€9.99/mo) adds 1080p streaming, co-streaming, a custom Vergr.me domain, advanced analytics, 5GB uploads, and priority support. Neither changes the tip fee.",
   updated: "2026-06-06",
   body: [
     {
@@ -21,7 +21,7 @@ export default {
       h2: "Pro, €9.99 per month"
     },
     {
-      p: "Pro is the full kit. On top of everything in Lite, you get 1080p streaming and co-streaming (bring a guest on screen), the top VP rate, the biggest tournaments with every bracket format, a custom Vergr.me domain, advanced analytics, an animated avatar with a Pro badge, 5GB uploads, and priority support."
+      p: "Pro is the full kit. On top of everything in Lite, you get 1080p streaming and co-streaming (bring a guest on screen), the top VP rate, a custom Vergr.me domain, advanced analytics, an animated avatar with a Pro badge, 5GB uploads, and priority support."
     },
     {
       h2: "Which should you pick?"
@@ -29,7 +29,7 @@ export default {
     {
       list: [
         "Pick Lite if you mainly want to stream at solid quality without a follower gate, and post more.",
-        "Pick Pro if you co-stream, run big tournaments, want 1080p, or are treating VERGR like a job."
+        "Pick Pro if you co-stream, want 1080p, or are treating VERGR like a job."
       ]
     },
     {

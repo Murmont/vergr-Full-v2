@@ -1,7 +1,5 @@
 // MatchFlowExtras — match-side player tools:
 //   <WarmupLobby />          pre-match voice + screen-share with opponent
-//   <DoubleOrNothingPrompt /> winner accept/decline UI
-//   <DoubleOrNothingButton /> loser-side challenge trigger
 //   <ReplayOnDemandButton />  request mod review of a specific moment
 //   <SchedulingDmButton />    open voice DM tagged to this match
 
@@ -35,58 +33,6 @@ export function WarmupLobby({ tournamentId, matchId, opponentUid }) {
       border: `1px solid ${C.cyan}66`, color: C.cyan,
       fontWeight: 800, fontSize: 12, cursor: 'pointer',
     }}>🎙 Open warmup lobby</button>
-  );
-}
-
-export function DoubleOrNothingButton({ tournamentId, matchId }) {
-  // Double-or-nothing stakes coins on an outcome — same Play gambling policy
-  // constraint as SpectatorBetPanel. Play build only; every other path keeps it.
-  if (IS_STORE_BUILD) return null;
-  const { showToast } = useUI();
-  const [busy, setBusy] = useState(false);
-  const fire = async () => {
-    setBusy(true);
-    try {
-      const { data } = await httpsCallable(fns(), 'requestDoubleOrNothing')({ tournamentId, matchId });
-      showToast(`Challenge sent · ${data.cost} coins on the line`, 'info');
-    } catch (err) { showToast(err?.message || 'Challenge failed', 'error'); }
-    finally { setBusy(false); }
-  };
-  return (
-    <button onClick={fire} disabled={busy} style={{
-      padding: '10px 14px', borderRadius: 10,
-      background: 'transparent', border: `1px solid ${C.gold}66`, color: C.gold,
-      fontWeight: 800, fontSize: 12, cursor: 'pointer',
-    }}>{busy ? 'Sending…' : '🎰 Double or nothing'}</button>
-  );
-}
-
-export function DoubleOrNothingPrompt({ tournamentId, matchId, cost, onResolved }) {
-  // Double-or-nothing stakes coins on an outcome — same Play gambling policy
-  // constraint as SpectatorBetPanel. Play build only; every other path keeps it.
-  if (IS_STORE_BUILD) return null;
-  const { showToast } = useUI();
-  const [busy, setBusy] = useState(false);
-  const respond = async (accept) => {
-    setBusy(true);
-    try {
-      await httpsCallable(fns(), 'respondDoubleOrNothing')({ tournamentId, matchId, accept });
-      showToast(accept ? 'Rematch on!' : 'Declined.', 'info');
-      onResolved?.();
-    } catch (err) { showToast(err?.message || 'Failed', 'error'); }
-    finally { setBusy(false); }
-  };
-  return (
-    <div style={{ padding: 14, borderRadius: 12, background: `${C.gold}11`, border: `1px solid ${C.gold}66` }}>
-      <div style={{ fontSize: 13, fontWeight: 800, color: C.gold }}>Double or nothing challenge</div>
-      <div style={{ fontSize: 12, color: C.dim, marginTop: 4 }}>
-        Your opponent wants a rematch for {cost} coins. Winner takes {cost * 2}.
-      </div>
-      <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-        <button onClick={() => respond(true)} disabled={busy} style={primaryBtn}>Accept</button>
-        <button onClick={() => respond(false)} disabled={busy} style={secondaryBtn}>Decline</button>
-      </div>
-    </div>
   );
 }
 

@@ -44,8 +44,17 @@ export function useBuyCheckout(showToast, opts = {}) {
 
   useEffect(() => () => { stopPolling(); }, []);
 
+  /**
+   * Launch checkout.
+   *
+   * Returns TRUE once the payment page has actually opened, FALSE if it never
+   * did. The cart relies on this: it empties itself only on true, because
+   * clearing on the click would lose a basket to a blocked popup or a PayRam
+   * outage. Every early return below is therefore explicit rather than a bare
+   * \`return\`, which used to come back as undefined and read as success.
+   */
   async function startCheckout(payload, label) {
-    if (checkout?.status === 'waiting') return;
+    if (checkout?.status === 'waiting') return false;
     // Any Tauri shell (Android app AND the desktop app) must hand off to the
     // SYSTEM browser — a webview popup renders blank/blocked there. Plain
     // web/PWA keeps the in-page popup so the user never leaves Vergr.
@@ -59,7 +68,7 @@ export function useBuyCheckout(showToast, opts = {}) {
       );
       if (!popup) {
         showToast('Allow popups for vergr.app to complete your purchase.', 'error');
-        return;
+        return false;
       }
       popupRef.current = popup;
     }
@@ -72,14 +81,14 @@ export function useBuyCheckout(showToast, opts = {}) {
       closePopup();
       setCheckout(null);
       showToast(err?.message || 'Could not start checkout. Try again.', 'error');
-      return;
+      return false;
     }
 
     if (!res?.ok || !res.paymentUrl) {
       closePopup();
       setCheckout(null);
       showToast(res?.message || 'PayRam is not available right now.', 'error');
-      return;
+      return false;
     }
 
     if (native) {
@@ -107,9 +116,62 @@ export function useBuyCheckout(showToast, opts = {}) {
         showToast('Payment expired or was cancelled.', 'info');
       }
     }, POLL_MS);
+
+    // The payment page is open. Whether it is PAID is a separate question the
+    // poller answers; the basket is safe to empty either way, because the order
+    // now exists server-side and settles on its own.
+    return true;
   }
 
   const cancelCheckout = () => { stopPolling(); closePopup(); setCheckout(null); };
 
   return { checkout, startCheckout, cancelCheckout };
+}
+
+/**
+ * Buy a basket through Google Play.
+ *
+ * Play Billing has no concept of a cart: it buys ONE product per sheet, so a
+ * basket is bought as a sequence of purchases and there is no way to make that
+ * one tap. That is a platform constraint, not a design choice, and the UI says
+ * so rather than pretending a five-line basket will be a single confirmation.
+ *
+ * Stops at the first failure instead of ploughing on. A user who cancels sheet
+ * two of five has said something, and charging them for sheets three to five
+ * would be ignoring it.
+ *
+ * Returns { bought, total, cancelled } so the caller can clear only what
+ * actually went through.
+ */
+export async function checkoutCartViaPlay(lines, uid, showToast) {
+  const { buyCoinPack, playProductIdFor } = await import('../../../utils/nativeBilling');
+
+  const total = lines.reduce((n, l) => n + l.qty, 0);
+  let bought = 0;
+
+  for (const line of lines) {
+    for (let i = 0; i < line.qty; i += 1) {
+      try {
+        await buyCoinPack(playProductIdFor(line.sku), uid);
+        bought += 1;
+      } catch (err) {
+        const code = err?.code;
+        if (code === 'cancelled' || code === 'canceled') {
+          return { bought, total, cancelled: true };
+        }
+        showToast?.(err?.message || 'Google Play could not complete that purchase.', 'error');
+        return { bought, total, cancelled: false };
+      }
+    }
+  }
+
+  if (bought > 0) {
+    showToast?.(
+      bought === total
+        ? 'Purchase complete — coins are on their way.'
+        : `${bought} of ${total} purchases completed.`,
+      'success',
+    );
+  }
+  return { bought, total, cancelled: false };
 }

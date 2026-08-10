@@ -5,6 +5,7 @@
 // no desktop max-w column or !isMobile branches. Routed IS_NATIVE_BUILD only.
 
 import { useState, useEffect } from 'react';
+import { isDiscoverableStream } from '../../../utils/streamVisibility';
 import { useNavigate } from 'react-router-dom';
 import { collection, query, where, orderBy, limit, getDocs, doc, getDoc } from 'firebase/firestore';
 import { db } from '../../../firebase/config';
@@ -87,8 +88,8 @@ export default function NativeExploreScreen() {
       try {
         const snap = await getDocs(query(collection(db, 'streams'), where('status', '==', 'live'), orderBy('viewerCount', 'desc'), limit(24)));
         if (cancelled) return;
-        setRealStreams(snap.docs.map((d) => {
-          const s = d.data();
+        setRealStreams(snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter(isDiscoverableStream).map((s) => {
+          const d = { id: s.id };
           return {
             id: d.id, hostUid: s.hostUid || null, title: s.title || 'Live Stream',
             creator: s.hostUsername || s.hostUid?.slice(0, 6) || 'creator', game: s.game || 'Live',

@@ -15,7 +15,7 @@ export default {
       h2: "What makes it skill, not chance"
     },
     {
-      p: "In a VERGR tournament or match, the outcome comes from execution, decisions, and strategy. There is no random element deciding who wins. Results are verified, not taken on trust, using a unique lobby code per match, automatic scoreboard reading where the game supports it, and human moderators who confirm and settle results. Higher-value competition adds a webcam requirement and an anti-cheat scan. You are competing against other players in a game of skill, and the better player is meant to win. That is the whole point."
+      p: "There is nothing on VERGR to stake money on. Coins are spent on tips, creator memberships, paid access to a stream, and boosts, and every one of those is a purchase with a known outcome: you pay, you get the thing. There is no wagering, no prediction market, no prize competition, no loot box, no random reward, and no game of chance anywhere on the platform."
     },
     {
       h2: "What VERGR does not do"
@@ -55,15 +55,15 @@ export default {
         ],
         [
           "Is it legal where I am?",
-          "It depends on your country and, in some places, your region. VERGR blocks the features where skill-based cash competition is not permitted. See the Tournament Rules for the current list."
+          "VERGR's money features are unavailable in a small number of jurisdictions, mainly those under sanctions or where the underlying payment rails are prohibited. The current list is published in the Terms of Service."
         ]
       ]
     },
     {
       cta: [
         {
-          to: "/platform/help/how-do-tournaments-work-on-vergr",
-          label: "How tournaments work"
+          to: "/platform/help/what-can-i-spend-coins-on",
+          label: "What Coins are spent on"
         },
         {
           to: "/platform/help/how-do-i-withdraw-my-earnings",

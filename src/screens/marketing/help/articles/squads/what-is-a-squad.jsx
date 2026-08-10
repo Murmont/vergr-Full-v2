@@ -5,11 +5,11 @@
 // Top-level: summary (1-2 sentences, answer-first), updated (YYYY-MM-DD), body [].
 
 export default {
-  summary: "A squad is your team and community on VERGR, up to 100 members. You get a shared squad chat, voice hangouts and streams, the ability to compete in tournaments as a team, and a shared treasury that automatically collects a slice of members' tournament wins. Squads also have roles and their own leaderboard.",
+  summary: "A squad is your team and community on VERGR, up to 100 members. You get a shared squad chat, voice hangouts and squad streams, and a shared treasury the squad funds and controls together. Squads also have roles and their own leaderboard.",
   updated: "2026-06-06",
   body: [
     {
-      p: "A squad is the team-and-community side of VERGR. Most of the best moments in games happen with other people, so squads are built to be a real home base, not just a friends list. Up to 100 people can be in one, and together you get tools to talk, play, compete, and even pool earnings. Here is what being in a squad actually gives you."
+      p: "A squad is the team-and-community side of VERGR. Most of the best moments in games happen with other people, so squads are built to be a real home base, not just a friends list. Up to 100 people can be in one, and together you get tools to talk, play, stream, and even pool earnings. Here is what being in a squad actually gives you."
     },
     {
       h2: "A place to hang out"
@@ -18,16 +18,16 @@ export default {
       p: "Every squad has its own chat for planning, banter, and sharing clips. Beyond text, you can jump into a voice hangout or a squad stream to play together, run scrims, or just hang while you grind. Squad streaming does not need the public follower requirement, so it is the easiest way to get comfortable on voice and camera with people you trust."
     },
     {
-      h2: "Compete as a team"
+      h2: "Stream as a team"
     },
     {
-      p: "Squads can enter tournaments as a unit. You field a roster, the bracket runs squad against squad, and results count toward the squad leaderboard. Climbing that leaderboard builds a reputation, and a strong squad starts getting noticed and invited to bigger events. It is the difference between being a scattered solo queue and being a team people recognise."
+      p: "Squad streams put the whole roster in one broadcast: voice for everyone, camera for a couple of people, and viewers watching the session together. It is the easiest way to build a shared identity, and squad activity counts toward the squad leaderboard, so a squad that shows up gets noticed."
     },
     {
       h2: "The shared treasury"
     },
     {
-      p: "This is the part that makes squads more than a group chat. When a squad member wins a tournament, 10% of that prize is automatically collected into the squad treasury. Over time that builds a shared pot the squad controls. It can cover tournament entries for members the squad wants to back, fund scrim leagues, or be paid out to members through a proper approval process so it is never one person's piggy bank. Everybody contributing a slice of their wins means the whole squad can punch above its weight."
+      p: "This is the part that makes squads more than a group chat. Members contribute Coins into the squad treasury, squads can receive sponsorships, and tips on squad streams can land there too. Over time that builds a shared pot the squad controls. It can fund squad events, back members, or be paid out through a proper approval process so it is never one person's piggy bank."
     },
     {
       h2: "Roles and structure"
@@ -57,8 +57,8 @@ export default {
     {
       cta: [
         {
-          to: "/platform/help/how-do-tournaments-work-on-vergr",
-          label: "Squad tournaments"
+          to: "/platform/help/how-do-i-run-a-squad-voice-hangout-or-stream",
+          label: "Squad streams"
         },
         {
           to: "/platform/help/what-are-all-the-ways-to-make-money-on-vergr",

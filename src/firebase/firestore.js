@@ -4833,3 +4833,130 @@ export const setGameRequestStatus = async (id, status) => {
 export const deleteGameRequest = async (id) => {
   await deleteDoc(doc(db, 'feedback', id));
 };
+
+// ─────────────────────────────────────────────── Locked content (entitlements)
+//
+// One entitlement system behind every "pay to see this" surface: locked posts,
+// locked chat media, paid streams, whole-creator access. The client NEVER sends
+// a price. It names a resource and the server re-reads what that resource costs
+// inside the purchase transaction, which is what stops a crafted request from
+// buying a 10,000-coin post for 50.
+//
+// Backend: functions/entitlements.js, functions/lockedPosts.js,
+// functions/lockedMessages.js. Plan: docs/CREATOR_MONETIZATION_PLAN.md.
+
+const callFn = async (name, payload = {}) => {
+  const { httpsCallable } = await import('firebase/functions');
+  const { functions: fns } = await import('./config');
+  const res = await httpsCallable(fns, name)(payload);
+  return res.data;
+};
+
+/**
+ * What does the viewer get to see, and what would it cost.
+ *
+ * Safe to call on ANYTHING: free content answers `{ hasAccess: true,
+ * priceCoins: 0 }`, so a caller renders the paywall or the content from one
+ * round trip without having to know in advance which it is dealing with.
+ *
+ * `mediaUrl` is a five-minute presigned GET and is deliberately not cached: it
+ * expires, and a stale one renders a broken image rather than a paywall, which
+ * is the more confusing failure.
+ */
+export const getContentAccess = (resourceType, resourceId) =>
+  callFn('getAccess', { resourceType, resourceId });
+
+/** Buy access. Idempotent server-side, so a double tap resolves to the first sale. */
+export const purchaseContentAccess = (resourceType, resourceId) =>
+  callFn('purchaseAccess', { resourceType, resourceId });
+
+/** Presign the locked object + its public blurred preview for a POST. */
+export const getLockedUploadUrl = ({ contentType, sizeBytes }) =>
+  callFn('getLockedUploadUrl', { contentType, sizeBytes });
+
+/** Create the locked post once both objects are uploaded. */
+export const createLockedPost = (payload) => callFn('createLockedPost', payload);
+
+/** Presign the locked object + preview for a CHAT MESSAGE. */
+export const getLockedMessageUploadUrl = ({ chatId, contentType, sizeBytes }) =>
+  callFn('getLockedMessageUploadUrl', { chatId, contentType, sizeBytes });
+
+/** Send the priced message once both objects are uploaded. */
+export const sendLockedMessage = (payload) => callFn('sendLockedMessage', payload);
+
+/**
+ * PUT bytes at a presigned URL.
+ *
+ * `uploadToR2` cannot be reused here: it presigns through `getR2UploadUrl`,
+ * which always targets a PUBLIC prefix and hands back a CDN URL. The whole point
+ * of locked media is that no such URL exists.
+ *
+ * Content-Type must match the signature exactly, including no `;codecs=` suffix
+ * (R2 exact-matches it and a mismatch fails silently) — strip it before calling.
+ */
+export const putSignedUpload = async (url, blob, contentType, cacheControl) => {
+  const headers = { 'Content-Type': contentType };
+  if (cacheControl) headers['Cache-Control'] = cacheControl;
+  const res = await fetch(url, { method: 'PUT', body: blob, headers });
+  if (!res.ok) throw new Error(`Upload failed (${res.status})`);
+};
+
+/**
+ * Downscale + blur an image on the SENDER's device, for use as the public
+ * preview of locked media.
+ *
+ * Blurring on the viewer's device is not an option and never will be: that is a
+ * CSS filter over bytes the browser has already downloaded, undone by anyone who
+ * opens the network tab. The sender already holds the full-resolution file (it
+ * is theirs), so the destructive step happens here, before anything is uploaded.
+ *
+ * Videos have no cheap client-side frame grab that works everywhere, so they
+ * fall back to a plain gradient placeholder rather than shipping a frame that
+ * might itself be the thing being sold.
+ */
+export const makeBlurredPreview = (file, { maxDim = 400, blur = 24 } = {}) =>
+  new Promise((resolve, reject) => {
+    if (!file?.type?.startsWith('image/')) { resolve(null); return; }
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+      const w = Math.max(1, Math.round(img.width * scale));
+      const h = Math.max(1, Math.round(img.height * scale));
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      ctx.filter = `blur(${blur}px)`;
+      // Drawn inset so the blur kernel does not pull transparent edges in and
+      // leave a pale border, which reads as a rendering bug rather than a blur.
+      ctx.drawImage(img, -blur, -blur, w + blur * 2, h + blur * 2);
+      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('Preview failed'))), 'image/jpeg', 0.6);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Could not read image')); };
+    img.src = url;
+  });
+
+/**
+ * The host's own publish credential for a stream they own.
+ *
+ * `streamKey` is deliberately NOT a field on `streams/{id}` any more: that
+ * document is world-readable, and the key both authorises publishing (browser
+ * ingest sends it as a Bearer token) and forms the path segment of the HLS
+ * playback URL. Only the host can call this, and only the server can answer it.
+ */
+export const getStreamIngest = (streamId) => callFn('getStreamIngest', { streamId });
+
+/**
+ * The exact amount this buyer will be charged, in the currency they will be
+ * charged in.
+ *
+ * Runs the same two steps the payment path runs, in the same order, against the
+ * same rate: regional price, then EUR→USD. The buy screen renders what comes
+ * back rather than doing arithmetic of its own, which is the only way the
+ * number on the button and the number on the statement stay the same number.
+ *
+ * Returns { coins, baseEUR, priceEUR, amountUSD, currency, fxRate, region }.
+ * Throws if no trustworthy FX rate is available, exactly as the payment does.
+ */
+export const getCoinPriceQuote = (args) => callFn('getCoinPriceQuote', args);

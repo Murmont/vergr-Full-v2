@@ -20,7 +20,7 @@ export default {
     },
     {
       list: [
-        "Game nights and warm-ups before squad tournaments.",
+        "Game nights and warm-ups before a squad stream.",
         "Strategy and VOD talk with the people who were in the match.",
         "Plain hanging out: the ambient togetherness that makes a squad a squad rather than a list of names.",
         "A zero-pressure streaming start: no followers needed, no public audience, just your people."

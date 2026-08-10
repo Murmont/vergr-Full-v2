@@ -1,7 +1,7 @@
 // Help center article: What gets you banned on VERGR?
 
 export default {
-  summary: "The fastest routes to a ban: cheating or match-fixing in tournaments, posting illegal or hateful content, harassment, running multiple accounts to dodge restrictions, selling Coins or accounts for real money outside the platform, and payment fraud. Lesser offences usually earn warnings or temporary mutes first; the list above can end an account outright.",
+  summary: "The fastest routes to a ban: posting illegal or hateful content, sexual content, harassment, running multiple accounts to dodge restrictions, selling Coins or accounts for real money outside the platform, and payment fraud. Lesser offences usually earn warnings or temporary mutes first; the list above can end an account outright.",
   updated: "2026-07-02",
   body: [
     {
@@ -9,7 +9,7 @@ export default {
     },
     {
       list: [
-        "Cheating in tournaments: unauthorised software, scripts, bots, exploiting bugs, or anything that corrupts a real-money competition. Also voids results and forfeits winnings.",
+        "Sexual or adult content: nudity, sexual acts, or sexual solicitation, anywhere on the platform including private messages and paid streams.",
         "Match-fixing and collusion: deliberately losing, pre-agreeing to split prizes, coordinating outcomes, or reporting false results.",
         "Illegal or abhorrent content: anything unlawful, sexual content involving minors, terrorism, or credible threats. These also go to law enforcement.",
         "Economy abuse: selling or buying Coins, Gems, VP, or accounts for real money outside the platform, laundering, or payment fraud.",

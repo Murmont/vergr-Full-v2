@@ -12,7 +12,7 @@ export default {
       "VP rank badge and rank tier.",
       "Social links you have added.",
       "Posts, clips, and articles set to Public.",
-      "Tournament history if you have made it public.",
+      "Your linked gaming accounts and their stats, if you have made them public.",
       "Squad memberships."
     ]},
     { h2: "What is never shown publicly" },

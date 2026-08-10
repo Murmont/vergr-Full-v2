@@ -31,11 +31,17 @@ const ACTIONS = [
   { id: 'location', icon: 'location_on',          label: 'Location', color: 'text-green-400',          bg: 'bg-green-400/10' },
   { id: 'contact',  icon: 'person',               label: 'Contact',  color: 'text-brand-pink',         bg: 'bg-brand-pink/10' },
   { id: 'ticket',   icon: 'confirmation_number',  label: 'Ticket',   color: 'text-brand-violet-light', bg: 'bg-brand-violet/10' },
+  // Priced media. Same PriceSheet as a locked post and a paid stream, so the
+  // gesture is learned once and works everywhere a price is set.
+  { id: 'locked',   icon: 'lock',                 label: 'Locked',   color: 'text-brand-gold',         bg: 'bg-brand-gold/10' },
+  // A private 1:1 session: unlisted, link-only, free or paid.
+  { id: 'oneToOne', icon: 'video_call',           label: '1:1',      color: 'text-brand-pink',         bg: 'bg-brand-pink/10' },
 ];
 
 export default function AttachmentMenu({
   isOpen, onClose,
   onGallery, onCamera, onFile, onLocation, onContact, onMusic, onWallet, onSendTicket, onSendPoll,
+  onLocked, onOneToOne,
   onPickedMedia, anchorRef,
 }) {
   // Desktop: sit directly above the paperclip. The sheet used to be pinned to a
@@ -119,6 +125,7 @@ export default function AttachmentMenu({
     camera: onCamera, gallery: onGallery, file: onFile, music: onMusic,
     location: onLocation, contact: onContact, wallet: onWallet,
     ticket: onSendTicket, poll: onSendPoll,
+    locked: onLocked, oneToOne: onOneToOne,
   };
   // 'ticket'/'poll' only render where the caller wired them up.
   const actions = ACTIONS.filter((a) =>

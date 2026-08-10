@@ -4,6 +4,7 @@ import { UserProvider } from '../context/UserContext';
 import { NotificationProvider } from '../context/NotificationContext';
 import { UIProvider } from '../context/UIContext';
 import { LayoutProvider } from '../context/LayoutContext';
+import { CartProvider } from '../context/CartContext';
 import { isTauri, IS_NATIVE_BUILD } from '../utils/platform';
 import { pruneNavOrigin } from '../utils/navOrigin';
 import ProtectedRoute from '../components/ProtectedRoute';
@@ -482,6 +483,9 @@ const ShopIntegrationsScreen = lazy(() => import('../screens/shop/ShopScreens').
 const ShopSettingsScreen = lazy(() => import('../screens/shop/ShopScreens').then((m) => ({ default: m.ShopSettingsScreen })));
 const WalletHomeScreen = lazy(() => import('../screens/wallet/v2/HomeScreen'));
 const WalletBuyScreen = lazy(() => import('../screens/wallet/v2/BuyScreen'));
+// Mobile basket. Desktop uses the slide-in drawer instead; both render the same
+// CartContents so the lines and totals cannot diverge.
+const WalletCartScreen = lazy(() => import('../screens/wallet/v2/CartScreen'));
 const WalletConvertScreen = lazy(() => import('../screens/wallet/v2/ConvertScreen'));
 const WalletWithdrawScreen = lazy(() => import('../screens/wallet/v2/WithdrawScreen'));
 const WalletNewAddressScreen = lazy(() => import('../screens/wallet/v2/NewAddressScreen'));
@@ -581,7 +585,8 @@ const NativeCoStreamInviteScreen = lazy(() => import('../screens/streams/native/
 const NativeStreamEndingScreen = lazy(() => import('../screens/streams/native/NativeStreamScreens').then((m) => ({ default: m.NativeStreamEndingScreen })));
 const NativeStreamAnalyticsScreen = lazy(() => import('../screens/streams/native/NativeStreamScreens').then((m) => ({ default: m.NativeStreamAnalyticsScreen })));
 import LiveInviteBanner from '../components/LiveInviteBanner';
-import TournamentSummonsBanner from '../components/TournamentSummonsBanner';
+// TournamentSummonsBanner unmounted with the tournaments section. The
+// component file is kept; re-import and re-mount below to restore it.
 
 // Tournaments
 const TournamentScreen = lazy(() => import('../screens/tournaments/TournamentScreen'));
@@ -688,13 +693,13 @@ export default function AppRouter() {
           <NotificationProvider>
             <UIProvider>
               <LayoutProvider>
+                <CartProvider>
                 <LiveUsersProvider>
                 <div className="app-container mx-auto min-h-screen bg-bg-dark text-text-primary relative">
                   <NavOriginTracker />
                   <Toast />
                   <PushToast />
                   <LiveInviteBanner />
-                  <TournamentSummonsBanner />
                   <IncomingCallOverlay />
                   <VoiceSessionPill />
                   <DesktopNotificationManager />
@@ -729,11 +734,11 @@ export default function AppRouter() {
                     <Route path="/platform/terms"                 element={<LegalScreen type="terms" />} />
                     <Route path="/platform/acceptable-use"        element={<LegalScreen type="acceptable_use" />} />
                     <Route path="/platform/cookies"               element={<LegalScreen type="cookies" />} />
+                    <Route path="/platform/refunds"              element={<LegalScreen type="refunds" />} />
                     {/* Required by Google Play's Child Safety Standards policy —
                         the declaration points at this URL, so it must stay live
                         and publicly reachable. */}
                     <Route path="/platform/child-safety"          element={<LegalScreen type="child_safety" />} />
-                    <Route path="/platform/learn/tournament-rules" element={<LegalScreen type="tournament_rules" />} />
                     <Route path="/platform/about" element={<MarketingAboutScreen />} />
                     <Route path="/platform/careers" element={<CareersScreen />} />
                     <Route path="/platform/contact" element={<ContactScreen />} />
@@ -746,15 +751,15 @@ export default function AppRouter() {
                     <Route path="/platform/studio-tools" element={<StudioToolsScreen />} />
                     <Route path="/platform/partners" element={<PartnerProgramScreen />} />
                     <Route path="/platform/learn/live" element={<LearnLiveScreen />} />
-                    <Route path="/platform/learn/tournaments" element={<LearnTournamentsScreen />} />
                     <Route path="/platform/learn/squads" element={<LearnSquadsScreen />} />
                     <Route path="/platform/learn/clips" element={<LearnClipsScreen />} />
                     <Route path="/platform/learn/coins" element={<LearnCoinsScreen />} />
-                    <Route path="/platform/make-money-gaming" element={<MakeMoneyGamingScreen />} />
-                    <Route path="/platform/legit" element={<LegitScreen />} />
+                    {/* /platform/make-money-gaming, /platform/legit and
+                        /platform/play are retired: an earnings-claim page, a
+                        page arguing our own legitimacy, and a per-game landing
+                        page all read badly to a payment underwriter. Screen
+                        files are kept; re-add the routes to restore. */}
                     <Route path="/linkinbio" element={<LinkInBioScreen />} />
-                    <Route path="/platform/play/:gameSlug" element={<PlayGameScreen />} />
-                    <Route path="/platform/play" element={<Navigate to="/platform/make-money-gaming" replace />} />
 
                     {/* Public ticketed-event landing page (share target, works logged-out) */}
                     <Route path="/e/:id" element={<EventLandingScreen />} />
@@ -766,6 +771,7 @@ export default function AppRouter() {
                     <Route path="/terms" element={<Navigate to="/platform/terms" replace />} />
                     <Route path="/acceptable-use" element={<Navigate to="/platform/acceptable-use" replace />} />
                     <Route path="/cookies" element={<Navigate to="/platform/cookies" replace />} />
+                    <Route path="/refunds" element={<Navigate to="/platform/refunds" replace />} />
                     <Route path="/about" element={<Navigate to="/platform/about" replace />} />
                     <Route path="/careers" element={<Navigate to="/platform/careers" replace />} />
                     <Route path="/contact" element={<Navigate to="/platform/contact" replace />} />
@@ -777,20 +783,13 @@ export default function AppRouter() {
                     <Route path="/creators" element={<Navigate to="/platform/creators" replace />} />
                     <Route path="/studio-tools" element={<Navigate to="/platform/studio-tools" replace />} />
                     <Route path="/partners" element={<Navigate to="/platform/partners" replace />} />
-                    <Route path="/learn/tournament-rules" element={<Navigate to="/platform/learn/tournament-rules" replace />} />
                     <Route path="/learn/live" element={<Navigate to="/platform/learn/live" replace />} />
-                    <Route path="/learn/tournaments" element={<Navigate to="/platform/learn/tournaments" replace />} />
                     <Route path="/learn/squads" element={<Navigate to="/platform/learn/squads" replace />} />
                     <Route path="/learn/clips" element={<Navigate to="/platform/learn/clips" replace />} />
                     <Route path="/learn/coins" element={<Navigate to="/platform/learn/coins" replace />} />
 
-                    {/* Tournament OBS overlay — public (token-gated, not auth-gated) */}
-                    <Route path="/overlay/:tournamentId" element={<TournamentOverlayScreen />} />
-                    {/* Tournament HUD pack — Neon (v1). Public, no auth.
-                        Streamer adds this URL once to OBS as a Browser
-                        Source (1920×1080, transparent). Subscribes to live
-                        match + picks pool. */}
-                    <Route path="/overlay/:tournamentId/neon" element={<TournamentOverlayNeon />} />
+                    {/* Tournament OBS overlays retired with the section. The
+                        screen files are kept; re-add the two routes to restore. */}
                     {/* GR8 — streamer-battle overlay (two-streamer co-stream),
                         reuses the neon visual language, driven by stream/co-host. */}
                     <Route path="/overlay/battle/:streamId/neon" element={<StreamerBattleOverlay />} />
@@ -957,36 +956,16 @@ export default function AppRouter() {
                       <Route path="/stream/analytics" element={IS_NATIVE_BUILD ? <NativeStreamAnalyticsScreen /> : <StreamAnalyticsScreen />} />
                       <Route path="/stream/ended" element={IS_NATIVE_BUILD ? <NativeStreamEndingScreen /> : <StreamEndingScreen />} />
 
-                      {/* Tournaments — browse-only screens stay open; entry
-                          and creation require KYC + supported region. */}
-                      <Route path="/tournaments" element={<RegionGate feature="tournaments">{IS_NATIVE_BUILD ? <NativeTournamentScreen /> : <TournamentScreen />}</RegionGate>} />
-                      <Route path="/tournaments/all" element={<RegionGate feature="tournaments"><TournamentListScreen variant="all" /></RegionGate>} />
-                      <Route path="/tournaments/mine" element={<RegionGate feature="tournaments"><TournamentListScreen variant="mine" /></RegionGate>} />
-                      <Route path="/tournaments/following" element={<RegionGate feature="tournaments"><TournamentListScreen variant="following" /></RegionGate>} />
-                      <Route path="/tournaments/past" element={<RegionGate feature="tournaments"><TournamentListScreen variant="past" /></RegionGate>} />
-                      <Route path="/tournaments/type/:slug" element={<RegionGate feature="tournaments"><TournamentListScreen variant="type" /></RegionGate>} />
-                      <Route path="/tournaments/applications" element={<RegionGate feature="tournaments"><TournamentApplicationsScreen /></RegionGate>} />
-                      <Route path="/tournaments/rules" element={<LegalScreen type="tournament_rules" />} />
-                      <Route path="/tournaments/:tournamentId/standings" element={<TournamentStandingsScreen />} />
-                      <Route path="/tournaments/:tournamentId/prizes" element={<TournamentPrizePoolScreen />} />
-                      <Route path="/match/:matchId" element={<RegionGate feature="tournament entry">{IS_NATIVE_BUILD ? <NativeMatchDetailsScreen /> : <MatchDetailsScreen />}</RegionGate>} />
-                      <Route path="/tournaments/:tournamentId/match/:matchId" element={<RegionGate feature="tournament entry"><TournamentMatchScreen /></RegionGate>} />
-                      <Route path="/tournaments/me/stats" element={<TournamentStatsScreen />} />
-                      {/* Mod-internal clip viewer for AI cheat-flag moments.
-                          Auth required + client-side mod-role gate. */}
-                      <Route path="/clips/cheat-flag/:tournamentId/:matchId/:flagIndex" element={<CheatFlagClipScreen />} />
-                      {/* Pre-match warmup lobby — voice P2P + readiness for the two players. */}
-                      <Route path="/squads/warmup/:tag" element={<WarmupLobbyScreen />} />
+                      {/* Tournaments are retired from the product. Every route
+                          that reached a tournament screen is unregistered so
+                          nothing is navigable or crawlable. The screen files
+                          under src/screens/tournaments/ are KEPT on disk — to
+                          restore the section, re-add these routes plus the
+                          navConfig entries. Only the role-gated moderation
+                          surfaces stay mounted. */}
                       <Route path="/vanguard/wall" element={<ModWallScreen />} />
                       {/* Distinct path — /vanguard/queue resolves to the active moderation queue (VanguardQueueScreen) below; this is the separate review/anti-cheat queue. */}
                       <Route path="/vanguard/review-queue" element={<VanguardReviewQueueScreen />} />
-                      <Route path="/team/:teamId/manage" element={<TeamManagementScreen />} />
-                      <Route path="/team/:teamId/funding" element={<TeamFundingScreen />} />
-                      <Route path="/team-contribute" element={<GuestRouteGate action="fund a team"><RegionGate feature="team funding"><KycGate feature="team funding"><ContributeScreen /></KycGate></RegionGate></GuestRouteGate>} />
-                      <Route path="/contribution-success" element={<ContributionSuccessScreen />} />
-                      <Route path="/prize-receipt/:prizeId" element={<PrizeReceiptScreen />} />
-                      <Route path="/create-tournament" element={<GuestRouteGate action="create a tournament"><RegionGate feature="creating tournaments"><KycGate feature="creating tournaments"><CreateTournamentV2 /></KycGate></RegionGate></GuestRouteGate>} />
-                      <Route path="/match/:matchId/control" element={<ModeratorMatchControlScreen />} />
 
                       {/* Settings */}
                       <Route path="/settings" element={IS_NATIVE_BUILD ? <NativeSettingsHubScreen /> : <SettingsScreen />} />
@@ -1056,6 +1035,10 @@ export default function AppRouter() {
                     <Route element={<ProtectedRoute><RegionGate feature="the VERGR wallet"><WalletLayout /></RegionGate></ProtectedRoute>}>
                       <Route path="/wallet"                          element={IS_NATIVE_BUILD ? <NativeHomeScreen /> : <WalletHomeScreen />} />
                       <Route path="/wallet/buy"                      element={IS_NATIVE_BUILD ? <NativeBuyScreen /> : <WalletBuyScreen />} />
+                      {/* Available in EVERY build, including Play. Google must permit
+                          alternative billing, so the basket offers both rails and the
+                          buyer picks; see PaymentMethodPicker. */}
+                      <Route path="/wallet/cart"                     element={<WalletCartScreen />} />
                       <Route path="/wallet/convert"                  element={IS_NATIVE_BUILD ? <NativeConvertScreen /> : <WalletConvertScreen />} />
                       <Route path="/wallet/withdraw"                 element={<WalletWithdrawScreen />} />
                       <Route path="/wallet/withdraw/new-address"     element={<WalletNewAddressScreen />} />
@@ -1187,6 +1170,7 @@ export default function AppRouter() {
                   </Suspense>
                 </div>
                 </LiveUsersProvider>
+                </CartProvider>
               </LayoutProvider>
             </UIProvider>
           </NotificationProvider>

@@ -2,7 +2,7 @@
 // Block model: { p } | { h2 } | { list:[] } | { steps:[] } | { faq:[[q,a]] } | { note } | { cta:[{to,label}] }
 
 export default {
-  summary: "Direct messages, group chats, and squad chats are private and are not read or moderated by anyone, so there is no content-report button inside a private conversation. If someone is bothering you, block them, which stops all their messages and calls, and leave or delete the chat. Reporting for review applies to public content like posts, streams, and tournament chat.",
+  summary: "Direct messages, group chats, and squad chats are private and are not read or moderated by anyone, so there is no content-report button inside a private conversation. If someone is bothering you, block them, which stops all their messages and calls, and leave or delete the chat. Reporting for review applies to public content like posts, streams, and live stream chat.",
   updated: "2026-06-18",
   body: [
     {
@@ -35,7 +35,7 @@ export default {
       list: [
         "Posts and other public content: use the report option on the item.",
         "Live streams: report from the stream.",
-        "Tournament spectator chat and stream tips: these public chats are moderated.",
+        "Live stream chat: public chat in a broadcast is moderated.",
         "These reports go to the Vanguard moderation queue for review."
       ]
     },
@@ -50,7 +50,7 @@ export default {
         ],
         [
           "Someone is breaking the rules in a public stream chat. What do I report?",
-          "Use the report option on that public surface. Public chats (stream and tournament) are moderated, unlike private DMs."
+          "Use the report option on that public surface. Live stream chat is moderated, unlike private DMs."
         ],
         [
           "Can I get a private message reviewed by a moderator?",

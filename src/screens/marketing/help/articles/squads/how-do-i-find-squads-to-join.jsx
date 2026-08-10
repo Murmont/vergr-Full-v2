@@ -11,8 +11,8 @@ export default {
       list: [
         "Browse: the Squads section lets you explore squads, open one, and read its page like a clubhouse tour: members, announcements, events, and trophies.",
         "Join or request: open squads take you instantly; request-based squads send your join request to the leadership for approval.",
-        "Invitation: members can invite you directly, and squads recruiting from tournaments or streams often do. Invitations wait for your accept or decline.",
-        "Through people: playing tournaments and hanging out in streams is how most squad recruitment actually happens, be visible and squads find you."
+        "Invitation: members can invite you directly, and squads recruiting from streams and chat often do. Invitations wait for your accept or decline.",
+        "Through people: hanging out in streams and squad chats is how most squad recruitment actually happens, be visible and squads find you."
       ]
     },
     {
@@ -21,9 +21,9 @@ export default {
     {
       list: [
         "Check the activity: recent announcements and events mean a living squad; a silent page means a dead one.",
-        "Check the trophies: tournament history tells you if they are competitive or casual, join the one that matches what you want.",
+        "Check the activity: how often they stream and post tells you if they are serious or casual, join the one that matches what you want.",
         "Size matters: squads hold up to 100 members. A 95-member squad is a community; a 6-member squad is a friend group. Both are great, know which you are joining.",
-        "Money runs through squads (shared treasuries, tournament winnings), so join people you trust."
+        "Money runs through squads (shared treasuries, pooled Coins), so join people you trust."
       ]
     },
     {

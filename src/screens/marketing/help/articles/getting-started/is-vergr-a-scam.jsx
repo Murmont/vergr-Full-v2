@@ -5,7 +5,7 @@
 // Top-level: summary (1-2 sentences, answer-first), updated (YYYY-MM-DD), body [].
 
 export default {
-  summary: "No. VERGR is a real platform with real, withdrawable earnings, verified tournament results, and openly stated fees. It will never ask for your password, it processes payments through secure checkout, and withdrawals go only to wallet addresses you set up yourself. Here is how to spot the difference and stay safe.",
+  summary: "No. VERGR is a real platform with real, withdrawable earnings and openly stated fees. It will never ask for your password, it processes payments through secure checkout, and withdrawals go only to wallet addresses you set up yourself. Here is how to spot the difference and stay safe.",
   updated: "2026-06-06",
   body: [
     {
@@ -25,7 +25,7 @@ export default {
         "VERGR will never ask for your password. Anyone who does is not us.",
         "Payments run through secure checkout, and your full card details are never stored by VERGR.",
         "Withdrawals only go to addresses you add and verify yourself, protected by your PIN and two-factor authentication.",
-        "Tournament results are verified, so you are not relying on an opponent's honesty to get paid."
+        "Every Coin movement is written to your wallet history, so you can audit what you earned and what was deducted."
       ]
     },
     {

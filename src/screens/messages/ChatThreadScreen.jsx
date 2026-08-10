@@ -53,8 +53,12 @@ import EventPickerModal from '../../components/tournament/EventPickerModal';
 import CreatePollSheet from '../../components/messages/CreatePollSheet';
 import ChatPollBubble from '../../components/messages/ChatPollBubble';
 import EventTicketCard from '../../components/tournament/EventTicketCard';
-import SendGemsModal from '../../components/SendGemsModal';
+import SendCoinsModal from '../../components/SendCoinsModal';
 import { getWallet, sendCoins, translateContent, groupAllows } from '../../firebase/firestore';
+import { getLockedMessageUploadUrl, sendLockedMessage, putSignedUpload, makeBlurredPreview } from '../../firebase/firestore';
+import LockedMedia from '../../components/monetization/LockedMedia';
+import ReportPrivate from '../../components/safety/ReportPrivate';
+import PriceSheet from '../../components/monetization/PriceSheet';
 import { translateTarget } from '../../utils/localePrefs';
 import { toggleReaction, tombstoneMessage, isChatMutedFor, setChatMuted, MUTE_OPTIONS, deleteChatForMe, deleteChatForEveryone } from '../../utils/chatOps';
 import { resolveChatUsers, chatDisplayName, senderColor, peekChatUser, chatPartner } from '../../utils/chatIdentity';
@@ -2364,7 +2368,7 @@ export default function ChatThreadScreen() {
 
   const handleWallet = () => {
     if (!otherUser) {
-      alert('Cannot send gems – user not found');
+      alert('Cannot send coins – user not found');
       return;
     }
     setShowSendCoinsModal(true);
@@ -2373,6 +2377,155 @@ export default function ChatThreadScreen() {
   // Ticketed-event share — pick one of my events, send it as an interactive
   // ticket card message. Denormalize display fields so the card renders
   // without a fetch; live price/sold/status refresh from getEventTicketStatus.
+  // ── Locked media ─────────────────────────────────────────────────────────
+  //
+  // Two steps, because the price has to be known BEFORE the upload: the object
+  // goes to a private prefix and the callable that files its key is the same one
+  // that writes the price, so there is no "upload now, decide later".
+  const [lockedFile, setLockedFile] = useState(null);
+  const [lockedSheet, setLockedSheet] = useState(false);
+  const lockedInputRef = useRef(null);
+
+  const handleLocked = () => lockedInputRef.current?.click();
+
+  const onLockedFilePicked = (e) => {
+    const f = e.target.files?.[0];
+    e.target.value = '';
+    if (!f) return;
+    setLockedFile(f);
+    setLockedSheet(true);
+  };
+
+  const sendLocked = async ({ priceCoins }) => {
+    const file = lockedFile;
+    if (!file) return;
+    setLockedSheet(false);
+    setLockedFile(null);
+    try {
+      // R2's CORS exact-matches Content-Type, so a ";codecs=" suffix fails the
+      // signature silently. Strip it.
+      const contentType = (file.type || 'image/jpeg').split(';')[0];
+      const isVideo = contentType.startsWith('video/');
+
+      const signed = await getLockedMessageUploadUrl({ chatId, scope: 'conversation', contentType, sizeBytes: file.size });
+      await putSignedUpload(signed.mediaUploadUrl, file, contentType, signed.cacheControl);
+
+      // Destroyed here, on the sender's device, before anything is uploaded.
+      const previewBlob = await makeBlurredPreview(file).catch(() => null);
+      let previewUrl = '';
+      if (previewBlob) {
+        await putSignedUpload(signed.previewUploadUrl, previewBlob, 'image/jpeg', signed.cacheControl);
+        previewUrl = signed.previewUrl;
+      }
+
+      // ONE id, named by us, used by both halves.
+      //
+      // The chat list on the relay path is built from relay FRAMES and never
+      // reads message docs from Firestore, so a callable that only wrote to
+      // Firestore produced a message nobody could see. The callable files the
+      // price and the private object key against this id; the frame below is
+      // what actually appears in the conversation.
+      const messageId = `lk_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+      await sendLockedMessage({
+        chatId, scope: 'conversation', messageId,
+        mediaKey: signed.mediaKey, previewUrl, priceCoins, isVideo, caption: '',
+      });
+      // The blurred preview is a deliberately public object, so it is safe on
+      // the wire. The real bytes are not on it, and never leave R2 unsigned.
+      // RELAY PATH ONLY.
+      //
+      // The callable above already wrote the message document. On the legacy
+      // (Firestore) chat path that document IS the message, and sending a frame
+      // too would post a second, duplicate row via relayMessage. On the relay
+      // path the list is built from frames and never reads that document, so
+      // the frame is the only thing that appears.
+      //
+      // mediaKind is set EXPLICITLY: the frame builder otherwise derives it from
+      // contentUrl, and a locked video has no preview to put there, so the
+      // message would arrive typed as plain text and render as an empty bubble.
+      if (relayEnabled) {
+        await hookSend({ id: messageId, type: 'locked', mediaKind: 'locked', contentUrl: previewUrl || '' });
+      }
+    } catch (err) {
+      alert(err?.message || 'Could not send locked media.');
+    }
+  };
+
+  // ── 1:1 session ──────────────────────────────────────────────────────────
+  //
+  // A 1:1 is an UNLISTED stream, not a new subsystem. That gets the whole
+  // existing pipeline for free (ingest, playback, chat, tips, gifts) and means
+  // "free or paid" is the same `access` block every other paid stream uses.
+  // Unlisted keeps it out of every discovery query, so the link is the only way
+  // in, which is the Tango model the founder asked for.
+  const [oneToOneSheet, setOneToOneSheet] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
+  // A report aimed at ONE message rather than the whole conversation. Set from
+  // the locked-media bubble, which is the priced surface a buyer needs to be
+  // able to escalate.
+  const [reportTarget, setReportTarget] = useState(null);
+  const handleOneToOne = () => setOneToOneSheet(true);
+
+  /**
+   * Start a 1:1 (or a group session), optionally paid.
+   *
+   * THIS IS A CALL, NOT A STREAM.
+   *
+   * The first version of this created an unlisted live stream and dropped a
+   * /watch link in the chat. That was wrong in every way that matters: it put
+   * the host on the broadcast page, it showed them as LIVE, and the other side
+   * had a link rather than a ringing phone. A 1:1 in a DM is a private video
+   * call between two people; in a group or squad it is the same thing with more
+   * seats. Neither is ever public and neither has a viewer.
+   *
+   * So this rides the EXISTING call path: one `calls/{chatId}` doc, which
+   * IncomingCallOverlay already watches and rings on. A DM goes peer-to-peer
+   * (/call), a group goes through the SFU (/group-call) because a mesh would
+   * have every phone encoding a stream per peer.
+   *
+   * The only thing new is the price. It rides on the call doc, and the person
+   * ANSWERING pays before they connect (entitlements resourceType 'call').
+   */
+  const startOneToOne = async ({ isPaid, priceCoins }) => {
+    setOneToOneSheet(false);
+    try {
+      const { httpsCallable: hc } = await import('firebase/functions');
+      const { functions: fns } = await import('../../firebase/config');
+      const res = await hc(fns, 'createStreamSession')({
+        kind: 'public',
+        mode: 'browser',
+        title: '1:1 session',
+        audience: 'unlisted',
+        // Server-side this forces unlisted, caps concurrent viewers, and stamps
+        // sessionType. Client-side, streamVisibility.js keeps it out of every
+        // discovery surface — Explore, Shorts, rails and the avatar LIVE ring
+        // all read those flags now, which they did not before.
+        sessionType: 'one_to_one',
+        access: isPaid ? { mode: 'paid', priceCoins } : { mode: 'free' },
+      });
+      const streamId = res.data?.streamId;
+      if (!streamId) throw new Error('Could not start the session.');
+
+      // A JOIN CARD, not a link.
+      //
+      // This used to drop a bare /watch URL into the chat as plain text, which
+      // on the relay path rendered as an unclickable line and gave the other
+      // person nothing to press. It now rides the wire as its own message type
+      // with the stream id in contentUrl, and renders as a card with a Join
+      // button (see the 'onetoone' case in the message renderer).
+      await hookSend({
+        type: 'onetoone',
+        mediaKind: 'onetoone',
+        contentUrl: streamId,
+        text: isPaid ? String(Math.floor(priceCoins)) : '0',
+      });
+
+      navigate(`/broadcast/${streamId}`);
+    } catch (err) {
+      alert(err?.message || 'Could not start the 1:1.');
+    }
+  };
+
   const handleSendTicket = () => setShowEventPicker(true);
   const handleEventSelected = (t) => {
     setShowEventPicker(false);
@@ -2421,6 +2574,82 @@ export default function ChatThreadScreen() {
     }
 
     switch (m.type) {
+      // An invitation to a private 1:1 session. A card with a button, because a
+      // URL in a text bubble is not something anyone can reliably press.
+      case 'onetoone': {
+        const oneToOneId = m.contentUrl;
+        const priceC = Math.floor(Number(m.text) || 0);
+        return (
+          <div className="flex flex-col p-3 gap-2 w-[250px] max-w-full">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-full bg-brand-pink/20 flex items-center justify-center shrink-0">
+                <Icon name="videocam" size={16} className="text-brand-pink" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-[13.5px] font-bold text-text-primary">1:1 session</div>
+                <div className="text-[11px] text-text-muted">
+                  {priceC > 0 ? `${priceC.toLocaleString()} coins to join` : 'Free to join'}
+                </div>
+              </div>
+            </div>
+            {!isMe && oneToOneId && (
+              <button
+                onClick={(e) => { e.stopPropagation(); navigate(`/watch/${oneToOneId}`); }}
+                className="w-full rounded-xl bg-brand-violet hover:bg-brand-violet-light text-white font-bold text-[13px] py-2 transition"
+              >
+                Join
+              </button>
+            )}
+            {isMe && <div className="text-[11px] text-text-muted">You started this session.</div>}
+            <span className="flex justify-end items-center gap-1">
+              <span className="text-[9px] text-white/55">{time}</span>
+              {isMe && <Ticks read={m.read} />}
+            </span>
+          </div>
+        );
+      }
+
+      // Priced media. The bytes are on a private R2 prefix and this message
+      // carries no contentUrl at all, so there is nothing here to accidentally
+      // render: LockedMedia asks the server whether this viewer has paid and
+      // only then receives a five-minute signed URL.
+      case 'locked':
+        return (
+          <div className="flex flex-col">
+            {forwardedLabel}<QuotedReply replyTo={m.replyTo} isMe={isMe} />
+            <div className="p-1.5 w-[240px] max-w-full">
+              <LockedMedia
+                resourceType="message"
+                resourceId={`${chatId}:${m.id}`}
+                locked={m.locked}
+                previewUrl={m.contentUrl || null}
+                className="aspect-square"
+                compact
+              />
+            </div>
+            {m.text && <p className="px-4 pb-1 text-sm break-words">{m.text}</p>}
+            <span className="px-4 pb-2 flex justify-end items-center gap-2">
+              {/* Sold media in a room nobody else can see. This is the only
+                  route from here to a human, so it sits on the bubble itself
+                  rather than behind a long-press people will not find. */}
+              {!isMe && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setReportTarget({ chatId, messageId: m.id });
+                  }}
+                  className="text-[10px] text-white/45 hover:text-brand-ember transition flex items-center gap-0.5"
+                >
+                  <Icon name="flag" size={12} />
+                  Report
+                </button>
+              )}
+              <span className="text-[9px] text-white/60">{time}</span>
+              {isMe && <Ticks read={m.read} />}
+            </span>
+          </div>
+        );
+
       case 'sticker':
         return (
           <div className="relative inline-block">
@@ -2797,6 +3026,14 @@ export default function ChatThreadScreen() {
                       await batch.commit();
                     }
                   } catch {}
+                  setShowHeaderMenu(false);
+                } },
+              // Private conversations are not scanned by automated moderation,
+              // so a participant reporting is the ONLY way anything in here
+              // reaches a human. Blocking stops the messages reaching YOU and
+              // tells nobody at Vergr that anything happened; this does.
+              { icon: 'flag', label: 'Report', danger: true, action: () => {
+                  setReportOpen(true);
                   setShowHeaderMenu(false);
                 } },
               { icon: 'delete', label: 'Delete Chat', danger: true, action: () => {
@@ -3564,8 +3801,59 @@ export default function ChatThreadScreen() {
         onWallet={handleWallet}
         onSendTicket={handleSendTicket}
         onSendPoll={() => setShowPollSheet(true)}
+        onLocked={handleLocked}
+        onOneToOne={handleOneToOne}
         onPickedMedia={handlePickedMedia}
         anchorRef={attachBtnRef}
+      />
+
+      <input
+        type="file"
+        ref={lockedInputRef}
+        onChange={onLockedFilePicked}
+        className="hidden"
+        accept="image/*,video/*"
+      />
+
+      <PriceSheet
+        open={lockedSheet}
+        onClose={() => { setLockedSheet(false); setLockedFile(null); }}
+        onConfirm={sendLocked}
+        title="Lock this media"
+        subtitle="They see a blurred preview and pay coins to open it. The real file never reaches their device until they do."
+        confirmLabel="Send locked"
+        allowFree={false}
+        initialPrice={100}
+      />
+
+      <ReportPrivate
+        open={!!reportTarget}
+        onClose={() => setReportTarget(null)}
+        targetType="message"
+        targetId={reportTarget ? `${reportTarget.chatId}:${reportTarget.messageId}` : ''}
+        context={{ surface: 'locked_message', chatId: reportTarget?.chatId, messageId: reportTarget?.messageId, paid: true }}
+        title="Report this media"
+      />
+
+      <ReportPrivate
+        open={reportOpen}
+        onClose={() => setReportOpen(false)}
+        targetType={chatInfo?.isGroup ? 'message' : 'user'}
+        targetId={chatInfo?.isGroup ? chatId : (otherUser?.id || chatId)}
+        context={{ surface: chatInfo?.isGroup ? 'group_chat' : 'direct_message', chatId }}
+        title={chatInfo?.isGroup ? 'Report this group' : 'Report this conversation'}
+      />
+
+      <PriceSheet
+        open={oneToOneSheet}
+        onClose={() => setOneToOneSheet(false)}
+        onConfirm={startOneToOne}
+        title="Start a 1:1"
+        subtitle="A private video call. It rings them directly, it is never listed anywhere, and nobody else can join. Tips and gifts work either way."
+        confirmLabel="Start call"
+        initialPaid={false}
+        initialPrice={250}
+        feeNote="Vergr takes a flat 10% of what they pay to join (8% on Pro). Tips and gifts sent during the session use the normal tip fee."
       />
 
       <EventPickerModal
@@ -3613,7 +3901,7 @@ export default function ChatThreadScreen() {
       {/* DM "Wallet" = person-to-person GEM transfer (3%), NOT a tip. Tipping
           keeps SendCoinsModal on the profile, so stream/post tipping and the
           10% fee are untouched by this. */}
-      <SendGemsModal
+      <SendCoinsModal
         isOpen={showSendCoinsModal}
         onClose={() => setShowSendCoinsModal(false)}
         recipient={otherUser ? { id: otherUserId, ...otherUser } : null}

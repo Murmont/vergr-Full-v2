@@ -15,7 +15,7 @@ export default {
       h2: "VC (Coins): what you spend"
     },
     {
-      p: "Coins are the in-app currency. You tip with them, enter tournaments with them, and subscribe and boost with them. You can buy Coins, or earn them by competing and getting tipped."
+      p: "Coins are the in-app currency. You tip with them, buy stream passes with them, and subscribe and boost with them. You can buy Coins, or earn them by creating and getting tipped."
     },
     {
       h2: "Gems: what you cash out"

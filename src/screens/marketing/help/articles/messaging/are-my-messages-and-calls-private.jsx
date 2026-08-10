@@ -2,7 +2,7 @@
 // Block model: { p } | { h2 } | { list:[] } | { steps:[] } | { faq:[[q,a]] } | { note } | { cta:[{to,label}] }
 
 export default {
-  summary: "Yes. Direct messages, group chats, and squad chats are private and are not scanned by automated moderation or read by moderators. Voice and video calls connect directly between devices (peer-to-peer). Only public surfaces, like stream and tournament chat, are moderated. Privacy controls for who can reach you live in Settings, then Privacy.",
+  summary: "Yes. Direct messages, group chats, and squad chats are private and are not scanned by automated moderation or read by moderators. Voice and video calls connect directly between devices (peer-to-peer). Only public surfaces, like live stream chat, are moderated. Privacy controls for who can reach you live in Settings, then Privacy.",
   updated: "2026-06-18",
   body: [
     {
@@ -40,7 +40,7 @@ export default {
       list: [
         "Posts and other public content.",
         "Live-stream chat.",
-        "Tournament spectator chat and stream tips."
+        "Live stream chat and the tips sent in it."
       ]
     },
     {
@@ -64,7 +64,7 @@ export default {
         ],
         [
           "Why is stream chat different?",
-          "Stream and tournament chats are public, so they are moderated to keep those shared spaces safe. Your private messages are not."
+          "Live stream chat is public, so it is moderated to keep that shared space safe. Your private messages are not."
         ]
       ]
     },

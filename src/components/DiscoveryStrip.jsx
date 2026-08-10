@@ -11,20 +11,8 @@ export default function DiscoveryStrip() {
   const navigate = useNavigate();
   const [trendingClips, setTrendingClips] = useState([]);
   const [suggestedUsers, setSuggestedUsers] = useState([]);
-  // DS6 — surface live tournaments so spectators discover Champion Picks
-  // ("predict the winner, earn coins") without already knowing it exists.
-  const [liveTournaments, setLiveTournaments] = useState([]);
 
   useEffect(() => {
-    // Live tournaments for the predictions nudge.
-    (async () => {
-      try {
-        const q = query(collection(db, 'tournaments'), where('status', 'in', ['live', 'active']), limit(3));
-        const snap = await getDocs(q);
-        setLiveTournaments(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-      } catch { setLiveTournaments([]); }
-    })();
-
     // Real clips from Klipy
     getTrendingClips().then(clips => setTrendingClips(clips.slice(0, 6))).catch(() => setTrendingClips([]));
 
@@ -50,31 +38,12 @@ export default function DiscoveryStrip() {
     fetchUsers();
   }, []);
 
-  if (trendingClips.length === 0 && suggestedUsers.length === 0 && liveTournaments.length === 0) {
+  if (trendingClips.length === 0 && suggestedUsers.length === 0) {
     return null;
   }
 
   return (
     <div className="w-[260px] h-full overflow-y-auto no-scrollbar py-4 px-3 space-y-6 border-l border-white/[0.06]">
-      {liveTournaments.length > 0 && (
-        <div>
-          <h3 className="text-xs font-bold text-text-primary uppercase tracking-wider mb-2">Predict & Earn</h3>
-          <div className="space-y-2">
-            {liveTournaments.map(t => (
-              <button key={t.id} onClick={() => navigate(`/match/${t.id}`)}
-                className="w-full p-3 rounded-xl bg-gradient-to-br from-brand-violet/20 to-brand-violet/10 border border-brand-violet/30 text-left hover:border-brand-violet/60 transition">
-                <div className="flex items-center gap-1.5 mb-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-brand-ember animate-pulse" />
-                  <span className="text-[9px] font-bold uppercase tracking-wider text-brand-ember">Live now</span>
-                </div>
-                <p className="text-white text-xs font-bold truncate">{t.name || 'Tournament'}</p>
-                <p className="text-brand-violet-light text-[10px] font-semibold mt-0.5">Predict the winner, earn coins</p>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
       {trendingClips.length > 0 && (
         <div>
           <div className="flex items-center justify-between mb-2">

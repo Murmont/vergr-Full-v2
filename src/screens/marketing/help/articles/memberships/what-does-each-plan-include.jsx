@@ -5,7 +5,7 @@
 // Top-level: summary (1-2 sentences, answer-first), updated (YYYY-MM-DD), body [].
 
 export default {
-  summary: "A full breakdown of Free, Lite (€4.99/mo) and Pro (€9.99/mo): streaming quality and requirements, VP earn rate, upload limits, tournament size, and the creator extras each one unlocks. The tip fee stays a flat 10% on every plan.",
+  summary: "A full breakdown of Free, Lite (€4.99/mo) and Pro (€9.99/mo): streaming quality and requirements, VP earn rate, upload limits, and the creator extras each one unlocks. The tip fee stays a flat 10% on every plan.",
   updated: "2026-06-06",
   body: [
     {
@@ -19,7 +19,7 @@ export default {
         "The full social platform: posting, clips, shorts, articles, watching, and chat.",
         "Public streaming once you reach 100 followers plus a one-time 50-coin Stream Boost, at 480p.",
         "Free squad streaming with your crew, no follower requirement.",
-        "Compete in tournaments, solo or with a squad.",
+        "Join squads, voice hangouts, and squad streams.",
         "200MB uploads, with 720p photos and shorts up to 60 seconds."
       ]
     },
@@ -36,7 +36,7 @@ export default {
         "1GB uploads with 1080p photos.",
         "Voice messages, post boosts, and scheduled posts.",
         "A custom profile banner.",
-        "Squads and tournaments at a larger size than Free."
+        "Larger squads than Free."
       ]
     },
     {
@@ -49,7 +49,7 @@ export default {
       list: [
         "1080p streaming and co-streaming so you can share the screen with a guest.",
         "The top VP earn rate.",
-        "The biggest tournaments, with every bracket format available to host.",
+        "Co-streaming, so you can bring a guest on screen.",
         "A custom Vergr.me domain for your link-in-bio page.",
         "Advanced analytics on your audience and content.",
         "An animated avatar and a Pro badge.",

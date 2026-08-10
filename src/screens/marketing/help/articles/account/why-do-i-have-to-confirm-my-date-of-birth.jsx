@@ -1,12 +1,12 @@
 export default {
-  summary: "VERGR requires users to be 18 or older because the platform involves real-money tournaments, coin purchases, and withdrawals. Confirming your date of birth is a legal requirement, not just a formality.",
+  summary: "VERGR requires users to be 18 or older because the platform involves coin purchases, creator earnings, and withdrawals. Confirming your date of birth is a legal requirement, not just a formality.",
   updated: "2026-06-06",
   body: [
     { p: "Skill-based gaming for real money and financial transactions are regulated activities in most countries. Age verification is required by law to protect minors from accessing them." },
     { h2: "Why 18?" },
     { list: [
       "Coin purchases and withdrawals are financial transactions subject to consumer-protection laws that apply differently to minors.",
-      "Paid tournaments involve real money changing hands, which is age-restricted in most jurisdictions.",
+      "Buying Coins and cashing out earnings involve real money, which is age-restricted in most jurisdictions.",
       "VERGR's terms of service and payment partners require users to be adults."
     ]},
     { h2: "What happens with your date of birth?" },

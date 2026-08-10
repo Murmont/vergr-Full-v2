@@ -1,11 +1,11 @@
 export default {
-  summary: "Each person may hold one VERGR account. Creating multiple accounts to gain unfair advantages in tournaments, referrals, or promotions is a violation of the Terms of Service and can result in all accounts being permanently banned.",
+  summary: "Each person may hold one VERGR account. Creating multiple accounts to gain unfair advantages in referrals, promotions, or the coin economy is a violation of the Terms of Service and can result in all accounts being permanently banned.",
   updated: "2026-06-06",
   body: [
-    { p: "VERGR's rules are clear: one account per person. This exists to keep tournaments fair and to protect the integrity of the economy." },
+    { p: "VERGR's rules are clear: one account per person. This exists to protect the integrity of the economy and keep the community accountable." },
     { h2: "Why only one account?" },
     { list: [
-      "Tournaments: entering the same event from multiple accounts is cheating.",
+      "Engagement: boosting your own posts, streams, or clips from a second account.",
       "Referrals: self-referrals using fake secondary accounts exploit the rewards system.",
       "Economy: duplicate accounts distort rankings and leaderboards.",
       "KYC: identity verification ties your real identity to your account. Two accounts would require two verified identities."

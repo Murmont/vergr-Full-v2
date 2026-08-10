@@ -26,7 +26,7 @@ export default {
       h2: "Getting there"
     },
     {
-      p: "Immortal is earned through a large amount of VP built over many tournaments, quests, and referrals. Higher levels cost more VP than early ones, so the climb steepens near the top. Paid plans earn VP faster, which shortens the journey, but it is still a long-term goal, not an overnight one."
+      p: "Immortal is earned through a large amount of VP built over many streams, quests, and referrals. Higher levels cost more VP than early ones, so the climb steepens near the top. Paid plans earn VP faster, which shortens the journey, but it is still a long-term goal, not an overnight one."
     },
     {
       note: "Once you reach the top level, prestige levels let you keep progressing beyond it. See the prestige article for how that works."

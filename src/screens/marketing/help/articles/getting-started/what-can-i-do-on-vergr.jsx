@@ -5,17 +5,11 @@
 // Top-level: summary (1-2 sentences, answer-first), updated (YYYY-MM-DD), body [].
 
 export default {
-  summary: "A lot. VERGR is a full platform for gamers: compete in tournaments, go live and get tipped, post clips and shorts, build a squad, chat and call your friends, run a creator page, and earn real money you can cash out. Think of it as the social, competitive, and earning sides of gaming in one app.",
-  updated: "2026-06-06",
+  summary: "A lot. VERGR is a full platform for gamers: go live and get tipped, post clips and shorts, build a squad, chat and call your friends, run a creator page, and earn real money you can cash out. Think of it as the social and earning sides of gaming in one app.",
+  updated: "2026-08-09",
   body: [
     {
-      p: "VERGR is built to do everything a gamer wants in one place instead of jumping between a streaming site, a social app, a tournament platform, and a chat tool. Here is the full tour of what is actually inside."
-    },
-    {
-      h2: "Compete"
-    },
-    {
-      p: "Enter skill-based tournaments in real titles like FC, CS2, NBA 2K, Warzone, Apex, and Rocket League. There are free events to learn on and paid ones with real rewards. You can play solo or bring your squad in as a team. Every match has verified results, and winners are paid in Coins."
+      p: "VERGR is built to do everything a gamer wants in one place instead of jumping between a streaming site, a social app, and a chat tool. Here is the full tour of what is actually inside."
     },
     {
       h2: "Stream and create"
@@ -38,10 +32,10 @@ export default {
       h2: "Earn and cash out"
     },
     {
-      p: "Win tournaments, collect tips, split squad winnings, sell memberships to fans, or moderate as part of the Vanguard. Your earnings build up in Coins, which you convert to Gems and withdraw as real money once you are verified."
+      p: "Collect tips, charge for access to a stream, sell memberships to fans, share in your squad's treasury, or moderate as part of the Vanguard. Your earnings build up in Coins, which you convert to Gems and withdraw as real money once you are verified."
     },
     {
-      note: "You can use VERGR purely as a social and competitive app and never spend a cent, or lean into the earning side. It is the same platform either way."
+      note: "You can use VERGR purely as a social app and never spend a cent, or lean into the earning side. It is the same platform either way."
     },
     {
       cta: [

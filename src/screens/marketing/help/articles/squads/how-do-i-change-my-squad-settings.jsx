@@ -22,7 +22,7 @@ export default {
       p: "Settings are a leadership surface: regular members do not edit the squad's identity or joining rules. The President holds the most sensitive switches, in line with the role's one-per-squad, buck-stops-here design."
     },
     {
-      note: "Changing the squad's name and imagery mid-life is legal but expensive in recognition: squads build brand equity in tournaments and browsing just like creators do. Rename thoughtfully."
+      note: "Changing the squad's name and imagery mid-life is legal but expensive in recognition: squads build brand equity in browsing and streams just like creators do. Rename thoughtfully."
     },
     {
       cta: [

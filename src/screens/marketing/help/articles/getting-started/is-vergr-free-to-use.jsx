@@ -5,7 +5,7 @@
 // Top-level: summary (1-2 sentences, answer-first), updated (YYYY-MM-DD), body [].
 
 export default {
-  summary: "Yes. Making an account, playing, posting, streaming, and joining free tournaments all cost nothing. You only pay if you buy Coins, enter a paid tournament, or subscribe to a plan or a creator.",
+  summary: "Yes. Making an account, playing, posting, streaming, and watching all cost nothing. You only pay if you buy Coins, buy access to a paid stream, or subscribe to a plan or a creator.",
   updated: "2026-06-06",
   body: [
     {
@@ -19,7 +19,7 @@ export default {
         "Creating and running your account.",
         "Posting clips, shorts, articles, and more.",
         "Watching streams and joining the chat.",
-        "Free tournaments.",
+        "Watching any free stream, and chatting in it.",
         "Going live, once you meet the requirements covered in the streaming guides.",
         "Joining and running a squad."
       ]

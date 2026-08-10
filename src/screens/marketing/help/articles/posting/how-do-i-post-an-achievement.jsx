@@ -5,14 +5,14 @@ export default {
     { h2: "Posting an achievement" },
     { steps: [
       "Tap create and choose Achievement.",
-      "Enter the achievement (e.g. 'Hit Radiant', 'First tournament win').",
+      "Enter the achievement (e.g. 'Hit Radiant', 'First 1,000 followers').",
       "Add details and a screenshot or clip if you have one.",
       "Choose your audience and post."
     ]},
     { h2: "Ideas worth posting" },
     { list: [
       "Reaching a new rank or tier.",
-      "Winning a tournament or a clutch match.",
+      "A clutch play or a personal best.",
       "A personal best or a long-chased grind finally done.",
       "Squad milestones worth celebrating together.",
     ]},

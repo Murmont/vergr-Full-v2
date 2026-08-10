@@ -21,7 +21,7 @@ export default {
         "Stream Boosts. Spend Coins to boost a stream for more discovery and the ability to notify followers.",
         "Subscriptions. Pay for a Lite or Pro plan with Coins instead of a card.",
         "Creator memberships. Subscribe to a creator's Fan or Super Fan tier.",
-        "Squad contributions. Pool Coins into a squad treasury or sponsor a tournament."
+        "Squad contributions. Pool Coins into a squad treasury to fund what the squad does together."
       ]
     },
     {

@@ -20,7 +20,7 @@ export default {
     },
     {
       list: [
-        "The practical: squad rules, the weekly schedule, tournament signup instructions, game lobby settings.",
+        "The practical: squad rules, the weekly schedule, stream times, game lobby settings.",
         "The reference: role assignments, treasury decisions, links members keep asking for.",
         "The legendary: the clutch clip, the trophy screenshot, the message that became an inside joke."
       ]

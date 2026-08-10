@@ -5,7 +5,7 @@
 // Top-level: summary (1-2 sentences, answer-first), updated (YYYY-MM-DD), body [].
 
 export default {
-  summary: "VP (Vergr Points) is your progress score. You earn it by being active, competing in tournaments, completing creator quests, and referring friends. VP is not money, you cannot spend it, but it ranks you up, and higher ranks mean a smaller commission when you convert Coins to Gems.",
+  summary: "VP (Vergr Points) is your progress score. You earn it by being active, streaming, posting, completing creator quests, and referring friends. VP is not money, you cannot spend it, but it ranks you up, and higher ranks mean a smaller commission when you convert Coins to Gems.",
   updated: "2026-06-06",
   body: [
     {
@@ -17,7 +17,7 @@ export default {
     {
       list: [
         "Being active: posting and engaging on the platform.",
-        "Competing in tournaments, win or lose.",
+        "Going live, and posting clips and shorts.",
         "Completing creator quests in the Creator Studio.",
         "Referring friends who sign up: you earn 5,000 VP, and your friend earns 3,000 VP when they complete the steps."
       ]

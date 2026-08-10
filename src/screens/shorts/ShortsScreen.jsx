@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { isDiscoverableStream } from '../../utils/streamVisibility';
 import { useNavigate } from 'react-router-dom';
 import { useLayout } from '../../context/LayoutContext';
 import useResponsive from '../../hooks/useResponsive';
@@ -40,7 +41,7 @@ export default function ShortsScreen() {
           orderBy('viewerCount', 'desc'), limit(10),
         ));
         if (!alive) return;
-        setLiveStreams(snap.docs.map((d) => ({ id: d.id, _kind: 'live', ...d.data() })));
+        setLiveStreams(snap.docs.map((d) => ({ id: d.id, _kind: 'live', ...d.data() })).filter(isDiscoverableStream));
       } catch { /* no live slides */ }
     })();
     return () => { alive = false; };

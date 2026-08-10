@@ -1,26 +1,26 @@
 export default {
-  summary: "An esports team profile is a dedicated page for a competitive team — its roster, results, and identity. On VERGR this is built on squads: create a squad, add your roster, and your squad page acts as your team's home for tournaments and recruitment.",
+  summary: "An esports team profile is a dedicated page for a team: its roster, its identity, and somewhere to be found. On VERGR this is built on squads: create a squad, add your roster, and your squad page acts as your team's home for streams and recruitment.",
   updated: "2026-06-06",
   body: [
-    { p: "If you run or play for a competitive team, your team identity on VERGR lives through a squad. A squad gives you a shared page, a roster, a treasury for prize money, and the ability to enter tournaments as a team." },
+    { p: "If you run or play for a team, your team identity on VERGR lives through a squad. A squad gives you a shared page, a roster, a shared treasury, and squad streams the whole roster can appear in." },
     { h2: "Setting up your team" },
     { steps: [
       "Create a squad from the Squads section — this becomes your team page.",
       "Set your team name, tag, banner, and description.",
       "Invite your players and assign roles.",
-      "Enter squad-mode tournaments as a team — prize money flows into the squad treasury.",
+      "Run squad streams as a team, with the whole roster in voice and a couple on camera.",
       "Use the squad page to recruit, post results, and run scrims or hangouts."
     ]},
     { h2: "Why a squad works as a team profile" },
     { list: [
-      "Shared treasury: tournament winnings are paid to the team, then split by your rules.",
+      "Shared treasury: the team pools Coins and distributes them by your own rules.",
       "Roster and roles: owners, managers, and members with the right permissions.",
       "Team tag shows on brackets and member profiles.",
       "Rivalries and analytics track your team's head-to-head record over time."
     ]},
     { cta: [
       { to: "/platform/help/how-do-i-create-a-squad", label: "How to create a squad" },
-      { to: "/platform/help/can-my-squad-enter-a-tournament-as-a-team", label: "Entering tournaments as a team" }
+      { to: "/platform/help/how-do-i-run-a-squad-voice-hangout-or-stream", label: "Running a squad stream" }
     ]}
   ]
 };

@@ -16,7 +16,7 @@ export default {
     },
     {
       list: [
-        "Coins (VC) are the in-app currency. You buy them, win them in tournaments, and receive them as tips. You spend them on event tickets, tips, boosts, and more.",
+        "Coins (VC) are the in-app currency. You buy them, earn them from paid streams, and receive them as tips. You spend them on stream passes, tips, boosts, and more.",
         "Gems are the only thing you withdraw as real money. You get Gems by converting Coins.",
         "VP (Vergr Points) is your standing. You earn it by being active, and it sets your rank."
       ]

@@ -27,7 +27,7 @@ export default {
       h2: "The line between public and private"
     },
     {
-      p: "These rules are enforced on public surfaces: the feed, profiles, streams, tournament chat. Private DMs and private group chats are not scanned, your conversations belong to you. The rules still apply in the sense that a victim of abuse in DMs can block, and serious misconduct can still be acted on when reported through other evidence."
+      p: "These rules are enforced on public surfaces: the feed, profiles, streams, and live stream chat. Private DMs and private group chats are not scanned, your conversations belong to you. The rules still apply in the sense that a victim of abuse in DMs can block, and serious misconduct can still be acted on when reported through other evidence."
     },
     {
       cta: [

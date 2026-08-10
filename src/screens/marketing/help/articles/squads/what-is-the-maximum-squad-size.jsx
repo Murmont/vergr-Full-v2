@@ -15,18 +15,18 @@ export default {
     },
     {
       list: [
-        "Recruit for participation, not headcount: 40 active members out-perform 100 ghosts in every way that matters, tournaments, treasury, and vibe.",
+        "Recruit for participation, not headcount: 40 active members out-perform 100 ghosts in every way that matters, streams, treasury, and vibe.",
         "Prune honestly: long-inactive members occupy slots that a motivated recruit could fill. Squad analytics shows you who is actually around.",
         "Overflowing with demand? A sister squad under the same banner is the classic move, allied squads even get to be rivals in the fun way."
       ]
     },
     {
-      note: "Related numbers: squad voice hangouts comfortably hold the whole squad in voice with up to 2 video slots, and squad tournament rosters are chosen per event via champion votes, the squad competes through its selected champions, not all 100 at once."
+      note: "Related numbers: squad voice hangouts comfortably hold the whole squad in voice with up to 2 video slots, so a big roster can all be in the room even when only a couple of people are on camera."
     },
     {
       cta: [
         { to: "/platform/help/how-do-i-invite-members-to-my-squad", label: "Filling your roster" },
-        { to: "/platform/help/how-do-squad-champion-votes-work-for-tournaments", label: "Champion selection" }
+        { to: "/platform/help/what-are-squad-roles-and-permissions", label: "Squad roles" }
       ]
     }
   ]

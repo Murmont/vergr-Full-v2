@@ -28,7 +28,7 @@ export default {
       h2: "Do I have to verify my identity?"
     },
     {
-      p: "Not to sign up. You can explore, post, play free tournaments, and follow people right away. A one-time identity check (a photo of your ID and a selfie) is only needed before you withdraw real earnings, so you can leave that until you actually want to cash out."
+      p: "Not to sign up. You can explore, post, stream, and follow people right away. A one-time identity check (a photo of your ID and a selfie) is only needed before you withdraw real earnings, so you can leave that until you actually want to cash out."
     },
     {
       note: "VERGR is for ages 18 and up. We check your date of birth at signup and run a full identity check before you use the wallet or withdraw."
@@ -37,7 +37,7 @@ export default {
       faq: [
         [
           "Is signing up free?",
-          "Yes. Creating an account, playing, posting, and joining free tournaments all cost nothing."
+          "Yes. Creating an account, playing, posting, watching, and streaming all cost nothing."
         ],
         [
           "Can I sign up without a phone number?",

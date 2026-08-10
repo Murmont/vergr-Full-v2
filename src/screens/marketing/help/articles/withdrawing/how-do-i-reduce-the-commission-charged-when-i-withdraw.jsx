@@ -24,7 +24,7 @@ export default {
       h2: "How to keep more"
     },
     {
-      p: "Focus on rank. Earning VP through tournaments, creator quests, and referrals lowers your conversion commission level by level, which is where most of the savings live. Paid plans earn VP faster (1.5x on Lite, 2x on Pro), so they reach the lower rates sooner."
+      p: "Focus on rank. Earning VP through streaming, creator quests, and referrals lowers your conversion commission level by level, which is where most of the savings live. Paid plans earn VP faster (1.5x on Lite, 2x on Pro), so they reach the lower rates sooner."
     },
     {
       h2: "Practical tips"

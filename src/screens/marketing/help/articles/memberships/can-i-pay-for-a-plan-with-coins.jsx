@@ -24,7 +24,7 @@ export default {
       h2: "Why it is useful"
     },
     {
-      p: "If you have built up Coins from tips, tournament wins, or your squad, paying for a plan with them means your earnings fund your upgrade, no card needed. It is especially handy for active players who would rather reinvest their balance than reach for their wallet."
+      p: "If you have built up Coins from tips, paid streams, or your squad, paying for a plan with them means your earnings fund your upgrade, no card needed. It is especially handy for active players who would rather reinvest their balance than reach for their wallet."
     },
     {
       h2: "Same plan, same features"

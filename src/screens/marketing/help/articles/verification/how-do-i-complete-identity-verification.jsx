@@ -5,7 +5,7 @@ export default {
   updated: "2026-07-02",
   body: [
     {
-      p: "Identity verification unlocks everything that involves real money: the wallet, tournaments, and payouts. It is a one-time check handled by a specialist identity partner over a secure connection."
+      p: "Identity verification unlocks everything that involves real money: the wallet, creator earnings, and payouts. It is a one-time check handled by a specialist identity partner over a secure connection."
     },
     {
       h2: "Step by step"

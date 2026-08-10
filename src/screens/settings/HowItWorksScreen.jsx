@@ -11,7 +11,7 @@ const SECTIONS = [
     icon: 'stadia_controller',
     color: '#B44FFF',
     title: 'What is VERGR?',
-    content: 'VERGR is a gaming social platform where you compete, create, earn, and cash out. Unlike other platforms where you just spend money, VERGR rewards you for being active. Every like you get, every quest you complete, every tournament you win — you earn real coins that have real value.',
+    content: 'VERGR is a live streaming and social platform for gamers and creators. You watch and broadcast live streams, post clips, message friends, and build a squad. Creators are supported directly by their audience through tips, memberships, and paid streams.',
   },
   {
     id: 'economy',
@@ -20,7 +20,7 @@ const SECTIONS = [
     title: 'The VERGR Economy',
     content: 'VERGR runs on three currencies. Coins are bought with real money and used to spend. Gems are earned when people spend coins ON YOU — these can be cashed out. VP (VERGR Points) are earned through activity and unlock levels, perks, and discounts.',
     items: [
-      { label: 'Coins (●)', value: 'Bought with real money. 1 coin = €0.01. Spend on tips, tournaments, and boosts.' },
+      { label: 'Coins (●)', value: 'Bought with real money. 1 coin = €0.01. Spend on tips, memberships, paid streams, and boosts. Spendable only inside VERGR.' },
       { label: 'Gems (◆)', value: 'Earned when someone spends coins on you. Cashable. 1 gem = €0.01. You keep 70% at L1 up to 90% at L100 (Immortal) depending on your VP level.' },
       { label: 'VP (★)', value: 'Earned through activity. Levels up your profile, unlocks perks, lowers your commission rate.' },
     ],
@@ -33,11 +33,11 @@ const SECTIONS = [
     title: 'How to Earn Real Money',
     content: 'There are two main ways to earn gems (cashable money) on VERGR:',
     items: [
-      { label: 'Win tournaments', value: 'Entry fees form the prize pool. Winners receive gems.' },
+      { label: 'Memberships and paid streams', value: 'Members pay in coins for access; you receive gems.' },
       { label: 'Receive tips', value: 'When someone tips you with coins, you get gems.' },
       { label: 'Cash out', value: 'Minimum 1000 gems (€10). Paid via Wise/PayPal. ~3% processor fee.' },
     ],
-    extra: 'VP (earned from quests, phone-add, referrals, streaming, and tournaments) lowers your commission rate — at L100 Immortal you keep 90% of every coin converted to gems, versus 70% at L1.',
+    extra: 'VP (earned from quests, phone-add, referrals, and streaming) lowers your commission rate — at L100 Immortal you keep 90% of every coin converted to gems, versus 70% at L1.',
   },
   {
     id: 'coins',
@@ -80,8 +80,8 @@ const SECTIONS = [
     title: 'Subscription Tiers',
     content: 'VERGR has three tiers. Plans do NOT reduce commission — commission is determined by VP level only. Plans give you VP multipliers, monthly bonuses, and feature unlocks so you level up faster and use more of the app.',
     items: [
-      { label: 'Free', value: 'Ads, 25MB, 720p, 50 media/day, no streaming, no tournament creation' },
-      { label: 'Lite ($9.99/mo)', value: 'No ads, 100MB, 1080p, 1.5× VP, +1,000 VP + 50 coins/mo, stream 1080p, create squads/tournaments' },
+      { label: 'Free', value: 'Ads, 25MB, 720p, 50 media/day, no public streaming' },
+      { label: 'Lite ($9.99/mo)', value: 'No ads, 100MB, 1080p, 1.5× VP, +1,000 VP + 50 coins/mo, stream 1080p, create squads' },
       { label: 'Pro ($24.99/mo)', value: 'No ads, 500MB, 4K, 2× VP, +3,000 VP + 150 coins/mo, stream 1440p60, co-streaming, custom vergr.me domain, advanced analytics, priority support' },
     ],
   },
@@ -90,37 +90,22 @@ const SECTIONS = [
     icon: 'shield',
     color: '#B44FFF',
     title: 'Squads',
-    content: 'Squads are your gaming crew. Create or join a squad to compete together in tournaments, chat, share media, and climb the squad leaderboard. Every squad has a leadership structure elected by members.',
+    content: 'Squads are your gaming crew. Create or join a squad to chat, run voice hangouts, share media, and climb the squad leaderboard. Every squad has a leadership structure elected by members.',
     items: [
       { label: 'President', value: 'Runs the squad. Set by creator, then monthly elections.' },
       { label: 'Vice President', value: 'Steps in if president is inactive 4+ days.' },
-      { label: 'Treasury', value: 'Manages squad wallet and tournament entry fees.' },
+      { label: 'Treasury', value: 'Manages the squad wallet and member contributions.' },
       { label: 'Security', value: 'Moderates chat. Can mute members and start kick votes.' },
       { label: 'Members', value: 'Vote, contribute coins, and participate in everything.' },
     ],
-    extra: 'Elections happen on the 1st of every month. Every member gets one vote. The person with the most votes becomes president. When squad members win tournaments, 10% of their prize automatically goes to the squad treasury.',
-  },
-  {
-    id: 'tournaments',
-    icon: 'emoji_events',
-    color: '#FF4D6A',
-    title: 'Tournaments',
-    content: 'Anyone in a squad can create a tournament. Set an entry fee (in coins), and the entry fees form the prize pool. The bracket is generated automatically — single elimination. When you report match results, the next round generates on its own.',
-    items: [
-      { label: 'Entry fee', value: 'Set by creator (0 for free tournaments)' },
-      { label: '1st place', value: '57% of pool (60% after mod fee, minus 10% squad contribution)' },
-      { label: '2nd place', value: '24% of pool' },
-      { label: '3rd/4th place', value: '~7% each' },
-      { label: 'Moderator', value: '5% of total pool for running the tournament' },
-      { label: 'Squad treasury', value: '10% of each winner\'s prize auto-contributed' },
-    ],
+    extra: 'Elections happen on the 1st of every month. Every member gets one vote. The person with the most votes becomes president.',
   },
   {
     id: 'streams',
     icon: 'live_tv',
     color: '#C87FFF',
     title: 'Streaming',
-    content: 'VERGR doesn\'t host streams directly. Instead, you link your Twitch, YouTube, Kick, or other streaming platform. When you go live there, your followers on VERGR see it and can watch the embedded stream right inside the app. Tournament moderators watch matches this way too.',
+    content: 'You can broadcast straight from the browser or stream in with OBS, and viewers watch and chat inside VERGR. You can also link a Twitch, YouTube, or Kick stream instead, and your VERGR followers will see it and watch the embedded stream in the app. Pro creators can co-stream with a guest, with gameplay in picture-in-picture.',
   },
   {
     id: 'posts',
@@ -144,7 +129,7 @@ const SECTIONS = [
     icon: 'admin_panel_settings',
     color: '#F5C542',
     title: 'Moderation & Safety',
-    content: 'Report any post, comment, or user through the three-dot menu. Reports are reviewed by moderators. Content that hits a report threshold is automatically hidden. Moderators earn coins by running tournaments (5% of the prize pool). Squad Security officers moderate squad chat and can mute or kick members via vote.',
+    content: 'Report any post, comment, or user through the three-dot menu. Reports are reviewed by moderators. Content that hits a report threshold is automatically hidden. Squad Security officers moderate squad chat and can mute or kick members via vote.',
   },
   {
     id: 'cashout',
@@ -224,7 +209,7 @@ export default function HowItWorksScreen() {
         {/* CTA */}
         <div className="mt-6 p-5 rounded-2xl bg-surface-1 border border-white/[0.06] text-center">
           <h3 className="font-syne font-bold text-base mb-2">Ready to start?</h3>
-          <p className="text-text-secondary text-sm mb-4">Create your first post, join a squad, or enter a tournament.</p>
+          <p className="text-text-secondary text-sm mb-4">Create your first post, join a squad, or go live.</p>
           <div className="flex gap-2 justify-center">
             <button onClick={() => navigate('/create')} className="px-5 py-2.5 rounded-xl bg-brand-violet text-white text-sm font-bold">Create Post</button>
             <button onClick={() => navigate('/squads')} className="px-5 py-2.5 rounded-xl bg-surface-2 border border-white/[0.06] text-text-secondary text-sm font-bold">Find a Squad</button>

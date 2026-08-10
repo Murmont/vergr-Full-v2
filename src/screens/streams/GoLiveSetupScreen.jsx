@@ -14,6 +14,7 @@ import { useLayout } from '../../context/LayoutContext';
 import useResponsive from '../../hooks/useResponsive';
 import TopBar from '../../components/TopBar';
 import EventPickerModal from '../../components/tournament/EventPickerModal';
+import PriceSheet from '../../components/monetization/PriceSheet';
 import { browserCanIngest } from '../../utils/streamIngest';
 import { uploadToR2 } from '../../utils/r2Storage';
 import { compressMedia } from '../../utils/mediaCompression';
@@ -86,6 +87,12 @@ export default function GoLiveSetupScreen() {
   // Squad streams are NOT started here — they're squad-dashboard only.
   const [audience, setAudience] = useState('public'); // public | followers | friends | ticketed
   const [ticketedEventId, setTicketedEventId] = useState(null);
+  // Paid stream: charge coins for entry, with no event behind it. Distinct from
+  // 'ticketed', which exists to fund a prize purse and is tied to an event; this
+  // is a creator selling entry to their own broadcast, and it settles through
+  // the same entitlement as a locked post. 0 = free.
+  const [accessPrice, setAccessPrice] = useState(0);
+  const [accessSheet, setAccessSheet] = useState(false);
   const [ticketedEventName, setTicketedEventName] = useState('');
   const [showEventPicker, setShowEventPicker] = useState(false);
   // Promote a ticketed event on a NON-ticketed (public/followers) stream so
@@ -355,6 +362,9 @@ export default function GoLiveSetupScreen() {
         orientation,
         language: streamLang || null,
         audience, // server sets discoverable/unlisted from this (honest enforcement)
+        // A paid stream's playback URL is withheld from the world-readable
+        // stream doc and served only by getAccess. See functions/streaming.js.
+        access: accessPrice > 0 ? { mode: 'paid', priceCoins: accessPrice } : { mode: 'free' },
         tournamentId: audience === 'ticketed' ? ticketedEventId : null, // ticket-gate target
         // "Stream to both" — server validates the RTMP path + mirror secrets.
         twitchMirror: mirrorToTwitch && ingestMode === 'rtmp' && twitchLinked,
@@ -959,6 +969,35 @@ export default function GoLiveSetupScreen() {
                   </button>
                 ))}
               </div>
+
+              {/* Charging for entry is orthogonal to WHO can find the stream, so
+                  it sits next to the audience picker rather than inside it: a
+                  paid stream can still be public, followers-only, or unlisted. */}
+              <div style={{ marginTop: 8 }}>
+                <button
+                  type="button"
+                  onClick={() => setAccessSheet(true)}
+                  style={{
+                    width: '100%', display: 'flex', alignItems: 'center', gap: 8,
+                    padding: '10px 12px',
+                    background: accessPrice > 0 ? 'rgba(240,165,0,0.14)' : 'rgba(255,255,255,0.04)',
+                    border: accessPrice > 0 ? '1px solid #F0A500' : `1px solid ${C.border}`,
+                    borderRadius: 8,
+                    color: accessPrice > 0 ? '#F5C842' : C.textDim,
+                    fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                  }}
+                >
+                  <span className="material-symbols-outlined" style={{ fontSize: 16 }}>
+                    {accessPrice > 0 ? 'lock' : 'lock_open'}
+                  </span>
+                  <span style={{ flex: 1, textAlign: 'left' }}>
+                    {accessPrice > 0
+                      ? `Paid entry — ${accessPrice.toLocaleString()} coins`
+                      : 'Free to watch (tap to charge for entry)'}
+                  </span>
+                  <span className="material-symbols-outlined" style={{ fontSize: 16 }}>chevron_right</span>
+                </button>
+              </div>
               <div style={{ fontSize: 10, color: C.textMuted, marginTop: 6, lineHeight: 1.4 }}>
                 Squad streams start from your squad dashboard, not here.
               </div>
@@ -977,6 +1016,16 @@ export default function GoLiveSetupScreen() {
                 isOpen={showEventPicker}
                 onClose={() => setShowEventPicker(false)}
                 onSelect={(t) => { setTicketedEventId(t.id); setTicketedEventName(t.name); setShowEventPicker(false); }}
+              />
+              <PriceSheet
+                open={accessSheet}
+                onClose={() => setAccessSheet(false)}
+                onConfirm={({ isPaid, priceCoins }) => { setAccessPrice(isPaid ? priceCoins : 0); setAccessSheet(false); }}
+                title="Charge for entry"
+                subtitle="Viewers pay once to watch this broadcast. Anyone with an active membership that includes your paid streams gets in without paying again."
+                confirmLabel="Set"
+                initialPaid={accessPrice > 0}
+                initialPrice={accessPrice > 0 ? accessPrice : 250}
               />
               {audience !== 'ticketed' && (
                 <button type="button" onClick={() => setShowPromotePicker(true)}

@@ -16,7 +16,7 @@ export default {
     },
     {
       steps: [
-        "Earn or hold Coins from tournaments, tips, squad winnings, and more.",
+        "Earn or hold Coins from tips, paid streams, memberships, and more.",
         "Convert Coins into Gems. A commission applies, set by your rank.",
         "Complete identity verification if you have not already.",
         "Withdraw your Gems, with a minimum of 1,000 Gems per withdrawal."

@@ -10,7 +10,7 @@ export default {
       "The new order saves automatically and updates your live page."
     ]},
     { h2: "Hiding a link" },
-    { p: "Each link has a show/hide toggle. Hiding keeps the link saved (and its click history) but removes it from your public page — handy for seasonal links like a tournament or a drop you will bring back later." },
+    { p: "Each link has a show/hide toggle. Hiding keeps the link saved (and its click history) but removes it from your public page — handy for seasonal links like an event or a drop you will bring back later." },
     { note: "Put your highest-priority link at the top: most visitors tap the first one or two and leave." },
     { cta: [
       { to: "/platform/help/how-do-i-add-links-to-my-vergrme-page", label: "Adding links" },

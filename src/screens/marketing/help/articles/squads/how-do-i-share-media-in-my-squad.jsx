@@ -10,7 +10,7 @@ export default {
     {
       steps: [
         "In the squad chat, use the attachment options to send photos, videos, clips, or files, same as any VERGR chat.",
-        "Share your VERGR content too: clips of squad games and tournament moments belong in the squad chat, that is what it is for.",
+        "Share your VERGR content too: clips of squad games and stream moments belong in the squad chat, that is what it is for.",
         "Everything shared collects automatically on the squad's Media screen."
       ]
     },

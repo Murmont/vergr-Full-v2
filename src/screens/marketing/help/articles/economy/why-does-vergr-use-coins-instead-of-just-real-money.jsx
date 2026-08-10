@@ -15,7 +15,7 @@ export default {
       h2: "One simple unit for everyone"
     },
     {
-      p: "VERGR is global. People join with different currencies and from different places. A single in-app unit (Coins) means a tournament entry, a tip, or a boost costs the same to everyone and works the same everywhere. No live exchange rates flickering on every button, no confusion about what something actually costs."
+      p: "VERGR is global. People join with different currencies and from different places. A single in-app unit (Coins) means a stream pass, a tip, or a boost costs the same to everyone and works the same everywhere. No live exchange rates flickering on every button, no confusion about what something actually costs."
     },
     {
       h2: "Instant, frictionless spending"

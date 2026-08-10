@@ -76,23 +76,9 @@ const SITE_MAP = {
     label: 'Platform',
     items: [
       ['Live',         '/learn/live'],
-      ['Tournaments',  '/learn/tournaments'],
       ['Squads',       '/learn/squads'],
       ['Clips',        '/learn/clips'],
       ['Coins',        '/learn/coins'],
-    ],
-  },
-  earn: {
-    label: 'Earn',
-    items: [
-      ['Make Money Gaming',  '/platform/make-money-gaming'],
-      ['EA Sports FC',       '/platform/play/fc25'],
-      ['CS2',                '/platform/play/cs2'],
-      ['Warzone',            '/platform/play/warzone'],
-      ['NBA 2K',             '/platform/play/nba2k'],
-      ['Apex Legends',       '/platform/play/apex'],
-      ['Rocket League',      '/platform/play/rocketleague'],
-      ['Is VERGR Legit?',    '/platform/legit'],
     ],
   },
   creators: {
@@ -144,7 +130,6 @@ const PATH_LABELS = {
   '/studio-tools':     'Studio Tools',
   '/partners':         'Partner Program',
   '/learn/live':         'Live',
-  '/learn/tournaments':  'Tournaments',
   '/learn/squads':       'Squads',
   '/learn/clips':        'Clips',
   '/learn/coins':        'Coins',
@@ -153,16 +138,7 @@ const PATH_LABELS = {
   '/acceptable-use':   'Acceptable Use',
   '/cookies':          'Cookies',
   '/child-safety':     'Child Safety',
-  '/learn/tournament-rules': 'Tournament Rules',
-  '/platform/make-money-gaming': 'Make Money Gaming',
-  '/platform/legit':             'Is VERGR Legit?',
-  '/platform/play':              'Play for Money',
-  '/platform/play/fc25':         'EA Sports FC',
-  '/platform/play/cs2':          'CS2',
-  '/platform/play/warzone':      'Warzone',
-  '/platform/play/nba2k':        'NBA 2K',
-  '/platform/play/apex':         'Apex Legends',
-  '/platform/play/rocketleague': 'Rocket League',
+  '/refunds':          'Refunds',
 };
 
 // ─────────────────────────────────────────────────────────────────────
@@ -390,7 +366,6 @@ function Logo({ size = 40, className }) {
 const NAV_LINKS = [
   ['Home',        '/'],
   ['Shop',        '/store'],
-  ['Tournaments', '/learn/tournaments'],
   ['Streamers',   '/streamer'],
   ['Squads',      '/learn/squads'],
   ['Help',        '/help'],
@@ -677,7 +652,7 @@ function Footer() {
           <Link to="/platform/acceptable-use"         className="vg-link" style={{ textDecoration: 'none' }}>Acceptable Use</Link>
           <Link to="/platform/cookies"                className="vg-link" style={{ textDecoration: 'none' }}>Cookies</Link>
           <Link to="/platform/child-safety"           className="vg-link" style={{ textDecoration: 'none' }}>Child Safety</Link>
-          <Link to="/platform/learn/tournament-rules" className="vg-link" style={{ textDecoration: 'none' }}>Tournament Rules</Link>
+          <Link to="/platform/refunds"                className="vg-link" style={{ textDecoration: 'none' }}>Refunds</Link>
         </div>
       </div>
     </footer>
@@ -912,7 +887,7 @@ function ChatLine({ user, msg, color = C.violet, emoji }) {
 }
 
 // Detailed Vergr home-feed mock — matches the actual app structure
-// (sidebar nav, live hero, tournaments rail, squads rail, live chat).
+// (sidebar nav, live hero, streams rail, squads rail, live chat).
 function DesktopMock() {
   return (
     <div style={{
@@ -957,7 +932,7 @@ function DesktopMock() {
           <SidebarItem icon="home" label="Home" active />
           <SidebarItem icon="live_tv" label="Live" />
           <SidebarItem icon="groups" label="Squads" />
-          <SidebarItem icon="emoji_events" label="Tournaments" />
+          <SidebarItem icon="live_tv" label="Live Streams" />
           <SidebarItem icon="movie" label="Clips" />
           <SidebarItem icon="account_balance_wallet" label="Wallet" />
           <SidebarItem icon="notifications" label="Notifications" />
@@ -1001,14 +976,14 @@ function DesktopMock() {
           </GameTile>
 
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div className="vg-syne" style={{ fontWeight: 700, fontSize: 13 }}>Upcoming Tournaments</div>
+            <div className="vg-syne" style={{ fontWeight: 700, fontSize: 13 }}>Live Now</div>
             <div style={{ fontSize: 10, color: C.violet, fontWeight: 600 }}>View All</div>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             {[
-              ['VERGR Season Cup', '€10,000', 'May 24', 'Open',       '#34d399'],
-              ['Elite Showdown',   '€5,000',  'May 25', 'Registering', C.gold],
-              ['Squad Wars',       '€2,500',  'May 26', 'Open',        '#34d399'],
+              ['NovaKill',    '1.2K',  'Valorant',  'Live', '#34d399'],
+              ['CYBER_V',     '840',   'CS2',       'Live', C.gold],
+              ['MidnightFox', '410',   'Apex',      'Live', '#34d399'],
             ].map(([title, prize, date, status, color]) => (
               <div key={title} style={{
                 flex: 1, padding: 12, minWidth: 0,
@@ -1027,7 +1002,7 @@ function DesktopMock() {
                   <div style={{ fontSize: 11, fontWeight: 600, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</div>
                 </div>
                 <div>
-                  <div style={{ fontSize: 9, color: C.text3 }}>Prize</div>
+                  <div style={{ fontSize: 9, color: C.text3 }}>Watching</div>
                   <div className="vg-mono" style={{ fontSize: 13, fontWeight: 700, color: C.violet }}>{prize}</div>
                 </div>
                 <div style={{ fontSize: 10, color: C.text3 }}>{date}</div>
@@ -1241,7 +1216,7 @@ function LandingHero() {
             color: C.text2, maxWidth: 440,
           }}>
             VERGR is where gamers, creators, and squads come together to play, compete, and earn.
-            Build crews, watch live, enter tournaments, and turn your wins into something real.
+            Build crews, watch live, share clips, and back the creators you follow.
           </p>
 
           <div style={{ marginTop: 28, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
@@ -1336,7 +1311,7 @@ const SLIDE_DATA = [
     intro: 'Get matched to squads built around your games, rank, and schedule, then win and earn together.',
     bullets: [
       ['recommend', 'Recommended squads', 'Matched to your games, rank, and when you actually play.'],
-      ['account_balance_wallet', 'Shared treasury', 'Tournament winnings flow into a squad wallet you all share.'],
+      ['account_balance_wallet', 'Shared treasury', 'Members contribute to a squad wallet you all share.'],
       ['groups', 'Up to 100 members', 'Run scrims, events, and squad streams together.'],
       ['trending_up', 'Climb together', 'Squad XP and loyalty rewards for your active members.'],
     ],
@@ -1355,16 +1330,16 @@ const SLIDE_DATA = [
     chips: ['Card · crypto', 'Min 1,000 gems', 'Lower fees by rank'],
   },
   {
-    id: 'tournaments', tab: 'Tournaments', accent: C.violet, img: '/brand/slide-tournaments.webp',
-    title: "Prove you're the best.",
-    intro: 'Enter skill-based brackets with real coin prize pools. Results are verified, so wins are earned, not claimed.',
+    id: 'cohost', tab: 'Co-streaming', accent: C.violet, img: '/brand/slide-live.webp',
+    title: 'Stream together.',
+    intro: 'Bring a guest on screen without leaving your own channel. Both audiences watch one show, in one chat room.',
     bullets: [
-      ['emoji_events', 'Real prize pools', 'Skill-based brackets with coin prizes, winner takes all.'],
-      ['fact_check', 'Verified results', 'Auto screen-reading plus mod review keep every match fair.'],
-      ['account_tree', 'Every format', '1v1 to 256-player, single or double elim, round robin.'],
-      ['groups', 'Squad or solo', 'Enter alone or roll in as your squad for the treasury.'],
+      ['diversity_3', 'Guest on screen', 'Invite another creator and go two-up in seconds.'],
+      ['picture_in_picture', 'Gameplay in PiP', 'Keep the game running in picture-in-picture while you talk.'],
+      ['forum', 'One chat room', 'Both audiences land in the same chat, moderated together.'],
+      ['groups', 'Squad or solo', 'Go live alone, or bring the squad in for a hangout.'],
     ],
-    chips: ['Up to 256 players', 'Anti-cheat scan', 'Winner takes all'],
+    chips: ['Pro plan', 'Picture-in-picture', 'Shared chat'],
   },
 ];
 
@@ -1387,7 +1362,7 @@ function LandingSlides() {
             }}>communities</span>.
           </h2>
           <p style={{ marginTop: 12, fontSize: 16, color: C.text2 }}>
-            One app for streaming, chat, squads, payments, and tournaments. Swipe through what you get.
+            One app for streaming, chat, squads, clips, and payments. Swipe through what you get.
           </p>
         </div>
 
@@ -1546,13 +1521,14 @@ function LandingEconomy() {
           <p style={{
             marginTop: 18, fontSize: 16, color: C.text2, lineHeight: 1.6, maxWidth: 460,
           }}>
-            VC Coins flow through every corner of VERGR — tips for streamers, prizes for tournaments,
-            memberships for top fans, and boosts for squads on the rise. Eligible gem earnings convert and withdraw.
+            VC Coins flow through every corner of VERGR — tips for streamers, memberships for top fans,
+            paid streams, and boosts for squads on the rise. Coins are spendable only inside VERGR;
+            creators convert their gem earnings and withdraw.
           </p>
           <div style={{ marginTop: 24, display: 'flex', flexDirection: 'column', gap: 10 }}>
             {[
               'Tip your favorite creators in real time',
-              'Win tournament prizes paid in VC',
+              'Unlock a creator’s paid live streams',
               'Subscribe to creators and squads — recurring perks',
               'Convert eligible gems → withdraw to your wallet',
             ].map((t, i) => (
@@ -1698,7 +1674,7 @@ function LandingLevels() {
             {[
               ['Lower platform commission', 'Your conversion rate improves as you rank up — keep more of what you earn'],
               ['Animated rank badges',      'Show your tier in chat, on profiles, and over your stream'],
-              ['Tier-only events',          'Invite-only tournaments and creator drops at higher ranks'],
+              ['Tier-only events',          'Invite-only streams and creator drops at higher ranks'],
               ['Faster VP gains',           'Bonus VP multipliers kick in the higher your rank'],
             ].map(([t, d], i) => (
               <div key={i} style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
@@ -1985,7 +1961,7 @@ function LandingCTA() {
           Where will <span className="vg-grad-text">your run</span> begin?
         </h2>
         <p style={{ marginTop: 18, fontSize: 16, color: C.text2, maxWidth: 580, margin: '18px auto 0' }}>
-          Sign up free, link your games, find your squad, and try a tournament — all in your first hour on VERGR.
+          Sign up free, link your games, find your squad, and catch a live stream — all in your first hour on VERGR.
         </p>
         <div style={{ marginTop: 32, display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
           <Link to={currentUser ? '/home' : '/signup'} className="vg-btn-primary" style={{ textDecoration: 'none' }}>
@@ -2002,8 +1978,8 @@ function LandingCTA() {
 
 export function LandingScreen() {
   useSeo({
-    title: 'Vergr | Connect, Stream & Compete in Tournaments',
-    description: 'Connect with gamers, live stream in high quality, and compete in tournaments on Vergr. Manage your competitive squad and earn rewards with daily quests.',
+    title: 'Vergr | Live Streaming for Gamers & Creators',
+    description: 'Connect with gamers, live stream in high quality, and share clips on Vergr. Build your squad, follow your favourite creators, and support them with tips and memberships.',
     canonical: 'https://vergr.app/platform',
   });
   return (
@@ -2056,14 +2032,14 @@ function PublicPackCard({ pack }) {
 export function StoreScreen() {
   useSeo({
     title: 'Shop — Buy VC Coins | VERGR',
-    description: 'Buy VC Coins to tip streamers, enter tournaments, subscribe to squads, and boost your reach. Eight pack sizes from €0.99 to €224.99. Pay with cryptocurrency or card.',
+    description: 'Buy VC Coins to tip streamers, join creator memberships, unlock paid streams, and boost your reach. Eight pack sizes from €0.99 to €224.99. Pay with cryptocurrency or card.',
     canonical: 'https://vergr.app/platform/store',
   });
   return (
     <MarketingShell>
       <PageHero
         title="Shop — Buy VC Coins"
-        subtitle="VC Coins power tips, memberships, tournament entries, and post boosts. Bigger packs unlock better per-coin value, and the top tiers come with VP bonuses."
+        subtitle="VC Coins power tips, memberships, paid streams, and post boosts. Coins are spendable only inside VERGR. Bigger packs unlock better per-coin value, and the top tiers come with VP bonuses."
         accent="gold"
       />
       <section className="vg-section" style={{ padding: '20px 32px 60px' }}>
@@ -2085,7 +2061,7 @@ export function StoreScreen() {
                 Coins fuel everything
               </div>
               <div style={{ fontSize: 13, color: C.text2, marginTop: 4 }}>
-                Tip creators, enter tournaments, subscribe to squads, boost your reach. Pick a pack to get started.
+                Tip creators, join memberships, unlock paid streams, boost your reach. Pick a pack to get started.
               </div>
             </div>
             <Link to="/signup" className="vg-btn-primary" style={{ textDecoration: 'none' }}>
@@ -2511,7 +2487,7 @@ export function HelpScreen() {
 
   useSeo({
     title: 'Help Center — guides, how-tos, and FAQ | VERGR',
-    description: 'Search the VERGR help center. How to go live, earn, run tournaments, withdraw, join squads, and more. Plain answers to how VERGR works.',
+    description: 'Search the VERGR help center. How to go live, earn, withdraw, join squads, and more. Plain answers to how VERGR works.',
     canonical: 'https://vergr.app/platform/help',
   });
 
@@ -3011,7 +2987,7 @@ export function CareersScreen() {
         <H2>Open paths</H2>
         <Grid cols={2} min={300}>
           <Tile icon="shield" accent={C.cyan} title="Vanguard moderator program"
-            body="Run tournament dispute resolution, content moderation, and community escalations. Paid per-shift in fiat, plus a share of platform tournament fees you adjudicate. Requires VP Level 30+ and a track record of clean play." />
+            body="Run content moderation, live-stream review, and community escalations. Paid per-shift in fiat, plus a share of the moderation treasury. Requires VP Level 30+ and a track record of clean conduct." />
           <Tile icon="terminal" accent={C.violet} title="Engineering"
             body="React + Node, Cloud Functions, WebRTC, Go (SFU). Send a GitHub link and one paragraph on something you've built that you're proud of. We hire on craft, not credentials." />
         </Grid>
@@ -3260,7 +3236,7 @@ export function ContactScreen() {
         <H2>Where to write (by topic)</H2>
         <Grid cols={2} min={300}>
           <Tile icon="support" accent={C.cyan} title="General support"
-            body="Account, wallet, tournaments, streaming, payment questions. support@vergr.app" />
+            body="Account, wallet, streaming, memberships, payment questions. support@vergr.app" />
           <Tile icon="privacy_tip" accent={C.violet} title="Privacy & data requests"
             body="Access, correction, deletion, portability, GDPR/CCPA rights. support@vergr.app — mention 'Privacy request' in the subject." />
           <Tile icon="gavel" accent={C.gold} title="Legal & compliance"
@@ -3413,7 +3389,7 @@ export function DeleteAccountScreen() {
           <Tile icon="gavel" accent={C.ember} title="Moderation and safety records"
             body="Records relating to serious policy violations, retained to protect other users and to comply with legal requests." />
           <Tile icon="hub" accent={C.violet} title="Other users' content"
-            body="Messages you sent to other people, and tournament results involving other competitors, remain in their records." />
+            body="Messages you sent to other people remain in their records, and public posts other people saved or shared may persist." />
         </Grid>
       </Section>
 
@@ -3422,8 +3398,8 @@ export function DeleteAccountScreen() {
         <Grid cols={3} min={260}>
           <Tile icon="account_balance_wallet" accent={C.gold} title="Withdraw your balance"
             body="Coin and gem balances are forfeited. Convert and withdraw before deleting." />
-          <Tile icon="event_busy" accent={C.ember} title="Finish active tournaments"
-            body="Deleting mid-tournament forfeits your place and any prize." />
+          <Tile icon="event_busy" accent={C.ember} title="End active memberships"
+            body="Deleting cancels memberships your fans hold with you, with no refund for the current period." />
           <Tile icon="autorenew" accent={C.cyan} title="Cancel subscriptions"
             body="Cancel any active plan or creator membership so you are not billed again." />
         </Grid>
@@ -3452,7 +3428,7 @@ export function ForumsScreen() {
       <Section>
         <H2>How it'll work</H2>
         <Grid cols={3} min={240}>
-          <Tile icon="forum"       accent={C.cyan}   title="Ask a question"     body="Any logged-in user can post a question about a game, a tournament, a creator tool, or a platform feature. Tag it so it surfaces to the right people." />
+          <Tile icon="forum"       accent={C.cyan}   title="Ask a question"     body="Any logged-in user can post a question about a game, a stream setup, a creator tool, or a platform feature. Tag it so it surfaces to the right people." />
           <Tile icon="thumb_up"    accent={C.violet} title="Vote on answers"    body="The community ranks answers by upvote. Helpful answers climb to the top, bad ones drop out of view." />
           <Tile icon="verified"    accent={C.gold}   title="Accept the best"    body="The asker picks the answer that solved their problem. Accepted answers stick to the top and earn the answerer VP toward their next rank." />
         </Grid>
@@ -3461,7 +3437,7 @@ export function ForumsScreen() {
         <H2>Categories at launch</H2>
         <Grid cols={4} min={200}>
           <Tile icon="sports_esports" accent={C.cyan}   title="Game help"      body="Strategy, builds, rotations, agent picks." />
-          <Tile icon="emoji_events"   accent={C.gold}   title="Tournaments"    body="Format questions, dispute precedent, prize-distribution clarifications." />
+          <Tile icon="videocam"       accent={C.gold}   title="Streaming"      body="Encoder settings, OBS setups, co-streaming, and growing an audience." />
           <Tile icon="payments"       accent={C.violet} title="Wallet & coins" body="How conversion works, withdrawals, address questions, refund flow." />
           <Tile icon="groups"         accent={C.pink}   title="Squads & creators" body="Building an audience, squad operations, monetisation tactics." />
         </Grid>
@@ -3469,7 +3445,7 @@ export function ForumsScreen() {
       <Section bordered>
         <H2>On the roadmap</H2>
         <P max={720}>
-          Forums are scheduled to launch once the core wallet + tournaments + streaming flows are battle-tested in the
+          Forums are scheduled to launch once the core wallet + streaming + creator flows are battle-tested in the
           wild. Building the platform's foundations first means the forum has real conversations to have when it goes
           live — not just empty categories.
         </P>
@@ -3502,15 +3478,15 @@ export function PartnerProgramScreen() {
     <MarketingShell>
       <PageHero
         title="Partner Program"
-        subtitle="For top creators, squads, and tournament organisers — verified partner status, custom Stream Boost terms, and direct support."
+        subtitle="For top creators and squads — verified partner status, custom Stream Boost terms, and direct support."
         accent="violet"
       />
       <Section>
         <H2>Who qualifies</H2>
         <Grid cols={3} min={260}>
           <Tile icon="emoji_events" accent={C.gold} title="Creators" body="Monthly average ≥500 concurrent viewers across the past three months, or ≥10,000 followers on VERGR, or an equivalent profile on another platform we recognise." />
-          <Tile icon="shield"       accent={C.cyan} title="Squads"   body="Active squad with ≥50 members, a clean moderation record, and consistent tournament participation." />
-          <Tile icon="campaign"     accent={C.violet} title="Organizers" body="At least three successful tournaments hosted on VERGR, no unresolved disputes, and a track record of clear rules and on-time payouts." />
+          <Tile icon="shield"       accent={C.cyan} title="Squads"   body="Active squad with ≥50 members, a clean moderation record, and consistent streaming activity." />
+          <Tile icon="campaign"     accent={C.violet} title="Community leads" body="A track record of running recurring community events on VERGR, no unresolved disputes, and a clean moderation history." />
         </Grid>
       </Section>
       <Section bordered>
@@ -3556,20 +3532,20 @@ export function AboutScreen() {
           earns enough for it to mean anything. We built VERGR to do the opposite.
         </P>
         <P>
-          On VERGR, players, creators, and squads share the same wallet, the same tournaments, and the same
-          upside. The tips you send, the memberships you subscribe to, the tournament entries you pay, and
-          the boosts you spend on your stream all run through one currency — VC Coins — that converts back
-          out to a real payout. The platform takes a flat 10% on tips and a tier-based commission on
+          On VERGR, players, creators, and squads share the same wallet and the same upside. The tips you
+          send, the memberships you subscribe to, the paid streams you unlock, and the boosts you spend on
+          your stream all run through one currency — VC Coins — and what a creator earns from it converts
+          back out to a real payout. The platform takes a flat 10% on tips and a tier-based commission on
           conversions, and that's it. No ads, no sponsored slots, no "Gifts" category siphoning money to the house.
         </P>
       </Section>
       <Section bordered>
         <H2>What we believe</H2>
         <Grid cols={4} min={220}>
-          <Tile icon="emoji_events"          accent={C.gold}   title="Skill should pay"
-            body="Tournaments are won by playing well, not by buying loot or grinding for a chance at random rewards. Posted rules, verified results, real prizes." />
+          <Tile icon="live_tv"               accent={C.gold}   title="Live comes first"
+            body="Everything is built around going live: fast chat, low-friction broadcasting from the browser, and clips that carry the moment onwards." />
           <Tile icon="groups"                accent={C.cyan}   title="Squads matter as much as solo"
-            body="Most great gaming moments happen with a crew. Squads are first-class on VERGR — shared streams, shared tournament entries, shared earnings split." />
+            body="Most great gaming moments happen with a crew. Squads are first-class on VERGR — shared streams, shared hangouts, a shared wallet." />
           <Tile icon="payments"              accent={C.violet} title="Creators keep more"
             body="Tip fee is a flat 10%, the same for free and Pro alike. The only thing that changes with subscription is what you can produce — never what you keep." />
           <Tile icon="rocket_launch"         accent={C.ember}  title="Reach is investment, not paywall"
@@ -3579,8 +3555,8 @@ export function AboutScreen() {
       <Section bordered>
         <H2>Built without compromise</H2>
         <Grid cols={3} min={260}>
-          <Tile icon="bolt"             accent={C.cyan}   title="Real prizes, no casino"
-            body="Tournament platform caps disclosed to Riot Games: per-player entry max 10,000 coins, per-tournament prize max 500,000 coins, fixed 5% mod cut. Skill-based, audit-trailed, dispute-handled." />
+          <Tile icon="bolt"             accent={C.cyan}   title="No gambling, ever"
+            body="No betting, no wagering, no prediction markets, no casino mechanics, no prize competitions. Coins buy support for creators — there is nothing to stake and nothing to win." />
           <Tile icon="account_balance"  accent={C.violet} title="Flat 10% tip fee"
             body="Same on free, same on Pro. We never sell a sliding scale on the thing creators do most. Conversion-side commission is your tier-based margin lever." />
           <Tile icon="verified_user"    accent={C.gold}   title="Withdraw to your wallet"
@@ -3591,7 +3567,7 @@ export function AboutScreen() {
         <div style={{ textAlign: 'center', padding: '24px 0' }}>
           <H2>Be early.</H2>
           <P max={580}>
-            VERGR is in early access. Sign up free, link your games, find your squad, and try a tournament — all in your first hour.
+            VERGR is in early access. Sign up free, link your games, find your squad, and go live — all in your first hour.
           </P>
           <Link to="/signup" className="vg-btn-primary" style={{ marginTop: 12, textDecoration: 'none' }}>
             Create account →
@@ -3615,7 +3591,7 @@ export function CodeOfConductScreen() {
         <H2>Our values</H2>
         <Grid cols={4} min={220}>
           <Tile icon="diversity_3"  accent={C.cyan}   title="Respect"      body="Treat other players, creators, and squads the way you'd want to be treated. Disagreement is fine — disrespect isn't." />
-          <Tile icon="balance"      accent={C.violet} title="Fair play"    body="No cheats, no exploits, no smurfs in tournaments. The platform is competitive — that only works if everyone plays it straight." />
+          <Tile icon="balance"      accent={C.violet} title="Play it straight" body="No manipulating engagement, no exploiting the economy, no second accounts to dodge restrictions. It only works if everyone plays it straight." />
           <Tile icon="visibility"   accent={C.gold}   title="Honesty"      body="Don't misrepresent yourself, your stats, or your content. Fake views, fake followers, and bot tips ruin trust for everyone." />
           <Tile icon="construction" accent={C.ember}  title="Build, don't break" body="Help squads grow. Boost the people you root for. Use the report tools when you see harm — they protect everyone, including you." />
         </Grid>
@@ -3624,16 +3600,16 @@ export function CodeOfConductScreen() {
         <H2>What's expected</H2>
         <div>
           <Bullet icon="check_circle" color="#34d399" title="Use real handles" body="Your VERGR account is yours — don't share logins, don't run multi-accounts, don't impersonate others." />
-          <Bullet icon="check_circle" color="#34d399" title="Respect the rules of the games you play" body="Tournament organizers post rules per event. Read them before you enter. Match results are verified — don't dispute in bad faith." />
+          <Bullet icon="check_circle" color="#34d399" title="Respect the rules of the games you play" body="Publishers set their own terms for streaming and clipping their titles. Read them, and do not broadcast anything you are not allowed to." />
           <Bullet icon="check_circle" color="#34d399" title="Keep streams safe" body="Moderate your chat, follow your platform's content guidelines, and use the safety tools we provide." />
-          <Bullet icon="check_circle" color="#34d399" title="Use VERGR features for their purpose" body="Boosts amplify streams. Tournaments compete. Squads collaborate. Don't twist them into something they're not." />
+          <Bullet icon="check_circle" color="#34d399" title="Use VERGR features for their purpose" body="Boosts amplify streams. Squads collaborate. Memberships reward fans. Don't twist them into something they're not." />
         </div>
       </Section>
       <Section bordered>
         <H2>What's not allowed</H2>
         <div>
           <Bullet icon="block" color={C.ember} title="Harassment, hate speech, threats" body="Targeting another user with personal attacks, slurs, or threats — in chat, on stream, in DMs — is grounds for immediate action." />
-          <Bullet icon="block" color={C.ember} title="Cheating, exploits, match-fixing" body="Aimbots, wall-hacks, scripts, account boosting, or coordinating to throw matches in a tournament. Verified events are tracked end-to-end." />
+          <Bullet icon="block" color={C.ember} title="Gambling, betting, and staking" body="Organising, advertising, or settling any bet or wager through VERGR — in stream chat, DMs, groups, or posts. There is no gambling on this platform and there will not be." />
           <Bullet icon="block" color={C.ember} title="Fraud and chargeback abuse" body="Stolen card use, refund abuse, fake tip rings to game leaderboards, and money-laundering through coin purchases all trigger account holds and possible legal referral." />
           <Bullet icon="block" color={C.ember} title="Doxxing and impersonation" body="Posting private info about another user, or pretending to be a creator/squad/employee you aren't, will end the account." />
           <Bullet icon="block" color={C.ember} title="Illegal content" body="CSAM, terrorism content, sales of illegal goods, and content that violates the law of your jurisdiction or ours are reported to authorities and removed immediately." />
@@ -3648,7 +3624,7 @@ export function CodeOfConductScreen() {
           — the same offense gets the same response, every time.
         </P>
         <P>
-          Actions range from a warning, to feature throttling (no boosts, no payouts, no tournament entries),
+          Actions range from a warning, to feature throttling (no boosts, no payouts, no paid access sales),
           to a suspension, to a permanent ban. Severe cases also include payment processor referrals and law
           enforcement contact.
         </P>
@@ -3711,7 +3687,7 @@ export function BecomeStreamerScreen() {
         <Grid cols={4} min={220}>
           <Tile icon="payments"      accent={C.gold}   title="Tips"           body="Real-time during the stream. Senders pay N coins → 10% platform fee → you receive floor(N × 0.90) coins, instantly." />
           <Tile icon="card_membership" accent={C.violet} title="Memberships"    body="Recurring monthly subscriptions from your top fans. Tier-based perks you set yourself — emotes, badge, member chat." />
-          <Tile icon="emoji_events"  accent={C.ember}  title="Tournament casts" body="Stream a tournament with the integrated bracket overlay. Bonus visibility from the tournament page." />
+          <Tile icon="lock"          accent={C.ember}  title="Paid streams" body="Set a price for a broadcast. Viewers buy a one-off pass, or their membership covers it. You keep 90%." />
           <Tile icon="rocket_launch" accent={C.cyan}   title="Boost amplification" body="Free users boost to unlock; paid users boost to amplify. Real algorithmic reach, refundable from tips." />
         </Grid>
       </Section>
@@ -3741,7 +3717,7 @@ export function BecomeStreamerScreen() {
 export function MonetizationScreen() {
   useSeo({
     title: 'Make Money Gaming — VERGR Creator Monetisation',
-    description: 'Five ways to earn on VERGR: tips, memberships, tournament prizes, Stream Boost amplification, and squad treasury shares. Flat 10% tip fee. Your conversion commission drops 30% → 10% as you climb the rank ladder.',
+    description: 'Five ways to earn on VERGR: tips, creator memberships, paid stream access, Stream Boost amplification, and squad treasury shares. Flat 10% fee on tips and creator payments. Your conversion commission drops 30% as you climb the rank ladder.',
     canonical: 'https://vergr.app/platform/monetization',
   });
   // Real commission per rank — derived from commissionForVP() in src/utils/vpSystem.js
@@ -3774,12 +3750,12 @@ export function MonetizationScreen() {
             body="When fans tip you N coins, 10% goes to the platform and you keep the rest — instantly, in your wallet. Same flat fee on free, Lite, and Pro." />
           <Tile icon="card_membership" accent={C.violet} title="Memberships"
             body="Set your own tier prices and perks. Top fans subscribe monthly with VC Coins, and you keep a recurring share every renewal." />
-          <Tile icon="emoji_events"   accent={C.ember}  title="Tournament prizes"
-            body="Enter brackets, win matches, take a share of the prize. The mod team takes 5%; the rest goes to the players who placed." />
+          <Tile icon="lock"           accent={C.ember}  title="Paid stream access"
+            body="Set a price for a broadcast. Viewers buy a one-off pass for that stream, or their membership covers it. Flat 10% platform fee; you keep 90%." />
           <Tile icon="rocket_launch"  accent={C.cyan}   title="Stream Boost amplification"
             body="Free streamers spend 50 coins to unlock public streaming. The first 50 coins of tips you earn during that stream refund the boost — so a single decent tip makes it free." />
           <Tile icon="groups"         accent={C.pink}   title="Squad treasury share"
-            body="When you win a tournament, 10% of your prize auto-routes to your squad's treasury. The treasury funds future tournament entries for the team — Treasury Secretary motions distribute coins to members with President approval." />
+            body="Squads pool Coins into a shared treasury, and tips on squad streams can be routed there too. The treasury funds team events and member backing — Treasury Secretary motions distribute coins with President approval." />
         </Grid>
       </Section>
 
@@ -3798,7 +3774,7 @@ export function MonetizationScreen() {
               your rank's commission rate, then withdraw the gems to your crypto wallet.
             </P>
             <div style={{ marginTop: 8 }}>
-              <Bullet icon="paid"                   color={C.gold}   title="Earn coins"      body="Tips, memberships, tournament wins, and boosted-stream rewards all credit your wallet in VC Coins." />
+              <Bullet icon="paid"                   color={C.gold}   title="Earn coins"      body="Tips, memberships, paid stream access, and boosted-stream rewards all credit your wallet in VC Coins." />
               <Bullet icon="swap_horiz"             color={C.violet} title="Convert to gems" body="Convert when you're ready to cash out. Your VP rank decides the commission — see the table below." />
               <Bullet icon="account_balance_wallet" color={C.cyan}   title="Withdraw"        body="1,000-gem minimum, 7-day hold for fraud review, then the payout lands in your wallet. Payment-processor and network fees are shown at confirmation." />
             </div>
@@ -3876,7 +3852,7 @@ export function MonetizationScreen() {
           <div style={{ fontSize: 14, color: C.text2, lineHeight: 1.7 }}>
             Creator quests reward you with VP toward your next rank — that's how you climb the conversion table
             and keep more of what you earn. Coins, on the other hand, only come from real users paying you (tips,
-            memberships, tournament wins, boosted-stream rewards). That's what keeps the economy honest and
+            memberships, paid stream access, boosted-stream rewards). That's what keeps the economy honest and
             your earnings credible.
           </div>
         </div>
@@ -3935,7 +3911,7 @@ export function StudioToolsScreen() {
 export function LearnLiveScreen() {
   useSeo({
     title: 'Stream Gameplay & Earn — Live Streaming on VERGR',
-    description: 'Go live in 30 seconds from your browser, no install. Earn real tips while you play, build memberships, and stream tournaments with 720p60 (Lite) or 1080p60 (Pro). The Twitch alternative built for gamer monetisation.',
+    description: 'Go live in 30 seconds from your browser, no install. Earn real tips while you play, sell memberships and paid access, and stream at 720p60 (Lite) or 1080p60 (Pro). The Twitch alternative built for gamer monetisation.',
     canonical: 'https://vergr.app/platform/learn/live',
   });
   return (
@@ -4018,17 +3994,17 @@ export function LearnLiveScreen() {
             body="Squad members hop into a voice hangout with up to 100 people, optional video for up to 2 at a time. Same place you organise, scrim, and post-game review — built in." />
           <Tile icon="cast_for_education" accent={C.violet}
             title="Co-stream as a team"
-            body="Stream a tournament match together — two broadcasters in one composited feed, side-by-side. Shoutcast your own bracket without any third-party software." />
+            body="Stream together — two broadcasters in one composited feed, side-by-side. Run a collab or a co-commentary session without any third-party software." />
         </Grid>
       </Section>
 
       <Section bordered>
-        <H2>Built for tournaments</H2>
+        <H2>Paid streams, when you want them</H2>
         <P max={680}>
-          Tournament streams run through our verified delivery path — no peer-to-peer shortcuts — so the
-          prize-money audit trail stays clean and disputes have a real timestamped record. Co-host streams
-          put two broadcasters side-by-side in a single composited feed for shoutcast-style coverage of
-          your own brackets.
+          Any broadcast can be free or paid. Set a price and viewers buy a one-off pass for that stream, or
+          their creator membership covers it automatically. The platform takes a flat 10%; you keep the rest.
+          The same content rules apply either way — paying for access does not create a private room with
+          different rules.
         </P>
       </Section>
 
@@ -4183,14 +4159,14 @@ export function LearnTournamentsScreen() {
 export function LearnSquadsScreen() {
   useSeo({
     title: 'Squads — Gaming Crews with Shared Treasuries | VERGR',
-    description: 'Up to 100 members. Voice + video hangouts built in. Monthly elections, real roles (President, Vice President, Treasury), and 10% of every tournament win auto-routed to the squad treasury. Discord meets esports team.',
+    description: 'Up to 100 members. Voice + video hangouts built in. Monthly elections, real roles (President, Vice President, Treasury), and a shared treasury the squad funds together. Discord meets esports team.',
     canonical: 'https://vergr.app/platform/learn/squads',
   });
   return (
     <MarketingShell>
       <PageHero
         title="Squads — Your Gaming Crew, Your Own Org"
-        subtitle="Up to 100 members. Voice + video hangouts built in. A shared treasury that grows every time a member wins a tournament. Monthly elections, real roles, real responsibilities. It's a Discord, an esports team, and a co-op savings account, all in one."
+        subtitle="Up to 100 members. Voice + video hangouts built in. A shared treasury the squad builds together. Monthly elections, real roles, real responsibilities. It's a Discord, an esports team, and a co-op savings account, all in one."
         accent="cyan"
         centered
       />
@@ -4199,7 +4175,7 @@ export function LearnSquadsScreen() {
         <H2>What a squad actually is</H2>
         <P max={720}>
           A squad on VERGR is your persistent gaming crew — a private space with shared chat, voice + video
-          hangouts, scheduled events, a tournament leaderboard, and a treasury that funds future entry fees
+          hangouts, scheduled events, a squad leaderboard, and a treasury that funds what the squad does
           for the team. Six friends running ranked, or a 100-strong competitive org — the squad is the unit
           that holds it together.
         </P>
@@ -4237,7 +4213,7 @@ export function LearnSquadsScreen() {
             body="Second-in-command. Can call a new presidential election if the current president goes inactive for 4+ days. Steps in for absent leadership." />
           <Tile icon="payments" accent={C.cyan}
             title="💰 Treasury Secretary"
-            body="Manages the squad wallet, distributions to members, and tournament entry-fee funding. Can move coins between treasury buckets but cannot solo-veto the president." />
+            body="Manages the squad wallet, distributions to members, and event funding. Can move coins between treasury buckets but cannot solo-veto the president." />
           <Tile icon="shield" accent={C.ember}
             title="🛡️ Security / General"
             body="Moderates squad chat. Can mute disruptive members and start kick votes. The squad's first line of defence against toxicity." />
@@ -4248,20 +4224,20 @@ export function LearnSquadsScreen() {
       </Section>
 
       <Section bordered>
-        <H2>Squad treasury: 10% of every tournament win, auto-collected</H2>
+        <H2>Squad treasury: a shared pot the squad builds</H2>
         <P max={720}>
-          When any squad member wins a tournament, <strong>10% of the prize automatically goes to the squad
-          treasury</strong>. That treasury funds future tournament entries, so the squad can subsidise smaller
-          members getting into bigger events, run scrim leagues with covered entry fees, or pay out to members
-          on a Treasury Secretary motion approved by the President.
+          Members pool Coins into a <strong>shared squad treasury</strong>, sponsorships land in it, and tips
+          earned on a squad stream can be routed there too. The treasury funds what the squad does together:
+          backing members who need a plan upgrade or a stream boost, running squad challenges with a real
+          reward, or paying out to members on a Treasury Secretary motion approved by the President.
         </P>
         <Grid cols={3} min={240}>
           <Tile icon="auto_awesome" accent={C.cyan}
-            title="Auto-contribution"
-            body="10% of any tournament prize a squad member wins is automatically routed to the squad treasury. No admin step, no chasing members for their cut." />
+            title="Everyone chips in"
+            body="Any member can contribute Coins directly, and squad-stream tips can be routed straight to the treasury. Nothing is ever taken from a member automatically." />
           <Tile icon="account_balance_wallet" accent={C.violet}
-            title="Treasury-funded entries"
-            body="The treasury covers tournament entry fees for members the squad wants to back. Affordable path into bigger events for the team's best players." />
+            title="Treasury-funded backing"
+            body="The treasury can cover a plan upgrade or a stream boost for a member the squad wants to invest in. A real path for the people carrying the crew." />
           <Tile icon="how_to_vote" accent={C.gold}
             title="Distributions need a vote"
             body="Treasury Secretary can propose a payout — the President signs off. Larger distributions trigger a member vote. The treasury isn't anyone's piggy bank." />
@@ -4269,12 +4245,11 @@ export function LearnSquadsScreen() {
       </Section>
 
       <Section bordered>
-        <H2>Compete as a team — squad tournaments</H2>
+        <H2>Stream as a team — squad broadcasts</H2>
         <P max={720}>
-          Squad tournaments are 5-stack CS2, 6-stack Overwatch 2, full-squad Valorant — your squad enters as
-          a team, results count toward the squad leaderboard, prizes drop into the squad treasury. Climb
-          the leaderboard and bigger leagues invite you in. Build a reputation as a team, not as scattered
-          solo queues.
+          Squad streams put the whole roster in one broadcast: everyone in voice, a couple on camera, and
+          viewers watching the session together. Squad activity counts toward the squad leaderboard, so a
+          crew that actually shows up gets seen. Build a reputation as a team, not as scattered solo queues.
         </P>
       </Section>
 
@@ -4355,14 +4330,14 @@ export function LearnClipsScreen() {
 export function LearnCoinsScreen() {
   useSeo({
     title: 'VC Coins — Gaming Currency You Can Cash Out | VERGR',
-    description: 'Buy coins from €0.99 to €224.99 with crypto or card. Tip streamers, enter tournaments, boost streams. Earn coins from your audience and convert to gems for crypto cash-out.',
+    description: 'Buy coins from €0.99 to €224.99 with crypto or card. Tip streamers, buy stream access and memberships, boost streams. Earn coins from your audience and convert to gems for crypto cash-out.',
     canonical: 'https://vergr.app/platform/learn/coins',
   });
   return (
     <MarketingShell>
       <PageHero
         title="VC Coins — The Currency Behind Gaming Earnings"
-        subtitle="Buy coins to play, tip, and enter tournaments. Earn coins from your audience, your competitions, and your community. Convert to gems and cash out to crypto when you're ready to move money out."
+        subtitle="Buy coins to tip, to unlock a paid stream, and to back the creators you follow. Earn coins from your audience and your community. Convert to gems and cash out to crypto when you're ready to move money out."
         accent="gold"
         centered
       />
@@ -4375,10 +4350,10 @@ export function LearnCoinsScreen() {
             body="Eight pack sizes from €0.99 to €224.99. Bigger packs scale to a lower per-coin price." />
           <Tile icon="payments" accent={C.violet}
             title="Spend on platform"
-            body="Tip your favourite streamers, subscribe to memberships, enter tournaments, boost your own stream's reach, unlock customisation." />
+            body="Tip your favourite streamers, subscribe to memberships, unlock a paid stream, boost your own stream's reach, unlock customisation." />
           <Tile icon="trending_up" accent={C.cyan}
             title="Earn from activity"
-            body="Tournament wins, tips from viewers, paid memberships, squad treasury distributions — every income source on VERGR pays in coins." />
+            body="Tips from viewers, paid stream access, paid memberships, squad treasury distributions — every income source on VERGR pays in coins." />
           <Tile icon="account_balance_wallet" accent={C.ember}
             title="Cash out"
             body="Convert coins to gems at your rank's commission, request a payout in cryptocurrency. Real money out, not just spend-only credit." />
@@ -4408,14 +4383,14 @@ export function LearnCoinsScreen() {
             body="Pay with Visa, Mastercard, Apple Pay, Google Pay, or bank transfer through our secure checkout — it opens right inside the app. No crypto knowledge needed." />
           <Tile icon="bolt" accent={C.cyan}
             title="Settlement"
-            body="Coins land in your wallet within seconds of payment confirmation. You can immediately tip, subscribe, enter a tournament, or boost a stream." />
+            body="Coins land in your wallet within seconds of payment confirmation. You can immediately tip, subscribe, unlock a paid stream, or boost a stream." />
         </Grid>
       </Section>
 
       <Section bordered>
         <H2>How coins become real money</H2>
         <P max={720}>
-          When you earn coins from tips, memberships, or tournament wins, you can convert them to <strong>Gems</strong>{' '}
+          When you earn coins from tips, memberships, or paid stream access, you can convert them to <strong>Gems</strong>{' '}
           at a commission rate tied to your VP rank. Gems are the only currency that withdraws to your crypto
           wallet — minimum 1,000 gems (~€10), with a 7-day fraud-review hold before processing. The payment
           processor and network gas fees are deducted from your withdrawal at confirmation; they're not VERGR's
@@ -4434,8 +4409,8 @@ export function LearnCoinsScreen() {
       <Section bordered>
         <H2>The economy in one paragraph</H2>
         <P max={720}>
-          Coins flow IN through purchases and out through creator earnings + tournament prizes. VERGR earns from
-          a flat 10% platform fee on tips and a tier-based commission on coin-to-gem conversion (your rank lever).
+          Coins flow IN through purchases and out through creator earnings. VERGR earns from a flat 10% platform
+          fee on tips and creator payments, and a tier-based commission on coin-to-gem conversion (your rank lever).
           That's it. No ads, no hidden fees, no "sponsored slot" carved out of your feed. Payment processors charge
           their own fees on inbound purchases and outbound withdrawals — these pass through to/from you directly
           and aren't VERGR revenue. Subscriptions (€4.99 Lite / €9.99 Pro) buy you platform features — they never
@@ -4447,8 +4422,8 @@ export function LearnCoinsScreen() {
         <div style={{ textAlign: 'center', padding: '24px 0' }}>
           <H2>Get your first pack</H2>
           <P max={580}>
-            Pick a pack that fits how you play. Starter for casual tipping, Pro Pack for entering your first tournament,
-            Champion if you're going to grind it out. You can top up any time.
+            Pick a pack that fits how you watch. Starter for casual tipping, Pro Pack if you back a few creators
+            monthly, Champion if you are supporting properly. You can top up any time.
           </P>
           <Link to="/signup" className="vg-btn-primary" style={{ marginTop: 12, textDecoration: 'none' }}>
             Create account →

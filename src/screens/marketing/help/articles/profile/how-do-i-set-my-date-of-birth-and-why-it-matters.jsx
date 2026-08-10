@@ -5,7 +5,7 @@ export default {
     { p: "VERGR uses your date of birth as an age gate, not a profile field. Other users never see it." },
     { h2: "Why it matters" },
     { list: [
-      "Real-money tournaments and Coin purchases are restricted to adults in most countries.",
+      "Coin purchases and cashing out earnings are restricted to adults in most countries.",
       "Withdrawal processing and KYC verification are legally age-gated.",
       "VERGR's Terms of Service require users to be 18 or older."
     ]},

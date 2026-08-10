@@ -1,7 +1,7 @@
 // Help center article: What is VERGRs refund policy?
 
 export default {
-  summary: "Coin purchases and subscription payments are final once delivered, like most digital goods, with two big exceptions: charges made in error (duplicates, unauthorised use) are refundable within 30 days via support, and if a tournament is cancelled before it starts, spectator tickets are refunded in full. Withdrawals that have been sent are irreversible.",
+  summary: "Coin purchases and subscription payments are final once delivered, like most digital goods, with two big exceptions: charges made in error (duplicates, unauthorised use) are refundable within 30 days via support, and if a paid stream you bought access to never happens, that purchase is refunded in full. Withdrawals that have been sent are irreversible.",
   updated: "2026-07-02",
   body: [
     {
@@ -16,7 +16,7 @@ export default {
     {
       list: [
         "Erroneous charges: duplicates, charges credited to the wrong account, or charges made by someone using your payment method without permission. Contact support@vergr.app within 30 days and, once confirmed, the amount is refunded to your original payment method.",
-        "Cancelled tournaments: if an event is cancelled before it starts, spectator tickets are refunded in full, and any prize contribution the host added is returned. Once a tournament has started and the first match is played, payments tied to it are final.",
+        "Undelivered paid streams: if you bought access to a stream that the creator cancelled or never ran, that purchase is refunded in full. Once the broadcast has gone ahead, the purchase is final.",
         "Where the law requires it: statutory consumer rights always apply on top of this policy."
       ]
     },
@@ -31,7 +31,7 @@ export default {
     },
     {
       cta: [
-        { to: "/platform/help/what-happens-if-a-tournament-is-cancelled", label: "Cancelled tournaments" },
+        { to: "/platform/refunds", label: "The full Refund Policy" },
         { to: "/platform/contact", label: "Contact support" }
       ]
     }

@@ -21,13 +21,13 @@ export default {
     {
       list: [
         "Treasury contributions stay: coins you contributed became the squad's shared money when you gave them, like chipping in for a shared server. Leaving does not refund them.",
-        "Your personal record is untouched: your TP, VP, wallet, and tournament history are yours, only squad membership changes.",
+        "Your personal record is untouched: your VP, wallet, followers, and content are yours, only squad membership changes.",
         "Rejoining is possible: through a new invite, request, or open joining, no cooldown from the leaving itself.",
         "If you are the President: hand over leadership before leaving, a squad should not be orphaned."
       ]
     },
     {
-      note: "Leaving mid-tournament is poor form if you are one of the squad's champions in an active event, finish what the squad is counting on you for."
+      note: "Leaving mid-event is poor form if the squad is counting on you for something scheduled, finish what you signed up for first."
     },
     {
       cta: [

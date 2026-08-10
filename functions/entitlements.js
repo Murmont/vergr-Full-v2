@@ -77,7 +77,7 @@ const MAX_PRICE_COINS = 10_000;
  *  enough that a shared link is worthless by the time it is pasted. */
 const SIGNED_URL_TTL_SECONDS = 300;
 
-const RESOURCE_TYPES = new Set(['post', 'stream', 'message', 'creator']);
+const RESOURCE_TYPES = new Set(['post', 'stream', 'message', 'creator', 'call']);
 
 const env = (name) => (process.env[name] || '').replace(/[\s\r\n]+$/g, '').trim();
 const bucket = () => env('R2_BUCKET') || 'vergr-media';
@@ -177,11 +177,26 @@ const RESOLVERS = {
   async message(resourceId) {
     // `resourceId` is `{chatId}:{messageId}` because a message id is only unique
     // within its chat, and an entitlement id has to be globally unique.
-    const [chatId, messageId] = resourceId.split(':');
+    //
+    // The collection is `conversations`, NOT `chats`. This read `chats` when the
+    // resolver shipped, which meant every locked-message lookup resolved against
+    // a collection that does not exist in this project and answered "not found"
+    // for content that was there. Nothing had written a price to a message yet,
+    // so it never fired in production.
+    // Two shapes, because squad chat does not live in `conversations`:
+    //   "{chatId}:{messageId}"          → conversations/{chatId}/messages
+    //   "squad:{squadId}:{messageId}"   → squads/{squadId}/messages
+    // The prefix is explicit rather than inferred from the part count so a chat
+    // id that happened to contain a colon could never be read as a squad path.
+    const parts = resourceId.split(':');
+    const isSquad = parts[0] === 'squad';
+    const [chatId, messageId] = isSquad ? [parts[1], parts[2]] : [parts[0], parts[1]];
     if (!chatId || !messageId) {
-      throw new HttpsError('invalid-argument', 'message resourceId must be "chatId:messageId".');
+      throw new HttpsError('invalid-argument', 'message resourceId must be "chatId:messageId" or "squad:squadId:messageId".');
     }
-    const ref = db.collection('chats').doc(chatId).collection('messages').doc(messageId);
+    const ref = isSquad
+      ? db.collection('squads').doc(chatId).collection('messages').doc(messageId)
+      : db.collection('conversations').doc(chatId).collection('messages').doc(messageId);
     const snap = await ref.get();
     if (!snap.exists) throw new HttpsError('not-found', 'Message not found.');
     const m = snap.data();
@@ -196,6 +211,33 @@ const RESOLVERS = {
       mediaOwnerUid: m.senderId || null,
       mediaDocPath: `users/${m.senderId}/private/lockedMessageFiles`,
       counterField: 'locked.unlockCount',
+    };
+  },
+
+  /**
+   * A paid 1:1 (or group) call. `resourceId` is the chat id, because that is
+   * what `calls/{chatId}` is keyed by and what both sides already hold.
+   *
+   * The seller is the CALLER: they set the price and they are the one being
+   * paid for their time. Anyone else on the call is a buyer, which is what
+   * makes this work for a group session as well as a two-person one.
+   */
+  async call(resourceId) {
+    const ref = db.collection('calls').doc(resourceId);
+    const snap = await ref.get();
+    if (!snap.exists) throw new HttpsError('not-found', 'That call has ended.');
+    const c = snap.data();
+    return {
+      ref,
+      sellerUid: c.callerId || null,
+      priceCoins: Math.floor(c.priceCoins || 0),
+      // The room is already closed: only people in the conversation can be rung
+      // by it, so there is no second audience gate to apply.
+      audience: 'public',
+      title: 'a 1:1 session',
+      mediaOwnerUid: null,
+      mediaDocPath: null,
+      counterField: 'paidJoinCount',
     };
   },
 

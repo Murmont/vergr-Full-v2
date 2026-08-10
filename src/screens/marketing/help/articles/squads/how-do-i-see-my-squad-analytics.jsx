@@ -12,7 +12,7 @@ export default {
         "Member activity: who is actually present and participating, versus names on a roster.",
         "Growth: joins and departures over time, the squad's population curve.",
         "Engagement: how alive the squad's chat, events, and sessions are.",
-        "Competitive trajectory: how the squad's tournament activity is trending."
+        "Activity trajectory: how the squad's streaming and posting is trending."
       ]
     },
     {
@@ -22,7 +22,7 @@ export default {
       list: [
         "Watch the active-member ratio, not the total: 20 active members beat 80 ghosts, and recruitment should aim at participation, not headcount.",
         "Departures cluster around real causes: a spike in leavers usually follows drama or a dead calendar. The graph tells you when to ask why.",
-        "Pair analytics with action: a soft month means it is time for an event, a challenge, or a tournament entry, the tools are all one screen away."
+        "Pair analytics with action: a soft month means it is time for an event, a challenge, or a squad stream, the tools are all one screen away."
       ]
     },
     {

@@ -9,7 +9,7 @@ export default {
       "Leaderboards: who is winning and earning most.",
     ]},
     { h2: "Why follow trends" },
-    { p: "Trending content shows you what the community cares about today — a new game launch, a big tournament, a viral clip. Posting around a trend while it is hot is one of the easiest ways to get discovered." },
+    { p: "Trending content shows you what the community cares about today — a new game launch, a big collab stream, a viral clip. Posting around a trend while it is hot is one of the easiest ways to get discovered." },
     { cta: [
       { to: "/platform/help/what-are-trending-hashtags", label: "Trending hashtags" },
       { to: "/platform/help/how-does-the-home-feed-work", label: "How the home feed works" }

@@ -2,7 +2,7 @@ export default {
   summary: "No. VERGR does not sell your personal data. Your information is used to run the platform — your account, payments, recommendations, and safety — not packaged and sold to third parties. Full detail is in the privacy policy.",
   updated: "2026-06-07",
   body: [
-    { p: "Selling user data is not part of how VERGR makes money. VERGR earns from platform fees — tips, memberships, tournament cuts, and boosts — not from your personal information." },
+    { p: "Selling user data is not part of how VERGR makes money. VERGR earns from platform fees, tips, memberships, paid stream access, and boosts, not from your personal information." },
     { h2: "How your data is used" },
     { list: [
       "Running your account and wallet.",

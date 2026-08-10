@@ -11,6 +11,7 @@
 // across the whole app. Trivial at launch scale; capped at 300 live streams.
 
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { isDiscoverableStream } from '../utils/streamVisibility';
 import { collection, query, where, limit, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase/config';
 
@@ -44,6 +45,10 @@ export function LiveUsersProvider({ children }) {
       const hosts = new Map();
       snap.forEach((d) => {
         const data = d.data() || {};
+        // A private session must never light up an avatar as LIVE. The stream
+        // doc has carried `unlisted`/`discoverable` all along; nothing read
+        // them. See streamVisibility.js.
+        if (!isDiscoverableStream(data)) return;
         const h = data.hostUid || data.hostId;
         if (!h) return;
         if (!m.has(h)) m.set(h, d.id);

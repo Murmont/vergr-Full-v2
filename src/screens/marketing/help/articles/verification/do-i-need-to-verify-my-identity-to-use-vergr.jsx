@@ -5,7 +5,7 @@
 // Top-level: summary (1-2 sentences, answer-first), updated (YYYY-MM-DD), body [].
 
 export default {
-  summary: "Not for the social side. You can sign up, post, stream, watch, chat, and join free tournaments without identity verification. You only need a one-time ID check to use the wallet, enter paid tournaments, receive tips you cash out, or withdraw earnings.",
+  summary: "Not for the social side. You can sign up, post, stream, watch, and chat without identity verification. You only need a one-time ID check to use the wallet, receive tips you cash out, or withdraw earnings.",
   updated: "2026-06-06",
   body: [
     {
@@ -18,7 +18,7 @@ export default {
       list: [
         "Creating and running your account.",
         "Posting, streaming, watching, and chatting.",
-        "Following people, joining squads, and free tournaments."
+        "Following people, joining squads, and watching streams."
       ]
     },
     {
@@ -27,7 +27,7 @@ export default {
     {
       list: [
         "Using the wallet and converting Coins to Gems.",
-        "Entering paid tournaments.",
+        "Selling paid access to your streams.",
         "Withdrawing your earnings."
       ]
     },

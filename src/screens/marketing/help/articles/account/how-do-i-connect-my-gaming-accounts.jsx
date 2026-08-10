@@ -2,7 +2,7 @@ export default {
   summary: "Go to Settings, then Linked Accounts, and tap Connect next to the platform you want to add. You will be taken through that platform's login flow and returned to VERGR once the link is confirmed.",
   updated: "2026-06-06",
   body: [
-    { p: "Linking your gaming accounts unlocks tournament auto-verification, shows your stats on your profile, and lets VERGR confirm your in-game identity for competitive play." },
+    { p: "Linking your gaming accounts shows your real stats on your profile, lets your Twitch streams surface on VERGR automatically, and confirms your in-game identity to the people who follow you." },
     { h2: "How to connect an account" },
     { steps: [
       "Go to Settings.",
@@ -15,7 +15,7 @@ export default {
     ]},
     { h2: "What linking unlocks" },
     { list: [
-      "Steam: automatic match result verification for Steam games in tournaments.",
+      "Steam: your PC game identity and playtime shown on your profile.",
       "Twitch: your Twitch stream appears on VERGR when you go live there, with chat bridged.",
       "YouTube and Discord: shown on your profile for social linking.",
       "Xbox: game library and achievement matching for supported titles."

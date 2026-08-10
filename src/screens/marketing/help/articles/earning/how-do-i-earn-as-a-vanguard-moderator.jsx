@@ -1,11 +1,11 @@
 export default {
-  summary: "Vanguard moderators earn a share of the 5% moderation cut from tournaments they help run, paid into the Vanguard squad treasury and split monthly by rank and activity. Active Vanguard also get their Coin-to-Gem conversion fee waived. The Vanguard is invite-only.",
+  summary: "Vanguard moderators are paid from the shared Vanguard treasury, split monthly by rank and by how much moderation work you actually did. Active Vanguard also get their Coin-to-Gem conversion fee waived. The Vanguard is invite-only.",
   updated: "2026-06-07",
   body: [
     { p: "The Vanguard is VERGR's anonymous moderator collective. Moderating is real work, and it is compensated." },
     { h2: "How Vanguard earn" },
     { list: [
-      "A share of the 5% tournament moderation cut goes to the Vanguard treasury when a tournament is Vanguard-moderated.",
+      "Moderation work you complete feeds your share of the Vanguard treasury.",
       "It is split monthly, weighted by your rank and how many moderation actions you did.",
       "Active Vanguard get their Coin-to-Gem conversion commission waived to 0%.",
     ]},

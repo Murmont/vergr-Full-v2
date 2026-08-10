@@ -5,7 +5,7 @@
 // Top-level: summary (1-2 sentences, answer-first), updated (YYYY-MM-DD), body [].
 
 export default {
-  summary: "No. You do not need to be good at games to use VERGR. Plenty of people are here to stream, build a community, post clips, hang out in squads, watch, and tip, none of which need you to win anything. Skill only matters if you choose to enter competitive tournaments, and even then there are free, low-stakes events to start with.",
+  summary: "No. You do not need to be good at games to use VERGR. Plenty of people are here to stream, build a community, post clips, hang out in squads, watch, and tip, none of which need you to win anything. Being entertaining matters far more than being good.",
   updated: "2026-06-06",
   body: [
     {
@@ -27,7 +27,7 @@ export default {
       h2: "What if I want to compete?"
     },
     {
-      p: "Tournaments are skill-based, so better players do win more often. But you choose your level. There are free tournaments with no entry cost, low-stakes events, and quickplay 1v1s, so you can test the water without risking much. You can also play casual matches purely to improve."
+      p: "Some of the most-watched streams on any platform are people who are openly bad at the game and funny about it. Commentary, personality, and consistency build an audience. Skill is one route to being watchable, not the only one."
     },
     {
       h2: "Getting better is part of it"

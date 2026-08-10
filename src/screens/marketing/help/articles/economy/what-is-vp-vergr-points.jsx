@@ -17,7 +17,7 @@ export default {
     {
       list: [
         "Being active and posting.",
-        "Competing in tournaments.",
+        "Going live and posting content.",
         "Completing creator quests.",
         "Referring friends who join."
       ]

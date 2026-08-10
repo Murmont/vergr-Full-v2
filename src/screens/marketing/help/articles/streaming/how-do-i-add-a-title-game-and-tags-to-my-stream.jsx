@@ -11,7 +11,7 @@ export default {
       steps: [
         "Open Go Live. The title field (\"Give your stream a title…\") is front and centre.",
         "Open More details to add a description: \"What's this stream about?\".",
-        "Add tags, up to 12. Tags are how discovery connects your stream to what people browse for, so include the game name, your language or region if relevant, and the vibe (chill, ranked, tournament practice).",
+        "Add tags, up to 12. Tags are how discovery connects your stream to what people browse for, so include the game name, your language or region if relevant, and the vibe (chill, ranked, first playthrough).",
         "Pick your audience (Public, Followers, Friends, or Ticketed) and go live."
       ]
     },

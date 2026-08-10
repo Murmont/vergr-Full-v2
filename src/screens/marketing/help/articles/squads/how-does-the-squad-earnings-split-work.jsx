@@ -5,20 +5,20 @@
 // Top-level: summary (1-2 sentences, answer-first), updated (YYYY-MM-DD), body [].
 
 export default {
-  summary: "Two things flow to a squad. Members' individual tournament wins contribute 10% to the shared treasury. Squad tournament wins go fully into the treasury. From there, the squad distributes funds to members through an approval process, with larger payouts needing sign-off, so the split is fair and controlled.",
+  summary: "Money reaches a squad through member contributions, sponsorships, and tips on squad streams. From there, the squad distributes funds to members through an approval process, with larger payouts needing sign-off, so the split is fair and controlled.",
   updated: "2026-06-06",
   body: [
     {
-      p: "Squad earnings come from two places and are shared through one controlled process. Here is how it fits together."
+      p: "Squad earnings come from a few places and are shared through one controlled process. Here is how it fits together."
     },
     {
       h2: "Where squad money comes from"
     },
     {
       list: [
-        "Member wins: when a member wins a solo tournament, 10% of the prize goes to the treasury.",
-        "Squad wins: when the squad wins a team tournament, the whole prize goes to the treasury.",
-        "Direct contributions and sponsorships from members."
+        "Member contributions: anyone in the squad can put Coins into the treasury.",
+        "Squad streams: tips earned on a squad broadcast can be routed to the treasury.",
+        "Sponsorships from other squads and from creators backing the team."
       ]
     },
     {

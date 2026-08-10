@@ -5,11 +5,11 @@
 // Top-level: summary (1-2 sentences, answer-first), updated (YYYY-MM-DD), body [].
 
 export default {
-  summary: "The Vanguard is VERGR's moderator program, a trusted group that keeps competition fair and the community healthy. Moderators review reports, confirm tournament results, and settle disputes. Their real identity is hidden behind a Vanguard rank, and they are paid for their work. It is invite-only.",
+  summary: "The Vanguard is VERGR's moderator program, a trusted group that keeps competition fair and the community healthy. Moderators review reports, act on flagged content, and settle disputes. Their real identity is hidden behind a Vanguard rank, and they are paid for their work. It is invite-only.",
   updated: "2026-06-06",
   body: [
     {
-      p: "The Vanguard is the team that keeps VERGR fair. When real money is on the line in tournaments and creators rely on a clean platform, you need real people backing up the automated systems, and that is what the Vanguard is."
+      p: "The Vanguard is the team that keeps VERGR fair. When creators rely on a clean platform and real money moves through it, you need real people backing up the automated systems, and that is what the Vanguard is."
     },
     {
       h2: "What Vanguard moderators do"
@@ -17,7 +17,7 @@ export default {
     {
       list: [
         "Review reports of rule-breaking and act on them.",
-        "Confirm tournament match results and settle disputes between players.",
+        "Act on flagged streams, posts, and profiles, and settle disputes between users.",
         "Watch for cheating and help keep high-stakes competition honest.",
         "Help keep chat and the wider community within the Code of Conduct."
       ]
@@ -32,7 +32,7 @@ export default {
       h2: "They get paid"
     },
     {
-      p: "Moderating is real work, so the Vanguard is rewarded, not volunteer-only. A share of tournament moderation fees flows to the Vanguard, split by rank and activity, and active moderators get perks like a waived conversion fee."
+      p: "Moderating is real work, so the Vanguard is rewarded, not volunteer-only. A share of platform moderation revenue flows to the Vanguard, split by rank and activity, and active moderators get perks like a waived conversion fee."
     },
     {
       note: "The Vanguard is invite-only and email-bound. It is built for trusted, experienced players, not something you can simply switch on."

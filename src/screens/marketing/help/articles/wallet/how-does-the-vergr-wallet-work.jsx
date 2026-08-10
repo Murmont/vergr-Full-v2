@@ -5,7 +5,7 @@
 // Top-level: summary (1-2 sentences, answer-first), updated (YYYY-MM-DD), body [].
 
 export default {
-  summary: "The wallet is where your Coins and Gems live. You buy and earn Coins, spend them on tips, tournaments, and boosts, and convert them to Gems to withdraw. It has its own section with a PIN on sensitive actions, a full transaction history, and the convert and withdraw tools.",
+  summary: "The wallet is where your Coins and Gems live. You buy and earn Coins, spend them on tips, stream passes, and boosts, and convert them to Gems to withdraw. It has its own section with a PIN on sensitive actions, a full transaction history, and the convert and withdraw tools.",
   updated: "2026-06-06",
   body: [
     {
@@ -28,7 +28,7 @@ export default {
       h2: "How the flow works"
     },
     {
-      p: "You add Coins by buying them or earning them through tips and competition. You spend Coins on tips, tournament entries, boosts, and subscriptions. When you want real money out, you convert Coins to Gems and withdraw. Gems are the only side that cashes out."
+      p: "You add Coins by buying them or earning them through tips and paid access. You spend Coins on tips, stream passes, boosts, and subscriptions. When you want real money out, you convert Coins to Gems and withdraw. Gems are the only side that cashes out."
     },
     {
       h2: "Security"

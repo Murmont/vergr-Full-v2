@@ -5,7 +5,7 @@ export default {
   updated: "2026-07-02",
   body: [
     {
-      p: "Moderators make unpopular calls: rejecting reports, calling tournament results against someone, muting people. Anonymity protects them from harassment and retaliation, so masking is built in, not optional."
+      p: "Moderators make unpopular calls: rejecting reports, removing content, muting people. Anonymity protects them from harassment and retaliation, so masking is built in, not optional."
     },
     {
       h2: "What regular users see"

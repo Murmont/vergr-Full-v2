@@ -19,7 +19,7 @@ export default {
     },
     {
       list: [
-        "Winning tournaments, which pay out Coins.",
+        "Charging for access to a stream, either a one-off pass or a creator membership.",
         "Tips from people watching your streams and posts.",
         "Your share of what your squad earns.",
         "Memberships from your fans.",

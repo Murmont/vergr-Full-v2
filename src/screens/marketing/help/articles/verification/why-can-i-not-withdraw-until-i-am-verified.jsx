@@ -1,7 +1,7 @@
 // Help center article: Why can I not withdraw until I am verified?
 
 export default {
-  summary: "Because withdrawals move real money, and the law and basic fraud protection both require VERGR to know that payouts go to a real, adult person. Verification is one time only: pass it once and the wallet, tournaments, and payouts stay unlocked for good.",
+  summary: "Because withdrawals move real money, and the law and basic fraud protection both require VERGR to know that payouts go to a real, adult person. Verification is one time only: pass it once and the wallet, earnings, and payouts stay unlocked for good.",
   updated: "2026-07-02",
   body: [
     {
@@ -23,7 +23,7 @@ export default {
     {
       list: [
         "The wallet and everything in it.",
-        "Tournaments with real entry and prizes.",
+        "Selling paid access to your streams.",
         "Converting Coins to Gems and withdrawing."
       ]
     },

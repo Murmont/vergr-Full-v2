@@ -12,7 +12,7 @@ export default {
     ]},
     { h2: "After disconnecting" },
     { list: [
-      "Tournament auto-verification that relied on that account will no longer work. You will need to verify matches manually or through another method.",
+      "Stats and identity from that account stop showing on your profile, and anything that relied on the link, like Twitch streams surfacing on VERGR, stops working.",
       "If you disconnected Twitch, your Twitch stream will no longer mirror on VERGR.",
       "Your stats from that platform are removed from your VERGR profile."
     ]},

@@ -39,7 +39,7 @@ export default {
       h2: "How you climb"
     },
     {
-      p: "You earn VP by being active, competing in tournaments, completing creator quests, and referring friends. The more VP you accumulate, the higher your rank. Paid plans earn VP faster, so they climb sooner."
+      p: "You earn VP by being active, streaming, posting, completing creator quests, and referring friends. The more VP you accumulate, the higher your rank. Paid plans earn VP faster, so they climb sooner."
     },
     {
       cta: [

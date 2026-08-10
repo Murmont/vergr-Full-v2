@@ -29,8 +29,8 @@ export default {
     {
       list: [
         "A private squad chat plus voice hangouts and squad streaming.",
-        "The ability to compete in tournaments as a team.",
-        "A shared treasury that collects a slice of members' tournament wins.",
+        "Squad streams and voice hangouts for the whole roster.",
+        "A shared treasury the squad funds and controls together.",
         "Roles and permissions to run the squad properly."
       ]
     },

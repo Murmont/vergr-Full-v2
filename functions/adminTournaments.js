@@ -270,13 +270,11 @@ exports.adminResolveTournamentDispute = functions.https.onCall(
       // Fallback: see resolveTournamentDispute path.
     }
 
-    // Settle spectator picks (admin completion path — P0 #4).
-    try {
-      const { settleMatchBets } = require('./tournamentExtras');
-      await settleMatchBets(tournamentId, matchId, winnerId);
-    } catch (err) {
-      console.error('settleMatchBets failed (admin)', tournamentId, matchId, err);
-    }
+    // Spectator picks were retired with predictions, so there is nothing left
+    // to settle here. This used to call settleMatchBets, which no longer
+    // exists: the require returned undefined and the resulting TypeError was
+    // swallowed by its own catch, which logged and looked healthy. Outstanding
+    // stakes are returned in one sweep by refundOutstandingPicks.
 
     const meta = extractRequestMeta(request);
     await auditAdminAction({
@@ -387,17 +385,9 @@ exports.adminCancelTournament = functions.https.onCall(
       });
     });
 
-    // Refund all spectator picks across every match in the cancelled
-    // tournament (P0 #4 — refund path on cancellation).
-    try {
-      const { refundMatchBets } = require('./tournamentExtras');
-      const matchesSnap = await tRef.collection('matches').get();
-      for (const md of matchesSnap.docs) {
-        await refundMatchBets(tournamentId, md.id, 'tournament_cancelled');
-      }
-    } catch (err) {
-      console.error('refundMatchBets failed (cancel)', tournamentId, err);
-    }
+    // Same as above: refundMatchBets went with predictions, so this call did
+    // nothing but log. Outstanding stakes are returned by
+    // refundOutstandingPicks rather than per-cancellation.
 
     // Ticketed events: refund every active ticket buyer the full price they
     // paid, and claw back the host's net earnings on those sales. The platform

@@ -5,7 +5,7 @@
 // Top-level: summary (1-2 sentences, answer-first), updated (YYYY-MM-DD), body [].
 
 export default {
-  summary: "VERGR is available in most places, but the money features (wallet, paid tournaments, and payouts) are blocked where skill-based competition for cash-equivalent prizes is not permitted. The current list of restricted regions is published in the Tournament Rules. Using a VPN to get around it breaks the Terms.",
+  summary: "VERGR is available in most places, but the money features (wallet, creator earnings, and payouts) are blocked in a small number of jurisdictions, mainly those under sanctions or where the underlying payment rails are prohibited. The current list is published in the Terms of Service. Using a VPN to get around it breaks the Terms.",
   updated: "2026-06-06",
   body: [
     {
@@ -15,13 +15,13 @@ export default {
       h2: "What is and is not restricted"
     },
     {
-      p: "The social platform (posting, streaming, watching, squads, chat) is broadly available. The money features (the wallet, paid tournaments, tips you cash out, and withdrawals) are not offered where local rules prohibit skill-based competition with cash-equivalent prizes. If your region is restricted, those features simply will not be available on your account."
+      p: "The social platform (posting, streaming, watching, squads, chat) is broadly available. The money features (the wallet, tips you cash out, and withdrawals) are not offered where we cannot lawfully move money. If your region is restricted, those features simply will not be available on your account, and everything else keeps working."
     },
     {
       h2: "Where to check"
     },
     {
-      p: "The current list of restricted countries and states is published in the Tournament Rules, and it is the authoritative source since it is kept up to date. If your location is on that list, you will not be able to use wallet, tournament, or payout features."
+      p: "The current list of restricted countries is published in the Terms of Service, and it is the authoritative source since it is kept up to date. If your location is on that list, you will not be able to use wallet or payout features."
     },
     {
       note: "Trying to bypass a regional restriction with a VPN is a breach of the Terms of Service and can put your account and any balance at risk. The rules exist to keep VERGR compliant where it operates."

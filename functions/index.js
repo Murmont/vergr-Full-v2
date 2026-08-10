@@ -524,6 +524,9 @@ exports.commanderResolveMatchReview  = tournamentMatchClaims.commanderResolveMat
 const streaming = require('./streaming');
 exports.createStreamSession      = streaming.createStreamSession;
 exports.endStreamSession         = streaming.endStreamSession;
+// The host's own publish credential, which is no longer a field on the
+// world-readable stream document. Host (or admin) only.
+exports.getStreamIngest          = streaming.getStreamIngest;
 exports.getLikelyTipperScore     = streaming.getLikelyTipperScore;
 exports.getLiveDiscoveryFeed     = streaming.getLiveDiscoveryFeed;
 exports.recordStreamTip          = streaming.recordStreamTip;
@@ -546,6 +549,9 @@ exports.twitchChannelImport = twitchMirror.twitchChannelImport;
 // PAYRAM_NODE_URL are set with real values.
 const payram = require('./payram');
 exports.createPayramPayment   = payram.createPayramPayment;
+// The quote the buy screen renders. Same regional + FX maths as the payment,
+// so the figure shown is the figure billed.
+exports.getCoinPriceQuote    = payram.getCoinPriceQuote;
 exports.getPayramOrderStatus  = payram.getPayramOrderStatus;
 exports.payramWebhook         = payram.payramWebhook;
 exports.pollPayramOrders      = payram.pollPayramOrders;
@@ -604,6 +610,18 @@ exports.getAccess      = entitlements.getAccess;
 const lockedPosts = require('./lockedPosts');
 exports.getLockedUploadUrl = lockedPosts.getLockedUploadUrl;
 exports.createLockedPost   = lockedPosts.createLockedPost;
+
+// The same mechanism on a message (DMs, groups, squad chats). entitlements.js
+// has had the `message` resolver since M0; this is what finally writes a price
+// onto one. Unpriced private chat is untouched and still unscanned.
+// One-shot sweep returning every unsettled prediction stake. Predictions were
+// retired; this is the only path those coins have back to their owners.
+const refundPicks = require('./refundOutstandingPicks');
+exports.refundOutstandingPicks = refundPicks.refundOutstandingPicks;
+
+const lockedMessages = require('./lockedMessages');
+exports.getLockedMessageUploadUrl = lockedMessages.getLockedMessageUploadUrl;
+exports.sendLockedMessage         = lockedMessages.sendLockedMessage;
 
 // Google Play Billing — coin purchases on the Play store build only. Verifies
 // the purchase token against the Play Developer API before crediting; see

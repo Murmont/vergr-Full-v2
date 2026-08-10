@@ -1,7 +1,7 @@
 // Help center article: How do squad announcements work?
 
 export default {
-  summary: "Announcements are the squad's official noticeboard, separate from the chat so important things do not scroll away. Leadership (President and Vice President) posts them; every member sees them on the squad's Announcements screen and surfaced on the squad page. Use them for the things nobody should miss: tournament signups, event times, rule changes.",
+  summary: "Announcements are the squad's official noticeboard, separate from the chat so important things do not scroll away. Leadership (President and Vice President) posts them; every member sees them on the squad's Announcements screen and surfaced on the squad page. Use them for the things nobody should miss: stream times, event times, rule changes.",
   updated: "2026-07-02",
   body: [
     {
@@ -19,7 +19,7 @@ export default {
     },
     {
       list: [
-        "Tournament plans: we are entering X, signups close Friday, champions vote Thursday.",
+        "Stream plans: we are going live Friday, here is the lineup and the time.",
         "Events: game night Saturday 8pm, RSVP on the events screen.",
         "Decisions: treasury spends, role changes, rule updates.",
         "Wins: celebrate loudly. A trophy announcement is recruitment material."

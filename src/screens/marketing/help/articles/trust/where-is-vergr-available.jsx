@@ -5,7 +5,7 @@
 // Top-level: summary (1-2 sentences, answer-first), updated (YYYY-MM-DD), body [].
 
 export default {
-  summary: "The social platform is broadly available. The money features (wallet, paid tournaments, and payouts) run only where skill-based competition for cash-equivalent prizes is legal. A list of restricted countries and US states is published in the Tournament Rules and kept current.",
+  summary: "The social platform is broadly available. The money features (wallet, creator earnings, and payouts) are unavailable in a small number of jurisdictions, mainly those under sanctions or where the underlying payment rails are prohibited. The current list is published in the Terms of Service.",
   updated: "2026-06-06",
   body: [
     {
@@ -21,13 +21,13 @@ export default {
       h2: "The money side"
     },
     {
-      p: "The wallet, paid tournaments, tips you cash out, and withdrawals are only offered where skill-based competition for cash-equivalent prizes is legal. Where it is restricted, those features are simply turned off on accounts in that region."
+      p: "The wallet, tips you cash out, and withdrawals are only offered where we can lawfully move money. Where that is restricted, those features are simply turned off on accounts in that region, and the rest of the platform keeps working."
     },
     {
       h2: "Where to check"
     },
     {
-      p: "The authoritative, up-to-date list of restricted countries and US states lives in the Tournament Rules. If your location is on that list, you will not have access to wallet, tournament, or payout features, and using a VPN to get around it breaks the Terms of Service."
+      p: "The authoritative, up-to-date list of restricted countries lives in the Terms of Service. If your location is on that list, you will not have access to wallet or payout features, and using a VPN to get around it breaks the Terms of Service."
     },
     {
       cta: [

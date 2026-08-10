@@ -5,7 +5,7 @@
 // Top-level: summary (1-2 sentences, answer-first), updated (YYYY-MM-DD), body [].
 
 export default {
-  summary: "They are not separate account types, they are just different ways to use the same account. A player competes in tournaments and matches. A creator posts content and builds an audience. A streamer goes live. Most people do a mix, and you can switch between all of it any time without changing anything.",
+  summary: "They are not separate account types, they are just different ways to use the same account. A player is here to play and hang out. A creator posts content and builds an audience. A streamer goes live. Most people do a mix, and you can switch between all of it any time without changing anything.",
   updated: "2026-06-06",
   body: [
     {
@@ -15,7 +15,7 @@ export default {
       h2: "Player"
     },
     {
-      p: "Playing is competing. Players enter tournaments, run quick 1v1 matches, climb the leaderboards, and earn Coins and Tournament Points from skill-based wins. If your focus is winning matches, you are playing."
+      p: "Playing is the social side. Players hang out in squads, join voice channels, watch other people's streams, chat, and tip the creators they like. If your focus is the games and the people rather than an audience, you are playing."
     },
     {
       h2: "Creator"
@@ -33,7 +33,7 @@ export default {
       h2: "You are probably all three"
     },
     {
-      p: "A typical VERGR user enters a tournament (player), clips the best moment and posts it (creator), then goes live for their next session (streamer). There is no setting to flip and no separate account to make. Do whatever you feel like, whenever."
+      p: "A typical VERGR user plays a session with their squad (player), clips the best moment and posts it (creator), then goes live for the next one (streamer). There is no setting to flip and no separate account to make. Do whatever you feel like, whenever."
     },
     {
       cta: [

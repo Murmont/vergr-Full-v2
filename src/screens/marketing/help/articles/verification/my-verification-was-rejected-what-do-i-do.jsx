@@ -25,7 +25,7 @@ export default {
       p: "For declined or incomplete checks you can simply tap Verify again and rerun the flow. There is no penalty for retrying."
     },
     {
-      note: "The rest of VERGR keeps working without verification: you can stream, post, chat, and join squads. Verification is only required for the wallet, tournaments, and payouts."
+      note: "The rest of VERGR keeps working without verification: you can stream, post, chat, and join squads. Verification is only required for the wallet, creator earnings, and payouts."
     },
     {
       cta: [

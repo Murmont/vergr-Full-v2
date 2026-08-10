@@ -29,7 +29,7 @@ export default {
       h2: "Custom or pack?"
     },
     {
-      p: "Packs carry the headline pricing and are the better deal at the sizes they cover. Custom is there for when you want a precise amount, topping up exactly enough for a specific tournament entry or a big tip, without over-buying."
+      p: "Packs carry the headline pricing and are the better deal at the sizes they cover. Custom is there for when you want a precise amount, topping up exactly enough for a specific stream pass or a big tip, without over-buying."
     },
     {
       cta: [

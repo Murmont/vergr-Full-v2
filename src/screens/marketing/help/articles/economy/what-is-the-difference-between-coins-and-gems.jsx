@@ -17,7 +17,7 @@ export default {
     {
       list: [
         "The in-app currency.",
-        "Used for tips, tournament entries, subscriptions, and boosts.",
+        "Used for tips, stream passes, subscriptions, and boosts.",
         "Bought in the Shop, or earned by competing and getting tipped."
       ]
     },

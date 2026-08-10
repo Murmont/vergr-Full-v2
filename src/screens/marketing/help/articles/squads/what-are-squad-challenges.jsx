@@ -1,7 +1,7 @@
 // Help center article: What are squad challenges?
 
 export default {
-  summary: "Leader-created goals for the whole squad, with a shared reward when completed: the squad's leadership defines a target (play X matches, win a tournament, grow the roster), members work toward it together, and completion pays out the promised VP or coin reward. They live on the squad's Challenges screen.",
+  summary: "Leader-created goals for the whole squad, with a shared reward when completed: the squad's leadership defines a target (play X matches, stream X hours, grow the roster), members work toward it together, and completion pays out the promised VP or coin reward. They live on the squad's Challenges screen.",
   updated: "2026-07-02",
   body: [
     {
@@ -20,7 +20,7 @@ export default {
     },
     {
       list: [
-        "Direction: a squad with a stated goal plays with purpose; \"win our first squad tournament this month\" changes how practice feels.",
+        "Direction: a squad with a stated goal plays with purpose; \"stream together every week this month\" changes how the roster shows up.",
         "Onboarding: challenges give new members an immediate way to contribute.",
         "Reward with meaning: coin rewards funded from the treasury put the squad's money where its mouth is, and VP rewards feed everyone's rank."
       ]

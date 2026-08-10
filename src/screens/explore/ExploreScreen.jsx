@@ -4,6 +4,7 @@
 // long tail until those endpoints land.
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { isDiscoverableStream } from '../../utils/streamVisibility';
 import { useNavigate } from 'react-router-dom';
 import { collection, query, where, orderBy, limit, getDocs, doc, getDoc } from 'firebase/firestore';
 import { CardGridSkeleton } from '../../components/skeletons/GlassSkeletons';
@@ -145,8 +146,8 @@ export default function ExploreScreen() {
         );
         const snap = await getDocs(q);
         if (cancelled) return;
-        setRealStreams(snap.docs.map((d) => {
-          const s = d.data();
+        setRealStreams(snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter(isDiscoverableStream).map((s) => {
+          const d = { id: s.id };
           return {
             id: d.id,
             hostUid: s.hostUid || null,

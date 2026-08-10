@@ -82,6 +82,71 @@ exports.adminGetModerationStats = functions.https.onCall(
       safeCount(reports.where('targetType', '==', 'stream').where('status', '==', 'pending')),
     ]);
 
+    // ── Enforcement record, last 30 days ──────────────────────────────────
+    //
+    // This is the block a payment processor or a store reviewer actually asks
+    // for: not "do you have a policy" but "how many reports did you get, how
+    // many did you act on, and how fast". The AUP publishes 24h/72h targets,
+    // and a target nobody measures is a sentence rather than a commitment.
+    //
+    // Computed by reading the window rather than by counting, because a median
+    // cannot come from an aggregation query. Capped so this stays cheap; if the
+    // volume ever exceeds the cap, the figures become "of the most recent 1000"
+    // and the flag says so rather than quietly reporting a partial number as if
+    // it were complete.
+    const WINDOW_DAYS = 30;
+    const SAMPLE_CAP = 1000;
+    const windowStart = new Date(Date.now() - WINDOW_DAYS * 24 * 60 * 60 * 1000);
+
+    let record = null;
+    try {
+      const snap = await reports
+        .where('createdAt', '>=', windowStart)
+        .orderBy('createdAt', 'desc')
+        .limit(SAMPLE_CAP)
+        .get();
+
+      const ms = (t) => (t && typeof t.toMillis === 'function' ? t.toMillis() : 0);
+      const latencies = [];
+      let received = 0;
+      let actioned = 0;
+      let withinTarget = 0;
+
+      snap.forEach((d) => {
+        const r = d.data() || {};
+        received += 1;
+        const created = ms(r.createdAt);
+        const resolved = ms(r.resolvedAt);
+        if (!resolved || !created) return;
+        actioned += 1;
+        const hours = (resolved - created) / 3_600_000;
+        latencies.push(hours);
+        // The published target is 24h for the urgent categories and 72h for
+        // everything else. `priority` is what the queue already uses to mark
+        // the urgent ones, so the measurement matches the promise.
+        const target = r.priority === 'high' || r.priority === 'urgent' ? 24 : 72;
+        if (hours <= target) withinTarget += 1;
+      });
+
+      latencies.sort((a, b) => a - b);
+      const median = latencies.length
+        ? latencies[Math.floor(latencies.length / 2)]
+        : null;
+
+      record = {
+        windowDays: WINDOW_DAYS,
+        received,
+        actioned,
+        openAtWindowEnd: received - actioned,
+        medianHoursToAction: median === null ? null : Math.round(median * 10) / 10,
+        withinTargetPct: actioned ? Math.round((withinTarget / actioned) * 100) : null,
+        truncated: received >= SAMPLE_CAP,
+      };
+    } catch {
+      // A missing composite index must not take the whole stats panel down.
+      record = null;
+    }
+
     return {
       total, pending, overdue, resolvedToday,
       byType: {
@@ -90,6 +155,7 @@ exports.adminGetModerationStats = functions.https.onCall(
         comment: commentReports,
         stream:  streamReports,
       },
+      record,
     };
   }
 );

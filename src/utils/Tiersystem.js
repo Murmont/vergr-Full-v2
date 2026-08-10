@@ -16,7 +16,7 @@ export const TIERS = {
     // First 5 are the headline "Top Perks" shown on the subscription screen.
     // Rest follow as additional perks in the full feature list.
     features: [
-      'Core social + tournaments',
+      'Core social + live streaming',
       '200MB uploads',
       '720p photos & 60s shorts',
       'Free squad streaming (voice + video)',
@@ -37,7 +37,7 @@ export const TIERS = {
       'No ads',
       'Stream publicly from day one (720p)',
       '1.5× VP multiplier + monthly bonuses',
-      'Create squads & tournaments (up to 32 players)',
+      'Create squads & group hangouts',
       '1GB uploads, 1080p photos',
       'Voice messages',
       'Post boosts + scheduled posts',
@@ -56,7 +56,7 @@ export const TIERS = {
       '1080p streaming + co-streaming',
       'Past broadcasts: streams saved as 90-day replays',
       '2× VP multiplier + biggest monthly bonuses',
-      'Tournaments up to 256 players, all bracket formats',
+      'Co-streaming with a guest, gameplay in picture-in-picture',
       'Vergr.me custom domain + advanced analytics',
       'Private streaming (IP masked from viewers)',
       '5GB uploads, 4K photos',
@@ -231,8 +231,7 @@ export const TIER_COMPARISON = [
   { section: 'Streaming',     feature: 'Monthly stream hrs',  free: '~15h',     lite: '40h',       pro: 'Unlimited' },
   { section: 'Streaming',     feature: 'Co-streaming',        free: 'No',       lite: 'No',        pro: 'Yes' },
   { section: 'Streaming',     feature: 'IP masking (TURN)',   free: 'No',       lite: 'No',        pro: 'Yes' },
-  { section: 'Tournaments',   feature: 'Create tournaments',  free: 'No',       lite: 'Up to 32',  pro: 'Up to 256' },
-  { section: 'Tournaments',   feature: 'Bracket formats',     free: '—',        lite: '3 formats', pro: 'All 6 formats' },
+  { section: 'Streaming',     feature: 'Paid streams',        free: 'No',       lite: 'Yes',       pro: 'Yes' },
   { section: 'Squads',        feature: 'Create squads',       free: 'No',       lite: '2 squads',  pro: '10 squads' },
   { section: 'Squads',        feature: 'Max members',         free: '—',        lite: '25',        pro: '100' },
   { section: 'Messaging',     feature: 'Voice messages',      free: 'No',       lite: 'Yes',       pro: 'Yes' },

@@ -175,6 +175,42 @@ export default function AdminModerationScreen() {
         <KpiCard icon="task_alt" color="#22c55e" label="Resolved today"  value={stats ? fmtNumber(stats.resolvedToday) : '—'} />
       </div>
 
+      {/* Enforcement record. These are the figures to quote when a payment
+          processor or a store reviewer asks how moderation actually performs:
+          the Acceptable Use Policy publishes 24h/72h response targets, and this
+          is the measurement against them. "Within target" is computed per
+          report against the target for its own priority, not against one
+          blended number. */}
+      {stats?.record && (
+        <div style={{ border: `1px solid ${C.border}`, borderRadius: 12, padding: 14, marginBottom: 16, background: 'rgba(255,255,255,0.02)' }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, marginBottom: 10, flexWrap: 'wrap' }}>
+            <div style={{ fontSize: 13, fontWeight: 700 }}>
+              Enforcement record
+              <span style={{ color: C.textDim, fontWeight: 500 }}> · last {stats.record.windowDays} days</span>
+            </div>
+            {stats.record.truncated && (
+              <div style={{ fontSize: 11, color: '#f5c542' }}>
+                Sampled from the most recent 1,000 reports
+              </div>
+            )}
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
+            {[
+              ['Reports received', fmtNumber(stats.record.received)],
+              ['Actioned', fmtNumber(stats.record.actioned)],
+              ['Still open', fmtNumber(stats.record.openAtWindowEnd)],
+              ['Median time to action', stats.record.medianHoursToAction === null ? '—' : `${stats.record.medianHoursToAction}h`],
+              ['Within published target', stats.record.withinTargetPct === null ? '—' : `${stats.record.withinTargetPct}%`],
+            ].map(([label, value]) => (
+              <div key={label}>
+                <div style={{ fontSize: 11, color: C.textDim, marginBottom: 2 }}>{label}</div>
+                <div style={{ fontSize: 18, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{value}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 280px', gap: 16 }}>
         <div style={{ minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 12, borderBottom: `1px solid ${C.border}`, overflowX: 'auto' }}>

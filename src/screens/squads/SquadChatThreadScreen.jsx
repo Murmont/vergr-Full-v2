@@ -14,6 +14,10 @@ import {
 import { db, auth } from '../../firebase/config';
 import { startVoiceRecording, uploadMediaFile, getYouTubeID } from '../../utils/mediaHelpers';
 import { createSquadVote } from '../../firebase/firestore';
+import { getLockedMessageUploadUrl, sendLockedMessage, putSignedUpload, makeBlurredPreview } from '../../firebase/firestore';
+import LockedMedia from '../../components/monetization/LockedMedia';
+import PriceSheet from '../../components/monetization/PriceSheet';
+import ReportPrivate from '../../components/safety/ReportPrivate';
 import { getSquadMembers, getUserTournaments } from '../../firebase/firestore';
 import useResponsive from '../../hooks/useResponsive';
 import useTier from '../../hooks/useTier';
@@ -305,6 +309,14 @@ export default function SquadChatThreadScreen() {
   const [editingMsg, setEditingMsg] = useState(null);
   const [translateMsg, setTranslateMsg] = useState(null);
   const [showMedia, setShowMedia] = useState(null);
+  // Locked media. The price must be chosen BEFORE the upload, because the same
+  // callable that files the private object key is the one that writes the price:
+  // there is no "upload now, decide later" for content on a private prefix.
+  const [lockedFile, setLockedFile] = useState(null);
+  const [lockedSheet, setLockedSheet] = useState(false);
+  // Squad chat is a closed room and is not scanned, so a member reporting is
+  // the only route from here to a moderator.
+  const [reportTarget, setReportTarget] = useState(null);
   const [showEmoji, setShowEmoji] = useState(false);
   const [reactToMsgId, setReactToMsgId] = useState(null);
   const [contextMenu, setContextMenu] = useState(null);   // { msgId, x, y }
@@ -766,7 +778,71 @@ export default function SquadChatThreadScreen() {
     if (idx >= 0) setLightbox({ index: idx });
   };
 
+  /**
+   * Send priced media into the squad.
+   *
+   * `scope: 'squad'` is what routes this to `squads/{id}/messages` instead of
+   * `conversations/{id}/messages`, and it is also what prefixes the entitlement
+   * resource id, so a squad message and a DM message with the same id can never
+   * collide in the sender's private key document.
+   */
+  const sendLockedToSquad = async ({ priceCoins }) => {
+    const file = lockedFile;
+    if (!file) return;
+    setLockedSheet(false);
+    setLockedFile(null);
+    try {
+      // R2 exact-matches Content-Type, so a ";codecs=" suffix fails the
+      // signature silently. Strip it.
+      const contentType = (file.type || 'image/jpeg').split(';')[0];
+      const isVideo = contentType.startsWith('video/');
+
+      const signed = await getLockedMessageUploadUrl({
+        chatId: squadId, scope: 'squad', contentType, sizeBytes: file.size,
+      });
+      await putSignedUpload(signed.mediaUploadUrl, file, contentType, signed.cacheControl);
+
+      // Destroyed on the sender's own device, before upload. Never blur on the
+      // viewer's side: that is a CSS filter over bytes already downloaded.
+      const previewBlob = await makeBlurredPreview(file).catch(() => null);
+      let previewUrl = '';
+      if (previewBlob) {
+        await putSignedUpload(signed.previewUploadUrl, previewBlob, 'image/jpeg', signed.cacheControl);
+        previewUrl = signed.previewUrl;
+      }
+
+      await sendLockedMessage({
+        chatId: squadId, scope: 'squad', mediaKey: signed.mediaKey,
+        previewUrl, priceCoins, isVideo, caption: '',
+      });
+    } catch (err) {
+      alert(err?.message || 'Could not send locked media.');
+    }
+  };
+
   const renderEmbed = (m) => {
+    // Priced media. The bytes live on a private R2 prefix and this message has no
+    // contentUrl at all, so LockedMedia asking the server is the only route in.
+    if (m.type === 'locked') return (
+      <div style={{ width: 240, maxWidth: '100%' }}>
+        {m.senderId !== auth.currentUser?.uid && (
+          <button
+            onClick={(e) => { e.stopPropagation(); setReportTarget(m.id); }}
+            style={{ display: 'flex', alignItems: 'center', gap: 3, marginBottom: 4, background: 'none', border: 0, cursor: 'pointer', color: 'rgba(255,255,255,.45)', fontSize: 10, padding: 0 }}
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: 12 }}>flag</span>
+            Report
+          </button>
+        )}
+        <LockedMedia
+          resourceType="message"
+          resourceId={`squad:${squadId}:${m.id}`}
+          locked={m.locked}
+          className="aspect-square"
+          compact
+        />
+      </div>
+    );
     if (m.type === 'tournament') return <TournamentEmbed data={m.tournament} />;
     if (m.type === 'event_ticket') {
       const et = m.eventTicket || {};
@@ -1159,6 +1235,17 @@ export default function SquadChatThreadScreen() {
                 onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) uploadAndSend(f, 'squad_images', 'image'); }}
               />
             </label>
+            <label className="compose-attach" title="Send locked media">
+              <span className="material-symbols-outlined">lock</span>
+              <input
+                type="file" accept="image/*,video/*" hidden
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  e.target.value = '';
+                  if (f) { setLockedFile(f); setLockedSheet(true); }
+                }}
+              />
+            </label>
             <input
               ref={inputRef}
               className="compose-input"
@@ -1230,6 +1317,26 @@ export default function SquadChatThreadScreen() {
           onClose={() => setLightbox(null)}
         />
       )}
+
+      <ReportPrivate
+        open={!!reportTarget}
+        onClose={() => setReportTarget(null)}
+        targetType="message"
+        targetId={reportTarget ? `squad:${squadId}:${reportTarget}` : ''}
+        context={{ surface: 'squad_locked_message', chatId: squadId, messageId: reportTarget, paid: true }}
+        title="Report this media"
+      />
+
+      <PriceSheet
+        open={lockedSheet}
+        onClose={() => { setLockedSheet(false); setLockedFile(null); }}
+        onConfirm={sendLockedToSquad}
+        title="Lock this media"
+        subtitle="The squad sees a blurred preview and pays coins to open it. The real file never reaches anyone's device until they do."
+        confirmLabel="Send locked"
+        allowFree={false}
+        initialPrice={100}
+      />
 
       <Modal isOpen={showPollModal} onClose={() => setShowPollModal(false)} title="Create a Poll">
         <div className="space-y-4">

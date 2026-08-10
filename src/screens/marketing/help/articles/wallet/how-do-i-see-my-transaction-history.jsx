@@ -1,5 +1,5 @@
 export default {
-  summary: "Open your wallet and go to History. It lists every transaction — purchases, tips sent and received, conversions, tournament entries and prizes, withdrawals, and fees — newest first, each with an amount, type, and date.",
+  summary: "Open your wallet and go to History. It lists every transaction — purchases, tips sent and received, conversions, paid stream access, withdrawals, and fees — newest first, each with an amount, type, and date.",
   updated: "2026-06-07",
   body: [
     { h2: "Viewing history" },
@@ -14,7 +14,7 @@ export default {
       "Coin purchases and the packs you bought.",
       "Tips sent and received.",
       "Coin-to-Gem conversions and their commission.",
-      "Tournament entries and prizes.",
+      "Paid stream access and creator memberships.",
       "Withdrawals and their status.",
     ]},
     { cta: [

@@ -22,7 +22,7 @@ export default {
       list: [
         "Requests appear in the squad's join requests screen.",
         "Approving is a leadership permission: the President and Vice President handle it.",
-        "Look at the requester's profile before deciding: their activity, tournament record, and conduct are all visible.",
+        "Look at the requester's profile before deciding: their activity, content, and conduct are all visible.",
         "Approve and they become a member instantly; decline and the request closes with a notification to them."
       ]
     },

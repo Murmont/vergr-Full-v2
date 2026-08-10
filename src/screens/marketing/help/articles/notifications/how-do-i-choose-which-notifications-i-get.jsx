@@ -1,5 +1,5 @@
 export default {
-  summary: "In Settings → Notifications you can turn individual categories on or off — things like calls, live streams, direct messages, squad activity, tournaments, and engagement (likes, comments, follows). Your choices apply to both in-app and push notifications.",
+  summary: "In Settings → Notifications you can turn individual categories on or off — things like calls, live streams, direct messages, squad activity, and engagement (likes, comments, follows). Your choices apply to both in-app and push notifications.",
   updated: "2026-06-07",
   body: [
     { p: "Rather than all-or-nothing, VERGR lets you keep the alerts you care about and silence the rest." },
@@ -8,7 +8,7 @@ export default {
       "Calls — incoming voice and video calls.",
       "Live — when people you follow go live.",
       "Direct messages and squad activity.",
-      "Tournaments and matches.",
+      "Creator memberships and paid stream access.",
       "Engagement — likes, comments, follows, mentions.",
     ]},
     { h2: "How to set them" },

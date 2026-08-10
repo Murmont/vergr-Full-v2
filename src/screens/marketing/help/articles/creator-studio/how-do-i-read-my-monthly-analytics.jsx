@@ -17,7 +17,7 @@ export default {
       list: [
         "Compare month to month, not day to day: single days swing wildly, months tell the truth.",
         "Track the ratio, not just the totals: views up but engagement flat means you reached more people who cared less.",
-        "Tie revenue to causes: a memberships launch, a big tournament, a viral clip, find the event behind every revenue bump so you can repeat it.",
+        "Tie revenue to causes: a memberships launch, a big collab stream, a viral clip, find the event behind every revenue bump so you can repeat it.",
         "One change at a time: alter your posting time OR your format in a given month, then read the effect. Change everything at once and the data tells you nothing."
       ]
     },

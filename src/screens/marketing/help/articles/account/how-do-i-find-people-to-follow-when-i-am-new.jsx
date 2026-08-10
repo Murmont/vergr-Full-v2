@@ -8,13 +8,13 @@ export default {
       "Explore tab: browse top creators, live streams, squads, and trending clips. Filter by game to narrow it down.",
       "Suggested follows: during onboarding and in the Explore tab, VERGR suggests creators based on your chosen interests.",
       "Search: tap the search icon and type a username, display name, or game to find specific people.",
-      "Leaderboard: the top players by tournament points, earnings, or VP rank are a good place to start.",
+      "Leaderboard: the top earners and the highest VP ranks are a good place to start.",
       "Squads: join a squad and follow the members who post content you enjoy."
     ]},
     { h2: "Who to follow" },
     { list: [
       "Streamers who play your games: their live streams go straight into your feed.",
-      "Tournament players: see results and highlights from competitive play.",
+      "Clip creators: short highlights are the fastest way to judge whether you like someone.",
       "Squad leaders: they often post strategy content and squad updates.",
       "Creators posting tips, tier lists, or clips for your main game."
     ]},

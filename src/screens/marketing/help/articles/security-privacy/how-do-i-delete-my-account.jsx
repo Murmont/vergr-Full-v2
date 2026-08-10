@@ -18,7 +18,7 @@ export default {
       list: [
         "Cash out first. Convert any Coins to Gems and withdraw your balance, because funds cannot be recovered once the account is deleted.",
         "Download your data if you want a copy of anything.",
-        "Settle anything in progress, like a pending tournament or withdrawal."
+        "Settle anything in progress, like an active membership or a pending withdrawal."
       ]
     },
     {

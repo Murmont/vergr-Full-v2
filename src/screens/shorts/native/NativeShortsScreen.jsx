@@ -3,6 +3,7 @@
 // or scroll-arrows. Reuses the shared ShortsDeck (drag engine + players +
 // overlays) so the interaction logic lives in one place.
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { isDiscoverableStream } from '../../../utils/streamVisibility';
 import { useNavigate } from 'react-router-dom';
 import { collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
 import { db } from '../../../firebase/config';
@@ -30,7 +31,7 @@ export default function NativeShortsScreen() {
           orderBy('viewerCount', 'desc'), limit(10),
         ));
         if (!alive) return;
-        setLiveStreams(snap.docs.map((d) => ({ id: d.id, _kind: 'live', ...d.data() })));
+        setLiveStreams(snap.docs.map((d) => ({ id: d.id, _kind: 'live', ...d.data() })).filter(isDiscoverableStream));
       } catch { /* no live slides */ }
     })();
     return () => { alive = false; };

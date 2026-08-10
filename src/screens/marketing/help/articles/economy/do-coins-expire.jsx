@@ -17,7 +17,7 @@ export default {
     {
       list: [
         "Coins you buy sit in your wallet indefinitely.",
-        "Coins you win in tournaments or receive as tips stay until you use them.",
+        "Coins you receive as tips or earn from paid streams stay until you use them.",
         "Taking a break does not cost you your balance, it will be there when you come back.",
         "You decide when to spend Coins or convert them to Gems. Nothing forces your hand."
       ]

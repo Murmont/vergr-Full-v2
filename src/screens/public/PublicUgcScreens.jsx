@@ -442,7 +442,7 @@ export function PublicWatchScreen() {
   // ticket against. A restricted stream's replay stays behind the app's gates.
   const vodRestricted = !!stream.unlisted || stream.audience === 'ticketed';
   const vod = vodRestricted ? null : (stream.archiveVodUrl || stream.vodUrl || null);
-  const hls = stream.source === 'twitch' ? null : (stream.compositeHlsUrl || getPlaybackUrl(stream.streamKey));
+  const hls = stream.source === 'twitch' ? null : (stream.compositeHlsUrl || stream.hlsUrl || null);
   const cover = stream.coverUrl || stream.thumbnailUrl || null;
 
   return (

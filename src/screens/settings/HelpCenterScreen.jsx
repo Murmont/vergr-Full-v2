@@ -15,17 +15,17 @@ export default function HelpCenterScreen() {
   const navigate = useNavigate();
   const [expanded, setExpanded] = useState(null);
   const faqs = [
-    {q:'What are coins, gems, and VP?',a:'Coins are bought with real money and spent on tips, tournaments, and boosts. Gems are earned when someone spends coins ON YOU (tips, tournament prizes) — gems can be cashed out. VP is earned through activity and unlocks levels, perks, and commission discounts.'},
-    {q:'How do I earn real money?',a:'Win tournaments or receive tips. People pay with coins, you receive gems. Cash out gems when you reach 1000 (€10). Your VP determines your conversion commission, which steps down from 30% to a 15% floor as your lifetime VP grows.'},
+    {q:'What are coins, gems, and VP?',a:'Coins are bought with real money and spent on tips, memberships, paid streams, and boosts. Coins are spendable only inside VERGR. Gems are earned when someone spends coins ON YOU (tips, memberships, paid stream access) — gems can be withdrawn. VP is earned through activity and unlocks levels, perks, and commission discounts.'},
+    {q:'How do creators earn?',a:'Receive tips, sell memberships, or charge for access to a stream. People pay with coins, you receive gems. Cash out gems when you reach 1000 (€10). Your VP determines your conversion commission, which steps down from 30% to a 15% floor as your lifetime VP grows.'},
     {q:'How do free coin bonuses work?',a:'You get 5 coins + 50 VP for a 5-day login streak. Referrals give 25 coins + 500 VP each (both need paid sub, friend must have bought coins). Lite subscribers get +1,000 VP & +50 coins / month. Pro gets +3,000 VP & +150 coins / month. Coin pack purchases include 10% bonus coins.'},
     {q:'What does VP unlock?',a:'VP spans 100 levels across 11 ranks (Rookie → Immortal). Higher VP lowers your coin-to-gem commission (30% down to a 15% floor) and earns rank rings and 30 collectible badges. After level 100 you can optionally Prestige for cosmetic badges.'},
     {q:'Does Lite/Pro lower my commission?',a:'No. Commission is determined ONLY by your VP level, not by your subscription. Plans give you a VP multiplier (1.5× on Lite, 2× on Pro) so you level up — and earn down commission — faster.'},
-    {q:'How do squads work?',a:'Create or join a squad. The creator starts as president. Monthly elections on the 1st — all members vote. When members win tournaments, 10% of their gems go to the squad treasury. The treasury funds future tournament entries.'},
-    {q:'How do tournaments work?',a:'Players pay coin entry fees forming the prize pool. Coins convert to gems: 1st (60%), 2nd (25%), 3rd/4th (7.5% each). The moderator running the tournament gets 5%. Winners also get VP. Brackets auto-advance.'},
+    {q:'How do squads work?',a:'Create or join a squad. The creator starts as president. Monthly elections on the 1st — all members vote. Members can contribute coins to the squad treasury, which is split among members monthly.'},
+    {q:'Is this gambling?',a:'No. VERGR does not offer betting, wagering, prediction markets, casino games, or prize competitions. Coins are in-app currency spent on tips, memberships, paid streams, and boosts.'},
     {q:'How does streaming work?',a:'VERGR doesn\'t host streams. Link your Twitch, YouTube, Kick, or other platform. When you go live, followers watch the embedded stream in the app.'},
     {q:'How do referrals work?',a:'Share your referral link from Earn → Refer Friends. When your friend creates an account, adds their phone number, and either joins a squad or subscribes to Lite/Pro, you both get rewarded — 3000 VP for you and 5000 VP for them.'},
-    {q:'Can I make a living on VERGR?',a:'Most income comes from tournaments and tips. A creator winning tournaments and receiving regular tips can earn €100-400+/month depending on activity, audience, and VP level (which determines commission rate).'},
-    {q:'What do Lite and Pro cost?',a:'Lite is $9.99/mo — no ads, 100MB uploads, 1080p, 1.5× VP, create squads & tournaments, stream at 1080p. Pro is $24.99/mo — 500MB uploads, 4K, 2× VP, stream at 1440p60 with co-streaming, custom vergr.me domain, advanced analytics, and priority support. See Settings → Subscription for the full comparison.'},
+    {q:'Can I make a living on VERGR?',a:'We make no income promise. Creator earnings come from tips, memberships, and paid streams, and depend entirely on your own audience and how often you stream. Many creators earn nothing.'},
+    {q:'What do Lite and Pro cost?',a:'Lite is $9.99/mo — no ads, 100MB uploads, 1080p, 1.5× VP, create squads, stream at 1080p. Pro is $24.99/mo — 500MB uploads, 4K, 2× VP, stream at 1440p60 with co-streaming, custom vergr.me domain, advanced analytics, and priority support. See Settings → Subscription for the full comparison.'},
   ];
   return (
     <div className={isDesktop ? "min-h-screen flex flex-col" : "screen-container min-h-screen flex flex-col"}>
@@ -38,7 +38,7 @@ export default function HelpCenterScreen() {
           </div>
           <div className="flex-1 text-left">
             <p className="text-brand-violet-light font-bold text-sm">How VERGR Works</p>
-            <p className="text-text-secondary text-[10px]">Complete guide to coins, squads, tournaments, and earning</p>
+            <p className="text-text-secondary text-[10px]">Complete guide to coins, squads, streaming, and earning</p>
           </div>
           <Icon name="arrow_forward" size={18} className="text-brand-violet-light/50 group-hover:text-brand-violet-light transition-colors" />
         </button>

@@ -29,7 +29,7 @@ import { useActiveStreamPoll, StreamPollCard, CreateStreamPollModal } from '../.
 import useStreamClipBuffer from '../../../hooks/useStreamClipBuffer';
 import { uploadToR2 } from '../../../utils/r2Storage';
 import { renderShareCard } from '../../../utils/shareCard';
-import { createPost } from '../../../firebase/firestore';
+import { createPost, getStreamIngest } from '../../../firebase/firestore';
 import StreamShareSheet from '../../../components/streams/StreamShareSheet';
 import { motion, AnimatePresence } from 'framer-motion';
 import { spring } from '../../../components/primitives/springs';
@@ -68,6 +68,7 @@ export default function NativeBroadcasterScreen() {
   const meterRafRef = useRef(0);
 
   const [streamDoc, setStreamDoc] = useState(null);
+  const ingestFetchedRef = useRef(false);
   const [streamLoading, setStreamLoading] = useState(true);
 
   const [micOn, setMicOn] = useState(true);
@@ -123,6 +124,15 @@ export default function NativeBroadcasterScreen() {
       if (!snap.exists()) { setStreamDoc(null); return; }
       const data = { id: snap.id, ...snap.data() };
       setStreamDoc(data);
+      // The publish key is not on this world-readable document; only the host
+      // can fetch it, and only from the server. Merged in so every existing
+      // `streamDoc.streamKey` read keeps working.
+      if (!data.streamKey && !ingestFetchedRef.current) {
+        ingestFetchedRef.current = true;
+        getStreamIngest(streamId)
+          .then((ing) => { if (ing?.streamKey) setStreamDoc((d) => (d ? { ...d, ...ing } : d)); })
+          .catch(() => { ingestFetchedRef.current = false; });
+      }
       if (data.status === 'live' && !isLive) setIsLive(true);
       if (data.status === 'ended' && isLive) setIsLive(false);
     }, (err) => { console.warn('stream doc subscribe error:', err); setStreamLoading(false); });

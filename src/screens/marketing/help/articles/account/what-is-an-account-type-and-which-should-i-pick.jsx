@@ -4,14 +4,14 @@ export default {
   body: [
     { p: "Your account type affects which features are highlighted in your experience, but both types get full access to the app. It is not a lock-in." },
     { h2: "Player" },
-    { p: "Pick Player if you mainly want to join tournaments, watch streams, chat, and earn Coins through gameplay. Your home screen focuses on tournaments, squads, and discovering other players." },
+    { p: "Pick Player if you mainly want to watch streams, chat, hang out in squads, and support the creators you like. Your home screen focuses on live streams, squads, and discovering other players." },
     { h2: "Creator" },
     { p: "Pick Creator if you plan to go live, post content regularly, or build an audience. You get quick access to the Creator Studio, stream setup, and your earnings overview from day one." },
     { h2: "Which should you pick?" },
     { list: [
       "Go with Player if you are not sure. You can switch to Creator in Settings any time.",
       "Go with Creator if streaming or posting content is your main goal.",
-      "Both types can play tournaments, join squads, tip, and earn money."
+      "Both types can stream, join squads, tip, and earn money."
     ]},
     { note: "Your account type does not affect your plan (Free, Lite, Pro) or your VP rank. Those are separate." },
     { cta: [

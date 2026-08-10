@@ -5,7 +5,7 @@
 // Top-level: summary (1-2 sentences, answer-first), updated (YYYY-MM-DD), body [].
 
 export default {
-  summary: "VP goes up when you do things that earn it, placing in tournaments, completing creator quests, referring friends, and staying active. It generally does not drop on its own; your total VP is cumulative. If your displayed level seemed to change unexpectedly, it is usually a quest reward landing, a tournament result finalizing, or progress within a level being recalculated.",
+  summary: "VP goes up when you do things that earn it, streaming, posting, completing creator quests, referring friends, and staying active. It generally does not drop on its own; your total VP is cumulative. If your displayed level seemed to change unexpectedly, it is usually a quest reward landing or progress within a level being recalculated.",
   updated: "2026-06-06",
   body: [
     {
@@ -16,7 +16,7 @@ export default {
     },
     {
       list: [
-        "You placed in a tournament. Results award VP when the tournament finalizes, which can be a little after your last match.",
+        "You finished a stream. Session VP is awarded once the broadcast ends and the session is tallied.",
         "A creator quest paid out. Quests award VP on completion.",
         "A referral landed. When a friend signs up with your link, you both get a VP boost.",
         "General activity. Ongoing participation keeps VP ticking up."
@@ -38,8 +38,8 @@ export default {
           "No. You earn VP for entering and placing; a loss simply earns less than a win. Your existing VP is not deducted."
         ],
         [
-          "My tournament VP has not shown up yet, why?",
-          "VP for a result is granted when the tournament finalizes. If matches are still being verified, it lands once the bracket completes."
+          "My stream VP has not shown up yet, why?",
+          "VP for a stream is granted once the broadcast has fully ended and the session is tallied, which can lag the moment you hit Stop."
         ]
       ]
     },

@@ -1,7 +1,7 @@
 // VERGR legal documents — full text.
 //
 // This file is the single source of truth for the Terms of Service, Privacy
-// Policy, Refund Policy, Acceptable Use Policy, Cookie Policy, and Tournament
+// Policy, Refund Policy, Acceptable Use Policy, Cookie Policy, and Tournament (retired, unrouted)
 // Rules. The marketing site renders this content; the signup flow + the
 // TosVersionGate use LEGAL_VERSION to know when re-acceptance is required.
 //
@@ -94,8 +94,8 @@ export const TERMS_OF_SERVICE = {
   updated: `Last updated: ${LEGAL_UPDATED}`,
   effective: `Effective: ${LEGAL_EFFECTIVE}`,
   intro: [
-    `These Terms of Service ("Terms") constitute a legally binding agreement between you ("you", "your", "User") and ${OPERATOR.legalName}, a limited liability company formed in the ${OPERATOR.formationState} and trading as VERGR ("VERGR", "we", "us", or "our"), the operator of the website at ${OPERATOR.website} and any associated mobile, desktop, or other applications and services (collectively, the "Service"). The Service comprises a competitive gaming social platform that includes user profiles, social posts, direct messaging, live streaming, organised skill-based gaming tournaments with cash-equivalent prize pools, an internal virtual currency economy, creator monetisation features, and related functionality.`,
-    `By creating an account, accessing, or otherwise using the Service, you confirm that you have read, understood, and agree to be bound by these Terms, by our Privacy Policy (available at /privacy), by our Tournament Rules (available at /learn/tournament-rules), by our Acceptable Use Policy (incorporated in Section 14 and published at /acceptable-use), by our Cookie Policy (published at /cookies), and by our Refund Policy (incorporated in Section 9). If you do not agree to all of the foregoing, you must not create an account or use the Service.`,
+    `These Terms of Service ("Terms") constitute a legally binding agreement between you ("you", "your", "User") and ${OPERATOR.legalName}, a limited liability company formed in the ${OPERATOR.formationState} and trading as VERGR ("VERGR", "we", "us", or "our"), the operator of the website at ${OPERATOR.website} and any associated mobile, desktop, or other applications and services (collectively, the "Service"). The Service comprises a social and live streaming platform for gamers and creators that includes user profiles, social posts, clips and short-form video, direct and group messaging, live streaming (free and paid-access), squad communities, an internal virtual currency economy, creator monetisation features, and related functionality.`,
+    `By creating an account, accessing, or otherwise using the Service, you confirm that you have read, understood, and agree to be bound by these Terms, by our Privacy Policy (available at /privacy), by our Acceptable Use Policy (incorporated in Section 14 and published at /acceptable-use), by our Cookie Policy (published at /cookies), and by our Refund Policy (incorporated in Section 9). If you do not agree to all of the foregoing, you must not create an account or use the Service.`,
     `IMPORTANT — READ CAREFULLY: These Terms include (i) extensive disclaimers and limitations of liability that cap the maximum amount VERGR can ever owe you at one hundred euros (€100) or three months of fees paid, whichever is lower (Section 22); (ii) a broad indemnification by you in favour of VERGR (Section 23); (iii) a binding arbitration clause and class-action waiver that affect how disputes between you and VERGR are resolved (Section 26); (iv) a representation by you that your use of the Service is lawful in your own jurisdiction, with sole responsibility for that determination resting on you and not on VERGR (Section 4A); and (v) acknowledgement that you participate at your own risk. These provisions materially limit your legal recourse against VERGR. If you do not accept them, do not use the Service.`,
   ],
   sections: [
@@ -107,17 +107,18 @@ export const TERMS_OF_SERVICE = {
         list([
           '"Account" means the account you create to access the Service.',
           '"Cash-Equivalent" means having ascertainable monetary value, including through conversion into another medium that does have monetary value (for example, Gems converted to cryptocurrency).',
-          '"Coins" or "VC Coins" means the virtual currency identified within the Service as VC, used for in-Service purchases, Tournament entry fees, Tips, and other interactions.',
-          '"Content" means any text, image, video, audio, livestream, comment, message, tournament result, profile information, or other material you submit, transmit, post, host, display, or otherwise make available through the Service.',
+          '"Coins" or "VC Coins" means the virtual currency identified within the Service as VC, used for in-Service purchases, Tips, paid stream access, creator memberships, Boosts, and other interactions.',
+          '"Content" means any text, image, video, audio, livestream, comment, message, profile information, or other material you submit, transmit, post, host, display, or otherwise make available through the Service.',
           '"Eligible Earnings" means Gems that are eligible for withdrawal under Section 8.',
           '"Gems" means the redeemable virtual asset described in Section 7.4 which represents Cash-Equivalent value and may be withdrawn through supported payout methods.',
           '"Identity Verification" means the government-identity, photographic, and liveness check performed by our third-party verification provider (Didit or a successor we identify in the Privacy Policy).',
           '"KYC" means know-your-customer compliance, including age verification, identity verification, and screening against international sanctions and watchlists.',
           '"Didit" means our Identity Verification provider (operated at didit.me).',
-          '"Platform Fee" means the percentage of Tournament prize pools, tip transactions, or other in-Service economic events retained by VERGR as described in these Terms and other policies posted within the Service.',
+          '"Platform Fee" means the percentage of tip transactions, creator payments, or other in-Service economic events retained by VERGR as described in these Terms and other policies posted within the Service.',
           '"Restricted Jurisdiction" means a country, state, province, region, or other jurisdiction listed at Section 4.3, or any other jurisdiction where the operation or use of the Service would be unlawful.',
           '"Service" means VERGR as defined in the introduction to these Terms.',
-          '"Tournament" means an organised, skill-based competitive event conducted through the Service, with one or more participants competing in a chosen video game in accordance with the Tournament Rules.',
+          '"Paid Stream" means a live broadcast to an audience for which the broadcasting User has set a price, access to which a viewer obtains either by a one-off purchase for that broadcast or through an active creator membership with that User.',
+        '"1:1 Session" means a private, invitation-only live session between exactly two Users, reachable only by a link the host sends directly. A 1:1 Session is technically limited to a single viewer and is excluded from all discovery surfaces. It is not a broadcast and is not a Paid Stream, whether or not the host has set a price for entry.',
           '"User", "you", and "your" mean any natural person who creates or uses an Account or accesses the Service.',
           '"VP" or "Vergr Points" means the non-withdrawable engagement-tracking unit awarded for completing in-Service activities; VP have no monetary value and are not Cash-Equivalent.',
           '"Wallet" means the in-Service ledger that records your Coins, VP, and Gems.',
@@ -138,7 +139,7 @@ export const TERMS_OF_SERVICE = {
       id: 'service-description',
       title: '3. Description of the Service',
       body: [
-        '3.1 What VERGR is. The Service is a competitive gaming social platform that combines (a) social networking features (profiles, posts, comments, direct and group messaging, squads, follow relationships); (b) live and on-demand video and audio streaming; (c) organised skill-based Tournaments with entry fees denominated in Coins and Cash-Equivalent prize pools; (d) an internal virtual-currency economy comprising Coins, VP, and Gems; (e) creator monetisation features including tipping, paid memberships, and platform-funded engagement amplifications ("Boosts"); and (f) related ancillary functionality.',
+        '3.1 What VERGR is. The Service is a social and live streaming platform for gamers and creators that combines (a) social networking features (profiles, posts, comments, clips and short-form video, direct and group messaging, squads, follow relationships); (b) live and on-demand video and audio streaming, including Paid Streams; (c) an internal virtual-currency economy comprising Coins, VP, and Gems; (d) creator monetisation features including tipping, paid memberships, paid stream access, and platform-funded engagement amplifications ("Boosts"); and (e) related ancillary functionality. The Service does not offer betting, wagering, prediction markets, prize competitions, or games of chance of any kind.',
         '3.2 What VERGR is not. The Service is not a gambling, sports-betting, casino, lottery, financial product, money-transmission, securities, banking, deposit-taking, or investment service. Coins, VP, and Gems are not legal tender, are not bank deposits, are not securities or investment contracts, and are not insured by any government or financial-regulator deposit-insurance scheme. The Service is not a means of transferring value between Users for general payment purposes outside of the in-Service features described in these Terms.',
         '3.3 No financial advice. Nothing in the Service constitutes financial, investment, legal, tax, or accounting advice. You are responsible for determining the tax treatment of your activity on the Service and for complying with the laws of your jurisdiction.',
         '3.4 Evolving Service. The Service is under active development. VERGR may add, remove, modify, or temporarily suspend features at any time without prior notice, except where these Terms or applicable law require prior notice.',
@@ -149,11 +150,11 @@ export const TERMS_OF_SERVICE = {
       title: '4. Eligibility, Registration, and Account',
       body: [
         '4.1 Minimum age. You must be at least eighteen (18) years of age, or the higher age of majority in your jurisdiction, to create an Account or use the Service. The Service is strictly not available to persons under 18, and we do not knowingly collect information from anyone under 18. If VERGR becomes aware that an Account belongs to a person under the required age, the Account will be closed, the Account-holder\'s data will be deleted in accordance with our Privacy Policy, and any balance in the Wallet will be forfeited or returned at VERGR\'s discretion, subject to applicable law.',
-        '4.2 Identity Verification. Identity Verification is required before you may (a) enter a paid Tournament, and (b) request a withdrawal of Gems to a cryptocurrency wallet. These are the two features that legally require an 18+-verified adult participant: paid competitive-gaming participation, and the outbound payout rail (anti-money-laundering / processor compliance). Other features of the Service — registering an Account, browsing, purchasing Coins, sending or receiving Tips, paying for a subscription, and converting Coins to Gems — do not require Identity Verification, although a user must still self-declare an age of at least eighteen (18) at signup and must reside in a non-Restricted Jurisdiction. Identity Verification is performed by Didit and includes capture of a government-issued photo ID, a selfie with liveness check, and screening against age and sanctions criteria. Verification is one-time per User; results are recorded in your Account record. VERGR may require additional or re-verification at any time, including in connection with elevated transaction volumes, fraud signals, or regulatory changes.',
-        '4.3 Restricted Jurisdictions. The Service is not offered, and you may not access or use the Service, if you are located in, ordinarily resident in, or accessing the Service from, a Restricted Jurisdiction. As of the Effective Date, Restricted Jurisdictions include the following countries — ' + BLOCKED_COUNTRIES_DISPLAY.join(', ') + ' — and, for users located in the United States, the following states — ' + BLOCKED_US_STATES_DISPLAY.join(', ') + '. VERGR may update the Restricted Jurisdiction list at any time. The current list is published in our Tournament Rules and Privacy Policy. Attempting to circumvent geographic restrictions by means of a virtual private network, proxy, anonymisation service, false declaration of residence, or any other method constitutes a material breach of these Terms.',
+        '4.2 Identity Verification. Identity Verification is required before you may request a withdrawal of Gems to a cryptocurrency wallet. This is the feature that legally requires an 18+-verified adult participant: the outbound payout rail (anti-money-laundering / processor compliance). Other features of the Service — registering an Account, browsing, purchasing Coins, sending or receiving Tips, buying access to a Paid Stream, paying for a subscription, and converting Coins to Gems — do not require Identity Verification, although a user must still self-declare an age of at least eighteen (18) at signup and must reside in a non-Restricted Jurisdiction. Identity Verification is performed by Didit and includes capture of a government-issued photo ID, a selfie with liveness check, and screening against age and sanctions criteria. Verification is one-time per User; results are recorded in your Account record. VERGR may require additional or re-verification at any time, including in connection with elevated transaction volumes, fraud signals, or regulatory changes.',
+        '4.3 Restricted Jurisdictions. The Service is not offered, and you may not access or use the Service, if you are located in, ordinarily resident in, or accessing the Service from, a Restricted Jurisdiction. As of the Effective Date, Restricted Jurisdictions include the following countries — ' + BLOCKED_COUNTRIES_DISPLAY.join(', ') + (BLOCKED_US_STATES_DISPLAY.length ? ' — and, for users located in the United States, the following states — ' + BLOCKED_US_STATES_DISPLAY.join(', ') : '') + '. VERGR may update the Restricted Jurisdiction list at any time. The current list is published in these Terms and in our Privacy Policy. Attempting to circumvent geographic restrictions by means of a virtual private network, proxy, anonymisation service, false declaration of residence, or any other method constitutes a material breach of these Terms.',
         '4.4 Sanctions. You represent and warrant that you are not (a) located in, ordinarily resident in, or a national of any country subject to comprehensive sanctions by the United Nations, the European Union, the United Kingdom, the United States Office of Foreign Assets Control ("OFAC"), or any other applicable sanctions authority; (b) identified on any sanctions list maintained by any such authority; or (c) owned or controlled by a person identified on any such list. You agree not to use the Service for the benefit of any such person. VERGR may screen Account-holders, transactions, and counterparties against sanctions lists at any time and may suspend or terminate Accounts that present a sanctions risk.',
         '4.5 Account registration. To register an Account you must provide accurate, current, and complete information, including a valid email address, a password, your date of birth, your username, and your display name. You must agree to these Terms and the Privacy Policy at the time of registration. You are responsible for keeping the information in your Account accurate and up to date.',
-        '4.6 One Account per person. Each person may hold only one Account. You may not register multiple Accounts; you may not allow another person to use your Account; and you may not create an Account on behalf of another person without that person\'s express authorisation and lawful capacity to consent. Creating additional Accounts to circumvent a suspension, gain an unfair advantage, manipulate the economy or Tournament outcomes, or evade fees is a material breach of these Terms.',
+        '4.6 One Account per person. Each person may hold only one Account. You may not register multiple Accounts; you may not allow another person to use your Account; and you may not create an Account on behalf of another person without that person\'s express authorisation and lawful capacity to consent. Creating additional Accounts to circumvent a suspension, gain an unfair advantage, manipulate the economy, or evade fees is a material breach of these Terms.',
         '4.7 Account security. You are responsible for maintaining the confidentiality of your Account credentials, including your password and any second-factor authentication device, and for all activity that occurs on your Account. You must notify VERGR immediately at ' + OPERATOR.supportEmail + ' if you suspect unauthorised access. VERGR is not liable for any loss arising from unauthorised access to your Account where such access was not caused by VERGR\'s breach of these Terms or applicable law.',
         '4.8 Username and identity. Your username must not impersonate another person, infringe a third party\'s rights, or contain unlawful, abusive, or deceptive content. VERGR may reclaim, rename, or reassign usernames in cases of impersonation, trademark complaint, inactivity, or violation of these Terms.',
       ],
@@ -162,8 +163,8 @@ export const TERMS_OF_SERVICE = {
       id: 'user-representations',
       title: '4A. User Representations, Warranties, and Acknowledgements',
       body: [
-        '4A.1 Eligibility representations. Each time you access or use the Service, you represent and warrant to VERGR that, at that moment: (a) you are at least eighteen (18) years of age, or the higher age of majority required by the laws of your jurisdiction; (b) you are not located in, ordinarily resident in, or accessing the Service from any Restricted Jurisdiction (Section 4.3); (c) your use of the Service is fully lawful in the jurisdiction in which you are located; (d) you are not subject to any sanctions list maintained by the United Nations, the European Union, the United Kingdom, the United States Office of Foreign Assets Control ("OFAC"), or any other applicable sanctions authority; (e) you have not been previously suspended or removed from the Service; (f) all information you provide to VERGR is accurate, current, and complete; and (g) you have read, understood, and agree to be bound by these Terms, the Privacy Policy, the Tournament Rules, the Acceptable Use Policy, and any other policies published on the Service.',
-        '4A.2 Sole responsibility for local compliance. YOU, AND NOT VERGR, ARE SOLELY AND EXCLUSIVELY RESPONSIBLE FOR DETERMINING WHETHER YOUR ACCESS TO AND USE OF THE SERVICE — INCLUDING WITHOUT LIMITATION YOUR PARTICIPATION IN TOURNAMENTS, YOUR PURCHASE AND USE OF COINS, YOUR RECEIPT OF TIPS, YOUR WITHDRAWAL OF GEMS, AND ANY OTHER ECONOMIC ACTIVITY — IS LAWFUL IN YOUR JURISDICTION OF RESIDENCE, NATIONALITY, OR PHYSICAL LOCATION AT THE TIME OF USE. VERGR MAKES NO REPRESENTATION OR WARRANTY THAT THE SERVICE OR ANY FEATURE OF IT IS LAWFUL IN YOUR JURISDICTION. The list of Restricted Jurisdictions published in these Terms is non-exhaustive and reflects VERGR\'s good-faith efforts only; your jurisdiction may impose restrictions, age requirements, tax obligations, licensing requirements, or other obligations that are not enumerated here, and YOU are responsible for identifying and complying with them.',
+        '4A.1 Eligibility representations. Each time you access or use the Service, you represent and warrant to VERGR that, at that moment: (a) you are at least eighteen (18) years of age, or the higher age of majority required by the laws of your jurisdiction; (b) you are not located in, ordinarily resident in, or accessing the Service from any Restricted Jurisdiction (Section 4.3); (c) your use of the Service is fully lawful in the jurisdiction in which you are located; (d) you are not subject to any sanctions list maintained by the United Nations, the European Union, the United Kingdom, the United States Office of Foreign Assets Control ("OFAC"), or any other applicable sanctions authority; (e) you have not been previously suspended or removed from the Service; (f) all information you provide to VERGR is accurate, current, and complete; and (g) you have read, understood, and agree to be bound by these Terms, the Privacy Policy, the Acceptable Use Policy, and any other policies published on the Service.',
+        '4A.2 Sole responsibility for local compliance. YOU, AND NOT VERGR, ARE SOLELY AND EXCLUSIVELY RESPONSIBLE FOR DETERMINING WHETHER YOUR ACCESS TO AND USE OF THE SERVICE — INCLUDING WITHOUT LIMITATION YOUR PURCHASE AND USE OF COINS, YOUR RECEIPT OF TIPS, YOUR WITHDRAWAL OF GEMS, AND ANY OTHER ECONOMIC ACTIVITY — IS LAWFUL IN YOUR JURISDICTION OF RESIDENCE, NATIONALITY, OR PHYSICAL LOCATION AT THE TIME OF USE. VERGR MAKES NO REPRESENTATION OR WARRANTY THAT THE SERVICE OR ANY FEATURE OF IT IS LAWFUL IN YOUR JURISDICTION. The list of Restricted Jurisdictions published in these Terms is non-exhaustive and reflects VERGR\'s good-faith efforts only; your jurisdiction may impose restrictions, age requirements, tax obligations, licensing requirements, or other obligations that are not enumerated here, and YOU are responsible for identifying and complying with them.',
         '4A.3 No reliance. You acknowledge that VERGR has not provided you with any legal, tax, financial, accounting, regulatory, or investment advice in connection with the Service, and that you have not relied on any such advice from VERGR in deciding to use the Service. If you require advice in any of these areas, you must consult an appropriately qualified professional in your jurisdiction.',
         '4A.4 Anti-circumvention representation. You represent and warrant that you have not used and will not use any virtual private network ("VPN"), proxy, anonymisation service, Tor, false declaration of residence or nationality, falsified identification document, or any other technique to circumvent the geographic restrictions, age restrictions, identity-verification requirements, or any other access controls applied by the Service. You acknowledge that any such circumvention is a material breach of these Terms, voids the protections of Section 11 (Service Availability) in your favour, may result in immediate termination and forfeiture of all balances, and renders any subsequent civil or regulatory consequence YOUR sole responsibility — not VERGR\'s.',
         '4A.5 Risk acknowledgement. You acknowledge and accept that (a) the Service involves competitive activity in which you may lose money paid for in-Service items; (b) cryptocurrency-rail withdrawals are irreversible and you bear the entire risk of any incorrect destination address you select; (c) virtual items (Coins, VP, Gems) have no real-world value and may be reduced or eliminated by VERGR with notice; (d) the Service may be modified, restricted, or discontinued at any time without compensation; (e) third-party processors (our payment processor, Didit, and any others VERGR may identify in the Privacy Policy) may delay, decline, freeze, or reverse transactions for their own compliance reasons over which VERGR has no control; (f) regulatory action in your jurisdiction may affect your ability to use the Service; and (g) you participate at your own risk.',
@@ -182,14 +183,14 @@ export const TERMS_OF_SERVICE = {
       ],
     },
     {
-      id: 'skill-classification',
-      title: '6. Skill-Based Competition Classification (Important — Read Carefully)',
+      id: 'no-gambling',
+      title: '6. No Gambling (Important — Read Carefully)',
       body: [
-        '6.1 Classification. Tournaments offered through the Service are organised skill-based competitions. The outcome of every Tournament match is materially determined by the participants\' skill in the relevant video game — execution, decision-making, strategy, mechanical proficiency, teamwork, and other player-controlled factors — and not by chance, lottery, randomised prize draw, betting on third-party outcomes, or any other mechanic in which the result is materially determined by random or extraneous factors.',
-        '6.2 No gambling. VERGR does not offer, facilitate, or promote any product or feature that meets the legal definition of gambling in jurisdictions where gambling is prohibited or where the Service is offered: there is no betting against the house; there is no betting between Users on the outcome of third-party sporting or e-sports events; there are no slot, casino, lottery, raffle, or chance-based prize-distribution mechanics; and there are no scratch-card, loot-box, or randomised-reward mechanics that involve Cash-Equivalent prizes. Bracket seeding within a Tournament may be randomised for fairness, but bracket seeding does not determine match outcomes.',
-        '6.3 Three-element test. Where applicable law applies the consideration-chance-prize test for gambling, VERGR\'s position is that, while Tournaments involve consideration (entry fees) and prizes (Cash-Equivalent prize pools), the chance element is absent because the outcome is materially determined by skill. VERGR makes good-faith efforts to comply with applicable skill-game laws by (a) restricting access from jurisdictions that prohibit or unduly restrict skill-gaming for Cash-Equivalent prizes; (b) requiring Identity Verification and minimum age; (c) maintaining published platform caps on entry fees and prize pools; (d) operating purely as an organiser of player-versus-player competition rather than as a counterparty; (e) prohibiting cheating, collusion, match-fixing, and other conduct that compromises the integrity of competition; and (f) maintaining a dispute-resolution process.',
-        '6.4 User acknowledgement. By entering or hosting a Tournament, you acknowledge that (a) you understand the Service classifies Tournaments as skill-based competitions, not gambling; (b) you are responsible for ensuring that your participation is lawful in your own jurisdiction; (c) entry fees are non-refundable once a Tournament starts and you have participated in your first match, except as required by law or expressly stated in these Terms; (d) outcomes may favour more skilled or more experienced players; and (e) VERGR makes no representation or warranty that you will win, recover, or be entitled to any portion of a prize pool.',
-        '6.5 Funding and platform caps. By default, Tournaments are ticketed: competitors play free and fans buy spectator tickets (10% Platform Fee per sale) that, together with any host top-up, fund the prize purse. Pay-to-enter prize-pool Tournaments are disabled by default and available only where VERGR enables them for a host; where enabled, VERGR enforces these caps: per-User entry fee no greater than ten thousand (10,000) Coins; per-Tournament gross prize pool no greater than five hundred thousand (500,000) Coins; Platform Fee fixed at five percent (5%). These terms may be revised by VERGR; revisions are published in the Tournament Rules.',
+        '6.1 No gambling of any kind. VERGR does not offer, facilitate, or promote betting, wagering, prediction markets, sports betting, casino games, slot mechanics, lotteries, raffles, sweepstakes, prize competitions, scratch cards, loot boxes, or any other product or feature in which a User stakes money, Coins, or anything of value on an uncertain outcome. There is no betting against the house and no betting between Users. No feature of the Service meets the legal definition of gambling in any jurisdiction in which the Service is offered.',
+        '6.2 No games of chance and no randomised rewards. The Service contains no chance-based prize-distribution mechanic and no randomised-reward mechanic. Coins are never awarded at random, and no purchase made through the Service produces an uncertain or randomised outcome.',
+        '6.3 Every Coin purchase is a known-value purchase. Coins are spent on goods and services with a stated price and a certain outcome: Tips to creators, access to a Paid Stream, creator memberships, subscription plans, and Boosts. In every case the User knows before paying what they receive in exchange. Nothing on the Service is staked, risked, or subject to forfeiture on the result of a game or event.',
+        '6.4 Prohibited User conduct. Users may not use the Service, or any feature of it, to organise, advertise, solicit, or settle gambling, betting, wagering, or any staking arrangement, whether between Users or with third parties, including in live stream chat, direct messages, group chats, squad chats, or posted Content. Doing so is a material breach of these Terms and of the Acceptable Use Policy, and may result in immediate and permanent termination of the Account.',
+        '6.5 Reporting. If you encounter any attempt to use the Service for gambling or staking, report it using the in-Service report function or by writing to ' + OPERATOR.supportEmail + '. Reports are reviewed by VERGR\'s moderation team.',
       ],
     },
     {
@@ -197,9 +198,9 @@ export const TERMS_OF_SERVICE = {
       title: '7. Virtual Currencies (Coins, VP, Gems)',
       body: [
         '7.1 No real-world value. Coins, VP, and Gems are virtual items provided through the Service. They are not money, are not legal tender, are not currency, are not securities, are not a substitute for any sovereign or private currency, are not redeemable for cash from VERGR (except via the Gems-withdrawal process described in Section 8), and have no value outside the Service except, in the case of Gems, as expressly provided in Section 8.',
-        '7.2 Coins (VC). Coins are the primary in-Service currency. Coins may be acquired by (a) purchase with fiat currency or cryptocurrency through the payment processors VERGR integrates; (b) award by VERGR in connection with promotions, refunds, or rebates at VERGR\'s discretion; or (c) receipt as a Tip, Tournament prize, or membership payment from another User. Coins may be spent on Tournament entry fees, Tips, paid memberships, Boosts, and other in-Service features. Coins are non-transferable except through the in-Service mechanisms described in these Terms. Coins are non-refundable once delivered to your Wallet, except where required by applicable consumer-protection law or as expressly stated in our Refund Policy (Section 9).',
+        '7.2 Coins (VC). Coins are the primary in-Service currency. Coins may be acquired by (a) purchase with fiat currency or cryptocurrency through the payment processors VERGR integrates; (b) award by VERGR in connection with promotions, refunds, or rebates at VERGR\'s discretion; or (c) receipt as a Tip, paid stream access payment, or membership payment from another User. Coins may be spent on Tips, access to a Paid Stream, paid memberships, subscription plans, Boosts, and other in-Service features. Coins are non-transferable except through the in-Service mechanisms described in these Terms. Coins are non-refundable once delivered to your Wallet, except where required by applicable consumer-protection law or as expressly stated in our Refund Policy (Section 9).',
         '7.3 VP (Vergr Points). VP is an engagement-tracking unit awarded for completing in-Service activities such as creator quests, daily logins, content milestones, and referrals. VP have no monetary value, are not Cash-Equivalent, are not redeemable for fiat currency or cryptocurrency, may not be converted into Coins or Gems, may not be transferred between Users, and may not be withdrawn. VP exist solely to recognise engagement and unlock progression within the Service.',
-        '7.4 Gems. Gems are the Cash-Equivalent redeemable virtual asset within the Service. Gems may be earned by (a) receipt of Tips as a creator; (b) winning Tournament prize pools where the host has structured the prize as gem-eligible; (c) revenue share from paid memberships; or (d) other monetisation features VERGR may introduce. Coins may be converted into Gems at VERGR\'s published conversion rate, which is tiered by the User\'s VERGR Points level (from a maximum thirty percent (30%) Platform Fee at the lowest tier to a minimum five percent (5%) Platform Fee at the highest tier). The conversion rate may be updated by VERGR with reasonable notice. Gems may be withdrawn in accordance with Section 8.',
+        '7.4 Gems. Gems are the Cash-Equivalent redeemable virtual asset within the Service. Gems may be earned by (a) receipt of Tips as a creator; (b) revenue share from paid stream access; (c) revenue share from paid memberships; or (d) other monetisation features VERGR may introduce. Coins may be converted into Gems at VERGR\'s published conversion rate, which is tiered by the User\'s VERGR Points level (from a maximum thirty percent (30%) Platform Fee at the lowest tier to a minimum five percent (5%) Platform Fee at the highest tier). The conversion rate may be updated by VERGR with reasonable notice. Gems may be withdrawn in accordance with Section 8.',
         '7.5 No promises about future value. VERGR makes no representation that the conversion rates, exchange rates, Platform Fee percentages, withdrawal minimums, or any other economic parameter of the in-Service economy will remain unchanged. VERGR may modify any of these parameters at any time with reasonable notice and without compensation to Users for changes in the perceived value of held balances. Coins, VP, and Gems are not investments and should not be acquired or held in the expectation of an increase in value.',
         '7.6 Non-transferability and non-resale. Except through the in-Service mechanisms described in these Terms, you must not sell, trade, transfer, lend, gift, or otherwise dispose of Coins, VP, or Gems to any other person or for any consideration outside the Service. Real-money trading ("RMT") of in-Service virtual items through any external venue is strictly prohibited and is grounds for permanent termination of your Account and forfeiture of balances.',
         '7.7 Account closure or termination. On voluntary closure of your Account, unspent Coins and VP are forfeited and not redeemable. Eligible Gem balances at the time of closure will be paid out in accordance with Section 8, subject to your having completed Identity Verification and the standard payout windows, holds, and limits. On involuntary termination of your Account by VERGR for cause (Section 21.3), all Coins, VP, and Gems may be forfeited.',
@@ -232,24 +233,34 @@ export const TERMS_OF_SERVICE = {
         '9.1 General rule — no refunds. Because Coins are virtual items delivered immediately and consumed within the Service, and because the Service offers digital content and services performed immediately on your acceptance, Coin purchases and subscription payments are not refundable once the Coins have been credited to your Wallet or the subscription period has begun, except where required by applicable consumer-protection law or as expressly stated below.',
         '9.2 EU/UK cooling-off — express waiver. Where you are a consumer in the European Union, the European Economic Area, or the United Kingdom and would otherwise have a fourteen (14) day right of withdrawal under Directive 2011/83/EU or its UK equivalent, you expressly acknowledge and agree that, by completing a purchase of Coins or activating a subscription, (a) you request that performance begin immediately during the cooling-off period; and (b) you accept that your right of withdrawal will be lost once the Coins are delivered or the subscription period begins. This waiver is presented to you at checkout in accordance with the legislation.',
         '9.3 Erroneous charges. If you are charged in error — including duplicate charges, charges to which the wrong Account was credited, or charges initiated by an unauthorised user of your payment method — you may request a refund within thirty (30) days of the charge by writing to ' + OPERATOR.supportEmail + '. We will investigate and, where the charge is confirmed as erroneous, refund the amount to the original payment method.',
-        '9.4 Cancelled Tournaments. If a Tournament is cancelled by VERGR or by the host before the Tournament starts, spectator tickets are refunded in full to buyers and any host purse top-up is returned; for legacy pay-to-enter events, all entry fees paid in Coins are likewise refunded to participants\' Wallets. Once a Tournament has started and the first match has been played, entry fees are non-refundable except as required by law.',
+        '9.4 Undelivered Paid Streams. If you purchase access to a Paid Stream and the broadcast is cancelled by the creator or by VERGR, or does not take place, the purchase is refunded to your Wallet in full. Once the broadcast has taken place and access has been delivered, the purchase is final except as required by law.',
         '9.5 Subscription cancellation. You may cancel a paid subscription at any time from your Account settings. Cancellation takes effect at the end of the current billing period; you retain access to subscription benefits until that date. No partial refunds are issued for unused subscription time.',
         '9.6 Processor terms. Where a purchase is processed by a third-party payment provider, that provider\'s additional terms may apply to refund eligibility. We are not responsible for refund decisions made by the provider; however, we will cooperate reasonably with bona fide refund requests.',
         '9.7 Chargebacks. Initiating a chargeback or successful payment dispute against a VERGR purchase has consequences including reversal of the corresponding Coins, debit of any amounts already spent from those Coins, account suspension or termination, and chargeback fees. Disputes about purchases should be raised with VERGR support before being escalated to your card issuer.',
       ],
     },
     {
-      id: 'tournaments',
-      title: '10. Tournaments',
+      id: 'paid-streams',
+      title: '10. Paid Live Streams',
       body: [
-        '10.1 Tournament Rules. Each Tournament is governed by these Terms together with the Tournament Rules published at /learn/tournament-rules and any host-specified rules consistent with them. By creating, hosting, entering, or playing in a Tournament you agree to those rules.',
-        '10.2 Hosts. A "Host" is the User who creates a Tournament. Hosts are responsible for (a) clearly specifying the rules of the Tournament before participants pay an entry fee, including the game, format, maximum participants, entry fee, prize structure, scheduling, and any game-specific rules; (b) not materially modifying rules after participants have paid an entry fee; (c) acting in good faith and avoiding conflicts of interest; (d) cooperating with VERGR moderators on dispute resolution; and (e) complying with all applicable laws.',
-        '10.3 Participants. Participants are responsible for (a) having sufficient Coins to pay the entry fee; (b) having any required linked gaming account (for example, Steam for CS2, Battle.net for Overwatch 2); (c) being available at scheduled match times; (d) playing in good faith; (e) reporting results truthfully; and (f) not engaging in prohibited conduct under Section 14 or the Tournament Rules.',
-        '10.4 Escrow. Entry fees are placed into an in-Service escrow at the time of entry and are released to participants based on the final Tournament results, less the five-percent (5%) Platform Fee retained by VERGR. Coins held in escrow do not earn interest and are not segregated as customer funds in a regulated trust.',
-        '10.5 Result reporting. Match results are reported in one of three ways: (a) automatically by trusted game integrations (Steam Game State Integration for CS2 and Dota 2; first-party APIs for other titles where available); (b) by mutual agreement of both participants; or (c) by the host. Where participants disagree on a result the match is flagged "disputed" and is resolved by a VERGR moderator. Moderator decisions are final and binding.',
-        '10.6 Coordinated false reporting. Coordinated false reporting, deliberately misreporting a result, or other attempts to manipulate the result-reporting system are serious offences that may result in forfeiture of entry fees and winnings, account suspension, and permanent ban.',
-        '10.7 Prize distribution. The prize pool, less the Platform Fee, is distributed to placing participants in accordance with the bracket format selected by the host (for example, single-elimination winner-take-all, double-elimination distributed across top placements, Swiss-system placement-based payout, battle-royale placement-based payout). Prizes are credited to winners\' Wallets in Coins within minutes of finalisation.',
-        '10.8 Disqualification. VERGR may disqualify a participant or a host, void match results, void Tournaments in whole or in part, redistribute prize pools, refund entry fees, or take other remedial action where it has reasonable grounds to conclude that prohibited conduct under Section 14 or the Tournament Rules has occurred.',
+        '10.1 What a Paid Stream is. A broadcasting User may set a price for access to a live broadcast. A viewer obtains access either by a one-off purchase of that broadcast, or through an active creator membership with that User where the creator has included Paid Streams in the membership. Access is to the live broadcast only; it does not convey any ownership of, or licence to redistribute, the Content.',
+        '10.2 Creator responsibilities. A creator offering a Paid Stream is responsible for (a) accurately describing what the broadcast will contain before a viewer pays; (b) actually delivering the broadcast at or around the stated time; (c) ensuring the Content complies with the Acceptable Use Policy; and (d) complying with all applicable laws, including any tax obligations arising from their earnings.',
+        '10.3 Content standards. A Paid Stream is a broadcast to an audience, and the Broadcast Content Standards in Section 2 of the Acceptable Use Policy apply to it in the same way they apply to a free public stream. Charging for entry does not change which standards apply to a broadcast. VERGR moderates Paid Streams on the same basis as free ones, and the Universal Prohibitions in Section 1 of that policy apply to every part of the Service without exception.',
+        '10.4 Pricing and fees. The creator sets the price in Coins. VERGR retains a ten percent (10%) Platform Fee on the sale; the remaining ninety percent (90%) is credited to the creator. Prices are shown to the viewer before purchase.',
+        '10.5 Refunds. If a Paid Stream is cancelled or does not take place, the purchase is refunded in full under Section 9.4. Dissatisfaction with a broadcast that did take place is not a ground for refund, save where required by applicable consumer-protection law.',
+        '10.6 Reporting. A viewer may report a Paid Stream at any time from within the broadcast, including while it is live. Reports are routed to VERGR\'s moderation team and are actioned on the same basis as reports about free Content.',
+      ],
+    },
+    {
+      id: 'one-to-one-sessions',
+      title: '10A. 1:1 Sessions',
+      body: [
+        '10A.1 What a 1:1 Session is. A 1:1 Session is a private live session between exactly two Users. It is reachable only through a link the host sends directly to the person they are inviting, it is limited by the Service to a single viewer, and it does not appear in search, discovery, recommendations, or any public listing. The host may make entry free or set a price in Coins.',
+        '10A.2 Both participants must be adults. Every Vergr Account holder is 18 or over, and a 1:1 Session is available only between Account holders. A host who has any reason to believe the other participant is under 18 must end the session immediately and report it.',
+        '10A.3 Universal Prohibitions apply. Section 1 of the Acceptable Use Policy applies to a 1:1 Session exactly as it applies everywhere else on the Service, without exception and regardless of whether entry was paid. That includes, without limitation, any content involving a minor, intimate imagery of a person who has not consented to it being shown or distributed, recording or capturing another participant without their consent, coercion, and the offering or arranging of in-person sexual services, prostitution, or any form of human trafficking.',
+        '10A.4 Consent to record. Neither participant may record, screen-capture, stream onward, or otherwise reproduce a 1:1 Session without the other participant\'s express consent. Doing so is a material breach of these Terms and may also be a criminal offence in the participant\'s jurisdiction.',
+        '10A.5 Reporting. Either participant may report a 1:1 Session, or the other participant, at any time from inside the session itself, including while it is running. Reports go to VERGR\'s moderation team. A report may be made whether or not money changed hands, and a host who has been paid has no right to prevent, discourage, or retaliate against a report.',
+        '10A.6 Refunds. If a paid 1:1 Session does not take place, the purchase is refunded in full under Section 9.4. Where a session is ended early because of a breach of the Acceptable Use Policy by the host, VERGR may refund the participant and withhold the corresponding earnings.',
       ],
     },
     {
@@ -269,7 +280,7 @@ export const TERMS_OF_SERVICE = {
       body: [
         '12.1 Ownership. You retain all ownership rights in the Content you submit to the Service. VERGR does not claim ownership of your Content.',
         '12.2 Licence to VERGR. You grant VERGR a worldwide, non-exclusive, royalty-free, transferable, sublicensable licence to host, store, cache, copy, reproduce, modify (only for technical purposes such as transcoding, resizing, and watermarking), display, perform, publish, distribute, translate, and create derivative works of your Content for the purposes of operating, providing, promoting, and improving the Service, including its marketing materials, in any medium now known or later developed. This licence continues for as long as your Content remains on the Service; on deletion of Content by you, VERGR will take reasonable steps to remove that Content from public-facing surfaces but may retain copies in backups and logs for a reasonable period.',
-        '12.3 Promotional use. The licence in Section 12.2 includes a right for VERGR to feature public Content (live streams, clips, posts, tournament highlights) in VERGR-operated promotional channels (social media, advertising, blog posts, in-Service discovery) without further consent, subject to your privacy settings at the time of capture.',
+        '12.3 Promotional use. The licence in Section 12.2 includes a right for VERGR to feature public Content (live streams, clips, posts, highlights) in VERGR-operated promotional channels (social media, advertising, blog posts, in-Service discovery) without further consent, subject to your privacy settings at the time of capture.',
         '12.4 Representations. You represent and warrant that (a) you own or have all necessary rights to your Content; (b) your Content does not infringe any third-party intellectual-property, privacy, publicity, or other right; (c) your Content does not contain material that is defamatory, harassing, sexually explicit involving minors, or otherwise unlawful under any applicable law; and (d) your Content complies with the Acceptable Use Policy (Section 14).',
         '12.5 No obligation to host. VERGR has no obligation to host any particular Content. VERGR may, in its discretion, decline to host, remove, restrict, refuse to surface, age-gate, label, or take other action with respect to any Content for any reason consistent with these Terms and applicable law.',
         '12.6 DMCA / copyright complaints. VERGR responds to notices of alleged copyright infringement in accordance with applicable law, including the United States Digital Millennium Copyright Act ("DMCA") and equivalent legislation in other jurisdictions. To submit a notice of alleged infringement, send a written notice to ' + OPERATOR.copyrightEmail + ' that contains: (a) a physical or electronic signature of the rights-holder or authorised agent; (b) identification of the copyrighted work claimed to be infringed; (c) identification of the material that is alleged to be infringing and reasonably sufficient information for VERGR to locate it on the Service (for example, the URL); (d) your contact details (address, telephone, email); (e) a statement that you have a good-faith belief that the use is not authorised; and (f) a statement, under penalty of perjury, that the information in the notice is accurate and that you are authorised to act on behalf of the rights-holder. Counter-notices may be submitted by the User whose material was removed; VERGR will follow the counter-notice procedures provided under the DMCA. Repeat infringers will have their Accounts terminated.',
@@ -297,8 +308,8 @@ export const TERMS_OF_SERVICE = {
           'impersonate another person or misrepresent your affiliation with any person or entity;',
           'use the Service to facilitate gambling, betting, lotteries, or chance-based prize draws outside of the skill-based competitions VERGR itself organises;',
           'use the Service to launder money, finance terrorism, evade sanctions, or otherwise process the proceeds of crime;',
-          'cheat, exploit bugs, use unauthorised third-party software, scripts, bots, or automation in Tournaments or in any way that compromises competitive integrity;',
-          'collude with other participants to manipulate Tournament outcomes, including by deliberately losing matches, splitting prize pools by agreement before play, or coordinating draws;',
+          'exploit bugs, use unauthorised third-party software, scripts, bots, or automation to manipulate engagement metrics, the economy, or any other part of the Service;',
+          'organise, advertise, solicit, or settle any gambling, betting, wagering, or staking arrangement through the Service, whether between Users or with third parties;',
           'manipulate, falsify, or attempt to influence match-result reporting, including reporting false outcomes;',
           'engage in real-money trading of Coins, VP, Gems, Accounts, or in-Service items outside the in-Service mechanisms in these Terms;',
           'create or use multiple Accounts to evade restrictions, gain unfair advantages, manipulate the economy, abuse promotional offers, or evade fees;',
@@ -311,7 +322,7 @@ export const TERMS_OF_SERVICE = {
           'use automated means (scrapers, crawlers, harvesters) to extract data from the Service except in accordance with VERGR\'s API documentation and any applicable rate limits;',
           'use the Service in any way intended to harm or defraud another User.',
         ]),
-        '14.2 Enforcement. Violations of this Section 14 are material breaches of these Terms. VERGR may, in its discretion and consistent with applicable law, remove offending Content, restrict features of an Account, suspend an Account temporarily, terminate an Account permanently, void Tournament results, forfeit balances, withhold pending payouts, and refer matters to law enforcement. In appropriate cases VERGR will pursue civil and criminal remedies.',
+        '14.2 Enforcement. Violations of this Section 14 are material breaches of these Terms. VERGR may, in its discretion and consistent with applicable law, remove offending Content, restrict features of an Account, suspend an Account temporarily, terminate an Account permanently, forfeit balances, withhold pending payouts, and refer matters to law enforcement. In appropriate cases VERGR will pursue civil and criminal remedies.',
       ],
     },
     {
@@ -320,7 +331,7 @@ export const TERMS_OF_SERVICE = {
       body: [
         '15.1 Reporting. You may report Content, Accounts, or conduct that you believe violates these Terms by using the in-Service reporting tools or by writing to ' + OPERATOR.abuseEmail + '.',
         '15.2 Investigations. VERGR may investigate reports, suspected violations of these Terms, or suspected unlawful conduct, including by reviewing Content, Account records, IP addresses, device identifiers, Wallet activity, communications metadata, and other available data. We will cooperate with law enforcement and respond to lawful requests in accordance with applicable law and our Privacy Policy.',
-        '15.3 Moderation outcomes. VERGR may, without prior notice, remove or restrict Content; restrict features available to an Account; require additional verification; suspend an Account temporarily; terminate an Account permanently; void Tournament results; or take other proportionate action. Where lawful and appropriate we will notify the affected User of the action and the reason. An Account-holder who believes a moderation decision was made in error may appeal by writing to ' + OPERATOR.supportEmail + '.',
+        '15.3 Moderation outcomes. VERGR may, without prior notice, remove or restrict Content; restrict features available to an Account; require additional verification; suspend an Account temporarily; terminate an Account permanently; or take other proportionate action. Where lawful and appropriate we will notify the affected User of the action and the reason. An Account-holder who believes a moderation decision was made in error may appeal by writing to ' + OPERATOR.supportEmail + '.',
       ],
     },
     {
@@ -329,7 +340,7 @@ export const TERMS_OF_SERVICE = {
       body: [
         '16.1 Integrations. The Service integrates with third-party services including but not limited to Steam (Valve Corporation), Discord, Twitch, YouTube, Battle.net, Riot Games, Epic Games Services, Xbox Live (via OpenXBL), Didit (Identity Verification), a third-party payment processor (cryptocurrency payments and payouts), Cloudflare, Google Firebase, and Hetzner. Use of those integrations is subject to the third party\'s own terms and privacy policies, in addition to these Terms.',
         '16.2 No endorsement. References to third-party services within the Service are not endorsements. VERGR does not control and is not responsible for the conduct of third-party services or content available through them.',
-        '16.3 Disconnection. You may disconnect a linked third-party service from your Account at any time in your Account settings, subject to any consequences described in the in-Service flow (for example, losing eligibility for game-specific Tournaments that require the linked account).',
+        '16.3 Disconnection. You may disconnect a linked third-party service from your Account at any time in your Account settings, subject to any consequences described in the in-Service flow (for example, your stats from that platform no longer appearing on your profile).',
       ],
     },
     {
@@ -338,7 +349,7 @@ export const TERMS_OF_SERVICE = {
       body: [
         '17.1 Coin pack pricing. Coin packs are priced in the local currency of the payment processor at the time of purchase. The Service maintains a minimum per-Coin price floor (the "Economy Floor") that may be revised by VERGR with notice. Prices shown at checkout are inclusive of any sales tax or VAT charged by the processor.',
         '17.2 Subscriptions. Lite and Pro subscriptions are priced at the rates published in the in-Service subscription flow. Prices may be revised by VERGR with at least thirty (30) days\' notice to active subscribers, who may cancel before the change takes effect.',
-        '17.3 Platform Fees. The Platform Fee on Tips is ten percent (10%); on event spectator tickets and season passes is ten percent (10%), taken at the time of sale; on legacy Tournament prize pools (where enabled) is five percent (5%); on Coin-to-Gem conversion is between five percent (5%) and thirty percent (30%) based on the User\'s VERGR Points level; and on Gem withdrawal is two percent (2%). These percentages may be revised by VERGR with reasonable notice.',
+        '17.3 Platform Fees. The Platform Fee on Tips is ten percent (10%); on paid stream access and creator memberships is ten percent (10%), taken at the time of sale; on Coin-to-Gem conversion is between five percent (5%) and thirty percent (30%) based on the User\'s VERGR Points level; and on Gem withdrawal is two percent (2%). These percentages may be revised by VERGR with reasonable notice.',
         '17.4 Network fees. Cryptocurrency network fees on payouts are paid by the receiver, as set out in Section 8.6.',
         '17.5 Currency. Prices are quoted in euros (€) for marketing purposes; charges at checkout are levied in the currency presented by the payment processor for your region.',
       ],
@@ -369,7 +380,7 @@ export const TERMS_OF_SERVICE = {
       body: [
         '20.1 NO WARRANTIES. To the MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, VERGR AND THE VERGR PARTIES DISCLAIM ALL WARRANTIES, REPRESENTATIONS, AND CONDITIONS OF ANY KIND, whether express, implied, statutory, or otherwise, in respect of the Service, including without limitation any implied warranty or condition of merchantability, fitness for a particular purpose, satisfactory quality, title, accuracy, non-infringement, security, availability, uninterrupted operation, freedom from errors, freedom from viruses or harmful components, and any warranty or condition arising from course of dealing, course of performance, or usage of trade.',
         '20.2 NO WARRANTY OF LAWFULNESS IN YOUR JURISDICTION. Without limiting Section 20.1, VERGR MAKES NO WARRANTY OR REPRESENTATION THAT THE SERVICE, OR ANY FEATURE OF IT, IS LAWFUL IN ANY PARTICULAR JURISDICTION. The lawfulness of your use of the Service depends on the laws of your jurisdiction and your personal circumstances; YOU are responsible for determining this and complying with applicable law (see Section 4A.2).',
-        '20.3 Reliance is at your own risk. Any reliance you place on any Content, advice, recommendation, statistic, leaderboard, rating, valuation, projection, or information available through the Service is at your own risk. VERGR does not guarantee the accuracy, completeness, currency, or reliability of any User-submitted Content, Tournament odds or projections, conversion rates, prize estimates, or any other information on the Service.',
+        '20.3 Reliance is at your own risk. Any reliance you place on any Content, advice, recommendation, statistic, leaderboard, rating, valuation, projection, or information available through the Service is at your own risk. VERGR does not guarantee the accuracy, completeness, currency, or reliability of any User-submitted Content, conversion rates, earnings estimates, or any other information on the Service.',
         '20.4 Statutory rights. Nothing in these Terms excludes or limits any warranty, condition, or right that may not be excluded or limited under mandatory applicable consumer-protection law in your jurisdiction. Those rights apply to you despite these Terms, but only to the minimum extent required by law.',
       ],
     },
@@ -410,10 +421,10 @@ export const TERMS_OF_SERVICE = {
         list([
           'your access to, use of, or inability to use the Service;',
           'any Content you submit, post, transmit, upload, or make available through the Service;',
-          'your violation or alleged violation of these Terms, the Privacy Policy, the Acceptable Use Policy, the Tournament Rules, the Cookie Policy, or any other policy of VERGR;',
+          'your violation or alleged violation of these Terms, the Privacy Policy, the Acceptable Use Policy, the Cookie Policy, or any other policy of VERGR;',
           'your violation or alleged violation of any applicable law, regulation, or ordinance in any jurisdiction (including without limitation any gambling, gaming, virtual-currency, cryptocurrency, anti-money-laundering, tax, consumer-protection, or competition law);',
           'your infringement or alleged infringement of any intellectual-property, privacy, publicity, contract, or other right of any third party;',
-          'any dispute, controversy, or claim between you and any other User of the Service, including without limitation Tournament disputes, tip disputes, content disputes, and harassment claims;',
+          'any dispute, controversy, or claim between you and any other User of the Service, including without limitation payment disputes, tip disputes, content disputes, and harassment claims;',
           'any tax, duty, levy, charge, or other governmental imposition arising from your activity on the Service in any jurisdiction;',
           'any chargeback, payment dispute, or reversal initiated by you against any purchase made through the Service;',
           'any circumvention or attempted circumvention by you of the Service\'s geographic, age, identity-verification, or other access controls (including without limitation use of a VPN, proxy, or false declaration of residence);',
@@ -436,7 +447,7 @@ export const TERMS_OF_SERVICE = {
       id: 'general',
       title: '25. General',
       body: [
-        '25.1 Entire agreement. These Terms, together with the Privacy Policy, the Tournament Rules, and any other policies expressly incorporated by reference, constitute the entire agreement between you and VERGR with respect to the Service and supersede all prior agreements between you and VERGR.',
+        '25.1 Entire agreement. These Terms, together with the Privacy Policy, the Acceptable Use Policy, and any other policies expressly incorporated by reference, constitute the entire agreement between you and VERGR with respect to the Service and supersede all prior agreements between you and VERGR.',
         '25.2 No waiver. Failure by VERGR to enforce any provision of these Terms is not a waiver of that provision or any other provision.',
         '25.3 Severability. If any provision of these Terms is held by a court of competent jurisdiction to be invalid, illegal, or unenforceable, that provision will be enforced to the maximum extent permitted, and the remaining provisions will remain in full force and effect.',
         '25.4 Assignment. You may not assign or transfer these Terms, by operation of law or otherwise, without VERGR\'s prior written consent. VERGR may assign these Terms in its sole discretion, including in connection with a merger, acquisition, or sale of assets. Any purported assignment in violation of this Section 25.4 is void.',
@@ -517,15 +528,15 @@ export const PRIVACY_POLICY = {
           'Withdrawal information — destination cryptocurrency wallet address, selected network, requested amount, and metadata associated with a withdrawal request.',
           'Phone number — if you choose to add one, your phone number in international format and a one-way cryptographic hash of it (used for friend matching and referral verification).',
           'Contact matching (optional) — if you use the "find friends" feature, the phone numbers of contacts you select are hashed on your device and only those one-way hashes are sent to our servers to check for matches against registered Users. Raw contact names and numbers are never uploaded, never stored, and are discarded from memory after the match check. The feature requires that you have first saved your own phone number, and it only runs when you actively invoke it.',
-          'Content — posts, comments, messages, clips, livestream recordings, tournament submissions, profile content, support messages, reports, appeals, and other content you submit.',
+          'Content — posts, comments, messages, clips, livestream recordings, profile content, support messages, reports, appeals, and other content you submit.',
           'Communications — emails, support tickets, in-app chats with support, and the metadata associated with them.',
           'Other voluntary disclosures — any other information you choose to provide.',
         ]),
         '2.2 Information collected automatically:',
         list([
           'Device and usage information — IP address; approximate location derived from IP (country, region, city); device type, operating system, browser type and version; screen resolution; language; time zone; device identifiers and advertising identifiers where available.',
-          'Session and activity data — pages and screens visited; features used; clicks, taps, scrolls; timestamps; referring URLs; in-app events such as purchases, tournament entries, Tips, and matches played.',
-          'Gameplay and economy events — match results, tournament participation, prize distributions, Wallet movements, Tips sent and received.',
+          'Session and activity data — pages and screens visited; features used; clicks, taps, scrolls; timestamps; referring URLs; in-app events such as purchases, Tips sent and received, streams watched, and content published.',
+          'Activity and economy events — streams started and watched, content published, paid stream access purchases, Wallet movements, Tips sent and received.',
           'Cookies and similar technologies — see Section 9.',
           'Stream-quality and moderation data — bitrate, dropped frames, viewer counts, chat messages and reactions, automated-moderation outcomes.',
         ]),
@@ -552,7 +563,7 @@ export const PRIVACY_POLICY = {
           'Provision of in-Service features — performance of contract (Article 6(1)(b) GDPR).',
           'Customer support — performance of contract (Article 6(1)(b) GDPR) and legitimate interests (Article 6(1)(f) GDPR).',
           'Service improvement, analytics, debugging, and capacity planning — legitimate interests in operating and improving the Service (Article 6(1)(f) GDPR).',
-          'Security, abuse-prevention, and Tournament-integrity investigations — legitimate interests in protecting Users and the Service (Article 6(1)(f) GDPR).',
+          'Security, abuse-prevention, and platform-integrity investigations — legitimate interests in protecting Users and the Service (Article 6(1)(f) GDPR).',
           'Marketing and promotional communications — your consent (Article 6(1)(a) GDPR), withdrawable at any time, or legitimate interests where permitted by applicable law (e.g. soft-opt-in for existing customers).',
           'Legal and regulatory compliance — legal obligations (Article 6(1)(c) GDPR) and, where applicable, the establishment, exercise, or defence of legal claims (Article 9(2)(f) GDPR where special-category data is involved).',
         ]),
@@ -568,8 +579,8 @@ export const PRIVACY_POLICY = {
           'create and manage your Account;',
           'verify your age and identity (via Didit) and screen for sanctions and watch-list matches;',
           'process Coin purchases, subscription payments, and Gem withdrawals through our processors;',
-          'provide the Service, including hosting profiles, posts, comments, messages, livestreams, clips, squads, tournaments, and the Wallet;',
-          'enforce eligibility: a self-declared age of at least 18 and a non-Restricted Jurisdiction at signup, and Identity Verification through Didit before paid Tournament entry and before any Gem withdrawal;',
+          'provide the Service, including hosting profiles, posts, comments, messages, livestreams, clips, squads, and the Wallet;',
+          'enforce eligibility: a self-declared age of at least 18 and a non-Restricted Jurisdiction at signup, and Identity Verification through Didit before any Gem withdrawal;',
           'detect, prevent, and respond to fraud, cheating, collusion, account-takeover, harassment, abuse, and other violations of the Terms of Service;',
           'communicate with you about the Service, including transactional notices, security alerts, dispute-resolution updates, and material changes to these documents;',
           'send you marketing communications where permitted by law and where you have not opted out;',
@@ -584,11 +595,11 @@ export const PRIVACY_POLICY = {
       title: '5. How We Share Personal Information',
       body: [
         'We do not sell personal information. We share personal information only as set out below.',
-        '5.1 Other Users. Public profile information, public posts, public livestreams, tournament participation, leaderboards, and similar content are visible to other Users by design. Direct messages are visible to their intended recipients. Wallet balances, withdrawal histories, identity-verification details, and contact information (other than the username) are private.',
+        '5.1 Other Users. Public profile information, public posts, public livestreams, leaderboards, and similar content are visible to other Users by design. Direct messages are visible to their intended recipients. Wallet balances, withdrawal histories, identity-verification details, and contact information (other than the username) are private.',
         '5.2 Processors and service providers. We share personal information with processors and service providers who help us operate the Service, including those listed in Section 6, on the basis of data-processing agreements that limit their use to providing the relevant service to us.',
         '5.3 Legal disclosures. We may disclose personal information where we are required to do so by law, court order, regulator, or government authority of competent jurisdiction; where disclosure is necessary to protect VERGR, Users, or others from imminent harm; or to investigate or prosecute fraud or other unlawful conduct.',
         '5.4 Successor in interest. In the event of a merger, acquisition, sale of assets, restructuring, or insolvency, personal information may be transferred to a successor or acquirer. Where the GDPR or UK GDPR applies, you will be notified of any such transfer and any change in controller.',
-        '5.5 Aggregate and de-identified data. We may share information that has been aggregated or de-identified such that it can no longer reasonably be used to identify you (for example, "X percent of Users entered at least one Tournament last quarter").',
+        '5.5 Aggregate and de-identified data. We may share information that has been aggregated or de-identified such that it can no longer reasonably be used to identify you (for example, "X percent of Users watched at least one live stream last quarter").',
       ],
     },
     {
@@ -638,7 +649,7 @@ export const PRIVACY_POLICY = {
           'Account profile data — for the lifetime of the Account. After Account closure, profile data is removed from public-facing surfaces within thirty (30) days; residual copies may persist in backups and logs for a reasonable period thereafter (typically up to ninety (90) days).',
           'Identity Verification records: for as long as the Account is open and for a minimum of five (5) years after closure (to satisfy anti-money-laundering record-keeping obligations). Didit retains the raw documents under its own policy; we retain only the result, the verification reference, and limited derived attributes.',
           'Financial records — Wallet movements, purchases, payouts, and tax-relevant records are retained for a minimum of seven (7) years from the date of the transaction, to satisfy tax and accounting obligations.',
-          'Tournament records — match results, brackets, and prize distributions are retained for at least five (5) years to support dispute resolution and integrity investigations.',
+          'Transaction records — purchases, Tips, paid stream access, conversions, and withdrawals are retained for at least five (5) years to support dispute resolution, accounting, and integrity investigations.',
           'Support communications — for as long as the Account is open and for a reasonable period thereafter (typically two (2) years).',
           'Live-stream recordings — public stream recordings are retained for as long as the recording remains published; on deletion, residual copies may persist in backups for a reasonable period. Recordings retained for moderation or evidentiary purposes may be held longer.',
           'Server, application, and security logs — typically thirty (30) to ninety (90) days; longer for logs implicated in security or fraud investigations.',
@@ -697,8 +708,8 @@ export const PRIVACY_POLICY = {
       id: 'automated-decisions',
       title: '12. Automated Decision-Making',
       body: [
-        '12.1 We use automated systems to (a) detect suspicious activity such as multi-accounting, fraud, cheating, and manipulation of tournament outcomes; (b) screen for sanctions matches; (c) moderate Content (text, images, livestreams); (d) limit access by age, jurisdiction, and Identity Verification status; and (e) rank discovery feeds.',
-        '12.2 Automated decisions that significantly affect you — such as suspension of your Account, blocking a payout, or excluding you from a Tournament — are reviewed by a human moderator before taking effect, except where immediate automated action is necessary to prevent imminent harm or where applicable law permits.',
+        '12.1 We use automated systems to (a) detect suspicious activity such as multi-accounting, fraud, payment abuse, and manipulation of engagement metrics; (b) screen for sanctions matches; (c) moderate Content (text, images, livestreams); (d) limit access by age, jurisdiction, and Identity Verification status; and (e) rank discovery feeds.',
+        '12.2 Automated decisions that significantly affect you — such as suspension of your Account, blocking a payout, or removing your Content — are reviewed by a human moderator before taking effect, except where immediate automated action is necessary to prevent imminent harm or where applicable law permits.',
         '12.3 You may request human review of any automated decision that significantly affects you by writing to ' + OPERATOR.supportEmail + '.',
       ],
     },
@@ -880,13 +891,33 @@ export const ACCEPTABLE_USE_POLICY = {
       ],
     },
     {
-      id: 'content-rules',
-      title: '2. Content Rules',
+      id: 'universal-prohibitions',
+      title: '2. Universal Prohibitions (everywhere on Vergr, no exceptions)',
       body: [
-        'You must not post, upload, livestream, or otherwise transmit Content that:',
+        'The following are prohibited on every part of the Service, without exception. They apply to public content, to live broadcasts, to private messages, to group and squad chats, to 1:1 Sessions, and to anything sold behind a price. There is no surface of Vergr on which any of this is permitted, and paying or being paid changes nothing about it. Violations are removed on sight, end accounts, and where the conduct is criminal are referred to law enforcement.',
         list([
-          'is unlawful, fraudulent, threatening, defamatory, libellous, harassing, hateful, obscene, sexually explicit involving minors, sexually-violent, or otherwise objectionable;',
-          'depicts or promotes violence, self-harm, terrorism, or human trafficking;',
+          'Any sexual content involving, depicting, or sexualising a person under 18, in any format, real, drawn, or generated. This is reported to NCMEC as described in our Child Safety Standards.',
+          'Intimate or sexual imagery of any person who has not given their consent for it to be shown, shared, or sold, including imagery obtained by deception, hacking, or from a former partner ("revenge porn"), and including content the sender did not create and has no right to distribute.',
+          'Recording, screen-capturing, or retransmitting another person in a private message, group, squad chat, or 1:1 Session without their express consent.',
+          'Offering, requesting, arranging, or paying for in-person sexual services, prostitution, escorting, or any form of human trafficking or sexual exploitation.',
+          'Coercing, blackmailing, or extorting another person, including threatening to publish someone\'s images or messages ("sextortion").',
+          'Content that depicts or promotes real-world violence, self-harm, terrorism, or cruelty to people or animals.',
+          'Content that is unlawful, fraudulent, or that infringes another person\'s intellectual-property, privacy, or publicity rights.',
+          'Disclosing another person\'s private personal information ("doxxing") without their consent.',
+          'Malicious code, phishing, scams, and fraud.',
+        ]),
+        'If you encounter any of the above, report it. Every surface of the Service, including private conversations and 1:1 Sessions, carries a report control, and a report can be made whether or not you paid for the content or were paid for it.',
+      ],
+    },
+    {
+      id: 'broadcast-content-standards',
+      title: '3. Broadcast Content Standards (public and paid broadcasts)',
+      body: [
+        'These standards apply to Content you publish to an audience: posts, comments, clips, Shorts, profile content, squad pages, public live streams, and Paid Streams. They apply to a Paid Stream in the same way they apply to a free one, because both are broadcasts; charging for entry does not change the standard.',
+        'On these surfaces you must not post, upload, livestream, or otherwise transmit Content that:',
+        list([
+          'contains nudity or sexually explicit material, or is primarily sexual in nature;',
+          'is unlawful, fraudulent, threatening, defamatory, libellous, harassing, hateful, obscene, sexually-violent, or otherwise objectionable;',
           'shows graphic real-world violence — actual gore, mutilation, killing, execution, torture, or serious injury filmed or photographed in real life — outside a clearly newsworthy context. Violence in video games, game footage, trailers and game art is expressly allowed and is not covered by this rule;',
           'depicts real-world cruelty to people or animals;',
           'infringes any third party\'s intellectual-property, privacy, or publicity right;',
@@ -899,13 +930,13 @@ export const ACCEPTABLE_USE_POLICY = {
     },
     {
       id: 'conduct-rules',
-      title: '3. Conduct Rules',
+      title: '4. Conduct Rules',
       body: [
         'You must not:',
         list([
           'harass, bully, intimidate, or threaten any User, moderator, host, or VERGR employee;',
           'impersonate another person or misrepresent your affiliation with any person, organisation, or entity;',
-          'cheat, exploit, or collude in Tournaments, or otherwise compromise competitive integrity;',
+          'organise, advertise, solicit, or settle gambling, betting, wagering, or any staking arrangement, anywhere on the Service, including in live stream chat, direct messages, group chats, and squad chats;',
           'create or use multiple Accounts to evade restrictions, manipulate the economy, abuse promotions, or evade fees;',
           'access another User\'s Account without authorisation, share credentials, or sell or rent your Account;',
           'engage in real-money trading of Coins, VP, Gems, items, or Accounts outside the in-Service mechanisms;',
@@ -918,7 +949,7 @@ export const ACCEPTABLE_USE_POLICY = {
     },
     {
       id: 'technical-rules',
-      title: '4. Technical Rules',
+      title: '5. Technical Rules',
       body: [
         'You must not:',
         list([
@@ -933,16 +964,26 @@ export const ACCEPTABLE_USE_POLICY = {
     },
     {
       id: 'enforcement',
-      title: '5. Enforcement',
+      title: '6. Enforcement',
       body: [
-        'Violations of this AUP are material breaches of the Terms of Service. VERGR may, in its discretion and consistent with applicable law, remove offending Content, restrict features of an Account, suspend an Account temporarily, terminate an Account permanently, void Tournament results, forfeit balances, withhold pending payouts, and refer matters to law enforcement. In appropriate cases VERGR will pursue civil and criminal remedies.',
+        'Violations of this AUP are material breaches of the Terms of Service. VERGR may, in its discretion and consistent with applicable law, remove offending Content, restrict features of an Account, suspend an Account temporarily, terminate an Account permanently, forfeit balances, withhold pending payouts, and refer matters to law enforcement. In appropriate cases VERGR will pursue civil and criminal remedies.',
       ],
     },
     {
       id: 'reporting',
-      title: '6. Reporting Violations',
+      title: '7. Reporting Violations',
       body: [
-        'To report a violation of this AUP, use the in-Service reporting tools or write to ' + OPERATOR.abuseEmail + '.',
+        'Every surface of the Service carries a report control, including the ones nothing scans automatically. You can report a post, a comment, a profile, a squad, a live stream, a direct message conversation, a group or squad chat, an individual piece of purchased media, and a 1:1 Session. In a live stream or a 1:1 Session the control is available while the session is running, not only afterwards.',
+        'A report can be made whether or not money changed hands. Being paid does not give anyone the right to prevent, discourage, or retaliate against a report, and attempting to do so is itself a violation of this policy.',
+        'Reports are confidential. The person reported is not told who filed the report.',
+        'Response targets. We aim to act within the following times of a report reaching us:',
+        list([
+          'Child sexual abuse or exploitation: reviewed immediately on receipt, and acted on within 24 hours. Confirmed material is reported to NCMEC as described in our Child Safety Standards.',
+          'Non-consensual intimate imagery, recording someone without consent, coercion or sextortion: within 24 hours.',
+          'Everything else: within 72 hours.',
+        ]),
+        'Where content is reported under one of the 24-hour categories, we may restrict access to it while the review is in progress rather than after it concludes.',
+        'You can also write to ' + OPERATOR.abuseEmail + '. For child-safety matters specifically, see our Child Safety Standards, which set out a dedicated route and our legal reporting obligations.',
       ],
     },
   ],
@@ -1024,7 +1065,7 @@ export const CHILD_SAFETY_STANDARDS = {
       body: [
         '1.1 Minimum age. You must be at least 18 years old, or the higher age of majority in your jurisdiction, to create a VERGR account. This is stated in Section 4.1 of our Terms of Service and is a condition of use, not a recommendation.',
         '1.2 Age declaration at signup. Every user must declare an age of at least 18 when registering. Accounts are also age-rated 18+ on Google Play, and we do not knowingly collect information from anyone under 18.',
-        '1.3 Verified identity for financial features. Entering a paid tournament or withdrawing funds requires identity verification through our verification provider, which includes a government-issued photo ID and a liveness-checked selfie screened against age criteria.',
+        '1.3 Verified identity for financial features. Withdrawing funds requires identity verification through our verification provider, which includes a government-issued photo ID and a liveness-checked selfie screened against age criteria.',
         '1.4 Enforcement. If we become aware that an account belongs to a person under 18, the account is closed and the account holder\'s data is deleted in accordance with our Privacy Policy.',
       ],
     },
@@ -1114,11 +1155,104 @@ export const CHILD_SAFETY_STANDARDS = {
 // of these via its `type` prop.
 // ─────────────────────────────────────────────────────────────────────
 
+// ─────────────────────────────────────────────────────────────────────
+// Refund and Cancellation Policy — standalone page.
+//
+// This restates Section 9 of the Terms as a dedicated, linkable document.
+// Payment providers expect a refund policy reachable from the footer and
+// from checkout without reading the full Terms. Keep the two in sync: if
+// you change a window or a rule here, change Section 9 as well.
+// ─────────────────────────────────────────────────────────────────────
+export const REFUND_POLICY = {
+  label: 'Refund and Cancellation Policy',
+  updated: `Last updated: ${LEGAL_UPDATED}`,
+  version: LEGAL_VERSION,
+  intro: [
+    'This policy explains when a purchase on VERGR can be refunded, how to cancel a subscription, and how to contact us about a charge. It restates Section 9 of our Terms of Service as a standalone page.',
+    `If anything below is unclear, or you believe you have been charged in error, write to ${OPERATOR.supportEmail} before contacting your bank. We answer refund enquiries within five (5) business days.`,
+  ],
+  sections: [
+    {
+      id: 'what-you-buy',
+      title: '1. What you are buying',
+      body: [
+        'VERGR sells two things directly to members: Coins, and paid subscriptions (Lite and Pro).',
+        'Coins are in-app currency. They are spendable only inside VERGR, on tips to creators, creator memberships, access to paid live streams, unlocking paid posts, and post boosts. Coins are not an investment, are not tradeable between members for money, and cannot be cashed out by the member who bought them.',
+        'Creator earnings are a separate matter. Where a creator withdraws earnings, that is a payout, not a purchase, and this policy does not apply to it.',
+      ],
+    },
+    {
+      id: 'general-rule',
+      title: '2. General rule',
+      body: [
+        'Coins are delivered to your Wallet immediately on purchase and are consumed inside the Service. For that reason, Coin purchases and subscription payments are not refundable once the Coins have been credited or the subscription period has begun, except where required by applicable consumer-protection law or as expressly stated in this policy.',
+        'Coins that you have already spent cannot be refunded. Once a tip has been sent to a creator, a membership has been joined, or a paid stream or post has been unlocked, that Coin spend is final.',
+      ],
+    },
+    {
+      id: 'cooling-off',
+      title: '3. EU and UK cooling-off',
+      body: [
+        'Where you are a consumer in the European Union, the European Economic Area, or the United Kingdom, you would ordinarily have a fourteen (14) day right of withdrawal under Directive 2011/83/EU or its UK equivalent.',
+        'By completing a purchase of Coins or activating a subscription, you request that performance begin immediately, and you accept that your right of withdrawal is lost once the Coins are delivered or the subscription period begins. This waiver is presented to you at checkout as the legislation requires.',
+      ],
+    },
+    {
+      id: 'erroneous-charges',
+      title: '4. Charges made in error',
+      body: [
+        `If you are charged in error — a duplicate charge, a charge credited to the wrong account, or a charge made by someone using your payment method without permission — request a refund within thirty (30) days of the charge by writing to ${OPERATOR.supportEmail}.`,
+        'Tell us the date, the amount, and the last four digits of the payment method. We will investigate and, where the charge is confirmed as erroneous, refund it to the original payment method.',
+      ],
+    },
+    {
+      id: 'subscriptions',
+      title: '5. Cancelling a subscription',
+      body: [
+        'You can cancel a paid subscription at any time from Settings, under Subscription. No email or support ticket is required.',
+        'Cancellation takes effect at the end of the current billing period. You keep your subscription benefits until that date, and you are not billed again. Partial refunds are not issued for unused subscription time.',
+        'Coins and VP already granted as part of a subscription month remain in your Wallet after cancellation.',
+      ],
+    },
+    {
+      id: 'we-cancel',
+      title: '6. If we cancel something you paid for',
+      body: [
+        'If a paid live stream or ticketed event is cancelled before it starts, everyone who paid for access is refunded in full, in Coins, to their Wallet.',
+        'If a creator membership is ended by the creator mid-period, the remainder of that period is refunded to the member in Coins.',
+      ],
+    },
+    {
+      id: 'processors',
+      title: '7. Payment providers',
+      body: [
+        'Where a purchase is processed by a third-party payment provider, that provider\'s terms may also affect refund eligibility. We are not responsible for a decision made by the provider, but we will cooperate with any genuine refund request.',
+      ],
+    },
+    {
+      id: 'chargebacks',
+      title: '8. Chargebacks',
+      body: [
+        'Please contact us before disputing a charge with your bank. Most disputes are a misunderstanding we can resolve quickly.',
+        'A chargeback raised without contacting us first has consequences: the corresponding Coins are reversed, any amount already spent from those Coins is debited, the account may be suspended or terminated, and chargeback fees may be applied.',
+      ],
+    },
+    {
+      id: 'contact',
+      title: '9. Contact',
+      body: [
+        `Refund and billing enquiries: ${OPERATOR.supportEmail}.`,
+        `${OPERATOR.legalName}, trading as ${OPERATOR.tradingAs}. ${OPERATOR.registeredAddress}.`,
+      ],
+    },
+  ],
+};
+
 export const LEGAL_DOCUMENTS = {
   terms:            TERMS_OF_SERVICE,
+  refunds:          REFUND_POLICY,
   child_safety:     CHILD_SAFETY_STANDARDS,
   privacy:          PRIVACY_POLICY,
-  tournament_rules: TOURNAMENT_RULES,
   acceptable_use:   ACCEPTABLE_USE_POLICY,
   cookies:          COOKIE_POLICY,
 };

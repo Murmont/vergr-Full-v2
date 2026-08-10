@@ -506,7 +506,7 @@ export function ShortsBackFab({ onClick }) {
 // ─── Live stream slide (interleaved into the Shorts/clips feed) ───
 export function LiveSlide({ stream, navigate }) {
   const isTwitch = stream.source === 'twitch' && !!stream.twitchChannel;
-  const playbackUrl = stream.compositeHlsUrl || (stream.streamKey ? getPlaybackUrl(stream.streamKey) : null);
+  const playbackUrl = stream.compositeHlsUrl || stream.hlsUrl || null;
   const viewers = stream.viewerCount || 0;
   const enter = () => navigate(`/watch/${stream.id}`);
 

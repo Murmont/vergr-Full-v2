@@ -27,10 +27,10 @@ export default {
       h2: "Finish setting up"
     },
     {
-      p: "During onboarding you can pick a few interests so your feed and recommendations start off useful, and follow some creators and squads. You can also link your gaming accounts, which makes tournaments and matching smoother. None of this locks you in, you can change it all later from your profile and settings."
+      p: "During onboarding you can pick a few interests so your feed and recommendations start off useful, and follow some creators and squads. You can also link your gaming accounts, which makes your recommendations sharper. None of this locks you in, you can change it all later from your profile and settings."
     },
     {
-      note: "Creating an account, posting, watching, and joining free tournaments are all free. You only pay if you buy Coins, enter a paid tournament, or subscribe to a plan."
+      note: "Creating an account, posting, watching, and streaming are all free. You only pay if you buy Coins, buy access to a paid stream, or subscribe to a plan."
     },
     {
       cta: [

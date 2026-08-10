@@ -31,11 +31,14 @@ import Icon from '../../components/Icon';
 import UserAvatar from '../../components/UserAvatar';
 import VanguardPresence from '../../components/VanguardPresence';
 import { getPlaybackUrl } from '../../utils/streamConfig';
+import { getContentAccess } from '../../firebase/firestore';
+import StreamPaywall from '../../components/monetization/StreamPaywall';
 import { captureStreamInterest } from '../../utils/feedRank';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { followUser, unfollowUser, isFollowing, sendCoins, getEventTicketStatus, getMembershipTiers, reportStream } from '../../firebase/firestore';
 import SubscribeSheet from '../../components/membership/SubscribeSheet';
 import ReportSheet from '../../components/ReportSheet';
+import ReportPrivate from '../../components/safety/ReportPrivate';
 import { collection as fsCollection, query as fsQuery, orderBy as fsOrderBy, limit as fsLimit } from 'firebase/firestore';
 import useLiveClip from '../../hooks/useLiveClip';
 import JoinAnnouncer from '../../components/streams/JoinAnnouncer';
@@ -433,8 +436,41 @@ function DesktopViewerStreamScreen() {
   // (vergr-cohost renders 1-4 publishers into one HLS stream). Falls back to
   // this stream's own solo HLS. Viewer always fetches ONE feed — 1× bandwidth
   // regardless of how many streamers are visible on screen.
-  const playbackUrl = streamDoc?.compositeHlsUrl
-    || (streamDoc?.streamKey ? getPlaybackUrl(streamDoc.streamKey) : null);
+  //
+  // PAID STREAMS take a different route entirely. `createStreamSession` writes
+  // no `hlsUrl` for them and puts both playback URLs in
+  // `streams/{id}/private/playback`, which rules deny to every client. The only
+  // way to a URL is `getAccess` proving this viewer bought entry, so a paid
+  // stream must never fall through to the streamKey reconstruction below.
+  const isPaidStream = streamDoc?.access?.mode === 'paid';
+  // Terms 10A. Server-stamped and server-capped to one viewer, so this is a
+  // real category rather than a label the host chose.
+  const isOneToOne = streamDoc?.sessionType === 'one_to_one';
+  const paidPrice = Math.floor(streamDoc?.access?.priceCoins || 0);
+  const [paidAccess, setPaidAccess] = useState(null); // null = still checking
+
+  useEffect(() => {
+    if (!isPaidStream || !streamId) { setPaidAccess(null); return undefined; }
+    let alive = true;
+    (async () => {
+      try {
+        const res = await getContentAccess('stream', streamId);
+        if (alive) setPaidAccess(res || { hasAccess: false });
+      } catch {
+        // Fail CLOSED. A failed access check is not a reason to hand over a
+        // stream someone is charging for.
+        if (alive) setPaidAccess({ hasAccess: false });
+      }
+    })();
+    return () => { alive = false; };
+  }, [isPaidStream, streamId]);
+
+  const playbackUrl = isPaidStream
+    ? (paidAccess?.hasAccess ? (paidAccess.hlsUrl || paidAccess.lowLatencyHlsUrl || null) : null)
+    // A free stream carries its own hlsUrl on the document. The old fallback
+    // rebuilt the URL from streamKey, which is why the key had to be public in
+    // the first place; it is gone now, so this reads what the server wrote.
+    : (streamDoc?.compositeHlsUrl || streamDoc?.hlsUrl || null);
   const isTwitchMirror = streamDoc?.source === 'twitch' && !!streamDoc?.twitchChannel;
   const hasVideo = !!playbackUrl || isTwitchMirror;
   // Source quality label (single-rendition — the viewer receives the source).
@@ -675,7 +711,15 @@ function DesktopViewerStreamScreen() {
         color: C.text, fontFamily: '"Inter", system-ui, sans-serif',
       }}>
         <div style={{ flex: 1, minHeight: 0 }}>
-          {playbackUrl ? (
+          {isPaidStream && !paidAccess?.hasAccess ? (
+            <StreamPaywall
+              streamId={streamId}
+              priceCoins={paidPrice}
+              title={streamDoc?.title}
+              hostName={streamDoc?.hostName || streamDoc?.hostUsername}
+              onUnlocked={() => getContentAccess('stream', streamId).then(setPaidAccess).catch(() => {})}
+            />
+          ) : playbackUrl ? (
             <HlsPlayerWithMeta
               src={playbackUrl}
               controls
@@ -748,7 +792,15 @@ function DesktopViewerStreamScreen() {
             border: `1px solid ${C.border}`, borderRadius: 12, overflow: 'hidden',
             aspectRatio: '16/9',
           }}>
-            {isTwitchMirror ? (
+            {isPaidStream && !paidAccess?.hasAccess ? (
+              <StreamPaywall
+                streamId={streamId}
+                priceCoins={paidPrice}
+                title={streamDoc?.title}
+                hostName={streamDoc?.hostName || streamDoc?.hostUsername}
+                onUnlocked={() => getContentAccess('stream', streamId).then(setPaidAccess).catch(() => {})}
+              />
+            ) : isTwitchMirror ? (
               <TwitchMirrorPlayer username={streamDoc.twitchChannel} autoplay fill />
             ) : playbackUrl ? (
               <HlsPlayerWithMeta
@@ -765,6 +817,28 @@ function DesktopViewerStreamScreen() {
                 alignItems: 'center', justifyContent: 'center', color: C.textDim, fontSize: 13 }}>
                 Waiting for stream…
               </div>
+            )}
+            {/* Terms 10A.5: reportable from INSIDE the session, while it is
+                running. Pinned to the player rather than tucked into a panel,
+                because in a private room this control is the entire escalation
+                path and a viewer must not have to go looking for it. */}
+            {isOneToOne && (
+              <button
+                onClick={() => setShowReport(true)}
+                title="Report this session"
+                style={{
+                  position: 'absolute', top: 10, right: 10, zIndex: 6,
+                  display: 'flex', alignItems: 'center', gap: 5,
+                  padding: '6px 10px', borderRadius: 999,
+                  background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(6px)',
+                  border: '1px solid rgba(255,255,255,0.16)',
+                  color: 'rgba(255,255,255,0.85)', fontSize: 11.5, fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: 14 }}>flag</span>
+                Report
+              </button>
             )}
             {stalled && streamDoc.status === 'live' && <ReconnectingOverlay />}
             <StreamLoadingCover
@@ -978,13 +1052,29 @@ function DesktopViewerStreamScreen() {
           tipCatalog={hostInfo?.tipCatalog}
         />
       )}
-      <ReportSheet open={showReport} title="Report Stream" onClose={() => setShowReport(false)}
-        onSubmit={(reason) => {
-          setShowReport(false);
-          reportStream(currentUser.uid, streamId, reason)
-            .then(() => showToast('Report submitted — our moderators will review it', 'success'))
-            .catch(() => showToast('Could not submit report', 'error'));
-        }} />
+      {/* A 1:1 is a private room that nothing scans, so its report control uses
+          the universal-prohibition reason set (a minor involved, non-consensual
+          imagery, recording without consent, coercion) rather than the generic
+          public-stream one. Terms 10A.5: reportable whether or not it was paid,
+          and the host cannot prevent it. */}
+      {isOneToOne ? (
+        <ReportPrivate
+          open={showReport}
+          onClose={() => setShowReport(false)}
+          targetType="stream"
+          targetId={streamId}
+          context={{ surface: 'one_to_one_session', streamId, paid: isPaidStream }}
+          title="Report this session"
+        />
+      ) : (
+        <ReportSheet open={showReport} title="Report Stream" onClose={() => setShowReport(false)}
+          onSubmit={(reason) => {
+            setShowReport(false);
+            reportStream(currentUser.uid, streamId, reason)
+              .then(() => showToast('Report submitted — our moderators will review it', 'success'))
+              .catch(() => showToast('Could not submit report', 'error'));
+          }} />
+      )}
       {showSubscribe && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 220, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
           onClick={() => setShowSubscribe(false)}>

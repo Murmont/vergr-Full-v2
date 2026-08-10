@@ -20,7 +20,7 @@ export default {
       h2: "Why not the App Store?"
     },
     {
-      p: "VERGR runs real-money features: tournaments with cash prizes, a coin economy, and cash-outs. App store rules force purchases through the store's own payment system with commissions of up to 30%, which would make Coins and prizes meaningfully worse for you. Distributing directly keeps the full feature set and the full value of your money."
+      p: "VERGR runs real-money features: a coin economy, creator earnings, and cash-outs. App store rules force purchases through the store's own payment system with commissions of up to 30%, which would make Coins and prizes meaningfully worse for you. Distributing directly keeps the full feature set and the full value of your money."
     },
     {
       note: "The home-screen app is always up to date automatically, there is nothing to update or reinstall."

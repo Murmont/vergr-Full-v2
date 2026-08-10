@@ -47,7 +47,7 @@ export default {
       p: "Clips do not expire, on any plan. Anything you or your viewers clipped while you were live becomes a permanent post on your profile and in the clips feed, long after a replay window has closed. If a moment matters, clip it while it happens."
     },
     {
-      note: "Tournament match streams are archived separately, on every plan, for result verification and dispute review. That copy is for fairness, not a public replay."
+      note: "Streams reported for review are retained separately while moderation looks at them, on every plan. That copy is for safety review, not a public replay."
     },
     {
       cta: [
