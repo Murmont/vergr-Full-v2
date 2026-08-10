@@ -1,31 +1,273 @@
 {
   "hosting": {
     "public": "dist",
+    "predeploy": [
+      "node scripts/guard-hosting-deploy.mjs"
+    ],
     "ignore": [
       "firebase.json",
       "**/.*",
       "**/node_modules/**"
     ],
+    "redirects": [
+      {
+        "source": "/store",
+        "destination": "/platform/store",
+        "type": 301
+      },
+      {
+        "source": "/download",
+        "destination": "/platform/download",
+        "type": 301
+      },
+      {
+        "source": "/help",
+        "destination": "/platform/help",
+        "type": 301
+      },
+      {
+        "source": "/privacy",
+        "destination": "/platform/privacy",
+        "type": 301
+      },
+      {
+        "source": "/terms",
+        "destination": "/platform/terms",
+        "type": 301
+      },
+      {
+        "source": "/acceptable-use",
+        "destination": "/platform/acceptable-use",
+        "type": 301
+      },
+      {
+        "source": "/cookies",
+        "destination": "/platform/cookies",
+        "type": 301
+      },
+      {
+        "source": "/about",
+        "destination": "/platform/about",
+        "type": 301
+      },
+      {
+        "source": "/careers",
+        "destination": "/platform/careers",
+        "type": 301
+      },
+      {
+        "source": "/contact",
+        "destination": "/platform/contact",
+        "type": 301
+      },
+      {
+        "source": "/code-of-conduct",
+        "destination": "/platform/code-of-conduct",
+        "type": 301
+      },
+      {
+        "source": "/forums",
+        "destination": "/platform/forums",
+        "type": 301
+      },
+      {
+        "source": "/streamer",
+        "destination": "/platform/streamer",
+        "type": 301
+      },
+      {
+        "source": "/monetization",
+        "destination": "/platform/monetization",
+        "type": 301
+      },
+      {
+        "source": "/studio-tools",
+        "destination": "/platform/studio-tools",
+        "type": 301
+      },
+      {
+        "source": "/partners",
+        "destination": "/platform/partners",
+        "type": 301
+      },
+      {
+        "source": "/learn/tournament-rules",
+        "destination": "/platform/learn/tournament-rules",
+        "type": 301
+      },
+      {
+        "source": "/learn/live",
+        "destination": "/platform/learn/live",
+        "type": 301
+      },
+      {
+        "source": "/learn/tournaments",
+        "destination": "/platform/learn/tournaments",
+        "type": 301
+      },
+      {
+        "source": "/learn/squads",
+        "destination": "/platform/learn/squads",
+        "type": 301
+      },
+      {
+        "source": "/learn/clips",
+        "destination": "/platform/learn/clips",
+        "type": 301
+      },
+      {
+        "source": "/learn/coins",
+        "destination": "/platform/learn/coins",
+        "type": 301
+      },
+      {
+        "source": "/platform/play",
+        "destination": "/platform/make-money-gaming",
+        "type": 301
+      }
+    ],
     "rewrites": [
       {
         "source": "/share/post/**",
-        "function": { "functionId": "shareLink", "region": "europe-west1" }
+        "function": {
+          "functionId": "shareLink",
+          "region": "europe-west1"
+        }
       },
       {
         "source": "/share/clip/**",
-        "function": { "functionId": "shareLink", "region": "europe-west1" }
+        "function": {
+          "functionId": "shareLink",
+          "region": "europe-west1"
+        }
+      },
+      {
+        "source": "/share/stream/**",
+        "function": {
+          "functionId": "shareLink",
+          "region": "europe-west1"
+        }
+      },
+      {
+        "source": "/share/live/**",
+        "function": {
+          "functionId": "shareLink",
+          "region": "europe-west1"
+        }
       },
       {
         "source": "/media/**",
-        "function": { "functionId": "serveMedia", "region": "europe-west1" }
+        "function": {
+          "functionId": "serveMedia",
+          "region": "europe-west1"
+        }
+      },
+      {
+        "source": "/post/**",
+        "function": {
+          "functionId": "ugcRenderer",
+          "region": "europe-west1"
+        }
+      },
+      {
+        "source": "/clip/**",
+        "function": {
+          "functionId": "ugcRenderer",
+          "region": "europe-west1"
+        }
+      },
+      {
+        "source": "/user/**",
+        "function": {
+          "functionId": "ugcRenderer",
+          "region": "europe-west1"
+        }
+      },
+      {
+        "source": "/u/**",
+        "function": {
+          "functionId": "ugcRenderer",
+          "region": "europe-west1"
+        }
+      },
+      {
+        "source": "/watch/**",
+        "function": {
+          "functionId": "ugcRenderer",
+          "region": "europe-west1"
+        }
+      },
+      {
+        "source": "/sitemap-ugc.xml",
+        "function": {
+          "functionId": "ugcRenderer",
+          "region": "europe-west1"
+        }
+      },
+      {
+        "source": "/sitemap-ugc-*.xml",
+        "function": {
+          "functionId": "ugcRenderer",
+          "region": "europe-west1"
+        }
+      },
+      {
+        "source": "/l/**",
+        "function": {
+          "functionId": "vlinkStorefront",
+          "region": "europe-west1"
+        }
+      },
+      {
+        "source": "/vlink",
+        "function": {
+          "functionId": "vlinkApp",
+          "region": "europe-west1"
+        }
+      },
+      {
+        "source": "/vlink/**",
+        "function": {
+          "functionId": "vlinkApp",
+          "region": "europe-west1"
+        }
+      },
+      {
+        "source": "/shopify/webhooks",
+        "function": {
+          "functionId": "shopifyApp",
+          "region": "europe-west1"
+        }
+      },
+      {
+        "comment": "EVERY other /shopify/* path, not just webhooks. Only /shopify/webhooks was rewritten here, so /shopify, /shopify/callback, /shopify/plan-selected and the rest fell through to the `**` catch-all below and served VERGR'S SPA — which sends an unknown path to /platform, the coin-selling landing page. Verified live before this was added: GET https://vergr.app/shopify returned 200 with the Vergr shell. CLAUDE.md's claim that the legacy /shopify routes still answered was false, and this is what made it true. shopifyApp strips the /shopify prefix and routes internally, so an unknown path gets ITS 404 instead of Vergr's marketing site. Must stay AFTER the webhooks rule: Hosting takes the first match.",
+        "source": "/shopify/**",
+        "function": {
+          "functionId": "shopifyApp",
+          "region": "europe-west1"
+        }
+      },
+      {
+        "comment": "The bare /shopify entry point. `/shopify/**` does not match a path with no trailing segment.",
+        "source": "/shopify",
+        "function": {
+          "functionId": "shopifyApp",
+          "region": "europe-west1"
+        }
       },
       {
         "source": "/auth/steam/callback",
-        "function": { "functionId": "steamOpenIdCallback", "region": "europe-west1" }
+        "function": {
+          "functionId": "steamOpenIdCallback",
+          "region": "europe-west1"
+        }
       },
       {
         "source": "/auth/:platform/callback",
-        "function": { "functionId": "oauthCallback", "region": "europe-west1" }
+        "function": {
+          "functionId": "oauthCallback",
+          "region": "europe-west1"
+        }
       },
       {
         "source": "**",
@@ -33,6 +275,16 @@
       }
     ],
     "headers": [
+      {
+        "comment": "Default: never let the browser hold a stale HTML shell or unhashed asset. The app shell (index.html, served for every SPA route) + fonts must revalidate so a new deploy lands on the next reload. More-specific rules below (hashed /assets, /media, sw.js, etc.) override this for their paths.",
+        "source": "**",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache, no-store, must-revalidate"
+          }
+        ]
+      },
       {
         "source": "/sw.js",
         "headers": [
@@ -43,11 +295,46 @@
         ]
       },
       {
+        "source": "/ota/**",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache, no-store, must-revalidate"
+          },
+          {
+            "key": "Access-Control-Allow-Origin",
+            "value": "*"
+          }
+        ]
+      },
+      {
         "source": "/assets/**",
         "headers": [
           {
             "key": "Cache-Control",
             "value": "public, max-age=31536000, immutable"
+          }
+        ]
+      },
+      {
+        "source": "/vlink/admin/assets/**",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public, max-age=31536000, immutable"
+          },
+          {
+            "key": "Vary",
+            "value": "Accept-Encoding"
+          }
+        ]
+      },
+      {
+        "source": "/l/*/feed.xml",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public, max-age=0, s-maxage=3600"
           }
         ]
       },
@@ -63,9 +350,25 @@
             "value": "*"
           }
         ]
+      },
+      {
+        "source": "/version.json",
+        "headers": [
+          {
+            "key": "Access-Control-Allow-Origin",
+            "value": "*"
+          },
+          {
+            "key": "Cache-Control",
+            "value": "no-cache, no-store, must-revalidate"
+          }
+        ]
       }
     ],
-    "cleanUrls": true
+    "cleanUrls": true,
+    "postdeploy": [
+      "node scripts/verify-vlink-live.mjs"
+    ]
   },
   "firestore": {
     "database": "vgrdb",

@@ -1,0 +1,30 @@
+{
+  "$comment": [
+    "PROJECT-WIDE, CHECKED IN. Applies to every agent session in this repo.",
+    "",
+    "The PreToolUse hook below refuses any `firebase deploy` that would touch",
+    "Hosting while firebase.json is missing the VLink rewrites. On 2026-08-10 a",
+    "stale firebase.json (restored from an older branch that predated VLink) was",
+    "deployed roughly ten times. Firebase Hosting REPLACES the whole config on",
+    "every deploy, so each one deleted the /vlink -> vlinkApp rewrite.",
+    "vergr.app/vlink then fell through the catch-all and served the Vergr SPA.",
+    "The Shopify reviewer saw a blank page and rejected the app.",
+    "",
+    "This is a hook rather than a note because a note already existed and did",
+    "not stop it. The guard also runs as firebase.json's `predeploy`, which",
+    "catches a deploy run by anyone or anything, not just an agent."
+  ],
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node scripts/guard-hosting-deploy.mjs --hook"
+          }
+        ]
+      }
+    ]
+  }
+}
