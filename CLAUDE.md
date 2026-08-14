@@ -160,6 +160,8 @@ The list above is the source of truth. Move items to "done" only after verifying
 
 **Dead / abandoned — never reference as current, never reintroduce:** MoonPay/Helio Commerce, Cryptomus, NOWPayments, Tebex, Xsolla, Polar, Banxa, Shyft/TymeBank settlement chain, Solana as a settlement chain (replaced by Base USDC). Code for these may still exist in the repo; it is NOT in the live flow.
 
+**Stripe: REMOVED 2026-08-13.** Stripe closed the account, so the rail was deleted outright rather than left dormant: `functions/stripeCheckout.js`, `StripeCheckoutPanel.jsx`, the `createStripeCheckout` helper, the `useStripeReturn` handler, the SDK deps and `VITE_STRIPE_PUBLISHABLE_KEY` are gone; the deployed `createStripeCheckout` / `stripeWebhook` / `handleStripeWebhook` functions were deleted and both `STRIPE_*` secrets destroyed. **Card = PayRam again** (one "Card or crypto" row in `PaymentMethodPicker`; `checkoutFees.js` no longer has a Stripe rail or an `activeCardRail` switch). Play Billing is the other live rail and was untouched. Nothing was left half-wired. Note the product changes made FOR Stripe underwriting (tournaments retired 2026-08-09, predictions removed, 1:1 free + link-only) are now reversible but remain in place pending a founder decision.
+
 ### LIVE payment + custody stack (Path C, locked, on Base mainnet)
 
 | Role | Provider | Status |
@@ -244,8 +246,116 @@ Docker container `payram` (image `payramapp/payram:latest`), host ports `127.0.0
 - **macOS minimum:** `getDisplayMedia` shipped in Safari 16 (macOS 13 Ventura) — tournament-eligible Mac players must be on macOS 13+. Older macOS = recorder shows "Encoder unavailable" → cannot claim a high-stakes win → must defer to mod call.
 - Native overlay path (no picker, no yellow border, no per-match prompt) is on the deferred v2 anti-cheat plan — gated on signing solution (SignPath Foundation / MS Store / reputation farming, NOT a paid cert). Don't reach for v2 as the answer to v1 UX issues.
 
+### Content policy REVERSED + 8 compliance policies shipped (2026-08-14)
+
+**No nudity or sexual content anywhere.** This reverses the 2026-08-13 "adult permitted on paid private surfaces" model. Driver: every processor had declined, and the one available (via Frank) wanted $1,000+/yr plus 15% per transaction. Founder instruction was to thread the needle like Tango: say no nudity plainly, frame Vergr as a place to play and meet people.
+
+- AUP section 3 rewritten as one flat standard applying to every surface (was two sections holding broadcasts and paid-private to different standards). New 3A covers mature language and themes, which ARE allowed.
+- `contentRating: 'nsfw'` SURVIVES as an advisory label + the on-stream banner, per founder. Real nudity never reaches storage anyway (scanner `block` verdict at upload), so the marker only ever means the softer `adult:true` band.
+- **Three filters switched off together, restore all three or none:** `feedRank.js` `passesRating` is now `() => true`; `entitlements.js` `assertNsfwViewerAllowed` is a documented no-op with call sites left wired; `streaming.js` `getLiveDiscoveryFeed` no longer excludes marked streams.
+
+**Eight compliance policies** in `src/screens/marketing/legal/compliancePolicies.js`, rendered by the existing `LegalScreen` (lookup falls through `LEGAL_DOCUMENTS` then `COMPLIANCE_DOCUMENTS`), in the footer, in `sitemap.xml`, and prerendered: `/platform/{content-moderation, identity-and-consent, age-verification, anti-slavery, csam-policy, law-enforcement, aml-policy, anti-fraud}`. Titled exactly as processor checklists name them. **Every threshold in them was read out of the code first** (CSAM block at 0.30, other categories 0.85, KYC tier caps, 3-day withdrawal hold). Keep them true or delete them; an overstated control is the document you get held to.
+
+### pro.vergr.app — Paddle subscription surface (2026-08-14, SHIPPED, DNS PENDING)
+
+`src/screens/marketing/ProSubscriptionSite.jsx`, gated on hostname at the top of `AppRouter` (returns BEFORE the providers, so no auth/presence/cart mounts on that host). Serves 4 pages on that host and nothing else: `/` product, `/terms`, `/refunds`, `/privacy`. Legal docs render on THAT host on purpose, because Paddle requires them "clearly accessible via navigation on your website" and a cross-domain link would send the reviewer to the main site.
+
+**THE RULE FOR THAT FILE: nothing on it may sell, price, advertise or link to Coins, tips, gifts, unlocks, withdrawals or the wallet.** Coins are Paddle's first-listed prohibited category ("Virtual currency or stored value..."). If a feature cannot be described without mentioning Coins, leave it off that page. This is separation, not concealment: the coin economy IS disclosed to Paddle in the application. Do NOT bundle coins into the subscription to route them through Paddle, that converts a clean SaaS product into a wrapper for stored value.
+
+**NOT LIVE UNTIL DNS EXISTS.** The gate is `window.location.hostname === 'pro.vergr.app'`, so nothing is reachable until the founder adds the custom domain in Firebase Hosting and the Cloudflare record. There is deliberately no localhost or query-param bypass (one was added temporarily to eyeball it and reverted before deploy).
+
+Prices come from `src/utils/tierSystem.js` (USD $4.99 / $9.99, matching what is actually charged, not the EUR figures elsewhere in this file).
+
+### PADDLE: coins never, subscriptions maybe (checked 2026-08-14)
+
+Vergr hits SIX prohibited categories in Paddle's AUP: virtual currency/stored value, digital marketplaces enabling non-Paddle sellers, donations/community access, crypto, regulated financial services, and dating. More fundamentally Paddle is a Merchant of Record: it buys your product and resells it, so it structurally cannot carry user-to-user money. Removing adult content changes none of it. Detail in memory `project-paddle-rejected`.
+
+⚠ Trap: marketing Vergr as "a place to meet people" reads as a dating app to an underwriter and makes mainstream acceptance HARDER. Copy Tango's rules, not Tango's marketing line.
+
+### SEO: news-post noindex was TRIED AND REVERTED (2026-08-14). Do not redo it without measuring first.
+
+On 2026-08-14 I noindexed every syndicated post and pulled all 1,888 of them from the UGC sitemap, arguing from Google's scaled-content-abuse policy. **Founder reverted it the same day: "you removed the posts from google that werent getting flagged as duplicate ... you have actually made seo worse."** Everything is back to the `seoText.length >= 400` gate in `ugcRenderer.js` (renderPost + renderSitemapPosts) and `indexNow.js`, and `rewriteNewsForSeo` pings IndexNow again. Verified live: posts serve `index,follow`, sitemap back to 984 + 904.
+
+**What was wrong with the reasoning, so it is not repeated:** a sitemap count tells you what is SUBMITTED, never what is INDEXED. I never opened Search Console to check whether those rewritten pages were indexed and performing, or actually sitting in the duplicate bucket. The rewrite exists precisely so they are NOT duplicates, so removing them plausibly removed the site's only working indexed content. **Before touching noindex/sitemap/canonical on any URL set again, get the real indexation status of those exact URLs out of Search Console first.**
+
+**Also settled while investigating:** the "Gaming News" home-feed tab is NOT reaching Google and cannot. It renders RSS fetched client-side into React state (`newsItems`, HomeFeedScreen ~L564), nothing is persisted to Firestore, those items have no URLs, and `HomeFeedScreen` only renders for a logged-in user (logged-out hits `<Navigate to="/platform">` at AppRouter ~L222). Googlebot is logged out, so it never sees that tab. There is nothing to stop there.
+
+### Native CSP blocked all video, audio and native thumbnails (2026-08-14, FIXED in 1.0.195)
+
+Found from founder screenshots after 1.0.194 fixed the status-bar overlap. Three separate faults, all in `src-tauri/tauri.conf.json`:
+
+- **No `media-src` directive at all.** `<video>` and `<audio>` therefore fell back to `default-src 'self' asset: https://asset.localhost`, which has neither `https:` nor `blob:`. Every clip, round video note and voice note is served from `cdn.vergr.app`, so the CSP blocked all of them: the grey blurred play glyph in the screenshots is the Android WebView's broken-media poster, and the voice bubble sat at 0:00. **This hit the desktop app too**, so the fix is in the shared conf, not the android one.
+- **Android serves the asset protocol over `http://asset.localhost`, not `https://`.** (Windows too; macOS and Linux use `asset://localhost`.) The CSP allowed only the `https://` form, so every `convertFileSrc()` URL stayed blocked even once `assetProtocol` was re-enabled: gallery-grid thumbnails rendered as broken-image glyphs. `connect-src` needed it as well, because `resolveDeviceMedia`, `nativeTranscode` and `shareIn` all `fetch(convertFileSrc(...))`, so picking a photo would have failed at send time even if the thumbnail had drawn.
+- **`worker-src` was missing**, so blob workers fell through to `script-src`, which has no `blob:`. hls.js and ffmpeg.wasm both build workers that way. Added `worker-src 'self' blob:`; it can only unblock.
+
+Separately: **the `hud` window is declared in `tauri.conf.json` and Tauri creates config windows on Android as well**, which is why a stray "VERGR HUD, idle" panel (`HudOverlay.jsx:106`) appeared over a blank screen on the phone. The Rust commands are correctly `#[cfg(desktop)]`; the window declaration was not gated by anything. `tauri.android.conf.json` now overrides `app.windows` to the main window only (RFC 7396 merge patch replaces arrays wholesale, so listing one entry drops the HUD).
+
+**Rule: a CSP directive that is absent is not permissive, it inherits `default-src`.** `default-src` here is deliberately tight, so every media type the app loads needs its own directive spelled out. When adding a new kind of remote or local media, check `media-src`/`img-src`/`connect-src`/`worker-src` before assuming the network is at fault.
+
+
+### 1.0.193 APK shipped as a WEB build: src-tauri lost its untracked configs (2026-08-14, FIXED)
+
+Founder reported the APK overlapping the phone's status bar on Messages "and other" screens, video notes stuck on a grey play glyph, and the chat gallery grid showing no files. Three unrelated-looking symptoms, **two config files that had been deleted**.
+
+`git reflog` shows a `checkout: moving from kotlin-native to main` plus resets around 2026-08-09. That wiped every UNTRACKED file under `src-tauri/`. Nothing failed. The APK built, installed and ran.
+
+**What was lost, and what each one broke:**
+
+| Lost | Consequence |
+|---|---|
+| `src-tauri/tauri.android.conf.json` | Tauri auto-merges `tauri.<platform>.conf.json` (confirmed in the CLI binary + [v2 docs](https://v2.tauri.app/develop/configuration-files/); merge order is base → platform → `--config`, so the store/huawei/dev `--config` still wins). It was the ONLY thing pointing android at `npm run build:android`. Without it the build fell back to `tauri.conf.json`'s `beforeBuildCommand: "npm run build"` = plain `vite build` = **`__VERGR_NATIVE__` false**. Every `IS_NATIVE_BUILD` branch compiled out: no native screens (`IS_NATIVE_BUILD ? <Native> : <web>` all took the web arm), no status-bar insets (`TopBar.jsx:19`, `MessagesInboxScreen.jsx:211`, dozens more), and `useResponsive` no longer forced the mobile tier so the WebView's ~980px width produced the broken `isMobile:false, isDesktop:false` tablet tier. |
+| `app.security.assetProtocol` (lived in that same file) | Tauri defaulted to `{enable:false, scope:[]}`, so **every `convertFileSrc()` URL was dead**: gallery-grid thumbnails (`nativeMedia.js` → `cache/media_thumbs`), the on-device media cache behind video notes and avatars (`fileMediaCache.js` → `MediaCacheBridge.kt` `files/vergr_media`, `cache/vergr_media`, `files/vergr_video`), `nativeTranscode`, `shareIn`, `nativeArCamera`. The CSP in `tauri.conf.json` still allows `asset:` / `https://asset.localhost`, which is the leftover proving the block used to exist. |
+| `tauri.store.conf.json`, `tauri.huawei.conf.json`, `tauri.dev.conf.json` | `android:build:store` / `:huawei` / `:dev` pass these with `--config`; they would have failed outright on the next store or Huawei build. |
+
+**Verified from the ARTIFACT, not from the command that was typed** (per [[reference-store-manifest-strip-ordering]]): the shipped `app-universal-release.apk` embeds `/downloads/latest.json`, `/og/share.mp4` and every `*_Desktop.*` background, all of which `prune-mobile-dist.mjs` deletes, so the pruner never ran, and its own `assets/tauri.conf.json` records `beforeBuildCommand: "npm run build"` and `assetProtocol {enable:false, scope:[]}`.
+
+**Fixed:** all four conf files restored and now **tracked in git** (they were untracked, which is why they vanished silently and why git showed a clean `src-tauri/`). `tauri.android.conf.json` carries the native `beforeBuildCommand`, `beforeDevCommand: "vite --mode native"` (`android:dev` had the same defect), and the `assetProtocol` scope, which is the app's own private sandbox (`/data/data/…` and `/data/user/*/…` `cache/**` + `files/**`) rather than an enumeration of bridge subdirectories, a tighter list silently breaks the next bridge that adds a directory.
+
+**Two new guards in `scripts/publish-apk.mjs`, both of which reject the 1.0.193 APK:** it refuses to publish an APK whose embedded bundle still carries pruned assets (proves a web-mode build), and it inflates `assets/tauri.conf.json` straight out of the APK and refuses to publish when `assetProtocol` is off. A guard that cannot read the artifact fails closed rather than waving it through.
+
+**The rule this leaves behind: nothing that decides how the APK is built may sit untracked.** A silent fallback to a config that still builds, installs and runs is indistinguishable from a pile of UI regressions, and it cost a release plus a day of the founder's time.
+
+
+### Sideload APK regressed to a universal (multi-ABI) build (2026-08-14)
+
+The published `downloads/VERGR.apk` (1.0.193) is **282 MB**. It is supposed to be **arm64-only, ~85 MB** (memory `project-native-app`: "Bootstrap APK ... arm64-only ~85MB; build with `npx tauri android build --target aarch64`").
+
+Measured from the artifact itself (`aapt dump badging` + `unzip -l`), not inferred:
+- ABIs present: `arm64-v8a`, `armeabi-v7a`. It is a universal build.
+- `lib/arm64-v8a/libvergr_desktop_lib.so` 104.2 MB + `lib/armeabi-v7a/libvergr_desktop_lib.so` 101.6 MB, plus `libxeno_native.so` 20.6 + 15.3 MB = 257 MB of the 282 MB.
+- **No `.exe`, `.msi`, nested `.apk` or `downloads/` inside.** The desktop installer is NOT baked in; `prune-mobile-dist.mjs` is doing its job. (Do not re-diagnose this as the old baked-APK bug, it is a different cause.)
+
+`libvergr_desktop_lib.so` is just the Rust crate name (`vergr_desktop_lib`), shared by the desktop and Android targets. It is not the desktop app inside the phone app.
+
+**Fixed so far (no build run, per the batch-native rule):**
+- `package.json` `android:build` is now `tauri android build --target aarch64`. It had no `--target`, so it built every ABI.
+- `scripts/publish-apk.mjs` parses the ABI list out of `aapt dump badging` and REFUSES to publish anything but arm64-v8a, with `--allow-multi-abi` as the deliberate escape hatch. Verified it would have blocked 1.0.193. The store AAB is untouched and should keep both ABIs, since Play splits per device.
+
+**STILL UNEXPLAINED, do not guess:** arm64-only would land ~165 MB, still about double the documented ~85 MB. The embedded payload has grown since that figure was recorded and nobody has established why. Next step is to compare the embedded web bundle against the ~72 MB that memory records, from the artifact, not from `dist/` in the working tree (measuring the web-mode `dist/` instead of the native-mode one is exactly the mistake made in this session).
+
+### Download-page size display (2026-08-14, SHIPPED + DEPLOYED)
+
+`formatMb` divided by 1048576 and labelled the result MB, so the page said 269 MB for a file Chrome reports as 282 MB. Now decimal MB (10^6) with a GB rollover, matching what browsers, Android and Play show, so the page agrees with the download bar. Installer now reads 104 MB, APK 282 MB.
+
+### Downloads split off the landing page (2026-08-14, SHIPPED + DEPLOYED)
+
+`/platform` no longer links at any binary. Its section is now two cards, "Get the mobile app" and "Get the desktop app", each routing to its own page.
+
+| Route | Screen | Carries |
+|---|---|---|
+| `/platform/download` | `DownloadScreen` (now a **hub**) | Mobile / Desktop / Web cards. Route kept: it is in `sitemap.xml`, in the prerender list, and referenced by a help article. |
+| `/platform/download/mobile` | `MobileAppScreen` (new) | APK download, provenance panel, Play Protect + unknown-sources steps, iPhone add-to-home-screen, `AndroidInstallModal` + browser-install prompt (both relocated off the landing page) |
+| `/platform/download/desktop` | `DesktopAppScreen` (new) | Windows installer, provenance panel, SmartScreen step, feature list, requirements |
+
+- **Provenance is real, not decorative.** Version / size / release date / SHA-256, read at RUNTIME from `/downloads/latest.json` and `/version.json` so the page cannot drift from what is on the CDN. `scripts/make-update-manifest.mjs` now writes `sha256`; `scripts/publish-apk.mjs` now writes `apkSize` / `apkSha256` / `apkPublishedAt`. The 1.0.193 values were backfilled by stream-hashing the live CDN files.
+- **`softwareAppSchema()` added to `src/utils/JsonLd.jsx`.** HONEST LIMIT: Google's Software App rich result REQUIRES `aggregateRating` or `review`. Vergr has no ratings and inventing one breaches Google's structured-data policy, so the builder omits them and **these pages are NOT rich-result eligible**. Add ratings only when real ones exist.
+- Both pages added to `public/sitemap.xml` and to the marketing list in `scripts/prerenderHelp.mjs`.
+- The desktop-install help article was updated to match (Download page -> Desktop -> Download for Windows) and now documents the SmartScreen notice.
+
+**Note on the Safe Browsing question that started this:** moving links between pages does nothing for Safe Browsing. The site interstitial keys on what a HOST serves (binaries are already on `cdn.vergr.app`, which usefully isolates blast radius from `vergr.app`), and the "unusual file" warning is SmartScreen reputation on an unsigned binary, fixable only by signing plus download volume. The download pages help by being real provenance a human reviewer can read, not by relocating the anchor tag.
+
 ### TODO before public indexing (do not forget)
-- **Google Safe Browsing check** — 2026-05-25 an old tab loaded `vergr.app` and showed Chrome "Dangerous site" phishing warning; a fresh tab loaded fine. Recheck via `transparencyreport.google.com/safe-browsing/search?url=vergr.app` once the app is feature-complete + before any user invite/marketing push. If flagged: find offending URL via Search Console → Security Issues, remove (likely R2 user upload), submit review request (24-72h). Also harden: scan R2 uploads through Gemini BEFORE the public URL goes live (currently lives during scan window).
+- **Google Safe Browsing check** — 2026-05-25 an old tab loaded `vergr.app` and showed Chrome "Dangerous site" phishing warning; a fresh tab loaded fine. Recheck via `transparencyreport.google.com/safe-browsing/search?url=vergr.app` once the app is feature-complete + before any user invite/marketing push. **2026-08-14: recheck NOT completed** (the transparency report is a JS app; WebFetch returns no verdict and the in-app browser was denied that origin). Founder must open the link himself, it is a 5-second check. If flagged: find offending URL via Search Console → Security Issues, remove (likely R2 user upload), submit review request (24-72h). Also harden: scan R2 uploads through Gemini BEFORE the public URL goes live (currently lives during scan window).
 - **Kill HashRouter → BrowserRouter** — every URL is `vergr.app/#/…` which looks broken/old. Migrate `src/router/AppRouter.jsx` to `BrowserRouter`, add Firebase Hosting rewrite `"source":"**","destination":"/index.html"` in `firebase.json` (or confirm it's already there), QA every `navigate()` + `window.location` callsite for hard hash assumptions, regenerate any external links that use `#/` (push notifications, email templates, FCM `actionUrl` fields). Founder wants the `#` gone before launch.
 
 ### P2 — post-launch hardening
@@ -293,6 +403,11 @@ Status legend: ✅ done · 🟢 in progress · 🟡 planned · 🟡 Partial · �
 ## Hard rules (do not violate)
 
 - **NEVER remove a feature/screen/route/button/link without explicit permission.** Don't "clean up dead links" or delete duplicates from both places. Broken/unbuilt screen → build it or stub "Coming soon", don't delete the entry point. When in doubt, ASK.
+- **The Android APK can be built WRONG in ways that still compile, install and run. Verify the ARTIFACT before publishing, never the command you typed.** `node scripts/publish-apk.mjs` enforces this now (it reads the finished APK and refuses to upload a bad one); do not weaken or bypass those guards. The three silent failures, all of which shipped to the founder's phone on 2026-08-13 and cost a day (full detail in "1.0.193 APK shipped as a WEB build" and "Native CSP blocked all video" below):
+  1. `src-tauri/tauri.android.conf.json` missing → tauri falls back to the desktop `beforeBuildCommand` (`npm run build`) → `__VERGR_NATIVE__` false → **every native screen, safe-area inset and the mobile `useResponsive` tier compiles out.** Check: `unzip -p <apk> assets/tauri.conf.json` must show `beforeBuildCommand: "npm run build:android"`.
+  2. `app.security.assetProtocol` off or unscoped → **every `convertFileSrc()` URL dies** (gallery thumbnails, on-device media cache, transcode, share-in). Same check, same file.
+  3. A CSP directive that is ABSENT inherits `default-src`, which is deliberately tight, so it BLOCKS rather than allows. `media-src` missing killed all video and audio; Android serves the asset protocol over `http://asset.localhost`, not `https://`.
+- **Nothing that decides how the app is built may sit UNTRACKED in git.** All four `src-tauri/tauri.*.conf.json` files are tracked for this reason. A `git checkout`/`reset`/`clean` deleted them once and nothing failed, it just built the wrong app. If a build config is not in `git ls-files`, that is a bug to fix, not a detail.
 - **Zero out-of-pocket cost.** No new paid services. Firebase Spark-compatible only.
 - **NEVER use em dashes (—) in any output to the user** (chat, commits, PRs, emails, code comments, this file). Use commas/periods/parentheses/colons.
 - **Terse output.** No trailing recaps, no emoji in code/docs unless asked.

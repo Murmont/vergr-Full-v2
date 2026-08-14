@@ -35,6 +35,8 @@
  */
 import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync, existsSync, statSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { inflateRawSync } from 'node:zlib';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -84,7 +86,112 @@ const versionCode = /versionCode='(\d+)'/.exec(badging)?.[1];
 const versionName = /versionName='([^']+)'/.exec(badging)?.[1];
 if (!versionCode || !versionName) { console.error('Could not read versionCode/versionName from APK.'); process.exit(1); }
 const size = statSync(APK).size;
+// SHA-256 of the exact APK bytes uploaded to R2, published on
+// /platform/download/mobile. A sideloaded APK has no store vouching for it,
+// so a checksum the user can actually check is the only provenance on offer.
+const apkBytes = readFileSync(APK);
+const sha256 = createHash('sha256').update(apkBytes).digest('hex');
 console.log(`APK: ${versionName} (code ${versionCode}), ${size} bytes`);
+
+// THE SIDELOAD APK IS ARM64-ONLY. A universal build ships the whole embedded
+// web payload once PER ABI, which is what took 1.0.193 to 282MB against the
+// ~85MB this artifact is supposed to be. `npm run android:build` passes
+// --target aarch64 for exactly this reason; this guard catches a build run by
+// hand without it, because the only symptom otherwise is a number nobody
+// looks at until a user complains about the download.
+//
+// The store AAB is different and SHOULD carry both ABIs: Play splits it per
+// device, so nobody downloads the other one. Only the direct-download APK,
+// which has no splitting, pays for every ABI it contains.
+const abis = [...(/native-code: (.*)/.exec(badging)?.[1] || '').matchAll(/'([^']+)'/g)].map((m) => m[1]);
+const extraAbis = abis.filter((a) => a !== 'arm64-v8a');
+if (extraAbis.length && !process.argv.includes('--allow-multi-abi')) {
+  console.error(`\nRefusing to publish: APK contains ${abis.join(", ")} (expected arm64-v8a only).`);
+  console.error('  Rebuild with:  npm run android:build');
+  console.error('  Or pass --allow-multi-abi if every ABI is genuinely intended.');
+  process.exit(1);
+}
+
+// THE APK MUST EMBED THE NATIVE WEB BUNDLE, NOT THE WEB ONE.
+//
+// Tauri auto-merges src-tauri/tauri.android.conf.json, and that file is the
+// ONLY thing pointing the android build at `npm run build:android`
+// (`vite build --mode native`). Without it the build silently falls back to
+// tauri.conf.json's beforeBuildCommand, `npm run build`, so __VERGR_NATIVE__
+// is false and every IS_NATIVE_BUILD branch compiles out: no native screens,
+// no status-bar insets, and useResponsive returns the broken ~980px tablet
+// tier. It still builds, installs and runs, which is why 1.0.193 shipped that
+// way and read on the phone as a pile of unrelated UI regressions.
+//
+// Checked against the ARTIFACT, not the command that was typed: the embedded
+// asset keys sit uncompressed in libvergr_desktop_lib.so, which is STORED in
+// the APK, so these paths are literal bytes in the file. build:android runs
+// prune-mobile-dist.mjs, which deletes dist/og and the desktop background
+// variants, so either key surviving proves the pruner never ran.
+//
+// A marker has to be a path NOTHING ELSE in the build mentions. '/downloads/
+// latest.json' looked ideal and is not: it is also the desktop updater endpoint
+// in tauri.conf.json, so it is baked into every APK and flagged a clean build.
+const UNPRUNED_MARKERS = ['/og/share.mp4', 'bg_1_Desktop.png'];
+const leaked = UNPRUNED_MARKERS.filter((m) => apkBytes.includes(Buffer.from(m, 'latin1')));
+if (leaked.length) {
+  console.error('\nRefusing to publish: this APK embeds the WEB bundle, not the native one.');
+  console.error(`  Found unpruned asset key(s): ${leaked.join(', ')}`);
+  console.error('  Check src-tauri/tauri.android.conf.json exists and sets');
+  console.error('    "beforeBuildCommand": "npm run build:android"');
+  console.error('  then rebuild with:  npm run android:build');
+  process.exit(1);
+}
+
+// THE ASSET PROTOCOL MUST BE ENABLED AND SCOPED.
+//
+// Every native file the WebView renders, gallery-grid thumbnails, the
+// on-device media cache behind avatars and video notes, transcoder output,
+// share-in payloads, is handed to the DOM as a convertFileSrc() URL. Those
+// URLs only resolve when app.security.assetProtocol is enabled and its scope
+// covers the app's private storage; that config lives in
+// tauri.android.conf.json. With it missing, Tauri defaults to
+// {enable:false, scope:[]} and every one of those elements silently renders
+// nothing: blank gallery tiles, a video note stuck on the play glyph. Nothing
+// logs, nothing fails the build. 1.0.193 shipped exactly that.
+//
+// tauri writes the MERGED config it built with into assets/tauri.conf.json, so
+// this reads the decision the artifact was actually built from.
+function apkEntry(name) {
+  const marker = Buffer.from(`PK\x03\x04`, 'latin1');
+  const want = Buffer.from(name, 'latin1');
+  let at = 0;
+  for (;;) {
+    at = apkBytes.indexOf(marker, at);
+    if (at < 0) return null;
+    const nameLen = apkBytes.readUInt16LE(at + 26);
+    const extraLen = apkBytes.readUInt16LE(at + 28);
+    const nameAt = at + 30;
+    if (apkBytes.subarray(nameAt, nameAt + nameLen).equals(want)) {
+      const method = apkBytes.readUInt16LE(at + 8);
+      const compSize = apkBytes.readUInt32LE(at + 18);
+      const body = apkBytes.subarray(nameAt + nameLen + extraLen, nameAt + nameLen + extraLen + compSize);
+      return method === 0 ? body : inflateRawSync(body);
+    }
+    at += 4;
+  }
+}
+try {
+  const merged = JSON.parse(apkEntry('assets/tauri.conf.json').toString('utf8'));
+  const ap = merged?.app?.security?.assetProtocol || {};
+  if (!ap.enable || !(ap.scope?.length || ap.scope?.allow?.length)) {
+    console.error('\nRefusing to publish: the asset protocol is off in this APK.');
+    console.error(`  Built with assetProtocol = ${JSON.stringify(ap)}`);
+    console.error('  Native thumbnails, cached media and video notes cannot render.');
+    console.error('  Restore app.security.assetProtocol in src-tauri/tauri.android.conf.json,');
+    console.error('  then rebuild with:  npm run android:build');
+    process.exit(1);
+  }
+} catch (err) {
+  // A guard that cannot read the artifact must not wave it through.
+  console.error(`\nRefusing to publish: could not read assets/tauri.conf.json from the APK (${err.message}).`);
+  process.exit(1);
+}
 
 // --- pull R2 creds via firebase CLI (so the script is one command) ---
 const sec = (name) => execFileSync('firebase', ['functions:secrets:access', name], { encoding: 'utf8', shell: true }).trim();
@@ -123,6 +230,9 @@ vj.androidVersion = versionName;
 const appCode = /APP_VERSION_CODE\s*=\s*(\d+)/.exec(readFileSync(join(repo, 'src/utils/appVersion.js'), 'utf8'))?.[1];
 if (appCode) vj.androidVersionCode = Number(appCode);
 vj.apkUrl = `${CDN_URL}?v=${versionCode}`;
+vj.apkSize = size;
+vj.apkSha256 = sha256;
+vj.apkPublishedAt = new Date().toISOString();
 writeFileSync(VERSION_JSON, JSON.stringify(vj, null, 2) + '\n');
 console.log(`${IS_DEV ? 'version-dev.json' : 'version.json'} -> androidVersionCode ${vj.androidVersionCode}, apkUrl ${vj.apkUrl}`);
 

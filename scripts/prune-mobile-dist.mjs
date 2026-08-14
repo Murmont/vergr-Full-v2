@@ -23,7 +23,7 @@ async function pruneDesktopBackgrounds() {
   let files = [];
   try { files = await readdir(bgDir); } catch { return; }
   for (const f of files) {
-    if (/_Desktop\.(png|jpe?g|webp)$/i.test(f)) {
+    if (/_Desktop\.(png|jpe?g|webp|avif)$/i.test(f)) {
       await rm(join(bgDir, f), { force: true });
       console.log(`[prune-mobile-dist] removed backgrounds/static/${f}`);
     }

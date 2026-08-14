@@ -1,0 +1,26 @@
+{
+  "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/crates/tauri-cli/schema.json",
+  "build": {
+    "beforeDevCommand": "vite --mode native",
+    "beforeBuildCommand": "npm run build:android"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "VERGR"
+      }
+    ],
+    "security": {
+      "assetProtocol": {
+        "enable": true,
+        "scope": [
+          "/data/data/com.vergr.desktop/cache/**",
+          "/data/data/com.vergr.desktop/files/**",
+          "/data/user/*/com.vergr.desktop/cache/**",
+          "/data/user/*/com.vergr.desktop/files/**"
+        ]
+      }
+    }
+  }
+}
