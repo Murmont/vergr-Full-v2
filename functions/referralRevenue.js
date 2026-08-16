@@ -3,13 +3,30 @@
 // signup. This is ON TOP of the one-time +5,000 VP signup reward.
 //
 // Rate = 1% base + 0.5% per referral who currently holds an active Lite/Pro
-// subscription (pool-wide across ALL your referrals' purchases), capped at 5%.
+// subscription (pool-wide across ALL your referrals' purchases), capped at 3%.
 // A lapsed subscription drops the rate back down (the daily downgrade cron
 // flips those users to `subscription:'free'`, so they stop counting here).
 //
-// Affordability: a coin only becomes real cash via coins→gems→USDC, and that
-// path loses 15-30% commission, so even a fully-withdrawn bonus costs well
-// under its face %. Wash-referral is strictly unprofitable for the same reason.
+// CAP LOWERED 5% -> 3% on 2026-08-11 (founder approved). Why:
+//
+// The bonus is MINTED, not deducted. Nothing comes off the buyer's payment or
+// off platform revenue: line ~99 increments the referrer's `balance` AND
+// `earnedBalance`, so every referred purchase creates a brand new withdrawable
+// liability ON TOP of the coins just sold. It also skips the 10% tip fee, so a
+// referral coin costs MORE on the way out than a tipped coin does.
+//
+// Real cost of one bonus coin = (1 - commission) x 0.98 spread x EUR 0.01,
+// i.e. EUR 0.0069 (Rookie) to EUR 0.0083 (Immortal). At the old 5% cap a
+// EUR 100 sale minted EUR 4.63 of new liability at the worst tier. The FX
+// buffer that used to offset it has been retired (native USD has no conversion
+// to buffer), so nothing offsets it any more. 3% halves the bleed while leaving
+// the 1% base and the 2% streamer base untouched, so only heavy referrers
+// notice.
+//
+// The older comment here claimed a bonus "costs well under its face %" because
+// the coins->gems path loses 15-30%. That is true but it is not the whole
+// picture: the coins are new, so the loss is on money that never existed
+// before. Wash-referral is still strictly unprofitable for the user.
 //
 // This helper is called STRICTLY POST-COMMIT from the two coin-purchase credit
 // sites (payram.js settlePayramOrder + circleWallets.js attributed path) and is
@@ -28,7 +45,7 @@ const BASE_RATE       = 0.01;   // 1% floor for every referrer
 // ceiling is unchanged.
 const STREAMER_BASE_RATE = 0.02;
 const SUB_BONUS_RATE  = 0.005;  // +0.5% per active-subbed referral
-const MAX_RATE        = 0.05;   // 5% ceiling
+const MAX_RATE        = 0.03;   // 3% ceiling (was 5%, lowered 2026-08-11)
 // Number of active-subbed referrals needed to reach the ceiling. We only ever
 // need to COUNT up to this, so the subbed-referral read is bounded (≤ this).
 const SUB_CAP_COUNT   = Math.round((MAX_RATE - BASE_RATE) / SUB_BONUS_RATE); // 8
@@ -128,6 +145,27 @@ async function creditReferralPurchaseBonus({ buyerUid, coins, sourceId }) {
         data: { bonus, rate },
         createdAt: FieldValue.serverTimestamp(),
       });
+    });
+
+    // Book the cost. These coins are newly minted, so the entire face value is
+    // a fresh payout liability that nothing was deducted to fund. Booked after
+    // the transaction commits and separately guarded — a ledger write must never
+    // be able to undo a bonus the referrer has already been told about.
+    try {
+      const { bookReferralCost } = require('./platformRevenue');
+      await bookReferralCost({ referrerUid, bonusCoins: bonus, sourceId, rate });
+    } catch (e) {
+      console.error('bookReferralCost failed', sourceId, e?.message || e);
+    }
+
+    // AUTO-CONVERT AT RECEIPT. Referral share is received value like any other,
+    // so it converts at the referrer's rate now rather than whenever they next
+    // choose to cash out. Keyed off the purchase's sourceId, so the settlement
+    // is idempotent across both payment rails exactly as the bonus itself is.
+    const { settleEarnedToGems } = require('./coinLedger');
+    await settleEarnedToGems(db, {
+      uid: referrerUid, coins: bonus,
+      source: 'referral_revenue', sourceId: `referral:${sourceId}`,
     });
   } catch (e) {
     // A bonus failure must never affect the already-committed purchase.

@@ -250,8 +250,10 @@ async function rewriteBatch(maxCount) {
     if (i < snap.docs.length - 1) await sleep(PACE_MS);
   }
   if (done || failed) console.log(`[rewriteNewsForSeo] rewritten=${done} failed=${failed}`);
-  // Fire-and-forget: the rewrites are already committed, so a ping failure
-  // must never turn a successful run into a failed one.
+  // No IndexNow ping: news posts are noindex (see ugcRenderer.js). Pushing
+  // a url we then serve noindex is the worst of both worlds: it spends
+  // crawl budget to have the page rejected. freshUrls is kept because the
+  // count is the useful signal in the logs.
   if (freshUrls.length) {
     await submitToIndexNow(freshUrls).catch((e) => console.warn('[rewriteNewsForSeo] indexnow', e.message));
   }

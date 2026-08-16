@@ -69,7 +69,33 @@ async function sameHumanBehindBoth(senderSnap, recipientSnap) {
 const QUOTE_TTL_MS = 90 * 1000;
 const GEM_TO_EUR = 0.01;
 
+// ── DISABLED 2026-08-14 — founder decision 4, docs/REVENUE_SHARE_PLAN.md ──
+//
+// User-to-user transfer of CASHABLE value is the single most money-transmission
+// -shaped feature in this codebase: value moves from one person to another and
+// leaves as USDC at the other end, with Vergr taking a 3% cut for moving it.
+// That is a worse fact pattern than the withdrawal itself, because a withdrawal
+// is at least arguably Vergr paying its own supplier, and this is plainly not.
+//
+// Both callables now reject. The file is kept rather than deleted so the
+// history, the fee constant and this reasoning stay findable, and so the
+// deployed functions return a clear message instead of vanishing and giving
+// callers an opaque internal error.
+//
+// The UI entry point was already gone: SendGemsModal.jsx is orphaned, replaced
+// on the DM wallet button by SendCoinsModal (coins, which are spend-only and
+// never cashable, so that one is fine and stays).
+//
+// Do NOT re-enable without a founder decision. Sending COINS is the supported
+// path and is not affected.
+const GEM_TRANSFER_DISABLED = () => err(
+  'failed-precondition',
+  'Sending gems to another person is no longer supported. You can send coins instead.',
+);
+
 exports.quoteGemSend = functions.https.onCall({ region: REGION }, async (request) => {
+  throw GEM_TRANSFER_DISABLED();
+  /* eslint-disable no-unreachable */
   const uid = request.auth?.uid;
   if (!uid) throw err('unauthenticated', 'Sign in first.');
 
@@ -136,6 +162,8 @@ exports.consumeGemQuote = async (uid, quoteId) => {
 };
 
 exports.sendGems = functions.https.onCall({ region: REGION }, async (request) => {
+  throw GEM_TRANSFER_DISABLED();  // see the note above quoteGemSend
+  /* eslint-disable no-unreachable */
   const uid = request.auth?.uid;
   if (!uid) throw err('unauthenticated', 'Sign in to send gems.');
 

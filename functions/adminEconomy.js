@@ -225,7 +225,13 @@ async function grantCurrency({ callerUid, targetUid, amount, currency, reason, t
     throw new HttpsError('invalid-argument', 'amount must be a non-zero number.');
   }
   const fieldMap = { coins: 'balance', gems: 'gems', vp: 'vp' };
-  const totalMap = { coins: 'totalEarned', gems: 'totalGemsEarned', vp: null };
+  // An admin grant is NOT revenue and must never land in an earnings total.
+  // It used to increment totalEarned / totalGemsEarned, which meant every
+  // support credit, comp and test grant was reported to the user as money they
+  // had EARNED. That is how the founder's account came to show $10.01 of
+  // earnings having earned nothing. Grants are tracked separately so the figure
+  // is not lost, just not counted as income.
+  const totalMap = { coins: 'totalGrantedCoins', gems: 'totalGrantedGems', vp: null };
   const field = fieldMap[currency];
   if (!field) throw new HttpsError('invalid-argument', 'currency must be coins/gems/vp.');
 

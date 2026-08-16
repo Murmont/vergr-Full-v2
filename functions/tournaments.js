@@ -107,7 +107,25 @@ const monthKeyForNow = () => {
 };
 
 // ─── 1. createTournamentSecure ────────────────────────────────────────
+
+// ── RETIRED 2026-08-16 ────────────────────────────────────────────────
+// Tournaments do not exist as a product. Unrouting the screens did not stop
+// these callables being invoked directly, and the money-moving ones could still
+// escrow a user's coins. They now throw.
+//
+// Bodies are RETAINED, not deleted, exactly as requestWithdrawal was: the
+// bracket, escrow and payout logic is still what the settle paths run on.
+//
+// Settle/refund paths stay LIVE on purpose so nothing already escrowed is
+// stranded (leaveTournamentSecure, leaveBrawlQueue, finalizeTournamentSecure,
+// reportMatchResultSecure, reportGameResultSecure, resolveTournamentDispute).
+const TOURNAMENTS_RETIRED = () => new HttpsError(
+  'failed-precondition',
+  'Tournaments have been retired and are no longer available on Vergr.',
+);
+
 exports.createTournamentSecure = functions.https.onCall({ secrets: ['VERGR_GEO_TOKEN'] }, async (request) => {
+  throw TOURNAMENTS_RETIRED();
   const uid = requireAuth(request);
 
   // Compliance gates — tournaments require KYC and a supported region.
@@ -409,6 +427,7 @@ exports.createTournamentSecure = functions.https.onCall({ secrets: ['VERGR_GEO_T
 //   treasury` — the doc says "prize pool goes to the squad treasury",
 //   the entry comes from there too.
 exports.joinTournamentSecure = functions.https.onCall({ secrets: ['VERGR_GEO_TOKEN'] }, async (request) => {
+  throw TOURNAMENTS_RETIRED();
   const uid = requireAuth(request);
 
   const { tournamentId, squadId = null, displayCaptureSupported = null } = request.data || {};
@@ -799,6 +818,7 @@ exports.leaveTournamentSecure = functions.https.onCall(async (request) => {
 // still get a tournament started with bracketData stub and the existing
 // client-side helpers can fill in. Phase 1 focus is escrow + result reporting.
 exports.startTournamentSecure = functions.https.onCall(async (request) => {
+  throw TOURNAMENTS_RETIRED();
   const uid = requireAuth(request);
   const { tournamentId } = request.data || {};
   if (!tournamentId) throw new HttpsError('invalid-argument', 'tournamentId required');
@@ -2720,6 +2740,7 @@ exports.resolveTournamentDispute = functions.https.onCall(async (request) => {
 // it in the Applications inbox. No coins move at apply time — the entry
 // fee is escrowed only when the user actually joins (after approval).
 exports.applyToTournamentSecure = functions.https.onCall(async (request) => {
+  throw TOURNAMENTS_RETIRED();
   const uid = requireAuth(request);
   const { tournamentId, message = '' } = request.data || {};
   if (!tournamentId) throw new HttpsError('invalid-argument', 'tournamentId required');

@@ -81,11 +81,25 @@ function isConfigured() {
 //   3. last-good persisted value
 //   4. otherwise: REFUSE the payment (never guess a rate that could undercharge)
 //
-// A safety buffer (app_config/general.payramFxBufferPct, default 0.02) is then
-// applied so amountUSD = priceEUR × rate × (1 + buffer). The bias is always to
-// charge slightly MORE USD — overcharging by the FX spread is acceptable;
+// A safety buffer (app_config/general.payramFxBufferPct) is then applied so
+// amountUSD = priceEUR × rate × (1 + buffer). The bias is always to charge
+// slightly MORE USD — overcharging by the FX spread is acceptable;
 // undercharging loses money and is not.
-const DEFAULT_FX_BUFFER = 0.02;
+//
+// RETIRED as a margin lever on 2026-08-11 (founder approved). Default is now 0.
+//
+// It was never a general-purpose lever, only an invisible markup on the EUR→USD
+// hop. The catalogue is going native USD, and USD is both the displayed AND the
+// charged currency, so for the buyer there is no conversion left to mark up.
+// Keeping a buffer on a native USD price would either do nothing or double-
+// charge on top of the itemised fees now shown at checkout. The margin it used
+// to provide has been folded into the per-coin price instead, where it is
+// honest and visible.
+//
+// The config field STAYS so the buffer can be switched back on without a deploy
+// if a genuinely FX-exposed rail ever appears. Set app_config/general
+// .payramFxBufferPct to re-enable. The mechanism below is untouched.
+const DEFAULT_FX_BUFFER = 0;
 const RATE_CACHE_MS = 6 * 60 * 60 * 1000;
 let _liveRate = null;       // { rate, fetchedAt }
 
@@ -138,21 +152,33 @@ async function priceEurToUsd(priceEUR) {
   return { amountUSD, rate, buffer };
 }
 
-// Coin packs — keys mirror src/utils/vpSystem.js → COIN_PACKS ids exactly.
+// Coin packs — keys AND values mirror src/utils/vpSystem.js → COIN_PACKS
+// exactly. NATIVE USD since 2026-08-11: coins are no longer priced in EUR and
+// converted, they are priced in the currency the buyer is charged in.
+//
+// ⚠ Keep the coin counts and prices identical to vpSystem.js. This is the
+// server-authoritative copy: the client names a pack, never an amount, and
+// every price the buyer is shown or charged is re-derived here.
 const COIN_PACKS = {
-  starter:   { coins: 100,   priceEUR: 0.99,   vpBonus: 0    },
-  gamer:     { coins: 500,   priceEUR: 4.79,   vpBonus: 0    },
-  pro:       { coins: 1200,  priceEUR: 11.49,  vpBonus: 0    },
-  elite:     { coins: 2500,  priceEUR: 22.99,  vpBonus: 0    },
-  legend:    { coins: 5000,  priceEUR: 44.99,  vpBonus: 0    },
-  champion:  { coins: 10000, priceEUR: 89.99,  vpBonus: 0    },
-  titan:     { coins: 15000, priceEUR: 134.99, vpBonus: 1500 },
-  ascendant: { coins: 25000, priceEUR: 224.99, vpBonus: 3000 },
+  starter:   { coins: 78,    priceUSD: 0.99,   vpBonus: 0    },
+  gamer:     { coins: 400,   priceUSD: 4.99,   vpBonus: 0    },
+  pro:       { coins: 815,   priceUSD: 9.99,   vpBonus: 0    },
+  elite:     { coins: 1650,  priceUSD: 19.99,  vpBonus: 0    },
+  legend:    { coins: 4180,  priceUSD: 49.99,  vpBonus: 0    },
+  champion:  { coins: 8450,  priceUSD: 99.99,  vpBonus: 0    },
+  titan:     { coins: 12800, priceUSD: 149.99, vpBonus: 1500 },
+  ascendant: { coins: 21500, priceUSD: 249.99, vpBonus: 3000 },
 };
 
 // Custom-amount pricing (Buy screen "Custom amount" tab). Authoritative floor.
-const CUSTOM_COIN_PRICE_EUR = 0.009;   // €0.0090 per coin (economy floor)
-const CUSTOM_MIN_EUR        = 10;      // PayRam underlying card-processor minimum
+// Set at the ladder's WORST per-coin rate (Starter, $0.99 / 78 coins) on
+// purpose: a custom amount must never undercut a pack, or the ladder's bulk
+// curve becomes decorative and buyers route around it.
+const CUSTOM_COIN_PRICE_USD = 0.0127;
+// PayRam's underlying card processor has a practical floor. It is not published
+// (their API exposes no fee or minimum field at all), so this stays a
+// conservative local guard rather than a mirrored constant.
+const CUSTOM_MIN_USD        = 10;
 
 // Subscription card payments (mirror functions/subscriptions.js TIER_EUR_PRICE).
 const TIER_EUR_PRICE = { lite: 4.99, pro: 9.99 };
@@ -194,7 +220,7 @@ exports.createPayramPayment = onCall({ region: REGION, secrets: SECRETS }, async
     // it is an obstacle course.
     let coins = 0;
     let vpBonus = 0;
-    let priceEUR = 0;
+    let priceUSD = 0;
     const lines = [];
     for (const raw of cart.slice(0, 20)) {
       const sku = String(raw?.sku || '');
@@ -203,13 +229,13 @@ exports.createPayramPayment = onCall({ region: REGION, secrets: SECRETS }, async
       if (!pack) throw new HttpsError('invalid-argument', `Unknown pack: ${sku}`);
       coins    += pack.coins   * qty;
       vpBonus  += pack.vpBonus * qty;
-      priceEUR += pack.priceEUR * qty;
-      lines.push({ sku, qty, coins: pack.coins * qty, priceEUR: +(pack.priceEUR * qty).toFixed(2) });
+      priceUSD += pack.priceUSD * qty;
+      lines.push({ sku, qty, coins: pack.coins * qty, priceUSD: +(pack.priceUSD * qty).toFixed(2) });
     }
     if (!coins) throw new HttpsError('invalid-argument', 'Cart is empty.');
     order = {
       kind: 'coins', sku: 'cart', coins, vpBonus,
-      priceEUR: +priceEUR.toFixed(2), lines,
+      priceUSD: +priceUSD.toFixed(2), lines,
     };
   } else if (subscriptionTier) {
     const priceEUR = TIER_EUR_PRICE[subscriptionTier];
@@ -218,14 +244,14 @@ exports.createPayramPayment = onCall({ region: REGION, secrets: SECRETS }, async
   } else if (packSku) {
     const pack = COIN_PACKS[packSku];
     if (!pack) throw new HttpsError('invalid-argument', 'Unknown pack');
-    order = { kind: 'coins', sku: packSku, coins: pack.coins, vpBonus: pack.vpBonus, priceEUR: pack.priceEUR };
+    order = { kind: 'coins', sku: packSku, coins: pack.coins, vpBonus: pack.vpBonus, priceUSD: pack.priceUSD };
   } else {
     const coins = Math.floor(Number(customCoins) || 0);
-    const priceEUR = +(coins * CUSTOM_COIN_PRICE_EUR).toFixed(2);
-    if (!coins || priceEUR < CUSTOM_MIN_EUR) {
-      throw new HttpsError('invalid-argument', `Minimum custom purchase is €${CUSTOM_MIN_EUR}.`);
+    const priceUSD = +(coins * CUSTOM_COIN_PRICE_USD).toFixed(2);
+    if (!coins || priceUSD < CUSTOM_MIN_USD) {
+      throw new HttpsError('invalid-argument', `Minimum custom purchase is $${CUSTOM_MIN_USD}.`);
     }
-    order = { kind: 'coins', sku: 'custom', coins, vpBonus: 0, priceEUR };
+    order = { kind: 'coins', sku: 'custom', coins, vpBonus: 0, priceUSD };
   }
 
   if (!isConfigured()) {
@@ -261,8 +287,48 @@ exports.createPayramPayment = onCall({ region: REGION, secrets: SECRETS }, async
   }
 
   // Pricing is server-authoritative — never trust a client-sent amount.
-  // priceEurToUsd throws if no trustworthy FX rate is available (fail closed).
-  const { amountUSD, rate, buffer } = await priceEurToUsd(order.priceEUR);
+  //
+  // COINS are native USD: the pack price IS the charged figure, no conversion,
+  // no FX rate to fail on, no buffer. SUBSCRIPTIONS and gem sends are still
+  // priced in EUR (subscriptions because they carry regional multipliers, which
+  // are safe only on something that is consumed rather than redeemed), so they
+  // still convert here and priceEurToUsd still fails closed if no trustworthy
+  // rate is available.
+  let amountUSD;
+  let rate = null;
+  let buffer = 0;
+  if (typeof order.priceUSD === 'number') {
+    amountUSD = +order.priceUSD.toFixed(2);
+  } else {
+    ({ amountUSD, rate, buffer } = await priceEurToUsd(order.priceEUR));
+  }
+
+  // ── Fees and tax, ADDED to the buyer (founder decision 2026-08-11) ──
+  //
+  // `amountUSD` above is the SUBTOTAL: what we intend to net. The buyer is
+  // charged that plus the rail's processing fee and any tax. Without this the
+  // Starter pack nets $0.66 on a $0.99 sale, because Stripe-class flat fees are
+  // 30% of a 99-cent charge.
+  //
+  // Quoted here rather than trusted from the client, on the same server call
+  // that priced the order, so the number on the button and the number on the
+  // statement come from one calculation. If the quote fails we charge the
+  // subtotal and eat the fee: undercharging is recoverable, overcharging a buyer
+  // on a guessed number is not.
+  const subtotalUSD = amountUSD;
+  let buyerFeesUSD = 0;
+  try {
+    const { quoteCheckout } = require('./checkoutFees');
+    const q = await quoteCheckout({ subtotalUsd: subtotalUSD, method: 'payram_card', uid });
+    if (q && q.total > 0) {
+      amountUSD = q.total;
+      buyerFeesUSD = +(q.total - subtotalUSD).toFixed(2);
+    }
+  } catch (e) {
+    functions.logger.warn('checkout fee quote failed on payment path; charging subtotal', {
+      uid, err: e?.message || e,
+    });
+  }
 
   const customerEmail = request.auth?.token?.email || `${uid}@users.vergr.app`;
 
@@ -303,8 +369,16 @@ exports.createPayramPayment = onCall({ region: REGION, secrets: SECRETS }, async
     gemSend: order.gemQuote || null,
     coinsToCredit: order.coins,        // field name circleWallets reads (0 for subs)
     vpBonus: order.vpBonus,
-    amountEUR: order.priceEUR,
+    // null for coins since 2026-08-11: they are natively USD and never had a EUR
+    // price to record. Subscriptions and gem sends still carry one.
+    amountEUR: typeof order.priceEUR === 'number' ? order.priceEUR : null,
+    // `amountUSD` is what the buyer is CHARGED (subtotal + fees + tax).
+    // `subtotalUSD` is what we intend to net. platformRevenue.js books the two
+    // separately so the ledger reconciles against the card statement rather than
+    // against a net figure nothing can be tied back to.
     amountUSD,
+    subtotalUSD,
+    buyerFeesUSD,
     eurUsdRate: rate,
     fxBufferPct: buffer,
     paymentUrl: resp.data.url,
@@ -458,7 +532,16 @@ async function settlePayramOrder(referenceId, ctx = {}) {
 
     t.update(orderRef, settleStamp);
 
-    return { credited: true, uid: order.uid, coins: order.coinsToCredit, vpBonus: order.vpBonus || 0 };
+    return {
+      credited: true, uid: order.uid, coins: order.coinsToCredit, vpBonus: order.vpBonus || 0,
+      // Carried out of the transaction for the profit ledger below. `order` is
+      // scoped to this callback, so the post-commit block cannot read it.
+      // What we intend to NET, i.e. the ladder price. Falls back to amountUSD
+      // for orders created before fees were itemised, where the two were equal.
+      subtotalUSD: Number(order.subtotalUSD) || Number(order.amountUSD) || 0,
+      buyerFeesUSD: Number(order.buyerFeesUSD) || 0,
+      processorFeeUSD: Number(order.processorFeeUSD) || 0,
+    };
   });
 
   // Post-commit, guarded: pay the buyer's referrer their coin revenue-share.
@@ -467,6 +550,24 @@ async function settlePayramOrder(referenceId, ctx = {}) {
     await creditReferralPurchaseBonus({
       buyerUid: result.uid, coins: result.coins, sourceId: `order:${referenceId}`,
     });
+
+    // Post-commit, guarded: book the sale to the profit ledger. Same sourceId
+    // as the referral bonus above, so the reconciler cron settling the same
+    // order a second time cannot double-book either one.
+    try {
+      const { bookCoinPurchase } = require('./platformRevenue');
+      await bookCoinPurchase({
+        uid: result.uid,
+        grossUsd: result.subtotalUSD,
+        coins: result.coins,
+        sourceId: `order:${referenceId}`,
+        gateway: 'payram',
+        buyerFeesUsd: result.buyerFeesUSD,
+        processorFeeUsd: result.processorFeeUSD,
+      });
+    } catch (e) {
+      console.error('platform revenue booking failed', referenceId, e?.message || e);
+    }
   }
   return result;
 }
@@ -661,6 +762,36 @@ exports._settlePayramOrder = settlePayramOrder;
 exports._priceEurToUsd = priceEurToUsd;
 
 /**
+ * Price one subscription tier, for ANY card rail.
+ *
+ * Exported so any future card rail quotes a subscription through exactly this
+ * code rather than keeping its own copy. Two rails with two price tables is the
+ * duplicated-constant failure that has already bitten this codebase once, and on
+ * a subscription it would mean the same subscriber paying different amounts
+ * depending on which button they pressed. (The Stripe rail that used to consume
+ * this was removed 2026-08-13; the export stays because the rule outlives it.)
+ *
+ * The EUR base is deliberate, not legacy: regional multipliers are applied to it,
+ * and a regional multiplier is only ever safe on something CONSUMED rather than
+ * redeemed. Coins are redeemable, so they are native USD with no multiplier.
+ *
+ * Returns { priceEUR, baseEUR, geo, amountUSD }. Fails closed via priceEurToUsd
+ * when no trustworthy FX rate is available.
+ */
+exports._internal_priceSubscription = async function _internal_priceSubscription(uid, tier) {
+  const baseEUR = TIER_EUR_PRICE[tier];
+  if (!baseEUR) throw new HttpsError('invalid-argument', 'Unknown subscription tier');
+  const geo = await regionalPrice(uid, baseEUR);
+  const { amountUSD } = await priceEurToUsd(geo.priceEUR);
+  return {
+    baseEUR,
+    priceEUR: geo.priceEUR,
+    geo: { country: geo.country, tier: geo.tier, multiplier: geo.multiplier },
+    amountUSD,
+  };
+};
+
+/**
  * What will this actually cost me, in the currency I will actually be charged.
  *
  * The buy screen used to show a EUR figure with "billed in USD/USDT" beneath
@@ -683,7 +814,26 @@ exports.getCoinPriceQuote = onCall(
     const uid = request.auth?.uid;
     if (!uid) throw new HttpsError('unauthenticated', 'Sign in required.');
 
-    const { packSku, customCoins, subscriptionTier, all, cart } = request.data || {};
+    const { packSku, customCoins, subscriptionTier, all, cart, method } = request.data || {};
+
+    // Fees and tax are quoted by the SERVER, on the same call that prices the
+    // basket, so the breakdown and the total can never come from two different
+    // calculations. `method` is the rail the buyer has selected; omitted means
+    // "price only, no fee lines yet" (the pack grid, before a rail is chosen).
+    const feesFor = async (subtotalUsd) => {
+      if (!method || !(subtotalUsd > 0)) return null;
+      try {
+        const { quoteCheckout } = require('./checkoutFees');
+        return await quoteCheckout({ subtotalUsd, method, uid });
+      } catch (e) {
+        // A fee-quote failure must not break the price quote: the buyer can
+        // still see what the coins cost. It DOES mean we must not present a
+        // total, which the client handles by falling back to the subtotal and
+        // saying fees are shown at checkout.
+        functions.logger.warn('checkout fee quote failed', { method, err: e?.message });
+        return null;
+      }
+    };
 
     // The whole ladder in ONE call. The buy screen shows eight packs, and eight
     // round trips to price a single screen is how you make a wallet feel slow.
@@ -693,10 +843,11 @@ exports.getCoinPriceQuote = onCall(
       // because they redeem at one global rate; see the note on the payment
       // path. This call exists to convert EUR to the USD the buyer is charged,
       // nothing more.
-      const entries = await Promise.all(Object.entries(COIN_PACKS).map(async ([sku, pack]) => {
-        const { amountUSD } = await priceEurToUsd(pack.priceEUR);
-        return [sku, { coins: pack.coins, priceEUR: pack.priceEUR, amountUSD }];
-      }));
+      // Native USD: the pack price IS the charged figure. No FX call, so this
+      // can no longer fail because a rate provider is down.
+      const entries = Object.entries(COIN_PACKS).map(([sku, pack]) => (
+        [sku, { coins: pack.coins, priceUSD: pack.priceUSD, amountUSD: pack.priceUSD }]
+      ));
       return { currency: 'USD', packs: Object.fromEntries(entries) };
     }
 
@@ -705,7 +856,7 @@ exports.getCoinPriceQuote = onCall(
     // the total on the cart button is the total on the statement.
     if (Array.isArray(cart) && cart.length) {
       let coinsTotal = 0;
-      let eurTotal = 0;
+      let usdTotal = 0;
       const lines = [];
       for (const raw of cart.slice(0, 20)) {
         const sku = String(raw?.sku || '');
@@ -713,42 +864,55 @@ exports.getCoinPriceQuote = onCall(
         const pack = COIN_PACKS[sku];
         if (!pack) continue;
         coinsTotal += pack.coins * qty;
-        eurTotal   += pack.priceEUR * qty;
-        lines.push({ sku, qty, coins: pack.coins * qty, priceEUR: +(pack.priceEUR * qty).toFixed(2) });
+        usdTotal   += pack.priceUSD * qty;
+        lines.push({ sku, qty, coins: pack.coins * qty, priceUSD: +(pack.priceUSD * qty).toFixed(2) });
       }
       if (!coinsTotal) throw new HttpsError('invalid-argument', 'Cart is empty.');
-      const eur = +eurTotal.toFixed(2);
-      const { amountUSD: cartUSD, rate: cartRate } = await priceEurToUsd(eur);
-      return { coins: coinsTotal, priceEUR: eur, amountUSD: cartUSD, currency: 'USD', fxRate: cartRate, lines };
+      const usd = +usdTotal.toFixed(2);
+      return {
+        coins: coinsTotal, priceUSD: usd, amountUSD: usd,
+        currency: 'USD', fxRate: null, lines,
+        checkout: await feesFor(usd),
+      };
     }
 
-    let baseEUR = 0;
-    let coins = 0;
-    if (subscriptionTier) {
-      baseEUR = TIER_EUR_PRICE[subscriptionTier];
-      if (!baseEUR) throw new HttpsError('invalid-argument', 'Unknown subscription tier');
-    } else if (packSku && packSku !== 'custom') {
-      const pack = COIN_PACKS[packSku];
-      if (!pack) throw new HttpsError('invalid-argument', 'Unknown pack');
-      baseEUR = pack.priceEUR;
-      coins = pack.coins;
-    } else {
-      coins = Math.floor(Number(customCoins) || 0);
-      baseEUR = +(coins * CUSTOM_COIN_PRICE_EUR).toFixed(2);
-      if (!coins || baseEUR < CUSTOM_MIN_EUR) {
-        throw new HttpsError('invalid-argument', `Minimum is EUR ${CUSTOM_MIN_EUR}.`);
+    // COINS: native USD, no conversion. SUBSCRIPTIONS: still EUR, because they
+    // carry regional multipliers and those are safe only on something consumed
+    // rather than redeemed.
+    if (!subscriptionTier) {
+      let coins = 0;
+      let priceUSD = 0;
+      if (packSku && packSku !== 'custom') {
+        const pack = COIN_PACKS[packSku];
+        if (!pack) throw new HttpsError('invalid-argument', 'Unknown pack');
+        priceUSD = pack.priceUSD;
+        coins = pack.coins;
+      } else {
+        coins = Math.floor(Number(customCoins) || 0);
+        priceUSD = +(coins * CUSTOM_COIN_PRICE_USD).toFixed(2);
+        if (!coins || priceUSD < CUSTOM_MIN_USD) {
+          throw new HttpsError('invalid-argument', `Minimum is $${CUSTOM_MIN_USD}.`);
+        }
       }
+      return {
+        coins,
+        priceUSD,
+        // THE NUMBER ON THE CARD STATEMENT (before fees and tax; `checkout.total`
+        // is the figure the buyer actually pays once a rail is chosen).
+        amountUSD: priceUSD,
+        currency: 'USD',
+        fxRate: null,
+        checkout: await feesFor(priceUSD),
+      };
     }
 
-    // Subscriptions may be priced regionally; coins never are. Same rule, and
-    // the same reason, as the payment path.
-    const priceEUR = subscriptionTier
-      ? (await regionalPrice(uid, baseEUR)).priceEUR
-      : baseEUR;
+    const baseEUR = TIER_EUR_PRICE[subscriptionTier];
+    if (!baseEUR) throw new HttpsError('invalid-argument', 'Unknown subscription tier');
+    const priceEUR = (await regionalPrice(uid, baseEUR)).priceEUR;
     const { amountUSD, rate } = await priceEurToUsd(priceEUR);
 
     return {
-      coins,
+      coins: 0,
       priceEUR,
       // THE NUMBER ON THE CARD STATEMENT.
       amountUSD,

@@ -36,7 +36,7 @@ exports.subscribeWithCoins = functions.https.onCall(
     const now = Date.now();
     const periodEnd = now + PERIOD_MS;
 
-    return await db.runTransaction(async (tx) => {
+    const out = await db.runTransaction(async (tx) => {
       const walletRef = db.collection('wallets').doc(uid);
       const userRef = db.collection('users').doc(uid);
       const wallet = await tx.get(walletRef);
@@ -84,6 +84,26 @@ exports.subscribeWithCoins = functions.https.onCall(
 
       return { ok: true, tier, periodEnd };
     });
+
+    // Coins spent HERE never become anyone's withdrawable balance, so the payout
+    // liability accrued when they were sold is released in full. This is the
+    // most profitable thing a coin can do: ~500 coins spent on Lite return the
+    // full sticker, the same coins tipped return 22-36%. Nothing was counting
+    // it, so nobody could tell whether the sink mattered.
+    //
+    // Post-commit and separately guarded: bookkeeping must never fail a
+    // subscription the user has already been told is active. Idempotent on
+    // sourceId, so a transaction retry cannot double-release.
+    try {
+      const { bookPlatformSink } = require('./platformRevenue');
+      await bookPlatformSink({
+        uid, coins: cost, sink: `subscription_${tier}`, sourceId: `sub:${uid}:${now}`,
+      });
+    } catch (e) {
+      console.error('bookPlatformSink failed', uid, e?.message || e);
+    }
+
+    return out;
   }
 );
 

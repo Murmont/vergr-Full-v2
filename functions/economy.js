@@ -9,12 +9,25 @@
 
 const functions = require('firebase-functions/v2');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
-const { convertibleCoins } = require('./coinLedger');
+const { convertibleCoins, shareForEarnings } = require('./coinLedger');
 
 const db = getFirestore('vgrdb');
 const REGION = 'europe-west1';
 
-// ── COMMISSION + LIMITS (mirrors src/utils/vpSystem.js) ───────────────
+// ── REVENUE SHARE + LIMITS ────────────────────────────────────────────
+// The rate ladder lives in ./coinLedger.js and is imported, NOT re-declared.
+// It used to be copy-pasted into this file, which meant three hand-maintained
+// mirrors of the same array and a silent split-brain the first time one moved.
+// See docs/REVENUE_SHARE_PLAN.md.
+//
+// The client mirror in src/utils/vpSystem.js still has to be kept equal by hand
+// (it cannot require a functions/ module), so any change to the ladder is a
+// TWO-file change: coinLedger.js and vpSystem.js.
+
+/**
+ * @deprecated VP-keyed commission. Superseded by shareForEarnings(). Retained
+ * only so anything still importing it from this module keeps working.
+ */
 const COMMISSION_RATES = [0.30, 0.28, 0.25, 0.22, 0.20, 0.18, 0.15];
 const VP_THRESHOLDS    = [0,    500,  2000, 5000, 15000, 40000, 100000];
 
@@ -162,8 +175,12 @@ exports.convertCoinsToGems = functions.https.onCall(
       const vanguardActive = userData.vanguard?.rank
         && userData.vanguard?.status !== 'suspended'
         && userData.vanguard?.status !== 'retired';
-      const commission = vanguardActive ? 0 : commissionForVP(w.vp || 0);
-      const gemsCredited = Math.floor(amount * (1 - commission));
+      // Revenue share is keyed to LIFETIME GROSS EARNED, not VP (2026-08-14).
+      // The coins being converted were counted into totalEarnedCoinsGross when
+      // they were earned, so this reads the creator's true tier.
+      const share = vanguardActive ? 1 : shareForEarnings(w.totalEarnedCoinsGross || 0);
+      const commission = 1 - share;
+      const gemsCredited = Math.floor(amount * share);
       const platformCut  = amount - gemsCredited;
       const newCoinBalance = (w.balance || 0) - amount;
       const newGemBalance  = (w.gems || 0) + gemsCredited;

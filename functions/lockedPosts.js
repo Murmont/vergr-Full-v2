@@ -174,9 +174,26 @@ exports.createLockedPost = functions.https.onCall(
     const caption = String(request.data?.caption || '').slice(0, 2000);
     const priceCoins = Math.floor(Number(request.data?.priceCoins) || 0);
     const isVideo = request.data?.isVideo === true;
+    // Adult marker. Only ever 'nsfw' or absent, never a literal 'general', so
+    // existing documents and ordinary posts read identically (absent = safe).
+    // The seller declares it here; the priced-media scanner can correct it
+    // later, and entitlements.js refuses to serve it without a verified age.
+    let contentRating = request.data?.contentRating === 'nsfw' ? 'nsfw' : null;
+    // Set by the scanner below when it sees adult content the seller did not
+    // declare. Declared here because the scan runs before the document write.
+    let autoRating = null;
     const audience = ['public', 'followers', 'subscribers'].includes(request.data?.audience)
       ? request.data.audience
       : 'public';
+
+    // Shape of the media, measured on the sender's device. A feed card and a
+    // profile tile both need to reserve the post's real proportions before the
+    // blurred preview has loaded, or the layout jumps. Clamped because these
+    // only ever produce a ratio and an absurd value would break the layout.
+    const clampDim = (v) => Math.min(20000, Math.max(0, Math.floor(Number(v) || 0)));
+    const previewW = clampDim(request.data?.previewW);
+    const previewH = clampDim(request.data?.previewH);
+    const durationMs = Math.min(24 * 3600 * 1000, Math.max(0, Math.floor(Number(request.data?.durationMs) || 0)));
 
     if (priceCoins < MIN_PRICE_COINS || priceCoins > MAX_PRICE_COINS) {
       throw new HttpsError(
@@ -222,6 +239,13 @@ exports.createLockedPost = functions.https.onCall(
       if (verdict.verdict === 'flag') {
         moderation = { status: 'review', category: verdict.category || 'none', reason: verdict.reason || '' };
       }
+      // SELF-DECLARATION IS NOT TRUSTED. The seller ticks the NSFW box; the
+      // scanner decides. A creator who forgets the toggle, or omits it to reach
+      // a wider feed, gets the label applied anyway. Deliberately one-way: the
+      // scanner can ADD the marker but never remove one the seller set, because
+      // a false negative puts adult content in front of someone who did not
+      // consent to it, while a false positive only narrows that seller's reach.
+      if (verdict.adult === true) autoRating = 'nsfw';
     }
 
     const user = await db.collection('users').doc(uid).get();
@@ -232,6 +256,7 @@ exports.createLockedPost = functions.https.onCall(
 
     batch.set(postRef, {
       authorId: uid,
+      ...((contentRating || autoRating) ? { contentRating: 'nsfw' } : {}),
       authorName: u.displayName || u.username || 'Unknown',
       authorUsername: u.username || null,
       authorAvatar: u.avatar || null,
@@ -246,6 +271,9 @@ exports.createLockedPost = functions.https.onCall(
         unlockCount: 0,
         isVideo,
         audience,
+        previewW,
+        previewH,
+        durationMs: isVideo ? durationMs : 0,
       },
       likes: 0,
       commentCount: 0,

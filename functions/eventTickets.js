@@ -27,6 +27,8 @@ if (admin.apps.length === 0) admin.initializeApp();
 const db = getFirestore('vgrdb');
 
 const HttpsError = functions.https.HttpsError;
+const { settleEarnedToGems } = require('./coinLedger');
+
 const REGION = 'europe-west1';
 
 function requireAuth(request) {
@@ -144,9 +146,16 @@ exports.purchaseEventTicket = functions.https.onCall(
       const buyerBalance = buyerWallet.data().balance || 0;
       if (buyerBalance < curPrice) throw new HttpsError('failed-precondition', 'Insufficient coin balance');
 
-      const platformFee       = Math.floor(curPrice * 0.10);
+      // ONE RATE (2026-08-14). The 10% surface fee is gone: the ticket price is
+      // gross revenue and Vergr's share is taken once, at the revenue-share step
+      // in coinLedger.js, when the host's earned coins become gems.
+      //
+      // The purse contribution is NOT a fee and stays exactly as it was. It is
+      // the host voluntarily allocating a slice of their own revenue to the
+      // prize pool, so it comes out of the host's side, not ours.
+      const platformFee       = 0;
       const purseContribution = Math.floor(curPrice * (purseSlicePct / 100));
-      const hostNet           = curPrice - platformFee - purseContribution;
+      const hostNet           = curPrice - purseContribution;
 
       // Debit buyer.
       tx.update(buyerWalletRef, {
@@ -215,7 +224,19 @@ exports.purchaseEventTicket = functions.https.onCall(
         ok: true, ticketId: ticketRef.id,
         pricePaid: curPrice, platformFee, hostNet, purseContribution,
         soldAfter: sold + 1, capacity,
+        hostUid: t.adminId,
       };
+    }).then(async (r) => {
+      // AUTO-CONVERT AT RECEIPT: the host's net becomes gems at their current
+      // rate. Post-commit because the transaction writes the host wallet with
+      // set/merge and never reads it, so there is no VP in scope to price with.
+      if (r?.hostNet > 0 && r.hostUid) {
+        await settleEarnedToGems(db, {
+          uid: r.hostUid, coins: r.hostNet,
+          source: 'event_ticket', sourceId: `ticket:${r.ticketId}`,
+        });
+      }
+      return r;
     });
   });
 
@@ -294,8 +315,10 @@ exports.purchaseSeasonPass = functions.https.onCall(
       const balance = bw.exists ? (bw.data().balance || 0) : 0;
       if (balance < price) throw new HttpsError('failed-precondition', 'Insufficient coin balance');
 
-      const platformFee = Math.floor(price * 0.10);
-      const hostNet = price - platformFee;
+      // ONE RATE (2026-08-14) — see the ticket path above. No surface fee; the
+      // full pass price is gross revenue and the share is taken at conversion.
+      const platformFee = 0;
+      const hostNet = price;
       const expiresAt = new Date(now + durationDays * 86400000);
 
       tx.update(buyerWalletRef, {
@@ -332,7 +355,16 @@ exports.purchaseSeasonPass = functions.https.onCall(
         body: 'A fan bought your season pass.', senderId: uid, read: false,
         createdAt: FieldValue.serverTimestamp(),
       });
-      return { ok: true, expiresAt: expiresAt.getTime() };
+      return { ok: true, expiresAt: expiresAt.getTime(), hostUid, hostNet, passId: passRef.id };
+    }).then(async (r) => {
+      // Same rule as a single ticket: the host's share converts at receipt.
+      if (r?.hostNet > 0 && r.hostUid) {
+        await settleEarnedToGems(db, {
+          uid: r.hostUid, coins: r.hostNet,
+          source: 'season_pass', sourceId: `pass:${r.passId}`,
+        });
+      }
+      return r;
     });
   });
 

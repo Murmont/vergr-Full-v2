@@ -27,7 +27,25 @@ function lobbyCode() {
   return `VERGR-${s}`;
 }
 
+
+// ── RETIRED 2026-08-16 ────────────────────────────────────────────────
+// Tournaments do not exist as a product. Unrouting the screens did not stop
+// these callables being invoked directly, and the money-moving ones could still
+// escrow a user's coins. They now throw.
+//
+// Bodies are RETAINED, not deleted, exactly as requestWithdrawal was: the
+// bracket, escrow and payout logic is still what the settle paths run on.
+//
+// Settle/refund paths stay LIVE on purpose so nothing already escrowed is
+// stranded (leaveTournamentSecure, leaveBrawlQueue, finalizeTournamentSecure,
+// reportMatchResultSecure, reportGameResultSecure, resolveTournamentDispute).
+const TOURNAMENTS_RETIRED = () => new HttpsError(
+  'failed-precondition',
+  'Tournaments have been retired and are no longer available on Vergr.',
+);
+
 exports.joinBrawlQueue = functions.https.onCall({ secrets: ['VERGR_GEO_TOKEN'] }, async (request) => {
+  throw TOURNAMENTS_RETIRED();
   const uid = request.auth?.uid;
   if (!uid) throw new HttpsError('unauthenticated', 'Sign in required.');
   const { game, stake = 0 } = request.data || {};

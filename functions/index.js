@@ -32,6 +32,13 @@ const defer = (_opts, fn) => fn;
 const ugcRenderer = require('./ugcRenderer');
 exports.ugcRenderer = ugcRenderer.ugcRenderer;
 
+// HTTP 410 for the help articles removed in the revenue-share migration.
+// Hosting rewrites the removed slugs here, ahead of the SPA catch-all, because
+// `redirects` can only emit 3xx and the catch-all would otherwise answer 200
+// with the app shell (a soft 404). See functions/gone.js for the full reasoning.
+const gone = require('./gone');
+exports.goneHelp = gone.goneHelp;
+
 // Scheduled-post publisher (releases scheduled posts/polls + honours options).
 const scheduledPosts = require('./scheduledPosts');
 // publishScheduledPosts — folded into cron5Min dispatcher (see EOF).
@@ -73,8 +80,49 @@ const economy = require('./economy');
 exports.convertCoinsToGems = economy.convertCoinsToGems;
 // Person-to-person gem transfer (the DM "Wallet"). Deliberately its own
 // callable rather than a branch inside sendTip — see functions/gemTransfer.js.
+// Both DISABLED 2026-08-14 (founder decision 4). Kept exported so callers get a
+// clear "no longer supported" message instead of an opaque missing-function
+// error; see functions/gemTransfer.js.
 exports.sendGems = require('./gemTransfer').sendGems;
 exports.quoteGemSend = require('./gemTransfer').quoteGemSend;
+
+// ── Creator payouts (revenue share) — docs/REVENUE_SHARE_PLAN.md ──
+// Scheduled supplier settlement. NOT yet the live payout path: it needs a
+// payout partner wired into disbursePayout() before it can move money, and
+// functions/withdrawals.js is still the active rail. Two systems must never be
+// able to move the same gems at once, so the cutover is deliberate and separate.
+exports.runCreatorPayouts = require('./creatorPayouts').runCreatorPayouts;
+
+// Creator Program: anyone can use Vergr, only a creator can monetize.
+const creatorProgram = require('./creatorProgram');
+exports.getCreatorEligibility = creatorProgram.getCreatorEligibility;
+exports.applyForCreator = creatorProgram.applyForCreator;
+exports.adminListCreatorApplications = creatorProgram.adminListCreatorApplications;
+exports.adminDecideCreatorApplication = creatorProgram.adminDecideCreatorApplication;
+exports.previewCreatorPayoutRun = require('./creatorPayouts').previewCreatorPayoutRun;
+exports.adminRecordPayoutStrike = require('./creatorPayouts').adminRecordPayoutStrike;
+exports.adminReversePayoutStrike = require('./creatorPayouts').adminReversePayoutStrike;
+exports.getPayoutAccount = require('./creatorPayouts').getPayoutAccount;
+exports.enrollForPayouts = require('./creatorPayouts').enrollForPayouts;
+exports.adminSetPayoutAccountState = require('./creatorPayouts').adminSetPayoutAccountState;
+
+// Solvency: are creator liabilities covered by what we hold. Alarms on shortfall
+// AND on "cannot tell", because an unverifiable solvency figure is not solvency.
+exports.reconcileSolvency = require('./solvencyLedger').reconcileSolvency;
+exports.getSolvencyLedger = require('./solvencyLedger').getSolvencyLedger;
+
+// Gems -> coins at a flat 1:1. The spend-side counterpart to converting out:
+// gems are withdrawal-only, so without this a creator who converted has no way
+// to spend what they earned in-app. Also the required other half of
+// auto-convert-at-receipt (see functions/coinLedger.js → earnedGemCredit).
+exports.buyCoinsWithGems = require('./gemBuyback').buyCoinsWithGems;
+
+// Stripe was the second card rail from 2026-08-11. Stripe closed the account,
+// so on 2026-08-13 the rail was removed outright rather than left dormant:
+// `createStripeCheckout`, `stripeWebhook` and the legacy unsigned
+// `handleStripeWebhook` are gone, along with the SDK and the secrets. PayRam is
+// the card rail again (functions/payram.js), Play Billing is the other.
+// Do NOT re-add a processor without wiring its webhook signature check first.
 
 // Admin security — TOTP step-up, audit log, rate-limit, alert pipeline.
 // Every privileged callable wraps through these helpers.
@@ -497,6 +545,10 @@ exports.analyzeTournamentMatch  = tournamentAi.analyzeTournamentMatch;
 const contentAi = require('./contentAi');
 exports.moderateChatMessage = contentAi.moderateChatMessage;
 exports.moderateNewPost     = contentAi.moderateNewPost;
+
+// Adaptive video: queue a transcode job for posts carrying video. Writes ONE doc
+// to transcode_jobs and touches nothing else, so it cannot affect posting.
+exports.enqueueVideoTranscode = require('./transcodeQueue').enqueueVideoTranscode;
 exports.rescanPost          = contentAi.rescanPost;
 
 // Vanguard tournament-assignment system (claim-based).
@@ -589,11 +641,18 @@ exports.approveTournamentApplication  = tournaments.approveTournamentApplication
 exports.declineTournamentApplication  = tournaments.declineTournamentApplication;
 
 // Ticketed events — non-gambling funding model. Fans buy spectator tickets;
-// competitors register free. See functions/eventTickets.js for the contract.
+// Ticketed events: fans buy a ticket to attend. No competitors, no prize purse.
 const eventTickets = require('./eventTickets');
 exports.purchaseEventTicket  = eventTickets.purchaseEventTicket;
 exports.getEventTicketStatus = eventTickets.getEventTicketStatus;
 exports.purchaseSeasonPass   = eventTickets.purchaseSeasonPass;
+
+// Event CREATION. Separate from tournaments on purpose: tournaments are retired
+// and their money-moving callables throw, so an event must not be able to grow
+// back into one through a shared path. See functions/events.js.
+const events = require('./events');
+exports.createEventSecure = events.createEventSecure;
+exports.closeEventSecure  = events.closeEventSecure;
 
 // Paid access to content: locked posts, locked chat media, paid streams. ONE
 // system for all of them, so the next thing that charges for access does not
@@ -622,6 +681,14 @@ exports.refundOutstandingPicks = refundPicks.refundOutstandingPicks;
 const lockedMessages = require('./lockedMessages');
 exports.getLockedMessageUploadUrl = lockedMessages.getLockedMessageUploadUrl;
 exports.sendLockedMessage         = lockedMessages.sendLockedMessage;
+
+// Content Packs: a saved, priced set a creator re-sends without re-uploading.
+// Sends go through the same writer as an ordinary locked send, so a pack is not
+// a second kind of purchase.
+const mediaPacks = require('./mediaPacks');
+exports.createMediaPack = mediaPacks.createMediaPack;
+exports.deleteMediaPack = mediaPacks.deleteMediaPack;
+exports.sendMediaPack   = mediaPacks.sendMediaPack;
 
 // Google Play Billing — coin purchases on the Play store build only. Verifies
 // the purchase token against the Play Developer API before crediting; see
@@ -3354,13 +3421,14 @@ exports.sendTip = functions.https.onCall(async (request) => {
     // All reads MUST precede writes in a transaction.
     const senderWallet = await tx.get(senderWalletRef);
     const recipientWallet = await tx.get(recipientWalletRef);
+    // Read the recipient's user doc for the Vanguard exemption. Inside the
+    // transaction so a rank flip mid-write is still consistent, and BEFORE any
+    // write because Firestore requires all reads first.
+    const recipientUserSnap = await tx.get(db.collection('users').doc(recipientId));
     if (!senderWallet.exists) throw new functions.https.HttpsError('not-found', 'Sender wallet not found');
     if (!recipientWallet.exists) throw new functions.https.HttpsError('not-found', 'Recipient wallet not found');
     const senderBalance = senderWallet.data().balance || 0;
     if (senderBalance < amount) throw new functions.https.HttpsError('failed-precondition', 'Insufficient coin balance');
-
-    const platformFee = Math.floor(amount * 0.10);
-    const recipientAmount = amount - platformFee;
 
     // ── Sender (gifter) VP — sub-1:1 (1 VP per 25 coins), plan-multiplied, uncapped ──
     const vpEarned = applyVPMultiplier(Math.floor(amount / GIFT_COINS_PER_VP), senderPlan);
@@ -3368,16 +3436,53 @@ exports.sendTip = functions.https.onCall(async (request) => {
     const senderUpdate = { balance: admin.firestore.FieldValue.increment(-amount), totalSpent: admin.firestore.FieldValue.increment(amount), totalTipped: admin.firestore.FieldValue.increment(amount), updatedAt: admin.firestore.FieldValue.serverTimestamp() };
     if (vpEarned > 0) senderUpdate.vp = admin.firestore.FieldValue.increment(vpEarned);
     tx.update(senderWalletRef, senderUpdate);
-    // A received tip is the canonical convertible credit: it came from someone
-    // else, so the recipient may convert it to gems and withdraw. earnedBalance
-    // is what makes that legal under Play's payments policy — see coinLedger.js.
-    tx.update(recipientWalletRef, { balance: admin.firestore.FieldValue.increment(recipientAmount), earnedBalance: admin.firestore.FieldValue.increment(recipientAmount), totalEarned: admin.firestore.FieldValue.increment(recipientAmount), totalReceived: admin.firestore.FieldValue.increment(recipientAmount), updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+    // AUTO-CONVERT AT RECEIPT (2026-08-11). A received tip lands as GEMS, at the
+    // recipient's commission rate AT THIS MOMENT, not whatever rate they happen
+    // to hold when they later choose to cash out.
+    //
+    // Closes a real leak: a Rookie used to be able to sit on earned coins, grind
+    // to Immortal, and convert the whole stored balance at 15% instead of 30%.
+    //
+    // The recipient can spend in-app again via `buyCoinsWithGems` (flat 1:1).
+    // That round trip is lossy at every rank, so it is not an exploit; see
+    // functions/gemBuyback.js.
+    //
+    // ONE RATE (2026-08-14, docs/REVENUE_SHARE_PLAN.md). This used to take a
+    // flat 10% here and THEN a VP-tier commission at conversion, so the
+    // advertised "flat 10% fee" really took 24-37%. Both deductions are now
+    // replaced by the single revenue-share ladder: the whole tip is gross
+    // revenue, and the creator accrues their tier's share of it.
+    const { earnedGemCredit, isVanguardExempt } = require('./coinLedger');
+    const tipCredit = earnedGemCredit(
+      amount,
+      recipientWallet.data().totalEarnedCoinsGross || 0,
+      {
+        vanguardExempt: isVanguardExempt(recipientUserSnap.exists ? recipientUserSnap.data() : null),
+        // Not a creator yet: the tip still lands, it just does not accrue.
+        creatorActive: (recipientUserSnap.exists ? recipientUserSnap.data()?.creator?.status : null) === 'active',
+      },
+    );
+    // Gross revenue this tip generated, and Vergr's share of it. `platformFee`
+    // keeps its name so existing ledger rows, admin reports and the daily
+    // rollup in dailyMetricsRollup.js keep their shape.
+    const recipientAmount = amount;
+    const platformFee = amount - tipCredit.gems;
+    tx.update(recipientWalletRef, {
+      ...tipCredit.fields,
+      totalEarned: admin.firestore.FieldValue.increment(recipientAmount),
+      totalReceived: admin.firestore.FieldValue.increment(recipientAmount),
+      totalGemsEarned: admin.firestore.FieldValue.increment(tipCredit.gems),
+    });
 
     const tipRef = db.collection('tips').doc();
     tx.set(tipRef, { senderId: uid, recipientId, amount, recipientAmount, platformFee, vpEarned, message: message || null, postId: postId || null, streamId: streamId || null, createdAt: admin.firestore.FieldValue.serverTimestamp() });
     tx.set(db.collection('transactions').doc(), { userId: uid, type: 'tip_sent', amount: -amount, balance: senderBalance - amount, recipientId, tipId: tipRef.id, vpEarned, description: `Tipped ${amount} coins${vpEarned > 0 ? ` (+${vpEarned} VP)` : ''}`, createdAt: admin.firestore.FieldValue.serverTimestamp() });
-    tx.set(db.collection('transactions').doc(), { userId: recipientId, type: 'tip_received', amount: recipientAmount, balance: (recipientWallet.data().balance || 0) + recipientAmount, senderId: uid, tipId: tipRef.id, description: `Received ${recipientAmount} coins (${amount} - ${platformFee} fee)`, createdAt: admin.firestore.FieldValue.serverTimestamp() });
-    tx.set(db.collection('notifications').doc(), { recipientId, type: 'tip', title: 'You received a tip!', body: `Someone tipped you ${recipientAmount} coins${message ? ': "' + message + '"' : ''}`, senderId: uid, read: false, data: { tipId: tipRef.id, amount: recipientAmount }, createdAt: admin.firestore.FieldValue.serverTimestamp() });
+    // The ledger row records BOTH sides: the gross coins the tip was worth and
+    // the gems actually credited after commission. Recording only one leaves no
+    // way to answer "why did I get this number", which is the question every
+    // support ticket about earnings is.
+    tx.set(db.collection('transactions').doc(), { userId: recipientId, type: 'tip_received', currency: 'gems', amount: tipCredit.gems, senderId: uid, tipId: tipRef.id, meta: { grossCoins: recipientAmount, share: tipCredit.share, commission: tipCredit.commission, tipAmount: amount, platformFee }, description: `Earned ${tipCredit.gems} gems — your ${Math.round(tipCredit.share * 100)}% share of a ${amount} coin tip`, createdAt: admin.firestore.FieldValue.serverTimestamp() });
+    tx.set(db.collection('notifications').doc(), { recipientId, type: 'tip', title: 'You received a tip!', body: `Someone tipped you ${amount} coins — you earned ${tipCredit.gems} gems${message ? ': "' + message + '"' : ''}`, senderId: uid, read: false, data: { tipId: tipRef.id, amount: recipientAmount, gems: tipCredit.gems }, createdAt: admin.firestore.FieldValue.serverTimestamp() });
 
     // Top-gifters leaderboard: accumulate this sender's running coin total for
     // the stream they're watching (server-written so the board can't be faked).
@@ -3501,31 +3606,12 @@ exports.createOrder = functions.https.onCall(async (request) => {
   });
 });
 
-exports.handleStripeWebhook = functions.https.onRequest(async (req, res) => {
-  if (req.method !== 'POST') { res.status(405).send('Method not allowed'); return; }
-  const event = req.body;
-  try {
-    if (event.type === 'payment_intent.succeeded') {
-      const intent = event.data.object;
-      const orderId = intent.metadata?.orderId;
-      if (orderId) {
-        await db.collection('orders').doc(orderId).update({ status: 'paid', paymentIntentId: intent.id, paidAt: admin.firestore.FieldValue.serverTimestamp(), updatedAt: admin.firestore.FieldValue.serverTimestamp() });
-        const order = await db.collection('orders').doc(orderId).get();
-        if (order.exists) {
-          await db.collection('notifications').add({ recipientId: order.data().userId, type: 'order', title: 'Payment confirmed!', body: `Your order #${orderId.substring(0, 8)} is being processed`, data: { orderId }, read: false, createdAt: admin.firestore.FieldValue.serverTimestamp() });
-        }
-      }
-    } else if (event.type === 'charge.refunded') {
-      const charge = event.data.object;
-      const orderId = charge.metadata?.orderId;
-      if (orderId) await db.collection('orders').doc(orderId).update({ status: 'refunded', refundedAt: admin.firestore.FieldValue.serverTimestamp(), updatedAt: admin.firestore.FieldValue.serverTimestamp() });
-    }
-    res.status(200).json({ received: true });
-  } catch (error) {
-    console.error('Stripe webhook error:', error);
-    res.status(500).json({ error: 'Webhook processing failed' });
-  }
-});
+// `handleStripeWebhook` lived here and was deleted with the rest of Stripe on
+// 2026-08-13. It flipped `orders/{id}` to paid from an UNSIGNED public POST,
+// so anyone who learned the URL could mark any order paid. `createOrder` above
+// is left in place (it is not Stripe's), but note it has no payment path and
+// nothing in src/ calls it. If merch checkout is ever revived, give it a rail
+// with a verified webhook signature and do not restore this shape.
 
 exports.requestPayout = functions.https.onCall(async (request) => {
   const uid = request.auth?.uid;

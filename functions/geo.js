@@ -47,14 +47,20 @@ const BLOCKED_COUNTRIES = new Set([
   'RU',  // Russia (sanctioned/restricted)
   'BY',  // Belarus (sanctioned)
   'VE',  // Venezuela (sanctioned-adjacent)
-  // MENA — Islamic-law gambling prohibition (maisir) can extend to paid prize
-  // competitions even with free competitor entry; several also restrict crypto.
-  // Held pending counsel.
-  'SA',  // Saudi Arabia
-  'AE',  // UAE (without local licence)
-  'QA',  // Qatar (also bans crypto)
-  'KW',  // Kuwait
-  'IQ',  // Iraq
+  // ── MENA BLOCK REMOVED 2026-08-12 (founder decision) ──────────────────
+  //
+  // SA, AE, QA, KW and IQ were blocked for the Islamic-law gambling prohibition
+  // (maisir), on the reasoning that it can extend to paid prize competitions.
+  // There are no longer any prize competitions: tournaments were removed from
+  // the product, and nothing on the platform stakes money on an outcome. The
+  // reason the block existed is gone, so the block is gone.
+  //
+  // The crypto half of that rationale is also weaker now that payouts are not
+  // crypto-only, but note it was never the primary reason for these five.
+  //
+  // Re-add here if counsel later advises otherwise; this is the only list the
+  // server enforces, and scripts/playPricing.mjs generates the Play Console
+  // restriction list from it, so the two cannot drift.
 ]);
 
 // 2026-07-08: emptied. These 12 states (AZ AR CT DE LA MT SD SC TN WA ID ME)

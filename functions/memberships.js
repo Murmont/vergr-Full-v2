@@ -15,12 +15,19 @@
 
 const functions = require('firebase-functions/v2');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
+const { settleEarnedToGems } = require('./coinLedger');
 
 const REGION = 'europe-west1';
 const db = getFirestore('vgrdb');
 
 const PERIOD_MS = 30 * 24 * 3600 * 1000;
-const PLATFORM_FEE_PCT = 0.10; // flat 10%, same as tips — LOCKED
+/**
+ * @deprecated UNUSED since 2026-08-14. The 10% surface fee was removed when the
+ * revenue-share model replaced both deductions with one rate taken at the
+ * revenue-share step (coinLedger.js → shareForEarnings). Retained only as a
+ * marker of what the rate used to be; delete once the migration is signed off.
+ */
+const PLATFORM_FEE_PCT = 0.10;
 
 // Find a published tier by id on a creator's profile doc. Returns { tier, creator }.
 async function loadTier(creatorId, tierId) {
@@ -74,8 +81,11 @@ exports.subscribeMembership = functions.https.onCall(
 
     const now = Date.now();
     const periodEnd = now + PERIOD_MS;
-    const platformFee = Math.floor(price * PLATFORM_FEE_PCT);
-    const creatorAmount = price - platformFee;
+    // ONE RATE (2026-08-14). See the renewal path below for the full note: the
+    // whole price is gross revenue, Vergr's share is taken once at the
+    // revenue-share step, never twice.
+    const platformFee = 0;
+    const creatorAmount = price;
     // Native VERGR groups linked to this tier → auto-invite after payment.
     const groupIds = (tier.communities || [])
       .filter((c) => c.type === 'vergr_group' && c.groupId).map((c) => c.groupId);
@@ -131,8 +141,18 @@ exports.subscribeMembership = functions.https.onCall(
       // early-returns on one cheap read instead of running two queries a day.
       tx.set(db.collection('app_config').doc('general'), { membershipsActive: true }, { merge: true });
 
-      return { ok: true, subscriptionId: subRef.id, periodEnd };
+      return { ok: true, subscriptionId: subRef.id, periodEnd, creatorAmount };
     }).then(async (result) => {
+      // AUTO-CONVERT AT RECEIPT: the creator's share becomes gems immediately, at
+      // their commission rate right now, rather than whatever rate they hold when
+      // they later choose to cash out. Post-commit because this transaction never
+      // reads the creator's wallet (it uses set/merge), so there is no VP here to
+      // price with. See coinLedger.js → settleEarnedToGems.
+      await settleEarnedToGems(db, {
+        uid: creatorId, coins: result.creatorAmount,
+        source: 'membership', sourceId: `membership:${result.subscriptionId}`,
+      });
+
       // Community auto-invite: add the new member to each linked native VERGR group
       // the creator actually owns/admins. Best-effort, post-commit. Discord/Telegram
       // stay as shared invite links (we can't programmatically add to those for free).
@@ -267,8 +287,12 @@ exports.renewMemberSubscriptions = defer(
       const s = docSnap.data();
       const price = Math.max(0, Math.floor(s.priceCoins || 0));
       if (price <= 0) continue;
-      const platformFee = Math.floor(price * PLATFORM_FEE_PCT);
-      const creatorAmount = price - platformFee;
+      // ONE RATE (2026-08-14). No surface fee here any more: the full price is
+      // gross revenue, and Vergr's share is taken once, at the revenue-share
+      // step in coinLedger.js. Taking 10% here AND the ladder later was the
+      // double deduction the revenue-share model exists to remove.
+      const platformFee = 0;
+      const creatorAmount = price;
       const newPeriodEnd = (s.periodEnd || now) + PERIOD_MS;
       try {
         await db.runTransaction(async (tx) => {
@@ -297,6 +321,14 @@ exports.renewMemberSubscriptions = defer(
           });
         });
         renewed++;
+        // Auto-convert the creator's share at their CURRENT rate, post-commit.
+        // Idempotent on the period end, so a cron retry over the same renewal
+        // cannot convert twice.
+        await settleEarnedToGems(db, {
+          uid: s.creatorId, coins: creatorAmount,
+          source: 'membership_renewal',
+          sourceId: `membership_renewal:${docSnap.id}:${newPeriodEnd}`,
+        });
       } catch (e) {
         failed++;
         // Insufficient coins → nudge the fan, leave the sub to lapse in Step 2 once expired.

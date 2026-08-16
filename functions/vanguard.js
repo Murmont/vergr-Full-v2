@@ -163,6 +163,27 @@ async function distributeMonth(db, monthKey) {
   });
 
   await batch.commit();
+
+  // AUTO-CONVERT AT RECEIPT for every recipient's share.
+  //
+  // Active Vanguard convert at 0% commission, so in practice this moves the full
+  // amount coin-for-gem. That exemption is NOT assumed here: `settleEarnedToGems`
+  // re-reads each user doc and applies `isVanguardExempt`, so a suspended or
+  // retired member correctly pays tier commission like anyone else, and a member
+  // whose status changed between distribution and settlement is priced on what
+  // is true now.
+  //
+  // Sequential rather than parallel: this is a monthly cron over a small set,
+  // and a burst of transactions against the same collection buys nothing.
+  // Idempotent per (month, uid), so a re-run cannot convert a share twice.
+  const { settleEarnedToGems } = require('./coinLedger');
+  for (const [uid, r] of Object.entries(recipients)) {
+    await settleEarnedToGems(db, {
+      uid, coins: r.coins,
+      source: 'vanguard_treasury', sourceId: `vanguard:${monthKey}:${uid}`,
+    });
+  }
+
   return { ok: true, monthKey, totalPool: pool, recipientCount: Object.keys(recipients).length };
 }
 

@@ -18,9 +18,9 @@
 // Privacy rules: public-visibility items only; Vanguard members are served
 // masked (persona name, no real avatar, noindex); admin/hideFromEnumeration
 // accounts render the plain shell; guests + bot accounts are noindexed.
-// Syndicated posts (isNewsPost/sourceUrl/bot author) index ONLY via their
-// original Gemini rewrite (seoHeadline/seoText, see newsSeoRewrite.js);
-// verbatim publisher text is never served as indexable (GSC duplicate bug).
+// Syndicated posts (isNewsPost/sourceUrl/bot author) are ALWAYS noindex and
+// never enter the sitemap. Republished feed content is Google's "scaled
+// content abuse", and its guidance for the republishing side is noindex.
 // Never expose emails, wallets, KYC, or any non-public field.
 //
 // Also serves /sitemap-ugc.xml (newest public posts/clips + established
@@ -172,13 +172,29 @@ async function renderPost(id, route) {
 
   const isSyndicated = post.isNewsPost === true || !!post.sourceUrl
     || (typeof (author && author.accountType) === 'string' && author.accountType.includes('_bot'));
-  // Syndicated posts carry publisher text (previewText) that Google refuses
-  // as a duplicate of the original article ("Duplicate, Google chose
-  // different canonical" — 1,449 pages, GSC 2026-07-16). newsSeoRewrite.js
-  // gives each one an ORIGINAL Gemini write-up (seoHeadline/seoText); the
-  // page serves THAT to search (index,follow + citation link). Until a
-  // post's rewrite lands it stays noindex — a verbatim copy can never index
-  // regardless of meta, so nothing is lost while the queue drains.
+  // Syndicated posts are ALWAYS noindex. Founder decision 2026-08-14.
+  //
+  // History: these carry publisher text that Google filed as duplicates of
+  // the original article ("Duplicate, Google chose different canonical",
+  // 1,449 pages, GSC 2026-07-16). newsSeoRewrite.js answered that by giving
+  // each one an ORIGINAL Gemini write-up (seoHeadline/seoText) and indexing
+  // THAT.
+  //
+  // Why that was the wrong answer: it swapped a duplicate-content problem
+  // for a spam-policy one. Google's spam policies name "scraping feeds ...
+  // to generate many pages (including through automated transformations
+  // like synonymizing, translating, or other obfuscation techniques)" as
+  // scaled content abuse, which is a SITE-level signal, not a per-page one.
+  // On 2026-08-14 the UGC sitemap was 1,888 rewritten news posts against 1
+  // real profile, i.e. as far as Google was concerned the whole site was
+  // that. Google's own guidance for the republishing side of syndication is
+  // noindex, not canonical (canonical is for near-duplicates; it does not
+  // bind across sites with different templates and surrounds).
+  //
+  // The rewrite still runs: seoText/seoHeadline remain the nicer summary
+  // READERS see, with the citation link. It just no longer drives
+  // indexation. Kill switch for the rewrite itself:
+  // app_config/general.newsSeoRewritePaused.
   const seoText = isSyndicated ? (post.seoText || '').trim() : '';
   const seoHeadline = isSyndicated ? (post.seoHeadline || '').trim() : '';
   const text = seoText || (post.content || post.previewText || '').trim();
@@ -293,8 +309,8 @@ async function renderUser(uid, route) {
     ? `${who.name} on VERGR: ${bio}`.slice(0, 200)
     : `${who.name} competes, streams, and earns on VERGR, the skill-based gaming platform.`;
 
-  // Bot profiles are deliberately NOT indexed (bot POSTS are — they carry the
-  // original rewrite; the bot's profile page carries nothing original).
+  // Bot profiles are not indexed, and as of 2026-08-14 neither are bot posts
+  // (they are syndicated; see renderPost). Nothing on this axis indexes.
   const index = !who.masked && !isGuest && !isBot && !!who.username && (bio.length > 0 || posts.length > 0);
   // /u/{username} is the public form and the one the user sitemap emits, so it
   // wins over the /user/{uid} alias and over /u/ case variants. Falls back to
@@ -436,6 +452,11 @@ function urlset(urls) {
 async function renderSitemapIndex(res) {
   let pages = 1;
   try {
+    // Counts ALL posts on purpose, including the syndicated ones that
+    // renderSitemapPosts drops. Paging is offset-based over that same
+    // unfiltered query, so the offsets must agree or real posts on later
+    // pages become unreachable. The cost is some trailing pages that come
+    // back as empty urlsets, which is valid and cheap.
     const agg = await db.collection('posts').count().get();
     pages = Math.max(1, Math.ceil((agg.data().count || 0) / PAGE_SIZE));
   } catch (e) { console.warn('sitemap-ugc index count failed', e.message); }
@@ -462,8 +483,10 @@ async function renderSitemapPosts(res, page) {
       const text = (p.content || '').trim();
       const media = Array.isArray(p.mediaUrls) ? p.mediaUrls : (p.mediaUrl ? [p.mediaUrl] : []);
       if (text.length < 30 && media.length === 0) continue; // same quality bar
-      // Syndicated posts enter the sitemap once their original rewrite
-      // exists (same gate as renderPost's index decision).
+      // Syndicated posts NEVER enter the sitemap (same gate as renderPost's
+      // index decision, which is now a hard false for them). Advertising a
+      // url that then renders noindex is a self-inflicted duplicate signal,
+      // so these two must never drift apart.
       if ((p.isNewsPost === true || p.sourceUrl) && !((p.seoText || '').length >= 400)) continue;
       // Prefer the SEO slug (news/article posts) over the raw doc id so the
       // sitemap shows e.g. /post/werewolf-metroidvania-revealed-5k8ymm instead

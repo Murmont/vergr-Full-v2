@@ -436,8 +436,10 @@ Return "flag" for content you cannot confidently place in either category but wh
 
 Everything else is "pass", including explicit sexual content between consenting adults.
 
+SEPARATELY from the verdict, report whether the image is adult content: "adult" is true for nudity, sexual acts, or sexually explicit posing, and false otherwise. This does NOT affect the verdict. It exists so the platform can label the item and keep it away from viewers who have not verified their age, and it is reported even when the verdict is "pass".
+
 Respond with ONLY a JSON object:
-{"verdict":"pass"|"flag"|"block","category":"csam"|"ncii"|"none","confidence":0.0-1.0,"reason":"one short sentence"}`;
+{"verdict":"pass"|"flag"|"block","category":"csam"|"ncii"|"none","adult":true|false,"confidence":0.0-1.0,"reason":"one short sentence"}`;
 }
 
 /**

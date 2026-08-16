@@ -97,6 +97,7 @@ exports.indexNowBacklog = onRequest({ region: 'europe-west1', timeoutSeconds: 54
       const text = (p.content || '').trim();
       const media = Array.isArray(p.mediaUrls) ? p.mediaUrls : (p.mediaUrl ? [p.mediaUrl] : []);
       if (text.length < 30 && media.length === 0) continue;
+      // Syndicated posts are noindex and are not in the sitemap either.
       if ((p.isNewsPost === true || p.sourceUrl) && !((p.seoText || '').length >= 400)) continue;
       urls.push(postUrl(d.id, p));
     }

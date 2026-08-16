@@ -58,6 +58,12 @@ const R2_SECRETS = ['R2_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY',
  * A fee can be cut as a promotion and can never be raised without a revolt, so
  * 10% is the floor to start from, not the target.
  */
+/**
+ * @deprecated UNUSED since 2026-08-14 — feePctFor() returns 0 under the
+ * one-rate revenue-share model. FEE_PCT_PRO is kept because the Pro perk it
+ * encoded is an OPEN founder decision, not a deleted feature: see the note in
+ * feePctFor() below.
+ */
 const FEE_PCT = 0.10;
 const FEE_PCT_PRO = 0.08;
 
@@ -76,6 +82,18 @@ const MAX_PRICE_COINS = 10_000;
 /** How long a signed media URL lives. Long enough to start a download, short
  *  enough that a shared link is worthless by the time it is pasted. */
 const SIGNED_URL_TTL_SECONDS = 300;
+
+/**
+ * The same, for video.
+ *
+ * A stream URL has to survive the whole playback, not just the start of it: the
+ * browser re-requests byte ranges as the viewer watches and seeks, and once the
+ * signature expires those requests 403 and the player stalls partway through
+ * something the viewer has already paid for. Five minutes is therefore a bug for
+ * anything longer than five minutes. An hour covers any clip that can be
+ * uploaded under the plan caps while still expiring well inside a session.
+ */
+const VIDEO_SIGNED_URL_TTL_SECONDS = 3600;
 
 const RESOURCE_TYPES = new Set(['post', 'stream', 'message', 'creator', 'call']);
 
@@ -128,6 +146,108 @@ function parseArgs(data) {
  * itself: keys live in `users/{uid}/private/...`, which no client can read, and
  * are resolved only after access is proven.
  */
+/**
+ * Refuse anyone not on a private session's guest list.
+ *
+ * Applies BEFORE price, because a free 1:1 is still private: "it costs nothing"
+ * is not the same as "anyone may watch". It also applies before purchase, so a
+ * stranger holding the id cannot buy their way into a session that was never
+ * offered to them — otherwise the paywall would function as a public door with
+ * a cover charge.
+ *
+ * A session with no list at all is left alone rather than closed: sessions
+ * created before this shipped have no `inviteUids`, and locking their
+ * participants out of something they are already in would be a worse failure
+ * than the one being fixed. New sessions always carry a list.
+ */
+/**
+ * Age-verify before ANY exposure to adult Content.
+ *
+ * ## Why this exists when `purchaseAccess` deliberately has no KYC gate
+ *
+ * The founder decision of 2026-08-08 (documented on purchaseAccess) was that
+ * locked content is a GATING product, not adult commerce, so identity had no
+ * business being checked on an ordinary unlock. That reasoning is untouched:
+ * this never fires on ordinary locked content.
+ *
+ * It fires only where the seller marked the item NSFW. There the thing being
+ * sold IS adult content, and a paywall is not an age gate: buying coins needs
+ * no identity check either, so a minor holding someone else's card walks
+ * straight through a price. Self-declaring 18 at signup is not age assurance
+ * and would not be accepted as such by an app store or a regulator.
+ *
+ * Checked on BOTH the buy path and the view path on purpose. Gating only the
+ * purchase would leave every already-entitled viewer, and every FREE NSFW item,
+ * completely open.
+ */
+// eslint-disable-next-line no-unused-vars
+async function assertNsfwViewerAllowed(resolved, uid) {
+  // NO-OP since 2026-08-14. The adult marker is an ADVISORY LABEL now, not a
+  // gate, and this function is kept only so the two call sites below stay
+  // wired and the gate can be restored by putting its body back.
+  //
+  // Why it went: nudity and sexual content are prohibited on every surface
+  // (Acceptable Use Policy s.3), and real nudity never reaches storage because
+  // the scanner refuses it at upload with a "block" verdict. What is left that
+  // can carry contentRating "nsfw" is the softer band the scanner reports as
+  // adult-but-not-explicit: mature language, dark humour, adult subject matter.
+  // A viewer deserves to be told that is what they are opening. Demanding a
+  // government identity document to read a swear word is not proportionate,
+  // and it put a KYC wall in front of content that is not adult content.
+  //
+  // Restoring the gate means restoring this body AND the feed filter in
+  // src/utils/feedRank.js and the discovery filter in functions/streaming.js.
+  // They were switched off together and only make sense together.
+}
+
+function assertInvited(resolved, uid) {
+  if (!Array.isArray(resolved.inviteUids) || resolved.inviteUids.length === 0) return;
+  if (resolved.sellerUid === uid) return;
+  if (resolved.inviteUids.includes(uid)) return;
+  // Deliberately the same wording a viewer would see for a session that has
+  // ended: confirming that a private session exists at this id tells an
+  // uninvited stranger something they should not learn from a probe.
+  throw new HttpsError('not-found', 'That session is not available.');
+}
+
+/**
+ * The public, non-secret shape of a locked item: blurred preview, dimensions,
+ * whether it is video, how long it runs.
+ *
+ * None of this is sensitive — the preview URL is a deliberately destroyed
+ * public object, and the dimensions of a photo are not the photo. It is
+ * returned because the CLIENT often cannot see it: on the relay chat path the
+ * message list is built from relay frames, which carry a fixed field set and no
+ * `locked` block at all, so the receiving bubble has no idea what shape to be
+ * and every locked message would fall back to the same default rectangle.
+ * getAccess is already the authority on the price for exactly that reason; this
+ * makes it the authority on the shape too.
+ */
+function previewMetaFrom(locked) {
+  if (!locked) return null;
+  const items = Array.isArray(locked.items) ? locked.items : [];
+  return {
+    previewUrl: locked.previewUrl || null,
+    previewW: Math.floor(locked.previewW || 0),
+    previewH: Math.floor(locked.previewH || 0),
+    isVideo: !!locked.isVideo,
+    durationMs: Math.floor(locked.durationMs || 0),
+    unlockCount: Math.floor(locked.unlockCount || 0),
+    // A locked send may be a SET, bought once. The count drives the "3 PICS"
+    // label and the carousel dots; the per-item previews are already public
+    // objects, so passing them costs nothing and is what lets the relay chat
+    // path render a set at all.
+    itemCount: Math.max(1, Math.floor(locked.itemCount || items.length || 1)),
+    items: items.map((it) => ({
+      previewUrl: it?.previewUrl || null,
+      isVideo: !!it?.isVideo,
+      previewW: Math.floor(it?.previewW || 0),
+      previewH: Math.floor(it?.previewH || 0),
+      durationMs: Math.floor(it?.durationMs || 0),
+    })),
+  };
+}
+
 const RESOLVERS = {
   async post(resourceId) {
     const ref = db.collection('posts').doc(resourceId);
@@ -137,12 +257,14 @@ const RESOLVERS = {
     return {
       ref,
       sellerUid: p.authorId || null,
+      contentRating: p.contentRating === 'nsfw' ? 'nsfw' : 'general',
       priceCoins: Math.floor(p.locked?.priceCoins || 0),
       audience: p.locked?.audience || 'public',
       title: 'a locked post',
       mediaOwnerUid: p.authorId || null,
       mediaDocPath: `users/${p.authorId}/private/lockedPostFiles`,
       counterField: 'locked.unlockCount',
+      preview: previewMetaFrom(p.locked),
     };
   },
 
@@ -158,6 +280,7 @@ const RESOLVERS = {
     return {
       ref,
       sellerUid: s.hostUid || null,
+      contentRating: s.contentRating === 'nsfw' ? 'nsfw' : 'general',
       priceCoins: paid ? Math.floor(s.access?.priceCoins || 0) : 0,
       // The stream's own audience still applies on top of the ticket price: a
       // followers-only paid stream means followers who have also paid.
@@ -171,6 +294,10 @@ const RESOLVERS = {
       // live on it.
       playbackDocPath: `streams/${resourceId}/private/playback`,
       counterField: 'access.unlockCount',
+      // A 1:1 names its guests. Absent on a broadcast, where the gate is the
+      // audience and the price rather than a list of people.
+      inviteUids: Array.isArray(s.inviteUids) ? s.inviteUids : null,
+      sessionType: s.sessionType || 'broadcast',
     };
   },
 
@@ -211,6 +338,7 @@ const RESOLVERS = {
       mediaOwnerUid: m.senderId || null,
       mediaDocPath: `users/${m.senderId}/private/lockedMessageFiles`,
       counterField: 'locked.unlockCount',
+      preview: previewMetaFrom(m.locked),
     };
   },
 
@@ -268,9 +396,24 @@ const RESOLVERS = {
  * earning, which is the only reading under which it pays for itself.
  */
 async function feePctFor(sellerUid) {
-  const snap = await db.collection('users').doc(sellerUid).get();
-  const tier = snap.exists ? snap.data()?.subscription?.tier : null;
-  return tier === 'pro' ? FEE_PCT_PRO : FEE_PCT;
+  // ONE RATE (2026-08-14, docs/REVENUE_SHARE_PLAN.md). The surface fee is gone:
+  // the full price is gross revenue and Vergr's share is taken once, at the
+  // revenue-share step (coinLedger.js → shareForEarnings), when the seller's
+  // earned coins become gems. Charging 8-10% here as well was the double
+  // deduction the whole model exists to remove.
+  //
+  // ⚠ OPEN FOUNDER DECISION — the Pro perk this used to carry.
+  // Pro sellers paid 8% instead of 10%. That perk is advertised and paid for,
+  // and returning 0 here deletes it silently, which is exactly what the "never
+  // remove a feature without permission" rule is about. It is NOT restored
+  // arbitrarily either, because inventing a replacement rate is a financial
+  // decision that is not mine to make.
+  //
+  // The natural replacement is a one-tier share bump for Pro sellers in
+  // shareForEarnings(). Until the founder sets that, Pro and free are equal
+  // here and the perk is dormant, not removed: FEE_PCT_PRO is retained at the
+  // top of this file so the intent stays visible in the code.
+  return 0;
 }
 
 // ─────────────────────────────────────────────────────── purchaseAccess
@@ -310,6 +453,8 @@ exports.purchaseAccess = functions.https.onCall(
     // needs one. The price read here is only for gating; the price that is
     // CHARGED is re-read inside the transaction below.
     const resolved = await RESOLVERS[resourceType](resourceId);
+    assertInvited(resolved, uid);
+    await assertNsfwViewerAllowed(resolved, uid);
     const { sellerUid } = resolved;
     if (!sellerUid) throw new HttpsError('failed-precondition', 'This has no owner to pay.');
     if (sellerUid === uid) {
@@ -358,6 +503,10 @@ exports.purchaseAccess = functions.https.onCall(
         throw new HttpsError('failed-precondition', 'Not enough coins.');
       }
 
+      // feePct is 0 under the one-rate model; the seller accrues the full price
+      // as earned value and Vergr's share is taken at conversion. Kept as a
+      // variable rather than inlined so the ledger row shape does not change
+      // and so a future founder decision can reinstate a surface fee here.
       const platformFee = Math.floor(price * feePct);
       const sellerNet = price - platformFee;
 
@@ -456,15 +605,20 @@ exports.getAccess = functions.https.onCall(
     const { resourceType, resourceId } = parseArgs(request.data);
 
     const resolved = await RESOLVERS[resourceType](resourceId);
+    assertInvited(resolved, uid);
+    await assertNsfwViewerAllowed(resolved, uid);
     const price = resolved.priceCoins;
 
     // Not for sale, or the caller owns it: nothing to buy.
     if (price <= 0 || resolved.sellerUid === uid) {
+      const urls = await signAll(resolved, resourceId);
       return {
         hasAccess: true,
         priceCoins: 0,
         isOwner: resolved.sellerUid === uid,
-        mediaUrl: await signIfPossible(resolved, resourceId),
+        preview: resolved.preview || null,
+        mediaUrl: urls[0] || null,
+        mediaUrls: urls,
         ...(await playbackFor(resolved)),
       };
     }
@@ -474,14 +628,17 @@ exports.getAccess = functions.https.onCall(
       .doc(entitlementId(resourceType, resourceId, uid))
       .get();
     const hasAccess = entSnap.exists && entSnap.data().status === 'active';
+    const urls = hasAccess ? await signAll(resolved, resourceId) : [];
 
     return {
       hasAccess,
       isOwner: false,
       priceCoins: price,
       sellerUid: resolved.sellerUid,
+      preview: resolved.preview || null,
       unlockedAt: hasAccess ? entSnap.data().createdAt || null : null,
-      mediaUrl: hasAccess ? await signIfPossible(resolved, resourceId) : null,
+      mediaUrl: urls[0] || null,
+      mediaUrls: urls,
       ...(hasAccess ? await playbackFor(resolved) : {}),
     };
   },
@@ -512,27 +669,61 @@ async function playbackFor(resolved) {
  * has nothing to hand over. Callers render the unlocked state either way.
  */
 async function signIfPossible(resolved, resourceId) {
-  if (!resolved.mediaDocPath) return null;
+  const urls = await signAll(resolved, resourceId);
+  return urls.length ? urls[0] : null;
+}
+
+/**
+ * Every private object behind one resource, signed, in order.
+ *
+ * A locked message can carry a SET ("3 PICS"), bought once. The keys live in an
+ * array on the private document; older single-item sends have only `key`, so
+ * both shapes are read here rather than migrated — a migration would rewrite
+ * documents nothing is broken by.
+ */
+async function signAll(resolved, resourceId) {
+  if (!resolved.mediaDocPath) return [];
   const snap = await db.doc(resolved.mediaDocPath).get();
-  if (!snap.exists) return null;
+  if (!snap.exists) return [];
   // Keyed by the resource id so one document holds every locked file a creator
   // owns, exactly like `vergrMeProductFiles`.
-  const key = snap.data()?.[resourceId]?.key;
-  if (!key) return null;
+  const entry = snap.data()?.[resourceId];
+  if (!entry) return [];
 
-  // The key must live under the seller's own prefix. Rules already stop a client
-  // writing this document, so reaching here with a foreign key should be
-  // impossible; it is checked anyway because the failure mode is handing a
-  // paying stranger a signed URL to a third party's private file, and "should be
-  // impossible" is not a good enough reason to skip four lines.
-  if (resolved.mediaOwnerUid && !String(key).startsWith(`locked/${resolved.mediaOwnerUid}/`)) {
-    console.error(`[entitlements] key ${key} does not belong to ${resolved.mediaOwnerUid}`);
-    return null;
+  const list = Array.isArray(entry.keys) && entry.keys.length
+    ? entry.keys
+    : (entry.key ? [{ key: entry.key, contentType: entry.contentType }] : []);
+
+  const out = [];
+  for (const item of list) {
+    const key = item?.key;
+    if (!key) continue;
+
+    // The key must live under the seller's own prefix. Rules already stop a
+    // client writing this document, so reaching here with a foreign key should
+    // be impossible; it is checked anyway because the failure mode is handing a
+    // paying stranger a signed URL to a third party's private file, and "should
+    // be impossible" is not a good enough reason to skip four lines.
+    if (resolved.mediaOwnerUid && !String(key).startsWith(`locked/${resolved.mediaOwnerUid}/`)) {
+      console.error(`[entitlements] key ${key} does not belong to ${resolved.mediaOwnerUid}`);
+      continue;
+    }
+
+    // A five-minute URL cannot serve a twenty-minute video: the player would die
+    // mid-playback with no explanation, and the buyer would have paid for it.
+    // The window is therefore chosen by media type, which is why the file type
+    // is recorded alongside the key at upload time rather than inferred from the
+    // extension. An image keeps the short window, because a still is fetched
+    // once and a pasted URL should be dead on arrival.
+    const expiresIn = item.contentType === 'video'
+      ? VIDEO_SIGNED_URL_TTL_SECONDS
+      : SIGNED_URL_TTL_SECONDS;
+
+    out.push(await getSignedUrl(
+      r2Client(),
+      new GetObjectCommand({ Bucket: bucket(), Key: key }),
+      { expiresIn },
+    ));
   }
-
-  return getSignedUrl(
-    r2Client(),
-    new GetObjectCommand({ Bucket: bucket(), Key: key }),
-    { expiresIn: SIGNED_URL_TTL_SECONDS },
-  );
+  return out;
 }

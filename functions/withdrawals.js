@@ -55,7 +55,17 @@ const BATCH_MAX_MICRO     = 20_000_000_000;             // €20,000 batch sum
 // KYC tier monthly + daily caps (in micro-USDC)
 const KYC_LIMITS = {
   0: { daily: 0,             monthly: 0,             cryptoOnly: true, blocked: true  },
-  1: { daily: 0,             monthly: 5_000_000_000, cryptoOnly: true, blocked: false }, // €50/mo
+  // FIXED 2026-08-14: this was 5_000_000_000, which at this file's own scale
+  // (1 USDC = 1,000,000 micro, see line 22) is €5,000/mo, not the €50/mo its
+  // comment claimed and its own error string would have printed. A 100x gap on
+  // the LOOSEST tier — ID+selfie only, no proof of address.
+  //
+  // €50 is not a guess: it is the figure published in the AML policy
+  // ("withdrawal up to 50 euro per month", compliancePolicies.js) and in ToS
+  // KYC tier table. The code was the outlier, so it was corrected to the
+  // published control rather than the control being loosened to match the code.
+  // L2 and L3 were already arithmetically correct and are untouched.
+  1: { daily: 0,             monthly: 50_000_000,    cryptoOnly: true, blocked: false }, // €50/mo
   2: { daily: 500_000_000,   monthly: 2_500_000_000, cryptoOnly: false, blocked: false },// €500/d €2,500/mo
   3: { daily: 2_500_000_000, monthly: 15_000_000_000,cryptoOnly: false, blocked: false },// €2.5k/d €15k/mo
 };
@@ -251,11 +261,35 @@ async function circleTransferUSDC({ destAddress, amountUSDC, refId }) {
 //   5. Debit gems atomically into escrow.
 //   6. Write payout_requests/{auto} with status=pending.
 
+/**
+ * ── DISABLED 2026-08-15 — revenue share migration ──────────────────────
+ *
+ * On-demand withdrawal is the shape that most looks like money transmission:
+ * the user decides the amount and the moment, and value leaves to a
+ * destination they nominate. Under the principal model Vergr computes what is
+ * owed and pays it on a SCHEDULE (functions/creatorPayouts.js), which is what
+ * makes the argument hold. See docs/REVENUE_SHARE_PLAN.md §1.5.
+ *
+ * The body below is retained, not deleted, because the Circle plumbing,
+ * sanctions screening and hold logic are all still wanted by the scheduled
+ * payout path. Nothing here runs while the guard is in place.
+ *
+ * `cancelWithdrawal` and `getMyWithdrawals` stay live on purpose: anyone with
+ * an in-flight request must still be able to see and cancel it.
+ */
+const WITHDRAWAL_DISABLED = () => new HttpsError(
+  'failed-precondition',
+  'Withdrawals are no longer requested manually. Your earnings are paid to you '
+  + 'automatically on a schedule. See Creator Studio to set up payouts.',
+);
+
 exports.requestWithdrawal = functions.https.onCall(
   // VERGR_GEO_TOKEN: lets functions/geo.js verify that geo headers came from
   // the Cloudflare Worker rather than a forged direct call.
   { region: REGION, secrets: ['VERGR_GEO_TOKEN'] },
   async (request) => {
+    throw WITHDRAWAL_DISABLED();
+
     const uid = requireAuthUid(request);
     const {
       gemsRequested,

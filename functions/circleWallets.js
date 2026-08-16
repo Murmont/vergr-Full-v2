@@ -363,6 +363,35 @@ async function processInboundDeposit(tx, ctx = {}) {
 
   const depRef = db.collection('circle_deposits').doc(txId);
 
+  // ── Known internal sources ───────────────────────────────────────────
+  // PayRam forwards settled payments to its cold wallet, and that cold wallet
+  // IS the Circle omnibus. A per-payment forward carries the order's refId and
+  // is matched below. A BATCHED forward carries no refId at all, and there is
+  // no reason to expect PayRam to sweep one payment at a time: batching is
+  // cheaper for them in gas and is the normal design.
+  //
+  // Without this allowlist every batch sweep would land in
+  // `unattributed_deposits` as if it were a stranger's transfer, which is both
+  // wrong and the exact noise that hides a real mis-attribution. Matching on the
+  // SOURCE ADDRESS is the only signal a batch sweep carries.
+  //
+  // Config, not a constant, so the PayRam deposit-contract address can be added
+  // the moment it is deployed without shipping code:
+  //   app_config/general.internalSweepAddresses = ["0x...", ...]
+  //
+  // ⚠ Only ever list addresses WE control. An address on this list can move USDC
+  // into the omnibus without appearing in the reconciliation queue, so a
+  // mistaken entry hides money rather than losing it.
+  let isInternalSweepSource = false;
+  try {
+    const cfgSnap = await db.doc('app_config/general').get();
+    const list = cfgSnap.exists ? cfgSnap.data()?.internalSweepAddresses : null;
+    if (Array.isArray(list) && sourceAddr) {
+      const needle = String(sourceAddr).toLowerCase();
+      isInternalSweepSource = list.some((a) => String(a || '').toLowerCase() === needle);
+    }
+  } catch { /* absent config means "no known internal sources", the safe default */ }
+
   const outcome = await db.runTransaction(async (t) => {
     const snap = await t.get(depRef);
     if (snap.exists) return; // already processed — idempotency win
@@ -372,9 +401,21 @@ async function processInboundDeposit(tx, ctx = {}) {
     // the user is owed. Until PayRam wires, every deposit will fall through to
     // the unattributed branch below.
     let attributed = null;
+    // A PayRam order that has ALREADY settled is not an anomaly, it is the
+    // routine case. See the settlement-sweep branch below for why this is
+    // tracked separately instead of being dumped in the anomaly queue.
+    let settledOrder = null;
     if (refId) {
       const payramRef = db.collection('payram_orders').doc(refId);
       const payram = await t.get(payramRef);
+      if (payram.exists && payram.data().status === 'settled') {
+        settledOrder = {
+          uid: payram.data().uid || null,
+          amountUSD: Number(payram.data().amountUSD) || 0,
+          buyerFeesUSD: Number(payram.data().buyerFeesUSD) || 0,
+          coins: Number(payram.data().coinsToCredit) || 0,
+        };
+      }
       if (
         payram.exists &&
         payram.data().status === 'awaiting_settlement' &&
@@ -433,6 +474,40 @@ async function processInboundDeposit(tx, ctx = {}) {
         processedAt: FieldValue.serverTimestamp(),
       });
       return { credited: true, uid: attributed.uid, coins: attributed.coinsToCredit, orderId: refId };
+    } else if (settledOrder || isInternalSweepSource) {
+      // ── PayRam SETTLEMENT SWEEP ──────────────────────────────────────
+      // PayRam is configured to forward settled payments to its cold wallet,
+      // and that cold wallet IS the Circle omnibus
+      // (0xbb1b1445d73cad5df9925b484996dc1f7f032240 — CIRCLE_HOT_WALLET_ADDRESS
+      // and the PayRam cold wallet are the same address by design). So every
+      // sweep arrives here as an inbound USDC transfer carrying a refId whose
+      // order the PayRam webhook already settled.
+      //
+      // This is our own float moving between two places we control. It is NOT a
+      // deposit, NOT a coin purchase, and above all NOT an anomaly. Before this
+      // branch existed it fell into the `else` below and filed an
+      // `unattributed_deposits` row on EVERY successful purchase, with the
+      // reason string "refId-not-in-payram_orders" — which was actively
+      // misleading, because the order is in payram_orders, it is simply already
+      // settled. An admin reconciling would have gone looking for an order that
+      // was there all along, while the routine sweeps buried the genuine
+      // mis-attributions the queue exists to surface.
+      //
+      // Coins are NOT credited here. The `awaiting_settlement` guard above is
+      // what makes that safe, and it stays the only crediting path.
+      t.set(depRef, {
+        txId, txHash, walletId, blockchain,
+        sourceAddress: sourceAddr, destinationAddress: destAddr,
+        amount: amountStr, tokenId, refId,
+        status: 'settlement_sweep',
+        payramOrderId: settledOrder ? refId : null,
+        // Which signal identified it. A batch sweep can only ever be matched by
+        // source address, so the two are worth telling apart when reconciling.
+        sweepMatchedBy: settledOrder ? 'settled-order-refid' : 'internal-source-address',
+        source: ctx.source || 'unknown',
+        ntype: ctx.ntype || null,
+        processedAt: FieldValue.serverTimestamp(),
+      });
     } else {
       // No PayRam match — park for manual admin reconciliation. The user can
       // file a support ticket including their tx hash and the founder matches
@@ -453,10 +528,16 @@ async function processInboundDeposit(tx, ctx = {}) {
         destinationAddress: destAddr,
         amount: amountStr,
         tokenId, refId,
+        // Distinguish the two genuinely different failures. "not in
+        // payram_orders" used to be claimed for orders that WERE in
+        // payram_orders and merely already settled; those are now handled above,
+        // so this string is finally accurate.
         reason: refId ? 'refId-not-in-payram_orders' : 'no-refId',
         receivedAt: FieldValue.serverTimestamp(),
       });
     }
+
+    if (settledOrder) return { sweep: true, orderId: refId, settledOrder };
   });
 
   // Post-commit, guarded: referral coin revenue-share for the buyer's referrer.
@@ -465,6 +546,53 @@ async function processInboundDeposit(tx, ctx = {}) {
     await creditReferralPurchaseBonus({
       buyerUid: outcome.uid, coins: outcome.coins, sourceId: `order:${outcome.orderId}`,
     });
+  }
+
+  // ── Reconcile the PayRam settlement fee against what ACTUALLY landed ──
+  //
+  // At purchase time platformRevenue.js books an ESTIMATED settlement fee, using
+  // app_config/general.payramSettlementFeePct (default 3%, the middle of the
+  // 1-5% band PayRam publishes). An estimate is the best that can be done there,
+  // because the sweep has not happened yet.
+  //
+  // The sweep is the only place the TRUE fee is observable: PayRam charges it on
+  // the way to the cold wallet, so the difference between what the buyer was
+  // charged and what arrived in the Circle omnibus IS the fee, net of nothing
+  // else. Booking a correction row here means the ledger converges on the real
+  // number instead of trusting a constant nobody has verified against an invoice.
+  //
+  // Guarded and idempotent (distinct sourceId, and `circle_deposits/{txId}`
+  // already stopped a repeat before we got here). A reconciliation failure must
+  // never affect a sweep that has already landed on-chain.
+  if (outcome?.sweep && outcome.orderId && outcome.settledOrder) {
+    try {
+      const { bookRevenue, _config } = require('./platformRevenue');
+      const charged = outcome.settledOrder.amountUSD + outcome.settledOrder.buyerFeesUSD;
+      const arrived = Number(amountStr) || 0;
+      if (charged > 0 && arrived > 0) {
+        const actualFee = charged - arrived;
+        const estimatedFee = charged * _config.DEFAULT_PAYRAM_SETTLEMENT_PCT;
+        const correction = estimatedFee - actualFee; // +ve: we over-provisioned
+        // Only book a correction worth reading. Sub-cent noise is dust, and a
+        // ledger full of $0.001 rows is harder to audit than one without them.
+        if (Math.abs(correction) >= 0.01) {
+          await bookRevenue({
+            kind: 'payram_settlement_fee_correction',
+            usd: correction,
+            sourceId: `sweep:${txId}`,
+            uid: outcome.settledOrder.uid,
+            meta: {
+              payramOrderId: outcome.orderId,
+              chargedUsd: charged, arrivedUsd: arrived,
+              actualFee, estimatedFee,
+              actualPct: charged > 0 ? actualFee / charged : null,
+            },
+          });
+        }
+      }
+    } catch (e) {
+      functions.logger.error('settlement fee reconciliation failed', { txId, err: e?.message || e });
+    }
   }
 
   functions.logger.info('circle inbound processed', { txId, hash: txHash, source: ctx.source });

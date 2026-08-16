@@ -147,7 +147,7 @@ exports.createStreamSession = functions.https.onCall({ region: REGION }, async (
   if (!req.auth) throw new functions.https.HttpsError('unauthenticated', 'Sign in required.');
   const uid = req.auth.uid;
 
-  const { kind = 'public', tournamentId = null, tournamentMatchId = null, boost = null, title = '', game = null, mode = 'rtmp', twitchMirror = false, orientation = 'landscape', language = null, audience = 'public' } = req.data || {};
+  const { kind = 'public', tournamentId = null, tournamentMatchId = null, boost = null, title = '', game = null, mode = 'rtmp', twitchMirror = false, orientation = 'landscape', language = null, audience = 'public', contentRating = null } = req.data || {};
   // Audience visibility within a public stream: 'public' (discoverable to all),
   // 'followers', or 'friends' (both = unlisted, gated on the watch page). Server
   // is the source of truth so discovery queries can trust a single boolean.
@@ -171,6 +171,22 @@ exports.createStreamSession = functions.https.onCall({ region: REGION }, async (
   // and stamped on the document so moderation and support can tell the two
   // apart after the fact. If it can hold an audience, it is not a 1:1.
   const isOneToOne = req.data?.sessionType === 'one_to_one';
+
+  // WHO IS ALLOWED IN. Not the same question as "who can find it".
+  //
+  // Unlisted only removes a session from discovery. `streams/{id}` is
+  // `allow read: if true`, so anyone holding the id could read the document,
+  // and for a free session that document carried the playback URL: a forwarded
+  // link was a forwarded session. "Nobody will guess the id" is not a privacy
+  // model for something sold as private.
+  //
+  // So a 1:1 names its guests. The list is the host plus whoever the chat had
+  // in it, and getAccess refuses playback to anyone else even when the session
+  // is free. Capped because a "1:1" with fifty names on it is a broadcast
+  // wearing the private-surface label that Terms 10A grants.
+  const inviteUids = Array.isArray(req.data?.inviteUids)
+    ? [...new Set(req.data.inviteUids.filter((u) => typeof u === 'string' && u).map(String))].slice(0, 32)
+    : [];
   // 'ticketed' streams stay DISCOVERABLE (so fans can find them and buy a
   // ticket) but the watch page gates playback on ticket ownership. Only
   // followers/friends are unlisted (hidden from discovery + follow-gated).
@@ -370,11 +386,21 @@ exports.createStreamSession = functions.https.onCall({ region: REGION }, async (
       access: isPaidStream
         ? { mode: 'paid', priceCoins: accessPriceCoins, unlockCount: 0 }
         : { mode: 'free', priceCoins: 0, unlockCount: 0 },
+      // Adult marker. Accepted ONLY on a paid stream: a free or followers-only
+      // broadcast reaches an audience, and Terms section 3 forbids nudity there
+      // regardless of what the client asks for. Honouring the flag on a free
+      // stream would let a host publish adult content to a public feed with a
+      // single request field. Absent means general, so nothing existing moves.
+      ...(contentRating === 'nsfw' && isPaidStream ? { contentRating: 'nsfw' } : {}),
       unlisted: isUnlisted,
       discoverable: !isUnlisted,
       // Terms 10A. Stamped so moderation, support and the viewer screen can tell
       // a private session from a paid broadcast without guessing from audience.
       sessionType: isOneToOne ? 'one_to_one' : 'broadcast',
+      // The guest list, host included. Read by entitlements.js before it will
+      // hand over a playback URL. Only ever set for a 1:1: a broadcast is
+      // gated by audience and price, not by a list of names.
+      inviteUids: isOneToOne ? [...new Set([uid, ...inviteUids])] : null,
       // THE STREAM KEY IS NOT ON THIS DOCUMENT.
       //
       // `streams/{id}` is `allow read: if true`, and the stream key is a
@@ -408,8 +434,12 @@ exports.createStreamSession = functions.https.onCall({ region: REGION }, async (
       // paid stream both URLs go to `streams/{id}/private/playback`, which rules
       // deny to every client, and getAccess hands them over after checking the
       // entitlement. Free streams are untouched: same fields, same place.
-      hlsUrl: isPaidStream ? null : hlsUrl,
-      lowLatencyHlsUrl: isPaidStream ? null : lowLatencyHlsUrl,
+      //
+      // A 1:1 withholds them for the same reason even when it is free: the
+      // document is world-readable and the guest list is the gate, so the URL
+      // has to be minted per-viewer by getAccess rather than published.
+      hlsUrl: (isPaidStream || isOneToOne) ? null : hlsUrl,
+      lowLatencyHlsUrl: (isPaidStream || isOneToOne) ? null : lowLatencyHlsUrl,
       status: 'created',
       boosted: boostCharged,
       boostChargedCoins: boostCharged ? BOOST_FEE_COINS : 0,
@@ -432,9 +462,15 @@ exports.createStreamSession = functions.https.onCall({ region: REGION }, async (
       peakViewers: 0,
     });
 
-    // The paid stream's playback URLs, out of reach of every client. Read only
-    // by getAccess, and only for someone who has paid or is the host.
-    if (isPaidStream) {
+    // Playback URLs out of reach of every client. Read only by getAccess, and
+    // only for someone who has paid (paid stream) or is on the guest list (1:1).
+    //
+    // A FREE 1:1 needs this as much as a paid one. `streams/{id}` is world
+    // readable, so leaving hlsUrl on the document meant the id WAS the session:
+    // forward the link, or guess an id, and you are watching something the two
+    // people in it believe is private. Unlisted hides it from discovery and does
+    // nothing at all about that.
+    if (isPaidStream || isOneToOne) {
       tx.set(db.collection('streams').doc(streamId).collection('private').doc('playback'), {
         hlsUrl,
         lowLatencyHlsUrl,
@@ -464,6 +500,27 @@ exports.createStreamSession = functions.https.onCall({ region: REGION }, async (
     });
   });
 
+  // Stream Boost is the platform's OTHER coin sink (subscriptions are the
+  // first). Coins spent here never reach a creator's withdrawable balance, so
+  // the payout liability accrued when they were sold is released in full and
+  // the coin is 100% margin. Post-commit and guarded: the stream already exists
+  // and must not fail because a ledger row did.
+  //
+  // `willBoost` is the intent; `boosted` on the doc is the truth, but the
+  // transaction has closed by here, so the charge condition is re-derived from
+  // the same flag the transaction used. Idempotent on streamId either way.
+  if (willBoost) {
+    try {
+      const { bookPlatformSink } = require('./platformRevenue');
+      await bookPlatformSink({
+        uid, coins: BOOST_FEE_COINS, sink: 'stream_boost',
+        sourceId: `boost:${streamId}`,
+      });
+    } catch (e) {
+      console.error('bookPlatformSink (boost) failed', streamId, e?.message || e);
+    }
+  }
+
   return {
     streamId,
     streamKey,
@@ -491,7 +548,7 @@ exports.endStreamSession = functions.https.onCall({ region: REGION }, async (req
   const { streamId } = req.data || {};
   if (!streamId) throw new functions.https.HttpsError('invalid-argument', 'streamId required.');
 
-  return await db.runTransaction(async (tx) => {
+  const endResult = await db.runTransaction(async (tx) => {
     const streamRef = db.collection('streams').doc(streamId);
     const streamSnap = await tx.get(streamRef);
     if (!streamSnap.exists) throw new functions.https.HttpsError('not-found', 'Stream not found.');
@@ -551,6 +608,28 @@ exports.endStreamSession = functions.https.onCall({ region: REGION }, async (req
 
     return { ok: true, refunded, alreadyEnded: false };
   });
+
+  // The boost sink is REVERSIBLE: a stream that takes 50 coins of tips gets its
+  // boost fee back, so those coins never actually stayed with the platform and
+  // the liability released at charge time has to be re-accrued. Without this the
+  // ledger would count every refunded boost as permanent margin and quietly
+  // overstate profit on exactly the streams that performed best.
+  //
+  // Distinct sourceId from the charge, so the two rows sit side by side and net
+  // to zero rather than one silently cancelling the other.
+  if (endResult?.refunded) {
+    try {
+      const { bookPlatformSink } = require('./platformRevenue');
+      await bookPlatformSink({
+        uid, coins: -BOOST_FEE_COINS, sink: 'stream_boost_refund',
+        sourceId: `boost_refund:${streamId}`,
+      });
+    } catch (e) {
+      console.error('bookPlatformSink (boost refund) failed', streamId, e?.message || e);
+    }
+  }
+
+  return endResult;
 });
 
 /**
@@ -654,6 +733,21 @@ exports.getLikelyTipperScore = functions.https.onCall({ region: REGION }, async 
 const STREAM_HEARTBEAT_STALE_MS = 180 * 1000;        // 3 min without a beat = dead
 const STREAM_NOHEARTBEAT_MAX_MS = 6 * 3600 * 1000;   // pre-heartbeat zombies: 6h hygiene cutoff
 
+// A 1:1 SESSION IS REAPED HARDER, and for a different reason.
+//
+// The windows above are tuned for a public broadcast, where the cost of ending
+// a healthy alt-tabbed stream is worse than the cost of a zombie card sitting in
+// a discovery list. A 1:1 is the opposite trade: there is exactly one guest,
+// they may have paid to be there, and the host walking away leaves them staring
+// at a frozen frame with no way to tell whether anyone is coming back. Six hours
+// of that is not a hygiene problem, it is somebody's money.
+//
+// 120s matches the plan and is roughly what Tango allows. The never-started
+// window is short for the same reason: a session that has not produced a single
+// frame is not a session.
+const ONE_TO_ONE_STALE_MS = 120 * 1000;
+const ONE_TO_ONE_NEVER_STARTED_MS = 5 * 60 * 1000;
+
 exports.reapStaleStreams = async () => {
   const snap = await db.collection('streams').where('status', '==', 'live').limit(300).get();
   if (snap.empty) return;
@@ -671,15 +765,20 @@ exports.reapStaleStreams = async () => {
     if (s.ingestType !== 'browser' && s.ingestType !== 'fmp4') return;
     const hb = s.lastHeartbeat?.toMillis?.() || 0;
     const created = s.createdAt?.toMillis?.() || s.startedAt?.toMillis?.() || 0;
+    const isOneToOne = s.sessionType === 'one_to_one';
+    const staleMs = isOneToOne ? ONE_TO_ONE_STALE_MS : STREAM_HEARTBEAT_STALE_MS;
+    const neverStartedMs = isOneToOne ? ONE_TO_ONE_NEVER_STARTED_MS : STREAM_NOHEARTBEAT_MAX_MS;
     const stale = hb
-      ? (now - hb) > STREAM_HEARTBEAT_STALE_MS
-      : (created && (now - created) > STREAM_NOHEARTBEAT_MAX_MS);
+      ? (now - hb) > staleMs
+      : (created && (now - created) > neverStartedMs);
     if (!stale) return;
     batch.update(d.ref, {
       status: 'ended',
       isLive: false,
       endedAt: FieldValue.serverTimestamp(),
-      endReason: hb ? 'stale-heartbeat' : 'no-heartbeat-hygiene',
+      endReason: hb
+        ? (isOneToOne ? 'host-absent' : 'stale-heartbeat')
+        : (isOneToOne ? 'never-started' : 'no-heartbeat-hygiene'),
     });
     n++;
   });
@@ -705,11 +804,36 @@ exports.getLiveDiscoveryFeed = functions.https.onCall({ region: REGION }, async 
     .limit(100)
     .get();
 
+  // ── ADULT CONTENT IS EXCLUDED FROM DISCOVERY BY DEFAULT ──────────────
+  //
+  // The playback URL of a paid NSFW stream is already safe: entitlements.js
+  // refuses to sign it without a verified identity. But a discovery card is
+  // a title and a thumbnail, and those render before anybody buys anything.
+  // Leaving them in the list would put adult material in front of every
+  // signed-out visitor and every user who never opted in, which is exactly
+  // what the age gate exists to prevent.
+  //
+  // Two conditions, both required, and the identity check is done HERE rather
+  // than trusted from the request: a client can send includeNsfw:true, but it
+  // cannot fake a verified kyc document.
+  let allowNsfw = false;
+  if (viewerUid && req.data?.includeNsfw === true) {
+    try {
+      const vs = await db.collection('users').doc(viewerUid).get();
+      const vd = vs.exists ? vs.data() : null;
+      allowNsfw = vd?.kyc?.verified === true || vd?.role === 'admin';
+    } catch { allowNsfw = false; }
+  }
+
   const viewerScore = viewerUid ? await computeLikelyTipperScore(viewerUid) : 50;
   // viewerScore 0-100. Streams that cost the platform money (free-tier hosts)
   // should be surfaced more aggressively to high-tipper viewers.
 
-  const streams = snap.docs.map(d => {
+  const streams = snap.docs
+    // Marked streams are listed like any other. The marker drives the on-stream
+    // banner so a viewer knows what they are joining, not whether it appears.
+    // See feedRank.js for the full reasoning.
+    .map(d => {
     const s = { id: d.id, ...d.data() };
     // Base score: recency (newer = higher) + viewer count
     const ageMs = Date.now() - (s.createdAt?.toMillis?.() || Date.now());

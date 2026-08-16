@@ -235,6 +235,17 @@ exports.admobSsvCallback = functions.https.onRequest(
         return { status: 'credited', coins: rewardCoins };
       });
 
+      // AUTO-CONVERT AT RECEIPT: rewarded-ad coins are income from the
+      // platform, so they follow the same rule as every other earned credit and
+      // become gems at the user's current rate. Post-commit, guarded, idempotent
+      // on the AdMob transaction id, so Google's retries cannot convert twice.
+      if (result.status === 'credited' && result.coins > 0) {
+        const { settleEarnedToGems } = require('./coinLedger');
+        await settleEarnedToGems(db, {
+          uid, coins: result.coins, source: 'ad_reward', sourceId: `ad:${txId}`,
+        });
+      }
+
       functions.logger.info('admobSsv', { uid, txId, ...result });
       // Always 200 to Google on a valid signature so it stops retrying; the
       // body is for our own logs only.

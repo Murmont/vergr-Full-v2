@@ -13,7 +13,25 @@ const db = getFirestore('vgrdb');
 // Spectator boosts the trailing player's effective prize. The added coins
 // route to the actual prize pool on settlement (winner gets them too if
 // the trailing player wins).
+
+// ── RETIRED 2026-08-16 ────────────────────────────────────────────────
+// Tournaments do not exist as a product. Unrouting the screens did not stop
+// these callables being invoked directly, and the money-moving ones could still
+// escrow a user's coins. They now throw.
+//
+// Bodies are RETAINED, not deleted, exactly as requestWithdrawal was: the
+// bracket, escrow and payout logic is still what the settle paths run on.
+//
+// Settle/refund paths stay LIVE on purpose so nothing already escrowed is
+// stranded (leaveTournamentSecure, leaveBrawlQueue, finalizeTournamentSecure,
+// reportMatchResultSecure, reportGameResultSecure, resolveTournamentDispute).
+const TOURNAMENTS_RETIRED = () => new functions.https.HttpsError(
+  'failed-precondition',
+  'Tournaments have been retired and are no longer available on Vergr.',
+);
+
 exports.tipUnderdog = functions.https.onCall({ region: REGION }, async (req) => {
+  throw TOURNAMENTS_RETIRED();
   if (!req.auth) throw new functions.https.HttpsError('unauthenticated', 'Sign in required.');
   const uid = req.auth.uid;
   const { tournamentId, matchId, underdogUid, amount } = req.data || {};
@@ -60,6 +78,7 @@ exports.aggregateStreamHype = onSchedule(
 // Squad members can contribute coins toward a shared prize. Contribs are
 // held; refunded if the tournament is cancelled.
 exports.contributeToSquadTournament = functions.https.onCall({ region: REGION }, async (req) => {
+  throw TOURNAMENTS_RETIRED();
   if (!req.auth) throw new functions.https.HttpsError('unauthenticated', 'Sign in required.');
   const uid = req.auth.uid;
   const { tournamentId, amount } = req.data || {};
@@ -103,6 +122,7 @@ exports.attachTournamentSponsor = functions.https.onCall({ region: REGION }, asy
 // an outlet beyond holding coins: the amount is debited from the squad treasury
 // and added to the tournament prize pool, and the squad is billed as a sponsor.
 exports.sponsorTournamentFromTreasury = functions.https.onCall({ region: REGION }, async (req) => {
+  throw TOURNAMENTS_RETIRED();
   if (!req.auth) throw new functions.https.HttpsError('unauthenticated', 'Sign in required.');
   const uid = req.auth.uid;
   const { tournamentId, squadId, amount, showBranding = true } = req.data || {};
