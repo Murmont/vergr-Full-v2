@@ -63,7 +63,7 @@ export default function EventLandingScreen() {
       <div className="min-h-screen bg-bg-dark flex flex-col items-center justify-center gap-3 text-center px-6">
         <Icon name="confirmation_number" size={40} className="text-text-muted" />
         <p className="text-text-primary font-bold">Event not found</p>
-        <Link to="/tournaments" className="text-brand-violet-light text-sm font-semibold">Browse events</Link>
+        <Link to="/" className="text-brand-violet-light text-sm font-semibold">Go to Vergr</Link>
       </div>
     );
   }
@@ -132,7 +132,7 @@ export default function EventLandingScreen() {
 
           {/* Event details */}
           <Section title="Event details">
-            <DetailRow label="Format" value={cfg?.label || tournament.type || 'Tournament'} />
+            <DetailRow label="Format" value={cfg?.label || tournament.eventKind || 'Event'} />
             <DetailRow label="Players" value={`${tournament.participants?.length || 0} / ${tournament.maxParticipants}`} />
             {startLabel && <DetailRow label="Starts" value={startLabel} />}
             <DetailRow label="Tickets sold" value={`${sold.toLocaleString()} / ${capacity.toLocaleString()}`} />

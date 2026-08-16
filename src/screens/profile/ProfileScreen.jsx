@@ -223,7 +223,6 @@ export default function ProfileScreen() {
                 <div className="h-px my-1" style={{ background: '#1E1E2E' }} />
                 {/* Surfaces the mobile bottom-nav doesn't cover */}
                 <DropdownItem icon="account_balance_wallet" label="Wallet" onClick={() => { setMenuOpen(false); navigate('/wallet'); }} />
-                <DropdownItem icon="emoji_events" label="Tournaments" onClick={() => { setMenuOpen(false); navigate('/tournaments'); }} />
                 <DropdownItem icon="groups" label="Squads" onClick={() => { setMenuOpen(false); navigate('/squads'); }} />
                 <DropdownItem icon="notifications" label="Notifications" onClick={() => { setMenuOpen(false); navigate('/notifications'); }} />
                 <DropdownItem icon="workspace_premium" label="Subscription" onClick={() => { setMenuOpen(false); navigate('/settings/subscription'); }} />
@@ -552,7 +551,6 @@ function OwnerRightPanel({ posts, navigate, profile, squads = [] }) {
       <div className="rounded-xl p-3" style={{ background: '#14141F', border: '1px solid #1E1E2E' }}>
         <div className="flex items-center justify-between mb-2">
           <p className="text-[13px] font-bold text-text-primary">Achievements</p>
-          <button onClick={() => navigate('/profile/achievements')} className="text-[11px] font-semibold" style={{ color: '#B44FFF' }}>View All</button>
         </div>
         <p className="text-[11px] text-text-muted">Coming soon</p>
       </div>

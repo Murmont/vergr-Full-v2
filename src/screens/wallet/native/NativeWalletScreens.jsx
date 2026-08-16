@@ -552,7 +552,6 @@ const HIST_FILTERS = [
 
 
   { id: 'purchases',    label: 'Purchases',        match: (t) => t.type === 'buy' || t.type === 'coin_purchase' },
-  { id: 'tournaments',  label: 'Tournaments',      match: (t) => t.type === 'tournament' || t.type === 'tournament_prize' || t.type === 'tournament_refund' },
   { id: 'memberships',  label: 'Memberships',      match: (t) => t.type === 'membership' || t.type === 'fan_renewal' },
 ];
 

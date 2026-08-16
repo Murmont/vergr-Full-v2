@@ -275,8 +275,8 @@ export default function SquadDetailScreen() {
         <button onClick={() => navigate(`/squads/${squadId}/leaderboard`)} className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-surface-2/60 border border-white/[0.06] text-text-primary text-sm font-semibold whitespace-nowrap">
           <Icon name="leaderboard" size={16} /> Leaderboard
         </button>
-        <button onClick={() => navigate(`/squads/${squadId}/tournaments`)} className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-surface-2/60 border border-white/[0.06] text-text-primary text-sm font-semibold whitespace-nowrap">
-          <Icon name="emoji_events" size={16} /> Tournaments
+        <button onClick={() => navigate(`/squads/${squadId}/events`)} className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-surface-2/60 border border-white/[0.06] text-text-primary text-sm font-semibold whitespace-nowrap">
+          <Icon name="event" size={16} /> Events
         </button>
         {isLeader && (
           <button onClick={() => navigate(`/squads/${squadId}/requests`)} className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-surface-2/60 border border-white/[0.06] text-text-primary text-sm font-semibold whitespace-nowrap">
@@ -290,7 +290,7 @@ export default function SquadDetailScreen() {
           finalized yet. */}
       {pendingTournaments.length > 0 && (
         <div className="px-4 mt-6">
-          <h3 className="font-syne font-bold text-base mb-3">Pending Tournaments</h3>
+          <h3 className="font-syne font-bold text-base mb-3">Pending squad votes</h3>
           <div className="space-y-2">
             {pendingTournaments.map((t) => (
               <div key={t.id} className="p-3 rounded-xl bg-surface-1 border border-white/[0.06]">

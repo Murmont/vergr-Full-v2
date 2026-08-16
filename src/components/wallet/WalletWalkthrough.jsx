@@ -215,7 +215,7 @@ const Beat3 = memo(function Beat3() {
   const sources = [
     { label: 'Tips from fans' },
     { label: 'Fan memberships' },
-    { label: 'Tournament prizes' },
+    { label: 'Event tickets' },
   ];
   return (
     <BeatShell bg="radial-gradient(ellipse 1400px 900px at 80% 50%, #16121c 0%, #0a0710 65%, #050308 100%)">

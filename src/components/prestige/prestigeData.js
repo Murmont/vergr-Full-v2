@@ -52,7 +52,7 @@ export const TOTAL_BADGES = 30;
 // `custom` overrides the flat "+N VP" amount for non-flat earners (e.g. gifting,
 // which scales with coins sent and is capped daily — see GIFT_* in vpSystem).
 export const EARN_ITEMS = [
-  { key: 'win_tournament',   label: 'Win a tournament',  icon: 'emoji_events' },
+  { key: 'host_event',       label: 'Host a live event', icon: 'confirmation_number' },
   { key: 'win_match',        label: 'Win a match',       icon: 'sports_esports' },
   { key: 'gift',             label: 'Gift / tip a creator', icon: 'redeem', custom: '+1 VP / 25c' },
   { key: 'go_live',          label: 'Go live',           icon: 'sensors' },

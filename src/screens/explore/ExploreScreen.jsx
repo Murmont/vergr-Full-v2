@@ -904,7 +904,7 @@ function AllTab({ navigate, setTab, streamsToShow, creators, squads, news, follo
       )}
 
       <section>
-        <SectionHeader title="Top Games" onViewAll={() => navigate('/tournaments')} />
+        <SectionHeader title="Top Games" onViewAll={() => navigate('/search')} />
         <Carousel innerClassName="flex gap-3 overflow-x-auto no-scrollbar pb-2 -mx-1 px-1" style={{ scrollSnapType: 'x proximity' }}>
           {TOP_GAME_LIST.map((g) => {
             // Real live signal only — count currently-live streams for this game.
@@ -913,7 +913,7 @@ function AllTab({ navigate, setTab, streamsToShow, creators, squads, news, follo
             const accent = gameAccent(g.name);
             return (
               <button key={g.id}
-                onClick={() => navigate('/tournaments')}
+                onClick={() => navigate(`/search?q=${encodeURIComponent(g.name)}`)}
                 className="relative rounded-xl overflow-hidden group text-left aspect-[3/4] w-28 shrink-0 border border-surface-3 hover:border-brand-violet-light/40 transition-all"
                 style={{ background: `linear-gradient(160deg, ${accent}33 0%, #14141F 55%, #0B0B14 100%)`, scrollSnapAlign: 'start' }}>
                 {/* Official cover art (publisher CDN). Gradient base stays

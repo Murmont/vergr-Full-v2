@@ -295,7 +295,7 @@ export default function NativeExploreScreen() {
                 <div className="space-y-2">{squads.slice(0, 4).map((s) => <SquadCard key={s.id} s={s} navigate={navigate} />)}</div>
               </Section>
             )}
-            <Section title="Top Games" onMore={() => navigate('/tournaments')}>
+            <Section title="Top Games" onMore={() => navigate('/search')}>
               <GamesCarousel streams={streams} navigate={navigate} />
             </Section>
             {news.length > 0 && (
@@ -393,7 +393,7 @@ function GamesCarousel({ streams, navigate }) {
         const watchers = liveForGame.reduce((sum, s) => sum + (parseInt(String(s.viewers).replace(/[^0-9]/g, '')) || 0), 0);
         const accent = gameAccent(g.name);
         return (
-          <button key={g.id} onClick={() => navigate('/tournaments')}
+          <button key={g.id} onClick={() => navigate(`/search?q=${encodeURIComponent(g.name)}`)}
             className="relative rounded-xl overflow-hidden text-left aspect-[3/4] w-24 shrink-0 border border-surface-3"
             style={{ background: `linear-gradient(160deg, ${accent}33 0%, #14141F 55%, #0B0B14 100%)`, scrollSnapAlign: 'start' }}>
             {g.coverArt && <img src={g.coverArt} alt={g.name} loading="lazy" className="absolute inset-0 w-full h-full object-cover" />}

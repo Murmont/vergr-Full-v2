@@ -19,7 +19,7 @@ const COPY = [
 const TIPS = [
   { label: 'TIP', body: 'Tier S clips earn more gems when posted within 30 minutes.' },
   { label: 'DID YOU KNOW', body: 'Rank up to drop your platform fee as low as 5%.' },
-  { label: 'NEW', body: 'Tournament prize pools auto-route straight to your wallet.' },
+  { label: 'NEW', body: 'Sell tickets to your own live events, straight from a chat.' },
   { label: 'PRO TIP', body: 'Pin your vergr.me link in chat to convert viewers into followers.' },
   { label: 'REMINDER', body: 'Squad voice rooms stay private — no transcripts, ever.' },
 ];

@@ -155,19 +155,17 @@ export function NativeTrendingHashtagsScreen() {
 const LB_CATEGORIES = [
   { key: 'vp', label: 'Top VP', field: 'vp', icon: 'star', suffix: 'VP' },
   { key: 'vpLevel', label: 'Highest Level', field: 'vpLevel', icon: 'trending_up', suffix: 'LVL' },
-  { key: 'tournamentPoints', label: 'Top Players', field: 'tournamentPoints', icon: 'leaderboard', suffix: 'TP' },
-  { key: 'tournamentWins', label: 'Tournament Wins', field: 'tournamentStats.won', icon: 'emoji_events' },
-  { key: 'tournamentTrust', label: 'Most Trusted', field: 'tournamentTrust.score', icon: 'verified', suffix: 'TRUST' },
-  { key: 'tournamentPrize', label: 'Top Prize', field: 'tournamentStats.earnedCoins', icon: 'paid', suffix: 'c' },
-  { key: 'tournamentMatches', label: 'Most Matches', field: 'tournamentTrust.verifiedMatches', icon: 'sports_esports' },
-  { key: 'topPredictor', label: 'Top Predictor', field: 'predictor.totalCorrect', icon: 'psychology' },
+  { key: 'streamers', label: 'Top Streamers', field: 'streamHours', icon: 'live_tv', suffix: 'hrs' },
+  { key: 'followers', label: 'Most Followed', field: 'followerCount', icon: 'group' },
+  { key: 'earnings', label: 'Top Earners', field: 'totalEarned', icon: 'paid' },
+  { key: 'xp', label: 'Top XP', field: 'totalXP', icon: 'military_tech' },
+  { key: 'posts', label: 'Top Posters', field: 'postCount', icon: 'edit_note' },
   { key: 'predictorStreak', label: 'Hottest Streak', field: 'predictor.currentStreak', icon: 'local_fire_department' },
   { key: 'earnings', label: 'Top Earners', field: 'totalEarned', icon: 'paid' },
   { key: 'xp', label: 'Top XP', field: 'totalXP', icon: 'military_tech' },
   { key: 'posts', label: 'Top Posters', field: 'postCount', icon: 'edit_note' },
   { key: 'followers', label: 'Most Followed', field: 'followerCount', icon: 'group' },
   { key: 'streamers', label: 'Top Streamers', field: 'streamHours', icon: 'live_tv', suffix: 'hrs' },
-  { key: 'gameWeekly', label: 'By Game (week)', field: null, icon: 'sports_esports', suffix: 'W', perGame: true },
 ];
 const LB_GAME_PICKS = ['Counter-Strike 2', 'VALORANT', 'League of Legends', 'EA Sports FC 25 (FIFA)', 'NBA 2K', 'Apex Legends', 'Rocket League', 'Fortnite'].filter((g) => TOURNAMENT_GAMES.some((tg) => tg.label === g));
 const PODIUM_COLORS = { 0: '#F5C542', 1: '#C0C0C0', 2: '#CD7F32' };
@@ -278,7 +276,7 @@ const QUEST_DEFS = {
   special: [
     { id: 'creator_content', title: 'Creator Content', description: 'Post 10 times with 5+ likes and 5+ comments each', reward: 100, currency: 'vp', target: 10, oneTime: true },
     { id: 'first_squad', title: 'Join a Squad', description: 'Join or create your first squad', reward: 50, currency: 'vp', target: 1, oneTime: true },
-    { id: 'first_tournament', title: 'Enter a Tournament', description: 'Compete in your first tournament', reward: 100, currency: 'vp', target: 1, oneTime: true },
+    { id: 'first_event', title: 'Host an Event', description: 'Create your first ticketed event', reward: 100, currency: 'vp', target: 1, oneTime: true },
     { id: 'refer_friend', title: 'Refer a Friend', description: 'Friend joins via your link and verifies a phone number. You earn 5000 VP, they earn 3000 VP', reward: 5000, currency: 'vp', target: 1, requiresFriend: true, external: true, externalRoute: '/earn/refer', externalLabel: 'Manage' },
     { id: 'add_phone', title: 'Add Phone Number', description: 'Unlocks contact invites — open New Chat → ⋮ → Add phone number', reward: 1000, currency: 'vp', target: 1, oneTime: true, external: true, externalRoute: '/messages/new', externalLabel: 'Add' },
   ],
@@ -338,7 +336,7 @@ export function NativeEarnCoinsScreen() {
     { icon: 'star', title: 'Daily Quests', desc: 'Complete tasks for VP', reward: '15-30 VP/day', color: 'text-brand-violet', action: () => setActiveTab('daily') },
     { icon: 'login', title: '5-Day Streak', desc: 'Log in 5 days straight', reward: '5 coins + 50 VP', color: 'text-brand-gold', action: () => navigate('/') },
     { icon: 'phone', title: 'Add Phone Number', desc: 'Unlock contact invites', reward: '1000 VP', color: 'text-brand-violet-light', action: () => navigate('/messages/new') },
-    { icon: 'emoji_events', title: 'Win Tournaments', desc: 'Win coins from prize pools', reward: 'Coins + VP', color: 'text-brand-ember', action: () => navigate('/tournaments') },
+    { icon: 'confirmation_number', title: 'Host an Event', desc: 'Sell tickets to a live event', reward: 'Coins + VP', color: 'text-brand-ember', action: () => navigate('/events/create') },
     { icon: 'person_add', title: 'Refer Friends', desc: 'Invite a friend who sets up properly', reward: '5000 VP (+3000 for them)', color: 'text-brand-pink', action: () => setActiveTab('special') },
     { icon: 'trending_up', title: 'Level Up', desc: '30% → 15% commission', reward: 'Ranks 1–100', color: 'text-brand-gold', action: () => navigate('/settings/ranks') },
     { icon: 'workspace_premium', title: 'Lite / Pro Plans', desc: '1.5×/2× VP + monthly VP & coins', reward: '+1k–3k VP / mo', color: 'text-brand-violet', action: () => navigate('/settings/subscription') },

@@ -1,6 +1,6 @@
 // History (v2) — ports the design's HistoryScreen. Filter tabs expanded
 // per the locked spec to real ledger categories: All / Tips / Conversions /
-// Withdrawals / Coin purchases / Tournament prizes / Memberships.
+// Coin purchases / Tips / Unlocks / Memberships.
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useUser } from '../../../context/UserContext';
@@ -16,7 +16,6 @@ const FILTERS = [
   { id: 'unlocks',      label: 'Unlocks',          match: (t) => /unlock|ticket|season_pass|coaching_payment/.test(String(t.type || '')) },
   { id: 'tips',         label: 'Tips sent',        match: (t) => t.type === 'tip_sent' },
   { id: 'purchases',    label: 'Coins bought',     match: (t) => t.type === 'buy' || t.type === 'coin_purchase' },
-  { id: 'tournaments',  label: 'Tournament prizes', match: (t) => t.type === 'tournament' || t.type === 'tournament_prize' || t.type === 'tournament_refund' },
   { id: 'memberships',  label: 'Subscriptions',    match: (t) => t.type === 'membership' || t.type === 'fan_renewal' || t.type === 'subscription_payment' },
 ];
 

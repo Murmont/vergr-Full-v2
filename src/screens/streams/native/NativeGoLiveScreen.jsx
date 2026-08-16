@@ -420,7 +420,7 @@ export default function NativeGoLiveScreen() {
         )}
 
         {/* Twitch mirror entry */}
-        <button type="button" onClick={() => navigate('/settings/linked')} style={{
+        <button type="button" onClick={() => navigate('/settings/linked-accounts')} style={{
           width: '100%', display: 'flex', alignItems: 'center', gap: 12, padding: '13px 14px', borderRadius: 14,
           cursor: 'pointer', textAlign: 'left', background: 'rgba(145,70,255,0.10)', border: '1px solid rgba(145,70,255,0.35)',
         }}>

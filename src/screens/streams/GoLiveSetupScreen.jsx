@@ -611,7 +611,7 @@ export default function GoLiveSetupScreen() {
         {!twitchLinked ? (
           <button
             type="button"
-            onClick={() => navigate('/settings/linked')}
+            onClick={() => navigate('/settings/linked-accounts')}
             style={{
               width: '100%', display: 'flex', alignItems: 'center', gap: 12,
               padding: '12px 14px', borderRadius: 12, cursor: 'pointer', textAlign: 'left',

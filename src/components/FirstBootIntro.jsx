@@ -432,7 +432,7 @@ function ChapterCrew({ active }) {
       </div>
 
       <div style={{ position: 'absolute', left: 0, right: 0, bottom: '14%', display: 'grid', placeItems: 'center' }}>
-        <HeroLine active={active} size="M">Squads. DMs.<br/><span className="accent">Tournaments.</span></HeroLine>
+        <HeroLine active={active} size="M">Squads. DMs.<br/><span className="accent">Live events.</span></HeroLine>
       </div>
     </div>
   );

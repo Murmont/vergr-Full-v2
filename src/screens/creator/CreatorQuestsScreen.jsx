@@ -52,7 +52,7 @@ const CREATOR_QUESTS = [
   { id: 'creator_collab',   title: 'Collaborate',        desc: 'Co-stream with another creator',  vp: 200, icon: 'diversity_3' },
   { id: 'creator_short',    title: 'Drop a Short',       desc: 'Publish a Short this week',       vp: 50,  icon: 'movie' },
   { id: 'creator_tierlist', title: 'Share a tier list',  desc: 'Create and publish a tier list',  vp: 40,  icon: 'format_list_numbered' },
-  { id: 'creator_host_tournament', title: 'Host a tournament', desc: 'Create a tournament for your community', vp: 150, icon: 'emoji_events' },
+  { id: 'creator_host_event', title: 'Host an event', desc: 'Run a ticketed event for your community', vp: 150, icon: 'confirmation_number' },
 ];
 
 // Leveled tournament-earnings ladder. Tracks REAL coins won in tournaments
@@ -64,7 +64,7 @@ const EARN_TIERS = [
   { id: 'tourney_earn_50k', coins: 50000, vp: 1500 },
 ];
 
-// ── Tournament earnings tracker (hero) ──────────────────────────────────
+// ── Creator earnings tracker (hero) ─────────────────────────────────────
 function TournamentEarningTracker({ earned, claimed, claiming, onClaim }) {
   const total = EARN_TIERS[EARN_TIERS.length - 1].coins;
   // current level = highest tier whose threshold is reached
@@ -83,15 +83,15 @@ function TournamentEarningTracker({ earned, claimed, claiming, onClaim }) {
       <div className="absolute -top-16 -right-16 w-48 h-48 rounded-full bg-amber-400/10 blur-3xl pointer-events-none" />
       <div className="relative flex items-start justify-between gap-3 mb-4">
         <div className="min-w-0">
-          <p className="text-[10px] uppercase tracking-[0.18em] text-amber-400 font-bold mb-1">Tournament earnings</p>
+          <p className="text-[10px] uppercase tracking-[0.18em] text-amber-400 font-bold mb-1">Creator earnings</p>
           <div className="flex items-end gap-2">
             <span className="font-dmmono font-bold text-4xl md:text-5xl text-white tabular-nums leading-none">{compactNum(earned)}</span>
             <Icon name="paid" filled size={22} className="text-amber-400 mb-1" />
           </div>
           <p className="text-xs text-text-muted mt-1.5">
             {nextTier
-              ? <>Win <span className="text-white font-semibold">{compactNum(segHigh - earned)}</span> more in tournaments to hit the next reward.</>
-              : <>Top tier reached. You've earned every tournament VP reward.</>}
+              ? <>Earn <span className="text-white font-semibold">{compactNum(segHigh - earned)}</span> more to hit the next reward.</>
+              : <>Top tier reached. You've earned every creator VP reward.</>}
           </p>
         </div>
         <div className="shrink-0 text-right">
@@ -236,7 +236,7 @@ export default function CreatorQuestsScreen({ embedded = false }) {
   const handleClaimMilestone = async (tier, btnEl) => {
     setClaiming(tier.id);
     try {
-      await claimMilestoneReward(currentUser.uid, tier.id, tier.vp, `Tournament earnings ${compactNum(tier.coins)}`);
+      await claimMilestoneReward(currentUser.uid, tier.id, tier.vp, `Creator earnings ${compactNum(tier.coins)}`);
       setMilestonesClaimed(prev => [...prev, tier.id]);
       burstConfetti(btnEl);
       showToast(`+${tier.vp} VP`, 'success');
@@ -265,7 +265,7 @@ export default function CreatorQuestsScreen({ embedded = false }) {
         </div>
       </div>
 
-      {/* Tournament earnings hero */}
+      {/* Creator earnings hero */}
       <TournamentEarningTracker
         earned={tournamentCoins}
         claimed={milestonesClaimed}

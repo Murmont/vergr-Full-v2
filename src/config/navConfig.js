@@ -61,52 +61,6 @@ export const MAIN_NAV = {
   ],
 };
 
-export const TOURNAMENTS_NAV = {
-  id: 'tournaments',
-  title: 'Tournaments',
-  back: { label: 'Back to Main', path: '/' },
-  groups: [
-    {
-      header: 'Tournaments',
-      items: [
-        { icon: 'dashboard', label: 'Overview', path: '/tournaments' },
-        { icon: 'format_list_bulleted', label: 'All Tournaments', path: '/tournaments/all' },
-        { icon: 'star', label: 'My Tournaments', path: '/tournaments/mine' },
-        { icon: 'favorite', label: 'Following', path: '/tournaments/following' },
-        { icon: 'history', label: 'Past Tournaments', path: '/tournaments/past' },
-      ],
-    },
-    {
-      header: 'Tournament Types',
-      items: [
-        { icon: 'person', label: '1v1 Single Elim', path: '/tournaments/type/1v1-single' },
-        { icon: 'person', label: '1v1 Double Elim', path: '/tournaments/type/1v1-double' },
-        { icon: 'groups', label: 'Squad vs Squad', path: '/tournaments/type/squad-single' },
-        { icon: 'groups', label: 'Squad Round Robin', path: '/tournaments/type/squad-round' },
-        { icon: 'gamepad', label: 'Free For All', path: '/tournaments/type/ffa' },
-        { icon: 'military_tech', label: 'Battle Royale', path: '/tournaments/type/battle' },
-        { icon: 'swap_horiz', label: 'Swiss System', path: '/tournaments/type/swiss' },
-        { icon: 'mail', label: 'Invitational / Custom', path: '/tournaments/type/invite' },
-      ],
-    },
-    {
-      header: 'Organise',
-      items: [
-        { icon: 'add_circle', label: 'Create Tournament', path: '/create-tournament' },
-        { icon: 'trophy', label: 'My Tournaments', path: '/tournaments/mine' },
-        { icon: 'inbox', label: 'Applications', path: '/tournaments/applications' },
-      ],
-    },
-    {
-      header: 'Support',
-      items: [
-        { icon: 'gavel', label: 'Rules & Guides', path: '/tournaments/rules' },
-        { icon: 'help', label: 'Help Center', path: '/platform/help' },
-      ],
-    },
-  ],
-};
-
 // SQUADS_NAV was removed 2026-05-14 — SquadShell owns the squad-section nav
 // entirely (see src/components/squad/SquadShell.jsx GLOBAL_NAV + SQUAD_NAV).
 // Don't reintroduce a navConfig entry for /squads; the contextual rail is
@@ -145,17 +99,15 @@ export const CREATOR_NAV = {
         { icon: 'dashboard', label: 'Overview', path: '/creator/dashboard' },
         { icon: 'analytics', label: 'Analytics', path: '/creator/analytics' },
         { icon: 'attach_money', label: 'Revenue', path: '/creator/earnings' },
-        { icon: 'live_tv', label: 'Streams', path: '/creator/streams' },
         { icon: 'people', label: 'Audience', path: '/creator/audience' },
         { icon: 'forum', label: 'Community', path: '/creator/community' },
-        { icon: 'favorite', label: 'Engagement', path: '/creator/engagement' },
-        { icon: 'payments', label: 'Payouts', path: '/creator/payouts' },
+        { icon: 'payments', label: 'Payouts', path: '/creator/earnings/setup' },
         { icon: 'grid_view', label: 'Content', path: '/creator/content' },
         { icon: 'link', label: 'Vergr.me', path: '/vergrme/edit' },
         { icon: 'calendar_month', label: 'Schedule', path: '/creator/schedule' },
         { icon: 'check_circle', label: 'Quests', path: '/creator/quests' },
         { icon: 'workspace_premium', label: 'Membership', path: '/creator/membership' },
-        { icon: 'settings', label: 'Settings', path: '/creator/settings' },
+        { icon: 'settings', label: 'Settings', path: '/settings' },
       ],
     },
   ],
@@ -187,8 +139,6 @@ export const SETTINGS_NAV = {
 // nav. If you add one here you'll re-introduce the double-rail bug.
 const RESOLVERS = [
   { prefix: '/creator', nav: CREATOR_NAV },
-  // Tournaments are retired from navigation. TOURNAMENTS_NAV is kept above so
-  // the section can be restored by re-adding these two resolver entries.
   { prefix: '/messages', nav: MESSAGING_NAV },
   { prefix: '/settings', nav: SETTINGS_NAV },
 ];

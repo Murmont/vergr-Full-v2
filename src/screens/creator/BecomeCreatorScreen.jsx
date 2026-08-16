@@ -93,7 +93,7 @@ export function BecomeCreatorModal({ open, onClose }) {
               Start onboarding
             </button>
             <button
-              onClick={() => { onClose?.(); navigate('/help/category/creator-studio'); }}
+              onClick={() => { onClose?.(); navigate('/platform/help/category/creator-studio'); }}
               className="rounded-xl px-5 py-3 text-sm font-bold text-text-secondary hover:text-text-primary"
               style={{ boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.12)' }}
             >

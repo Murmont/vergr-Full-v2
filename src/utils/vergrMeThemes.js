@@ -739,7 +739,8 @@ export const BLOCK_REGISTRY = {
   tip:     { label: 'Tip jar',       icon: 'volunteer_activism',  tier: 'free', cat: 'commerce', make: () => ({ label: 'Buy me a coffee' }) },
   membership: { label: 'Membership', icon: 'workspace_premium',   tier: 'free', cat: 'commerce', make: () => ({ title: 'Membership' }) },
   vergr_stream:     { label: 'My live stream',  icon: 'sensors',             tier: 'free', cat: 'vergr', make: () => ({ auto: true }) },
-  vergr_tournament: { label: 'My tournament',   icon: 'emoji_events',        tier: 'free', cat: 'vergr', make: () => ({ tournamentId: '' }) },
+  // vergr_tournament retired: not offered in the picker. Renderer kept for existing pages.
+  _retired_vergr_tournament: { label: 'My tournament',   icon: 'emoji_events',        tier: 'free', cat: 'vergr', make: () => ({ tournamentId: '' }) },
   vergr_event:      { label: 'Ticketed event',  icon: 'confirmation_number', tier: 'free', cat: 'vergr', make: () => ({ eventId: '' }) },
   vergr_squad:      { label: 'My squad',        icon: 'groups',              tier: 'free', cat: 'vergr', make: () => ({ squadId: '' }) },
   vergr_group:      { label: 'Join my group',   icon: 'forum',               tier: 'free', cat: 'vergr', make: () => ({ groupId: '' }) },

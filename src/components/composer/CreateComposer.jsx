@@ -1402,9 +1402,9 @@ export default function CreateComposer({ onClose, originRect, editingPost = null
                             <div className="icon-wrap"><CIcon name="users" size={20} /></div>
                             <div><div className="t">Squad Update</div><div className="d">Share with your squad</div></div>
                           </button>
-                          <button className="action-card ac-orange" onClick={() => branch('/tournaments')}>
+                          <button className="action-card ac-orange" onClick={() => branch('/events/create')}>
                             <div className="icon-wrap"><CIcon name="trophy2" size={20} /></div>
-                            <div><div className="t">Tournament Result</div><div className="d">Post match results</div></div>
+                            <div><div className="t">Host an Event</div><div className="d">Sell tickets to a live event</div></div>
                             <span className="chev"><CIcon name="chevron-right" size={16} /></span>
                           </button>
                         </div>}

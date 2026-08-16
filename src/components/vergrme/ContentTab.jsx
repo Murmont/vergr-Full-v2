@@ -127,7 +127,6 @@ const BLOCK_DESC = {
   message: 'Let visitors DM you on Vergr',
   tip: 'Accept coin tips (you keep 50-80%)',
   vergr_stream: 'Auto-shows when you go live',
-  vergr_tournament: 'Promote one of your tournaments',
   vergr_event: 'Sell tickets to your event',
   vergr_squad: 'Invite people to your squad',
   vergr_group: 'Link to a public group chat',

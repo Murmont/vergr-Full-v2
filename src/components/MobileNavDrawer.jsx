@@ -87,9 +87,8 @@ const GROUPS = [
     ],
   },
   {
-    header: 'Compete',
+    header: 'Discover',
     items: [
-      { icon: 'emoji_events', label: 'Tournaments', path: '/tournaments' },
       { icon: 'leaderboard', label: 'Leaderboard', path: '/leaderboard' },
       { icon: 'live_tv', label: 'Live Streams', path: '/streams' },
     ],
@@ -100,7 +99,7 @@ const GROUPS = [
       { icon: 'redeem', label: 'Earn VP', path: '/earn' },
       { icon: 'account_balance_wallet', label: 'Wallet', path: '/wallet' },
       { icon: 'dashboard', label: 'Creator Studio', path: '/creator/dashboard' },
-      { icon: 'verified', label: 'Verification', path: '/settings/verify' },
+      { icon: 'verified', label: 'Verification', path: '/creator/verify' },
       { icon: 'settings', label: 'Settings', path: '/settings' },
       { icon: 'help', label: 'Help & Support', path: '/platform/help' },
     ],

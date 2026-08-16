@@ -23,8 +23,8 @@ import { useLayoutEffect } from 'react';
 import { isTauri } from './platform';
 
 const DEFAULT = {
-  title: 'Vergr | Connect, Stream & Compete in Tournaments',
-  description: 'Connect with gamers, live stream in high quality, and compete in tournaments on Vergr. Manage your competitive squad and earn rewards with daily quests.',
+  title: 'Vergr | Live Streaming for Gamers & Creators',
+  description: 'Connect with gamers, live stream in high quality, and share clips on Vergr. Build your squad, host ticketed events, and earn from your audience.',
   image: 'https://vergr.app/brand/og-default.png',
   type: 'website',
   siteName: 'VERGR',

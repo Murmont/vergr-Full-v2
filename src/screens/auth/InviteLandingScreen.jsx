@@ -18,7 +18,7 @@ import { VPIcon } from '../../components/CoinIcon';
 import { REFERRAL_VP_REFEREE } from '../../utils/vpSystem';
 
 const PERKS = [
-  { icon: 'emoji_events', title: 'Compete for real prizes', body: 'Join or host tournaments across your favourite games.' },
+  { icon: 'confirmation_number', title: 'Host live events', body: 'Run a show, a watch party or a class across your favourite games.' },
   { icon: 'live_tv',      title: 'Stream in high quality',   body: 'Go live, get tipped, and grow an audience.' },
   { icon: 'groups',       title: 'Build your squad',         body: 'Team up, chat, and climb the ranks together.' },
 ];

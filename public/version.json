@@ -1,10 +1,10 @@
 {
-  "androidVersion": "1.0.196",
-  "androidVersionCode": 196,
-  "apkUrl": "https://cdn.vergr.app/downloads/VERGR.apk?v=1000196",
+  "androidVersion": "1.0.197",
+  "androidVersionCode": 197,
+  "apkUrl": "https://cdn.vergr.app/downloads/VERGR.apk?v=1000197",
   "minSupportedVersionCode": 1,
-  "notes": "Host ticketed events from anywhere: DMs, groups, squads and go-live. New Create Event screen. Plus a big pass over earnings wording so what you keep is stated correctly everywhere.",
+  "notes": "Tournaments are gone from the app: the drawer, profile menu, leaderboard, explore tiles and quests. Host ticketed events instead, from DMs, groups, squads or go-live.",
   "apkSize": 128324459,
-  "apkSha256": "51353c732e1bb2c203ccc1a7d2ec46cff21d04a612334a9dd08229a89a5ee510",
-  "apkPublishedAt": "2026-08-16T13:56:11.640Z"
+  "apkSha256": "9c31c74418ebec8b2b96a41cce2c309c09ac7ebb571a56056ed605a4d47a6866",
+  "apkPublishedAt": "2026-08-16T17:02:37.928Z"
 }

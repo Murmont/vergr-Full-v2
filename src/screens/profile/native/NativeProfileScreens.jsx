@@ -258,7 +258,6 @@ export function NativeProfileScreen() {
                 <MenuItem icon="link" label="Vergr.me" onClick={() => { setMenuOpen(false); navigate('/vergrme/edit'); }} />
                 <div className="h-px my-1" style={{ background: '#1E1E2E' }} />
                 <MenuItem icon="account_balance_wallet" label="Wallet" onClick={() => { setMenuOpen(false); navigate('/wallet'); }} />
-                <MenuItem icon="emoji_events" label="Tournaments" onClick={() => { setMenuOpen(false); navigate('/tournaments'); }} />
                 <MenuItem icon="groups" label="Squads" onClick={() => { setMenuOpen(false); navigate('/squads'); }} />
                 <MenuItem icon="workspace_premium" label="Subscription" onClick={() => { setMenuOpen(false); navigate('/settings/subscription'); }} />
                 <MenuItem icon="verified_user" label="Verify (KYC)" onClick={() => { setMenuOpen(false); navigate('/creator/verify'); }} />
