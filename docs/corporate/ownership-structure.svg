@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 720" width="760" height="720" font-family="Georgia, 'Times New Roman', serif">
+  <rect width="760" height="720" fill="#ffffff"/>
+  <text x="380" y="52" text-anchor="middle" font-size="23" font-weight="bold" fill="#111">Murmont LLC</text>
+  <text x="380" y="80" text-anchor="middle" font-size="15" fill="#555">Legal and Beneficial Ownership Structure</text>
+
+  <!-- Damien Ashton -->
+  <rect x="230" y="120" width="300" height="96" rx="26" fill="#e2e2e2"/>
+  <text x="380" y="163" text-anchor="middle" font-size="21" fill="#111">Damien Ashton</text>
+  <text x="380" y="189" text-anchor="middle" font-size="13" fill="#555">Individual, resident of South Africa</text>
+
+  <!-- connector 1 -->
+  <line x1="380" y1="216" x2="380" y2="286" stroke="#111" stroke-width="2.5"/>
+  <circle cx="380" cy="222" r="5.5" fill="#fff" stroke="#111" stroke-width="2.5"/>
+  <circle cx="380" cy="280" r="5.5" fill="#fff" stroke="#111" stroke-width="2.5"/>
+  <rect x="341" y="235" width="78" height="32" rx="16" fill="#fff" stroke="#111" stroke-width="2.5"/>
+  <text x="380" y="257" text-anchor="middle" font-size="15" fill="#111">100%</text>
+
+  <!-- Murmont LLC -->
+  <rect x="230" y="286" width="300" height="112" rx="26" fill="#e2e2e2"/>
+  <text x="380" y="329" text-anchor="middle" font-size="21" fill="#111">Murmont LLC</text>
+  <text x="380" y="354" text-anchor="middle" font-size="13" fill="#555">Wyoming, United States</text>
+  <text x="380" y="375" text-anchor="middle" font-size="13" fill="#555">Entity no. 2023-001339075 · EIN 35-2825718</text>
+
+  <!-- connector 2 -->
+  <line x1="380" y1="398" x2="380" y2="468" stroke="#111" stroke-width="2.5"/>
+  <circle cx="380" cy="404" r="5.5" fill="#fff" stroke="#111" stroke-width="2.5"/>
+  <circle cx="380" cy="462" r="5.5" fill="#fff" stroke="#111" stroke-width="2.5"/>
+  <rect x="341" y="417" width="78" height="32" rx="16" fill="#fff" stroke="#111" stroke-width="2.5"/>
+  <text x="380" y="439" text-anchor="middle" font-size="15" fill="#111">100%</text>
+
+  <!-- Vergr -->
+  <rect x="230" y="468" width="300" height="100" rx="26" fill="#e2e2e2"/>
+  <text x="380" y="510" text-anchor="middle" font-size="21" fill="#111">Vergr</text>
+  <text x="380" y="536" text-anchor="middle" font-size="13" fill="#555">Product and platform operated by</text>
+  <text x="380" y="554" text-anchor="middle" font-size="13" fill="#555">Murmont LLC · vergr.app</text>
+
+  <text x="380" y="628" text-anchor="middle" font-size="12.5" fill="#666">Damien Ashton is the sole member and sole ultimate beneficial owner of Murmont LLC.</text>
+  <text x="380" y="650" text-anchor="middle" font-size="12.5" fill="#666">There are no intermediate holding companies and no other shareholders or members.</text>
+  <text x="380" y="672" text-anchor="middle" font-size="12.5" fill="#666">Registered office: 1309 Coffeen Avenue, Ste 11930, Sheridan, WY 82801, United States</text>
+</svg>

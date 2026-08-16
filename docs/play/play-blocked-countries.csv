@@ -1,0 +1,9 @@
+country_name,iso,reason
+China,CN,"Google Play does not operate in China; also ICP licensing"
+North Korea,KP,"Sanctioned"
+Iran,IR,"Sanctioned"
+Syria,SY,"Sanctioned"
+Cuba,CU,"Sanctioned"
+Russia,RU,"Sanctioned / restricted"
+Belarus,BY,"Sanctioned"
+Venezuela,VE,"Sanctioned-adjacent"

@@ -19,7 +19,7 @@
     "desktop:debug": "tauri dev --verbose",
     "desktop:dist": "tauri build && node scripts/make-update-manifest.mjs && vite build",
     "android:dev": "tauri android dev",
-    "android:build": "tauri android build",
+    "android:build": "tauri android build --target aarch64",
     "android:build:store": "node scripts/android-store-build.mjs",
     "android:build:huawei": "node scripts/android-huawei-build.mjs",
     "android:build:dev": "node scripts/android-dev-build.mjs"

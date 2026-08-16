@@ -67,9 +67,16 @@ access      : { mode: 'free'|'paid', priceCoins }      // already
 maxConcurrentViewers : 1 for dm, else member count     // already for dm
 ```
 
-`inviteUids` is the enforcement. Today a 1:1 is protected only by being
-unlisted, which means a leaked id is a leaked session. Add it to `getAccess`'s
-stream resolver: not on the list → no playback URL, paid or not.
+`inviteUids` is the enforcement, and it is **BUILT** (2026-08-10). Unlisted
+alone was never privacy: `streams/{id}` is world-readable, so a leaked id was a
+leaked session. `assertInvited` in `functions/entitlements.js` runs in both
+`getAccess` and `purchaseAccess`; not on the list → no playback URL, free or
+paid, and no way to buy in either. A 1:1 also withholds `hlsUrl` from the public
+document the same way a paid stream does.
+
+Sessions created before this shipped have no `inviteUids` and are deliberately
+left open rather than retroactively closed — locking their own participants out
+would be a worse failure than the one being fixed.
 
 ### 1.3 Flow
 
@@ -86,14 +93,21 @@ stream resolver: not on the list → no playback URL, paid or not.
    - paid, unpaid → paywall → `purchaseAccess` → play.
 7. Chat + tips are the existing viewer-screen components.
 
-### 1.4 Protections (all Tango-equivalent, none built yet)
+### 1.4 Protections
 
-- **Host-absent auto-end.** If `lastFrameAt` is stale > 120s, end the session
-  and refund anyone who paid within the last 5 minutes and saw < 60s. Nobody
-  pays for dead air.
-- **Never-started refund.** Session ends with zero seconds broadcast → refund
-  all buyers. Hooks into the existing `endStreamSession`.
-- **One purchase per session**, already guaranteed by the entitlement id.
+- **Host-absent auto-end. BUILT.** Folded into the existing `reapStaleStreams`
+  sweep (runs every minute) rather than added as a second cron. A 1:1 uses
+  tighter windows than a broadcast: 120s without a heartbeat ends it
+  (`endReason:'host-absent'`), and a session that never produced a frame ends
+  after 5 minutes (`endReason:'never-started'`). The public-broadcast windows
+  are unchanged, because there the trade runs the other way: killing a healthy
+  alt-tabbed streamer costs more than a stale card in a discovery list.
+- **No refunds. SETTLED (founder, 2026-08-10).** An earlier draft proposed
+  refunding a buyer who saw under 60 seconds. Rejected: *"No, Tango doesn't
+  refund things like that."* There is also no never-started refund to write,
+  because the join card only offers **Join** while the session is actually
+  `live` — a buyer cannot pay for a session that has not started.
+- **One purchase per session**, guaranteed by the deterministic entitlement id.
 
 ### 1.5 UI
 
@@ -243,28 +257,109 @@ exactly like a free one, with a price badge on the card.
 
 ## 7. Build order
 
-| # | Item | Why this order |
+| # | Item | Status |
 |---|---|---|
-| 1 | Full-screen viewing for unlocked media (§2.2C, §3), incl. fresh-URL-on-open | Highest value, smallest change. Paying for a thumbnail is the worst current defect |
-| 2 | Aspect-ratio + video preview frame (§2.2A, §3) | Same files; fixes "looks like shit" |
-| 3 | Video signed-URL TTL (§3) | Latent breakage on any video over 5 min |
-| 4 | `inviteUids` enforcement in the stream resolver (§1.2) | Privacy: today a leaked id is a leaked session |
-| 5 | 1:1 join card states + group/squad scopes (§1.5) | Completes the feature across all three surfaces |
-| 6 | Host-absent auto-end + never-started refund (§1.4) | Needed before charging for sessions at any scale |
-| 7 | Locked post feed/grid states (§4) | Polish on a working path |
-| 8 | Premium-live discovery decision (§5.2) | Blocked on founder |
+| 1 | Full-screen viewing for unlocked media (§2.2C, §3), incl. fresh-URL-on-open | ✅ shipped + deployed 2026-08-10 |
+| 2 | Aspect-ratio + video preview frame (§2.2A, §3) | ✅ shipped + deployed 2026-08-10 |
+| 3 | Video signed-URL TTL (§3) | ✅ shipped + deployed 2026-08-10 |
+| 4 | `inviteUids` enforcement in the stream resolver (§1.2) | ✅ shipped + deployed 2026-08-10 |
+| 5 | 1:1 join card states + group/squad scopes (§1.5) | ✅ shipped + deployed 2026-08-10 |
+| 6 | Host-absent auto-end (§1.4) | ✅ shipped + deployed 2026-08-10 (refund dropped, see §1.4) |
+| 7 | Locked post feed/grid states (§4) | ✅ shipped 2026-08-10 — see note |
+| 8 | Premium-live discovery decision (§5.2) | ✅ settled: public + paywalled |
+
+### What shipped, precisely (2026-08-10)
+
+**1–3, locked media.**
+- `makeBlurredPreview` now handles **video** (decodes a frame at 0.1s, not 0 —
+  encoders emit blank first frames) and returns `{blob, width, height,
+  durationMs}` instead of a bare Blob. Locked videos previously had no preview
+  at all, which is why that bubble was a flat gradient.
+- Dimensions and duration ride the `locked` block through `sendLockedMessage`
+  and `createLockedPost`, so every bubble reserves the **real aspect ratio**
+  before the preview paints. Nothing is cropped square any more.
+- `getAccess` returns a `preview` block (url, w, h, isVideo, durationMs,
+  unlockCount). This is what makes the relay chat path work: relay frames carry
+  a fixed field set and no `locked` block, so the client had no idea what shape
+  to draw. The server was already the authority on price; it is now the
+  authority on shape.
+- Unlocked media is **tappable and opens `MediaLightbox`** with a URL minted at
+  the moment of opening, not the mount-time one — a thread left open for ten
+  minutes would otherwise open onto an expired signature.
+- **Video signed URLs live 3600s**, images stay at 300s. A 5-minute URL cannot
+  serve a 20-minute video; the player would have stalled partway through
+  something already paid for. Chosen off `contentType` recorded at upload.
+- Chat bubbles lost the border on media types (`image`, `video`, `locked`,
+  `onetoone`) — that 1px rim tracing a photo is the "thick border".
+- `PostCard` passes `minRatio={0.72}` so a 9:16 locked clip cannot swallow the
+  whole feed.
+
+**4, privacy.** This was the real hole. A 1:1 was protected only by being
+unlisted, and `streams/{id}` is `allow read: if true` — for a FREE session the
+playback URL was on that document, so a forwarded id was a forwarded session.
+Now: `createStreamSession` takes `inviteUids`, stores host+guests, and
+**withholds `hlsUrl` from a 1:1 exactly as it does from a paid stream**, putting
+both URLs in `streams/{id}/private/playback`. `assertInvited` runs in *both*
+`getAccess` and `purchaseAccess` — the latter so a stranger cannot buy their way
+into a session never offered to them. Refusal is `not-found`, identical to a
+session that never existed, so probing ids reveals nothing.
+
+**5, the card.** New `src/components/monetization/OneToOneCard.jsx`, shared by DM
+and squad chat. Subscribes to the stream doc and shows the state the session is
+actually in: *Starting soon* → **Join** (pink, or **Tip to Join** when priced) →
+*Session ended*, greyed and not tappable. Backdrop is the host's own thumbnail,
+dimmed. Squad chat gained the whole feature (a videocam button in the compose
+tools, the price sheet, and the card), which it did not have before.
+
+**Also fixed in transit:** `MobileLiveViewer` never resolved paid access at all,
+so a **paid stream on a phone showed an empty player and no paywall** — it now
+runs the same getAccess path and renders `StreamPaywall`. And the followers-only
+gate was catching 1:1 sessions (they are unlisted too), which would have told an
+invited guest to go and follow the person who had just invited them.
+
+**Copy corrections.** `startOneToOne` carried a large comment insisting "THIS IS
+A CALL, NOT A STREAM" and the sheet said "it rings them directly" — both left
+over from the two-way-call version that was built and reverted. A 1:1 is a
+private one-way broadcast; the code was right and the comments were wrong.
+
+**Note on 7.** There is no separate profile media grid to fix: `PostCard` is used
+everywhere posts appear (feed, profile tabs, pinned, post detail), so the feed
+work covered it. A locked post carries no `mediaUrl` by design, so no grid could
+leak a real thumbnail. Verified the Shorts query already excludes locked clips
+(it drops any post with no `videoUrl`).
 
 ## 8. Open decisions (founder)
 
 1. ~~Paid stream discoverable?~~ **SETTLED: yes, public + paywalled.** §5.2
-2. **Host-absent auto-end window** — Tango uses 2–4 min. Proposed 120s.
-3. **Refund rule** for a session that ends early: proposed full refund if the
-   buyer saw under 60 seconds.
+2. ~~Host-absent auto-end window~~ **SETTLED: 120s, built.** §1.4
+3. ~~Refund rule for a session that ends early~~ **SETTLED: no refund.** §1.4
 4. **Does the coin count actually differ by payment method?** Tango's web
    checkout shows "+50% coins" on EVERY method (Visa, Mastercard, Google Pay,
    PayPal, Skrill) — the bonus is a promotion, not a per-method difference. My
    cart currently shows FEWER coins for Google Play. Need a screenshot of the
    Android app's checkout to know whether Tango reduces coins there.
+
+---
+
+## 8b. Gap closure — ✅ ALL SHIPPED + DEPLOYED 2026-08-10
+
+Everything below was outstanding after the section 7 build order finished.
+
+| Gap | What shipped |
+|---|---|
+| Google Play "fewer coins" model | `STORE_COIN_OVERRIDES` deleted. One ladder. Play price fetched live, row disabled if unavailable, single-pack only. `playSubPriceFor()` added. Section 17.3 |
+| Premium Live invisible in discovery | `streamPremium()` + `<StreamStateBadge>`: PREMIUM pill with coin price on Explore (web + native), the following rail, the home rail, Shorts and the avatar live ring |
+| Paid streams autoplaying a free preview | Shorts `LiveSlide` shows a still + padlock + price for a paid stream and never mounts a player. `canAutoplayPreview()` states the rule |
+| Join gate was a generic panel; free 1:1 had none | `StreamPaywall` rebuilt to the section 22 design (blurred still, avatar, state line, coin price, gradient pill). ONE screen for both products, and a free 1:1 now gets it too |
+| Send sheet missing most of section 19 | `PriceSheet` gained the media strip with remove + "+", the Free/Premium segmented control, and a proportional stepper. Quick picks now descend |
+| Locked sends were single-item only | Full sets end to end: `items[]` through `sendLockedMessage`, `keys[]` in the private doc, `signAll()` returning `mediaUrls[]`, and a carousel with dots, chevrons and an `N PICS` label. Bought once. EVERY image in a set is scanned, not just the cover |
+| Content Packs did not exist | Section 20 |
+
+**Two bugs found in passing.** `MobileLiveViewer` never resolved paid access at
+all, so a paid stream on a phone showed an empty player and no paywall. And the
+followers-only gate was catching 1:1 sessions (they are unlisted too), which
+would have told an invited guest to go and follow the person who had just
+invited them.
 
 ---
 
@@ -384,6 +479,13 @@ a founder decision it says so explicitly rather than being left implied.
 Tango's checkout is **in-app**: saved cards as radio rows, one Pay button, fees
 disclosed inline. That is only possible because they hold the payment
 relationship.
+
+> **⚠ 2026-08-13: Stripe closed the account and the rail was removed.** The
+> "Target (Stripe)" column below is now a description of what an in-app card
+> sheet WOULD need from any processor, not a plan with a named one. The two-layer
+> split it argues for still holds and is still the right shape: the cart is
+> processor-agnostic, the adapter is not. PayRam is the only card rail today, so
+> the hosted hand-off is the reality, not a temporary state.
 
 **We cannot build that on PayRam.** PayRam hands back a hosted URL and the user
 completes payment on PayRam's own page. We cannot render their card list, cannot
@@ -599,8 +701,18 @@ fixed quantity and one Play-set price per market**. If our cart displays a
 number that differs from what the Play sheet then charges, that is the
 displayed-versus-charged mismatch again, and Play does reject for it.
 
-### 17.3 What I built is the risky version
-Today: **same price, fewer coins** on Google Play (1,000 vs 1,200). Two problems.
+### 17.3 What I built is the risky version — FIXED 2026-08-10
+`STORE_COIN_OVERRIDES` is **deleted**. `STORE_COIN_PACKS` is now literally
+`COIN_PACKS`, so there is one ladder everywhere and no second quantity to drift.
+The cart shows one coin count, the Play row carries Play's own formatted price
+(fetched, never computed) and is disabled when that fetch has not answered.
+Because Play prices one product per sheet, the Play row is offered only for a
+single pack at quantity one; anything larger says so plainly and uses the card
+rail. `playSubPriceFor()` was added for subscriptions.
+
+The rest of this section is kept as the reasoning, which has not changed.
+
+Today (historical): **same price, fewer coins** on Google Play (1,000 vs 1,200). Two problems.
 1. It is a thumb on the scale expressed in the *product itself*, which is the
    least defensible form of it.
 2. It forces a second SKU quantity, so the shelf shows one number and Play shows
@@ -713,7 +825,31 @@ existing full-screen carousel, which the founder confirms is fine as-is.
 - Our `PriceSheet` is close but must gain: the media strip, the +, the segmented
   Free/Premium control, and the stepper.
 
-## 20. Content Packs (new feature, founder-specified)
+## 20. Content Packs (new feature, founder-specified) — ✅ SHIPPED 2026-08-10
+
+`functions/mediaPacks.js`: `createMediaPack`, `deleteMediaPack`, `sendMediaPack`.
+Public half at `users/{uid}/mediaPacks/{id}` (title, price, blurred previews,
+sendCount) is owner-read and callable-write-only; the object keys live in
+`users/{uid}/private/mediaPackFiles`, which rules deny to every client and which
+is now on the same deny-list as `lockedPostFiles`.
+
+**Sending a pack writes an ordinary locked message** through the same
+`writeLockedMessage` a fresh upload uses, so the entitlement stays keyed to the
+MESSAGE. Two sends are two independent sales; buying it in one conversation does
+not unlock it in another. Keying the entitlement to the pack would have been a
+hole, not a feature.
+
+No re-scan on send: every image was scanned at pack creation, the bytes are
+immutable on a private prefix, and re-scanning would spend a Vision call per fan
+to re-derive an answer already on file. Deleting a pack leaves the R2 objects
+alone, because past buyers' messages point at them.
+
+UI: `ContentPacksSheet.jsx`, opened by the lock button in DM and squad chat, with
+the founder-specified empty state. `PriceSheet` gained `allowSaveAsPack`, so a
+normal locked send can be saved as a pack on its way out; that write is a side
+effect and can never fail the send.
+
+### Original spec
 
 Empty state, read off the screen:
 > **Content Packs** X - image glyph - **"Create a Media Pack"** -

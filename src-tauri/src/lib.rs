@@ -60,7 +60,16 @@ async fn scan_processes() -> Result<ScanResult, String> {
     })
 }
 
-// ─── HUD window control ─────────────────────────────────────────────────
+// ─── HUD window control (DESKTOP ONLY) ──────────────────────────────────
+//
+// Every call in this block is a desktop window API. `set_ignore_cursor_events`,
+// `set_position`, `set_always_on_top` and `set_skip_taskbar` do not exist on
+// `WebviewWindow` when the target is Android, so an ungated build fails to
+// compile for aarch64-linux-android rather than degrading.
+//
+// There is nothing to port: the HUD is a second, always-on-top, click-through
+// window floating over a PC game. A phone has no such concept.
+#[cfg(desktop)]
 #[tauri::command]
 async fn open_hud(app: AppHandle) -> Result<(), String> {
     if let Some(win) = app.get_webview_window("hud") {
@@ -74,6 +83,7 @@ async fn open_hud(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(desktop)]
 #[tauri::command]
 async fn close_hud(app: AppHandle) -> Result<(), String> {
     if let Some(win) = app.get_webview_window("hud") {
@@ -82,6 +92,7 @@ async fn close_hud(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(desktop)]
 #[tauri::command]
 async fn set_hud_click_through(app: AppHandle, click_through: bool) -> Result<(), String> {
     if let Some(win) = app.get_webview_window("hud") {
@@ -90,6 +101,7 @@ async fn set_hud_click_through(app: AppHandle, click_through: bool) -> Result<()
     Ok(())
 }
 
+#[cfg(desktop)]
 #[tauri::command]
 async fn set_hud_position(app: AppHandle, x: i32, y: i32) -> Result<(), String> {
     if let Some(win) = app.get_webview_window("hud") {
@@ -303,14 +315,29 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
-        .invoke_handler(tauri::generate_handler![
-            start_oauth_listener,
-            scan_processes,
-            open_hud,
-            close_hud,
-            set_hud_click_through,
-            set_hud_position,
-        ])
+        // Two handler lists, not one with cfg attributes inside:
+        // `generate_handler!` expands to a match over command names and does not
+        // accept `#[cfg]` on its entries, so the split has to happen here.
+        .invoke_handler({
+            #[cfg(desktop)]
+            {
+                tauri::generate_handler![
+                    start_oauth_listener,
+                    scan_processes,
+                    open_hud,
+                    close_hud,
+                    set_hud_click_through,
+                    set_hud_position,
+                ]
+            }
+            #[cfg(not(desktop))]
+            {
+                tauri::generate_handler![
+                    start_oauth_listener,
+                    scan_processes,
+                ]
+            }
+        })
         .run(tauri::generate_context!())
         .expect("error while running VERGR desktop");
 }
