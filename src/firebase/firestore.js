@@ -286,7 +286,7 @@ export const saveMembershipTiers = async (uid, tiers, seasonPass) => {
 };
 
 // Real stats for the Studio header: active member count + gross monthly recurring
-// (sum of active tier prices) + the creator's 90% net. All derived from live subs,
+// (sum of active tier prices). NO net figure: the creator's share is 50-80% by
 // no placeholders.
 export const getMembershipStats = async (creatorId) => {
   if (!creatorId) return { activeMembers: 0, monthlyGross: 0, monthlyNet: 0 };
@@ -299,7 +299,7 @@ export const getMembershipStats = async (creatorId) => {
     ));
     let gross = 0;
     snap.docs.forEach((d) => { gross += Math.max(0, Math.floor(d.data().priceCoins || 0)); });
-    return { activeMembers: snap.size, monthlyGross: gross, monthlyNet: Math.floor(gross * 0.9) };
+    return { activeMembers: snap.size, monthlyGross: gross };
   } catch (err) { console.error('getMembershipStats failed:', err); return { activeMembers: 0, monthlyGross: 0, monthlyNet: 0 }; }
 };
 
@@ -413,7 +413,7 @@ export const createPost = async (authorId, {
   linkPreview = null, lfgData = null, articleData = null, tierListData = null, achievementData = null,
   embedVideoUrl = null, youtubeVideoId = null, thumbnailUrl = null,
   visibility = 'public', scheduledFor = null, scheduleOptions = null,
-  isAnnouncement = false, topic = null, game = null,
+  isAnnouncement = false, topic = null, game = null, contentRating = 'general',
 }) => {
   // Scheduled posts are parked with status 'scheduled' + a scheduledFor
   // timestamp. They stay out of the feed (which queries status=='published')
@@ -453,6 +453,10 @@ export const createPost = async (authorId, {
   if (thumbnailUrl) postData.thumbnailUrl = thumbnailUrl;
   if (type === 'lfg') postData.expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
   if (isAnnouncement) postData.isAnnouncement = true; // @Vergr broadcast — pinned + push
+  // Adult content marker. Written ONLY when set, so every existing post and
+  // every ordinary new one stays absent rather than carrying a redundant
+  // 'general'. The feed filter and the server gate both treat absent as safe.
+  if (contentRating === 'nsfw') postData.contentRating = 'nsfw';
   if (topic) postData.topic = topic; // optional CONTENT_TOPICS tag → feeds For You matching
   if (game) postData.game = game; // game title (e.g. from a stream clip) → 'Gaming' topic signal + future per-game feeds
   // Per-image {w,h} aligned to mediaUrls (B11-4): lets the card reserve the exact
@@ -2917,6 +2921,140 @@ export const deleteSquadChallenge = async (squadId, challengeId) => {
 // Convert coins → gems via the server callable (Phase 3). The callable
 // enforces rate limits, idempotency, and writes the platform commission
 // ledger. Signature kept the same so existing callers don't need to change.
+/**
+ * New-follower counts for the last 30 days and the 30 before, for the Creator
+ * Studio home delta strip.
+ *
+ * Bounded by DATE, not by follower count. `getFollowers` reads every follow doc
+ * a creator has ever received, which is fine for a profile list but is an
+ * unbounded read to put on a screen that loads on every visit. This reads only
+ * the trailing 60 days, so its cost tracks recent activity rather than career
+ * total.
+ *
+ * Needs a composite index on follows(followingId ==, createdAt >=). Firestore
+ * prints the create link in the console on first run; click it once.
+ */
+export const getRecentFollowerCounts = async (uid) => {
+  if (!uid) return { last30: 0, prev30: 0 };
+  const DAY = 86400000;
+  const since = new Date(Date.now() - 60 * DAY);
+  const snap = await getDocs(query(
+    collection(db, 'follows'),
+    where('followingId', '==', uid),
+    where('createdAt', '>=', since),
+    limit(2000),
+  ));
+  const cut = Date.now() - 30 * DAY;
+  let last30 = 0, prev30 = 0;
+  snap.docs.forEach((d) => {
+    const ms = _ts(d.data().createdAt);
+    if (!ms) return;
+    if (ms >= cut) last30++; else prev30++;
+  });
+  return { last30, prev30 };
+};
+
+/**
+ * The two "Needs you" signals that need their own reads: an unanswered comment
+ * on a post that is doing well, and a membership tier nobody has joined.
+ *
+ * Cost is deliberately fixed, not proportional to the creator's history:
+ *
+ * - Comments are fetched for ONE post only, the best-performing of the recent
+ *   set. Checking every post would be a query per post plus an author lookup
+ *   per comment, on a screen that loads on every visit. The spec was always
+ *   "a post doing well", singular, so scoping to one is the intent as well as
+ *   the cheap option.
+ * - Memberships is a single query for this creator's active members, counted
+ *   client-side per tier, rather than one seat-count query per tier.
+ *
+ * Every branch fails soft: a rejected read yields no signal rather than a wrong
+ * one, because a to-do list that invents rows gets ignored wholesale.
+ *
+ * @param {string} uid
+ * @param {Array}  posts already-loaded posts, newest first
+ */
+export const getCreatorAttentionSignals = async (uid, posts = []) => {
+  const out = { unanswered: null, emptyTiers: [] };
+  if (!uid) return out;
+
+  const DAY = 86400000;
+  const recent = posts.filter((p) => {
+    const ms = _ts(p.createdAt);
+    return ms && ms >= Date.now() - 30 * DAY;
+  });
+
+  // ── Membership tier with no members ──
+  //
+  // NOT gated on tier age: a tier is a plain object inside
+  // `creators/{uid}.membershipTiers` and carries no createdAt, so "has this
+  // existed long enough to have failed" is unknowable. An earlier version
+  // pretended otherwise and defaulted to true when the field was missing, which
+  // meant a tier created seconds ago got flagged as failing.
+  //
+  // Instead this only fires when the creator has PROVEN the offer works: at
+  // least one other tier does have members. A tier failing next to a tier that
+  // sells is a real, specific signal. Every tier being empty just means they
+  // have not started yet, which is not a to-do item.
+  try {
+    const { tiers } = await getMembershipTiers(uid, { forOwner: true });
+    const published = (tiers || []).filter((t) => t.published !== false);
+    if (published.length > 1) {
+      const memSnap = await getDocs(query(
+        collection(db, 'memberships'),
+        where('creatorId', '==', uid),
+        where('status', '==', 'active'),
+        limit(1000),
+      ));
+      const perTier = {};
+      memSnap.docs.forEach((d) => {
+        const t = d.data().tierId;
+        if (t) perTier[t] = (perTier[t] || 0) + 1;
+      });
+      const anySelling = published.some((t) => perTier[t.id] > 0);
+      if (anySelling) {
+        out.emptyTiers = published
+          .filter((t) => !perTier[t.id])
+          .map((t) => ({ id: t.id, name: t.name || 'Untitled tier' }));
+      }
+    }
+  } catch (e) { console.error('attention: memberships', e); }
+
+  return out;
+};
+
+// ── Creator payouts (revenue share) ──────────────────────────────────
+// See docs/REVENUE_SHARE_PLAN.md. The server is authoritative on every figure
+// returned here; nothing in this file may recompute an amount or a rate.
+
+/** Payout setup + eligibility state for the Earnings screen. Creates nothing. */
+export const getPayoutAccount = async () => {
+  const { httpsCallable } = await import('firebase/functions');
+  const { functions: fns } = await import('./config');
+  const res = await httpsCallable(fns, 'getPayoutAccount')({});
+  return res.data;
+};
+
+/** Begin payout setup. Idempotent; never resets earned progress. */
+export const enrollForPayouts = async () => {
+  const { httpsCallable } = await import('firebase/functions');
+  const { functions: fns } = await import('./config');
+  const res = await httpsCallable(fns, 'enrollForPayouts')({});
+  return res.data;
+};
+
+/** This creator's payout statements, newest first. */
+export const getMyPayoutStatements = async (uid, max = 24) => {
+  const q = query(
+    collection(db, 'payout_statements'),
+    where('uid', '==', uid),
+    orderBy('createdAt', 'desc'),
+    limit(max),
+  );
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+};
+
 export const convertCoinsToGems = async (uid, amount) => {
   if (!Number.isFinite(amount) || amount <= 0) {
     throw new Error('Invalid conversion amount');
@@ -2932,22 +3070,48 @@ export const convertCoinsToGems = async (uid, amount) => {
   return res.data;
 };
 
-// Tip / send coins.
-// Sender pays N coins. Platform takes a flat 10% upfront fee (covers Gcore
-// live-streaming bandwidth + general operating cost). Recipient receives
-// floor(N × 0.90) coins. The remaining VP-tier commission is applied later
-// when the recipient converts coins → gems for cash-out.
+// `createStripeCheckout` lived here and was removed 2026-08-13 with the rest of
+// the Stripe rail. Card checkout is `createPayramPayment`; the rule it carried
+// applies to any rail that replaces it: send WHAT, never HOW MUCH (a pack sku or
+// a cart of `{sku, qty}`), so the server re-prices every line from COIN_PACKS
+// and a tampered client changes what it draws on screen, not what it is charged.
+
+// Convert gems → coins at a flat 1:1, via the server callable.
 //
-// HARD RULE — locked in CLAUDE.md: tips ALWAYS take the 10% flat fee, no
-// matter the recipient's tier. Do not parameterise.
-const TIP_PLATFORM_FEE_PCT = 0.10;
+// Gems are withdrawal-only, so this is how earned money becomes spendable in-app
+// again: tips, subscriptions, locked content and 1:1 sessions all cost coins.
+//
+// The rate is FLAT and rank-independent by design. It is not configurable from
+// Firestore either, because a remotely-tunable buyback rate pushed past ~1.18
+// coins per gem turns the gem→coin→gem round trip profitable and becomes a money
+// pump. See functions/gemBuyback.js for the full arithmetic.
+export const buyCoinsWithGems = async (gems) => {
+  if (!Number.isFinite(gems) || gems <= 0) {
+    throw new Error('Invalid gem amount');
+  }
+  const { httpsCallable } = await import('firebase/functions');
+  const { functions: fns } = await import('./config');
+  const fn = httpsCallable(fns, 'buyCoinsWithGems');
+  const res = await fn({ gems: Math.floor(gems) });
+  return res.data;
+};
+
+// Tip / send coins.
+// Sender pays N coins. NO fee is taken at send time: the whole tip is gross
+// revenue, and Vergr's share is taken once at the revenue-share step
+// (functions/coinLedger.js shareForEarnings), so the creator accrues 50-80%
+// of it depending on their lifetime earnings.
+//
+// ⚠ The old "tips ALWAYS take a flat 10% fee" rule is DEAD. It was replaced by
+// the single revenue-share ladder on 2026-08-14. TIP_PLATFORM_FEE_PCT below is
+const TIP_PLATFORM_FEE_PCT = 0; // vestigial: the server takes nothing at send time
 
 // Tipping moves coins from the sender to ANOTHER user's wallet + writes the
 // platform-commission ledger. A client can never do that under firestore.rules
 // (it can't write a wallet it doesn't own, can't create a transaction with
 // someone else's userId, and platform_commissions is server-only) — so this
 // routes through the `sendTip` Cloud Function (admin SDK), which runs the full
-// atomic transfer with the 10% fee, tip + transaction records, and recipient
+// atomic transfer, the revenue-share credit, tip + transaction records, and
 // notification. Signature kept identical so existing callers don't change.
 export const sendCoins = async (fromUid, toUid, amount, desc = '', extra = {}) => {
   if (!toUid) throw new Error('Recipient required');
@@ -3048,7 +3212,7 @@ export const requestPayout = async (uid, amount, method, details) => {
       userId: uid,
       type: 'payout',
       amount: -amount,
-      description: `Cash out €${userReceives} via ${method}`,
+      description: `Payout of $${userReceives} via ${method}`,
       status: 'pending',
       createdAt: serverTimestamp(),
     });
@@ -3195,12 +3359,17 @@ export const getTournamentCoinsEarned = async (uid) => {
 // STREAMS
 // ═══════════════════════════════════════════
 
-export const getLiveStreams = async (limitCount = 20) => {
+export const getLiveStreams = async (limitCount = 20, { allowNsfw = false } = {}) => {
   const q = query(collection(db, 'streams'), where('isLive', '==', true), orderBy('viewerCount', 'desc'), limit(limitCount));
   const snap = await getDocs(q);
   const streams = [];
   for (const d of snap.docs) {
     const stream = { id: d.id, ...d.data() };
+    // Adult streams are dropped unless the caller has established the viewer
+    // may see them. Filtered here rather than in the query because Firestore
+    // cannot express "field absent OR field != x" without an inequality that
+    // would exclude every existing stream, which have no contentRating at all.
+    if (!allowNsfw && stream.contentRating === 'nsfw') continue;
     stream.streamer = await getUser(stream.streamerId);
     streams.push(stream);
   }
@@ -3818,9 +3987,14 @@ export const createTournamentSecure = (payload) =>
 export const joinTournamentSecure = (tournamentId, opts = {}) =>
   callTournamentFn('joinTournamentSecure', { tournamentId, ...opts });
 
-// Ticketed events — fans buy spectator tickets; competitors register free.
-// registerForEvent is just the free competitor join (entryFee is 0 on
-// ticketed events, so joinTournamentSecure debits nothing).
+// ── Ticketed EVENTS ────────────────────────────────────────────────────
+// An event is anything a user wants to host and sell a ticket to: a live show,
+// a watch party, a Q&A, a class, a community night. NOT a tournament: no
+// competitors, no prize purse, no entry fee. See functions/events.js.
+
+export const createEventSecure = (payload) => callTournamentFn('createEventSecure', payload);
+export const closeEventSecure  = (eventId) => callTournamentFn('closeEventSecure', { eventId });
+
 export const purchaseEventTicket = ({ tournamentId, source = 'direct', kind = 'single' }) =>
   callTournamentFn('purchaseEventTicket', { tournamentId, source, kind });
 
@@ -4884,6 +5058,82 @@ export const getLockedMessageUploadUrl = ({ chatId, contentType, sizeBytes }) =>
 /** Send the priced message once both objects are uploaded. */
 export const sendLockedMessage = (payload) => callFn('sendLockedMessage', payload);
 
+// ── Content Packs ──────────────────────────────────────────────────────────
+//
+// A saved, titled, priced set the creator re-sends without re-uploading. The
+// send produces an ordinary locked message, so a pack is not a second kind of
+// purchase; see functions/mediaPacks.js.
+
+/** Save an uploaded set for reuse. `items` come from `uploadLockedItem`. */
+export const createMediaPack = (payload) => callFn('createMediaPack', payload);
+
+/** Forget a saved pack. The R2 objects stay, because past sales reference them. */
+export const deleteMediaPack = (packId) => callFn('deleteMediaPack', { packId });
+
+/** Send a saved pack into a chat. `priceCoins` overrides the pack's own price. */
+export const sendMediaPack = (payload) => callFn('sendMediaPack', payload);
+
+/**
+ * The signed-in creator's saved packs, newest first.
+ *
+ * Read directly rather than through a callable: the documents are owner-readable
+ * by rules and carry no object keys, so a round trip through a function would
+ * buy nothing but latency on a picker that opens constantly.
+ */
+export const getMyMediaPacks = async () => {
+  const uid = auth.currentUser?.uid;
+  if (!uid) return [];
+  const snap = await getDocs(query(
+    collection(db, 'users', uid, 'mediaPacks'),
+    orderBy('createdAt', 'desc'),
+    limit(50),
+  ));
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+};
+
+/**
+ * Upload ONE file of a locked send: the real bytes to the private prefix, and
+ * a blurred preview produced on this device to the public one.
+ *
+ * Extracted because a locked send can carry a SET, and because the DM and the
+ * squad thread were each running their own copy of this sequence. Two copies of
+ * "destroy the preview before uploading" is one copy too many.
+ *
+ * Returns the item descriptor `sendLockedMessage` expects. The caller collects
+ * these into `items[]` and sends ONE message for the whole set, so the buyer
+ * pays once.
+ */
+export const uploadLockedItem = async ({ chatId, scope, file }) => {
+  // R2's CORS exact-matches Content-Type, so a ";codecs=" suffix fails the
+  // signature silently. Strip it.
+  const contentType = (file.type || 'image/jpeg').split(';')[0];
+  const isVideo = contentType.startsWith('video/');
+
+  const signed = await getLockedMessageUploadUrl({
+    chatId, scope, contentType, sizeBytes: file.size,
+  });
+  await putSignedUpload(signed.mediaUploadUrl, file, contentType, signed.cacheControl);
+
+  // Destroyed here, on the sender's device, before anything is uploaded. The
+  // dimensions come back with it so the bubble can be drawn at the real aspect
+  // ratio instead of cropping everything to a square.
+  const preview = await makeBlurredPreview(file).catch(() => null);
+  let previewUrl = '';
+  if (preview?.blob) {
+    await putSignedUpload(signed.previewUploadUrl, preview.blob, 'image/jpeg', signed.cacheControl);
+    previewUrl = signed.previewUrl;
+  }
+
+  return {
+    mediaKey: signed.mediaKey,
+    previewUrl,
+    isVideo,
+    previewW: preview?.width || 0,
+    previewH: preview?.height || 0,
+    durationMs: preview?.durationMs || 0,
+  };
+};
+
 /**
  * PUT bytes at a presigned URL.
  *
@@ -4902,40 +5152,97 @@ export const putSignedUpload = async (url, blob, contentType, cacheControl) => {
 };
 
 /**
- * Downscale + blur an image on the SENDER's device, for use as the public
- * preview of locked media.
+ * Downscale + blur a photo or video on the SENDER's device, for use as the
+ * public preview of locked media.
  *
  * Blurring on the viewer's device is not an option and never will be: that is a
  * CSS filter over bytes the browser has already downloaded, undone by anyone who
  * opens the network tab. The sender already holds the full-resolution file (it
  * is theirs), so the destructive step happens here, before anything is uploaded.
  *
- * Videos have no cheap client-side frame grab that works everywhere, so they
- * fall back to a plain gradient placeholder rather than shipping a frame that
- * might itself be the thing being sold.
+ * ## Why videos are handled here rather than skipped
+ *
+ * They used to return null, so a locked video shipped with no preview and the
+ * bubble fell back to a flat gradient. The result told a buyer nothing about
+ * what they were being asked to pay for, which is the one job a preview has. A
+ * video is decoded to a canvas at 0.1s (not 0 — some encoders hand back a blank
+ * first frame) and blurred by the same kernel as a photo, so it is destroyed to
+ * exactly the same degree.
+ *
+ * ## Returns
+ *
+ * `{ blob, width, height, durationMs }`, not a bare Blob. The dimensions are
+ * the whole point: without them every locked bubble is a forced square, which
+ * crops portrait media and is the main reason the current one looks wrong.
+ * `durationMs` is 0 for a photo.
+ *
+ * Resolves null only when the file is neither an image nor a video.
  */
-export const makeBlurredPreview = (file, { maxDim = 400, blur = 24 } = {}) =>
-  new Promise((resolve, reject) => {
-    if (!file?.type?.startsWith('image/')) { resolve(null); return; }
+export const makeBlurredPreview = (file, { maxDim = 400, blur = 24 } = {}) => {
+  const isImage = !!file?.type?.startsWith('image/');
+  const isVideo = !!file?.type?.startsWith('video/');
+  if (!isImage && !isVideo) return Promise.resolve(null);
+
+  return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file);
-    const img = new Image();
-    img.onload = () => {
-      URL.revokeObjectURL(url);
-      const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
-      const w = Math.max(1, Math.round(img.width * scale));
-      const h = Math.max(1, Math.round(img.height * scale));
+    const done = (v) => { URL.revokeObjectURL(url); resolve(v); };
+    const failed = (e) => { URL.revokeObjectURL(url); reject(e); };
+
+    // Shared tail: whatever produced the frame, blur and encode it identically.
+    const render = (source, srcW, srcH, durationMs) => {
+      if (!srcW || !srcH) { failed(new Error('Media had no dimensions')); return; }
+      const scale = Math.min(1, maxDim / Math.max(srcW, srcH));
+      const w = Math.max(1, Math.round(srcW * scale));
+      const h = Math.max(1, Math.round(srcH * scale));
       const canvas = document.createElement('canvas');
       canvas.width = w; canvas.height = h;
       const ctx = canvas.getContext('2d');
       ctx.filter = `blur(${blur}px)`;
       // Drawn inset so the blur kernel does not pull transparent edges in and
       // leave a pale border, which reads as a rendering bug rather than a blur.
-      ctx.drawImage(img, -blur, -blur, w + blur * 2, h + blur * 2);
-      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('Preview failed'))), 'image/jpeg', 0.6);
+      ctx.drawImage(source, -blur, -blur, w + blur * 2, h + blur * 2);
+      canvas.toBlob(
+        (b) => (b
+          ? done({ blob: b, width: srcW, height: srcH, durationMs })
+          : failed(new Error('Preview failed'))),
+        'image/jpeg',
+        0.6,
+      );
     };
-    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Could not read image')); };
-    img.src = url;
+
+    if (isImage) {
+      const img = new Image();
+      img.onload = () => render(img, img.width, img.height, 0);
+      img.onerror = () => failed(new Error('Could not read image'));
+      img.src = url;
+      return;
+    }
+
+    // Video. Muted + playsInline so mobile browsers will decode without a user
+    // gesture; without both, the seek never completes and this hangs.
+    const v = document.createElement('video');
+    v.muted = true;
+    v.playsInline = true;
+    v.preload = 'metadata';
+    v.crossOrigin = 'anonymous';
+
+    // A file that never fires `seeked` (a codec the browser cannot decode) would
+    // otherwise leave the send waiting forever. Give up and let the caller fall
+    // through to the gradient, which is worse but not broken.
+    const bail = setTimeout(() => failed(new Error('Could not read video frame')), 8000);
+
+    v.onloadedmetadata = () => {
+      // 0.1s rather than 0: several encoders emit a black or garbage first frame.
+      v.currentTime = Math.min(0.1, (v.duration || 1) / 2);
+    };
+    v.onseeked = () => {
+      clearTimeout(bail);
+      render(v, v.videoWidth, v.videoHeight, Math.round((v.duration || 0) * 1000));
+    };
+    v.onerror = () => { clearTimeout(bail); failed(new Error('Could not read video')); };
+    v.src = url;
   });
+};
 
 /**
  * The host's own publish credential for a stream they own.

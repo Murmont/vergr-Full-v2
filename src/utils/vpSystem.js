@@ -34,11 +34,55 @@ const levelCost = (level) => {
   return 2000 + 1000 * bracket;
 };
 
-// ── COMMISSION (coin→gem conversion) — SINGLE SOURCE OF TRUTH ──
-// The server (functions/economy.js convertCoinsToGems) is authoritative on the
-// actual gem credit, so these MUST stay byte-aligned with it. Commission steps
-// DOWN as lifetime VP rises (a better conversion rate is the one real rank perk).
-// Keyed by total VP, NOT level. Floor 15%.
+// ── REVENUE SHARE LADDER — CLIENT MIRROR ──────────────────────────────
+// Server source of truth: functions/coinLedger.js (shareForEarnings). These two
+// files MUST stay byte-aligned; the client cannot import from functions/, so a
+// ladder change is always a two-file change. The server is authoritative on the
+// actual credit — anything here is for DISPLAY ONLY, never for promising a
+// number before the server has agreed to it.
+//
+// See docs/REVENUE_SHARE_PLAN.md for why this replaced the VP-keyed commission:
+// Vergr is the principal, the creator is a supplier paid a share of the revenue
+// their content generated, and a supplier rate card is keyed to volume
+// delivered, not to how much the supplier played our game.
+//
+// Thresholds are LIFETIME GROSS COINS EARNED (wallets/{uid}.totalEarnedCoinsGross).
+// At 1 coin = $0.01 they are $0 / $50 / $250 / $1,000 / $5,000 / $15,000 / $50,000.
+export const REVENUE_SHARE_RATES      = [0.50, 0.55, 0.60, 0.65, 0.70, 0.75, 0.80];
+export const REVENUE_SHARE_THRESHOLDS = [0, 5000, 25000, 100000, 500000, 1500000, 5000000];
+
+/** Fraction the creator KEEPS (0.50-0.80). Note: not what is taken. */
+export const shareForEarnings = (earnedGross = 0) => {
+  for (let i = REVENUE_SHARE_THRESHOLDS.length - 1; i >= 0; i--) {
+    if (earnedGross >= REVENUE_SHARE_THRESHOLDS[i]) return REVENUE_SHARE_RATES[i];
+  }
+  return REVENUE_SHARE_RATES[0];
+};
+
+/** Tier index (0-6) and progress toward the next, for the Earnings screen. */
+export const revenueShareTier = (earnedGross = 0) => {
+  let idx = 0;
+  for (let i = REVENUE_SHARE_THRESHOLDS.length - 1; i >= 0; i--) {
+    if (earnedGross >= REVENUE_SHARE_THRESHOLDS[i]) { idx = i; break; }
+  }
+  const isMax = idx >= REVENUE_SHARE_RATES.length - 1;
+  const nextAt = isMax ? null : REVENUE_SHARE_THRESHOLDS[idx + 1];
+  const floor = REVENUE_SHARE_THRESHOLDS[idx];
+  return {
+    tier: idx + 1,
+    tierCount: REVENUE_SHARE_RATES.length,
+    share: REVENUE_SHARE_RATES[idx],
+    nextShare: isMax ? null : REVENUE_SHARE_RATES[idx + 1],
+    nextAt,
+    coinsToNext: isMax ? 0 : Math.max(0, nextAt - earnedGross),
+    progress: isMax ? 100 : Math.min(100, ((earnedGross - floor) / (nextAt - floor)) * 100),
+  };
+};
+
+// ── COMMISSION (coin→gem conversion) — DEPRECATED ──
+// @deprecated Superseded by shareForEarnings() above. Still imported by screens
+// that have not moved yet (VPRanksScreen, wallet v2, marketing rate tables); see
+// docs/REVENUE_SHARE_PART3_SCREENS.md §14.4 for the list. Do not add new uses.
 export const COMMISSION_RATES = [0.30, 0.28, 0.25, 0.22, 0.20, 0.18, 0.15];
 export const VP_THRESHOLDS    = [0,    500,  2000, 5000, 15000, 40000, 100000];
 export const commissionForVP = (vp = 0) => {
@@ -184,22 +228,108 @@ export const BOOST_COSTS = {
 // `vpBonus` is the BASE VP awarded with the pack. Optional promo fields
 // (`promoVPBonus`, `promoLabel`, `promoStartsAt`, `promoEndsAt`) can be set
 // per-pack server-side to layer a temporary bonus on any pack.
-// Display value of ONE coin in EUR, for showing "what is this worth" next to a
-// coin amount. This is the purchase floor above — i.e. what a coin COSTS, which
-// is the number that makes sense when you are about to send some. It is NOT a
-// payout rate: cashing out runs through the coins→gems commission, so never
-// reuse this to promise anyone a withdrawal figure.
-export const COIN_VALUE_EUR = 0.0090;
+// Display value of ONE coin, for showing "what is this worth" next to a coin
+// amount. This is the ladder's BEST per-coin rate — i.e. what a coin costs at
+// the cheapest tier, which is the number that makes sense when you are about to
+// send some. It is NOT a payout rate: cashing out runs through the coins→gems
+// commission, so never reuse this to promise anyone a withdrawal figure.
+//
+// Now USD, matching the native-USD ladder below ($249.99 / 21,500 coins).
+export const COIN_VALUE_USD = 0.01163;
 
+/**
+ * @deprecated EUR alias kept ONLY so a missed callsite renders a sane number
+ * instead of `undefined` while the USD migration settles. It is the same coin at
+ * an approximate 1.08 rate, NOT an independently maintained price. Do not add
+ * new uses, and do not "correct" it to a live rate: two numbers describing one
+ * price is exactly how the gem ended up with three different values in three
+ * different files. Delete once nothing reads it.
+ */
+export const COIN_VALUE_EUR = +(0.01163 / 1.08).toFixed(5);
+
+/**
+ * How much better value a pack is than the smallest one, as a percentage of
+ * coins per unit of currency.
+ *
+ * The ladder really does get cheaper per coin as it grows (Starter 101 coins per
+ * euro, Legend and above 111), and until now nothing displayed that, so every
+ * pack looked like the same deal in a bigger box and there was no reason to
+ * scroll past the first one.
+ *
+ * This is the HONEST figure, computed from the prices actually charged. It tops
+ * out around +10%. It is deliberately NOT the kind of number competitors show
+ * ("+300% More"), because those are promotional rates measured against a base
+ * the seller invented, not a bulk curve. If we want numbers like that they have
+ * to come from a real promotion crediting real extra coins, which is a founder
+ * decision and would layer on top of this rather than replace it.
+ */
+export function packValueBonusPct(pack, packs = COIN_PACKS) {
+  const base = packs[0];
+  if (!base || !pack || pack.id === base.id) return 0;
+  const baseRate = base.coins / base.priceUSD;
+  const rate = pack.coins / pack.priceUSD;
+  if (!isFinite(baseRate) || !isFinite(rate) || baseRate <= 0) return 0;
+  return Math.round(((rate / baseRate) - 1) * 100);
+}
+
+/**
+ * Below this, the difference is not worth a badge.
+ *
+ * A "+3% More" label is technically true and reads as an insult; it draws the
+ * eye to a number that argues against buying the bigger pack. Only Elite and
+ * above clear this today.
+ */
+export const MIN_SHOWN_VALUE_BONUS_PCT = 5;
+
+// ── THE COIN LADDER — NATIVE USD ──────────────────────────────────────
+//
+// Re-denominated from EUR to USD on 2026-08-11 (founder approved). USD is the
+// currency both DISPLAYED and CHARGED; local currency appears beside it as an
+// estimate only, never as the charged figure. See `project-geo-pricing`.
+//
+// ## Why the coin counts are the variable and the prices are not
+//
+// Buyers anchor on price points, not on coin counts. $0.99 / $4.99 / $9.99 read
+// as familiar and cheap; 78 coins reads as nothing in particular, because
+// nobody has a reference for what a coin should cost. So the ladder holds the
+// price points people recognise and moves the quantity, which is exactly how
+// TikTok (70 coins for $0.99) and Tango price theirs.
+//
+// ## The per-coin rate, which is the number that actually matters
+//
+// Payout is anchored to the gem at EUR 0.01 and does NOT move when the sale
+// price moves: one earned coin costs us EUR 0.0075 to pay out at the worst rank
+// (Immortal, 15% commission, then the 2% withdrawal spread). So every cent added
+// to the sale price is a cent of pure margin, and nothing else in the economy is
+// that direct.
+//
+// The old EUR ladder bottomed out at EUR 0.0090/coin (~$0.0104), which left
+// roughly 17% gross against that EUR 0.0075 payout, and under 13% after
+// processing and referral. That is the tail this ladder fixes: the floor is now
+// $0.01163/coin, about 30% gross at the worst rank.
+//
+//   Starter    $1.27 per 100 coins
+//   ...          monotonically improving
+//   Ascendant  $1.16 per 100 coins
+//
+// +9% bulk curve top to bottom, the same shape the EUR ladder had. The founder's
+// stated anchor of ~$1.17 per 100 coins sits mid-ladder by design.
+//
+// ⚠ ONE WORLDWIDE PRICE. Coins redeem back into money at a fixed rate, so a
+// regional discount on them is arbitrage, not a promotion: buy cheap in a
+// discounted region, tip, withdraw at the full rate, and the treasury funds the
+// gap. Regional pricing is for SUBSCRIPTIONS ONLY (functions/geoPricing.js).
+// Affordability in cheaper markets comes from the small packs, never a cheaper
+// coin. See `reference-never-discount-a-redeemable`.
 export const COIN_PACKS = [
-  { id: 'starter',   name: 'Starter Pack',   coins: 100,    vpBonus: 0,    priceEUR: 0.99,   tagline: 'Get started for less than a coffee' },
-  { id: 'gamer',     name: 'Gamer Pack',     coins: 500,    vpBonus: 0,    priceEUR: 4.79,   tagline: 'Best per-coin value at this size' },
-  { id: 'pro',       name: 'Pro Pack',       coins: 1200,   vpBonus: 0,    priceEUR: 11.49,  tagline: 'Enough to tip 24 creators or run a tournament', badge: 'MOST POPULAR', badgeStyle: 'popular' },
-  { id: 'elite',     name: 'Elite Pack',     coins: 2500,   vpBonus: 0,    priceEUR: 22.99,  tagline: '7% bulk discount + headroom for streaks',         badge: 'BEST VALUE',   badgeStyle: 'value' },
-  { id: 'legend',    name: 'Legend Pack',    coins: 5000,   vpBonus: 0,    priceEUR: 44.99,  tagline: '9% off — for serious players & squads' },
-  { id: 'champion',  name: 'Champion Pack',  coins: 10000,  vpBonus: 0,    priceEUR: 89.99,  tagline: '10K coins · maximum bulk discount' },
-  { id: 'titan',     name: 'Titan Pack',     coins: 15000,  vpBonus: 1500, priceEUR: 134.99, tagline: 'Skip ranks faster, earn more on every conversion', badge: '+1,500 VP BONUS', badgeStyle: 'vp' },
-  { id: 'ascendant', name: 'Ascendant Pack', coins: 25000,  vpBonus: 3000, priceEUR: 224.99, tagline: 'For top creators & squad leaders',                badge: 'BIGGEST VP BONUS', badgeStyle: 'vp' },
+  { id: 'starter',   name: 'Starter Pack',   coins: 78,     vpBonus: 0,    priceUSD: 0.99,   tagline: 'Get started for less than a coffee' },
+  { id: 'gamer',     name: 'Gamer Pack',     coins: 400,    vpBonus: 0,    priceUSD: 4.99,   tagline: 'Better value per coin than Starter' },
+  { id: 'pro',       name: 'Pro Pack',       coins: 815,    vpBonus: 0,    priceUSD: 9.99,   tagline: 'Enough to tip 16 creators', badge: 'MOST POPULAR', badgeStyle: 'popular' },
+  { id: 'elite',     name: 'Elite Pack',     coins: 1650,   vpBonus: 0,    priceUSD: 19.99,  tagline: 'Headroom for streaks and locked content',         badge: 'BEST VALUE',   badgeStyle: 'value' },
+  { id: 'legend',    name: 'Legend Pack',    coins: 4180,   vpBonus: 0,    priceUSD: 49.99,  tagline: 'For serious players and squads' },
+  { id: 'champion',  name: 'Champion Pack',  coins: 8450,   vpBonus: 0,    priceUSD: 99.99,  tagline: 'Deep bulk discount' },
+  { id: 'titan',     name: 'Titan Pack',     coins: 12800,  vpBonus: 1500, priceUSD: 149.99, tagline: 'Skip ranks faster, earn more on every conversion', badge: '+1,500 VP BONUS', badgeStyle: 'vp' },
+  { id: 'ascendant', name: 'Ascendant Pack', coins: 21500,  vpBonus: 3000, priceUSD: 249.99, tagline: 'For top creators and squad leaders',              badge: 'BIGGEST VP BONUS', badgeStyle: 'vp' },
 ];
 
 // ── WITHDRAWAL CONSTANTS ───────────────────────────────────────────
@@ -223,8 +353,23 @@ export const PAYOUT_CURRENCIES = [
 ];
 
 // ── ECONOMY CONSTANTS ──
-export const COIN_TO_EUR = 0.01;
+//
+// THE ONE TRUE GEM VALUE. Mirrors functions/withdrawals.js
+// `GEM_TO_MICRO_USDC = 10_000`, which is the ONLY place that decides real money.
+//
+// Before 2026-08-11 three files disagreed about what a gem was worth: this one
+// said 0.01, while ConvertScreen.jsx and NativeWalletScreens.jsx each hardcoded
+// their own `GEM_TO_EUR = 0.009`. The two hardcoded copies were display-only, so
+// nobody lost money, but every wallet screen quietly UNDERSTATED what a user was
+// about to receive by 10%. Import this instead of writing the number again.
+//
+// It is USD, not EUR: withdrawals settle in USDC on Base, and 1 gem is 0.01
+// USDC exactly. There is no FX step and never was.
+export const GEM_VALUE_USD = 0.01;
+
+/** @deprecated Use GEM_VALUE_USD. Same number, honest name. */
 export const GEM_TO_EUR = 0.01;
+export const COIN_TO_EUR = 0.01;
 export const MIN_CASHOUT_GEMS = 1000;
 export const CASHOUT_PLATFORM_FEE = 0;
 export const CASHOUT_PROCESSOR_FEE = 0.03;

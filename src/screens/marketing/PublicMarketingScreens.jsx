@@ -10,7 +10,7 @@
 // Downloads). Inline styles + CSS variables, like the settings redesign.
 // Brand fonts (Syne / DM Sans / DM Mono) and Vergr accent palette
 // (cyan / violet / pink / gold / ember) replace the design's Space Grotesk
-// + violet-only palette. Currency is € not $. Downloads are real (no
+// + violet-only palette. Currency is $ (COIN_PACKS is priceUSD). Downloads are real (no
 // "coming soon" — web/desktop/iOS/Android all redirect to /signup which
 // the PWA install banner handles per platform).
 
@@ -22,9 +22,11 @@ import { COIN_PACKS } from '../../utils/vpSystem';
 import { APP_VERSION } from '../../utils/appVersion';
 import Icon from '../../components/Icon';
 import { LEGAL_DOCUMENTS, LEGAL_VERSION as LEGAL_FILE_VERSION, OPERATOR } from './legal/legalContent';
+import { COMPLIANCE_DOCUMENTS } from './legal/compliancePolicies';
 import useSeo from '../../utils/seo';
 import JsonLd, {
   articleSchema, faqSchema, howToSchema, breadcrumbSchema, webPageSchema, useRobots,
+  softwareAppSchema,
 } from '../../utils/JsonLd';
 import {
   HELP_CATEGORIES, HELP_ARTICLES, HELP_ARTICLE_BY_SLUG, HELP_CATEGORY_BY_ID,
@@ -145,7 +147,7 @@ const PATH_LABELS = {
 // Global style block (CSS vars + small utility classes used by inline-
 // styled components, e.g. .lift, .grad-text, .reveal animations)
 // ─────────────────────────────────────────────────────────────────────
-function MarketingStyles() {
+export function MarketingStyles() {
   return (
     <style>{`
       :root {
@@ -611,7 +613,7 @@ function Footer() {
             <span className="vg-syne vg-brand-text" style={{ fontWeight: 800, fontSize: 22, letterSpacing: '0.16em' }}>VERGR</span>
           </div>
           <p style={{ marginTop: 16, fontSize: 13, color: C.text3, lineHeight: 1.55, maxWidth: 280 }}>
-            Where gamers converge. Compete, create, earn, and grow with the squads and creators that built it.
+            Where creators converge. Share, watch, earn, and grow with the squads and communities that built it.
           </p>
         </div>
         {Object.values(SITE_MAP).map(col => (
@@ -643,7 +645,8 @@ function Footer() {
           © {new Date().getFullYear()} {OPERATOR.legalName}. All rights reserved.
           <div style={{ marginTop: 4, color: C.text3 }}>
             VERGR is operated by {OPERATOR.legalName}, a {OPERATOR.formationState.replace('State of ', '').replace(', United States of America', '')} limited
-            liability company. Registered address: {OPERATOR.registeredAddress}. Contact: {OPERATOR.supportEmail}.
+            liability company, registration number {OPERATOR.registrationNumber}. Registered address:{' '}
+            {OPERATOR.registeredAddress}. Contact: {OPERATOR.supportEmail}.
           </div>
         </div>
         <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap' }}>
@@ -653,6 +656,14 @@ function Footer() {
           <Link to="/platform/cookies"                className="vg-link" style={{ textDecoration: 'none' }}>Cookies</Link>
           <Link to="/platform/child-safety"           className="vg-link" style={{ textDecoration: 'none' }}>Child Safety</Link>
           <Link to="/platform/refunds"                className="vg-link" style={{ textDecoration: 'none' }}>Refunds</Link>
+          <Link to="/platform/content-moderation" className="vg-link" style={{ textDecoration: 'none' }}>Content Moderation</Link>
+          <Link to="/platform/identity-and-consent" className="vg-link" style={{ textDecoration: 'none' }}>ID&V and Consent</Link>
+          <Link to="/platform/age-verification" className="vg-link" style={{ textDecoration: 'none' }}>Age Verification</Link>
+          <Link to="/platform/anti-slavery" className="vg-link" style={{ textDecoration: 'none' }}>Anti-Slavery</Link>
+          <Link to="/platform/csam-policy" className="vg-link" style={{ textDecoration: 'none' }}>CSAM and Illegal Content</Link>
+          <Link to="/platform/law-enforcement" className="vg-link" style={{ textDecoration: 'none' }}>Law Enforcement</Link>
+          <Link to="/platform/aml-policy" className="vg-link" style={{ textDecoration: 'none' }}>Anti-Money Laundering</Link>
+          <Link to="/platform/anti-fraud" className="vg-link" style={{ textDecoration: 'none' }}>Anti-Fraud</Link>
         </div>
       </div>
     </footer>
@@ -1131,12 +1142,12 @@ function PhoneMock() {
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
               <div style={{ width: 18, height: 18, borderRadius: 4, background: 'var(--vg-grad-violet)', fontSize: 8, fontWeight: 800, fontFamily: 'Syne', color: '#fff', display: 'grid', placeItems: 'center' }}>V</div>
-              <span style={{ fontSize: 10, fontWeight: 600 }}>Season Cup</span>
+              <span style={{ fontSize: 10, fontWeight: 600 }}>Squad Night</span>
             </div>
-            <div className="vg-mono" style={{ fontSize: 11, fontWeight: 700, color: C.violet, marginTop: 2 }}>€10,000</div>
+            <div className="vg-mono" style={{ fontSize: 11, fontWeight: 700, color: C.violet, marginTop: 2 }}>20:00 CET</div>
             <div style={{ fontSize: 9, color: C.text3 }}>May 24</div>
           </div>
-          <div style={{ padding: '4px 8px', borderRadius: 5, fontSize: 9, fontWeight: 700, color: '#34d399', background: 'rgba(52,211,153,0.12)', border: '1px solid rgba(52,211,153,0.3)' }}>Open</div>
+          <div style={{ padding: '4px 8px', borderRadius: 5, fontSize: 9, fontWeight: 700, color: '#34d399', background: 'rgba(52,211,153,0.12)', border: '1px solid rgba(52,211,153,0.3)' }}>Remind me</div>
         </div>
       </div>
       <div style={{
@@ -1206,17 +1217,23 @@ function LandingHero() {
             fontSize: 52, lineHeight: 1.05, fontWeight: 800,
             letterSpacing: '-0.03em', margin: 0,
           }}>
-            <div>Play together.</div>
-            <div>Win together.</div>
-            <div className="vg-grad-text">Grow together.</div>
+            {/* Gaming is ONE category now, not the whole platform (founder,
+                2026-08-11). The old "Play together / Win together" hero read as
+                a gaming-only product and pushed away every creator who is not a
+                gamer, which is most of them. The "together" motif stays because
+                the social/squad angle is still the differentiator. */}
+            <div>Create together.</div>
+            <div>Watch together.</div>
+            <div className="vg-grad-text">Earn together.</div>
           </h1>
 
           <p style={{
             marginTop: 22, fontSize: 16, lineHeight: 1.6,
             color: C.text2, maxWidth: 440,
           }}>
-            VERGR is where gamers, creators, and squads come together to play, compete, and earn.
-            Build crews, watch live, share clips, and back the creators you follow.
+            Vergr is where creators and their communities come together to share, watch, and earn.
+            Gaming, music, art, IRL, whatever you are into. Build squads, go live, share clips,
+            and back the people you follow.
           </p>
 
           <div style={{ marginTop: 28, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
@@ -1291,7 +1308,7 @@ const SLIDE_DATA = [
       ['monitoring', 'Stream health built in', 'Bitrate, viewers, and dropped frames at a glance, no second monitor.'],
       ['smartphone', 'Mobile-first controls', 'Start, switch cameras, and moderate straight from your phone.'],
     ],
-    chips: ['1080p60 on Pro', 'Tips at 10% flat', 'OBS or browser'],
+    chips: ['1080p60 on Pro', 'Keep up to 80%', 'OBS or browser'],
   },
   {
     id: 'connect', tab: 'Connect', accent: C.violet, img: '/brand/slide-connect.webp',
@@ -1319,15 +1336,15 @@ const SLIDE_DATA = [
   },
   {
     id: 'payments', tab: 'Payments', accent: C.gold, img: '/brand/slide-payments.webp',
-    title: 'Real money, real fast.',
-    intro: 'Top up in seconds and cash eligible gems out to your own wallet. One balance powers tips, entries, and boosts.',
+    title: 'One balance, everywhere.',
+    intro: 'Top up in seconds. One balance powers tips, memberships, paid streams, and boosts.',
     bullets: [
       ['bolt', 'Top up instantly', 'Buy coins with card, Apple Pay, or crypto via PayRam.'],
-      ['payments', 'Withdraw to crypto', 'Cash eligible gems out to your own Base wallet.'],
-      ['trending_down', 'Convert as you rank', 'Your conversion commission drops the higher your VP rank.'],
-      ['verified', 'Transparent fees', 'Flat 10% tip fee, no hidden cuts, no surprises.'],
+      ['payments', 'Paid on a schedule', 'Creators are paid their revenue share automatically, no request needed.'],
+      ['trending_up', 'Your share climbs', 'You start at 50% and rise to 80% as you earn. Your rate never goes down.'],
+      ['verified', 'One number', 'Your share is the only deduction. No tip fee, no conversion fee, no payout fee.'],
     ],
-    chips: ['Card · crypto', 'Min 1,000 gems', 'Lower fees by rank'],
+    chips: ['Card · crypto', 'Paid on a schedule', 'Your share climbs'],
   },
   {
     id: 'cohost', tab: 'Co-streaming', accent: C.violet, img: '/brand/slide-live.webp',
@@ -1355,7 +1372,7 @@ function LandingSlides() {
           <h2 className="vg-syne vg-h2" style={{
             fontSize: 40, fontWeight: 800, letterSpacing: '-0.03em', margin: 0, lineHeight: 1.1,
           }}>
-            Built for <span className="vg-grad-text">gamers</span>. Designed for{' '}
+            Built for <span className="vg-grad-text">creators</span>. Designed for{' '}
             <span style={{
               background: `linear-gradient(92deg, ${C.cyan}, ${C.violet})`,
               WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent',
@@ -1478,9 +1495,9 @@ function LandingStats() {
         }} />
         {[
           ['paid',                    'Free',                 'To join, play and stream'],
-          ['verified_user',           'Lower fees',           'Commission drops as you rank up'],
+          ['verified_user',           'A rising share',       'From 50% up to 80% as you earn'],
           ['devices',                 'Desktop · Mobile',     'One account, all devices'],
-          ['account_balance_wallet',  'Real payouts',          'Withdraw eligible gems'],
+          ['account_balance_wallet',  'Real payouts',          'Paid on a schedule, automatically'],
         ].map(([ic, n, l], i) => (
           <div key={i} style={{
             display: 'flex', alignItems: 'center', gap: 14,
@@ -1522,15 +1539,15 @@ function LandingEconomy() {
             marginTop: 18, fontSize: 16, color: C.text2, lineHeight: 1.6, maxWidth: 460,
           }}>
             VC Coins flow through every corner of VERGR — tips for streamers, memberships for top fans,
-            paid streams, and boosts for squads on the rise. Coins are spendable only inside VERGR;
-            creators convert their gem earnings and withdraw.
+            paid streams, and boosts for squads on the rise. Coins are spendable only inside VERGR.
+            Creators are paid a share of the revenue their content earns, on VERGR's schedule.
           </p>
           <div style={{ marginTop: 24, display: 'flex', flexDirection: 'column', gap: 10 }}>
             {[
               'Tip your favorite creators in real time',
               'Unlock a creator’s paid live streams',
               'Subscribe to creators and squads — recurring perks',
-              'Convert eligible gems → withdraw to your wallet',
+              'Creators are paid their revenue share automatically',
             ].map((t, i) => (
               <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'center', fontSize: 14, color: C.text2 }}>
                 <span style={{
@@ -1565,7 +1582,7 @@ function LandingEconomy() {
             textAlign: 'center', fontSize: 12,
             color: C.violet, letterSpacing: '0.18em',
           }}>
-            1 VC ≈ €0.01 · MIN. WITHDRAWAL 1,000 GEMS
+            1 VC ≈ $0.01 · SPENDABLE INSIDE VERGR
           </div>
         </div>
       </div>
@@ -1574,10 +1591,10 @@ function LandingEconomy() {
 }
 
 // VP / Levels — uses the real /brand/vp-gem.webp with 4 tier chips at the
-// cardinal points. Commission % matches commissionForVP() in src/utils/vpSystem.js
-// (and the authoritative functions/economy.js): steps DOWN with lifetime VP from
-// 30% to a 15% floor at 100,000 VP. Rookie 30%, Challenger ~18%, Champion 15%,
-// Immortal 15%.
+// cardinal points. The chips show the REVENUE SHARE a creator keeps, keyed to
+// lifetime earnings (shareForEarnings() in src/utils/vpSystem.js), NOT to VP rank.
+// Rank and revenue share are separate ladders as of 2026-08-14: ranking up no
+// longer changes what you keep.
 function LandingLevels() {
   // Each chip uses explicit edge anchoring (top/right/bottom/left = 0) so
   // it lands on a perfect cross relative to the wrapper, regardless of the
@@ -1628,13 +1645,13 @@ function LandingLevels() {
           {/* Row 1 col 2 — Rookie */}
           <div className="vg-vp-chip" style={{ gridColumn: 2, gridRow: 1, ...chip }}>
             <div className="vg-mono" style={chipName}>ROOKIE</div>
-            <div style={chipFee}>30% fees</div>
+            <div style={chipFee}>keep 50%</div>
           </div>
 
           {/* Row 2 col 1 — Immortal */}
           <div className="vg-vp-chip" style={{ gridColumn: 1, gridRow: 2, ...chip }}>
             <div className="vg-mono" style={chipName}>IMMORTAL</div>
-            <div style={chipFee}>15% fees</div>
+            <div style={chipFee}>keep 65%</div>
           </div>
 
           {/* Row 2 col 2 — GEM (dead center) */}
@@ -1653,7 +1670,7 @@ function LandingLevels() {
           {/* Row 3 col 2 — Champion */}
           <div className="vg-vp-chip" style={{ gridColumn: 2, gridRow: 3, ...chip }}>
             <div className="vg-mono" style={chipName}>CHAMPION</div>
-            <div style={chipFee}>15% fees</div>
+            <div style={chipFee}>keep 80%</div>
           </div>
         </div>
 
@@ -1668,11 +1685,11 @@ function LandingLevels() {
           <p style={{ marginTop: 18, fontSize: 16, color: C.text2, lineHeight: 1.6, maxWidth: 480 }}>
             Every match, stream, and tip you send earns VP. Climb the 11 ranks
             from Rookie all the way to Immortal to collect 30 rank badges and cut
-            your coin-to-gem platform commission as you rise.
+            your share of the revenue you generate as you rise.
           </p>
           <div style={{ marginTop: 24, display: 'flex', flexDirection: 'column', gap: 12 }}>
             {[
-              ['Lower platform commission', 'Your conversion rate improves as you rank up — keep more of what you earn'],
+              ['A bigger share', 'Your revenue share climbs from 50% to 80% as you earn — and never drops'],
               ['Animated rank badges',      'Show your tier in chat, on profiles, and over your stream'],
               ['Tier-only events',          'Invite-only streams and creator drops at higher ranks'],
               ['Faster VP gains',           'Bonus VP multipliers kick in the higher your rank'],
@@ -1817,51 +1834,30 @@ function AndroidInstallModal({ onClose }) {
   );
 }
 
+// Landing "get the app" section.
+//
+// This used to hold four cards, two of which linked straight at the .exe and
+// the .apk on the CDN. Those links moved to /platform/download/desktop and
+// /platform/download/mobile (founder decision 2026-08-14): a binary link needs
+// version, size, checksum and honest install warnings around it, and none of
+// that fits in a landing-page card. Nothing was dropped, only relocated. The
+// web-app and iPhone routes live on the mobile page.
 function LandingDownload() {
-  const deferredPrompt = useInstallPrompt();
-  const [showIosModal, setShowIosModal] = useState(false);
-  const [showAndroidModal, setShowAndroidModal] = useState(false);
-  const { isIOS, isAndroid, isStandalone } = detectPlatform();
-
-  // Fires the right install path on click instead of routing to /signup.
-  // Android Chrome → native install prompt. iOS Safari → modal with steps
-  // (Apple has no programmatic install API). Desktop → also native prompt
-  // if available, else fall back to /signup.
-  const handleInstall = async (e, fallbackTo) => {
-    if (isStandalone) return; // already installed
-    if (deferredPrompt) {
-      e.preventDefault();
-      try {
-        await deferredPrompt.prompt();
-        await deferredPrompt.userChoice;
-      } catch {/* user dismissed */}
-      return;
-    }
-    if (isIOS) {
-      e.preventDefault();
-      setShowIosModal(true);
-      return;
-    }
-    // Otherwise let the link navigate (signup flow), still better than nothing.
-    void fallbackTo;
-  };
-
-  // Choose CTAs per platform so the user sees a button that matches what
-  // tapping it will actually do.
-  const mobileCta = isIOS
-    ? 'Install on iPhone'
-    : isAndroid
-      ? (deferredPrompt ? 'Install now' : 'How to install')
-      : 'Get on mobile';
   const cards = [
-    { title: 'Web app',         body: 'Open VERGR right in your browser. Nothing to install.',                  icon: 'language',        cta: 'Open web app', to: '/signup',                  install: false },
-    // Standalone desktop app: a signed NSIS installer on R2 / cdn.vergr.app
-    // ($0 egress). Direct download (silent auto-updates itself thereafter).
-    { title: 'Windows desktop', body: 'Native window, system notifications, and Discord-style background run.', icon: 'desktop_windows', cta: 'Download for Windows', href: 'https://cdn.vergr.app/downloads/VERGR-Setup.exe', download: 'VERGR-Setup.exe' },
-    // Real native Android app: a signed APK served from R2 / cdn.vergr.app
-    // ($0 egress, no Play Store). Direct download, not a router link.
-    { title: 'Android app',     body: 'The real native app. Direct download, native push, full-screen. Tap then allow install from this source.', icon: 'android', cta: 'Download for Android', href: `https://cdn.vergr.app/downloads/VERGR.apk?v=${APP_VERSION}`, download: `VERGR-${APP_VERSION}.apk` },
-    { title: 'iPhone',          body: 'Add VERGR to your home screen from Safari. Push notifications, full-screen viewer.', icon: 'phone_iphone', cta: 'Install on iPhone', to: '/signup?platform=mobile', install: true },
+    {
+      title: 'Get the mobile app',
+      body: 'The real native app on Android, plus two-tap install on iPhone. Native push, full-screen viewer, background playback.',
+      icon: 'smartphone',
+      cta: 'Mobile downloads',
+      to: '/platform/download/mobile',
+    },
+    {
+      title: 'Get the desktop app',
+      body: 'VERGR in its own window on Windows 10 and 11. System notifications, background run, silent auto-updates.',
+      icon: 'desktop_windows',
+      cta: 'Desktop download',
+      to: '/platform/download/desktop',
+    },
   ];
   return (
     <section className="vg-section" style={{ padding: '40px 32px 80px' }}>
@@ -1877,70 +1873,46 @@ function LandingDownload() {
             Take VERGR <span className="vg-grad-text">everywhere.</span>
           </h2>
           <p style={{ marginTop: 14, fontSize: 16, color: C.text2 }}>
-            One account. Web, desktop, and mobile — all in sync.
+            One account. Web, desktop, and mobile, all in sync.
           </p>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }} className="vg-grid-cols-4">
-          {cards.map((card) => {
-            const cardStyle = {
-              padding: 24, borderRadius: 16,
-              background: 'var(--vg-grad-card)',
-              border: `1px solid ${C.borderSoft}`,
-              textDecoration: 'none', color: 'inherit',
-              display: 'flex', flexDirection: 'column', gap: 12,
-            };
-            const inner = (
-              <>
-                <span style={{ color: C.violet }}><Icon name={card.icon} size={36} /></span>
-                <h3 className="vg-syne" style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>{card.title}</h3>
-                <p style={{ fontSize: 13, lineHeight: 1.55, color: C.text2, margin: 0, flex: 1 }}>{card.body}</p>
-                <div style={{
-                  marginTop: 8, padding: '10px 14px', borderRadius: 8,
-                  background: 'rgba(123,111,255,0.12)',
-                  border: `1px solid ${C.violet}55`,
-                  color: C.text, fontSize: 13, fontWeight: 700,
-                  display: 'inline-flex', alignItems: 'center', justifyContent: 'space-between',
-                }}>
-                  {card.cta} <span>→</span>
-                </div>
-              </>
-            );
-            // Direct file download (the Android APK) uses a plain anchor so the
-            // browser downloads the file instead of client-routing.
-            if (card.download) {
-              return (
-                <a key={card.title} href={card.href} download={typeof card.download === 'string' ? card.download : true} className="vg-lift" style={cardStyle}>
-                  {inner}
-                </a>
-              );
-            }
-            return (
-              <Link
-                key={card.title}
-                to={card.to}
-                onClick={(e) => { if (card.install) handleInstall(e, card.to); }}
-                className="vg-lift"
-                style={cardStyle}
-              >
-                {inner}
-              </Link>
-            );
-          })}
+        <div style={{
+          display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16,
+          maxWidth: 820, margin: '0 auto',
+        }} className="vg-grid-cols-2">
+          {cards.map((card) => (
+            <Link
+              key={card.title}
+              to={card.to}
+              className="vg-lift"
+              style={{
+                padding: 28, borderRadius: 16,
+                background: 'var(--vg-grad-card)',
+                border: `1px solid ${C.borderSoft}`,
+                textDecoration: 'none', color: 'inherit',
+                display: 'flex', flexDirection: 'column', gap: 12,
+              }}
+            >
+              <span style={{ color: C.violet }}><Icon name={card.icon} size={38} /></span>
+              <h3 className="vg-syne" style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>{card.title}</h3>
+              <p style={{ fontSize: 14, lineHeight: 1.55, color: C.text2, margin: 0, flex: 1 }}>{card.body}</p>
+              <div style={{
+                marginTop: 8, padding: '11px 15px', borderRadius: 8,
+                background: 'rgba(123,111,255,0.12)',
+                border: `1px solid ${C.violet}55`,
+                color: C.text, fontSize: 13, fontWeight: 700,
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'space-between',
+              }}>
+                {card.cta} <span>&rarr;</span>
+              </div>
+            </Link>
+          ))}
         </div>
-        <p style={{ textAlign: 'center', marginTop: 18, fontSize: 13, color: C.text3 }}>
-          On Android, you'll install VERGR directly (not via the Play Store).{' '}
-          <button
-            type="button"
-            onClick={() => setShowAndroidModal(true)}
-            style={{
-              background: 'none', border: 'none', padding: 0, cursor: 'pointer',
-              color: C.violet, fontWeight: 700, textDecoration: 'underline', fontSize: 13,
-            }}
-          >See how to install &amp; get past the Play Protect notice</button>
+        <p style={{ textAlign: 'center', marginTop: 22, fontSize: 13, color: C.text3 }}>
+          Every download page lists the version, size and SHA-256 checksum of the
+          exact file it serves.
         </p>
       </div>
-      {showIosModal && <IosInstallModal onClose={() => setShowIosModal(false)} />}
-      {showAndroidModal && <AndroidInstallModal onClose={() => setShowAndroidModal(false)} />}
     </section>
   );
 }
@@ -1978,8 +1950,8 @@ function LandingCTA() {
 
 export function LandingScreen() {
   useSeo({
-    title: 'Vergr | Live Streaming for Gamers & Creators',
-    description: 'Connect with gamers, live stream in high quality, and share clips on Vergr. Build your squad, follow your favourite creators, and support them with tips and memberships.',
+    title: 'Vergr | Live Streaming for Creators & Communities',
+    description: 'Connect with creators, live stream in high quality, and share clips on Vergr. Build your squad, follow your favourite creators, and support them with tips and memberships.',
     canonical: 'https://vergr.app/platform',
   });
   return (
@@ -2022,7 +1994,7 @@ function PublicPackCard({ pack }) {
       </div>
       <div style={{ marginTop: 'auto', display: 'flex', alignItems: 'baseline', gap: 8 }}>
         <span className="vg-mono" style={{ fontSize: 22, fontWeight: 800, color: C.text }}>
-          €{pack.priceEUR.toFixed(2)}
+          ${pack.priceUSD.toFixed(2)}
         </span>
       </div>
     </Link>
@@ -2032,7 +2004,7 @@ function PublicPackCard({ pack }) {
 export function StoreScreen() {
   useSeo({
     title: 'Shop — Buy VC Coins | VERGR',
-    description: 'Buy VC Coins to tip streamers, join creator memberships, unlock paid streams, and boost your reach. Eight pack sizes from €0.99 to €224.99. Pay with cryptocurrency or card.',
+    description: 'Buy VC Coins to tip streamers, join creator memberships, unlock paid streams, and boost your reach. Eight pack sizes from $0.99 to $249.99. Pay with card or cryptocurrency.',
     canonical: 'https://vergr.app/platform/store',
   });
   return (
@@ -2078,101 +2050,573 @@ export function StoreScreen() {
 // Download (real platforms — no "coming soon")
 // ═════════════════════════════════════════════════════════════════════
 
+// /platform/download is now a HUB, not a download page.
+//
+// The route predates the split and is already in sitemap.xml + the prerender
+// list, so it stays exactly where it is rather than being retired: it just
+// routes to the per-platform page that carries the binary, the checksum and
+// the install warnings. Keeping the url alive also means the existing help
+// article that points users at "the Download page" is still correct.
 export function DownloadScreen() {
-  const deferredPrompt = useInstallPrompt();
-  const [showIosModal, setShowIosModal] = useState(false);
-  const { isIOS, isAndroid, isStandalone } = detectPlatform();
+  useSeo({
+    title: 'Download VERGR | Windows, Android, iPhone and Web',
+    description: 'Download VERGR for Windows or Android, or install it on iPhone from Safari. Every build lists its version, size and SHA-256 checksum.',
+    canonical: 'https://vergr.app/platform/download',
+  });
 
-  const handleInstall = async (e, target) => {
-    if (isStandalone) return;
-    if (target === 'ios' || isIOS) { e.preventDefault(); setShowIosModal(true); return; }
-    if (deferredPrompt) {
-      e.preventDefault();
-      try {
-        await deferredPrompt.prompt();
-        await deferredPrompt.userChoice;
-      } catch {/* dismissed */}
-    }
-    // else fall through to /signup
-  };
-
-  const androidCta = isAndroid
-    ? (deferredPrompt ? 'Install on Android' : 'How to install')
-    : 'Get for Android';
   const cards = [
-    { title: 'Web app',         body: 'Use VERGR right in your browser — no install needed.',                                       icon: 'language',        cta: 'Open web app',    to: '/signup',                  install: false                       },
-    // Standalone desktop app: signed NSIS installer on cdn.vergr.app, direct
-    // download (silent auto-updates itself afterward).
-    { title: 'Windows desktop', body: 'Native window, system notifications, runs in the background. Best for streamers and mods.', icon: 'desktop_windows', cta: 'Download for Windows', href: 'https://cdn.vergr.app/downloads/VERGR-Setup.exe', download: 'VERGR-Setup.exe' },
-    { title: 'iOS',             body: 'Add VERGR to your iPhone home screen. Push alerts, full-screen viewer, picture-in-picture.', icon: 'phone_iphone',    cta: 'Install on iPhone', to: '/signup?platform=ios',   install: true,  target: 'ios'        },
-    { title: 'Android',         body: 'Install on Android via your browser. Background playback, notifications, fast wallet flows.', icon: 'android',        cta: androidCta,        to: '/signup?platform=android', install: true,  target: 'android'    },
+    {
+      title: 'Mobile',
+      body: 'Native Android app as a direct download, and the two-tap install for iPhone and iPad.',
+      icon: 'smartphone',
+      cta: 'Get the mobile app',
+      to: '/platform/download/mobile',
+    },
+    {
+      title: 'Desktop',
+      body: 'Windows 10 and 11 installer. Own window, system notifications, background run, silent auto-updates.',
+      icon: 'desktop_windows',
+      cta: 'Get the desktop app',
+      to: '/platform/download/desktop',
+    },
+    {
+      title: 'Web',
+      body: 'Nothing to install. VERGR runs in any modern browser with the same account and wallet.',
+      icon: 'language',
+      cta: 'Open the web app',
+      to: '/signup',
+    },
   ];
+
   return (
     <MarketingShell>
+      <JsonLd data={breadcrumbSchema([
+        { name: 'Home', path: '/platform' },
+        { name: 'Download', path: '/platform/download' },
+      ])} />
       <PageHero
         title="One account. Every platform."
-        subtitle="VERGR runs on the web, your desktop, and your phone. Start anywhere — your wallet, squads, and notifications follow you."
-        accent="cyan"
+        subtitle="VERGR runs on the web, your desktop, and your phone. Start anywhere: your wallet, squads, and notifications follow you."
+        accent="violet"
       />
       <section className="vg-section" style={{ padding: '20px 32px 80px' }}>
         <div style={{ maxWidth: 1280, margin: '0 auto' }}>
           <div style={{
-            display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16,
+            display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 16,
           }}>
-            {cards.map((card) => {
-              const cardStyle = {
-                padding: 24, borderRadius: 16, textDecoration: 'none', color: 'inherit',
-                background: 'var(--vg-grad-card)',
-                border: `1px solid ${C.borderSoft}`,
-                display: 'flex', flexDirection: 'column', gap: 12,
-              };
-              const inner = (
-                <>
-                  <span style={{ color: C.violet }}><Icon name={card.icon} size={36} /></span>
-                  <h3 className="vg-syne" style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>{card.title}</h3>
-                  <p style={{ fontSize: 13, lineHeight: 1.55, color: C.text2, margin: 0, flex: 1 }}>{card.body}</p>
-                  <div style={{
-                    marginTop: 8, padding: '10px 14px', borderRadius: 8,
-                    background: 'rgba(123,111,255,0.12)',
-                    border: `1px solid ${C.violet}55`,
-                    color: C.text, fontSize: 13, fontWeight: 700,
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  }}>
-                    {card.cta} <span>→</span>
-                  </div>
-                </>
-              );
-              // Direct file download (the desktop installer) uses a plain anchor
-              // so the browser downloads it instead of client-routing.
-              if (card.download) {
-                return (
-                  <a key={card.title} href={card.href} download={typeof card.download === 'string' ? card.download : true} className="vg-lift" style={cardStyle}>
-                    {inner}
-                  </a>
-                );
-              }
-              return (
-                <Link
-                  key={card.title}
-                  to={card.to}
-                  onClick={(e) => { if (card.install) handleInstall(e, card.target); }}
-                  className="vg-lift"
-                  style={cardStyle}
-                >
-                  {inner}
-                </Link>
-              );
-            })}
+            {cards.map((card) => (
+              <Link
+                key={card.title}
+                to={card.to}
+                className="vg-lift"
+                style={{
+                  padding: 26, borderRadius: 16, textDecoration: 'none', color: 'inherit',
+                  background: 'var(--vg-grad-card)',
+                  border: `1px solid ${C.borderSoft}`,
+                  display: 'flex', flexDirection: 'column', gap: 12,
+                }}
+              >
+                <span style={{ color: C.violet }}><Icon name={card.icon} size={36} /></span>
+                <h3 className="vg-syne" style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>{card.title}</h3>
+                <p style={{ fontSize: 13, lineHeight: 1.55, color: C.text2, margin: 0, flex: 1 }}>{card.body}</p>
+                <div style={{
+                  marginTop: 8, padding: '10px 14px', borderRadius: 8,
+                  background: 'rgba(123,111,255,0.12)',
+                  border: `1px solid ${C.violet}55`,
+                  color: C.text, fontSize: 13, fontWeight: 700,
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                }}>
+                  {card.cta} <span>&rarr;</span>
+                </div>
+              </Link>
+            ))}
           </div>
           <p style={{ marginTop: 24, fontSize: 12, color: C.text3, textAlign: 'center' }}>
-            Tap the card for your device. Android/desktop fire the native install prompt; iPhone gets a quick step-by-step.
+            The desktop and Android pages publish the version, byte size and
+            SHA-256 checksum of the exact file they serve, so you can verify a
+            download before you run it.
           </p>
         </div>
       </section>
-      {showIosModal && <IosInstallModal onClose={() => setShowIosModal(false)} />}
     </MarketingShell>
   );
 }
+// ═════════════════════════════════════════════════════════════════════
+// Download pages
+// ═════════════════════════════════════════════════════════════════════
+//
+// The binaries deliberately live ONLY on these two pages, not on the landing
+// page. Two reasons, in order of weight:
+//
+//  1. Provenance. An unsigned .exe and a sideloaded .apk have no store
+//     vouching for them, so the only trust we can offer is a page that states
+//     the version, the byte size, the release date and a SHA-256 the user can
+//     check, plus honest steps for the SmartScreen / Play Protect warnings
+//     they WILL see. That does not fit in a landing-page card, and a bare
+//     "Download" link with none of it around it is the shape of a drive-by
+//     download.
+//  2. A dedicated page is the thing that can rank for "vergr download"
+//     queries and carry SoftwareApplication markup.
+//
+// Version/size/checksum are read at runtime from the manifests the publish
+// scripts write (scripts/make-update-manifest.mjs -> /downloads/latest.json,
+// scripts/publish-apk.mjs -> /version.json), never hardcoded here, so the page
+// cannot drift from the file actually sitting on the CDN.
+
+const DESKTOP_URL = 'https://cdn.vergr.app/downloads/VERGR-Setup.exe';
+
+// Fetch a publish manifest. Returns null while loading or on failure; every
+// consumer degrades to "not shown" rather than rendering a placeholder that
+// could be mistaken for a real checksum.
+function useDownloadManifest(path) {
+  const [data, setData] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    fetch(path, { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => { if (alive) setData(j); })
+      .catch(() => { if (alive) setData(null); });
+    return () => { alive = false; };
+  }, [path]);
+  return data;
+}
+
+// DECIMAL MB (10^6), not MiB (2^20). Browsers, Android and Play all report a
+// download in decimal, so a page that divides by 1048576 shows a smaller
+// number than the one the user watches tick up in their download bar (269 MB
+// on the page vs 282 MB in Chrome for the same file). Match what they see.
+const formatMb = (bytes) => {
+  if (typeof bytes !== 'number' || bytes <= 0) return null;
+  const mb = bytes / 1e6;
+  return mb >= 1000 ? `${(mb / 1000).toFixed(2)} GB` : `${mb.toFixed(mb < 100 ? 1 : 0)} MB`;
+};
+
+const formatDay = (iso) => {
+  if (!iso) return null;
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime())
+    ? null
+    : d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+};
+
+// One fact row in the provenance panel.
+function FactRow({ label, value, mono, wrap }) {
+  if (!value) return null;
+  return (
+    <div style={{
+      display: 'flex', gap: 16, alignItems: wrap ? 'flex-start' : 'center',
+      padding: '11px 0', borderBottom: `1px solid ${C.borderSoft}`,
+      flexWrap: wrap ? 'wrap' : 'nowrap',
+    }}>
+      <span style={{
+        fontSize: 12, color: C.text3, textTransform: 'uppercase',
+        letterSpacing: '0.12em', fontWeight: 700, minWidth: 96,
+      }}>{label}</span>
+      <span
+        className={mono ? 'vg-mono' : undefined}
+        style={{
+          fontSize: mono ? 12 : 14, color: C.text, fontWeight: 600,
+          wordBreak: wrap ? 'break-all' : 'normal', lineHeight: 1.5, flex: 1,
+        }}
+      >{value}</span>
+    </div>
+  );
+}
+
+function CopyButton({ text, label = 'Copy' }) {
+  const [done, setDone] = useState(false);
+  return (
+    <button
+      type="button"
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(text);
+          setDone(true);
+          setTimeout(() => setDone(false), 1600);
+        } catch { /* clipboard blocked, nothing useful to say */ }
+      }}
+      style={{
+        background: 'none', border: `1px solid ${C.borderSoft}`, borderRadius: 7,
+        padding: '5px 10px', cursor: 'pointer', color: done ? C.gold : C.text2,
+        fontSize: 12, fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 5,
+      }}
+    >
+      <Icon name={done ? 'check' : 'content_copy'} size={14} />
+      {done ? 'Copied' : label}
+    </button>
+  );
+}
+
+// The trust block. Renders only the facts the manifest actually carries: a
+// missing checksum shows nothing rather than a reassuring blank.
+function ProvenancePanel({ version, size, published, sha256, verifyLabel, verifyCommand }) {
+  if (!version && !size && !published && !sha256) return null;
+  return (
+    <div style={{
+      borderRadius: 16, padding: '20px 24px', marginTop: 28,
+      background: 'var(--vg-grad-card)', border: `1px solid ${C.borderSoft}`,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+        <span style={{ color: C.gold }}><Icon name="verified_user" size={18} /></span>
+        <h3 className="vg-syne" style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>
+          What you are downloading
+        </h3>
+      </div>
+      <FactRow label="Version" value={version} />
+      <FactRow label="Size" value={formatMb(size)} />
+      <FactRow label="Released" value={formatDay(published)} />
+      <FactRow label="SHA-256" value={sha256} mono wrap />
+      {sha256 && (
+        <div style={{ marginTop: 14 }}>
+          <p style={{ fontSize: 13, lineHeight: 1.6, color: C.text2, margin: '0 0 10px' }}>
+            {verifyLabel}
+          </p>
+          {verifyCommand && (
+            <div style={{
+              display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap',
+              background: C.bg, border: `1px solid ${C.borderSoft}`,
+              borderRadius: 9, padding: '10px 12px',
+            }}>
+              <code className="vg-mono" style={{ fontSize: 12, color: C.text2, flex: 1, wordBreak: 'break-all' }}>
+                {verifyCommand}
+              </code>
+              <CopyButton text={verifyCommand} />
+            </div>
+          )}
+          <div style={{ marginTop: 10 }}><CopyButton text={sha256} label="Copy checksum" /></div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// A numbered install step. tone="warn" is for the steps where the OS shows a
+// scary prompt: those get called out rather than glossed over.
+function StepRow({ n, title, body, tone }) {
+  const accent = tone === 'warn' ? C.gold : C.violet;
+  return (
+    <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', padding: '12px 0' }}>
+      <span className="vg-mono" style={{
+        flexShrink: 0, width: 26, height: 26, borderRadius: 999,
+        display: 'grid', placeItems: 'center',
+        background: tone === 'warn' ? 'rgba(245,197,66,0.14)' : 'rgba(123,111,255,0.14)',
+        border: `1px solid ${accent}55`, color: accent,
+        fontSize: 12, fontWeight: 800,
+      }}>{n}</span>
+      <div>
+        <div style={{ fontSize: 15, fontWeight: 700, color: C.text, marginBottom: 3 }}>{title}</div>
+        <p style={{ fontSize: 14, lineHeight: 1.6, color: C.text2, margin: 0 }}>{body}</p>
+      </div>
+    </div>
+  );
+}
+
+// Big primary download anchor. A plain <a download>, never a scripted or
+// automatic navigation: a download the user did not click is the exact
+// pattern browser download protection treats as hostile.
+function DownloadButton({ href, filename, children, sub }) {
+  return (
+    <a
+      href={href}
+      download={filename}
+      className="vg-lift"
+      style={{
+        display: 'inline-flex', flexDirection: 'column', alignItems: 'center',
+        gap: 2, textDecoration: 'none', padding: '16px 34px', borderRadius: 12,
+        background: `linear-gradient(135deg, ${C.violet}, ${C.pink})`,
+        color: '#0B0B14', fontWeight: 800, fontSize: 16,
+      }}
+    >
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 9 }}>
+        <Icon name="download" size={20} />{children}
+      </span>
+      {sub && <span style={{ fontSize: 12, fontWeight: 700, opacity: 0.75 }}>{sub}</span>}
+    </a>
+  );
+}
+
+export function DesktopAppScreen() {
+  const manifest = useDownloadManifest('/downloads/latest.json');
+  const version = manifest?.version || null;
+  const size = manifest?.size || null;
+  const subLabel = [version && `v${version}`, formatMb(size)].filter(Boolean).join(' · ');
+
+  useSeo({
+    title: 'Download VERGR for Windows | VERGR',
+    description: 'Get the VERGR desktop app for Windows 10 and 11. Native window, system notifications, background run and silent auto-updates. Free, with published version, size and SHA-256 checksum.',
+    canonical: 'https://vergr.app/platform/download/desktop',
+  });
+
+  return (
+    <MarketingShell>
+      <JsonLd data={[
+        softwareAppSchema({
+          type: 'SoftwareApplication',
+          name: 'VERGR for Windows',
+          description: 'VERGR desktop app for Windows: native window, system notifications, background run and silent auto-updates.',
+          url: '/platform/download/desktop',
+          operatingSystem: 'Windows 10, Windows 11',
+          softwareVersion: version || undefined,
+          fileSize: formatMb(size) || undefined,
+          downloadUrl: DESKTOP_URL,
+          datePublished: manifest?.pub_date || undefined,
+        }),
+        breadcrumbSchema([
+          { name: 'Home', path: '/platform' },
+          { name: 'Download', path: '/platform/download' },
+          { name: 'Windows', path: '/platform/download/desktop' },
+        ]),
+      ]} />
+
+      <PageHero
+        title="Get the desktop app"
+        subtitle="VERGR in its own window on Windows 10 and 11. System notifications, a background run like Discord, and it keeps itself up to date."
+        accent="violet"
+      />
+
+      <section className="vg-section" style={{ padding: '4px 32px 24px' }}>
+        <div style={{ maxWidth: 820, margin: '0 auto' }}>
+          <DownloadButton href={DESKTOP_URL} filename="VERGR-Setup.exe" sub={subLabel || undefined}>
+            Download for Windows
+          </DownloadButton>
+
+          <ProvenancePanel
+            version={version}
+            size={size}
+            published={manifest?.pub_date}
+            sha256={manifest?.sha256}
+            verifyLabel="Every build we publish lists its checksum here. To confirm the file you downloaded is the file we shipped, run this in PowerShell from your Downloads folder and check the result matches."
+            verifyCommand="Get-FileHash .\VERGR-Setup.exe -Algorithm SHA256"
+          />
+        </div>
+      </section>
+
+      <Section bordered>
+        <H2>Installing it</H2>
+        <div style={{ maxWidth: 820 }}>
+          <StepRow
+            n="1"
+            title="Run VERGR-Setup.exe"
+            body="The installer sets VERGR up and opens it. There is no bundled extra software and nothing else is installed alongside it."
+          />
+          <StepRow
+            n="2"
+            tone="warn"
+            title="Windows may warn you first"
+            body="You may see 'Windows protected your PC'. That is SmartScreen reacting to an installer few people have downloaded yet, not a detection of anything in the file. Click More info, then Run anyway. The checksum above is there so you do not have to take our word for it."
+          />
+          <StepRow
+            n="3"
+            title="It updates itself"
+            body="After the first install, VERGR checks for updates on launch and applies them silently. You will not need to come back to this page."
+          />
+        </div>
+      </Section>
+
+      <Section bordered>
+        <H2>What the desktop app adds</H2>
+        <Grid cols={2}>
+          <Bullet icon="desktop_windows" title="Its own window" body="No browser tab, no address bar. Alt-tab straight to VERGR." />
+          <Bullet icon="notifications_active" title="System notifications" body="Native Windows notifications for messages, follows, and streams going live." />
+          <Bullet icon="dock_to_bottom" title="Runs in the background" body="Close the window and it keeps running in the tray, the way Discord does." />
+          <Bullet icon="update" title="Silent auto-update" body="New versions install themselves on launch, signed with our updater key." />
+        </Grid>
+        <P dim max={720}>
+          Requires 64-bit Windows 10 or 11. The web app has the same features if
+          you would rather not install anything.
+        </P>
+      </Section>
+
+      <Section>
+        <H2>On a phone instead?</H2>
+        <P dim max={720}>The Android app and the iPhone install steps are on the mobile page.</P>
+        <Link
+          to="/platform/download/mobile"
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 8, marginTop: 8,
+            color: C.violet, fontWeight: 700, textDecoration: 'none', fontSize: 15,
+          }}
+        >
+          Get the mobile app <Icon name="arrow_forward" size={18} />
+        </Link>
+      </Section>
+    </MarketingShell>
+  );
+}
+
+export function MobileAppScreen() {
+  const manifest = useDownloadManifest('/version.json');
+  const [showIosModal, setShowIosModal] = useState(false);
+  const [showAndroidModal, setShowAndroidModal] = useState(false);
+  // The landing page used to own these: the browser-install prompt and the
+  // Play Protect walkthrough. They moved here with the rest of the mobile
+  // routes rather than being dropped.
+  const deferredPrompt = useInstallPrompt();
+  const { isStandalone } = detectPlatform();
+  const version = manifest?.androidVersion || null;
+  const size = manifest?.apkSize || null;
+  const apkUrl = manifest?.apkUrl || `https://cdn.vergr.app/downloads/VERGR.apk?v=${APP_VERSION}`;
+  const subLabel = [version && `v${version}`, formatMb(size)].filter(Boolean).join(' · ');
+
+  useSeo({
+    title: 'Download the VERGR Android App | VERGR',
+    description: 'Get the native VERGR app for Android as a direct download, with published version, size and SHA-256 checksum. iPhone users can install VERGR from Safari in two taps.',
+    canonical: 'https://vergr.app/platform/download/mobile',
+  });
+
+  return (
+    <MarketingShell>
+      <JsonLd data={[
+        softwareAppSchema({
+          type: 'MobileApplication',
+          name: 'VERGR for Android',
+          description: 'The native VERGR Android app: full-screen viewer, native push notifications and background playback.',
+          url: '/platform/download/mobile',
+          operatingSystem: 'Android',
+          softwareVersion: version || undefined,
+          fileSize: formatMb(size) || undefined,
+          downloadUrl: apkUrl,
+          datePublished: manifest?.apkPublishedAt || undefined,
+        }),
+        breadcrumbSchema([
+          { name: 'Home', path: '/platform' },
+          { name: 'Download', path: '/platform/download' },
+          { name: 'Mobile', path: '/platform/download/mobile' },
+        ]),
+      ]} />
+
+      <PageHero
+        title="Get the mobile app"
+        subtitle="The real native app on Android, and a two-tap install on iPhone. Same account, same wallet, same notifications."
+        accent="violet"
+      />
+
+      <section className="vg-section" style={{ padding: '4px 32px 24px' }}>
+        <div style={{ maxWidth: 820, margin: '0 auto' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+            <span style={{ color: C.violet }}><Icon name="android" size={26} /></span>
+            <h2 className="vg-syne" style={{ fontSize: 26, fontWeight: 800, margin: 0 }}>Android</h2>
+          </div>
+
+          <DownloadButton
+            href={apkUrl}
+            filename={version ? `VERGR-${version}.apk` : 'VERGR.apk'}
+            sub={subLabel || undefined}
+          >
+            Download the APK
+          </DownloadButton>
+
+          <ProvenancePanel
+            version={version}
+            size={size}
+            published={manifest?.apkPublishedAt}
+            sha256={manifest?.apkSha256}
+            verifyLabel="VERGR is not on the Play Store, so nothing else is vouching for this file. We publish the checksum for every build. Any file manager or checksum app on Android can show you the SHA-256 of what you downloaded, and it should match this exactly."
+          />
+
+          <div style={{ marginTop: 24 }}>
+            <StepRow
+              n="1"
+              title="Tap the download, then open it"
+              body="Android saves the APK. Open it from your notification shade or your Downloads folder."
+            />
+            <StepRow
+              n="2"
+              tone="warn"
+              title="Allow installs from your browser"
+              body="Android asks permission the first time an app installs from somewhere other than the Play Store. That prompt is about where the file came from, not about what is in it. Allow it for your browser and continue."
+            />
+            <StepRow
+              n="3"
+              tone="warn"
+              title="Play Protect may show a notice"
+              body="Play Protect flags apps it has not seen distributed through the Play Store. Choose to install anyway. Check the checksum above first if you would rather be certain."
+            />
+            <StepRow
+              n="4"
+              title="Sign in once"
+              body="Your account, wallet and notifications carry across from web and desktop."
+            />
+          </div>
+
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 14 }}>
+            <button
+              type="button"
+              onClick={() => setShowAndroidModal(true)}
+              style={{
+                background: 'none', border: `1px solid ${C.borderSoft}`,
+                borderRadius: 10, padding: '11px 16px', cursor: 'pointer',
+                color: C.text2, fontWeight: 700, fontSize: 13,
+                display: 'inline-flex', alignItems: 'center', gap: 7,
+              }}
+            >
+              <Icon name="help" size={16} /> Full walkthrough, including the Play Protect notice
+            </button>
+            {deferredPrompt && !isStandalone && (
+              <button
+                type="button"
+                onClick={async () => {
+                  try { await deferredPrompt.prompt(); await deferredPrompt.userChoice; } catch { /* dismissed */ }
+                }}
+                style={{
+                  background: 'none', border: `1px solid ${C.violet}55`,
+                  borderRadius: 10, padding: '11px 16px', cursor: 'pointer',
+                  color: C.text, fontWeight: 700, fontSize: 13,
+                  display: 'inline-flex', alignItems: 'center', gap: 7,
+                }}
+              >
+                <Icon name="install_mobile" size={16} /> Or install from the browser instead
+              </button>
+            )}
+          </div>
+        </div>
+      </section>
+
+      <Section bordered>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+          <span style={{ color: C.violet }}><Icon name="phone_iphone" size={24} /></span>
+          <H2>iPhone and iPad</H2>
+        </div>
+        <P dim max={720}>
+          There is nothing to download on iOS. Open vergr.app in Safari and add it
+          to your home screen: you get a full-screen app icon, push notifications
+          and the picture-in-picture viewer.
+        </P>
+        <button
+          type="button"
+          onClick={() => setShowIosModal(true)}
+          style={{
+            marginTop: 10, background: 'none', border: `1px solid ${C.violet}55`,
+            borderRadius: 10, padding: '11px 18px', cursor: 'pointer',
+            color: C.text, fontWeight: 700, fontSize: 14,
+            display: 'inline-flex', alignItems: 'center', gap: 8,
+          }}
+        >
+          <Icon name="ios_share" size={18} /> Show me the steps
+        </button>
+      </Section>
+
+      <Section>
+        <H2>Prefer a desktop?</H2>
+        <P dim max={720}>The Windows installer, with its own checksum and install notes, is on the desktop page.</P>
+        <Link
+          to="/platform/download/desktop"
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 8, marginTop: 8,
+            color: C.violet, fontWeight: 700, textDecoration: 'none', fontSize: 15,
+          }}
+        >
+          Get the desktop app <Icon name="arrow_forward" size={18} />
+        </Link>
+      </Section>
+
+      {showIosModal && <IosInstallModal onClose={() => setShowIosModal(false)} />}
+      {showAndroidModal && <AndroidInstallModal onClose={() => setShowAndroidModal(false)} />}
+    </MarketingShell>
+  );
+}
+
+
 
 // ═════════════════════════════════════════════════════════════════════
 // Content primitives used by Phase 2 info pages
@@ -2487,7 +2931,7 @@ export function HelpScreen() {
 
   useSeo({
     title: 'Help Center — guides, how-tos, and FAQ | VERGR',
-    description: 'Search the VERGR help center. How to go live, earn, withdraw, join squads, and more. Plain answers to how VERGR works.',
+    description: 'Search the VERGR help center. How to go live, earn, get paid, join squads, and more. Plain answers to how VERGR works.',
     canonical: 'https://vergr.app/platform/help',
   });
 
@@ -2500,7 +2944,7 @@ export function HelpScreen() {
       ]} />
       <PageHero
         title="Help Center"
-        subtitle="Search for an answer, or browse by topic. Everything you need to play, stream, earn, and cash out on VERGR."
+        subtitle="Search for an answer, or browse by topic. Everything you need to play, stream, earn, and get paid on VERGR."
         accent="cyan"
       />
 
@@ -3263,8 +3707,9 @@ export function ContactScreen() {
           <div>
             <div className="vg-mono" style={{ fontSize: 11, color: C.text3, textTransform: 'uppercase', letterSpacing: '0.14em', marginBottom: 4 }}>Operating company</div>
             <div className="vg-syne" style={{ fontSize: 15, fontWeight: 700, color: C.text }}>{OPERATOR.legalName}</div>
-            <div style={{ fontSize: 13, color: C.text2 }}>Trading as VERGR — a competitive gaming social platform</div>
+            <div style={{ fontSize: 13, color: C.text2 }}>Owner and operator of Vergr, a creator social platform</div>
             <div style={{ fontSize: 13, color: C.text2, marginTop: 4 }}>Formed in the {OPERATOR.formationState}</div>
+            <div style={{ fontSize: 13, color: C.text2, marginTop: 2 }}>Registration number {OPERATOR.registrationNumber}</div>
           </div>
           <div>
             <div className="vg-mono" style={{ fontSize: 11, color: C.text3, textTransform: 'uppercase', letterSpacing: '0.14em', marginBottom: 4 }}>Registered address</div>
@@ -3371,7 +3816,7 @@ export function DeleteAccountScreen() {
           <Tile icon="groups" accent={C.cyan} title="Social connections"
             body="Follows, followers, squad memberships, and blocked-user lists." />
           <Tile icon="wallet" accent={C.gold} title="Wallet balances"
-            body="Any remaining coin and gem balances are forfeited on deletion. Withdraw first if you hold a balance." />
+            body="Any remaining coin balance is forfeited on deletion. Coins have no cash value and cannot be refunded or transferred, so spend them first." />
         </Grid>
       </Section>
 
@@ -3396,8 +3841,8 @@ export function DeleteAccountScreen() {
       <Section bordered>
         <H2>Before you delete</H2>
         <Grid cols={3} min={260}>
-          <Tile icon="account_balance_wallet" accent={C.gold} title="Withdraw your balance"
-            body="Coin and gem balances are forfeited. Convert and withdraw before deleting." />
+          <Tile icon="account_balance_wallet" accent={C.gold} title="Spend your coins first"
+            body="Coins are forfeited when you delete. They have no cash value and cannot be refunded or transferred, so spend them before you go." />
           <Tile icon="event_busy" accent={C.ember} title="End active memberships"
             body="Deleting cancels memberships your fans hold with you, with no refund for the current period." />
           <Tile icon="autorenew" accent={C.cyan} title="Cancel subscriptions"
@@ -3438,7 +3883,7 @@ export function ForumsScreen() {
         <Grid cols={4} min={200}>
           <Tile icon="sports_esports" accent={C.cyan}   title="Game help"      body="Strategy, builds, rotations, agent picks." />
           <Tile icon="videocam"       accent={C.gold}   title="Streaming"      body="Encoder settings, OBS setups, co-streaming, and growing an audience." />
-          <Tile icon="payments"       accent={C.violet} title="Wallet & coins" body="How conversion works, withdrawals, address questions, refund flow." />
+          <Tile icon="payments"       accent={C.violet} title="Wallet & coins" body="How coins work, buying and spending, refunds, and creator revenue share." />
           <Tile icon="groups"         accent={C.pink}   title="Squads & creators" body="Building an audience, squad operations, monetisation tactics." />
         </Grid>
       </Section>
@@ -3494,7 +3939,7 @@ export function PartnerProgramScreen() {
         <div>
           <Bullet icon="verified"     color={C.cyan}   title="Verified badge"        body="A visible check on your profile that audiences trust." />
           <Bullet icon="rocket_launch" color={C.gold}   title="Custom Boost terms"   body="Larger reach amplification on Boosted streams + better surfacing in discovery." />
-          <Bullet icon="payments"     color={C.violet} title="Priority payouts"      body="Faster review window on Gem withdrawals and dedicated support contact." />
+          <Bullet icon="payments"     color={C.violet} title="Priority payouts"      body="Faster payout review window and a dedicated support contact." />
           <Bullet icon="forum"        color={C.pink}   title="Direct line"           body="A private Discord channel with VERGR for product feedback, early access, and roadmap input." />
         </div>
       </Section>
@@ -3521,13 +3966,13 @@ export function AboutScreen() {
     <MarketingShell>
       <PageHero
         title="About VERGR"
-        subtitle="Where gamers converge to play, compete, and grow — on a platform that shares the economy with the people who build it."
+        subtitle="Where creators converge to share, compete, and grow, on a platform that gives the economy back to the people who build it."
         centered
       />
       <Section>
         <H2>Why we built VERGR</H2>
         <P>
-          You've probably noticed it: most gaming social platforms either gate everything behind ads,
+          You've probably noticed it: most social platforms either gate everything behind ads,
           sell your data, or split creators into revenue tiers so small that almost nobody outside the top 1%
           earns enough for it to mean anything. We built VERGR to do the opposite.
         </P>
@@ -3535,7 +3980,7 @@ export function AboutScreen() {
           On VERGR, players, creators, and squads share the same wallet and the same upside. The tips you
           send, the memberships you subscribe to, the paid streams you unlock, and the boosts you spend on
           your stream all run through one currency — VC Coins — and what a creator earns from it converts
-          back out to a real payout. The platform takes a flat 10% on tips and a tier-based commission on
+          back out to a real payout. You keep between 50% and 80% of the revenue your content generates, and that is the only deduction on
           conversions, and that's it. No ads, no sponsored slots, no "Gifts" category siphoning money to the house.
         </P>
       </Section>
@@ -3547,7 +3992,7 @@ export function AboutScreen() {
           <Tile icon="groups"                accent={C.cyan}   title="Squads matter as much as solo"
             body="Most great gaming moments happen with a crew. Squads are first-class on VERGR — shared streams, shared hangouts, a shared wallet." />
           <Tile icon="payments"              accent={C.violet} title="Creators keep more"
-            body="Tip fee is a flat 10%, the same for free and Pro alike. The only thing that changes with subscription is what you can produce — never what you keep." />
+            body="Your revenue share is set by what you have earned, not by what you pay us. A subscription changes what you can produce, never what you keep." />
           <Tile icon="rocket_launch"         accent={C.ember}  title="Reach is investment, not paywall"
             body="Stream Boosts amplify your reach — and refund themselves from the first tips you earn during the boosted stream. The platform invests in you, not against you." />
         </Grid>
@@ -3557,10 +4002,10 @@ export function AboutScreen() {
         <Grid cols={3} min={260}>
           <Tile icon="bolt"             accent={C.cyan}   title="No gambling, ever"
             body="No betting, no wagering, no prediction markets, no casino mechanics, no prize competitions. Coins buy support for creators — there is nothing to stake and nothing to win." />
-          <Tile icon="account_balance"  accent={C.violet} title="Flat 10% tip fee"
-            body="Same on free, same on Pro. We never sell a sliding scale on the thing creators do most. Conversion-side commission is your tier-based margin lever." />
-          <Tile icon="verified_user"    accent={C.gold}   title="Withdraw to your wallet"
-            body="Eligible gem earnings withdraw to your crypto wallet. 1,000-gem minimum, 7-day hold for fraud review, then the payout is sent." />
+          <Tile icon="account_balance"  accent={C.violet} title="One rate, nothing hidden"
+            body="Your share is the only deduction we make. There is no separate tip fee, conversion fee or payout fee stacked on top of it." />
+          <Tile icon="verified_user"    accent={C.gold}   title="Paid on a schedule"
+            body="Creators are paid the revenue share they are owed automatically, once the balance reaches $100. No request, no withdrawal, no crypto address." />
         </Grid>
       </Section>
       <Section bordered>
@@ -3685,9 +4130,9 @@ export function BecomeStreamerScreen() {
       <Section bordered>
         <H2>Earn from your stream</H2>
         <Grid cols={4} min={220}>
-          <Tile icon="payments"      accent={C.gold}   title="Tips"           body="Real-time during the stream. Senders pay N coins → 10% platform fee → you receive floor(N × 0.90) coins, instantly." />
+          <Tile icon="payments"      accent={C.gold}   title="Tips"           body="Real-time during the stream. A supporter sends N coins and your share of it lands in your earnings instantly, at your current rate." />
           <Tile icon="card_membership" accent={C.violet} title="Memberships"    body="Recurring monthly subscriptions from your top fans. Tier-based perks you set yourself — emotes, badge, member chat." />
-          <Tile icon="lock"          accent={C.ember}  title="Paid streams" body="Set a price for a broadcast. Viewers buy a one-off pass, or their membership covers it. You keep 90%." />
+          <Tile icon="lock"          accent={C.ember}  title="Paid streams" body="Set a price for a broadcast. Viewers buy a one-off pass, or their membership covers it. You keep your revenue share of every pass." />
           <Tile icon="rocket_launch" accent={C.cyan}   title="Boost amplification" body="Free users boost to unlock; paid users boost to amplify. Real algorithmic reach, refundable from tips." />
         </Grid>
       </Section>
@@ -3717,41 +4162,41 @@ export function BecomeStreamerScreen() {
 export function MonetizationScreen() {
   useSeo({
     title: 'Make Money Gaming — VERGR Creator Monetisation',
-    description: 'Five ways to earn on VERGR: tips, creator memberships, paid stream access, Stream Boost amplification, and squad treasury shares. Flat 10% fee on tips and creator payments. Your conversion commission drops 30% as you climb the rank ladder.',
+    description: 'Five ways to earn on VERGR: tips, creator memberships, paid stream access, Stream Boost amplification, and squad treasury shares. You keep 50% to 80% of the revenue you generate, rising as you earn, with no other fees.',
     canonical: 'https://vergr.app/platform/monetization',
   });
   // Real commission per rank — derived from commissionForVP() in src/utils/vpSystem.js
   // (the same threshold table the server enforces). It steps down with lifetime VP
   // and hits its 15% floor around 100,000 VP, so every rank from Elite up sits at 15%.
   const ranks = [
-    ['Rookie',     'Lvl 1–10',  '20–30%', C.text2,  '/badges/rookie1-3.webp'],
-    ['Contender',  'Lvl 11–20', '18–20%', '#CD7F32', '/badges/contender11-13.webp'],
-    ['Rival',      'Lvl 21–30', '18%',    '#C0C0C0', '/badges/rival21-23.webp'],
-    ['Challenger', 'Lvl 31–40', '15–18%', C.gold,    '/badges/challenger31-33.webp'],
-    ['Elite',      'Lvl 41–50', '15%',    C.cyan,    '/badges/elite41-43.webp'],
-    ['Champion',   'Lvl 51–60', '15%',    C.violet,  '/badges/champion51-53.webp'],
-    ['Veteran',    'Lvl 61–70', '15%',    '#2A2A2A', '/badges/veteran61-63.webp'],
-    ['Legend',     'Lvl 71–80', '15%',    '#E0115F', '/badges/legend71-73.webp'],
-    ['Mythic',     'Lvl 81–90', '15%',    C.pink,    '/badges/mythic81-83.webp'],
-    ['Ascendant',  'Lvl 91–99', '15%',    '#FFB347', '/badges/ascendant91-93.webp'],
-    ['Immortal',   'Lvl 100',   '15%',    '#fff',    '/badges/ascendant97-100.webp'],
+    ['Rookie',     'Lvl 1–10',  'No ring',   C.text2,  '/badges/rookie1-3.webp'],
+    ['Contender',  'Lvl 11–20', 'Bronze',    '#CD7F32', '/badges/contender11-13.webp'],
+    ['Rival',      'Lvl 21–30', 'Silver',    '#C0C0C0', '/badges/rival21-23.webp'],
+    ['Challenger', 'Lvl 31–40', 'Gold',      C.gold,    '/badges/challenger31-33.webp'],
+    ['Elite',      'Lvl 41–50', 'Platinum',  C.violet,    '/badges/elite41-43.webp'],
+    ['Champion',   'Lvl 51–60', 'Diamond',   C.violet,  '/badges/champion51-53.webp'],
+    ['Veteran',    'Lvl 61–70', 'Onyx',      '#2A2A2A', '/badges/veteran61-63.webp'],
+    ['Legend',     'Lvl 71–80', 'Ruby',      '#E0115F', '/badges/legend71-73.webp'],
+    ['Mythic',     'Lvl 81–90', 'Mythic',    C.pink,    '/badges/mythic81-83.webp'],
+    ['Ascendant',  'Lvl 91–99', 'Ascendant', '#FFB347', '/badges/ascendant91-93.webp'],
+    ['Immortal',   'Lvl 100',   'Immortal',  '#fff',    '/badges/ascendant97-100.webp'],
   ];
   return (
     <MarketingShell>
       <PageHero
         title="Monetization"
-        subtitle="Every way to earn on VERGR. The platform takes a flat 10% on tips. Your coin-to-gem conversion commission steps down as your VP grows, from 30% at Rookie to a 15% floor at the top."
+        subtitle="Every way to earn on VERGR. You keep 50% to 80% of the revenue your content generates, rising as you earn. That share is the only deduction — there is no separate tip fee, conversion fee or payout fee."
         accent="gold"
       />
       <Section>
         <H2>Five ways to earn</H2>
         <Grid cols={3} min={260}>
           <Tile icon="payments"        accent={C.gold}   title="Tips"
-            body="When fans tip you N coins, 10% goes to the platform and you keep the rest — instantly, in your wallet. Same flat fee on free, Lite, and Pro." />
+            body="When fans tip you, your share lands in your earnings instantly at your current rate. The same rate on free, Lite, and Pro — what you keep depends on what you have earned, not what you pay us." />
           <Tile icon="card_membership" accent={C.violet} title="Memberships"
             body="Set your own tier prices and perks. Top fans subscribe monthly with VC Coins, and you keep a recurring share every renewal." />
           <Tile icon="lock"           accent={C.ember}  title="Paid stream access"
-            body="Set a price for a broadcast. Viewers buy a one-off pass for that stream, or their membership covers it. Flat 10% platform fee; you keep 90%." />
+            body="Set a price for a broadcast. Viewers buy a one-off pass for that stream, or their membership covers it. You keep your revenue share of every pass sold." />
           <Tile icon="rocket_launch"  accent={C.cyan}   title="Stream Boost amplification"
             body="Free streamers spend 50 coins to unlock public streaming. The first 50 coins of tips you earn during that stream refund the boost — so a single decent tip makes it free." />
           <Tile icon="groups"         accent={C.pink}   title="Squad treasury share"
@@ -3768,15 +4213,15 @@ export function MonetizationScreen() {
           display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 40, alignItems: 'center',
         }} className="vg-grid-2">
           <div>
-            <H2>Coins → Gems → Cash</H2>
+            <H2>How you get paid</H2>
             <P>
-              The coins you earn are spendable inside VERGR. When you want to cash out, convert them to gems at
-              your rank's commission rate, then withdraw the gems to your crypto wallet.
+              Coins you buy are spendable inside VERGR. Coins that fans spend on you are revenue VERGR earns, and
+              you are paid your share of it automatically on your payout schedule. You never request a payout.
             </P>
             <div style={{ marginTop: 8 }}>
               <Bullet icon="paid"                   color={C.gold}   title="Earn coins"      body="Tips, memberships, paid stream access, and boosted-stream rewards all credit your wallet in VC Coins." />
-              <Bullet icon="swap_horiz"             color={C.violet} title="Convert to gems" body="Convert when you're ready to cash out. Your VP rank decides the commission — see the table below." />
-              <Bullet icon="account_balance_wallet" color={C.cyan}   title="Withdraw"        body="1,000-gem minimum, 7-day hold for fraud review, then the payout lands in your wallet. Payment-processor and network fees are shown at confirmation." />
+              <Bullet icon="trending_up"            color={C.violet} title="Your share grows" body="You start at 50% and climb to 80% as your lifetime earnings grow. Your rate never goes down." />
+              <Bullet icon="account_balance_wallet" color={C.violet} title="Get paid"        body="Paid monthly once you reach $100, moving to twice monthly and then weekly as your account matures. Anything under the minimum rolls over, never lost." />
             </div>
           </div>
           <div style={{ display: 'grid', placeItems: 'center', position: 'relative', minHeight: 320 }}>
@@ -3795,10 +4240,10 @@ export function MonetizationScreen() {
 
       {/* Real conversion table with VP badges */}
       <Section bordered>
-        <H2>Conversion commission by rank</H2>
+        <H2>Rank rings by level</H2>
         <P max={680}>
-          You earn the same gross either way — the rank just decides how much you keep. The lowest commission
-          is 10% (at Immortal, level 100). Most active creators land between Champion and Legend.
+          Rank is status, not money. Your revenue share is set by your lifetime earnings, never by your rank
+          or your plan. What rank buys you is the ring on your avatar, badges, and standing.
         </P>
         <div style={{
           marginTop: 16, borderRadius: 16, overflow: 'hidden',
@@ -3817,7 +4262,7 @@ export function MonetizationScreen() {
             <div>Badge</div>
             <div>Rank</div>
             <div>Levels</div>
-            <div>Commission</div>
+            <div>Ring</div>
           </div>
           {ranks.map(([rank, lvl, comm, color, badge], i) => (
             <div key={rank} style={{
@@ -3911,14 +4356,14 @@ export function StudioToolsScreen() {
 export function LearnLiveScreen() {
   useSeo({
     title: 'Stream Gameplay & Earn — Live Streaming on VERGR',
-    description: 'Go live in 30 seconds from your browser, no install. Earn real tips while you play, sell memberships and paid access, and stream at 720p60 (Lite) or 1080p60 (Pro). The Twitch alternative built for gamer monetisation.',
+    description: 'Go live in 30 seconds from your browser, no install. Earn real tips while you stream, sell memberships and paid access, and stream at 720p60 (Lite) or 1080p60 (Pro). The Twitch alternative built for creator monetisation.',
     canonical: 'https://vergr.app/platform/learn/live',
   });
   return (
     <MarketingShell>
       <PageHero
-        title="Stream Your Gameplay. Earn From Day One."
-        subtitle="Go live straight from your browser — no install, no studio. Get paid in real tips while you play. Build a following on a gaming platform built by gamers."
+        title="Go Live. Earn From Day One."
+        subtitle="Go live straight from your browser, no install and no studio. Get paid in real tips while you stream. Build a following on a platform built by creators."
         accent="ember"
         centered
       />
@@ -3928,7 +4373,7 @@ export function LearnLiveScreen() {
         <Grid cols={3} min={260}>
           <Tile icon="payments" accent={C.gold}
             title="Tips in coins, instantly"
-            body="Viewers send tips during your stream — your name and amount pop in your overlay live. 10% platform fee, you keep the rest. Convert to cash whenever you're ready." />
+            body="Viewers send tips during your stream — your name and amount pop in your overlay live. Your revenue share lands in your earnings instantly, and you are paid on your schedule." />
           <Tile icon="card_membership" accent={C.violet}
             title="Paid memberships"
             body="Your top fans subscribe monthly for perks you set — exclusive emotes, sub-only chat, private squad channels. Recurring revenue every month." />
@@ -3963,10 +4408,10 @@ export function LearnLiveScreen() {
             title="Free — 480p · 30 fps"
             body="3 Mbps source bitrate. Stream from your browser, share screen + webcam, watch your audience build. Upgrade to Lite for 720p60 once you outgrow it." />
           <Tile icon="hd" accent={C.violet}
-            title="Lite (€4.99/mo) — 720p · 60 fps"
+            title="Lite ($4.99/mo) — 720p · 60 fps"
             body="4.5 Mbps. 60 fps makes fast-action games look smooth. OBS supported, scheduled streams, ad-free, custom banner. The proper streamer tier." />
           <Tile icon="4k" accent={C.gold}
-            title="Pro (€9.99/mo) — 1080p · 60 fps"
+            title="Pro ($9.99/mo) — 1080p · 60 fps"
             body="6.5 Mbps. Highest quality on the platform, plus IP-masked private streaming via Cloudflare TURN if you don't want your origin exposed." />
         </Grid>
       </Section>
@@ -4002,7 +4447,7 @@ export function LearnLiveScreen() {
         <H2>Paid streams, when you want them</H2>
         <P max={680}>
           Any broadcast can be free or paid. Set a price and viewers buy a one-off pass for that stream, or
-          their creator membership covers it automatically. The platform takes a flat 10%; you keep the rest.
+          their creator membership covers it automatically. You keep your revenue share of every sale.
           The same content rules apply either way — paying for access does not create a private room with
           different rules.
         </P>
@@ -4329,15 +4774,15 @@ export function LearnClipsScreen() {
 
 export function LearnCoinsScreen() {
   useSeo({
-    title: 'VC Coins — Gaming Currency You Can Cash Out | VERGR',
-    description: 'Buy coins from €0.99 to €224.99 with crypto or card. Tip streamers, buy stream access and memberships, boost streams. Earn coins from your audience and convert to gems for crypto cash-out.',
+    title: 'VC Coins — How the VERGR Coin Economy Works | VERGR',
+    description: 'Buy coins from $0.99 to $249.99 with card or crypto. Tip streamers, buy stream access and memberships, boost streams. Creators are paid a share of the revenue their content earns, on VERGR\'s schedule.',
     canonical: 'https://vergr.app/platform/learn/coins',
   });
   return (
     <MarketingShell>
       <PageHero
-        title="VC Coins — The Currency Behind Gaming Earnings"
-        subtitle="Buy coins to tip, to unlock a paid stream, and to back the creators you follow. Earn coins from your audience and your community. Convert to gems and cash out to crypto when you're ready to move money out."
+        title="VC Coins — The Currency Behind VERGR"
+        subtitle="Buy coins to tip, to unlock a paid stream, and to back the creators you follow. Coins are spendable inside VERGR. Creators are paid a share of the revenue their content earns, on VERGR's schedule."
         accent="gold"
         centered
       />
@@ -4347,7 +4792,7 @@ export function LearnCoinsScreen() {
         <Grid cols={4} min={220}>
           <Tile icon="shopping_cart" accent={C.gold}
             title="Buy coins"
-            body="Eight pack sizes from €0.99 to €224.99. Bigger packs scale to a lower per-coin price." />
+            body="Eight pack sizes from $0.99 to $249.99. Bigger packs scale to a lower per-coin price." />
           <Tile icon="payments" accent={C.violet}
             title="Spend on platform"
             body="Tip your favourite streamers, subscribe to memberships, unlock a paid stream, boost your own stream's reach, unlock customisation." />
@@ -4355,15 +4800,15 @@ export function LearnCoinsScreen() {
             title="Earn from activity"
             body="Tips from viewers, paid stream access, paid memberships, squad treasury distributions — every income source on VERGR pays in coins." />
           <Tile icon="account_balance_wallet" accent={C.ember}
-            title="Cash out"
-            body="Convert coins to gems at your rank's commission, request a payout in cryptocurrency. Real money out, not just spend-only credit." />
+            title="Creators get paid"
+            body="Coins spent on a creator are revenue VERGR earns, and VERGR pays that creator a share of it automatically on a schedule." />
         </Grid>
       </Section>
 
       <Section bordered>
         <H2>Pack catalog</H2>
         <P max={680}>
-          Bigger packs scale to a lower per-coin price. The economy floor is <strong>€0.0090 per coin</strong>, and full-price packs
+          Bigger packs scale to a lower per-coin price. The economy floor is <strong>$0.0116 per coin</strong>, and full-price packs
           never drop below it. Coin prices are fixed and transparent, so everyone pays the same. The way to get more value
           is to buy a larger pack for a better per-coin rate, with bonus VP on the top tiers.
         </P>
@@ -4388,33 +4833,33 @@ export function LearnCoinsScreen() {
       </Section>
 
       <Section bordered>
-        <H2>How coins become real money</H2>
+        <H2>How creators get paid</H2>
         <P max={720}>
-          When you earn coins from tips, memberships, or paid stream access, you can convert them to <strong>Gems</strong>{' '}
-          at a commission rate tied to your VP rank. Gems are the only currency that withdraws to your crypto
-          wallet — minimum 1,000 gems (~€10), with a 7-day fraud-review hold before processing. The payment
-          processor and network gas fees are deducted from your withdrawal at confirmation; they're not VERGR's
-          revenue, just the cost of moving the crypto.
+          Coins spent on a creator, through tips, memberships or paid stream access, are revenue VERGR
+          earns. VERGR then owes that creator a share of it. The share starts at 50% and rises to 80% as
+          their lifetime earnings grow, and it is the only deduction: there is no separate tip fee,
+          conversion fee or payout fee stacked on top.
         </P>
         <P max={720}>
-          The commission scale rewards engagement: Rookie (Level 1) starts at 30%, dropping linearly with every
-          level you gain. By Immortal (Level 100) you're keeping 90% of every conversion — a 20-percentage-point
-          margin improvement just from playing the platform actively.
+          Creators do not request payouts, and nothing on VERGR is withdrawn, converted or transferred by
+          a user. VERGR works out what it owes and pays it automatically on a schedule, monthly to begin
+          with, once the balance reaches $100. Coins themselves are a licence to use VERGR features: they
+          have no cash value and cannot be redeemed for money.
         </P>
         <Link to="/platform/monetization" style={{ color: C.cyan, fontSize: 14, fontWeight: 700, textDecoration: 'none' }}>
-          See the full rank-by-rank commission table →
+          See how the revenue share works →
         </Link>
       </Section>
 
       <Section bordered>
         <H2>The economy in one paragraph</H2>
         <P max={720}>
-          Coins flow IN through purchases and out through creator earnings. VERGR earns from a flat 10% platform
-          fee on tips and creator payments, and a tier-based commission on coin-to-gem conversion (your rank lever).
-          That's it. No ads, no hidden fees, no "sponsored slot" carved out of your feed. Payment processors charge
-          their own fees on inbound purchases and outbound withdrawals — these pass through to/from you directly
-          and aren't VERGR revenue. Subscriptions (€4.99 Lite / €9.99 Pro) buy you platform features — they never
-          buy you a margin advantage on the parts of the economy that matter.
+          Coins flow in through purchases and out through creator revenue share. VERGR keeps the
+          difference between what a coin sells for and the share it owes the creator whose content earned
+          it. That is it. No ads, no hidden fees, no "sponsored slot" carved out of your feed. Payment
+          processors charge their own fees on inbound purchases, and those pass through to you directly
+          rather than being VERGR revenue. Subscriptions ($4.99 Lite / $9.99 Pro) buy you platform
+          features, and they never buy you a better share.
         </P>
       </Section>
 
@@ -4480,7 +4925,9 @@ function LegalSection({ section }) {
 }
 
 export function LegalScreen({ type }) {
-  const page = LEGAL_DOCUMENTS[type] || LEGAL_DOCUMENTS.privacy;
+  // Terms/Privacy/AUP/etc plus the eight compliance policies, which live in
+  // their own module. One renderer serves both: same shape, same chrome.
+  const page = LEGAL_DOCUMENTS[type] || COMPLIANCE_DOCUMENTS[type] || LEGAL_DOCUMENTS.privacy;
   const introBlocks = Array.isArray(page.intro) ? page.intro : [page.intro];
   return (
     <MarketingShell>
@@ -4554,27 +5001,27 @@ export const CURRENT_LEGAL_VERSION = LEGAL_FILE_VERSION;
 // For Creators — the Twitch-acquisition landing page
 // (14_GROWTH_MIGRATION §4.1). The commission comparison uses Twitch's
 // PUBLISHED terms, verified + founder-approved 2026-07-15; the footnote
-// dates them. Payout path stated honestly (coins → gems → USDC incl. the
-// rank-based conversion commission) — an inflated claim here would cost
+// dates them. Payout path stated honestly (VERGR pays the revenue share it
+// owes, on its own schedule) — an inflated claim here would cost. UPDATED
 // more trust than it wins.
 // ============================================================
 export function CreatorsLandingScreen() {
   useSeo({
-    title: 'For Creators — Keep 90% From Your First Fan | VERGR',
-    description: 'VERGR takes a flat 10% on tips and memberships — you keep 90% from day one, no points program, no tier ladder. Mirror your stream to Twitch while you grow here. Trying it costs nothing.',
+    title: 'For Creators — Keep Up To 80% Of What You Earn | VERGR',
+    description: 'Keep 50% of what you generate from day one, rising to 80% as you earn — one rate, no separate tip, conversion or payout fees. Mirror your stream to Twitch while you grow here. Trying it costs nothing.',
     canonical: 'https://vergr.app/platform/creators',
   });
   const rows = [
-    ['Memberships / subs', 'You keep 90%, from your first fan', 'Default 50/50. 60/40 needs 100 Plus Points, 70/30 needs 300 — each held 3 straight months; gifted + Prime subs don\'t count'],
-    ['Tips / cheers', 'Flat 10% fee — tip 100 coins, creator gets 90', 'Bits: your viewer pays ~$1.40 per 100, you receive $1.00'],
-    ['Getting paid', '1,000-gem minimum, withdraw as USDC', '$100 minimum payout'],
-    ['Starting out', 'Same 90% on day one as at 1M followers', 'Best rates are gated behind sustained sub counts'],
+    ['Memberships / subs', 'You keep 50% from your first fan, up to 80% as you earn', 'Default 50/50. 60/40 needs 100 Plus Points, 70/30 needs 300 — each held 3 straight months; gifted + Prime subs don\'t count'],
+    ['Tips / cheers', 'You keep 50% to start, rising to 80% as you earn', 'Bits: your viewer pays ~$1.40 per 100, you receive $1.00'],
+    ['Getting paid', '$100 minimum, monthly at first then twice monthly and weekly', '$100 minimum payout'],
+    ['Starting out', 'Start at 50%, the rate Twitch caps most creators at, then climb', 'Best rates are gated behind sustained sub counts'],
   ];
   return (
     <MarketingShell>
       <PageHero
-        title="Keep 90% from your first fan"
-        subtitle="VERGR takes a flat 10% on tips and memberships. No points program, no 3-month holds, no tier ladder — the rate every creator gets is the rate you get on day one."
+        title="Keep up to 80% of what you earn"
+        subtitle="You keep 50% of the revenue you generate on day one, and up to 80% as you earn. One rate, applied once — no separate tip fee, conversion fee or payout fee stacked behind it."
         accent="violet"
       />
 
@@ -4617,7 +5064,7 @@ export function CreatorsLandingScreen() {
         <P max={720}>
           The Twitch mirror forwards your VERGR stream to your Twitch channel in real time. You go live here,
           your Twitch audience sees the same stream on the same channel they always watch — nothing changes for
-          them, while your VERGR channel and its 90% economics grow underneath.
+          them, while your VERGR channel and its 50-to-80% economics grow underneath.
         </P>
         <Grid cols={3} min={240}>
           <Tile icon="cast" accent={C.violet} title="Stream to both"
@@ -4632,15 +5079,14 @@ export function CreatorsLandingScreen() {
       <Section bordered>
         <H2>How you actually get paid</H2>
         <P max={720}>
-          No asterisks: fans tip and subscribe with VC Coins, and 90% lands in your wallet instantly. Coins are
-          spendable on VERGR as-is. To cash out, you convert coins to gems — that conversion carries a commission
-          that starts at 30% and falls to a 15% floor as your rank grows — then withdraw gems as USDC
-          (1,000-gem minimum). Most creators spend some and cash out some; the split is yours.
+          Fans tip and subscribe with VC Coins. That is revenue VERGR earns, and VERGR owes you a share of
+          it. Your share starts at 50% and climbs to 80% as your lifetime earnings grow, and it never goes
+          down. It is the only deduction: no separate tip fee, no conversion fee, no payout fee.
         </P>
         <div style={{ marginTop: 8 }}>
-          <Bullet icon="paid" color={C.gold} title="Earn" body="Tips and memberships credit your wallet in coins, 90% of every payment." />
-          <Bullet icon="swap_horiz" color={C.violet} title="Convert" body="Coins → gems at your rank's commission (30% at the start, 15% floor as you climb)." />
-          <Bullet icon="account_balance_wallet" color={C.pink} title="Withdraw" body="Gems → USDC to your wallet. 1,000-gem minimum, fraud-review hold, network fees shown at confirmation." />
+          <Bullet icon="paid" color={C.gold} title="Earn" body="Tips, memberships and paid stream access all credit your account the moment they land." />
+          <Bullet icon="trending_up" color={C.violet} title="Your share climbs" body="50% to start, rising to 80% as your lifetime earnings grow. Your rate never goes down." />
+          <Bullet icon="account_balance_wallet" color={C.pink} title="Get paid" body="VERGR pays your share automatically on a schedule once you reach $100. No request, no withdrawal, no crypto address." />
         </div>
       </Section>
 

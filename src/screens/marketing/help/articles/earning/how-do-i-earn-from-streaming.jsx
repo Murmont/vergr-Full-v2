@@ -5,7 +5,7 @@
 // Top-level: summary (1-2 sentences, answer-first), updated (YYYY-MM-DD), body [].
 
 export default {
-  summary: "When you go live, viewers tip you in Coins, and you keep 90% of every tip. You can set a tip goal to rally support, clip great moments into posts that earn more, and grow a following that comes back. On the free plan you need 100 followers plus a Stream Boost to go live; Lite and Pro stream from day one.",
+  summary: "When you go live, viewers tip you in Coins, and VERGR pays you a share of every tip. You can set a tip goal to rally support, clip great moments into posts that earn more, and grow a following that comes back. On the free plan you need 100 followers plus a Stream Boost to go live; Lite and Pro stream from day one.",
   updated: "2026-06-06",
   body: [
     {
@@ -15,7 +15,7 @@ export default {
       h2: "Tips are the main earner"
     },
     {
-      p: "While you are live, viewers tip you in Coins. You keep 90% of every tip; the platform takes a flat 10%, the same on every plan. Big tips pop up on screen so you can thank people live, which encourages more support."
+      p: "While you are live, viewers tip you in Coins. VERGR pays you a share of every tip: 50% to start, rising to 80% as your lifetime earnings grow. Big tips pop up on screen so you can thank people live, which encourages more support."
     },
     {
       h2: "Tip goals rally your audience"

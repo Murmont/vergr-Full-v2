@@ -24,7 +24,7 @@ export default {
       h2: "Why VP is a good welcome gift"
     },
     {
-      p: "VP counts toward rank, and rank decides the commission you pay when converting Coins to Gems for cash-out. Starting with 3,000 VP means your friend begins climbing the ladder immediately instead of from zero."
+      p: "VP counts toward rank, and rank decides the share you keep as a creator. Starting with 3,000 VP means your friend begins climbing the ladder immediately instead of from zero."
     },
     {
       note: "The bonus only applies if they sign up through your link. If they created their account first and clicked your link later, the referral cannot be attached afterwards."

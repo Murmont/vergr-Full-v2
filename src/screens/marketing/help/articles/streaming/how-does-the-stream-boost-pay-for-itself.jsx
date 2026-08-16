@@ -16,7 +16,7 @@ export default {
         "You spend 50 coins to boost and go live.",
         "Viewers tip you while you stream.",
         "The first 50 coins of those tips refund the boost.",
-        "Everything you earn beyond that 50 is yours to keep (minus the standard 10% tip fee that applies to all tips)."
+        "Everything you earn beyond that 50 accrues to you at your revenue share rate."
       ]
     },
     {
@@ -38,8 +38,8 @@ export default {
           "Then 20 coins go toward the boost and the rest is not refunded for that session. You are never charged more than the original 50, and the boost still gave you the unlock and the discovery push."
         ],
         [
-          "Does the 10% tip fee come out before or after the refund?",
-          "The 10% flat fee applies to tips as normal. The refund is drawn from the coins you receive. Either way, a stream pulling decent tips comes out ahead."
+          "Is the boost refund taken before or after my revenue share?",
+          "The refund is drawn from the coins the stream earns. Either way, a stream pulling decent tips comes out ahead."
         ]
       ]
     },

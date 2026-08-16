@@ -5,7 +5,7 @@
 // Top-level: summary (1-2 sentences, answer-first), updated (YYYY-MM-DD), body [].
 
 export default {
-  summary: "Yes. You can tip from several places, not just live streams: on a post you like, on a creator's profile, and during a live stream. Wherever you see a tip button, you choose an amount in Coins and send. The creator keeps 90% of every tip, the same flat 10% fee applies everywhere.",
+  summary: "Yes. You can tip from several places, not just live streams: on a post you like, on a creator's profile, and during a live stream. Wherever you see a tip button, you choose an amount in Coins and send. Vergr pays the creator their revenue share of every tip, the same rate everywhere.",
   updated: "2026-06-06",
   body: [
     {
@@ -29,7 +29,7 @@ export default {
       steps: [
         "Tap the tip button on the post, profile, or stream.",
         "Choose an amount in Coins.",
-        "Confirm. The creator receives 90% of the tip; the flat 10% fee is taken at send time."
+        "Confirm. Nothing is taken at send time; the creator accrues their revenue share of the tip."
       ]
     },
     {

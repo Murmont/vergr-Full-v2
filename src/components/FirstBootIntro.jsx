@@ -158,15 +158,15 @@ function ChapterCold({ active }) {
 
 // ─── CHAPTER 2 — Economy ────────────────────────────────────────────────────
 function ChapterEconomy({ active }) {
-  const [gems, setGems] = useState(0);
-  const [payout, setPayout] = useState(0);
+  const [coins, setCoins] = useState(0);
+  
   useEffect(() => {
-    if (!active) { setGems(0); setPayout(0); return; }
+    if (!active) { setCoins(0); return; }
     let raf;
     const start = performance.now();
     const tick = (t) => {
       const dt = Math.min(1, (t - start - 1400) / 1600);
-      if (dt > 0) { setGems(Math.floor(1000 * easeOut(dt))); setPayout(9.50 * easeOut(dt)); }
+      if (dt > 0) { setCoins(Math.floor(1000 * easeOut(dt))); }
       if (dt < 1) raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
@@ -185,9 +185,9 @@ function ChapterEconomy({ active }) {
         {active && [...Array(8)].map((_, i) => {
           const angle = (i / 8) * Math.PI * 2;
           return (
-            <img key={i} src={`${A}/gem.webp`} alt="" draggable="false" style={{
+            <img key={i} src={`${A}/vc-coin.webp`} alt="" draggable="false" style={{
               position: 'absolute', left: '50%', top: '50%', width: 28, height: 28, marginLeft: -14, marginTop: -14,
-              filter: 'drop-shadow(0 0 10px rgba(94,231,255,0.9))',
+              filter: 'drop-shadow(0 0 10px rgba(245,197,66,0.9))',
               animation: `fb-shard-out 1.4s cubic-bezier(.2,.7,.2,1) ${2.2 + i * 0.05}s forwards`,
               '--dx': Math.cos(angle) * 60 + 'px', '--dy': Math.sin(angle) * 60 + 'px', opacity: 0, userSelect: 'none',
             }} />
@@ -209,21 +209,21 @@ function ChapterEconomy({ active }) {
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 10 }}>
-          <img src={`${A}/gem.webp`} alt="" draggable="false" style={{ width: 36, height: 36, filter: 'drop-shadow(0 0 8px rgba(94,231,255,0.7))', userSelect: 'none' }} />
+          <img src={`${A}/vc-coin.webp`} alt="" draggable="false" style={{ width: 36, height: 36, filter: 'drop-shadow(0 0 8px rgba(245,197,66,0.7))', userSelect: 'none' }} />
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-            <span className="mono" style={{ fontSize: 36, fontWeight: 500, color: '#fff', letterSpacing: '-0.02em' }}>{gems.toLocaleString()}</span>
-            <span className="mono" style={{ fontSize: 13, color: 'var(--cyan)' }}>gems</span>
+            <span className="mono" style={{ fontSize: 36, fontWeight: 500, color: '#fff', letterSpacing: '-0.02em' }}>{coins.toLocaleString()}</span>
+            <span className="mono" style={{ fontSize: 13, color: 'var(--cyan)' }}>coins</span>
           </div>
         </div>
         <div style={{ height: 1, background: 'var(--hairline)', margin: '12px 0' }} />
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div className="mono" style={{ fontSize: 10, color: 'var(--ink-faint)', letterSpacing: '0.1em' }}>PAYOUT · USD</div>
-          <span className="mono" style={{ fontSize: 16, color: '#fff', fontWeight: 500 }}>${payout.toFixed(2)}</span>
+          <div className="mono" style={{ fontSize: 10, color: 'var(--ink-faint)', letterSpacing: '0.1em' }}>SPENDABLE ON VERGR</div>
+          <span className="mono" style={{ fontSize: 16, color: '#fff', fontWeight: 500 }}>TIPS &middot; UNLOCKS</span>
         </div>
       </div>
 
       <div style={{ position: 'absolute', left: 0, right: 0, bottom: '18%', display: 'grid', placeItems: 'center' }}>
-        <HeroLine active={active} size="M">Coins in. Gems out.<br/><span className="accent">Real money.</span></HeroLine>
+        <HeroLine active={active} size="M">Coins in.<br/><span className="accent">Creators paid.</span></HeroLine>
       </div>
     </div>
   );

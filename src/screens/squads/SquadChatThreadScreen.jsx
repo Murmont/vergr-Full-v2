@@ -14,8 +14,13 @@ import {
 import { db, auth } from '../../firebase/config';
 import { startVoiceRecording, uploadMediaFile, getYouTubeID } from '../../utils/mediaHelpers';
 import { createSquadVote } from '../../firebase/firestore';
-import { getLockedMessageUploadUrl, sendLockedMessage, putSignedUpload, makeBlurredPreview } from '../../firebase/firestore';
+import { sendLockedMessage, uploadLockedItem, createMediaPack } from '../../firebase/firestore';
+import ContentPacksSheet from '../../components/monetization/ContentPacksSheet';
+
+/** Ceiling on one locked send, mirroring MAX_ITEMS_PER_SEND in the callable. */
+const MAX_LOCKED_ITEMS = 20;
 import LockedMedia from '../../components/monetization/LockedMedia';
+import OneToOneCard from '../../components/monetization/OneToOneCard';
 import PriceSheet from '../../components/monetization/PriceSheet';
 import ReportPrivate from '../../components/safety/ReportPrivate';
 import { getSquadMembers, getUserTournaments } from '../../firebase/firestore';
@@ -47,6 +52,7 @@ import InlineVideoPlayer from '../../components/media/InlineVideoPlayer';
 import usePresenceMap from '../../hooks/usePresenceMap';
 import { presenceVisible } from '../../utils/presence';
 import EventTicketCard from '../../components/tournament/EventTicketCard';
+import EventPickerModal from '../../components/tournament/EventPickerModal';
 import { dissolveElement, preloadThanosDissolve } from '../../utils/thanosDissolve';
 import { MessageContextMenu, ReactionBubbles } from '../../components/MessageContextMenu';
 import ReactorsSheet from '../../components/messages/ReactorsSheet';
@@ -312,8 +318,28 @@ export default function SquadChatThreadScreen() {
   // Locked media. The price must be chosen BEFORE the upload, because the same
   // callable that files the private object key is the one that writes the price:
   // there is no "upload now, decide later" for content on a private prefix.
-  const [lockedFile, setLockedFile] = useState(null);
+  // A locked send may carry a SET ("3 PICS"), bought once.
+  const [lockedFiles, setLockedFiles] = useState([]);
   const [lockedSheet, setLockedSheet] = useState(false);
+  const [packsSheet, setPacksSheet] = useState(false);
+  const lockedInputRef = useRef(null);
+
+  // Object URLs for the sheet's media strip. Built in an effect, never in the
+  // render body: createObjectURL there leaks a URL every pass and the thumbnail
+  // flickers without ever settling.
+  const [lockedThumbs, setLockedThumbs] = useState([]);
+  useEffect(() => {
+    const urls = lockedFiles.map((f) => ({
+      id: `${f.name}:${f.size}:${f.lastModified}`,
+      url: URL.createObjectURL(f),
+      isVideo: (f.type || '').startsWith('video/'),
+    }));
+    setLockedThumbs(urls);
+    return () => urls.forEach((u) => { try { URL.revokeObjectURL(u.url); } catch {} });
+  }, [lockedFiles]);
+  // A 1:1 session started from inside the squad. Same thing as the DM one, with
+  // the squad's members as the guest list instead of the conversation's.
+  const [sessionSheet, setSessionSheet] = useState(false);
   // Squad chat is a closed room and is not scanned, so a member reporting is
   // the only route from here to a moderator.
   const [reportTarget, setReportTarget] = useState(null);
@@ -344,6 +370,11 @@ export default function SquadChatThreadScreen() {
   const [pollOptions, setPollOptions] = useState(['', '']);
   const [showBackgroundModal, setShowBackgroundModal] = useState(false);
   const [upgradeModal, setUpgradeModal] = useState({ open: false, requiredTier: 'lite', message: '' });
+  // Sharing an EVENT (live show, watch party, Q&A, class, community night).
+  // ⚠ The `showTournamentModal` picker below this is DEAD: `openTournamentShare`
+  // has no callers, so squads could not share anything. Tournaments are retired,
+  // so it was not rewired; events use the shared EventPickerModal instead.
+  const [showEventPicker, setShowEventPicker] = useState(false);
   const [showTournamentModal, setShowTournamentModal] = useState(false);
   const [myTournaments, setMyTournaments] = useState([]);
   const [tournamentsLoading, setTournamentsLoading] = useState(false);
@@ -786,41 +817,88 @@ export default function SquadChatThreadScreen() {
    * resource id, so a squad message and a DM message with the same id can never
    * collide in the sender's private key document.
    */
-  const sendLockedToSquad = async ({ priceCoins }) => {
-    const file = lockedFile;
-    if (!file) return;
+  const sendLockedToSquad = async ({ priceCoins, saveAsPack, packTitle }) => {
+    const files = lockedFiles;
+    if (!files.length) return;
     setLockedSheet(false);
-    setLockedFile(null);
+    setLockedFiles([]);
     try {
-      // R2 exact-matches Content-Type, so a ";codecs=" suffix fails the
-      // signature silently. Strip it.
-      const contentType = (file.type || 'image/jpeg').split(';')[0];
-      const isVideo = contentType.startsWith('video/');
+      // Sequential, in pick order, so the first file is the cover the bubble
+      // draws. Parallel uploads of a five-video set on a phone connection is
+      // how you get five timeouts.
+      const items = [];
+      for (const file of files) {
+        items.push(await uploadLockedItem({ chatId: squadId, scope: 'squad', file }));
+      }
 
-      const signed = await getLockedMessageUploadUrl({
-        chatId: squadId, scope: 'squad', contentType, sizeBytes: file.size,
-      });
-      await putSignedUpload(signed.mediaUploadUrl, file, contentType, signed.cacheControl);
-
-      // Destroyed on the sender's own device, before upload. Never blur on the
-      // viewer's side: that is a CSS filter over bytes already downloaded.
-      const previewBlob = await makeBlurredPreview(file).catch(() => null);
-      let previewUrl = '';
-      if (previewBlob) {
-        await putSignedUpload(signed.previewUploadUrl, previewBlob, 'image/jpeg', signed.cacheControl);
-        previewUrl = signed.previewUrl;
+      // Saving for reuse is a side effect, never a precondition: a failed pack
+      // write must not cost the creator the sale.
+      if (saveAsPack && packTitle) {
+        createMediaPack({ title: packTitle, priceCoins, items })
+          .catch(() => alert('Sent, but the pack could not be saved for reuse.'));
       }
 
       await sendLockedMessage({
-        chatId: squadId, scope: 'squad', mediaKey: signed.mediaKey,
-        previewUrl, priceCoins, isVideo, caption: '',
+        chatId: squadId, scope: 'squad', priceCoins, caption: '', items,
       });
     } catch (err) {
       alert(err?.message || 'Could not send locked media.');
     }
   };
 
+  /**
+   * Start a 1:1 session for this squad.
+   *
+   * A 1:1 IS A PRIVATE ONE-WAY BROADCAST, not a call: the host goes live and
+   * the squad watches, chats and tips. It rides the streaming pipeline, which
+   * is where ingest, playback, chat and tips already live.
+   *
+   * The guest list is the squad's current membership. Unlisted only hides it
+   * from discovery — `streams/{id}` is world-readable, so without a list a
+   * forwarded id would be a forwarded session. getAccess checks the list before
+   * it mints a playback URL, free session or not.
+   */
+  const startSquadSession = async ({ isPaid, priceCoins }) => {
+    setSessionSheet(false);
+    try {
+      const { httpsCallable: hc } = await import('firebase/functions');
+      const { functions: fns } = await import('../../firebase/config');
+      const res = await hc(fns, 'createStreamSession')({
+        kind: 'public',
+        mode: 'browser',
+        title: `${squadInfo?.name || 'Squad'} session`,
+        audience: 'unlisted',
+        sessionType: 'one_to_one',
+        inviteUids: members.map((mem) => mem.id).filter(Boolean),
+        access: isPaid ? { mode: 'paid', priceCoins } : { mode: 'free' },
+      });
+      const streamId = res.data?.streamId;
+      if (!streamId) throw new Error('Could not start the session.');
+
+      // A card, not a link: the squad needs something to press.
+      await sendMsg({
+        type: 'onetoone',
+        contentUrl: streamId,
+        text: isPaid ? String(Math.floor(priceCoins)) : '0',
+      });
+      navigate(`/broadcast/${streamId}`);
+    } catch (err) {
+      alert(err?.message || 'Could not start the session.');
+    }
+  };
+
   const renderEmbed = (m) => {
+    // A private session started in this squad. The card tracks the session's
+    // real state rather than always offering a Join that may lead nowhere.
+    if (m.type === 'onetoone') return (
+      <OneToOneCard
+        streamId={m.contentUrl}
+        priceCoins={Math.floor(Number(m.text) || 0)}
+        isMe={m.senderId === auth.currentUser?.uid}
+        hostName={m.senderName}
+        hostAvatar={m.senderAvatar}
+      />
+    );
     // Priced media. The bytes live on a private R2 prefix and this message has no
     // contentUrl at all, so LockedMedia asking the server is the only route in.
     if (m.type === 'locked') return (
@@ -838,7 +916,6 @@ export default function SquadChatThreadScreen() {
           resourceType="message"
           resourceId={`squad:${squadId}:${m.id}`}
           locked={m.locked}
-          className="aspect-square"
           compact
         />
       </div>
@@ -1235,14 +1312,27 @@ export default function SquadChatThreadScreen() {
                 onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) uploadAndSend(f, 'squad_images', 'image'); }}
               />
             </label>
-            <label className="compose-attach" title="Send locked media">
+            {/* Opens SAVED PACKS first. A creator with packs nearly always wants
+                one of them, and the sheet's empty state is how anyone discovers
+                the feature exists; "New pack" from there opens this picker. */}
+            <button className="compose-attach" title="Send locked media" onClick={() => setPacksSheet(true)}>
               <span className="material-symbols-outlined">lock</span>
+            </button>
+            <button className="compose-attach" title="Share an event" onClick={() => setShowEventPicker(true)}>
+              <span className="material-symbols-outlined">confirmation_number</span>
+            </button>
+            <label className="hidden">
+              {/* Multi-select: one locked send can be a set, bought once. Files
+                  ADD to what is staged so the sheet's "+" tile works. */}
               <input
-                type="file" accept="image/*,video/*" hidden
+                ref={lockedInputRef}
+                type="file" accept="image/*,video/*" hidden multiple
                 onChange={(e) => {
-                  const f = e.target.files?.[0];
+                  const picked = Array.from(e.target.files || []);
                   e.target.value = '';
-                  if (f) { setLockedFile(f); setLockedSheet(true); }
+                  if (!picked.length) return;
+                  setLockedFiles((prev) => [...prev, ...picked].slice(0, MAX_LOCKED_ITEMS));
+                  setLockedSheet(true);
                 }}
               />
             </label>
@@ -1263,6 +1353,9 @@ export default function SquadChatThreadScreen() {
               </button>
               <button className="tool-btn" title="Poll" onClick={() => setShowPollModal(true)}>
                 <span className="material-symbols-outlined">how_to_vote</span>
+              </button>
+              <button className="tool-btn" title="Start a 1:1 session" onClick={() => setSessionSheet(true)}>
+                <span className="material-symbols-outlined">videocam</span>
               </button>
               <button className="tool-btn" title="Share tournament" onClick={openTournamentShare}>
                 <span className="material-symbols-outlined">emoji_events</span>
@@ -1329,13 +1422,39 @@ export default function SquadChatThreadScreen() {
 
       <PriceSheet
         open={lockedSheet}
-        onClose={() => { setLockedSheet(false); setLockedFile(null); }}
+        onClose={() => { setLockedSheet(false); setLockedFiles([]); }}
         onConfirm={sendLockedToSquad}
+        items={lockedThumbs}
+        onAddMore={() => lockedInputRef.current?.click()}
+        onRemoveItem={(i) => setLockedFiles((prev) => prev.filter((_, n) => n !== i))}
+        allowSaveAsPack
         title="Lock this media"
         subtitle="The squad sees a blurred preview and pays coins to open it. The real file never reaches anyone's device until they do."
         confirmLabel="Send locked"
         allowFree={false}
         initialPrice={100}
+      />
+
+      {/* Squad chat writes messages straight to Firestore and renders from that
+          snapshot, so a pack send needs no client-side echo. */}
+      <ContentPacksSheet
+        open={packsSheet}
+        onClose={() => setPacksSheet(false)}
+        chatId={squadId}
+        scope="squad"
+        onCreateNew={() => lockedInputRef.current?.click()}
+      />
+
+      <PriceSheet
+        open={sessionSheet}
+        onClose={() => setSessionSheet(false)}
+        onConfirm={startSquadSession}
+        title="Start a session"
+        subtitle="You go live, just for this squad. It is never listed anywhere and only members can join. Tips and gifts work either way."
+        confirmLabel="Go live"
+        initialPaid={false}
+        initialPrice={250}
+        feeNote="What they pay to join is revenue Vergr earns, and Vergr pays you a share of it: 50% to start, rising to 80% as your lifetime earnings grow."
       />
 
       <Modal isOpen={showPollModal} onClose={() => setShowPollModal(false)} title="Create a Poll">
@@ -1374,6 +1493,28 @@ export default function SquadChatThreadScreen() {
         squadId={squadId}
         currentBackground={squadInfo?.chatBackground}
         currentValue={squadInfo?.chatBackgroundValue}
+      />
+
+      {/* Share an EVENT. Same picker as DMs, groups and go-live, so a squad
+          host with no events gets the "Create an event" path rather than a
+          dead end. */}
+      <EventPickerModal
+        isOpen={showEventPicker}
+        onClose={() => setShowEventPicker(false)}
+        onSelect={(t) => {
+          setShowEventPicker(false);
+          sendMsg({
+            type: 'event_ticket',
+            text: `🎟 ${t.name}`,
+            eventTicket: {
+              tournamentId: t.id, name: t.name || 'Event', game: t.game || '',
+              bannerUrl: t.bannerUrl || null,
+              priceCoins: t.ticket?.priceCoins || 0,
+              capacity: t.ticket?.capacity || 0,
+              sold: t.ticket?.sold || 0,
+            },
+          });
+        }}
       />
 
       {/* Share Tournament picker */}

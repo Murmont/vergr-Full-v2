@@ -107,7 +107,7 @@ function MediaRow({ items, onImageClick, onDoubleTapLike }) {
           <div key={i} className="snap-start shrink-0 h-[280px] md:h-[340px] rounded-xl overflow-hidden border border-white/[0.06] bg-black flex items-center justify-center">
             {it.video ? (
               <div className="h-full w-[min(560px,80vw)] flex items-center justify-center">
-                <InlineVideoPlayer src={it.url} maxHeightClass="h-full" rounded={false} objectFit="contain" onDoubleTapLike={onDoubleTapLike} />
+                <InlineVideoPlayer src={it.url} renditions={post?.adaptiveRenditions} maxHeightClass="h-full" rounded={false} objectFit="contain" onDoubleTapLike={onDoubleTapLike} />
               </div>
             ) : (
               <img src={it.url} alt="" onClick={onTap(() => onImageClick(i))} className="h-full w-auto max-w-[85vw] object-contain cursor-zoom-in" loading="lazy" />
@@ -144,11 +144,15 @@ function MediaContent({ post, onImageClick, onDoubleTapLike }) {
   if (post.locked?.priceCoins > 0) {
     return (
       <div className="mt-3" onClick={(e) => e.stopPropagation()}>
+        {/* No aspect class: the post's own dimensions were measured at upload
+            and travel on `locked`, so the card reserves the real shape. A fixed
+            4:5 cropped every landscape post to portrait. The floor stops a 9:16
+            clip from filling the whole viewport. */}
         <LockedMedia
           resourceType="post"
           resourceId={post.id}
           locked={post.locked}
-          className="aspect-[4/5] max-h-[520px]"
+          minRatio={0.72}
         />
       </div>
     );
@@ -183,7 +187,7 @@ function MediaContent({ post, onImageClick, onDoubleTapLike }) {
     if (it.video) {
       return (
         <div className="mt-3 rounded-2xl overflow-hidden border border-white/[0.06] relative aspect-video bg-black" onClick={(e) => e.stopPropagation()}>
-          <InlineVideoPlayer src={it.url} poster={post.thumbnailUrl} maxHeightClass="h-full" rounded={false} objectFit="contain" onDoubleTapLike={onDoubleTapLike} />
+          <InlineVideoPlayer src={it.url} renditions={post?.adaptiveRenditions} poster={post.thumbnailUrl} maxHeightClass="h-full" rounded={false} objectFit="contain" onDoubleTapLike={onDoubleTapLike} />
           {post.type === 'clip' && (
             <div className="absolute top-2 left-2 px-2 py-0.5 rounded-lg bg-brand-ember/90 text-white text-[9px] font-bold uppercase tracking-wider">Clip</div>
           )}

@@ -18,29 +18,33 @@ import { useUI } from '../../../context/UIContext';
 import { useWalletUnlock } from '../../../context/WalletUnlockContext';
 import {
   WalletCard, WalletButton, SectionLabel, Pill, Callout, FeeBreakdown,
-  CoinGlyph, GemGlyph, VPGlyph, LimitProgressBar, AnimatedNumber, StatusPill,
-  WALLET_TOKENS, fmtNum, fmtEUR,
+  CoinGlyph, GemGlyph, VPGlyph, AnimatedNumber, StatusPill,
+  WALLET_TOKENS, fmtNum, fmtEUR, fmtUsd,
 } from '../../../components/wallet/primitives';
 import Icon from '../../../components/Icon';
 import { getTransactions, convertCoinsToGems } from '../../../firebase/firestore';
-import { getVPLevel, getNextVPLevel, getCommission, COIN_PACKS } from '../../../utils/vpSystem';
-import { STORE_COIN_PACKS } from '../../../utils/storePricing';
+import { getVPLevel, getNextVPLevel, getCommission, COIN_PACKS, GEM_VALUE_USD, COIN_VALUE_USD } from '../../../utils/vpSystem';
 import { IS_STORE_BUILD, IS_HUAWEI_BUILD } from '../../../utils/platform';
 import { useAuth } from '../../../context/AuthContext';
 import {
   isPlayBillingSupported, fetchPlayPrices, buyCoinPack, playProductIdFor,
 } from '../../../utils/nativeBilling';
 
-// See BuyScreen.jsx — Play builds carry the reduced ladder from storePricing.js.
-// The STORE ladder exists to absorb Google's cut, so it only applies where Play
-// Billing is actually taking one. Huawei sells through PayRam like the web does,
-// so it gets the web ladder and its better coin counts.
-const ACTIVE_COIN_PACKS =
-  IS_STORE_BUILD && !IS_HUAWEI_BUILD ? STORE_COIN_PACKS : COIN_PACKS;
+// ONE LADDER, EVERYWHERE — web, Play and Huawei sell the identical packs.
+//
+// There used to be a second, reduced ladder for Play builds. It is gone: a Play
+// IAP product has one fixed quantity, so a second ladder meant the shelf and the
+// Play purchase sheet disagreed about what was being sold. Google's cut is
+// absorbed in the PRICE of the Play SKU instead, which is set in Play Console
+// and read back at runtime through fetchPlayPrices(). See storePricing.js.
+const ACTIVE_COIN_PACKS = COIN_PACKS;
 import { getMyWalletSecurityStatus, getMyWithdrawals, cancelWithdrawal } from '../../../firebase/walletCallables';
-import { useBuyCheckout, MIN_CUSTOM_EUR, COIN_PRICE_EUR } from '../v2/buyCheckout';
+import { useBuyCheckout, MIN_CUSTOM_USD, COIN_PRICE_USD } from '../v2/buyCheckout';
+import PaymentMethodPicker from '../../../components/wallet/PaymentMethodPicker';
 
-const GEM_TO_EUR = 0.009;
+// GEM_VALUE_USD and COIN_VALUE_USD come from vpSystem (imported above) and are
+// never re-declared here. This file used to hardcode `GEM_TO_EUR = 0.009`, which
+// understated every gem figure on the native wallet by 10%.
 const COL = { display: 'flex', flexDirection: 'column' };
 
 const useGreeting = () => {
@@ -68,21 +72,21 @@ export function NativeHomeScreen() {
   }, [profile?.uid]);
 
   const coins = wallet?.balance || 0;
-  const gems  = wallet?.gems    || 0;
+
   const vp    = wallet?.vp      || 0;
   const vpInfo = getVPLevel(vp);
   const vpNext = getNextVPLevel(vp);
 
   const kycLevel = secStatus?.kycLevel ?? 0;
   const frozen = !!secStatus?.walletFrozen;
-  const canWithdraw = kycLevel >= 1 && !frozen;
+
   const tryGo = (path) => requirePin(() => navigate(path));
 
   return (
     <div style={{ ...COL, gap: 18, width: '100%', maxWidth: '100%' }}>
       {frozen && (
         <Callout tone="danger" icon="report" title="Your wallet is frozen">
-          Withdrawals and conversions are paused. Reach support to resolve.
+          Buying and spending are paused. Reach support to resolve.
         </Callout>
       )}
 
@@ -106,10 +110,9 @@ export function NativeHomeScreen() {
       {/* Balances — full-width stacked cards */}
       <NativeBal
         glyph={<CoinGlyph size={28} />} label="Coins" labelColor={WALLET_TOKENS.gold}
-        value={coins} valueColor={WALLET_TOKENS.goldLight} fiat={fmtEUR(coins * GEM_TO_EUR)}
+        value={coins} valueColor={WALLET_TOKENS.goldLight} fiat={fmtUsd(coins * COIN_VALUE_USD)}
         actions={<>
           <WalletButton size="sm" variant="primary" onClick={() => navigate('/wallet/buy')}>Buy</WalletButton>
-          <WalletButton size="sm" variant="secondary" onClick={() => tryGo('/wallet/convert')}>Convert</WalletButton>
         </>}
       />
       <NativeBal
@@ -124,36 +127,12 @@ export function NativeHomeScreen() {
           </div>
         }
       />
-      <NativeBal
-        glyph={<GemGlyph size={28} />} label="Gems" labelColor={WALLET_TOKENS.gemBlue}
-        value={gems} valueColor="#7CA3FF" fiat={fmtEUR(gems * GEM_TO_EUR)}
-        actions={<>
-          <WalletButton size="sm" variant="primary" disabled={!canWithdraw} icon="north_east" onClick={() => tryGo('/wallet/withdraw')}>Withdraw</WalletButton>
-          <WalletButton size="sm" variant="ghost" onClick={() => navigate('/wallet/history')}>History</WalletButton>
-        </>}
-        note={!canWithdraw && (frozen ? 'Wallet frozen — contact support.' : 'Verify your identity (KYC) to withdraw.')}
-      />
 
       {/* Quick actions — fixed 2-up grid (renders 2 cols at any width) */}
       <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
         <QuickAction icon="shopping_cart" color={WALLET_TOKENS.gold} title="Buy coins" sub="Card or bank" onClick={() => navigate('/wallet/buy')} />
-        <QuickAction icon="swap_horiz" color={WALLET_TOKENS.violetLight} title="Convert" sub="Coins to gems" onClick={() => tryGo('/wallet/convert')} />
-        <QuickAction icon="north_east" color={WALLET_TOKENS.gemBlue} title="Withdraw" sub="Gems out" onClick={() => tryGo('/wallet/withdraw')} locked={!canWithdraw} />
-        <QuickAction icon="qr_code_2" color={WALLET_TOKENS.success} title="Receive USDC" sub="On Base" onClick={() => tryGo('/wallet/security/deposit')} />
       </div>
 
-      {/* Withdrawal limits */}
-      <WalletCard>
-        <SectionLabel>Withdrawal limits</SectionLabel>
-        <div style={{ ...COL, gap: 12 }}>
-          <LimitProgressBar used={0} max={kycLevel >= 2 ? 500 : 0} label="Today" suffix=" €" />
-          <LimitProgressBar used={0} max={kycLevel >= 2 ? 2500 : (kycLevel >= 1 ? 50 : 0)} label="This month" suffix=" €" />
-        </div>
-        <div style={{ fontSize: 12, color: WALLET_TOKENS.textMuted, marginTop: 12 }}>
-          KYC Level {kycLevel} ·{' '}
-          <span onClick={() => navigate('/wallet/kyc')} style={{ color: WALLET_TOKENS.violetLight }}>Raise limits</span>
-        </div>
-      </WalletCard>
 
       {/* Recent activity */}
       <div>
@@ -331,7 +310,7 @@ export function NativeConvertScreen() {
         </div>
         <div style={{ color: WALLET_TOKENS.textSecondary, fontSize: 14, marginBottom: 20 }}>Conversion settled.</div>
         <div style={{ ...COL, gap: 10 }}>
-          <WalletButton variant="primary" onClick={() => navigate('/wallet/withdraw')} iconRight="arrow_forward">Withdraw now</WalletButton>
+          <WalletButton variant="primary" onClick={() => navigate('/creator/earnings')} iconRight="arrow_forward">View earnings</WalletButton>
           <WalletButton variant="secondary" onClick={() => { setDone(false); setAmount(0); }}>Convert more</WalletButton>
         </div>
       </WalletCard>
@@ -407,7 +386,7 @@ export function NativeConvertScreen() {
           <AnimatedNumber value={gemsOut} />
         </div>
         <div className="font-dmmono" style={{ fontSize: 13, color: WALLET_TOKENS.textMuted, marginTop: 10 }}>
-          Worth ≈ {fmtEUR(gemsOut * GEM_TO_EUR)}
+          Worth ≈ {fmtUsd(gemsOut * GEM_VALUE_USD)}
         </div>
       </WalletCard>
 
@@ -417,7 +396,7 @@ export function NativeConvertScreen() {
           { label: `Commission (${vpInfo.name} L${vpInfo.level}, ${commissionPct}%)`, value: `-${fmtNum(amount - gemsOut)} c` },
           { label: 'Conversion rate', value: `1 c → ${(1 - commission).toFixed(2)} gems`, tone: 'muted' },
         ]}
-        total={`+${fmtNum(gemsOut)} gems · ≈ ${fmtEUR(gemsOut * GEM_TO_EUR)}`}
+        total={`+${fmtNum(gemsOut)} gems · ≈ ${fmtUsd(gemsOut * GEM_VALUE_USD)}`}
       />
 
       {vpNext && (
@@ -486,20 +465,14 @@ export function NativeSettingsScreen() {
       <Section title="Security">
         <LinkCard icon="lock" title="Change PIN" sub="Last changed never" onClick={() => navigate('/wallet/security/pin')} />
         <LinkCard icon="shield" title="Two-factor auth" sub="Manage 2FA + recovery codes" onClick={() => navigate('/wallet/security/totp')} />
-        <LinkCard icon="account_balance_wallet" title="Withdrawal addresses" sub="Manage your whitelist" onClick={() => navigate('/wallet/security/addresses')} />
-        <LinkCard icon="qr_code_2" title="Deposit address" sub="USDC on Base · view QR" onClick={() => navigate('/wallet/security/deposit')} />
       </Section>
 
       <Section title="Limits & verification">
         <Card title="KYC tier">
           <div style={{ color: WALLET_TOKENS.textSecondary, fontSize: 13, marginBottom: 14 }}>
-            Raise your daily/monthly limits by completing higher-tier verification.
+            Higher-tier verification raises how much VERGR can pay you per month.
           </div>
           <WalletButton variant="primary" size="sm" iconRight="arrow_forward" onClick={() => navigate('/wallet/kyc')}>Manage KYC</WalletButton>
-        </Card>
-        <Card title="Withdrawal limits">
-          <LimitProgressBar used={0} max={500} label="Daily (€)" />
-          <div style={{ marginTop: 12 }}><LimitProgressBar used={0} max={2500} label="Monthly (€)" /></div>
         </Card>
         <Card title="Danger zone" danger>
           <DangerBtn label="Freeze wallet" />
@@ -576,8 +549,8 @@ function maskEmail(email) {
 const HIST_FILTERS = [
   { id: 'all',          label: 'All',              match: () => true },
   { id: 'tips',         label: 'Tips',             match: (t) => t.type === 'tip_received' || t.type === 'tip_sent' },
-  { id: 'conversions',  label: 'Conversions',      match: (t) => t.type === 'conversion' || t.type === 'coin_to_gem_conversion' },
-  { id: 'withdrawals',  label: 'Withdrawals',      match: (t) => t.type === 'withdrawal' || t.type === 'gem_withdrawal' || t.type === 'withdrawal_cancelled' },
+
+
   { id: 'purchases',    label: 'Purchases',        match: (t) => t.type === 'buy' || t.type === 'coin_purchase' },
   { id: 'tournaments',  label: 'Tournaments',      match: (t) => t.type === 'tournament' || t.type === 'tournament_prize' || t.type === 'tournament_refund' },
   { id: 'memberships',  label: 'Memberships',      match: (t) => t.type === 'membership' || t.type === 'fan_renewal' },
@@ -721,13 +694,13 @@ function NativeWithdrawalRow({ w, onChanged }) {
 
 const KYC_TIERS = [
   { level: 0, name: 'Unverified', dailyEUR: 0, monthlyEUR: 0,
-    requires: ['Email confirmed'], unlocks: ['Buy coins', 'Tip creators', 'Receive gems', 'No withdrawals'] },
+    requires: ['Email confirmed'], unlocks: ['Buy coins', 'Tip creators', 'Unlock paid content', 'Cannot be paid a revenue share'] },
   { level: 1, name: 'Basic', dailyEUR: 0, monthlyEUR: 50,
-    requires: ['Government ID', 'Selfie liveness'], unlocks: ['Convert coins to gems', 'Crypto withdrawals up to €50/month'] },
-  { level: 2, name: 'Standard', dailyEUR: 500, monthlyEUR: 2500,
-    requires: ['L1 + proof of address'], unlocks: ['Crypto withdrawals €500/day, €2,500/month', 'Bank withdrawals'] },
-  { level: 3, name: 'Premium', dailyEUR: 2500, monthlyEUR: 15000,
-    requires: ['L2 + source-of-funds on first €1,000+ deposit'], unlocks: ['Crypto withdrawals €2,500/day, €15,000/month', 'Priority support'] },
+    requires: ['Government ID', 'Selfie liveness'], unlocks: ['VERGR can pay your creator revenue share', 'Paid up to €50 per month'] },
+  { level: 2, name: 'Standard', dailyEUR: 0, monthlyEUR: 2500,
+    requires: ['L1 + proof of address'], unlocks: ['Paid up to €2,500 per month', 'Faster payout schedules unlock'] },
+  { level: 3, name: 'Premium', dailyEUR: 0, monthlyEUR: 15000,
+    requires: ['L2 + source-of-funds on first €1,000+ deposit'], unlocks: ['Paid up to €15,000 per month', 'Priority support'] },
 ];
 
 export function NativeKycScreen() {
@@ -823,7 +796,7 @@ export function NativeBuyScreen() {
   const [customEUR, setCustomEUR] = useState(20);
   // ONE shared checkout implementation (money flow) — see ../v2/buyCheckout.
   const { checkout, startCheckout, cancelCheckout } = useBuyCheckout(showToast);
-  const customCoins = Math.floor((parseFloat(customEUR) || 0) / COIN_PRICE_EUR);
+  const customCoins = Math.floor((parseFloat(customEUR) || 0) / COIN_PRICE_USD);
   const { currentUser } = useAuth();
   const [playBusy, setPlayBusy] = useState('');
   const [playPrices, setPlayPrices] = useState({});
@@ -845,17 +818,35 @@ export function NativeBuyScreen() {
     return () => { alive = false; };
   }, [usePlay]);
 
-  // Route a pack purchase. On the Play build this MUST end in Play Billing:
-  // if the bridge is unavailable we surface an error rather than falling
-  // through to PayRam, because a card checkout for coins inside a Play app is
-  // the payments-policy breach that gets an app pulled.
-  const buyPack = (pack) => {
-    if (IS_STORE_BUILD && !IS_HUAWEI_BUILD && !isPlayBillingSupported()) {
-      showToast("Purchases are temporarily unavailable. Please reopen the app and try again.", "error");
-      return;
-    }
-    if (usePlay) { buyViaPlay(pack); return; }
-    startCheckout({ packSku: pack.id }, pack.name);
+  // Route a pack purchase.
+  //
+  // ⚠ THIS USED TO FORCE PLAY BILLING and it was WRONG.
+  //
+  // The old comment here claimed "a card checkout for coins inside a Play app is
+  // the payments-policy breach that gets an app pulled", and hid every other
+  // rail plus the whole Custom tab on a store build. That belief contradicted
+  // `PaymentMethodPicker.jsx`, which had already been written to the correct
+  // rule and offers both rails on the web.
+  //
+  // Google may NOT compel Play Billing as the only option. What it does require
+  // is a FAIR comparison: no steering, no badge calling one option better, no
+  // pre-selection of the cheaper rail, and the Play price shown as Play's own
+  // string. `<PaymentMethodPicker>` already implements exactly that, which is
+  // why it is reused here instead of a native-only variant that could drift
+  // away from the policy the web version encodes.
+  //
+  // The buyer picks. That is the whole point.
+  const [payFor, setPayFor] = useState(null); // pack awaiting a method choice
+
+  const buyPack = (pack) => setPayFor(pack);
+
+  // Chosen rail for `payFor`. Play Billing only becomes reachable if the bridge
+  // is actually up, so a broken bridge disables THAT ROW rather than blocking
+  // the purchase entirely as it used to.
+  const payWith = (pack, method) => {
+    setPayFor(null);
+    if (method === 'googlePlay') { buyViaPlay(pack); return; }
+    startCheckout({ packSku: pack.id }, pack.name); // card or crypto, via PayRam
   };
 
   const buyViaPlay = async (pack) => {
@@ -902,9 +893,13 @@ export function NativeBuyScreen() {
             the payments-policy breach that gets an app pulled. Huawei is the
             exception — it has no Play Billing at all and sells through PayRam
             by design, so a custom amount is fine there. */}
-        {(!IS_STORE_BUILD || IS_HUAWEI_BUILD) && (
-          <NativeTabBtn active={tab === 'custom'} onClick={() => setTab('custom')}>Custom</NativeTabBtn>
-        )}
+        {/* Custom amount is available on EVERY build, including Play.
+            It was hidden on store builds under the same mistaken belief that
+            corrupted buyPack. A custom amount cannot use Play Billing (fixed
+            SKUs), so it is inherently an alternative-billing purchase, which is
+            permitted. Hiding it removed a legitimate option from Play users for
+            no policy reason. */}
+        <NativeTabBtn active={tab === 'custom'} onClick={() => setTab('custom')}>Custom</NativeTabBtn>
       </div>
 
       {tab === 'packs' && (
@@ -918,9 +913,21 @@ export function NativeBuyScreen() {
         </div>
       )}
 
-      {tab === 'custom' && (!IS_STORE_BUILD || IS_HUAWEI_BUILD) && (
+      {tab === 'custom' && (
         <NativeCustomBuy eur={customEUR} setEur={setCustomEUR} busy={busy}
           onContinue={() => startCheckout({ customCoins }, `${fmtNum(customCoins)} coins`)} />
+      )}
+
+      {/* Method choice. Same component the web cart uses, so the fair-comparison
+          rules live in ONE place and cannot drift between surfaces. */}
+      {payFor && (
+        <NativePayMethodSheet
+          pack={payFor}
+          playPrice={playPrices[playProductIdFor(payFor.id)]?.price}
+          playAvailable={IS_STORE_BUILD && !IS_HUAWEI_BUILD && isPlayBillingSupported()}
+          onPick={(m) => payWith(payFor, m)}
+          onClose={() => setPayFor(null)}
+        />
       )}
 
       {checkout && <NativeCheckoutOverlay checkout={checkout} onCancel={cancelCheckout} />}
@@ -942,6 +949,82 @@ function NativeTabBtn({ active, children, onClick }) {
 // `playPrice` is Play's own localized string (e.g. "R189,99"). When present it
 // MUST win over pack.priceEUR: Play sets the price per market, and rendering a
 // different figure than the purchase sheet is both confusing and a policy risk.
+/**
+ * Choose how to pay for a pack, on native.
+ *
+ * Wraps the SAME `<PaymentMethodPicker>` the web cart uses. That component
+ * already encodes Play's alternative-billing requirements: identical padding,
+ * type and tap target on every row, no "best value" badge, no colour that scores
+ * one rail against another, and the Play row showing Play's OWN formatted price
+ * rather than a number we calculated.
+ *
+ * Reused rather than reimplemented so those rules cannot drift apart between
+ * web and native, which is exactly how this screen ended up Play-only in the
+ * first place.
+ */
+function NativePayMethodSheet({ pack, playPrice, playAvailable, onPick, onClose }) {
+  // Nothing is pre-selected as the better deal. 'card' is the default only
+  // because it is first in the list, matching the web cart.
+  const [method, setMethod] = useState('card');
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 200,
+        background: 'rgba(5,5,10,0.72)', backdropFilter: 'blur(6px)',
+        display: 'flex', alignItems: 'flex-end',
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: '100%', background: WALLET_TOKENS.surface1,
+          borderTopLeftRadius: 20, borderTopRightRadius: 20,
+          borderTop: `1px solid ${WALLET_TOKENS.hairline}`,
+          padding: '18px 16px calc(18px + env(safe-area-inset-bottom))',
+          color: WALLET_TOKENS.text, maxHeight: '88vh', overflowY: 'auto',
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+          <span style={{ fontFamily: 'Syne, sans-serif', fontWeight: 800, fontSize: 17 }}>
+            {pack.name}
+          </span>
+          <button onClick={onClose} aria-label="Close"
+            style={{ background: 'none', border: 0, color: WALLET_TOKENS.textSecondary, padding: 4, cursor: 'pointer' }}>
+            <Icon name="close" size={20} />
+          </button>
+        </div>
+        <div style={{ fontSize: 12.5, color: WALLET_TOKENS.textMuted, marginBottom: 14 }}>
+          {fmtNum(pack.coins)} coins{pack.vpBonus > 0 ? ` · +${fmtNum(pack.vpBonus)} VP` : ''}
+        </div>
+
+        <PaymentMethodPicker
+          value={method}
+          onChange={setMethod}
+          googlePlayAvailable={playAvailable}
+          coins={pack.coins}
+          cardPrice={`$${pack.priceUSD.toFixed(2)}`}
+          playPrice={playPrice}
+          playPriceLoading={playAvailable && !playPrice}
+          playUnavailableReason={playAvailable ? '' : 'Not available on this device'}
+        />
+
+        <button
+          onClick={() => onPick(method)}
+          style={{
+            width: '100%', marginTop: 6, padding: '13px 16px', borderRadius: 12,
+            border: 0, cursor: 'pointer', background: WALLET_TOKENS.gold,
+            color: '#141018', font: 'inherit', fontWeight: 800, fontSize: 15,
+          }}
+        >
+          Continue
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function NativePackCard({ pack, onBuy, busy, playPrice }) {
   const isPopular = pack.badgeStyle === 'popular';
   return (
@@ -975,7 +1058,7 @@ function NativePackCard({ pack, onBuy, busy, playPrice }) {
         <div style={{ fontSize: 11, color: WALLET_TOKENS.goldLight, marginBottom: 4 }}>+ {fmtNum(pack.vpBonus)} VP</div>
       )}
       <div style={{ fontSize: 11, color: WALLET_TOKENS.textMuted, lineHeight: 1.35, marginBottom: 12, flex: 1 }}>{pack.tagline}</div>
-      <div className="font-dmmono tabular-nums" style={{ fontSize: 18, fontWeight: 700, marginBottom: 10 }}>{playPrice || fmtEUR(pack.priceEUR)}</div>
+      <div className="font-dmmono tabular-nums" style={{ fontSize: 18, fontWeight: 700, marginBottom: 10 }}>{playPrice || fmtUsd(pack.priceUSD)}</div>
       <WalletButton variant="primary" full disabled={busy} onClick={onBuy}>Buy</WalletButton>
     </div>
   );
@@ -983,8 +1066,8 @@ function NativePackCard({ pack, onBuy, busy, playPrice }) {
 
 function NativeCustomBuy({ eur, setEur, onContinue, busy }) {
   const eurNum = parseFloat(eur) || 0;
-  const coins = Math.floor(eurNum / COIN_PRICE_EUR);
-  const valid = eurNum >= MIN_CUSTOM_EUR;
+  const coins = Math.floor(eurNum / COIN_PRICE_USD);
+  const valid = eurNum >= MIN_CUSTOM_USD;
   const procFee = eurNum * 0.015;
   return (
     <WalletCard>
@@ -1021,16 +1104,16 @@ function NativeCustomBuy({ eur, setEur, onContinue, busy }) {
       </div>
       <FeeBreakdown
         items={[
-          { label: 'You pay', value: fmtEUR(eurNum) },
+          { label: 'You pay', value: fmtUsd(eurNum) },
           { label: 'Payment processing (~1.5%)', value: `-${fmtEUR(procFee)}`, tone: 'muted' },
-          { label: 'VERGR fee', value: fmtEUR(0), tone: 'muted' },
+          { label: 'VERGR fee', value: fmtUsd(0), tone: 'muted' },
         ]}
         total={`${fmtNum(coins)} coins`}
         totalLabel="You receive"
       />
       {!valid && eur && (
         <div style={{ marginTop: 12, fontSize: 12, color: '#FCD34D' }}>
-          Minimum is {fmtEUR(MIN_CUSTOM_EUR)} (set by our card processor).
+          Minimum is {fmtUsd(MIN_CUSTOM_USD)} (set by our card processor).
         </div>
       )}
       <div style={{ marginTop: 18 }}>

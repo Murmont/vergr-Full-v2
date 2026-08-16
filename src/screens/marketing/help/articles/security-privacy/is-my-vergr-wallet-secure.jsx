@@ -5,7 +5,7 @@
 // Top-level: summary (1-2 sentences, answer-first), updated (YYYY-MM-DD), body [].
 
 export default {
-  summary: "Yes. Your wallet is protected by a PIN on sensitive actions, optional two-factor authentication, and a withdrawal address whitelist so funds can only go to addresses you have approved. Combined with identity verification and short review holds on payouts, it is built so your earnings stay yours.",
+  summary: "Yes. Your wallet is protected by a PIN on sensitive actions and optional two-factor authentication. Combined with identity verification and scheduled payouts, it is built so your earnings stay yours.",
   updated: "2026-06-06",
   body: [
     {
@@ -18,16 +18,16 @@ export default {
       list: [
         "A wallet PIN that guards sensitive actions, so opening the app is not enough to move money.",
         "Two-factor authentication you can switch on for an extra layer at sign-in and on key actions.",
-        "A withdrawal address whitelist, so payouts can only ever go to addresses you have added and approved yourself.",
-        "Identity verification before any payout, which stops a stranger cashing out a hijacked account.",
-        "A short review hold on withdrawals, giving time to catch anything suspicious before money leaves."
+        "Creator payments that only ever go to payout details you set up and verified yourself.",
+        "Identity verification before any payout, which stops a stranger being paid from a hijacked account.",
+        "A scheduled payout run, giving time to catch anything suspicious before money leaves."
       ]
     },
     {
       h2: "Your part"
     },
     {
-      p: "Security is a partnership. Turn on two-factor authentication, keep your PIN private, never share codes or your password with anyone (VERGR will never ask), and double-check a withdrawal address before confirming, since crypto payouts cannot be reversed."
+      p: "Security is a partnership. Turn on two-factor authentication, keep your PIN private, and never share codes or your password with anyone (VERGR will never ask)."
     },
     {
       cta: [

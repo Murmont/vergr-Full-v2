@@ -17,7 +17,12 @@ export async function enrichBlocks(uid, blocks) {
             const snap = await getDocs(
               query(collection(db, 'streams'), where('streamerId', '==', uid), where('isLive', '==', true), limit(1))
             );
-            if (!snap.empty) {
+            // vergr.me is a PUBLIC, unauthenticated page, so an adult stream is
+            // never surfaced here: there is no viewer to have opted in and no
+            // identity to have verified. Filtered in JS, not in the query, because
+            // a Firestore `!=` also excludes documents where the field is ABSENT,
+            // which is every stream created before this shipped.
+            if (!snap.empty && snap.docs[0].data()?.contentRating !== 'nsfw') {
               const s = snap.docs[0];
               return { ...b, _title: s.data().title || 'Live now', _subtitle: '🔴 LIVE now', streamId: s.id, _live: true };
             }

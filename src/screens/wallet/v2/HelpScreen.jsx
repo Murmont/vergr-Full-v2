@@ -5,16 +5,14 @@ import { WalletCard, WalletButton, SectionLabel, WALLET_TOKENS } from '../../../
 import Icon from '../../../components/Icon';
 
 const FAQ = [
-  { q: 'Why is there a 3-day hold on withdrawals?',
-    a: "It gives you time to cancel if anyone ever uses your session without permission. Industry standard. Cancellable for one hour after submission." },
-  { q: 'How do gems differ from coins?',
-    a: "Coins are the spend currency. You buy them to tip, join tournaments, support creators. Gems are the earn currency. They cash out." },
-  { q: 'What is my conversion rate?',
-    a: "It depends on your VP level. Rookie (L1) keeps 70% of converted value. Each level up keeps more. L100 keeps 90%." },
-  { q: 'Can I withdraw to any wallet?',
-    a: "Any USDC-on-Base address. We support most major wallets (MetaMask, Coinbase, Rainbow, Trust). You whitelist addresses first, then a 24-hour cooldown protects you from rushed mistakes." },
-  { q: 'Where do my deposits go?',
-    a: "Reserves are split across hot (≤10%), warm (~30%), and cold (~60%) wallets. Hot is Circle MPC custody; warm + cold are self-sovereign multisig Safes. Audited monthly via Proof of Reserves." },
+  { q: 'Can I cash out my coins?',
+    a: "No. Coins are a licence to use VERGR features: they have no cash value and cannot be withdrawn, converted or transferred. Creators are paid a share of the revenue their content earns, automatically, on VERGR's schedule." },
+  { q: 'What can I spend coins on?',
+    a: "Tipping creators, creator memberships, access to paid live streams, unlocking paid content, event tickets, and boosting your own stream." },
+  { q: 'How do creators get paid?',
+    a: "Creators never request a payout. VERGR works out the revenue share it owes and pays it automatically on a schedule, monthly to begin with, once the balance reaches $100. Identity verification and an account at least 30 days old are required first." },
+  { q: 'Can I get a refund on a coin purchase?',
+    a: "Coins are delivered immediately, so purchases are non-refundable once they land. Erroneous, duplicate or unauthorised charges can be refunded: write to support@vergr.app within 30 days." },
   { q: 'I lost my PIN — what now?',
     a: "PIN reset requires re-running KYC + a 7-day waiting period. We can't reset it from a password reset alone — that's by design, so an email compromise can't drain the wallet." },
 ];

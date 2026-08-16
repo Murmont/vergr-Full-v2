@@ -36,6 +36,7 @@ export const ADMIN_NAV = [
   { id: 'dashboard',     label: 'Dashboard',         path: '/admin',              icon: 'grid_view' },
   { id: 'announcements', label: 'Announcements',     path: '/admin/announce',     icon: 'campaign' },
   { id: 'users',         label: 'Users',             path: '/admin/users',        icon: 'group' },
+  { id: 'creators',      label: 'Creators',          path: '/admin/creators',     icon: 'workspace_premium' },
   { id: 'moderation',    label: 'Moderation Queue',  path: '/admin/reports',      icon: 'flag' },
   { id: 'economy',       label: 'Economy',           path: '/admin/economy',      icon: 'paid' },
   { id: 'subscriptions', label: 'Subscriptions',     path: '/admin/subscriptions',icon: 'workspace_premium' },

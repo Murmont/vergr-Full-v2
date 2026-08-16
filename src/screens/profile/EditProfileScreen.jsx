@@ -339,7 +339,7 @@ export function ProfileInfoTab({ form, setField }) {
         </Field>
         <Field
           label="Date of Birth"
-          hint="Required to buy coins, enter paid tournaments, or withdraw earnings. VERGR is 18+."
+          hint="Required to buy coins and to be paid your creator revenue share. VERGR is 18+."
         >
           <input
             className={inputClass}

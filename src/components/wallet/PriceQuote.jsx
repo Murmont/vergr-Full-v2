@@ -53,7 +53,7 @@ export default function PriceQuote({ quote, size = 'lg', fallback = null }) {
           the charge is the USD above, and saying otherwise would recreate the
           problem this component exists to fix. */}
       <div style={{ fontSize: big ? 11 : 10, opacity: 0.62, marginTop: 2 }}>
-        <LocalPrice eur={quote.priceEUR} prefix="≈ " />
+        <LocalPrice usd={quote.priceUSD} prefix="≈ " />
         <span> · charged in USD</span>
       </div>
     </div>

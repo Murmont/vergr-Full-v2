@@ -1,22 +1,22 @@
 // Help center article: Why are creator quests VP-only and not Coins?
 
 export default {
-  summary: "Because Coins are real money, and printing them for daily checklist tasks would inflate the economy until everyone's earnings were worth less. VP costs nothing to award but is genuinely valuable to you: it climbs your rank, and rank permanently cuts the commission you pay when converting Coins to Gems.",
+  summary: "Because Coins are real money, and printing them for daily checklist tasks would inflate the economy until everyone's earnings were worth less. VP costs nothing to award but is genuinely valuable to you: it climbs your rank, and rank permanently increases the share you keep of what your content earns.",
   updated: "2026-07-02",
   body: [
     {
       h2: "The economic reason"
     },
     {
-      p: "Every Coin on VERGR is backed by someone paying real money for it. That is what makes tips, prizes, and cash-outs real. If quests minted free Coins daily for thousands of creators, the platform would be printing unbacked currency, and the value of everyone's earnings, including yours, would erode. Platforms that tried it drowned in farming bots. So Coins only ever enter through purchases, and only move between people through tips, prizes, and memberships."
+      p: "Every Coin on VERGR is backed by someone paying real money for it. That is what makes tips and creator revenue share real. If quests minted free Coins daily for thousands of creators, the platform would be printing unbacked currency, and the value of everyone's earnings, including yours, would erode. Platforms that tried it drowned in farming bots. So Coins only ever enter through purchases, and only leave through tips, unlocks and memberships."
     },
     {
-      h2: "Why VP is not a consolation prize"
+      h2: "Why VP is not a substitute"
     },
     {
       list: [
-        "VP drives rank, and rank cuts your conversion commission from 30% down to 15% at the top. That is real money saved on every single cash-out, forever.",
-        "A creator converting steadily will bank far more from a lower commission than any plausible daily coin drip would have paid.",
+        "VP drives rank, and rank cuts the share Vergr keeps from 30% down to 15% at the top. That is real money kept on everything you earn, forever.",
+        "A steadily earning creator will bank far more from a better revenue share than any plausible daily coin drip would have paid.",
         "VP also unlocks rank badges and status, and it never resets: every quest permanently compounds."
       ]
     },

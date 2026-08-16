@@ -449,23 +449,68 @@ function DesktopViewerStreamScreen() {
   const paidPrice = Math.floor(streamDoc?.access?.priceCoins || 0);
   const [paidAccess, setPaidAccess] = useState(null); // null = still checking
 
+  // A 1:1 goes through getAccess EVEN WHEN IT IS FREE.
+  //
+  // Free normally means the playback URL is on the stream document, and that
+  // document is world-readable. For a private session that would make the id
+  // the session: forward the link and the third person is watching. The server
+  // now withholds the URL from a 1:1 the same way it does from a paid stream,
+  // and hands it over only to a uid on the guest list.
+  const needsServerPlayback = isPaidStream || isOneToOne;
+
   useEffect(() => {
-    if (!isPaidStream || !streamId) { setPaidAccess(null); return undefined; }
+    if (!needsServerPlayback || !streamId) { setPaidAccess(null); return undefined; }
     let alive = true;
     (async () => {
       try {
         const res = await getContentAccess('stream', streamId);
         if (alive) setPaidAccess(res || { hasAccess: false });
-      } catch {
+      } catch (err) {
         // Fail CLOSED. A failed access check is not a reason to hand over a
         // stream someone is charging for.
-        if (alive) setPaidAccess({ hasAccess: false });
+        //
+        // `not-found` is the server refusing an uninvited viewer on a private
+        // session. It deliberately does not distinguish that from a session that
+        // never existed, and neither does this: the viewer is told the session
+        // is unavailable, which is true either way and gives a stranger probing
+        // ids nothing to learn from the difference.
+        if (alive) setPaidAccess({ hasAccess: false, denied: err?.code === 'functions/not-found' });
       }
     })();
     return () => { alive = false; };
-  }, [isPaidStream, streamId]);
+  }, [needsServerPlayback, streamId]);
 
-  const playbackUrl = isPaidStream
+  // A private session this viewer is not in. Distinct from "not paid": there is
+  // nothing to buy, so offering a paywall would be a lie.
+  const sessionDenied = !!paidAccess?.denied;
+
+  // THE JOIN GATE, shown before entering a Premium Live that has not been paid
+  // for AND before entering a 1:1 — including a free one. Dropping straight into
+  // somebody's private broadcast with no confirmation is startling for both
+  // sides. One screen for both products, so price and copy cannot drift.
+  const [gateAccepted, setGateAccepted] = useState(false);
+  const needsGate = !sessionDenied && (
+    isPaidStream ? (paidAccess && !paidAccess.hasAccess) : (isOneToOne && !gateAccepted)
+  );
+
+  const joinGate = (
+    <StreamPaywall
+      streamId={streamId}
+      priceCoins={isPaidStream ? paidPrice : 0}
+      title={streamDoc?.title}
+      hostName={streamDoc?.hostName || streamDoc?.hostUsername}
+      hostAvatar={streamDoc?.hostAvatar}
+      stillUrl={streamDoc?.thumbnailUrl || streamDoc?.coverUrl || streamDoc?.thumbUrl}
+      isOneToOne={isOneToOne}
+      viewerCount={streamDoc?.viewerCount || 0}
+      onUnlocked={() => {
+        setGateAccepted(true);
+        getContentAccess('stream', streamId).then(setPaidAccess).catch(() => {});
+      }}
+    />
+  );
+
+  const playbackUrl = needsServerPlayback
     ? (paidAccess?.hasAccess ? (paidAccess.hlsUrl || paidAccess.lowLatencyHlsUrl || null) : null)
     // A free stream carries its own hlsUrl on the document. The old fallback
     // rebuilt the URL from streamKey, which is why the key had to be public in
@@ -711,14 +756,10 @@ function DesktopViewerStreamScreen() {
         color: C.text, fontFamily: '"Inter", system-ui, sans-serif',
       }}>
         <div style={{ flex: 1, minHeight: 0 }}>
-          {isPaidStream && !paidAccess?.hasAccess ? (
-            <StreamPaywall
-              streamId={streamId}
-              priceCoins={paidPrice}
-              title={streamDoc?.title}
-              hostName={streamDoc?.hostName || streamDoc?.hostUsername}
-              onUnlocked={() => getContentAccess('stream', streamId).then(setPaidAccess).catch(() => {})}
-            />
+          {sessionDenied ? (
+            <Centered label="That session is not available." />
+          ) : needsGate ? (
+            joinGate
           ) : playbackUrl ? (
             <HlsPlayerWithMeta
               src={playbackUrl}
@@ -792,14 +833,13 @@ function DesktopViewerStreamScreen() {
             border: `1px solid ${C.border}`, borderRadius: 12, overflow: 'hidden',
             aspectRatio: '16/9',
           }}>
-            {isPaidStream && !paidAccess?.hasAccess ? (
-              <StreamPaywall
-                streamId={streamId}
-                priceCoins={paidPrice}
-                title={streamDoc?.title}
-                hostName={streamDoc?.hostName || streamDoc?.hostUsername}
-                onUnlocked={() => getContentAccess('stream', streamId).then(setPaidAccess).catch(() => {})}
-              />
+            {sessionDenied ? (
+              <div style={{ position: 'absolute', inset: 0, display: 'flex',
+                alignItems: 'center', justifyContent: 'center', color: C.textDim, fontSize: 13 }}>
+                That session is not available.
+              </div>
+            ) : needsGate ? (
+              joinGate
             ) : isTwitchMirror ? (
               <TwitchMirrorPlayer username={streamDoc.twitchChannel} autoplay fill />
             ) : playbackUrl ? (
@@ -1466,7 +1506,7 @@ function TipModal({ amount, setAmount, message, setMessage, onClose, onSend, sen
         />
         <div style={{ fontSize: 10, color: C.textMuted, marginBottom: 14, lineHeight: 1.4 }}>
           Every message is moderated before broadcast. {' '}
-          10% platform fee. Host receives {Math.floor(amount * 0.9)}c.
+          Vergr pays the host their revenue share of this tip.
         </div>
         <div style={{ display: 'flex', gap: 10 }}>
           <button onClick={onClose} disabled={sending} style={{

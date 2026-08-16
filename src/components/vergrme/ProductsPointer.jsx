@@ -31,7 +31,7 @@ export default function ProductsPointer({ uid, onGoToBlocks }) {
             <div className="font-syne font-bold text-sm">Sell on your page, keep 92%</div>
             <p className="text-xs text-text-secondary mt-1 leading-relaxed">
               One flat 8% fee. Earnings land as <span className="text-gem-blue font-semibold">gems</span> instantly,
-              with <span className="text-white font-semibold">no withdraw fee</span> on top. Linktree charges 12%, Beacons 9%.
+              with <span className="text-white font-semibold">nothing else deducted</span>. Linktree charges 12%, Beacons 9%.
             </p>
           </div>
         </div>

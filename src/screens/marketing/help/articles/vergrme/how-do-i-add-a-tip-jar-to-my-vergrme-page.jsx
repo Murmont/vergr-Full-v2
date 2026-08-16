@@ -5,7 +5,7 @@
 // Top-level: summary (1-2 sentences, answer-first), updated (YYYY-MM-DD), body [].
 
 export default {
-  summary: "In the Vergr.me editor, switch on the tip jar toggle. Visitors can then tip you in Coins straight from your page. The standard flat 10% fee applies, so you keep 90% of every tip, and it is one of the easiest always-on ways to earn from your audience.",
+  summary: "In the Vergr.me editor, switch on the tip jar toggle. Visitors can then tip you in Coins straight from your page. VERGR pays you a share of every tip, and it is one of the easiest always-on ways to earn from your audience.",
   updated: "2026-06-06",
   body: [
     {
@@ -26,7 +26,7 @@ export default {
       h2: "How it pays"
     },
     {
-      p: "Visitors tip you in Coins from your page, the same as tipping anywhere else on VERGR. The platform takes a flat 10% and you keep the other 90%. So a 100-coin tip puts 90 Coins in your wallet, which you can later convert to Gems and cash out."
+      p: "Visitors tip you in Coins from your page, the same as tipping anywhere else on VERGR. Vergr pays you a share of it, 50% to 80% by lifetime earnings, which Vergr pays out on a schedule."
     },
     {
       note: "Because your Vergr.me link goes everywhere your audience already is, a tip jar there quietly earns from people who never even open the main app."

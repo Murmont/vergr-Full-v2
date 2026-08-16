@@ -5,11 +5,11 @@
 // Top-level: summary (1-2 sentences, answer-first), updated (YYYY-MM-DD), body [].
 
 export default {
-  summary: "A full breakdown of Free, Lite (€4.99/mo) and Pro (€9.99/mo): streaming quality and requirements, VP earn rate, upload limits, and the creator extras each one unlocks. The tip fee stays a flat 10% on every plan.",
+  summary: "A full breakdown of Free, Lite ($4.99/mo) and Pro ($9.99/mo): streaming quality and requirements, VP earn rate, upload limits, and the creator extras each one unlocks. Your revenue share is unaffected by your plan.",
   updated: "2026-06-06",
   body: [
     {
-      p: "Here is the detailed version of what each VERGR plan gives you, so you can see exactly where the lines are before you decide. Read it as a ladder: each plan includes everything below it and adds more. And remember the rule that does not change, the tip fee is a flat 10% on all three."
+      p: "Here is the detailed version of what each VERGR plan gives you, so you can see exactly where the lines are before you decide. Read it as a ladder: each plan includes everything below it and adds more. And remember the rule that does not change: your plan never affects your revenue share."
     },
     {
       h2: "Free"
@@ -24,7 +24,7 @@ export default {
       ]
     },
     {
-      h2: "Lite, €4.99 per month"
+      h2: "Lite, $4.99 per month"
     },
     {
       p: "Everything in Free, plus the things that matter most if you stream and post often:"
@@ -32,7 +32,7 @@ export default {
     {
       list: [
         "Public streaming from day one at 720p, with no follower gate and no Stream Boost needed.",
-        "VP earns faster, so you rank up and lower your conversion commission quicker.",
+        "VP earns faster, so you rank up and improve your revenue share quicker.",
         "1GB uploads with 1080p photos.",
         "Voice messages, post boosts, and scheduled posts.",
         "A custom profile banner.",
@@ -40,10 +40,10 @@ export default {
       ]
     },
     {
-      h2: "Pro, €9.99 per month"
+      h2: "Pro, $9.99 per month"
     },
     {
-      p: "Everything in Lite, plus the full creator and competitor toolkit:"
+      p: "Everything in Lite, plus the full creator toolkit:"
     },
     {
       list: [
@@ -60,7 +60,7 @@ export default {
       h2: "What stays the same on every plan"
     },
     {
-      p: "No matter which plan you are on, the tip fee is a flat 10%, and the commission when you convert Coins to Gems depends on your VP rank, not your plan. So upgrading speeds up how fast you rank up (which lowers your conversion cut), but it never changes the tip cut itself. You are paying for capability and reach, not for a better rate on your earnings."
+      p: "No matter which plan you are on, your revenue share depends on your lifetime earnings, never on your plan or rank. So upgrading speeds up how fast you rank up (which improves your share), but it never changes the tip cut itself. You are paying for capability and reach, not for a better rate on your earnings."
     },
     {
       note: "You can pay monthly with a card or buy a plan with Coins, around 500 for Lite and 1,000 for Pro, and change plans anytime from settings."
@@ -76,7 +76,7 @@ export default {
           "Yes. 200MB on Free, 1GB on Lite, 5GB on Pro, with photo quality rising alongside. If you post long clips or high-res content, the limit matters."
         ],
         [
-          "Does a plan lower my conversion commission?",
+          "Does a plan improve my revenue share?",
           "Not directly. Your conversion rate is tied to your VP rank, and paid plans earn VP faster, so you reach the lower rates sooner."
         ]
       ]

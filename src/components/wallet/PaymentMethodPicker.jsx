@@ -1,33 +1,42 @@
 // src/components/wallet/PaymentMethodPicker.jsx
 //
-// Choose how to pay, and see what that choice costs you in coins.
+// Choose how to pay. Same coins either way; only the price differs.
 //
-// ## Why the coin count moves
+// ## The model, and why it is this way round
 //
-// This is the Tango behaviour, and it is not a discount or a penalty we
-// invented: Google takes a service fee on every in-app purchase, and in
-// tax-inclusive markets Play is the merchant of record and collects the VAT
-// before paying us. Same money in from the buyer, materially less money out to
-// us. `src/utils/storePricing.js` already models that exactly, which is why the
-// Play ladder carries ~15-20% fewer coins per pack than the web ladder.
+// Google takes a service fee on every in-app purchase, and in tax-inclusive
+// markets Play is the merchant of record and collects the VAT before paying us.
+// Same money in from the buyer, materially less money out to us. Something has
+// to give, and there are only two places it can: the coins or the price.
 //
-// Hiding that and shipping one number would mean either selling coins below the
-// floor through Play or overcharging on the web. Showing it is honest, and it
-// is the strongest argument for the cheaper rail: the buyer can see, in coins,
-// exactly what the store fee costs them.
+// It is the PRICE. An earlier version cut the coin count on Play instead, and
+// that was the dangerous choice for two independent reasons:
+//
+//   1. Play's alternative-billing rules require the buyer to be able to compare
+//      the options FAIRLY, with no thumb on the scale toward our own billing.
+//      Expressing the penalty in the product itself — you receive fewer coins if
+//      you pay Google — is the least defensible form of exactly that.
+//   2. A Play IAP product carries ONE fixed quantity. A second quantity means
+//      the shelf advertises one number and the Play sheet charges for another,
+//      which is the displayed-versus-charged mismatch Play rejects for.
+//
+// So both rows sell the identical pack, and the Play row costs more. That is an
+// ordinary, disclosable consequence of the store fee.
+//
+// ## The Play price is NEVER ours to calculate
+//
+// `src/utils/storePricing.js` can compute what a market should charge, but that
+// is for deciding what to type into Play Console. At runtime the figure shown
+// here must be Play's own formatted string, fetched through `fetchPlayPrices()`,
+// because Play rounds to its own price points per market and applies its own
+// tax-display rules. If the fetch has not answered, the row says so and cannot
+// be selected. Guessing is the failure mode this whole file exists to avoid.
 //
 // ## Both rails are offered inside the Play app
 //
-// Google is required to permit alternative billing, so this picker is NOT
-// hidden in a store build. Play is offered because some people want it; card is
-// offered because it buys more coins. The user decides, and neither option is
-// pre-selected on their behalf beyond the default.
-//
-// ## What this does NOT do
-//
-// It does not price anything. Each method reports its own coin count from the
-// ladder that method actually uses, and the money total still comes from the
-// server quote. This component picks a lane.
+// Google is required to permit alternative billing, so this picker is NOT hidden
+// in a store build. Neither row is highlighted, badged or pre-selected as the
+// better deal: same height, same type, same button treatment. The buyer decides.
 import Icon from '../Icon';
 import { WALLET_TOKENS } from './primitives';
 
@@ -35,45 +44,59 @@ import { WALLET_TOKENS } from './primitives';
  * @param {'card'|'googlePlay'} value
  * @param {function} onChange
  * @param {boolean}  googlePlayAvailable  only inside a Play build with billing
- * @param {number}   cardCoins            coins on the web ladder
- * @param {number}   playCoins            coins on the Play ladder
+ * @param {number}   coins                what the basket yields — the SAME on both rails
+ * @param {string}   cardPrice            our own formatted total (we are the merchant)
+ * @param {string}   playPrice            Play's OWN formatted string, or '' if unknown
+ * @param {boolean}  playPriceLoading     true while the Play lookup is in flight
+ * @param {string}   playUnavailableReason  set when Play cannot be offered at all
  */
 export default function PaymentMethodPicker({
   value,
   onChange,
   googlePlayAvailable,
-  cardCoins,
-  playCoins,
+  coins,
+  cardPrice,
+  playPrice,
+  playPriceLoading,
+  playUnavailableReason,
 }) {
+  // A Play row we cannot price is a row nobody may choose. Selecting it would
+  // send the buyer to a sheet showing a number this screen never displayed.
+  const playSelectable = !!googlePlayAvailable && !!playPrice;
+
   const methods = [
     {
+      // ONE card row, routing to PayRam (founder, 2026-08-13). Stripe was the
+      // 'card' row from 2026-08-11 until Stripe closed the account. With one
+      // processor left there is no second row to draw: two rows both reaching
+      // the same provider under different names is a support ticket waiting to
+      // happen, which was the reason they were named apart in the first place.
+      //
+      // Buyers do not know or care what a PayRam is, so the row says what it
+      // does rather than who runs it.
       id: 'card',
-      label: 'Card, Apple Pay or crypto',
+      label: 'Card or crypto',
       icon: 'credit_card',
-      coins: cardCoins,
+      price: cardPrice,
       available: true,
-      note: 'Processed by our payment provider',
+      note: 'Opens our payment provider',
     },
     {
       id: 'googlePlay',
       label: 'Google Play',
       icon: 'shop',
-      coins: playCoins,
-      available: googlePlayAvailable,
-      note: googlePlayAvailable
-        ? 'Billed to your Google account'
-        : 'Only available in the Android app',
+      price: playPrice,
+      available: playSelectable,
+      note: playUnavailableReason
+        || (playPriceLoading
+          ? 'Checking Google Play pricing…'
+          : !playPrice
+            ? 'Google Play pricing unavailable right now'
+            // Rule 2: disclose the fee in words. We cannot add a surcharge line,
+            // because Play charges its own SKU price, not ours plus something.
+            : 'Billed by Google. Includes Google Play’s service fee'),
     },
   ];
-
-  // ALWAYS rendered, including on the web where Google Play cannot work.
-  //
-  // This used to return null unless Play billing was available, which meant the
-  // picker was invisible on web and desktop — every place it is easiest to
-  // look at. Showing Google Play greyed out with the reason is more useful than
-  // hiding it: the buyer learns the option exists in the app, and they can see
-  // what it would cost them in coins.
-  const best = Math.max(cardCoins || 0, playCoins || 0);
 
   return (
     <div style={{ marginBottom: 14 }}>
@@ -87,13 +110,14 @@ export default function PaymentMethodPicker({
       <div style={{ display: 'grid', gap: 8 }}>
         {methods.map((m) => {
           const active = value === m.id;
-          const fewer = best > 0 && m.coins > 0 && m.coins < best;
           return (
             <button
               key={m.id}
               onClick={() => m.available && onChange(m.id)}
               disabled={!m.available}
               style={{
+                // Visual parity is a policy requirement, not a style choice:
+                // identical padding, radius, type and tap target on both rows.
                 display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left',
                 padding: '12px 14px', borderRadius: 12, width: '100%',
                 cursor: m.available ? 'pointer' : 'not-allowed',
@@ -117,15 +141,15 @@ export default function PaymentMethodPicker({
                 </span>
               </span>
 
-              {m.coins > 0 && (
-                <span style={{ textAlign: 'right', flexShrink: 0 }}>
-                  <span
-                    className="font-dmmono tabular-nums"
-                    style={{ display: 'block', fontSize: 14, fontWeight: 800, color: fewer ? WALLET_TOKENS.textSecondary : WALLET_TOKENS.goldLight }}
-                  >
-                    {m.coins.toLocaleString()}
-                  </span>
-                  <span style={{ display: 'block', fontSize: 10, color: WALLET_TOKENS.textMuted }}>coins</span>
+              {/* The PRICE is what differs, so the price is what each row
+                  carries. Same treatment on both: no "best value", no colour
+                  that scores one against the other. */}
+              {m.price && (
+                <span
+                  className="font-dmmono tabular-nums"
+                  style={{ flexShrink: 0, fontSize: 14, fontWeight: 800, color: WALLET_TOKENS.text }}
+                >
+                  {m.price}
                 </span>
               )}
 
@@ -139,14 +163,14 @@ export default function PaymentMethodPicker({
         })}
       </div>
 
-      {/* Stated once, plainly, rather than as an asterisk. The buyer is about to
-          notice the difference anyway; explaining it is better than letting them
-          think we changed the price on them. */}
-      {cardCoins > 0 && playCoins > 0 && cardCoins !== playCoins && (
+      {/* Stated plainly rather than as an asterisk. The buyer is about to notice
+          the difference anyway, and "the store takes a cut" is both true and the
+          reason every app that offers a choice gives. */}
+      {coins > 0 && (
         <p style={{ fontSize: 11, color: WALLET_TOKENS.textMuted, lineHeight: 1.5, marginTop: 8 }}>
           <Icon name="info" size={12} style={{ verticalAlign: '-2px', marginRight: 4 }} />
-          Google charges a store fee on in-app purchases, so the same payment buys
-          fewer coins through Google Play.
+          You get the same {coins.toLocaleString()} coins either way. Google charges a
+          store fee on in-app purchases, so the price through Google Play is higher.
         </p>
       )}
     </div>

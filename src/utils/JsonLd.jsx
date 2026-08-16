@@ -131,6 +131,48 @@ export function articleSchema({ headline, description, url, datePublished, dateM
   };
 }
 
+// SoftwareApplication / MobileApplication: the download pages.
+//
+// HONEST LIMIT: Google's Software App rich result REQUIRES aggregateRating or
+// review. VERGR has no ratings, and inventing one would breach both Google's
+// structured-data policy and basic honesty, so this builder deliberately omits
+// them and the pages are NOT rich-result eligible. It is still worth emitting:
+// it is valid schema.org, it states the app's OS/version/size/price in machine
+// form, and AI crawlers (allowed in robots.txt) read it. Add aggregateRating
+// only when real user ratings exist to report.
+//
+// `type` is 'MobileApplication' for the APK and 'SoftwareApplication' for the
+// desktop installer.
+export function softwareAppSchema({
+  type = 'SoftwareApplication',
+  name,
+  description,
+  url,
+  operatingSystem,
+  applicationCategory = 'SocialNetworkingApplication',
+  softwareVersion,
+  fileSize,
+  downloadUrl,
+  datePublished,
+}) {
+  return {
+    '@context': 'https://schema.org',
+    '@type': type,
+    name,
+    ...(description ? { description } : {}),
+    url: abs(url),
+    ...(operatingSystem ? { operatingSystem } : {}),
+    applicationCategory,
+    ...(softwareVersion ? { softwareVersion } : {}),
+    // schema.org fileSize is a string with a unit, not a raw byte count.
+    ...(fileSize ? { fileSize } : {}),
+    ...(downloadUrl ? { downloadUrl } : {}),
+    ...(datePublished ? { datePublished } : {}),
+    offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+    publisher: { '@type': 'Organization', name: 'VERGR', url: SITE },
+  };
+}
+
 export function webPageSchema({ name, description, url }) {
   return {
     '@context': 'https://schema.org',

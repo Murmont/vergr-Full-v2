@@ -3,6 +3,7 @@
 // bottom nav on mobile. Sidebar collapsible to icon-only.
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { BecomeCreatorModal } from '../../screens/creator/BecomeCreatorScreen';
 import { useAuth } from '../../context/AuthContext';
 import { useUser } from '../../context/UserContext';
 import useResponsive from '../../hooks/useResponsive';
@@ -18,12 +19,12 @@ import CreateComposer from '../composer/CreateComposer';
 const NAV = [
   { key: 'home',        label: 'Home',         icon: 'dashboard',                path: '/creator/dashboard' },
   { key: 'analytics',   label: 'Analytics',    icon: 'analytics',                path: '/creator/analytics',  lock: 'lite' },
-  { key: 'earnings',    label: 'Earnings',     icon: 'paid',                     path: '/creator/earnings',   lock: 'lite' },
+  { key: 'earnings',    label: 'Earnings',     icon: 'paid',                     path: '/creator/earnings' },
   { key: 'content',     label: 'Content',      icon: 'grid_view',                path: '/creator/content' },
   { key: 'schedule',    label: 'Schedule',     icon: 'calendar_month',           path: '/creator/schedule',   lock: 'lite' },
   { key: 'audience',    label: 'Audience',     icon: 'groups',                   path: '/creator/audience' },
   { key: 'ads',         label: 'Ads',          icon: 'campaign',                 path: '/creator/ads' },
-  { key: 'memberships', label: 'Memberships',  icon: 'workspace_premium',        path: '/creator/membership', lock: 'pro' },
+  { key: 'memberships', label: 'Memberships',  icon: 'workspace_premium',        path: '/creator/membership' },
   { key: 'quests',      label: 'Quests',       icon: 'military_tech',            path: '/creator/quests' },
   { key: 'verify',      label: 'Verify',       icon: 'verified',                 path: '/creator/verify' },
 ];
@@ -41,6 +42,9 @@ export default function CreatorLayout({ children, page = 'home', title, subtitle
   const location = useLocation();
   const { currentUser } = useAuth();
   const { profile, wallet } = useUser();
+  // A non-creator opening Creator Studio gets the explainer, not an empty
+  // dashboard. Anyone can use Vergr; only a creator can monetize.
+  const [gateOpen, setGateOpen] = useState((profile?.creator?.status || 'none') === 'none');
   const { isDesktop } = useResponsive();
   const { tier } = useTier();
 
@@ -87,6 +91,7 @@ export default function CreatorLayout({ children, page = 'home', title, subtitle
     const sidebarWidth = collapsed ? 72 : 260;
     return (
       <div className="min-h-screen bg-gradient-to-br from-[#07080c] via-[#0a0d14] to-[#07080c] text-text-primary">
+      <BecomeCreatorModal open={gateOpen} onClose={() => setGateOpen(false)} />
         {/* ── Sidebar ── */}
         <aside
           style={{ width: sidebarWidth }}

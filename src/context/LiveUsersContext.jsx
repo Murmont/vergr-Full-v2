@@ -11,7 +11,7 @@
 // across the whole app. Trivial at launch scale; capped at 300 live streams.
 
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import { isDiscoverableStream } from '../utils/streamVisibility';
+import { isDiscoverableStream, streamPremium } from '../utils/streamVisibility';
 import { collection, query, where, limit, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase/config';
 
@@ -66,6 +66,10 @@ export function LiveUsersProvider({ children }) {
             coverUrl: data.coverUrl || data.thumbnailUrl || null,
             // Only publicly-discoverable streams belong on discovery rails.
             discoverable: data.discoverable !== false && data.unlisted !== true,
+            // Premium Live: public, discoverable, paywalled. Carried so a ring
+            // or a rail can label it before somebody taps into a paywall, and
+            // so nothing autoplays a free preview of paid content.
+            ...streamPremium(data),
           });
         }
       });

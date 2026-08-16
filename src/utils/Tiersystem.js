@@ -1,8 +1,11 @@
 // ═══════════════════════════════════════════
 // VERGR SUBSCRIPTION TIERS — Free / Lite / Pro
 // ═══════════════════════════════════════════
-// Commission is determined ONLY by VP level, NOT by plan.
-// Plans grant VP multipliers, monthly bonuses, and feature unlocks.
+// A PLAN NEVER CHANGES WHAT A CREATOR IS PAID. The revenue share is set by
+// LIFETIME EARNINGS alone (50%-80%, functions/coinLedger.js shareForEarnings),
+// never by plan and never by VP rank. Plans grant VP multipliers, monthly
+// bonuses, and feature unlocks. Nothing that lets a creator earn, see earnings
+// or get paid may sit behind a paid tier.
 
 export const TIERS = {
   free: {
@@ -90,10 +93,6 @@ export const TIER_FEATURES = {
     streamHoursPerMonth: 15, // soft cap — 30min/day × 30days
     privateStreamingTURN: false, // IP exposure to peers in P2P
     coStream: false,
-    // Tournaments
-    canCreateTournament: false,
-    maxTournamentSize: 0,
-    tournamentBracketTypes: [],
     // Squads
     canCreateSquad: false,
     maxSquadsOwned: 0,
@@ -106,7 +105,6 @@ export const TIER_FEATURES = {
     vpMultiplier: 1,
     monthlyVP: 0,
     monthlyCoins: 0,
-    coinPackDiscount: 0,
     // Vergr.me
     vergrMeEnabled: true,
     vergrMeCustomDomain: false,
@@ -142,9 +140,6 @@ export const TIER_FEATURES = {
     streamHoursPerMonth: 40,
     privateStreamingTURN: false,
     coStream: false,
-    canCreateTournament: true,
-    maxTournamentSize: 32,
-    tournamentBracketTypes: ['single_elim', 'double_elim', 'round_robin'],
     canCreateSquad: true,
     maxSquadsOwned: 2,
     maxSquadMembers: 25,
@@ -154,7 +149,6 @@ export const TIER_FEATURES = {
     vpMultiplier: 1.5,
     monthlyVP: 1000,
     monthlyCoins: 50,
-    coinPackDiscount: 0.05,
     vergrMeEnabled: true,
     vergrMeCustomDomain: false,
     vergrMeAnalytics: true,
@@ -186,9 +180,6 @@ export const TIER_FEATURES = {
     streamHoursPerMonth: Infinity,
     privateStreamingTURN: true, // IP masking via Cloudflare TURN, paid feature
     coStream: true,
-    canCreateTournament: true,
-    maxTournamentSize: 256,
-    tournamentBracketTypes: ['single_elim', 'double_elim', 'round_robin', 'swiss', 'battle_royale', 'invitational'],
     canCreateSquad: true,
     maxSquadsOwned: 10,
     maxSquadMembers: 100,
@@ -198,7 +189,6 @@ export const TIER_FEATURES = {
     vpMultiplier: 2,
     monthlyVP: 3000,
     monthlyCoins: 150,
-    coinPackDiscount: 0.10,
     vergrMeEnabled: true,
     vergrMeCustomDomain: true,
     vergrMeAnalytics: true,
@@ -240,7 +230,6 @@ export const TIER_COMPARISON = [
   { section: 'Economy',       feature: 'VP multiplier',       free: '1×',       lite: '1.5×',      pro: '2×' },
   { section: 'Economy',       feature: 'Monthly VP',          free: '0',        lite: '1,000',     pro: '3,000' },
   { section: 'Economy',       feature: 'Monthly coins',       free: '0',        lite: '50',        pro: '150' },
-  { section: 'Economy',       feature: 'Coin pack discount',  free: '0%',       lite: '5%',        pro: '10%' },
   { section: 'Vergr.me',      feature: 'Custom domain',       free: 'No',       lite: 'No',        pro: 'Yes' },
   { section: 'Vergr.me',      feature: 'Analytics',           free: 'No',       lite: 'Basic',     pro: 'Advanced' },
   { section: 'Vergr.me',      feature: 'Themes',              free: 'Basic',    lite: 'Standard',  pro: 'Premium' },

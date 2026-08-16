@@ -4,15 +4,15 @@ export default {
   body: [
     { h2: "Opening the wallet" },
     { steps: [
-      "Tap your coin/gem balance or the wallet entry in the menu.",
+      "Tap your Coin balance or the wallet entry in the menu.",
       "If it is your first time, set up a wallet PIN.",
       "Enter your PIN to unlock.",
       "You land on the wallet home with your balances and quick actions."
     ]},
     { h2: "What's inside" },
     { list: [
-      "Balances for Coins and Gems.",
-      "Buy, Convert, Withdraw, and Deposit actions.",
+      "Your Coin balance.",
+      "Buy Coins and purchase history.",
       "Transaction history.",
       "Security settings (PIN, whitelisted addresses) and KYC.",
     ]},

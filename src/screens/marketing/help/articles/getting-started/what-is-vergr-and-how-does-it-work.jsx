@@ -5,14 +5,14 @@
 // Top-level: summary (1-2 sentences, answer-first), updated (YYYY-MM-DD), body [].
 
 export default {
-  summary: "VERGR is where gamers stream, post, and earn in one place. You play the games you already play, go live, get tipped, sell memberships, and cash out, all on a flat-fee economy that does not gut your earnings.",
+  summary: "VERGR is where gamers stream, post, and earn in one place. You play the games you already play, go live, get tipped and sell memberships, and Vergr pays you a share of the revenue that generates.",
   updated: "2026-08-09",
   body: [
     {
       p: "VERGR is one place to do the three things gamers actually want to do: play, build an audience, and get paid for it. No grinding a side hustle. You play the games you already play."
     },
     {
-      p: "Here is the short version. You go live and your viewers tip you. You post clips between streams so people find you. Your biggest fans buy a membership, or a pass to a stream you are charging for. And when you want real money out, you convert your Coins to Gems and withdraw. That is the whole loop."
+      p: "Here is the short version. You go live and your viewers tip you. You post clips between streams so people find you. Your biggest fans buy a membership, or a pass to a stream you are charging for. Vergr then pays you a share of the revenue that generated, on a schedule. That is the whole loop."
     },
     {
       h2: "The three things on VERGR"
@@ -21,7 +21,7 @@ export default {
       list: [
         "Stream. Go live straight from your browser or OBS, with chat, tips, polls, co-streaming, and on-the-spot clipping. Free, or charge for access.",
         "Create. Post clips, shorts, photos, articles, tier lists, polls, and looking-for-group posts. Everything lives on your profile and can earn you tips.",
-        "Earn. Coins power everything inside the app. Gems are what you cash out. Your rank lowers the cut we take when you convert."
+        "Earn. Coins power everything inside the app. Your rank increases the share you keep of what your content earns."
       ]
     },
     {
@@ -34,7 +34,7 @@ export default {
       h2: "What does it cost?"
     },
     {
-      p: "Signing up is free. Playing is free. We make money on a flat 10% fee on tips and creator payments, and a commission when you convert Coins to Gems that drops as you rank up. That is it. No ads carving up your reach, no mystery cuts."
+      p: "Signing up is free. Playing is free. We make money by keeping a share of what creators earn, and the creator keeps the rest — 50% on tips and creator payments from day one, rising to 80%, with your rank improving your share further. That is it. No ads carving up your reach, no mystery cuts."
     },
     {
       note: "VERGR is for ages 18 and up. There is no betting, wagering, or gambling of any kind on the platform."
@@ -51,7 +51,7 @@ export default {
         ],
         [
           "How do I get my money out?",
-          "Convert Coins to Gems, then withdraw your Gems once you are verified. The minimum withdrawal is 1,000 Gems."
+          "Vergr pays your revenue share on a schedule once you are verified and over the minimum."
         ]
       ]
     }

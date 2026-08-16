@@ -119,11 +119,6 @@
         "source": "/learn/coins",
         "destination": "/platform/learn/coins",
         "type": 301
-      },
-      {
-        "source": "/platform/play",
-        "destination": "/platform/make-money-gaming",
-        "type": 301
       }
     ],
     "rewrites": [
@@ -270,6 +265,272 @@
         }
       },
       {
+        "source": "/platform/help/is-playing-games-for-money-on-vergr-gambling",
+        "function": {
+          "functionId": "goneHelp",
+          "region": "europe-west1"
+        }
+      },
+      {
+        "source": "/platform/help/how-does-vergr-detect-cheating",
+        "function": {
+          "functionId": "goneHelp",
+          "region": "europe-west1"
+        }
+      },
+      {
+        "source": "/platform/help/how-does-vergr-verify-results-and-prevent-cheating",
+        "function": {
+          "functionId": "goneHelp",
+          "region": "europe-west1"
+        }
+      },
+      {
+        "source": "/platform/make-money-gaming",
+        "function": {
+          "functionId": "goneHelp",
+          "region": "europe-west1"
+        }
+      },
+      {
+        "source": "/platform/legit",
+        "function": {
+          "functionId": "goneHelp",
+          "region": "europe-west1"
+        }
+      },
+      {
+        "source": "/platform/play",
+        "function": {
+          "functionId": "goneHelp",
+          "region": "europe-west1"
+        }
+      },
+      {
+        "source": "/platform/play/**",
+        "function": {
+          "functionId": "goneHelp",
+          "region": "europe-west1"
+        }
+      },
+      {
+        "source": "/platform/help/how-do-i-withdraw-my-earnings",
+        "function": {
+          "functionId": "goneHelp",
+          "region": "europe-west1"
+        }
+      },
+      {
+        "source": "/platform/help/how-do-i-withdraw-to-my-bank-account",
+        "function": {
+          "functionId": "goneHelp",
+          "region": "europe-west1"
+        }
+      },
+      {
+        "source": "/platform/help/how-do-i-cash-out-my-gems",
+        "function": {
+          "functionId": "goneHelp",
+          "region": "europe-west1"
+        }
+      },
+      {
+        "source": "/platform/help/how-long-does-a-withdrawal-take",
+        "function": {
+          "functionId": "goneHelp",
+          "region": "europe-west1"
+        }
+      },
+      {
+        "source": "/platform/help/what-is-the-minimum-withdrawal",
+        "function": {
+          "functionId": "goneHelp",
+          "region": "europe-west1"
+        }
+      },
+      {
+        "source": "/platform/help/why-is-there-a-hold-on-my-withdrawal",
+        "function": {
+          "functionId": "goneHelp",
+          "region": "europe-west1"
+        }
+      },
+      {
+        "source": "/platform/help/why-was-my-withdrawal-put-under-review",
+        "function": {
+          "functionId": "goneHelp",
+          "region": "europe-west1"
+        }
+      },
+      {
+        "source": "/platform/help/how-do-i-cancel-a-pending-withdrawal",
+        "function": {
+          "functionId": "goneHelp",
+          "region": "europe-west1"
+        }
+      },
+      {
+        "source": "/platform/help/i-sent-a-withdrawal-to-the-wrong-address-can-i-get-it-back",
+        "function": {
+          "functionId": "goneHelp",
+          "region": "europe-west1"
+        }
+      },
+      {
+        "source": "/platform/help/can-i-withdraw-in-regular-money-instead-of-crypto",
+        "function": {
+          "functionId": "goneHelp",
+          "region": "europe-west1"
+        }
+      },
+      {
+        "source": "/platform/help/where-do-i-see-the-status-of-my-withdrawal",
+        "function": {
+          "functionId": "goneHelp",
+          "region": "europe-west1"
+        }
+      },
+      {
+        "source": "/platform/help/what-fees-apply-when-i-withdraw",
+        "function": {
+          "functionId": "goneHelp",
+          "region": "europe-west1"
+        }
+      },
+      {
+        "source": "/platform/help/what-is-the-conversion-commission",
+        "function": {
+          "functionId": "goneHelp",
+          "region": "europe-west1"
+        }
+      },
+      {
+        "source": "/platform/help/how-do-i-lower-my-conversion-commission",
+        "function": {
+          "functionId": "goneHelp",
+          "region": "europe-west1"
+        }
+      },
+      {
+        "source": "/platform/help/how-do-i-reduce-the-commission-charged-when-i-withdraw",
+        "function": {
+          "functionId": "goneHelp",
+          "region": "europe-west1"
+        }
+      },
+      {
+        "source": "/platform/help/why-does-the-conversion-rate-change-with-my-rank",
+        "function": {
+          "functionId": "goneHelp",
+          "region": "europe-west1"
+        }
+      },
+      {
+        "source": "/platform/help/what-is-the-conversion-rate-at-each-rank",
+        "function": {
+          "functionId": "goneHelp",
+          "region": "europe-west1"
+        }
+      },
+      {
+        "source": "/platform/help/how-do-i-convert-coins-into-gems",
+        "function": {
+          "functionId": "goneHelp",
+          "region": "europe-west1"
+        }
+      },
+      {
+        "source": "/platform/help/why-can-i-not-convert-gems-back-into-coins",
+        "function": {
+          "functionId": "goneHelp",
+          "region": "europe-west1"
+        }
+      },
+      {
+        "source": "/platform/help/what-is-the-difference-between-coins-and-gems",
+        "function": {
+          "functionId": "goneHelp",
+          "region": "europe-west1"
+        }
+      },
+      {
+        "source": "/platform/help/how-do-coins-gems-and-vp-work-together",
+        "function": {
+          "functionId": "goneHelp",
+          "region": "europe-west1"
+        }
+      },
+      {
+        "source": "/platform/help/what-are-gems",
+        "function": {
+          "functionId": "goneHelp",
+          "region": "europe-west1"
+        }
+      },
+      {
+        "source": "/platform/help/which-currency-can-i-withdraw-as-real-money",
+        "function": {
+          "functionId": "goneHelp",
+          "region": "europe-west1"
+        }
+      },
+      {
+        "source": "/platform/help/do-gems-expire",
+        "function": {
+          "functionId": "goneHelp",
+          "region": "europe-west1"
+        }
+      },
+      {
+        "source": "/platform/help/what-are-vc-vp-and-gems",
+        "function": {
+          "functionId": "goneHelp",
+          "region": "europe-west1"
+        }
+      },
+      {
+        "source": "/platform/help/how-do-i-check-my-coin-and-gem-balance",
+        "function": {
+          "functionId": "goneHelp",
+          "region": "europe-west1"
+        }
+      },
+      {
+        "source": "/platform/help/what-is-a-withdrawal-address-and-how-do-i-set-it",
+        "function": {
+          "functionId": "goneHelp",
+          "region": "europe-west1"
+        }
+      },
+      {
+        "source": "/platform/help/what-is-a-whitelisted-withdrawal-address-and-why-do-i-need-one",
+        "function": {
+          "functionId": "goneHelp",
+          "region": "europe-west1"
+        }
+      },
+      {
+        "source": "/platform/help/how-do-i-add-or-remove-a-withdrawal-address",
+        "function": {
+          "functionId": "goneHelp",
+          "region": "europe-west1"
+        }
+      },
+      {
+        "source": "/platform/help/do-i-need-to-be-verified-to-withdraw-gems",
+        "function": {
+          "functionId": "goneHelp",
+          "region": "europe-west1"
+        }
+      },
+      {
+        "source": "/platform/help/why-can-i-not-withdraw-until-i-am-verified",
+        "function": {
+          "functionId": "goneHelp",
+          "region": "europe-west1"
+        }
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }
@@ -348,6 +609,15 @@
           {
             "key": "Access-Control-Allow-Origin",
             "value": "*"
+          }
+        ]
+      },
+      {
+        "source": "/brand/**",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public, max-age=604800, s-maxage=2592000"
           }
         ]
       },

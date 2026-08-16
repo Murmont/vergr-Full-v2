@@ -18,7 +18,7 @@ export default {
         "Play fair: no cheating, no unauthorised software or scripts, no colluding to fix matches, no false result reporting.",
         "Be decent in public: no harassment, hate speech, threats, or illegal content anywhere public.",
         "One person, one account: no multi-accounting to dodge bans, farm promotions, or manipulate the economy.",
-        "Respect the money: no selling Coins, VP, Gems, or accounts outside the platform, no laundering, no fraud.",
+        "Respect the money: no selling Coins, VP, or accounts outside the platform, no laundering, no fraud.",
         "Respect the platform: no spam, phishing, malware, scraping, or attacks on the service."
       ]
     },

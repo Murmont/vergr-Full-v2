@@ -15,7 +15,7 @@ export default {
     { list: [
       "Shared treasury: the team pools Coins and distributes them by your own rules.",
       "Roster and roles: owners, managers, and members with the right permissions.",
-      "Team tag shows on brackets and member profiles.",
+      "Team tag shows on member profiles.",
       "Rivalries and analytics track your team's head-to-head record over time."
     ]},
     { cta: [

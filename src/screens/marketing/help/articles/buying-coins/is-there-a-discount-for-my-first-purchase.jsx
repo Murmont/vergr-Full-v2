@@ -6,8 +6,8 @@ export default {
     { h2: "Where the value actually comes from" },
     { list: [
       "Larger packs have a better rate per Coin than smaller ones.",
-      "The top packs include bonus VP, which helps lower your future conversion commission.",
-      "Ranking up (earning VP) lowers the fee when you later convert Coins to Gems — that is the real long-term saving.",
+      "The top packs include bonus VP, which helps improve your future revenue share.",
+      "Ranking up (earning VP) increases the share you keep of what your content earns — that is the real long-term saving.",
     ]},
     { note: "If you ever see a third-party site or message offering 'discounted VERGR Coins' or a first-purchase code, it is not from VERGR. Only buy Coins inside the app." },
     { cta: [

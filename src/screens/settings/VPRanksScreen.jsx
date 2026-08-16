@@ -10,7 +10,7 @@ import { useUser } from '../../context/UserContext';
 import useResponsive from '../../hooks/useResponsive';
 import {
   VP_LEVELS, RANK_TIERS, MAX_VP_LEVEL, TOTAL_VP_TO_MAX,
-  getVPLevel, getVPProgress, getNextVPLevel, getCommission,
+  getVPLevel, getVPProgress, getNextVPLevel,
   PRESTIGE_REWARDS, PRESTIGE_MAX, PLAN_VP_MULTIPLIER,
 } from '../../utils/vpSystem';
 import { resolveTier } from '../../utils/tierSystem';
@@ -79,7 +79,7 @@ export default function VPRanksScreen() {
             <div className="flex-1 min-w-0">
               <p className="text-white font-bold text-lg">{currentLevel.name}</p>
               <p className="text-text-secondary text-xs">
-                Level {currentLevel.level}{prestige > 0 ? ` · Prestige ${prestige}` : ''} · {Math.round(getCommission(totalVP) * 100)}% conversion commission
+                Level {currentLevel.level}{prestige > 0 ? ` · Prestige ${prestige}` : ''}
               </p>
             </div>
           </div>
@@ -109,10 +109,10 @@ export default function VPRanksScreen() {
         <div className="mb-6 p-4 rounded-2xl border border-white/[0.06] bg-surface-1 text-xs text-text-secondary leading-relaxed">
           <p className="text-white font-semibold text-sm mb-1">How leveling works</p>
           <p>
-            100 levels across 11 ranks. Each level costs 2,000 VP at the start, rising by 1,000 every 10 levels (11,000 per level from L91 to L100). Reaching L100 takes {fmt(TOTAL_VP_TO_MAX)} VP total. Your coin-to-gem conversion commission steps down as VP grows, from 30% to a 15% floor at 100,000 VP.
+            100 levels across 11 ranks. Each level costs 2,000 VP at the start, rising by 1,000 every 10 levels (11,000 per level from L91 to L100). Reaching L100 takes {fmt(TOTAL_VP_TO_MAX)} VP total. VP is a status ladder: it unlocks rings, badges and standing, and it never changes what a creator is paid.
           </p>
           <p className="mt-2">
-            Earn VP from daily logins, quests, likes received, tournament wins, streaming, referrals, and more. Pro/Lite plans multiply all VP earnings (1.5× / 2×) so you rank up faster.
+            Earn VP from daily logins, quests, likes received, streaming, referrals, and more. Pro/Lite plans multiply all VP earnings (1.5× / 2×) so you rank up faster.
           </p>
         </div>
         </div>

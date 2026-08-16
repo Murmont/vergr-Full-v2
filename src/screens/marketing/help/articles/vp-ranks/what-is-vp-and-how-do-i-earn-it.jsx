@@ -5,7 +5,7 @@
 // Top-level: summary (1-2 sentences, answer-first), updated (YYYY-MM-DD), body [].
 
 export default {
-  summary: "VP (Vergr Points) is your progress score. You earn it by being active, streaming, posting, completing creator quests, and referring friends. VP is not money, you cannot spend it, but it ranks you up, and higher ranks mean a smaller commission when you convert Coins to Gems.",
+  summary: "VP (Vergr Points) is your progress score. You earn it by being active, streaming, posting, completing creator quests, and referring friends. VP is not money and you cannot spend it, but it ranks you up, and higher ranks mean a larger share of what your content earns.",
   updated: "2026-06-06",
   body: [
     {
@@ -26,7 +26,7 @@ export default {
       h2: "What VP does"
     },
     {
-      p: "VP is not a currency. You cannot tip with it or cash it out. What it does is rank you up, from Rookie all the way to Immortal. The higher your rank, the smaller the commission VERGR takes when you convert Coins into Gems. So VP is basically how you earn a better cash-out rate."
+      p: "VP is not a currency. You cannot tip with it or spend it. What it does is rank you up, from Rookie all the way to Immortal. The higher your rank, the smaller the share VERGR keeps of what your content earns. So VP is basically how you earn a better cash-out rate."
     },
     {
       note: "Creator quests pay VP, never Coins. VP is about status and lower fees, not a second wallet to spend."

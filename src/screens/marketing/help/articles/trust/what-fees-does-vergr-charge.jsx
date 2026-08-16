@@ -5,7 +5,7 @@
 // Top-level: summary (1-2 sentences, answer-first), updated (YYYY-MM-DD), body [].
 
 export default {
-  summary: "Three things: a flat 10% on tips and creator payments, a conversion commission of 30% down to a 15% floor when you turn Coins into Gems (based on your VP), and optional Lite (€4.99/mo) and Pro (€9.99/mo) plans. No ads, no data selling, no hidden cuts.",
+  summary: "Two things: we keep a share of what creators earn (they keep 50% from day one, rising to 80% as their lifetime earnings grow), and optional Lite ($4.99/mo) and Pro ($9.99/mo) plans. No ads, no data selling, no hidden cuts.",
   updated: "2026-08-09",
   body: [
     {
@@ -15,25 +15,25 @@ export default {
       h2: "Tips and creator payments"
     },
     {
-      p: "A flat 10% on every tip, on every creator membership, and on paid access to a stream, the same on every plan. The creator keeps 90%. This rate does not rise as a creator grows."
+      p: "No per-surface fee at all. Tips, creator memberships and paid stream access are revenue VERGR earns, and VERGR pays the creator a share of it: 50% to start, rising to 80% as their lifetime earnings grow. The rate only ever moves in the creator’s favour."
     },
     {
-      h2: "Converting Coins to Gems"
+      h2: "Your revenue share rate"
     },
     {
-      p: "A commission applies when you convert Coins into withdrawable Gems. It is based on your VP: 30% at the start, stepping down to a 15% floor at 100,000 VP. Earning VP is how you pay less."
+      p: "Vergr keeps a share of what your content earns. It is based on your VP: 30% at the start, stepping down to a 15% floor at 100,000 VP. Earning VP is how you keep more."
     },
     {
       h2: "Plans"
     },
     {
-      p: "Lite is €4.99 a month and Pro is €9.99 a month. These are optional and unlock features and capability, they do not change the fees above."
+      p: "Lite is $4.99 a month and Pro is $9.99 a month. These are optional and unlock features and capability, they do not change the fees above."
     },
     {
       h2: "What there is not"
     },
     {
-      p: "No advertising business eating your reach, no selling your data, and no surprise deductions. Buying Coins and withdrawing may carry standard processing costs, which are always shown before you confirm."
+      p: "No advertising business eating your reach, no selling your data, and no surprise deductions. Buying Coins may carry standard processing costs, which are always shown before you confirm."
     },
     {
       cta: [

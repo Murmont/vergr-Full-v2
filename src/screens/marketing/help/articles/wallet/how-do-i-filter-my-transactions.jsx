@@ -1,5 +1,5 @@
 export default {
-  summary: "In the wallet History, use the filter controls to narrow by type — for example only purchases, only tips, only withdrawals, or only conversions. This makes it easy to find a specific transaction or reconcile a balance.",
+  summary: "In the wallet History, use the filter controls to narrow by type — for example only Coin purchases, only tips, or only memberships. This makes it easy to find a specific transaction or reconcile a balance.",
   updated: "2026-06-07",
   body: [
     { h2: "Filtering" },
@@ -12,8 +12,8 @@ export default {
     { h2: "When this helps" },
     { list: [
       "Finding a specific tip or purchase.",
-      "Checking only your withdrawals and their status.",
-      "Reviewing conversion commissions over time.",
+      "Checking only your Coin purchases and their status.",
+      "Reviewing your revenue share over time.",
       "Working out why a balance changed.",
     ]},
     { cta: [

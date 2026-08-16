@@ -41,12 +41,6 @@ export default function SettingsScreen() {
                     onClick={() => navigate('/wallet/security/pin')} />
           <LinkCard icon="shield" title="Two-factor auth" sub="Manage 2FA + recovery codes"
                     onClick={() => navigate('/wallet/security/totp')} />
-          <LinkCard icon="account_balance_wallet" title="Withdrawal addresses"
-                    sub="Manage your whitelist"
-                    onClick={() => navigate('/wallet/security/addresses')} />
-          <LinkCard icon="qr_code_2" title="Deposit address"
-                    sub="USDC on Base · view QR"
-                    onClick={() => navigate('/wallet/security/deposit')} />
         </Column>
 
         {/* Column 3: Limits + Verification + Danger */}

@@ -5,7 +5,7 @@
 // Top-level: summary (1-2 sentences, answer-first), updated (YYYY-MM-DD), body [].
 
 export default {
-  summary: "Immortal is the highest rank, reached at level 100. It carries the lowest conversion commission possible (10%), the top-tier avatar ring, and the most status on the platform. Reaching it takes a lot of VP, so it marks someone who has been seriously active over time.",
+  summary: "Immortal is the highest rank, reached at level 100. It carries the best revenue share on the ladder, the top-tier avatar ring, and the most status on the platform. Reaching it takes a lot of VP, so it marks someone who has been seriously active over time.",
   updated: "2026-06-06",
   body: [
     {
@@ -16,7 +16,7 @@ export default {
     },
     {
       list: [
-        "The lowest conversion commission, 10%, so you keep the most when turning Coins into Gems.",
+        "The best revenue share on the ladder, so you keep the most of what you earn.",
         "The top avatar ring and rank badge, the clearest status marker on VERGR.",
         "The fullest set of rank perks, including the largest in-app purchase discount and all unlocked reactions.",
         "A standing few accounts reach, which carries real weight with other players."

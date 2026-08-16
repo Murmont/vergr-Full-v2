@@ -14,16 +14,16 @@ import { getMyWalletSecurityStatus } from '../../../firebase/walletCallables';
 const KYC_TIERS = [
   { level: 0, name: 'Unverified', dailyEUR: 0,    monthlyEUR: 0,
     requires: ['Email confirmed'],
-    unlocks:  ['Buy coins', 'Tip creators', 'Receive gems', 'No withdrawals'] },
+    unlocks:  ['Buy coins', 'Tip creators', 'Unlock paid content', 'Cannot be paid a revenue share'] },
   { level: 1, name: 'Basic',      dailyEUR: 0,    monthlyEUR: 50,
     requires: ['Government ID', 'Selfie liveness'],
-    unlocks:  ['Convert coins to gems', 'Crypto withdrawals up to €50/month'] },
-  { level: 2, name: 'Standard',   dailyEUR: 500,  monthlyEUR: 2500,
+    unlocks:  ['VERGR can pay your creator revenue share', 'Paid up to €50 per month'] },
+  { level: 2, name: 'Standard',   dailyEUR: 0,    monthlyEUR: 2500,
     requires: ['L1 + proof of address (utility bill / bank statement)'],
-    unlocks:  ['Crypto withdrawals €500/day, €2,500/month', 'Bank withdrawals'] },
-  { level: 3, name: 'Premium',    dailyEUR: 2500, monthlyEUR: 15000,
+    unlocks:  ['Paid up to €2,500 per month', 'Faster payout schedules unlock'] },
+  { level: 3, name: 'Premium',    dailyEUR: 0,    monthlyEUR: 15000,
     requires: ['L2 + source-of-funds declaration on first €1,000+ deposit'],
-    unlocks:  ['Crypto withdrawals €2,500/day, €15,000/month', 'Priority support'] },
+    unlocks:  ['Paid up to €15,000 per month', 'Priority support'] },
 ];
 
 export default function KycScreen() {
@@ -120,9 +120,9 @@ export default function KycScreen() {
                             {u}
                           </li>
                         ))}
-                        {t.dailyEUR > 0 && (
+                        {t.monthlyEUR > 0 && (
                           <li className="font-dmmono" style={{ fontSize: 12, color: WALLET_TOKENS.textSecondary, marginTop: 4 }}>
-                            {fmtEUR(t.dailyEUR)} / day · {fmtEUR(t.monthlyEUR)} / month
+                            Paid up to {fmtEUR(t.monthlyEUR)} / month
                           </li>
                         )}
                       </ul>
@@ -144,7 +144,7 @@ export default function KycScreen() {
 
       <div style={{ marginTop: 22 }}>
         <Callout tone="info" icon="info" title="Why we ask">
-          EU regulators require us to verify identity for withdrawals. Your documents go straight to Didit. We see only the result.
+          We verify identity before paying a creator their revenue share, as the regulations require. Your documents go straight to Didit. We see only the result.
         </Callout>
       </div>
 

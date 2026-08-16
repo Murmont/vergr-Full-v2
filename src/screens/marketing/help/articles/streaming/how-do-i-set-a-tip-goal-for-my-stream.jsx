@@ -27,7 +27,7 @@ export default {
       ]
     },
     {
-      note: "Keep goals honest and reachable. A believable target that completes on stream (celebrate it!) builds the habit; a fantasy number that never moves teaches viewers to ignore the bar. Tips carry the standard flat 10% fee, you keep 90%."
+      note: "Keep goals honest and reachable. A believable target that completes on stream (celebrate it!) builds the habit; a fantasy number that never moves teaches viewers to ignore the bar. Vergr pays you your revenue share of each tip, at least 50%."
     },
     {
       cta: [

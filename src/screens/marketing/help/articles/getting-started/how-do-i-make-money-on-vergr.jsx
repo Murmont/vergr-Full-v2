@@ -5,11 +5,11 @@
 // Top-level: summary (1-2 sentences, answer-first), updated (YYYY-MM-DD), body [].
 
 export default {
-  summary: "Get tipped while you stream or post, charge for access to a stream, sell memberships to fans, share in your squad's treasury, or earn as a Vanguard moderator. Your earnings build up in Coins, then you convert them to Gems and withdraw real money once you are verified.",
+  summary: "Get tipped while you stream or post, charge for access to a stream, sell memberships to fans, share in your squad's treasury, or earn as a Vanguard moderator. Vergr pays you a share of the revenue that generates, on a schedule, once you are verified.",
   updated: "2026-06-06",
   body: [
     {
-      p: "There are several ways to earn on VERGR, and most people combine a few rather than relying on one. The common thread is that you earn in Coins, then convert to Gems to cash out. Here is the overview."
+      p: "There are several ways to earn on VERGR, and most people combine a few rather than relying on one. The common thread is that Vergr pays you a share of the revenue your content generates. Here is the overview."
     },
     {
       h2: "The main earning paths"
@@ -17,7 +17,7 @@ export default {
     {
       list: [
         "Paid streams: charge a one-off pass for a stream, or let a creator membership cover it.",
-        "Tips: go live or post, and your audience tips you in Coins. You keep 90% of every tip, since the platform fee is a flat 10%.",
+        "Tips: go live or post, and your audience tips you in Coins. Vergr pays you a share of every tip: 50% to start, up to 80% as your lifetime earnings grow.",
         "Squads: team up and share what you earn. Members pool Coins into a shared squad treasury the squad controls.",
         "Memberships: your fans pay monthly for perks you set up in the Creator Studio.",
         "Vanguard moderation: trusted players can join the moderator program and get paid for keeping competition fair."
@@ -27,7 +27,7 @@ export default {
       h2: "Turning earnings into real money"
     },
     {
-      p: "Everything above pays in Coins, which live inside the app. When you want real money, you convert Coins into Gems and withdraw the Gems. You need to complete a one-time identity check first, and the minimum withdrawal is 1,000 Gems."
+      p: "When people pay for your content, Vergr pays you a share of that revenue on a schedule. You need to complete a one-time identity check before your first payment."
     },
     {
       h2: "A realistic note"
@@ -42,8 +42,8 @@ export default {
           label: "Every method in detail"
         },
         {
-          to: "/platform/help/how-do-i-withdraw-my-earnings",
-          label: "How to cash out"
+          to: "/platform/help/how-do-i-see-my-earnings",
+          label: "See your earnings"
         }
       ]
     }

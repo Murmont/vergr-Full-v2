@@ -15,13 +15,13 @@ export default {
       h2: "Paid streams"
     },
     {
-      p: "You can charge for access to a stream: viewers either buy a one-off pass for that broadcast, or their creator membership covers it. You set the price. The platform takes a flat 10% and you keep the rest."
+      p: "You can charge for access to a stream: viewers either buy a one-off pass for that broadcast, or their creator membership covers it. You set the price. Vergr pays you a share of that revenue and you keep the rest."
     },
     {
       h2: "Streaming tips"
     },
     {
-      p: "Go live and your viewers tip you in Coins. You keep the large majority of every tip; the platform takes a flat 10%. To go live on the free plan you need 100 followers (far below TikTok's 1,000) plus a 50-coin Stream Boost that refunds itself from your first tips. Paid plans let you stream from day one. Tips on your posts and clips have no follower requirement."
+      p: "Go live and your viewers tip you in Coins. Vergr pays you a share of every tip: 50% to start, rising to 80% as your lifetime earnings grow. To go live on the free plan you need 100 followers (far below TikTok's 1,000) plus a 50-coin Stream Boost that refunds itself from your first tips. Paid plans let you stream from day one. Tips on your posts and clips have no follower requirement."
     },
     {
       h2: "Squads"
@@ -51,8 +51,8 @@ export default {
           label: "Can I make real money?"
         },
         {
-          to: "/platform/help/how-do-i-withdraw-my-earnings",
-          label: "How to cash out"
+          to: "/platform/help/how-do-i-see-my-earnings",
+          label: "See your earnings"
         }
       ]
     }

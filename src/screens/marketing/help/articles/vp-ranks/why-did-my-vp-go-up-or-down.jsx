@@ -29,7 +29,7 @@ export default {
       p: "Your lifetime VP is not taken away for normal activity. What can look like a drop is usually the progress bar within a level resetting after you level up (you start the next level near empty), or a pending reward that had been shown optimistically settling to its final value. The level number itself does not fall."
     },
     {
-      note: "VP is separate from Coins and Gems. Spending Coins or withdrawing Gems never reduces your VP."
+      note: "VP is separate from Coins. Spending Coins never reduces your VP."
     },
     {
       faq: [

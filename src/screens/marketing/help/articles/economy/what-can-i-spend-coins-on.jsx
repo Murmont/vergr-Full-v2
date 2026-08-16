@@ -5,7 +5,7 @@
 // Top-level: summary (1-2 sentences, answer-first), updated (YYYY-MM-DD), body [].
 
 export default {
-  summary: "Coins are the in-app currency, so almost everything you pay for inside VERGR uses them: event tickets and season passes, tips to creators, Stream Boosts, subscriptions, creator memberships, and squad contributions. Anything you can convert to real money happens by turning Coins into Gems first.",
+  summary: "Coins are the in-app currency, so almost everything you pay for inside VERGR uses them: event tickets and season passes, tips to creators, Stream Boosts, subscriptions, creator memberships, and squad contributions. Earning is separate from spending, and is paid by Vergr as a revenue share.",
   updated: "2026-06-06",
   body: [
     {
@@ -16,7 +16,7 @@ export default {
     },
     {
       list: [
-        "Event tickets and season passes. Buy a spectator ticket (or a host's season pass) to watch ticketed events; competing is free.",
+        "Event tickets and season passes. Buy a ticket, or a host's season pass, to watch a ticketed event.",
         "Tips. Send Coins to creators on their posts, profiles, and live streams.",
         "Stream Boosts. Spend Coins to boost a stream for more discovery and the ability to notify followers.",
         "Subscriptions. Pay for a Lite or Pro plan with Coins instead of a card.",
@@ -25,10 +25,10 @@ export default {
       ]
     },
     {
-      h2: "Coins vs cashing out"
+      h2: "Coins vs earning"
     },
     {
-      p: "Coins are for spending and circulating inside the app. They are not what you withdraw. When you want real money, you convert Coins to Gems and withdraw the Gems. Think of Coins as your everyday balance and Gems as your payout balance."
+      p: "Coins are for spending inside the app. They are a licence to use features, they have no cash value, and they cannot be transferred or redeemed for money. Earning is a separate thing: if people pay for your content, Vergr pays you a share of that revenue."
     },
     {
       cta: [
@@ -41,8 +41,8 @@ export default {
           label: "Buy Coins"
         },
         {
-          to: "/platform/help/how-do-i-convert-coins-into-gems",
-          label: "Convert to Gems"
+          to: "/platform/help/how-do-coins-and-vp-work-together",
+          label: "How Coins and VP work"
         }
       ]
     }

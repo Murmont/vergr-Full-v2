@@ -6,7 +6,7 @@ export default {
     { h2: "How your data is used" },
     { list: [
       "Running your account and wallet.",
-      "Processing payments and withdrawals.",
+      "Processing payments and creator payouts.",
       "Personalizing your feed and recommendations.",
       "Keeping the platform safe and preventing fraud.",
     ]},

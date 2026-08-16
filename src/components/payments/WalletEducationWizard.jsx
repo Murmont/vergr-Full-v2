@@ -169,7 +169,7 @@ export default function WalletEducationWizard({ onAddressEntered, onClose }) {
           />
           {error && <p className="text-brand-ember text-xs">{error}</p>}
           <p className="text-text-muted text-[11px]">
-            Double-check the address — withdrawals are irreversible. We only support USDT (TRC-20) at launch.
+            Double-check the amount before you confirm — spent Coins are not returned. We only support USDT (TRC-20) at launch.
           </p>
         </div>
       )}

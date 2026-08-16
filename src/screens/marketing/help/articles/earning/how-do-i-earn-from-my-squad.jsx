@@ -7,7 +7,7 @@ export default {
     { list: [
       "Tips on squad streams and hangouts, paid into the squad treasury.",
       "Sponsorships and contributions from members and other squads.",
-      "Member contributions when pooling for a prize or an entry.",
+      "Member contributions when the squad pools coins for something together.",
     ]},
     { h2: "How it reaches members" },
     { p: "The treasury is split among active members according to the squad's earnings-split settings, so contribution and activity are rewarded. Owners and managers configure how the split works." },

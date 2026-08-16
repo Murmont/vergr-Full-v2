@@ -9,13 +9,13 @@ export default {
   updated: "2026-06-06",
   body: [
     {
-      p: "VERGR is available to most people, but whether you can use the earning side depends on where you are. We follow local law on skill-based competition for prizes, so a handful of countries and US states have the money features turned off."
+      p: "VERGR is available to most people, but whether you can use the earning side depends on where you are. A handful of countries have the money features turned off."
     },
     {
       h2: "What is and is not restricted"
     },
     {
-      p: "The social platform (posting, streaming, watching, squads, chat) is broadly available. The money features (the wallet, tips you cash out, and withdrawals) are not offered where we cannot lawfully move money. If your region is restricted, those features simply will not be available on your account, and everything else keeps working."
+      p: "The social platform (posting, streaming, watching, squads, chat) is broadly available. The money features (the wallet and creator payments) are not offered where we cannot lawfully move money. If your region is restricted, those features simply will not be available on your account, and everything else keeps working."
     },
     {
       h2: "Where to check"
@@ -33,7 +33,7 @@ export default {
           label: "Where VERGR operates"
         },
         {
-          to: "/platform/help/is-skill-based-gaming-for-money-legal",
+          to: "/platform/help/is-vergr-gambling",
           label: "Is it legal?"
         }
       ]

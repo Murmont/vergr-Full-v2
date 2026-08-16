@@ -169,7 +169,7 @@ export default function PrestigeShowcase({ totalVP = 0, plan = 'free', prestige 
             </div>
           ))}
         </div>
-        <p className="text-[11px] text-text-muted mt-2">VP is not cashable. Only gems convert to a payout. VP is purely status, perks and progression.</p>
+        <p className="text-[11px] text-text-muted mt-2">VP is not money and cannot be spent, converted or cashed. It is purely status, perks and progression.</p>
       </Section>
       )}
 

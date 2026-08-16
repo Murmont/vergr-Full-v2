@@ -5,7 +5,7 @@
 // Top-level: summary (1-2 sentences, answer-first), updated (YYYY-MM-DD), body [].
 
 export default {
-  summary: "While watching a stream, tap the tip button, choose an amount in Coins, and confirm. Big tips can pop up on the streamer's screen, and if a tip goal is running your tip moves the bar. The flat 10% fee applies, so the streamer keeps 90%.",
+  summary: "While watching a stream, tap the tip button, choose an amount in Coins, and confirm. Big tips can pop up on the streamer's screen, and if a tip goal is running your tip moves the bar. Vergr pays the streamer their revenue share of it.",
   updated: "2026-06-06",
   body: [
     {
@@ -31,7 +31,7 @@ export default {
       h2: "What it costs and what they keep"
     },
     {
-      p: "You need Coins in your wallet to tip, which you can buy or earn. The platform takes a flat 10%, so a 100-coin tip puts 90 Coins with the streamer. That rate is the same on every plan."
+      p: "You need Coins in your wallet to tip, which you can buy or earn. Nothing is taken at send time, and the streamer accrues their revenue share of it. That rate is the same on every plan."
     },
     {
       cta: [

@@ -5,7 +5,7 @@
 // Top-level: summary (1-2 sentences, answer-first), updated (YYYY-MM-DD), body [].
 
 export default {
-  summary: "Honestly, it depends, and there are no guarantees. Earnings come down to how much you play, how good you are, the audience you build, and consistency. Some people earn pocket money from tips and small wins; dedicated competitors and creators earn more. VERGR will never promise you a figure.",
+  summary: "Honestly, it depends, and there are no guarantees. Earnings come down to how much you play, how good you are, the audience you build, and consistency. Some people earn pocket money from tips; creators who stream consistently and build an audience earn more. VERGR will never promise you a figure.",
   updated: "2026-06-06",
   body: [
     {
@@ -32,7 +32,7 @@ export default {
       h2: "The fairer side"
     },
     {
-      p: "What VERGR controls is the cut: a flat 10% on tips that never grows with your success, and a conversion commission that shrinks as you rank up. So more of what you earn stays with you than on many platforms, but the earning itself is on you."
+      p: "What VERGR controls is the rate: one revenue share that starts at 50% and only ever rises with your lifetime earnings, never falls. So more of what you earn stays with you than on many platforms, but the earning itself is on you."
     },
     {
       note: "There are no income guarantees. Treat any earnings as the result of your effort and results, not a promised return."

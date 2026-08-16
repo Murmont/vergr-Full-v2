@@ -37,7 +37,8 @@ import VanguardPresence from '../VanguardPresence';
 import { getPlaybackUrl } from '../../utils/streamConfig';
 import { captureStreamInterest } from '../../utils/feedRank';
 import { getFunctions, httpsCallable } from 'firebase/functions';
-import { followUser, unfollowUser, isFollowing, sendCoins, getEventTicketStatus } from '../../firebase/firestore';
+import { followUser, unfollowUser, isFollowing, sendCoins, getEventTicketStatus, getContentAccess } from '../../firebase/firestore';
+import StreamPaywall from '../monetization/StreamPaywall';
 import EventTicketCard from '../tournament/EventTicketCard';
 import InStreamTicketWidget from './InStreamTicketWidget';
 import StreamShareSheet from './StreamShareSheet';
@@ -505,9 +506,46 @@ export default function MobileLiveViewer() {
   };
   const behind = drift > 6;
 
-  // hlsUrl is written by createStreamSession for free streams. It is null on a
-  // paid one by design; the paid path resolves through getAccess.
-  const playbackUrl = streamDoc?.compositeHlsUrl || streamDoc?.hlsUrl || null;
+  // WHERE THE PLAYBACK URL COMES FROM.
+  //
+  // A free public stream carries `hlsUrl` on its own document. A PAID stream and
+  // a 1:1 SESSION do not: `streams/{id}` is world-readable, so publishing the
+  // URL there would be a paywall anyone defeats by reading the document they are
+  // already allowed to read, and a "private" session anyone could join by
+  // holding the id. Both resolve through getAccess, which checks the entitlement
+  // (paid) or the guest list (1:1) before it mints anything.
+  //
+  // This screen previously did neither, so a paid stream on a phone showed an
+  // empty player and no paywall at all.
+  const isPaidStream = streamDoc?.access?.mode === 'paid';
+  const isOneToOne = streamDoc?.sessionType === 'one_to_one';
+  const paidPrice = Math.floor(streamDoc?.access?.priceCoins || 0);
+  const needsServerPlayback = isPaidStream || isOneToOne;
+  const [serverAccess, setServerAccess] = useState(null); // null = still checking
+  // The join gate is dismissed for this visit. Not persisted: arriving in
+  // somebody's private session should always be a deliberate act.
+  const [gateAccepted, setGateAccepted] = useState(false);
+
+  useEffect(() => {
+    if (!needsServerPlayback || !streamId) { setServerAccess(null); return undefined; }
+    let alive = true;
+    (async () => {
+      try {
+        const res = await getContentAccess('stream', streamId);
+        if (alive) setServerAccess(res || { hasAccess: false });
+      } catch (err) {
+        // Fail CLOSED. `not-found` is the server refusing an uninvited viewer on
+        // a private session; it is not distinguished from a session that never
+        // existed, so that probing an id tells a stranger nothing.
+        if (alive) setServerAccess({ hasAccess: false, denied: err?.code === 'functions/not-found' });
+      }
+    })();
+    return () => { alive = false; };
+  }, [needsServerPlayback, streamId]);
+
+  const playbackUrl = needsServerPlayback
+    ? (serverAccess?.hasAccess ? (serverAccess.hlsUrl || serverAccess.lowLatencyHlsUrl || null) : null)
+    : (streamDoc?.compositeHlsUrl || streamDoc?.hlsUrl || null);
   const isTwitchMirror = streamDoc?.source === 'twitch' && !!streamDoc?.twitchChannel;
   const hasVideo = !!playbackUrl || isTwitchMirror;
 
@@ -608,10 +646,25 @@ export default function MobileLiveViewer() {
     return <Centered label="Stream hasn't started yet." action={{ label: 'Refresh', onClick: () => safeReload() }} />;
   }
 
+  // A PRIVATE SESSION THE VIEWER IS NOT IN. Checked before every other gate,
+  // because there is nothing here to follow, buy or wait for.
+  if (serverAccess?.denied) {
+    return (
+      <Centered
+        label="That session is not available."
+        action={{ label: 'Browse live', onClick: () => navigate('/') }}
+      />
+    );
+  }
+
   // Audience gate: followers/friends-only streams (unlisted) only play for the
   // host, admins, and followers. Everyone else gets a Follow gate, not the video.
   // (isHost/isAdmin are hoisted above the ended branch — the replay needs them.)
-  const audienceGated = !!streamDoc.unlisted && !isHost && !isAdmin && (followChecked ? !followed : !currentUser);
+  //
+  // A 1:1 is EXCLUDED. It is unlisted too, but its gate is the guest list, and
+  // running it through this one would have told an invited guest to go and
+  // follow the person who just invited them.
+  const audienceGated = !!streamDoc.unlisted && !isOneToOne && !isHost && !isAdmin && (followChecked ? !followed : !currentUser);
   if (audienceGated) {
     return (
       <div style={{ minHeight: '100vh', background: `radial-gradient(circle at 50% 0%, #1a1030 0%, ${C.bg} 60%)`, color: C.text, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, fontFamily: '"Inter", system-ui, sans-serif' }}>
@@ -655,6 +708,39 @@ export default function MobileLiveViewer() {
           />
           <button onClick={() => navigate('/')} style={{ width: '100%', marginTop: 12, padding: 12, borderRadius: 12, border: `1px solid ${C.border}`, background: 'transparent', color: C.text, fontSize: 13, fontWeight: 800, cursor: 'pointer' }}>Browse live</button>
         </div>
+      </div>
+    );
+  }
+
+  // THE JOIN GATE. Shown before entering a Premium Live that has not been paid
+  // for, AND before entering a 1:1 session — including a free one.
+  //
+  // A free 1:1 gets a gate on purpose. Dropping straight into somebody's private
+  // broadcast with no confirmation is startling for both sides; the host should
+  // know when a guest arrives, and the guest should know what they are walking
+  // into. Same screen for both products, so the price and the copy cannot drift.
+  const needsGate = serverAccess && !serverAccess.hasAccess
+    ? isPaidStream            // paid: must buy in
+    : (isOneToOne && !isHost && !gateAccepted); // free 1:1: must accept
+
+  if (needsGate) {
+    return (
+      <div style={{ position: 'fixed', inset: 0, background: '#000', zIndex: 95 }}>
+        <StreamPaywall
+          streamId={streamId}
+          priceCoins={isPaidStream ? paidPrice : 0}
+          title={streamDoc?.title}
+          hostName={hostInfo?.displayName || hostInfo?.username}
+          hostAvatar={hostInfo?.avatar}
+          stillUrl={streamDoc?.thumbnailUrl || streamDoc?.coverUrl || streamDoc?.thumbUrl}
+          isOneToOne={isOneToOne}
+          viewerCount={streamDoc?.viewerCount || 0}
+          onBack={() => navigate('/')}
+          onUnlocked={() => {
+            setGateAccepted(true);
+            getContentAccess('stream', streamId).then(setServerAccess).catch(() => {});
+          }}
+        />
       </div>
     );
   }
@@ -1394,7 +1480,7 @@ function TipModal({ amount, setAmount, message, setMessage, onClose, onSend, sen
         </div>
         <input type="number" min={1} value={amount} onChange={(e) => setAmount(Math.max(1, parseInt(e.target.value || '0', 10)))} style={{ width: '100%', boxSizing: 'border-box', background: 'rgba(255,255,255,0.04)', border: `1px solid ${C.border}`, borderRadius: 12, padding: 13, color: C.text, fontSize: 15, outline: 'none', marginBottom: 10 }} />
         <input type="text" value={message} maxLength={80} onChange={(e) => setMessage(e.target.value)} placeholder={suggested ? `Optional message (default: "${suggested.message}")` : 'Optional message (up to 80 chars)'} style={{ width: '100%', boxSizing: 'border-box', background: 'rgba(255,255,255,0.04)', border: `1px solid ${C.border}`, borderRadius: 12, padding: 13, color: C.text, fontSize: 14, outline: 'none', marginBottom: 6 }} />
-        <div style={{ fontSize: 11, color: C.textMuted, marginBottom: 14, lineHeight: 1.4 }}>Every message is moderated before broadcast. 10% platform fee. Host receives {Math.floor(amount * 0.9)}c.</div>
+        <div style={{ fontSize: 11, color: C.textMuted, marginBottom: 14, lineHeight: 1.4 }}>Every message is moderated before broadcast. Vergr pays the host their revenue share of this tip.</div>
         <div style={{ display: 'flex', gap: 10 }}>
           <button onClick={onClose} disabled={sending} style={{ flex: 1, padding: 14, borderRadius: 12, border: `1px solid ${C.border}`, background: 'transparent', color: C.textDim, fontSize: 13, fontWeight: 800, cursor: 'pointer' }}>Cancel</button>
           <button onClick={onSend} disabled={sending} style={{ flex: 2, padding: 14, borderRadius: 12, border: 'none', background: `linear-gradient(135deg, ${C.purple}, ${C.purpleLight})`, color: '#fff', fontSize: 13, fontWeight: 800, cursor: 'pointer', opacity: sending ? 0.6 : 1 }}>{sending ? 'Sending…' : `Send ${amount}c`}</button>

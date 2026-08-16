@@ -30,7 +30,7 @@ export default {
       h2: "How to get the best value"
     },
     {
-      p: "The bigger the pack, the better the rate per Coin, with the largest packs giving a real bulk discount. The top two packs also throw in bonus VP, which helps you rank up faster and lowers your conversion commission down the line."
+      p: "The bigger the pack, the better the rate per Coin, with the largest packs giving a real bulk discount. The top two packs also throw in bonus VP, which ranks you up faster for rings and badges. VP never changes what a creator is paid, which is set by lifetime earnings aine."
     },
     {
       h2: "Custom amounts"

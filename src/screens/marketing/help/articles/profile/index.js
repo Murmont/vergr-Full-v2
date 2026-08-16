@@ -17,7 +17,6 @@ import a12 from './what-are-prestige-levels.jsx';
 import a13 from './what-do-the-badges-on-a-profile-mean.jsx';
 import a14 from './what-is-a-public-profile-and-what-do-other-people-see.jsx';
 import a15 from './what-is-an-esports-team-profile-and-how-do-i-set-one-up.jsx';
-import a16 from './what-is-the-gold-ring-on-some-avatars.jsx';
 
 export default {
   'how-do-i-add-my-social-media-links-to-my-profile': a0,
@@ -36,5 +35,4 @@ export default {
   'what-do-the-badges-on-a-profile-mean': a13,
   'what-is-a-public-profile-and-what-do-other-people-see': a14,
   'what-is-an-esports-team-profile-and-how-do-i-set-one-up': a15,
-  'what-is-the-gold-ring-on-some-avatars': a16,
 };

@@ -232,7 +232,7 @@ export default function BlockForm({ block, patch }) {
       return (
         <div className="flex flex-col gap-2">
           <input value={block.label || ''} onChange={(e) => patch({ label: e.target.value })} className="input-mini" placeholder="Buy me a coffee" />
-          <Hint>Adds a tip button. When a fan taps it, the in-app tip sheet opens (deep-links into the Vergr app, or prompts install) where they send you coins. You keep 90% (flat 10% platform fee).</Hint>
+          <Hint>Adds a tip button. When a fan taps it, the in-app tip sheet opens (deep-links into the Vergr app, or prompts install) where they send you coins. Vergr pays you a share of that revenue, 50% to 80% by lifetime earnings.</Hint>
         </div>
       );
 
@@ -437,7 +437,7 @@ export default function BlockForm({ block, patch }) {
       return (
         <div className="flex flex-col gap-2">
           <input value={block.title || ''} onChange={(e) => patch({ title: e.target.value })} className="input-mini" placeholder="Section title (e.g. Membership)" />
-          <Hint>Shows your PUBLISHED membership tiers with a Subscribe button. Visitors tap through to the app to join — you keep 90%. Manage tiers in Creator Studio.</Hint>
+          <Hint>Shows your PUBLISHED membership tiers with a Subscribe button. Visitors tap through to the app to join. Vergr pays you a share of that revenue. Manage tiers in Creator Studio.</Hint>
           <a href="/creator/membership" target="_blank" rel="noreferrer" className="flex items-center justify-center gap-1.5 py-2 border border-dashed border-white/10 rounded-lg text-xs text-brand-violet-light hover:text-white">
             <Icon name="open_in_new" size={13} /> Manage tiers
           </a>
@@ -448,7 +448,7 @@ export default function BlockForm({ block, patch }) {
       return (
         <div className="flex flex-col gap-2">
           <DigitalProductPicker uid={uid} value={block.productId} onChange={(p) => patch({ productId: p?.id || '' })} />
-          <Hint>Sells one of your products (digital download or physical item) right on the page. Buyers pay with coins; you keep 92%, paid straight to gems (no withdraw fee). Create and manage products in Vergr Shop.</Hint>
+          <Hint>Sells one of your products (digital download or physical item) right on the page. Buyers pay with coins and you keep 92%, credited to your earnings straight away. Create and manage products in Vergr Shop.</Hint>
         </div>
       );
 

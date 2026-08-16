@@ -37,7 +37,7 @@ export default {
       h2: "Are Coins real money?"
     },
     {
-      p: "Coins are an in-app currency, not cash. But they are tied to real value: you can convert Coins into Gems and withdraw the Gems. So the Coins you earn are not stuck in the app."
+      p: "Coins are an in-app credit, not cash, and they cannot be redeemed for money. Earning is separate: when people pay for your content, Vergr pays you a share of that revenue."
     },
     {
       cta: [
@@ -46,8 +46,8 @@ export default {
           label: "How to buy Coins"
         },
         {
-          to: "/platform/help/what-is-the-difference-between-coins-and-gems",
-          label: "Coins vs Gems"
+          to: "/platform/help/how-do-coins-and-vp-work-together",
+          label: "How Coins and VP work"
         }
       ]
     }

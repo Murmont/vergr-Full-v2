@@ -25,7 +25,7 @@ export default {
       h2: "Do not forget the bonus VP"
     },
     {
-      p: "The top two packs include bonus VP, which is more valuable than it looks: VP raises your rank, and a higher rank lowers the commission you pay when converting Coins to Gems. So those packs help you keep more on every future cash-out, not just give you more Coins now."
+      p: "The top two packs include bonus VP, which is more valuable than it looks: VP raises your rank, and a higher rank improves the share you keep as a creator. So those packs help you keep more of what you earn later, not just give you more Coins now."
     },
     {
       note: "There is no flat per-Coin discount on top of pack pricing. Value comes from choosing a larger pack, where the per-Coin rate is lower."

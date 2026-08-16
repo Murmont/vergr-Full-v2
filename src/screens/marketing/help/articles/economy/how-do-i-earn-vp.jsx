@@ -5,7 +5,7 @@
 // Top-level: summary (1-2 sentences, answer-first), updated (YYYY-MM-DD), body [].
 
 export default {
-  summary: "You earn VP (Vergr Points) by being active: streaming, posting, completing creator quests, and referring friends. VP raises your rank, and a higher rank lowers the commission you pay when converting Coins to Gems. Paid plans earn VP faster, so they climb sooner.",
+  summary: "You earn VP (Vergr Points) by being active: streaming, posting, completing creator quests, and referring friends. VP raises your rank, and a higher rank increases the share you keep of what your content earns. Paid plans earn VP faster, so they climb sooner.",
   updated: "2026-06-06",
   body: [
     {
@@ -32,7 +32,7 @@ export default {
       h2: "What VP gives you"
     },
     {
-      p: "VP is not a currency, you cannot spend or withdraw it. Its job is your rank, and more VP lowers the commission on converting Coins to Gems, from 30% to a 15% floor at 100,000 VP. Higher ranks also unlock avatar rings and badges."
+      p: "VP is not a currency and you cannot spend it. Its job is your rank, and more VP improves the share you keep as a creator, from 70% at the bottom to an 85% ceiling at 100,000 VP. Higher ranks also unlock avatar rings and badges."
     },
     {
       cta: [

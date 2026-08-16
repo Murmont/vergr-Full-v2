@@ -6,7 +6,7 @@
 // withdrawable unit and sending them peer-to-peer is a money transfer with a
 // different meaning, a different minimum and a different set of store problems.
 // A tip inside a chat is the same gesture as a tip on a post or in a stream, so
-// it uses the same unit and the same flat 10% fee, and the numbers a user sees
+// it uses the same unit and the same revenue-share model, and what a user sees
 // here match the ones they see everywhere else.
 //
 // SendGemsModal still exists and is still correct where an actual gem transfer
@@ -22,9 +22,9 @@ import UserAvatar from './UserAvatar';
 
 const QUICK_AMOUNTS = [50, 100, 500, 1000, 5000, 10000];
 
-/** Flat 10% platform fee at send time, same as every other tip. Mirrors
+/** No fee is taken at send time. The full tip is gross revenue and Vergr's
  *  `sendCoins` in firestore.js — the server is authoritative, this is display. */
-const FEE_PCT = 0.10;
+const FEE_PCT = 0; // no send-time fee: the revenue share is taken once, later
 
 export default function SendCoinsModal({ isOpen, onClose, recipient }) {
   const { currentUser } = useAuth();
@@ -51,7 +51,7 @@ export default function SendCoinsModal({ isOpen, onClose, recipient }) {
   const finalAmount = custom ? parseInt(custom, 10) : amount;
   const valid = Number.isFinite(finalAmount) && finalAmount > 0
     && finalAmount <= balance && !!toId && toId !== currentUser?.uid;
-  const net = Math.floor((finalAmount || 0) * (1 - FEE_PCT));
+  // No client-side net: the creator's share depends on their lifetime earnings.
 
   const handleSend = async () => {
     if (!valid || sending) return;
@@ -120,8 +120,8 @@ export default function SendCoinsModal({ isOpen, onClose, recipient }) {
       </div>
       {finalAmount > 0 && (
         <div className="flex items-center justify-between text-xs text-text-muted mb-4">
-          <span className="font-dmmono">They receive (after 10% fee)</span>
-          <span className="font-dmmono font-bold tabular-nums text-text-secondary">{net.toLocaleString()}</span>
+          <span className="font-dmmono">Vergr pays the creator their revenue share</span>
+          <span className="font-dmmono font-bold tabular-nums text-text-secondary">50-80%</span>
         </div>
       )}
 

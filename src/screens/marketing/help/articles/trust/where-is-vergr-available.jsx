@@ -21,7 +21,7 @@ export default {
       h2: "The money side"
     },
     {
-      p: "The wallet, tips you cash out, and withdrawals are only offered where we can lawfully move money. Where that is restricted, those features are simply turned off on accounts in that region, and the rest of the platform keeps working."
+      p: "The wallet and creator payments are only offered where we can lawfully move money. Where that is restricted, those features are simply turned off on accounts in that region, and the rest of the platform keeps working."
     },
     {
       h2: "Where to check"
@@ -36,7 +36,7 @@ export default {
           label: "Is it in my country?"
         },
         {
-          to: "/platform/help/is-skill-based-gaming-for-money-legal",
+          to: "/platform/help/is-vergr-gambling",
           label: "Is it legal?"
         }
       ]

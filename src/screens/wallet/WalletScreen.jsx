@@ -538,9 +538,12 @@ export default function WalletScreen() {
     // /buy-coins screen shows the full lineup.
     // Three featured picks. Source of truth: vpSystem.COIN_PACKS.
     const fallback = [
-      { id: 'starter', name: 'Starter Pack',  coins: 100,    priceEUR: 0.99,   glow: 'rgba(240,165,0,0.5)' },
-      { id: 'pro',     name: 'Pro Pack',      coins: 1200,   priceEUR: 11.49,  glow: 'rgba(240,165,0,0.6)', popular: true },
-      { id: 'titan',   name: 'Titan Pack',    coins: 15000,  priceEUR: 134.99, glow: 'rgba(140,80,255,0.5)', vpPack: true },
+      // Mirrors vpSystem.js COIN_PACKS (native USD since 2026-08-11). Keep the
+      // coins and prices identical to that file, or this teaser advertises a
+      // deal the buy screen will not honour.
+      { id: 'starter', name: 'Starter Pack',  coins: 78,     priceUSD: 0.99,   glow: 'rgba(240,165,0,0.5)' },
+      { id: 'pro',     name: 'Pro Pack',      coins: 815,    priceUSD: 9.99,   glow: 'rgba(240,165,0,0.6)', popular: true },
+      { id: 'titan',   name: 'Titan Pack',    coins: 12800,  priceUSD: 149.99, glow: 'rgba(140,80,255,0.5)', vpPack: true },
     ];
     const packs = (coinPacks && coinPacks.length >= 3)
       ? coinPacks.filter(p => ['starter', 'pro', 'titan'].includes(p.id)).slice(0, 3)
@@ -602,7 +605,7 @@ export default function WalletScreen() {
                   : { background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)' }
                 }
               >
-                €{Number(p.priceEUR || 0).toFixed(2)}
+                ${Number(p.priceUSD || 0).toFixed(2)}
               </button>
             </div>
           );

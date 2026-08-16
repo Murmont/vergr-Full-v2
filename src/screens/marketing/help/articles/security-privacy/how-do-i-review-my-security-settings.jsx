@@ -1,5 +1,5 @@
 export default {
-  summary: "Go to Settings → Security. From there you can change your password, turn on two-factor authentication, and sign out of all devices. Your wallet has its own Security section for your PIN and whitelisted withdrawal addresses.",
+  summary: "Go to Settings → Security. From there you can change your password, turn on two-factor authentication, and sign out of all devices. Your wallet has its own Security section for your PIN and two-factor settings.",
   updated: "2026-06-07",
   body: [
     { p: "VERGR splits security into two places: account-level (Settings) and wallet-level (inside the wallet)." },
@@ -11,8 +11,8 @@ export default {
     ]},
     { h2: "Wallet security (inside the wallet)" },
     { list: [
-      "Wallet PIN — required to view balances and approve withdrawals.",
-      "Whitelisted addresses — the only destinations your withdrawals can go to.",
+      "Wallet PIN — required to view balances and approve purchases.",
+      "Verified payout details — the only destination your earnings can go to.",
     ]},
     { h2: "Recommended setup" },
     { p: "Turn on 2FA, set a wallet PIN you do not use anywhere else, and whitelist only addresses you control. That combination protects both your account and your funds." },

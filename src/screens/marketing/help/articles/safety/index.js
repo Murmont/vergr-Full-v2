@@ -9,8 +9,6 @@ import a4 from './what-is-the-code-of-conduct.jsx';
 import a5 from './what-gets-you-banned-on-vergr.jsx';
 import a6 from './my-account-was-muted-or-banned-what-do-i-do.jsx';
 import a7 from './how-do-i-appeal-a-ban-or-a-moderation-decision.jsx';
-import a8 from './how-does-vergr-keep-tournaments-fair.jsx';
-import a9 from './how-does-vergr-detect-cheating.jsx';
 import a10 from './what-content-is-not-allowed-on-vergr.jsx';
 import a11 from './how-do-i-keep-myself-safe-on-vergr.jsx';
 
@@ -23,8 +21,6 @@ export default {
   'what-gets-you-banned-on-vergr': a5,
   'my-account-was-muted-or-banned-what-do-i-do': a6,
   'how-do-i-appeal-a-ban-or-a-moderation-decision': a7,
-  'how-does-vergr-keep-tournaments-fair': a8,
-  'how-does-vergr-detect-cheating': a9,
   'what-content-is-not-allowed-on-vergr': a10,
   'how-do-i-keep-myself-safe-on-vergr': a11,
 };

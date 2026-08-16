@@ -120,7 +120,7 @@ const tsMs = (t) => (t?.toMillis ? t.toMillis() : (t ? new Date(t).getTime() : 0
 export const VERGR_PIN_HOURS = 24;
 
 // Build the ranking context from what the screen already has in hand.
-export const buildForYouCtx = ({ profile, vergrUid = null, botHumanRatio = 0.5 } = {}) => {
+export const buildForYouCtx = ({ profile, vergrUid = null, botHumanRatio = 0.5, allowNsfw = false } = {}) => {
   const declaredTopics = new Set();
   for (const t of (profile?.gameTags || [])) declaredTopics.add(String(t).toLowerCase());
   const neg = getNegatives();
@@ -136,8 +136,40 @@ export const buildForYouCtx = ({ profile, vergrUid = null, botHumanRatio = 0.5 }
     negativeTopics: neg.topics, // matched vs post hashtags AND inferred topics
     vergrUid,
     botPenaltyScale: 1 + Math.max(0, Math.min(1, botHumanRatio)), // 1..2
+    allowNsfw: allowNsfw === true,
   };
 };
+
+// ── ADULT CONTENT: the one place the demote-never-drop rule is INVERTED ──
+//
+// Everything else in this file demotes rather than excludes, because a blank
+// For You is the worse failure while the app is still bot-seeded (B2, founder
+// 2026-07-12). NSFW is the exact opposite: showing adult content to somebody who
+// did not ask for it is not a ranking miss, it is the failure. A low score is
+// not a gate, it just means "further down", and further down is still visible.
+//
+// So this drops. It is applied to BOTH rank entry points, before the early
+// returns, so a one-item page cannot slip past on the length check.
+//
+// This is presentation only and is NOT the security boundary. The real gate is
+// server-side in functions/entitlements.js (assertNsfwViewerAllowed), which
+// requires a verified identity before the media or playback URL is ever signed.
+// 2026-08-14: the adult marker is an ADVISORY LABEL, not a filter.
+//
+// Nudity and sexual content are now prohibited on every surface (Acceptable
+// Use Policy s.3) and actual nudity is refused at upload by the scanner's
+// "block" verdict before anything is stored. So `contentRating: "nsfw"` can
+// only ever mean the softer band: mature language, dark humour, adult subject
+// matter. That warrants telling a viewer what they are joining. It does not
+// warrant hiding the content or demanding a government ID to see it.
+//
+// The marker, the broadcaster toggle and the on-stream banner all stay. Only
+// the filtering behaviour is switched off, so restoring it is a one-line
+// change if the content policy ever moves back.
+const passesRating = () => true;
+
+export const filterForViewer = (posts, ctx) =>
+  (Array.isArray(posts) ? posts.filter((p) => passesRating(p, ctx)) : []);
 
 const scorePost = (post, ctx, nowMs) => {
   const author = post.author || {};
@@ -204,10 +236,11 @@ const scorePost = (post, ctx, nowMs) => {
 // outright would blank For You while the app is still bot-seeded (ghost-town),
 // so demote instead of drop — real content leads, news fills the bottom.
 export const rankForYou = (posts, ctx) => {
-  if (!Array.isArray(posts) || posts.length < 2) return posts || [];
+  const list = filterForViewer(posts, ctx);
+  if (list.length < 2) return list;
   const nowMs = Date.now();
   const newsTier = (p) => (p?.isNewsPost ? 1 : 0);
-  return posts
+  return list
     .map((post, i) => ({ post, i, s: scorePost(post, ctx, nowMs) }))
     .sort((a, b) =>
       (newsTier(a.post) - newsTier(b.post)) || // non-news first, always
@@ -230,9 +263,10 @@ export const rankForYou = (posts, ctx) => {
 // exact slots. Only genuinely new posts are ranked, and they are appended below.
 // Pass an empty list on an explicit refresh to re-rank everything from scratch.
 export const rankForYouStable = (posts, ctx, shownIds) => {
-  if (!Array.isArray(posts) || posts.length < 2) return posts || [];
-  if (!shownIds || !shownIds.length) return rankForYou(posts, ctx);
-  const byId = new Map(posts.map((p) => [p.id, p]));
+  const visible = filterForViewer(posts, ctx);
+  if (visible.length < 2) return visible;
+  if (!shownIds || !shownIds.length) return rankForYou(visible, ctx);
+  const byId = new Map(visible.map((p) => [p.id, p]));
   const held = [];
   for (const id of shownIds) {
     const p = byId.get(id);

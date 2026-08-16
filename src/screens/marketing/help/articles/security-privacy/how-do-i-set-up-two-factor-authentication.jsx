@@ -27,7 +27,7 @@ export default {
       h2: "What changes afterward"
     },
     {
-      p: "Once 2FA is on, signing in and sensitive actions ask for a current code from your authenticator app. It refreshes every 30 seconds, so it cannot be reused or guessed. This is especially worth doing if you hold a balance you plan to withdraw."
+      p: "Once 2FA is on, signing in and sensitive actions ask for a current code from your authenticator app. It refreshes every 30 seconds, so it cannot be reused or guessed. This is especially worth doing if you buy Coins regularly."
     },
     {
       note: "Keep your backup codes somewhere safe. If you lose access to your authenticator app, those are how you get back in."

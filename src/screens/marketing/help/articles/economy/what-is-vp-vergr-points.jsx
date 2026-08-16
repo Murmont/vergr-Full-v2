@@ -5,7 +5,7 @@
 // Top-level: summary (1-2 sentences, answer-first), updated (YYYY-MM-DD), body [].
 
 export default {
-  summary: "VP (Vergr Points) is your progress score on VERGR. You earn it by being active, competing, and referring friends. More VP means a higher rank, and a higher rank means a smaller commission when you convert Coins to Gems.",
+  summary: "VP (Vergr Points) is your progress score on VERGR. You earn it by being active and referring friends. More VP means a higher rank, and a higher rank means a larger share of what your content earns.",
   updated: "2026-06-06",
   body: [
     {
@@ -26,7 +26,7 @@ export default {
       h2: "What VP gets you"
     },
     {
-      p: "As your VP grows, you climb the ranks, from Rookie at the bottom up to Immortal at the top. The higher your rank, the smaller the commission we take when you convert Coins into Gems. So VP is basically how you earn a better rate over time."
+      p: "As your VP grows, you climb the ranks, from Rookie at the bottom up to Immortal at the top. The higher your rank, the smaller the share Vergr keeps of what your content earns. So VP is basically how you earn a better rate over time."
     },
     {
       note: "Quests pay VP, never Coins. VP is about status and lower fees, not a second wallet."
@@ -34,8 +34,8 @@ export default {
     {
       cta: [
         {
-          to: "/platform/help/how-do-i-convert-coins-into-gems",
-          label: "Convert Coins to Gems"
+          to: "/platform/help/how-do-coins-and-vp-work-together",
+          label: "How Coins and VP work"
         },
         {
           to: "/platform/help/can-i-make-real-money-on-vergr",

@@ -3,59 +3,71 @@
 //   { p } paragraph · { h2 } heading · { list:[...] } bullets · { steps:[...] } numbered
 //   { faq:[[q,a],...] } · { note } callout · { cta:[{ to, label }] } related links
 // Top-level: summary (1-2 sentences, answer-first), updated (YYYY-MM-DD), body [].
+//
+// ⚠ This article is the one an underwriter or a processor searches for, so every
+// sentence in it has to survive being read literally. It was rewritten on
+// 2026-08-16 because the old version answered "no" while describing entry-free
+// competitions, prize purses and "Champion Picks" predictions, all of which are
+// retired. The strongest honest answer is now much simpler: there is nothing on
+// VERGR to stake, and nothing to win. Keep it that way.
 
 export default {
-  summary: "No. VERGR runs skill-based competition, not gambling. Outcomes are decided by how you play, results are verified, and there are no chance-based mechanics anywhere: no random draws, no betting on other people's games, no slots, no loot boxes. It is 18+ and available only where local law permits.",
-  updated: "2026-06-06",
+  summary: "No. VERGR has no betting, wagering, prediction markets, prize competitions, loot boxes or games of chance of any kind. Coins buy support for creators and access to their content: there is nothing to stake and nothing to win.",
+  updated: "2026-08-16",
   body: [
     {
-      p: "No, VERGR is not gambling, and the difference is not a technicality. Gambling pays out on chance. VERGR pays out on skill. When you win Coins here, it is because you played better than the person across from you, not because a number came up. That distinction runs through everything on the platform, and it is worth spelling out, because it is exactly what makes VERGR different from the things people lump it in with."
+      p: "No. VERGR is a live streaming and social platform, and it has none of the mechanics that make something gambling. There is no wager to place, no pot to win, and no element of chance attached to money anywhere on the platform."
     },
     {
-      h2: "What makes it skill, not chance"
+      h2: "Why the question does not really arise"
     },
     {
-      p: "There is nothing on VERGR to stake money on. Coins are spent on tips, creator memberships, paid access to a stream, and boosts, and every one of those is a purchase with a known outcome: you pay, you get the thing. There is no wagering, no prediction market, no prize competition, no loot box, no random reward, and no game of chance anywhere on the platform."
+      p: "Gambling needs two things: something you stake, and an uncertain outcome that decides whether you get it back. Neither exists here. Coins are spent on tips, creator memberships, paid access to a live stream, unlocking a creator's content, event tickets, and boosts. Every one of those is an ordinary purchase with a known outcome: you pay, and you get the thing you paid for. Nothing is ever put at risk."
     },
     {
       h2: "What VERGR does not do"
     },
     {
-      p: "This is where the line is clearest. VERGR deliberately has none of the mechanics that define gambling:"
-    },
-    {
       list: [
+        "No betting or wagering of any kind, on VERGR or on outside events.",
+        "No prediction markets and no odds.",
+        "No prize competitions, entry fees or prize pools.",
         "No random prize draws or lotteries. You never pay for a chance at a reward.",
-        "No betting on other people's matches as a house product. The prediction features that exist are skill calls, not a casino book.",
-        "No slot machines, wheels, or chance games of any kind.",
+        "No slot machines, wheels, or chance games.",
         "No loot boxes or paid randomised rewards."
       ]
     },
     {
-      p: "Coins are something you spend and earn inside the platform through tips, competition, and your community. They are not chips, and there is no house edge designed to grind your balance down."
+      p: "Coins are also not chips. They are a licence to use features on VERGR: they have no cash value, they cannot be transferred to another person, and they cannot be redeemed for money. There is no balance to lose and no house edge grinding one down."
+    },
+    {
+      h2: "How money actually moves"
+    },
+    {
+      p: "One direction, with no uncertainty in it. You buy Coins from VERGR and spend them on VERGR features. When you spend them on a creator, that is revenue VERGR earns, and VERGR then pays that creator a share of it on VERGR's own schedule, the same way any business pays a supplier. Creators are paid for work their audience valued, never for winning anything."
     },
     {
       h2: "The guardrails"
     },
     {
-      p: "Because real money is involved, VERGR takes the responsible side seriously. The platform is strictly 18 and over, with date-of-birth and identity checks before any money feature unlocks. It is only available where local law permits skill-based competition with cash-equivalent prizes, and it is not offered where that is restricted. Crucially, competitors don't pay to enter — events are funded by fans buying spectator tickets, so the people who can win never stake anything. Payouts are guarded and results are audited. None of that would make sense for a gambling product, and all of it is there to keep VERGR a clean, skill-first platform."
+      p: "VERGR is strictly 18 and over, with a date-of-birth check at signup, and creators complete an identity check before VERGR can pay them. A small number of countries are unavailable, mainly those under sanctions or where the underlying payment rails are prohibited; the current list is published in the Terms of Service."
     },
     {
-      note: "If skill-based competition for prizes is not permitted where you live, VERGR's money features will not be available to you, and trying to get around that breaks the Terms of Service."
+      note: "If you have been told VERGR runs tournaments, money matches or predictions, that is out of date. Those were retired and no part of the platform offers them."
     },
     {
       faq: [
         [
-          "Do I pay to compete?",
-          "No. Competing is free. Events are funded by fans buying spectator tickets to watch and support — like a ticket to a sports match. The players don't stake anything, and the winner earns the prize through skill."
+          "Can I lose Coins I have paid for?",
+          "Not to chance. Coins are consumed when you spend them on a feature, exactly like any other purchase, and there is no mechanic anywhere that takes them based on an uncertain outcome."
         ],
         [
-          "What are Champion Picks then?",
-          "They are skill predictions about match outcomes, framed and built as a call you make using what you know, not a house betting product. They are capped and deliberately kept out of casino territory."
+          "Can I win money on VERGR?",
+          "No. There is nothing to win. Creators are paid a share of the revenue their content generates, which is payment for work, not a prize."
         ],
         [
           "Is it legal where I am?",
-          "VERGR's money features are unavailable in a small number of jurisdictions, mainly those under sanctions or where the underlying payment rails are prohibited. The current list is published in the Terms of Service."
+          "VERGR is unavailable in a small number of jurisdictions, mainly those under sanctions or where the underlying payment rails are prohibited. The current list is published in the Terms of Service."
         ]
       ]
     },
@@ -66,8 +78,8 @@ export default {
           label: "What Coins are spent on"
         },
         {
-          to: "/platform/help/how-do-i-withdraw-my-earnings",
-          label: "How payouts work"
+          to: "/platform/help/how-do-i-see-my-earnings",
+          label: "See your earnings"
         }
       ]
     }

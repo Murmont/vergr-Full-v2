@@ -1,6 +1,6 @@
 // Redesigned Subscription page — current plan hero, billing history, change plan modal.
 // Pulls plans from src/utils/tierSystem.js (source of truth, NOT the design's hardcoded list).
-// Honors the hard rule: a flat 10% platform fee applies to all tips, regardless of plan.
+// A plan never changes your revenue share: the share is set by lifetime earnings only.
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useUser } from '../../context/UserContext';
@@ -96,7 +96,7 @@ export default function SubscriptionScreen() {
                 {currentTierId === 'pro' ? "You're getting the most out of VERGR." : 'Upgrade for more perks.'}
               </div>
               <div style={{ marginTop: 8, fontSize: 11, color: C.textVeryDim }}>
-                A flat 10% platform fee applies to all tips, regardless of plan.
+                Your plan never changes your revenue share. That is set by your lifetime earnings only.
               </div>
             </div>
           </div>
@@ -245,21 +245,39 @@ function ChangePlanModal({ currentId, onClose }) {
   // stays the path on web, desktop and sideload.
   const usePlaySubs = IS_STORE_BUILD && !IS_HUAWEI_BUILD && isPlayBillingSupported();
 
-  const startCardCheckout = async (tier) => {
+  /**
+   * CARD checkout for a subscription. This is the path the buyer picked.
+   *
+   * ⚠ It used to IGNORE that choice and force Play Billing on a store build,
+   * on the belief that a card checkout for digital goods inside a Play app
+   * "gets an app pulled". That is not the rule. Google may not compel Play
+   * Billing as the only option; it requires a fair, unsteered comparison, which
+   * is what the method chooser above presents.
+   *
+   * The buyer opening this function has already chosen card. Overriding them
+   * here made the chooser decorative.
+   *
+   * Play Billing remains available and is chosen by `startPlayCheckout`.
+   */
+  /**
+   * CARD rail = PayRam (Stripe removed 2026-08-13, account closed by Stripe).
+   *
+   * Note this modal's "Pay by card" used to open an in-page Stripe panel, and
+   * the PayRam handler was passed as an `onPayram` prop the local picker never
+   * accepted, so PayRam was unreachable from here. Card now goes straight to it.
+   */
+  const startCardCheckout = (tier) => {
     setMethodOpen(false);
-    // On the Play build, Play Billing is the ONLY permitted path for a
-    // subscription. If the bridge is missing we fail closed — falling through
-    // to PayRam here would put a card checkout for digital goods inside a Play
-    // app, which is the payments-policy breach that gets an app pulled. A
-    // temporary "try again" is a far cheaper failure than that.
-    // Huawei is exempt: it has no Play Billing to fail closed to, and PayRam is
-    // its intended path, so it falls through to the card checkout below.
-    if (IS_STORE_BUILD && !IS_HUAWEI_BUILD && !isPlayBillingSupported()) {
-      showToast('Purchases are temporarily unavailable. Please reopen the app and try again.', 'error');
-      return;
-    }
-    if (!usePlaySubs) {
-      startCheckout({ subscriptionTier: tier }, `${tier} plan`);
+    startCheckout({ subscriptionTier: tier }, `${tier} plan`);
+  };
+
+  /** PLAY BILLING checkout. The other half of the same choice. */
+  const startPlayCheckout = async (tier) => {
+    setMethodOpen(false);
+    if (!isPlayBillingSupported()) {
+      // Only THIS rail is unavailable. The card rail above still works, so this
+      // is a row-level failure, not a blocked purchase.
+      showToast('Google Play billing is unavailable on this device. Try paying by card.', 'error');
       return;
     }
     try {
@@ -386,7 +404,7 @@ function ChangePlanModal({ currentId, onClose }) {
           display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
         }}>
           <span className="material-symbols-outlined" style={{ fontSize: 12 }}>shield</span>
-          All plans include access to VERGR core features. A flat 10% platform fee applies to tips. Prices exclude VAT/tax; checkout is processed in USD/USDT.
+          All plans include access to VERGR core features. A plan never changes your creator revenue share. Prices exclude VAT/tax; checkout is processed in USD/USDT.
         </div>
       </div>
 
@@ -394,6 +412,8 @@ function ChangePlanModal({ currentId, onClose }) {
         <PaymentMethodPicker
           tier={pickedTier}
           onCard={() => startCardCheckout(pickedTier)}
+          onPlay={() => startPlayCheckout(pickedTier)}
+          playOffered={usePlaySubs}
           onCoins={async () => {
             try {
               const { getFunctions, httpsCallable } = await import('firebase/functions');
@@ -433,7 +453,16 @@ function ChangePlanModal({ currentId, onClose }) {
   );
 }
 
-function PaymentMethodPicker({ tier, onCard, onCoins, onClose }) {
+/**
+ * @param {function} [onPlay]      Google Play Billing. Omitted where unavailable.
+ * @param {boolean}  [playOffered] true only on a Play build with a live bridge.
+ *
+ * ⚠ FAIR COMPARISON. Google permits alternative billing but requires the options
+ * be presented without steering. So the Play row carries the SAME padding, type
+ * scale and tap target as the card row, no badge calls either one better, and
+ * neither is pre-selected. Do not restyle one of these rows without the other.
+ */
+function PaymentMethodPicker({ tier, onCard, onCoins, onPlay, playOffered, onClose }) {
   const COIN_PRICE = { lite: 500, pro: 1000 }[tier];
   const EUR_PRICE = { lite: 4.99, pro: 9.99 }[tier];
   return (
@@ -458,6 +487,22 @@ function PaymentMethodPicker({ tier, onCard, onCoins, onClose }) {
           </div>
           <div style={{ fontSize: 10, opacity: 0.7, marginTop: 2 }}>exc. VAT/tax · billed in USD/USDT</div>
         </button>
+        {/* Google Play. Present ONLY on a Play build with a working bridge, and
+            styled identically to the card row above so neither is steered. It
+            was missing entirely, which meant a Play user had no legitimate way
+            to choose Play Billing even while the code was forcing them onto it. */}
+        {playOffered && (
+          <button onClick={onPlay} style={{
+            width: '100%', padding: 14, marginBottom: 8, borderRadius: 10,
+            background: 'transparent', color: C.text, border: `1px solid ${C.borderHard}`,
+            textAlign: 'left', cursor: 'pointer',
+          }}>
+            <div style={{ fontWeight: 700, fontSize: 14 }}>Google Play</div>
+            <div style={{ fontSize: 11, color: C.textDim }}>
+              Billed by Google. Includes Google Play&rsquo;s service fee
+            </div>
+          </button>
+        )}
         <button onClick={onCoins} style={{
           width: '100%', padding: 14, marginBottom: 8, borderRadius: 10,
           background: 'transparent', color: C.text, border: `1px solid ${C.borderHard}`,

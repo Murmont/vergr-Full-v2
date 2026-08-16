@@ -50,3 +50,34 @@ export function isDiscoverableStream(s) {
 
 /** Convenience for the common `snap.docs` / array case. */
 export const filterDiscoverableStreams = (list) => (list || []).filter(isDiscoverableStream);
+
+/**
+ * Is this a PREMIUM LIVE, and what does it cost to get in?
+ *
+ * A Premium Live is public, discoverable and paywalled: anyone may join by
+ * paying, which is the funnel. It passes `isDiscoverableStream` deliberately —
+ * hiding it would defeat the entire point of it.
+ *
+ * That makes labelling it non-optional. A viewer who taps a card expecting a
+ * free stream and lands on a paywall has been misled by our own list, so every
+ * discovery surface has to be able to ask this question and every one has to get
+ * the same answer. Hence: here, next to the visibility rule, rather than
+ * re-derived from `access.mode` in six components.
+ */
+export function streamPremium(s) {
+  const paid = s?.access?.mode === 'paid';
+  return {
+    isPremium: paid,
+    priceCoins: paid ? Math.floor(s.access.priceCoins || 0) : 0,
+  };
+}
+
+/**
+ * May a discovery card autoplay a looping preview of this stream?
+ *
+ * No, if it is paid. A free preview clip of paid content is the paywall leaking:
+ * the buyer would be getting, free and unprompted, a sample of the thing they
+ * are being asked to pay for. A still is shown instead, which is also how Tango
+ * presents these.
+ */
+export const canAutoplayPreview = (s) => !streamPremium(s).isPremium;

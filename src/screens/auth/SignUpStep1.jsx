@@ -214,9 +214,9 @@ export default function SignUpStep1() {
               {complianceConfirmed && <Icon name="check" size={14} className="text-bg-dark" />}
             </button>
             <span className="text-text-secondary text-sm">
-              I confirm that my use of VERGR — including competitive
-              tournaments, virtual-currency purchases, and cryptocurrency
-              withdrawals — is lawful in my jurisdiction. I take sole
+              I confirm that my use of VERGR — including Coin purchases,
+              subscriptions, and receiving a creator revenue share — is
+              lawful in my jurisdiction. I take sole
               responsibility for verifying this and indemnify VERGR
               accordingly.
             </span>

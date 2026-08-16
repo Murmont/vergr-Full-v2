@@ -96,23 +96,7 @@ export function SecurityScreen() {
           </div>
         </SecBlock>
 
-        <SecBlock icon="account_balance_wallet" title="Whitelisted addresses"
-                  status={<Pill tone="violet" size="sm">{addrs.length} of 10</Pill>}>
-          <div style={{ marginTop: 8 }}>
-            <WalletButton variant="secondary" size="sm" onClick={() => navigate('/wallet/security/addresses')}>
-              Manage addresses
-            </WalletButton>
-          </div>
-        </SecBlock>
 
-        <SecBlock icon="qr_code_2" title="Deposit address"
-                  status={<Pill tone="violet" size="sm">USDC on Base</Pill>}>
-          <div style={{ marginTop: 8 }}>
-            <WalletButton variant="secondary" size="sm" onClick={() => navigate('/wallet/security/deposit')}>
-              View QR
-            </WalletButton>
-          </div>
-        </SecBlock>
       </div>
     </div>
   );
@@ -328,7 +312,7 @@ export function SecurityTotpScreen() {
             <div>
               <div style={{ fontFamily: 'Syne, sans-serif', fontWeight: 700, fontSize: 20 }}>2FA is active.</div>
               <div style={{ color: WALLET_TOKENS.textSecondary, fontSize: 13, marginTop: 4 }}>
-                Required for withdrawals over {fmtEUR(100)}, address whitelisting, and PIN change.
+                Required for changing your PIN and for other sensitive wallet actions.
               </div>
             </div>
           </div>
@@ -344,7 +328,7 @@ export function SecurityTotpScreen() {
         <WalletCard style={{ border: '1px solid rgba(240,64,96,0.30)' }}>
           <div style={{ fontWeight: 600, color: '#FCA5A5', marginBottom: 8 }}>Disable 2FA</div>
           <div style={{ color: WALLET_TOKENS.textSecondary, fontSize: 13, marginBottom: 14 }}>
-            Withdrawals over {fmtEUR(100)} will no longer require a code. Requires PIN + a current 2FA code.
+            Sensitive wallet actions will no longer require a code. Requires PIN + a current 2FA code.
           </div>
           <WalletButton variant="danger" size="sm" onClick={() => setDisableOpen(true)}>Disable 2FA</WalletButton>
         </WalletCard>

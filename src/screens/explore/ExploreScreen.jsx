@@ -4,7 +4,8 @@
 // long tail until those endpoints land.
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { isDiscoverableStream } from '../../utils/streamVisibility';
+import { isDiscoverableStream, streamPremium } from '../../utils/streamVisibility';
+import StreamStateBadge from '../../components/streams/StreamStateBadge';
 import { useNavigate } from 'react-router-dom';
 import { collection, query, where, orderBy, limit, getDocs, doc, getDoc } from 'firebase/firestore';
 import { CardGridSkeleton } from '../../components/skeletons/GlassSkeletons';
@@ -157,6 +158,10 @@ export default function ExploreScreen() {
             viewers: (s.viewerCount || 0).toLocaleString(),
             boosted: !!s.boosted,
             source: s.source || null,
+            // A Premium Live is discoverable on purpose, so the card has to say
+            // it costs something. Without this it looks exactly like a free
+            // stream right up until the paywall.
+            ...streamPremium(s),
             // Orientation drives the desktop (16:9) vs mobile (9:16) split below.
             // Twitch mirrors + OBS default to landscape; missing = landscape.
             orientation: s.orientation || 'landscape',
@@ -389,6 +394,7 @@ export default function ExploreScreen() {
             game: s.game || '',
             viewers: s.viewerCount || 0,
             hostName, hostAvatar,
+            ...streamPremium(s),
           };
         }));
         if (!cancelled) setFollowingLive(enriched);
@@ -702,9 +708,7 @@ function FollowingLiveRail({ rows, navigate }) {
                 background: `linear-gradient(135deg, hsl(${(r.id.charCodeAt(0) * 7) % 360}, 45%, 18%), #0B0B14)`,
               }}>
               <div className="absolute top-2 left-2 flex items-center gap-1.5">
-                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold tracking-wider bg-rose-500 text-white">
-                  ● LIVE
-                </span>
+                <StreamStateBadge isPremium={r.isPremium} priceCoins={r.priceCoins} size="sm" />
               </div>
               <div className="absolute bottom-2 right-2 flex items-center gap-1 text-[10px] font-bold text-white bg-black/55 px-1.5 py-0.5 rounded">
                 <Icon name="visibility" size={10} className="text-white/80" />
@@ -735,7 +739,7 @@ function StreamCard({ stream, tall, onClick }) {
       <div className={`relative rounded-xl overflow-hidden ${tall ? 'aspect-[9/16]' : 'aspect-video'}`}
            style={{ background: `linear-gradient(135deg, hsl(${260 + Math.random() * 60}, 50%, 15%) 0%, #0B0B14 100%)` }}>
         <div className="absolute top-2 left-2 flex items-center gap-1.5">
-          <LiveBadge />
+          <StreamStateBadge isPremium={stream.isPremium} priceCoins={stream.priceCoins} />
           {stream.boosted && (
             <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-gradient-to-r from-brand-violet/80 to-brand-pink/80 backdrop-blur-md">
               <span className="material-symbols-outlined text-white" style={{ fontSize: 10 }}>bolt</span>

@@ -19,7 +19,7 @@ export default {
       ]
     },
     {
-      note: "Please contact support before your bank. A chargeback filed while the Coins are simply in transit will reverse the purchase, freeze withdrawals on your account for months, and can suspend the account, all for a problem support fixes in one email."
+      note: "Please contact support before your bank. A chargeback filed while the Coins are simply in transit will reverse the purchase, freeze payments on your account for months, and can suspend the account, all for a problem support fixes in one email."
     },
     {
       cta: [

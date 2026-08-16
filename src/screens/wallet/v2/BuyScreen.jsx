@@ -7,25 +7,20 @@
 
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { COIN_PACKS } from '../../../utils/vpSystem';
-import { STORE_COIN_PACKS } from '../../../utils/storePricing';
-import { IS_STORE_BUILD, IS_HUAWEI_BUILD } from '../../../utils/platform';
+import { COIN_PACKS, packValueBonusPct, MIN_SHOWN_VALUE_BONUS_PCT } from '../../../utils/vpSystem';
 
-// The pack GRID shows the standard ladder everywhere, including inside the Play
-// app. Google's store fee is real, but it only applies if the buyer chooses
-// Google Play, and they are free not to — alternative billing is permitted. So
-// the reduced Play quantities belong where the choice is actually made: the
-// basket's payment picker, which re-renders the coin count per method. Shrinking
-// every pack on the shelf would charge everyone in the Android app for a fee
-// most of them are about to avoid.
-// Fee model: src/utils/storePricing.js.
+// ONE LADDER, EVERYWHERE. A pack is the same product whichever rail pays for it,
+// which is what lets the Play IAP product and this shelf agree exactly on what
+// is being sold. Google's store fee shows up as a higher PRICE on the Play row
+// of the basket's payment picker, never as fewer coins here.
+// Fee model + the reasoning: src/utils/storePricing.js.
 const ACTIVE_COIN_PACKS = COIN_PACKS;
 import {
-  WalletCard, WalletButton, Pill, SectionLabel, FeeBreakdown,
-  CoinGlyph, WALLET_TOKENS, fmtNum, fmtEUR, AnimatedNumber,
+  WalletCard, WalletButton, SectionLabel, FeeBreakdown,
+  CoinGlyph, WALLET_TOKENS, fmtNum, fmtEUR, fmtUsd, AnimatedNumber,
 } from '../../../components/wallet/primitives';
 import { useUI } from '../../../context/UIContext';
-import { useBuyCheckout, MIN_CUSTOM_EUR, COIN_PRICE_EUR, checkoutCartViaPlay } from './buyCheckout';
+import { useBuyCheckout, MIN_CUSTOM_USD, COIN_PRICE_USD, checkoutCartViaPlay } from './buyCheckout';
 import { auth } from '../../../firebase/config';
 import Icon from '../../../components/Icon';
 import LocalPrice from '../../../components/LocalPrice';
@@ -53,6 +48,19 @@ export default function BuyScreen() {
     showToast(`${pack.name} added to your basket`, 'success');
   };
 
+  // Tapping a pack ADDS IT AND OPENS THE BASKET. It used to jump straight to the
+  // payment provider, which skipped the one screen carrying the fee breakdown,
+  // the payment-method choice and the refund terms, and left the buyer no way to
+  // change their mind without backing out of a live checkout.
+  //
+  // Almost nobody buys two packs at once, so the basket is really a confirm
+  // step. Treating it as one is both the clearer flow and the thing an
+  // underwriter expects to see before money moves.
+  const buyPack = (pack) => {
+    cart.add(pack.id, 1);
+    openCart();
+  };
+
   const checkoutCart = async (lines, _quote, method) => {
     // Google Play cannot take a basket in one go, so it buys line by line.
     // Routing it here rather than through PayRam is not a preference: billing
@@ -70,7 +78,24 @@ export default function BuyScreen() {
     if (ok === true) { cart.clear(); cart.setOpen(false); }
   };
 
-  const customCoins = Math.floor((parseFloat(customEUR) || 0) / COIN_PRICE_EUR);
+  // ARRIVING FROM THE QUICK-BUY DRAWER.
+  //
+  // `/wallet/buy?pack=pro` means the user already chose, in the drawer, from a
+  // row showing the coins and the price. Making them choose again here would
+  // throw away the impulse the drawer exists to catch, so checkout opens
+  // straight away.
+  //
+  // The param is consumed once (replace, not push) so a refresh or a back
+  // gesture does not relaunch a payment window the user has finished with.
+  useEffect(() => {
+    const sku = new URLSearchParams(window.location.search).get('pack');
+    if (!sku) return;
+    const pack = ACTIVE_COIN_PACKS.find((p) => p.id === sku);
+    window.history.replaceState({}, '', '/wallet/buy');
+    if (pack) startCheckout({ packSku: pack.id }, pack.name);
+  }, []);
+
+  const customCoins = Math.floor((parseFloat(customEUR) || 0) / COIN_PRICE_USD);
 
   // The whole ladder priced in ONE server call: regional multiplier applied,
   // then converted to the USD figure that will actually be charged. The screen
@@ -139,7 +164,7 @@ export default function BuyScreen() {
               quote={ladder?.packs?.[p.id]}
               busy={checkout?.status === 'waiting'}
               onAdd={() => addToCart(p)}
-              onBuy={() => startCheckout({ packSku: p.id }, p.name)} />
+              onBuy={() => buyPack(p)} />
           ))}
         </div>
       )}
@@ -208,8 +233,8 @@ function CustomTab({ eur, setEur, onContinue, busy }) {
   // fire a call per pixel. The quote is the ONLY source of the charged figure.
   const [customQuote, setCustomQuote] = useState(null);
   const eurNum = parseFloat(eur) || 0;
-  const coins = Math.floor(eurNum / COIN_PRICE_EUR);
-  const valid = eurNum >= MIN_CUSTOM_EUR;
+  const coins = Math.floor(eurNum / COIN_PRICE_USD);
+  const valid = eurNum >= MIN_CUSTOM_USD;
   const procFee = eurNum * 0.015; // illustrative card-processor fee (3rd party)
 
   useEffect(() => {
@@ -275,9 +300,9 @@ function CustomTab({ eur, setEur, onContinue, busy }) {
 
       <FeeBreakdown
         items={[
-          { label: 'You pay',                  value: fmtEUR(eurNum) },
+          { label: 'You pay',                  value: fmtUsd(eurNum) },
           { label: 'Payment processing (~1.5%)', value: `-${fmtEUR(procFee)}`, tone: 'muted' },
-          { label: 'VERGR fee',                value: fmtEUR(0), tone: 'muted' },
+          { label: 'VERGR fee',                value: fmtUsd(0), tone: 'muted' },
         ]}
         total={`${fmtNum(coins)} coins`}
         totalLabel="You receive"
@@ -293,7 +318,7 @@ function CustomTab({ eur, setEur, onContinue, busy }) {
             size="sm"
             fallback={(
               <div style={{ fontSize: 11, color: WALLET_TOKENS.textMuted }}>
-                <LocalPrice eur={eurNum} prefix="≈ " /> · charged in USD
+                <LocalPrice usd={eurNum} prefix="≈ " /> · charged in USD
               </div>
             )}
           />
@@ -302,7 +327,7 @@ function CustomTab({ eur, setEur, onContinue, busy }) {
 
       {!valid && eur && (
         <div style={{ marginTop: 12, fontSize: 12, color: '#FCD34D' }}>
-          Minimum is {fmtEUR(MIN_CUSTOM_EUR)} (set by our card processor).
+          Minimum is {fmtUsd(MIN_CUSTOM_USD)} (set by our card processor).
         </div>
       )}
 
@@ -316,84 +341,173 @@ function CustomTab({ eur, setEur, onContinue, busy }) {
   );
 }
 
+/**
+ * Badge colours. SOLID fills, not tinted glass.
+ *
+ * The old badge was a translucent pill sitting in the content flow, which on a
+ * near-black card was almost invisible and did nothing to pull the eye toward
+ * the packs worth buying. A badge is a merchandising device: it should be the
+ * brightest thing on the card and it should sit on the top edge where the eye
+ * lands first.
+ */
+const BADGE_TONES = {
+  popular: { bg: '#7B1FFF', fg: '#FFFFFF' },
+  value: { bg: '#F0A500', fg: '#141018' },
+  vp: { bg: '#C87FFF', fg: '#141018' },
+  hot: { bg: '#F04060', fg: '#FFFFFF' },
+};
+
+/**
+ * A coin pack on the shelf.
+ *
+ * ## Why this got rebuilt
+ *
+ * The old card was `#14141F` on a `#0B0B14` page with a 1px hairline: two
+ * near-blacks and no light source, so the card read as a hole cut into the page
+ * rather than an object sitting on it. Everything below is in service of making
+ * it look like something you would pick up.
+ *
+ * - A lit surface. A warm top-down gradient plus a tinted rim, so the card has a
+ *   direction the light comes from.
+ * - A solid badge straddling the top edge, centred, in the tier's colour.
+ * - Coin count centred under the artwork with the real coin glyph, large.
+ * - The honest value line ("+10% more coins per euro"), shown only where the
+ *   difference is big enough to be worth reading.
+ * - A distinct footer bar for the price, which is what separates a product card
+ *   from a panel of text.
+ * - The whole card is the buy target. Two equal buttons made a shelf item look
+ *   like a settings row; the basket moves to a quiet "+" in the corner.
+ */
 function PackCard({ pack, onBuy, onAdd, busy, quote }) {
-  const isPopular = pack.badgeStyle === 'popular';
+  const tone = BADGE_TONES[pack.badgeStyle] || BADGE_TONES.popular;
+  const isVp = pack.badgeStyle === 'vp';
+  const accent = isVp ? WALLET_TOKENS.violetLight : WALLET_TOKENS.gold;
+  const valueBonus = packValueBonusPct(pack);
+  const showValue = valueBonus >= MIN_SHOWN_VALUE_BONUS_PCT;
+
   return (
-    <div style={{
-      padding: 18, borderRadius: 16,
-      background: WALLET_TOKENS.surface1,
-      border: `1px solid ${isPopular ? 'rgba(123,31,255,0.40)' : WALLET_TOKENS.hairline}`,
-      position: 'relative', overflow: 'hidden',
-      display: 'flex', flexDirection: 'column',
-    }}>
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={() => !busy && onBuy()}
+      onKeyDown={(e) => { if (!busy && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onBuy(); } }}
+      style={{
+        position: 'relative', borderRadius: 18, overflow: 'hidden',
+        display: 'flex', flexDirection: 'column',
+        cursor: busy ? 'not-allowed' : 'pointer',
+        // Lit from the top, tinted by the tier. This is the whole difference
+        // between "bright and vibrant" and "dark and moody".
+        background: isVp
+          ? 'linear-gradient(180deg, #2A1B44 0%, #1B1430 46%, #171126 100%)'
+          : 'linear-gradient(180deg, #2E2417 0%, #1D1826 46%, #171420 100%)',
+        border: `1px solid ${isVp ? 'rgba(180,79,255,0.34)' : 'rgba(240,165,0,0.26)'}`,
+        boxShadow: '0 10px 28px rgba(0,0,0,0.42)',
+        paddingTop: pack.badge ? 20 : 14,
+      }}
+    >
+      {/* Warm bloom behind the artwork, so the illustration sits in light
+          rather than on a flat panel. */}
+      <div aria-hidden style={{
+        position: 'absolute', top: -70, left: '50%', transform: 'translateX(-50%)',
+        width: 240, height: 190, pointerEvents: 'none',
+        background: `radial-gradient(ellipse at center, ${isVp ? 'rgba(180,79,255,0.30)' : 'rgba(240,165,0,0.26)'} 0%, transparent 70%)`,
+      }} />
+
       {pack.badge && (
-        <div style={{ marginBottom: 10 }}>
-          <Pill tone={pack.badgeStyle === 'vp' ? 'gold' : pack.badgeStyle === 'popular' ? 'violet' : 'neutral'} size="sm">
-            {pack.badge}
-          </Pill>
+        <div style={{
+          position: 'absolute', top: 0, left: '50%', transform: 'translateX(-50%)',
+          background: tone.bg, color: tone.fg,
+          padding: '3px 12px', borderRadius: '0 0 10px 10px',
+          fontSize: 10, fontWeight: 800, letterSpacing: '0.06em',
+          textTransform: 'uppercase', whiteSpace: 'nowrap',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.35)',
+        }}>
+          {pack.badge}
         </div>
       )}
-      {/* Coin-pack graphic — /public/brand/packs/<id>-pack.webp */}
-      <div style={{ height: 116, display: 'grid', placeItems: 'center', marginBottom: 6 }}>
+
+      {/* FIXED SQUARE BOX. Every illustration is normalised to the same optical
+          size by scripts/packArt.mjs, and width/height are explicit so the grid
+          never reflows while they load. */}
+      <div style={{ position: 'relative', display: 'grid', placeItems: 'center', padding: '6px 0 2px' }}>
         <img
           src={`/brand/packs/${pack.id}-pack.webp`}
-          alt={pack.name}
+          alt=""
+          width={132}
+          height={132}
           draggable={false}
-          onError={(e) => { e.currentTarget.style.display = 'none'; }}
+          loading="eager"
+          onError={(e) => { e.currentTarget.style.visibility = 'hidden'; }}
           style={{
-            maxHeight: 110, maxWidth: '88%', objectFit: 'contain',
-            filter: pack.badgeStyle === 'vp'
-              ? 'drop-shadow(0 8px 22px rgba(123,31,255,0.40))'
-              : 'drop-shadow(0 8px 22px rgba(240,165,0,0.30))',
+            width: 132, height: 132, objectFit: 'contain',
+            filter: `drop-shadow(0 10px 20px ${isVp ? 'rgba(123,31,255,0.45)' : 'rgba(240,165,0,0.34)'})`,
           }}
         />
       </div>
-      <div style={{ fontFamily: 'Syne, sans-serif', fontWeight: 700, fontSize: 16, marginBottom: 6 }}>
-        {pack.name}
-      </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-        <CoinGlyph size={26} />
-        <span className="font-dmmono tabular-nums" style={{ fontSize: 22, fontWeight: 700, color: WALLET_TOKENS.goldLight }}>
-          {fmtNum(pack.coins)}
-        </span>
-      </div>
-      {pack.vpBonus > 0 && (
-        <div style={{ fontSize: 12, color: WALLET_TOKENS.goldLight, marginBottom: 8 }}>
-          + {fmtNum(pack.vpBonus)} VP bonus
+
+      <div style={{ position: 'relative', padding: '0 16px 14px', textAlign: 'center' }}>
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, marginBottom: 2,
+        }}>
+          <CoinGlyph size={26} />
+          <span className="font-dmmono tabular-nums" style={{ fontSize: 25, fontWeight: 800, color: '#FFFFFF' }}>
+            {fmtNum(pack.coins)}
+          </span>
         </div>
-      )}
-      <div style={{ fontSize: 12, color: WALLET_TOKENS.textMuted, lineHeight: 1.4, marginBottom: 16, flex: 1 }}>
-        {pack.tagline}
+
+        {/* The reason to buy the bigger pack, stated. */}
+        {showValue && (
+          <div style={{ fontSize: 12, fontWeight: 700, color: accent, marginBottom: 4 }}>
+            {valueBonus}% More
+          </div>
+        )}
+
+        {pack.vpBonus > 0 && (
+          <div style={{ fontSize: 11.5, fontWeight: 700, color: WALLET_TOKENS.violetLight, marginBottom: 4 }}>
+            +{fmtNum(pack.vpBonus)} VP
+          </div>
+        )}
+
+        <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.52)', lineHeight: 1.4 }}>
+          {pack.name}
+        </div>
       </div>
-      <div style={{ marginBottom: 12 }}>
+
+      {/* Footer bar. A product card has a price shelf; a panel of text does not. */}
+      <div style={{
+        position: 'relative', marginTop: 'auto',
+        background: 'rgba(0,0,0,0.30)',
+        borderTop: '1px solid rgba(255,255,255,0.07)',
+        padding: '11px 14px',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+      }}>
         <PriceQuote
           quote={quote}
           fallback={(
-            <span className="font-dmmono tabular-nums" style={{ fontSize: 22, fontWeight: 700 }}>
-              <LocalPrice eur={pack.priceEUR} fallback={fmtEUR(pack.priceEUR)} />
+            <span className="font-dmmono tabular-nums" style={{ fontSize: 17, fontWeight: 800, color: '#FFFFFF' }}>
+              <LocalPrice usd={pack.priceUSD} fallback={fmtUsd(pack.priceUSD)} />
             </span>
           )}
         />
       </div>
-      <div style={{ display: 'flex', gap: 8 }}>
-        {/* Add is the primary action now: the basket is what makes this a
-            storefront rather than a row of one-click payment triggers. Buy now
-            stays for the single-pack case, which is most purchases. */}
-        <button
-          onClick={onAdd}
-          disabled={busy}
-          style={{
-            flex: 1, padding: '11px 12px', borderRadius: 10, cursor: busy ? 'not-allowed' : 'pointer',
-            background: 'rgba(255,255,255,0.06)', border: `1px solid ${WALLET_TOKENS.hairline}`,
-            color: WALLET_TOKENS.text, font: 'inherit', fontWeight: 700, fontSize: 13,
-          }}
-        >
-          Add
-        </button>
-        <div style={{ flex: 1 }}>
-          <WalletButton variant="primary" full disabled={busy} onClick={onBuy}>Buy now</WalletButton>
-        </div>
-      </div>
+
+      {/* The basket, quietly. The card itself is the buy action, so this must
+          not steal the tap: hence the stopPropagation. */}
+      <button
+        onClick={(e) => { e.stopPropagation(); if (!busy) onAdd(); }}
+        disabled={busy}
+        aria-label={`Add ${pack.name} to basket`}
+        title="Add to basket"
+        style={{
+          position: 'absolute', top: pack.badge ? 26 : 10, right: 10,
+          width: 30, height: 30, borderRadius: 9,
+          display: 'grid', placeItems: 'center',
+          background: 'rgba(0,0,0,0.34)', border: '1px solid rgba(255,255,255,0.14)',
+          color: '#FFFFFF', cursor: busy ? 'not-allowed' : 'pointer', padding: 0,
+        }}
+      >
+        <Icon name="add_shopping_cart" size={15} />
+      </button>
     </div>
   );
 }

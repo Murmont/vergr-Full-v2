@@ -15,7 +15,7 @@ export default {
       h2: "VP ranks: the main ladder"
     },
     {
-      p: "Your VP rank runs from Rookie up to Immortal across 100 levels. Climbing it lowers your conversion commission, unlocks avatar rings and badges, and raises your standing. This is the system that actually changes what you pay and what you can do."
+      p: "Your VP rank runs from Rookie up to Immortal across 100 levels. Climbing it unlocks avatar rings and badges, and raises your standing. This is the system that actually changes what you pay and what you can do."
     },
     {
       h2: "Prestige levels: beyond the top"

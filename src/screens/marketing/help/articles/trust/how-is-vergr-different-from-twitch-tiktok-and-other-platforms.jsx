@@ -1,7 +1,7 @@
 // Help center article: How is VERGR different from Twitch, TikTok, and other platforms?
 
 export default {
-  summary: "Those platforms do one thing each: Twitch is watching streams, TikTok is scrolling clips. VERGR combines streaming, clips, squads with shared treasuries, and messaging in one place, and it pays creators a bigger share: 90% of tips and memberships, with earnings you can actually withdraw.",
+  summary: "Those platforms do one thing each: Twitch is watching streams, TikTok is scrolling clips. VERGR combines streaming, clips, squads with shared treasuries, and messaging in one place, and it pays creators a bigger share: 50% of tips and memberships from day one, rising to 80% as lifetime earnings grow.",
   updated: "2026-07-02",
   body: [
     {
@@ -15,8 +15,8 @@ export default {
     },
     {
       list: [
-        "Creator share: tips and creator memberships pay the creator 90%, a flat 10% platform fee. Big platforms commonly keep 30 to 50% of fan support.",
-        "Real cash-out: earnings convert to Gems and withdraw as real money. You are not accumulating points that only spend inside the platform.",
+        "Creator share: tips and creator memberships pay the creator 50% to start, rising to 80% as their lifetime earnings grow. Big platforms commonly keep 30 to 50% of fan support and cap most creators there.",
+        "Real money: Vergr pays you a share of the revenue your content generates. You are not accumulating points that only spend inside the platform.",
         "Squads are first-class: a shared page, roster, chat, voice, and treasury, not something you organise off-platform in a spreadsheet.",
         "No follower cliff: tipping and memberships work from day one, you do not need to reach a partner program to start earning."
       ]

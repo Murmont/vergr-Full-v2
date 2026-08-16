@@ -12,7 +12,7 @@ export default {
       p: "You must be at least 18 years old to use VERGR. This applies to the whole platform, not just the paid features."
     },
     {
-      p: "We verify your date of birth at signup, and we run a one-time government-ID and selfie check before you can use the wallet, receive tips, or withdraw earnings. We do not knowingly hold accounts for anyone under 18."
+      p: "We verify your date of birth at signup, and we run a one-time government-ID and selfie check before you can use the wallet, receive tips, or be paid your earnings. We do not knowingly hold accounts for anyone under 18."
     },
     {
       h2: "Why the age requirement"
@@ -23,8 +23,8 @@ export default {
     {
       cta: [
         {
-          to: "/platform/help/how-do-i-withdraw-my-earnings",
-          label: "How withdrawals work"
+          to: "/platform/help/how-do-i-see-my-earnings",
+          label: "See your earnings"
         }
       ]
     }

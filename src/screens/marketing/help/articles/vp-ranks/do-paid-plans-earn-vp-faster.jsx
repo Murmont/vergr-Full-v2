@@ -28,7 +28,7 @@ export default {
       p: "It changes how fast you accumulate VP, nothing else. The VP needed for each level is the same for everyone, and the perks at each rank are the same. A Pro user does not get cheaper fees for being Pro; they reach the lower-fee ranks sooner because they earn VP twice as fast."
     },
     {
-      note: "Conversion commission and the flat 10% tip fee are set by rank and by the fee itself, not by your plan. The plan only affects how quickly you rank up."
+      note: "Your revenue share is set by your lifetime earnings, not by your rank and not by your plan. The plan only affects how quickly you rank up."
     },
     {
       cta: [

@@ -1,7 +1,7 @@
 // Help center article: What is a chargeback and what happens if I file one?
 
 export default {
-  summary: "A chargeback is asking your bank to forcibly reverse a payment instead of resolving it with the seller. On VERGR it has serious consequences: the purchased Coins are reversed, anything already spent from them is debited, withdrawals are blocked for 180 days, and the account can be suspended. Real payment problems are fixed faster and consequence-free by emailing support first.",
+  summary: "A chargeback is asking your bank to forcibly reverse a payment instead of resolving it with the seller. On VERGR it has serious consequences: the purchased Coins are reversed, anything already spent from them is debited, payouts are blocked for 180 days, and the account can be suspended. Real payment problems are fixed faster and consequence-free by emailing support first.",
   updated: "2026-07-02",
   body: [
     {
@@ -17,7 +17,7 @@ export default {
       list: [
         "The Coins from that purchase are reversed out of your wallet.",
         "If you already spent them, the spent amount is debited from your balance.",
-        "Withdrawals are blocked on your account for 180 days after any chargeback or payment dispute.",
+        "Payouts are blocked on your account for 180 days after any chargeback or payment dispute.",
         "The account can be suspended or terminated, and chargeback fees can apply."
       ]
     },

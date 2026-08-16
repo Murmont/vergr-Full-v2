@@ -28,6 +28,7 @@
 
 import { readdirSync, statSync, readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
@@ -60,6 +61,11 @@ if (!setupExe || !sigFile) {
 }
 
 const size = statSync(setupExe).size;
+// SHA-256 of the exact bytes uploaded to R2. Published on the download page
+// so a user (or anyone looking at a Safe Browsing report) can verify the file
+// they got is the file we shipped. Provenance only, NOT the update trust
+// root (that stays the Tauri detached signature).
+const sha256 = createHash('sha256').update(readFileSync(setupExe)).digest('hex');
 
 // --- upload the installer to R2 (the CDN origin, $0 egress) ---
 const require = createRequire(join(ROOT, 'functions', 'package.json'));
@@ -99,6 +105,8 @@ const manifest = {
   // before the signed download begins. Tauri's update.body carries the notes;
   // size is NOT exposed on the update handle, hence the extra manifest field.
   size,
+  // Published on /platform/download/desktop for user-verifiable provenance.
+  sha256,
   pub_date: new Date().toISOString(),
   platforms: {
     'windows-x86_64': { signature, url: CDN_URL },
@@ -107,4 +115,5 @@ const manifest = {
 writeFileSync(MANIFEST, JSON.stringify(manifest, null, 2));
 console.log(`[make-update-manifest] v${version}`);
 console.log(`  installer -> ${CDN_URL} (R2, ${(size / 1_048_576).toFixed(1)} MB)`);
+console.log(`  sha256    -> ${sha256}`);
 console.log(`  manifest  -> ${MANIFEST} (url -> CDN, no installer on Hosting)`);

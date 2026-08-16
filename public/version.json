@@ -1,10 +1,10 @@
 {
-  "androidVersion": "1.0.195",
-  "androidVersionCode": 195,
-  "apkUrl": "https://cdn.vergr.app/downloads/VERGR.apk?v=1000195",
+  "androidVersion": "1.0.196",
+  "androidVersionCode": 196,
+  "apkUrl": "https://cdn.vergr.app/downloads/VERGR.apk?v=1000196",
   "minSupportedVersionCode": 1,
-  "notes": "Video messages, clips and voice notes play again, chat photos and the gallery picker show real thumbnails, and the stray HUD panel no longer appears on phones.",
-  "apkSize": 128160619,
-  "apkSha256": "679c252f4642c545bfe4a2b54649538bdcee72a91148a6a73f241990503ceacd",
-  "apkPublishedAt": "2026-08-14T12:23:14.659Z"
+  "notes": "Host ticketed events from anywhere: DMs, groups, squads and go-live. New Create Event screen. Plus a big pass over earnings wording so what you keep is stated correctly everywhere.",
+  "apkSize": 128324459,
+  "apkSha256": "51353c732e1bb2c203ccc1a7d2ec46cff21d04a612334a9dd08229a89a5ee510",
+  "apkPublishedAt": "2026-08-16T13:56:11.640Z"
 }

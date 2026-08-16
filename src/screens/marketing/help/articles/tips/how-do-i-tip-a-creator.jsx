@@ -5,7 +5,7 @@
 // Top-level: summary (1-2 sentences, answer-first), updated (YYYY-MM-DD), body [].
 
 export default {
-  summary: "You can tip with Coins from a stream, a post, a profile, or a creator's Vergr.me page. A tip costs the Coins you send, the platform takes a flat 10%, and the creator gets the rest. You need Coins in your wallet first, which you can buy or earn.",
+  summary: "You can tip with Coins from a stream, a post, a profile, or a creator's Vergr.me page. A tip costs the Coins you send, and Vergr pays the creator a share of that revenue. You need Coins in your wallet first, which you can buy or earn.",
   updated: "2026-06-06",
   body: [
     {
@@ -27,7 +27,7 @@ export default {
       h2: "What the creator actually gets"
     },
     {
-      p: "When you tip, the platform takes a flat 10% and the creator receives the other 90%. So a 100-coin tip puts 90 Coins in the creator's pocket. That 10% is the same for everyone, whether the creator is on the free plan or on Pro. VERGR does not charge creators more for being successful, and it does not quietly widen the cut as they grow. The creator can then keep those Coins, spend them, or convert them to Gems and cash out."
+      p: "When you tip, nothing is taken at send time. The whole tip is revenue VERGR earns, and VERGR pays the creator a share of it: 50% to start, rising to 80% as their lifetime earnings grow. The rate is the same whether the creator is on the free plan or on Pro. VERGR does not charge creators more for being successful, and it does not quietly widen the cut as they grow. Coins cannot be withdrawn, converted or transferred, so what the creator receives is revenue share that Vergr pays them on a schedule."
     },
     {
       h2: "Tip goals"
@@ -46,7 +46,7 @@ export default {
         ],
         [
           "Does the creator pay a fee too?",
-          "The flat 10% is taken from the tip itself, and the creator receives the remaining 90%. There is no separate charge layered on top."
+          "Nothing is added on top of the amount you choose, and nothing is charged to the creator separately. The creator accrues their revenue share of the tip."
         ],
         [
           "Can I tip from my phone?",

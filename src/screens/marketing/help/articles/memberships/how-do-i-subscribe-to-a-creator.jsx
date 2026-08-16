@@ -5,7 +5,7 @@ export default {
   updated: "2026-07-02",
   body: [
     {
-      p: "Creators on VERGR can offer paid membership tiers with perks like a member badge in their stream chat, access to private communities, and whatever else they choose to include. Subscribing supports them directly: the creator keeps 90% of every payment."
+      p: "Creators on VERGR can offer paid membership tiers with perks like a member badge in their stream chat, access to private communities, and whatever else they choose to include. Subscribing supports them directly: Vergr pays the creator a share of every payment."
     },
     {
       h2: "Step by step"

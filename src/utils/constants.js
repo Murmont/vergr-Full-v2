@@ -51,7 +51,7 @@ export const TOURNAMENT_PRIZE_SPLITS = {
 // 3. Squad security role earns nothing automatic — it's a volunteer position
 // Revenue stays positive because:
 // - Mod fee comes from the prize pool (player entry fees), not from the platform
-// - Platform earns from: coin purchases, 10% tip fee, subscription fees
+// - Platform earns from: coin purchases, its revenue share (50-80% goes to the creator), subscription fees
 // - Mods earn from: tournament fees (already player-funded)
 
 export const MUTE_DURATIONS = [

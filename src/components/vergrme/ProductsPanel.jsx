@@ -88,8 +88,8 @@ export default function ProductsPanel({ uid, showOrders = true }) {
           <div className="min-w-0">
             <div className="font-syne font-bold text-sm">Sell downloads, keep 92%</div>
             <p className="text-xs text-text-secondary mt-1 leading-relaxed">
-              One flat 8% fee. Your earnings land as <span className="text-gem-blue font-semibold">gems</span> (the
-              withdrawable currency) instantly, with <span className="text-white font-semibold">no withdraw fee</span> on
+              One flat 8% fee. Your 92% is credited to your earnings
+              instantly, with <span className="text-white font-semibold">nothing else deducted</span> on
               top. Linktree charges 12%, Beacons 9% — plus payout processing.
             </p>
             {gemsEarned > 0 && (
@@ -408,7 +408,7 @@ export function ProductEditor({ uid, tier, product, onClose, onSaved }) {
           {price > 0 && (
             <div className="text-[11px] text-text-muted -mt-1">
               You keep <span className="font-dmmono font-bold tabular-nums text-gem-blue">{youKeep.toLocaleString()} gems</span> per sale
-              {isPhysical && shipCoins > 0 ? ' (8% fee on the price, shipping passed through in full)' : ' (8% fee, no withdraw fee)'}.
+              {isPhysical && shipCoins > 0 ? ' (8% fee on the price, shipping passed through in full)' : ' (8% fee, nothing else deducted)'}.
             </div>
           )}
 

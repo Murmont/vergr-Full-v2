@@ -11,13 +11,13 @@ export default {
     ]},
     { h2: "When you'll need it" },
     { list: [
-      "Confirming a purchase or withdrawal went through.",
+      "Confirming a purchase went through.",
       "Giving support a reference if you contact them about a transaction.",
       "Keeping your own records of earnings and fees.",
     ]},
     { cta: [
       { to: "/platform/help/how-do-i-see-my-transaction-history", label: "Transaction history" },
-      { to: "/platform/help/where-do-i-see-the-status-of-my-withdrawal", label: "Withdrawal status" }
+      { to: "/platform/help/how-do-i-see-my-transaction-history", label: "Transaction history" }
     ]}
   ]
 };

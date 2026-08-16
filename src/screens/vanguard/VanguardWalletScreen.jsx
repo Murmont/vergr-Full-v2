@@ -9,7 +9,7 @@ import Icon from '../../components/Icon';
 import { useUser } from '../../context/UserContext';
 import { getMyVanguardActions } from '../../firebase/firestore';
 import { rankMeta } from '../../utils/vanguardRanks';
-import { getVPLevel, getNextVPLevel, getVPProgress, getCommission } from '../../utils/vpSystem';
+import { getVPLevel, getNextVPLevel, getVPProgress } from '../../utils/vpSystem';
 
 const fmt = (n) => Number(n || 0).toLocaleString();
 const tsMs = (t) => (t?.toDate ? t.toDate().getTime() : t?.seconds ? t.seconds * 1000 : (t instanceof Date ? t.getTime() : Number(t) || 0));
@@ -50,7 +50,6 @@ export default function VanguardWalletScreen() {
   const pct = getVPProgress(vp);
   const maxVp = getVPLevel(Number.MAX_SAFE_INTEGER).vpRequired;
   const vpToL100 = Math.max(0, maxVp - vp);
-  const withdrawalCommission = Math.round(getCommission(vp) * 100);
 
   const list = actions || [];
   const now = Date.now();
@@ -106,7 +105,7 @@ export default function VanguardWalletScreen() {
             </div>
             <div>
               <div style={{ fontFamily: 'DM Mono', fontSize: 22, fontWeight: 800, color: C.text, lineHeight: 1 }}>{fmt(vpToL100)}</div>
-              <div style={{ fontFamily: 'DM Sans', fontSize: 11, color: C.textDim, marginTop: 4 }}>VP to Immortal (L100) — unlock 5% withdraw rate</div>
+              <div style={{ fontFamily: 'DM Sans', fontSize: 11, color: C.textDim, marginTop: 4 }}>VP to Immortal (L100)</div>
             </div>
           </div>
         </VgCard>
@@ -143,28 +142,14 @@ export default function VanguardWalletScreen() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <img src="/brand/vc-coin.webp" alt="" style={{ height: 32 }} />
             <div style={{ flex: 1 }}>
-              <div style={{ fontFamily: 'DM Sans', fontSize: 13, fontWeight: 700, color: C.text }}>Convert Coins → Gems</div>
+              <div style={{ fontFamily: 'DM Sans', fontSize: 13, fontWeight: 700, color: C.text }}>Your Vanguard earnings</div>
               <div style={{ fontFamily: 'DM Mono', fontSize: 10.5, color: C.success, marginTop: 2 }}>Balance {fmt(coinBalance)} VC</div>
             </div>
           </div>
           <button
-            onClick={() => navigate('/wallet/convert')}
+            onClick={() => navigate('/creator/earnings')}
             style={{ marginTop: 12, width: '100%', padding: '10px 14px', background: C.violet, border: 0, borderRadius: 8, color: C.text, fontFamily: 'DM Sans', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}
-          >Convert</button>
-        </VgCard>
-
-        <VgCard>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <img src="/brand/vp-gem.webp" alt="" style={{ height: 32 }} />
-            <div style={{ flex: 1 }}>
-              <div style={{ fontFamily: 'DM Sans', fontSize: 13, fontWeight: 700, color: C.text }}>Request Payout</div>
-              <div style={{ fontFamily: 'DM Mono', fontSize: 10.5, color: C.textDim, marginTop: 2 }}>Conversion commission: {withdrawalCommission}%</div>
-            </div>
-          </div>
-          <button
-            onClick={() => navigate('/wallet/payout')}
-            style={{ marginTop: 12, width: '100%', padding: '10px 14px', background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 8, color: C.text, fontFamily: 'DM Sans', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}
-          >Withdraw</button>
+          >View earnings</button>
         </VgCard>
 
         <VgCard>

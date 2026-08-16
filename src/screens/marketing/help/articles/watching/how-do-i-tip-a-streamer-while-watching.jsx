@@ -2,7 +2,7 @@
 // Block model: { p } | { h2 } | { list:[] } | { steps:[] } | { faq:[[q,a]] } | { note } | { cta:[{to,label}] }
 
 export default {
-  summary: "Tap the tip button on the stream, choose or type an amount of Coins, and send. The tip shows in chat in real time and counts toward the streamer's tip goal if they set one. A flat 10% fee applies, so the streamer receives 90% of what you send. You need Coins in your wallet first.",
+  summary: "Tap the tip button on the stream, choose or type an amount of Coins, and send. The tip shows in chat in real time and counts toward the streamer's tip goal if they set one. Vergr pays the streamer a share of what you send. You need Coins in your wallet first.",
   updated: "2026-06-18",
   body: [
     {
@@ -24,7 +24,7 @@ export default {
       h2: "The fee, plainly"
     },
     {
-      p: "Every tip carries a flat 10% fee, the same on every plan. You send N Coins, VERGR takes 10%, and the streamer receives the rest. So a 100-coin tip puts 90 Coins in the streamer's hands. No hidden cuts, no tier that changes the tip fee."
+      p: "No fee is taken from a tip. You send N Coins, VERGR earns that as revenue, and the streamer accrues their revenue share of it. The rate is the same on every plan. So a healthy tip puts most of it with the streamer's hands. No hidden cuts, no tier that changes the tip fee."
     },
     {
       note: "Tipping a creator also earns you VP (1 VP per 25 Coins sent, multiplied by your plan), which counts toward your rank. Supporting people you like nudges your own progress along."

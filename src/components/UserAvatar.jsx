@@ -44,6 +44,8 @@ export default function UserAvatar({
   tier,
   isVerified,
   isLive,
+  // The live stream is a PREMIUM one (paid entry). Only meaningful with isLive.
+  isPremiumLive = false,
   // A coloured ring is a SIGNAL, not decoration. Only two things earn one:
   // the user is live, or they have an unseen active status. Everything else
   // gets the neutral lift ring below, so a list of avatars reads as calm.
@@ -93,10 +95,16 @@ export default function UserAvatar({
   // status ring comes next. Failing both, every avatar gets the same neutral
   // hairline: a couple of tones lighter than the surface it sits on, which
   // lifts the circle off the background without claiming anything about it.
+  //
+  // A PREMIUM live (paid entry) rings violet and reads PREMIUM rather than LIVE.
+  // It is public and discoverable on purpose, so the ring is the first place a
+  // viewer can be told it costs coins — telling them only at the paywall, after
+  // they have tapped, is the version that feels like a trick.
   const showLiveRing = !!isLive;
+  const livePremium = !!isLive && !!isPremiumLive;
   const LIFT_RING = 'rgba(255,255,255,0.10)';
   const finalRing = showLiveRing
-    ? '#F04060'
+    ? (livePremium ? '#B44FFF' : '#F04060')
     : (hasStory ? '#B44FFF' : (ringColor || LIFT_RING));
 
   // Resolve through the on-device media cache: the first sighting shows the
@@ -177,10 +185,15 @@ export default function UserAvatar({
 
       {isLive && (
         <div
-          className="absolute -bottom-1 left-1/2 -translate-x-1/2 z-20 bg-brand-ember px-1.5 py-0.5 rounded text-[8px] font-bold text-white uppercase tracking-wider"
-          style={{ whiteSpace: 'nowrap' }}
+          className="absolute -bottom-1 left-1/2 -translate-x-1/2 z-20 px-1.5 py-0.5 rounded text-[8px] font-bold text-white uppercase tracking-wider"
+          style={{
+            whiteSpace: 'nowrap',
+            background: livePremium
+              ? 'linear-gradient(135deg, #C87FFF 0%, #7B1FFF 100%)'
+              : '#F04060',
+          }}
         >
-          LIVE
+          {livePremium ? 'PREMIUM' : 'LIVE'}
         </div>
       )}
 

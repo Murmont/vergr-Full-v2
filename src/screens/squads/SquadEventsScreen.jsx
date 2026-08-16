@@ -2,7 +2,7 @@
 // RSVP. Auto-sorts upcoming → live → past. Wired to
 // `squads/{id}/events` subcollection via helpers in firestore.js.
 import { useEffect, useState, useMemo } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import {
   getSquad, getSquadMembers, getSquadMember,
   getSquadEvents, createSquadEvent, rsvpSquadEvent, deleteSquadEvent,
@@ -15,7 +15,7 @@ import Modal from '../../components/Modal';
 
 const EVENT_TYPES = [
   { id: 'scrim',       label: 'Scrim',       icon: 'swords' },
-  { id: 'tournament',  label: 'Tournament',  icon: 'emoji_events' },
+  { id: 'watch',       label: 'Watch party', icon: 'groups' },
   { id: 'practice',    label: 'Practice',    icon: 'fitness_center' },
   { id: 'social',      label: 'Social',      icon: 'celebration' },
   { id: 'review',      label: 'VOD Review',  icon: 'play_circle' },
@@ -198,6 +198,7 @@ export function NewEventModal({ open, onClose, onCreate, busy }) {
 
 export default function SquadEventsScreen() {
   const { squadId } = useParams();
+  const navigate = useNavigate();
   const { currentUser } = useAuth();
   const { showToast } = useUI();
   const [squad, setSquad] = useState(null);
@@ -288,13 +289,18 @@ export default function SquadEventsScreen() {
           <div className="channel-title">
             <span className="channel-name">Events</span>
             <span className="channel-divider" />
-            <span className="channel-desc">Scrims, tournaments, and squad nights</span>
+            <span className="channel-desc">Scrims, watch parties, and squad nights</span>
           </div>
           {canManage && (
             <button className="btn primary" onClick={() => setShowNew(true)}>
               <span className="material-symbols-outlined">add</span> New Event
             </button>
           )}
+          {/* Ticketed event: public, paid, sold in coins. Different product
+              from the squad RSVP above, so it gets its own button. */}
+          <button className="btn" onClick={() => navigate('/events/create')} title="Host a public event and sell tickets">
+            <span className="material-symbols-outlined">confirmation_number</span> Ticketed event
+          </button>
         </header>
 
         <div style={{ padding: 22, display: 'flex', flexDirection: 'column', gap: 18 }}>
@@ -304,7 +310,7 @@ export default function SquadEventsScreen() {
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '60px 24px', gap: 14, color: 'var(--t3)', textAlign: 'center', background: 'rgba(255,255,255,.02)', border: '1px dashed rgba(255,255,255,.08)', borderRadius: 18 }}>
               <span className="material-symbols-outlined" style={{ fontSize: 56, opacity: .45 }}>event</span>
               <div style={{ fontFamily: 'Syne', fontWeight: 700, fontSize: 18, color: 'var(--t1)' }}>No events scheduled</div>
-              <div style={{ fontSize: 13, maxWidth: 380 }}>Plan your next scrim, tournament, or squad night. Members can RSVP and you can post follow-ups in chat.</div>
+              <div style={{ fontSize: 13, maxWidth: 380 }}>Plan your next scrim, watch party, or squad night. Members can RSVP and you can post follow-ups in chat.</div>
               {canManage && (
                 <button className="btn primary" onClick={() => setShowNew(true)}>
                   <span className="material-symbols-outlined">add</span> Schedule First Event

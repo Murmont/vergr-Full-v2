@@ -10,9 +10,9 @@ export default {
     {
       list: [
         "Sexual or adult content: nudity, sexual acts, or sexual solicitation, anywhere on the platform including private messages and paid streams.",
-        "Match-fixing and collusion: deliberately losing, pre-agreeing to split prizes, coordinating outcomes, or reporting false results.",
+        "Coordinated manipulation: running multiple accounts, faking engagement, or colluding to inflate a creator's standing or earnings.",
         "Illegal or abhorrent content: anything unlawful, sexual content involving minors, terrorism, or credible threats. These also go to law enforcement.",
-        "Economy abuse: selling or buying Coins, Gems, VP, or accounts for real money outside the platform, laundering, or payment fraud.",
+        "Economy abuse: selling or buying Coins, VP, or accounts for real money outside the platform, laundering, or payment fraud.",
         "Ban evasion: coming back on a new account while banned, or multi-accounting to dodge restrictions."
       ]
     },

@@ -19,16 +19,38 @@
 // €0.6955 in a 21% VAT market. Ignoring this is how you sell coins below the
 // €0.0090 floor without noticing.
 //
-// THE MODEL
-// ─────────
-// Coin counts are GLOBAL (a Play IAP product carries one quantity worldwide);
-// only PRICE varies by country. So:
+// THE MODEL: SAME COINS, DIFFERENT PRICE
+// ──────────────────────────────────────
+// A Play IAP product has ONE fixed quantity and one Play-set price per market.
+// So the store build sells the SAME pack as the web (1,200 coins is 1,200 coins
+// everywhere) and charges more for it, because Play takes a cut of the sale.
 //
-//   • STORE_COIN_PACKS sets the coin quantity, cut ~15% vs the web ladder in
-//     src/utils/vpSystem.js. That cut is the "more coins on vergr.app"
-//     promotion, and it is deliberate, not an accident of rounding.
-//   • playPriceFor(coins, countryCode) computes the price that holds our net
-//     at or above TARGET_NET_EUR_PER_COIN in that specific market.
+//   • STORE_COIN_PACKS carries the web coin quantities, unchanged.
+//   • playPriceFor(coins, countryCode) computes the price that holds our net at
+//     or above TARGET_NET_USD_PER_COIN in that specific market.
+//
+// ## Why it is not the other way round
+//
+// This file used to cut the coin count ~15% on Play and hold the price. That
+// was the dangerous version, for two separate reasons:
+//
+//   1. Play's alternative-billing rules require the user to be able to compare
+//      the two payment options FAIRLY, with no thumb on the scale. Expressing
+//      the penalty in the product itself (you get fewer coins if you pay Google)
+//      is the least defensible form of that.
+//   2. It forced a second SKU quantity, so the shelf showed one number and the
+//      Play sheet charged for another. That displayed-versus-charged mismatch is
+//      a documented rejection reason.
+//
+// Charging more on Play is an ordinary, disclosable consequence of the store
+// fee. The Play product reads "1,200 coins, $14.99", the Console agrees with the
+// UI exactly, and the user compares two prices for the same thing.
+//
+// ⚠ NEVER DISPLAY A PRICE THIS FILE COMPUTED as the Play price. These figures
+// exist to decide what to TYPE INTO Play Console. At runtime the UI must show
+// Play's own formatted string from `fetchPlayPrices()`, because Play rounds to
+// its own price points per market and applies its own tax display rules. If
+// that fetch fails, disable the Play option rather than guess.
 //
 // Run `node scripts/playPricing.mjs` to emit the full per-country table for
 // pasting into Play Console.
@@ -51,12 +73,25 @@ import { COIN_PACKS } from './vpSystem.js';
 export const PLAY_SERVICE_FEE = 0.15;
 
 /**
- * Minimum acceptable net revenue per coin, in EUR, AFTER Play's fee and
- * after VAT is stripped out. This is the locked €0.0090 purchase floor
- * (see CLAUDE.md "Locked economic/product facts") — a coin sold below it
- * loses money once the holder converts to gems at the 15% commission floor.
+ * Minimum acceptable net revenue per coin, in USD, AFTER Play's fee and after
+ * VAT is stripped out.
+ *
+ * NOW USD (2026-08-11), because the catalogue is natively USD. The number is the
+ * ladder's floor rate: Ascendant, $249.99 / 21,500 coins = $0.011628.
+ *
+ * Why the floor is where it is: an earned coin costs us EUR 0.0075 (~$0.0081) to
+ * pay out at the worst rank (Immortal 15% commission, then the 2% withdrawal
+ * spread), and the payout does NOT move when the sale price does. Selling below
+ * this loses money the moment the holder converts to gems.
  */
-export const TARGET_NET_EUR_PER_COIN = 0.0090;
+export const TARGET_NET_USD_PER_COIN = 0.011628;
+
+/**
+ * @deprecated EUR alias, kept only so a missed callsite fails visibly at review
+ * rather than silently pricing off a number that no longer means anything.
+ * Do not add new uses.
+ */
+export const TARGET_NET_EUR_PER_COIN = TARGET_NET_USD_PER_COIN;
 
 // ─────────────────────────────────────────────────────────────────────
 // Tax-inclusive markets.
@@ -93,40 +128,23 @@ export function taxRateFor(countryCode) {
 // ─────────────────────────────────────────────────────────────────────
 // The store ladder.
 //
-// Coins ≈ 85% of the web pack, rounded to clean numbers. Rounding is always
-// DOWN or to a rounder figure, never up: rounding up erodes margin, and the
-// difference is what funds the "more coins on the web" promotion.
+// IDENTICAL to the web ladder. There is no separate store quantity and there
+// must never be one again: a Play IAP product carries a fixed quantity, so a
+// second ladder means the shelf and the Play sheet disagree about what is being
+// sold. See the header for why the old ~15% coin cut was removed.
 //
-// VP bonuses are kept IDENTICAL to web. VP costs us nothing real, so it is
-// free goodwill that stops the top Play packs feeling thin.
+// Only the PRICE differs on Play, and that price comes from Play at runtime,
+// never from this file.
 // ─────────────────────────────────────────────────────────────────────
 
-const STORE_COIN_OVERRIDES = {
-  starter:   85,
-  gamer:     425,
-  pro:       1000,
-  elite:     2100,
-  legend:    4250,
-  champion:  8500,
-  titan:     12500,
-  ascendant: 21000,
-};
-
 /**
- * The coin packs shown inside the Play build. Same ids, taglines and VP
- * bonuses as web so the rest of the wallet UI needs no special-casing —
- * only `coins` differs, plus a `webCoins` field for the comparison badge.
+ * The coin packs shown inside the Play build.
+ *
+ * Re-exported rather than aliased so every existing import keeps working and
+ * so there is one obvious place to look when someone asks "does the store sell
+ * something different?". The answer is no, and this is where it says so.
  */
-export const STORE_COIN_PACKS = COIN_PACKS.map((pack) => {
-  const coins = STORE_COIN_OVERRIDES[pack.id];
-  if (!coins) return pack; // new web pack with no store mapping yet: pass through
-  return {
-    ...pack,
-    coins,
-    webCoins: pack.coins,
-    webBonusPct: Math.round(((pack.coins / coins) - 1) * 100),
-  };
-});
+export const STORE_COIN_PACKS = COIN_PACKS;
 
 // ─────────────────────────────────────────────────────────────────────
 // Price computation.
@@ -150,29 +168,53 @@ function charmRound(value) {
 
 /**
  * Price to charge in `countryCode` so that, after VAT and Play's fee, we net
- * at least TARGET_NET_EUR_PER_COIN per coin.
+ * at least TARGET_NET_USD_PER_COIN per coin.
  *
  *   net = price ÷ (1 + vat) × (1 − fee)  ⟹  price = net × (1 + vat) ÷ (1 − fee)
  *
- * Returned in EUR. Play Console converts to local currency, or you paste the
+ * Returned in USD. Play Console converts to local currency, or you paste the
  * per-country figures from scripts/playPricing.mjs directly.
  */
 export function playPriceFor(coins, countryCode, {
   fee = PLAY_SERVICE_FEE,
-  targetNet = TARGET_NET_EUR_PER_COIN,
+  targetNet = TARGET_NET_USD_PER_COIN,
 } = {}) {
   const vat = taxRateFor(countryCode);
   const raw = (coins * targetNet) * (1 + vat) / (1 - fee);
   return charmRound(raw);
 }
 
-/** What we actually receive, in EUR, for a given price in a given market. */
-export function playNetFor(priceEUR, countryCode, { fee = PLAY_SERVICE_FEE } = {}) {
-  return priceEUR / (1 + taxRateFor(countryCode)) * (1 - fee);
+/**
+ * Play price for a SUBSCRIPTION, holding the same net as the web sale.
+ *
+ * A subscription is not coins, so the per-coin floor does not apply. The target
+ * is simply "do not earn less through Play than we do on our own rail": the web
+ * price is the benchmark, and the Play price is whatever recovers Google's fee
+ * and, in tax-inclusive markets, the VAT that Google collects and remits before
+ * paying us.
+ *
+ *   net = price ÷ (1 + vat) × (1 − fee)  ⟹  price = webPrice × (1 + vat) ÷ (1 − fee)
+ *
+ * This deliberately does NOT model our own processor cost on the web rail. Doing
+ * so would raise the Play price further on an assumption nobody has verified,
+ * and erring toward the smaller Play price is the safer direction: it protects
+ * the fair-comparison requirement rather than quietly widening the gap.
+ *
+ * Same rule as everywhere else in this file: the figure is for typing into Play
+ * Console. At runtime, display Play's own string from `fetchPlaySubPrices()`.
+ */
+export function playSubPriceFor(webPriceEUR, countryCode, { fee = PLAY_SERVICE_FEE } = {}) {
+  const vat = taxRateFor(countryCode);
+  return charmRound(webPriceEUR * (1 + vat) / (1 - fee));
 }
 
-/** Net revenue per coin. Must stay ≥ TARGET_NET_EUR_PER_COIN. */
-export function playNetPerCoin(priceEUR, coins, countryCode, opts) {
+/** What we actually receive, in USD, for a given price in a given market. */
+export function playNetFor(priceUSD, countryCode, { fee = PLAY_SERVICE_FEE } = {}) {
+  return priceUSD / (1 + taxRateFor(countryCode)) * (1 - fee);
+}
+
+/** Net revenue per coin. Must stay >= TARGET_NET_USD_PER_COIN. */
+export function playNetPerCoin(priceUSD, coins, countryCode, opts) {
   if (!coins) return 0;
-  return playNetFor(priceEUR, countryCode, opts) / coins;
+  return playNetFor(priceUSD, countryCode, opts) / coins;
 }

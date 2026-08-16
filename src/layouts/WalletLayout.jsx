@@ -14,19 +14,18 @@ import PinUnlockModal from '../components/wallet/PinUnlockModal';
 import WalletOnboarding from '../components/wallet/WalletOnboarding';
 import WalletWalkthrough from '../components/wallet/WalletWalkthrough';
 import { getMyWalletSecurityStatus } from '../firebase/walletCallables';
+import { COIN_VALUE_USD, GEM_VALUE_USD } from '../utils/vpSystem';
 
 // LocalStorage flag — walkthrough plays once per browser, even if the user
 // later cancels onboarding. They can replay manually from Settings.
 const WALKTHROUGH_FLAG = 'vergr.wallet.walkthroughSeen.v1';
 import {
-  CoinGlyph, GemGlyph, VPGlyph, WALLET_TOKENS, fmtNum, fmtEUR,
+  CoinGlyph, GemGlyph, VPGlyph, WALLET_TOKENS, fmtNum, fmtEUR, fmtUsd,
 } from '../components/wallet/primitives';
 
 const NAV_MONEY = [
   { path: '/wallet',          label: 'Home',     icon: 'home' },
   { path: '/wallet/buy',      label: 'Buy coins', icon: 'shopping_cart' },
-  { path: '/wallet/convert',  label: 'Convert',  icon: 'swap_horiz' },
-  { path: '/wallet/withdraw', label: 'Withdraw', icon: 'north_east' },
   { path: '/wallet/referral', label: 'Refer & Earn', icon: 'redeem' },
   { path: '/wallet/history',  label: 'History',  icon: 'history' },
 ];
@@ -42,7 +41,6 @@ const NAV_ACCOUNT = [
 const MOBILE_NAV = [
   { path: '/wallet',         label: 'Home',    icon: 'home' },
   { path: '/wallet/buy',     label: 'Buy',     icon: 'shopping_cart' },
-  { path: '/wallet/convert', label: 'Convert', icon: 'swap_horiz' },
   { path: '/wallet/history', label: 'History', icon: 'history' },
   { label: 'More',   icon: 'menu', more: true },
 ];
@@ -97,8 +95,8 @@ function WalletGuestGate() {
           Your wallet needs an account
         </h1>
         <p style={{ fontSize: 14, lineHeight: 1.6, color: WALLET_TOKENS.textSecondary, margin: '0 0 24px' }}>
-          Coins, gems, and withdrawals are tied to a real account. Create a free
-          one to buy coins, earn, and cash out. It only takes a minute.
+          Coins are tied to a real account. Create a free
+          one to buy and spend coins. It only takes a minute.
         </p>
         <button
           onClick={() => navigate('/signup')}
@@ -198,6 +196,18 @@ function OnboardingGate() {
   );
 }
 
+// A `useStripeReturn()` hook lived here to catch Stripe Embedded Checkout's
+// redirect back to `return_url` and clear the basket once `stripe_orders/{sid}`
+// read `settled`. It went with the rest of Stripe on 2026-08-13.
+//
+// If a redirecting card rail is ever added back, the rule it encoded still
+// holds and is the part worth keeping: a `session_id` in the URL is NOT proof of
+// payment (anyone can type one), so the basket may only be cleared once the
+// SERVER's own order doc says settled, written by a signature-verified webhook.
+// A redirect is the normal path, not an edge case: 3-D Secure, iDEAL and most
+// non-card methods all return that way, so the panel's own onPaid callback
+// cannot be relied on.
+
 function WalletShell() {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -219,22 +229,17 @@ function WalletShell() {
   // Breadcrumbs derived from path
   const titles = {
     '/wallet':                       { title: 'Home',     parents: [] },
-    '/wallet/buy':                   { title: 'Buy coins', parents: ['Wallet'] },
-    '/wallet/convert':               { title: 'Convert',  parents: ['Wallet'] },
-    '/wallet/withdraw':              { title: 'Withdraw', parents: ['Wallet'] },
-    '/wallet/withdraw/new-address':  { title: 'Add address', parents: ['Wallet', 'Withdraw'] },
-    '/wallet/history':               { title: 'History',  parents: ['Wallet'] },
-    '/wallet/referral':              { title: 'Refer & Earn', m: 'Referrals', parents: ['Wallet'] },
-    '/wallet/settings':              { title: 'Settings', parents: ['Wallet'] },
-    '/wallet/security':              { title: 'Security', parents: ['Wallet'] },
-    '/wallet/security/pin':          { title: 'Change PIN', parents: ['Wallet', 'Security'] },
-    '/wallet/security/totp':         { title: 'Two-factor auth', m: 'Two-factor', parents: ['Wallet', 'Security'] },
-    '/wallet/security/addresses':    { title: 'Whitelisted addresses', m: 'Addresses', parents: ['Wallet', 'Security'] },
-    '/wallet/security/deposit':      { title: 'Deposit address', m: 'Deposit', parents: ['Wallet', 'Security'] },
-    '/wallet/kyc':                   { title: 'KYC verification', m: 'KYC', parents: ['Wallet'] },
-    '/wallet/help':                  { title: 'Help', parents: ['Wallet'] },
+    '/wallet/buy':                   { title: 'Buy coins', parents: ['Coins'] },
+    '/wallet/history':               { title: 'History',  parents: ['Coins'] },
+    '/wallet/referral':              { title: 'Refer & Earn', m: 'Referrals', parents: ['Coins'] },
+    '/wallet/settings':              { title: 'Settings', parents: ['Coins'] },
+    '/wallet/security':              { title: 'Security', parents: ['Coins'] },
+    '/wallet/security/pin':          { title: 'Change PIN', parents: ['Coins', 'Security'] },
+    '/wallet/security/totp':         { title: 'Two-factor auth', m: 'Two-factor', parents: ['Coins', 'Security'] },
+    '/wallet/kyc':                   { title: 'KYC verification', m: 'KYC', parents: ['Coins'] },
+    '/wallet/help':                  { title: 'Help', parents: ['Coins'] },
   };
-  const meta = titles[path] || { title: 'Wallet', parents: [] };
+  const meta = titles[path] || { title: 'Coins', parents: [] };
 
   return (
     <div className={isDesktop ? undefined : 'vg-wallet-mobile'} style={{
@@ -344,7 +349,7 @@ function Sidebar({ collapsed, setCollapsed, matches, navigate }) {
         {!collapsed && (
           <div style={{ minWidth: 0 }}>
             <div style={{ fontFamily: 'Syne, sans-serif', fontWeight: 700, fontSize: 14 }}>VERGR</div>
-            <div style={{ fontSize: 10, letterSpacing: '0.10em', textTransform: 'uppercase', color: WALLET_TOKENS.textMuted }}>Wallet</div>
+            <div style={{ fontSize: 10, letterSpacing: '0.10em', textTransform: 'uppercase', color: WALLET_TOKENS.textMuted }}>Coins</div>
           </div>
         )}
       </div>
@@ -420,7 +425,14 @@ function Topbar({ meta, wallet, navigate, onMobileNav, isDesktop }) {
   const [balOpen, setBalOpen] = useState(false);
   const coins = wallet?.balance || 0;
   const gems = wallet?.gems || 0;
-  const totalEUR = (coins + gems) * 0.009; // coin = €0.009 floor; gem ≈ same redemption order
+  // Coins and gems are NOT the same value and must not be summed at one rate.
+  // The accrual unit is worth $0.01 flat, because that is what it pays out at
+  // (functions/withdrawals.js GEM_TO_MICRO_USDC). A coin is valued at what it
+  // COSTS to buy, which is the number that makes sense when you are about to
+  // spend some. A coin's redemption value is much lower, since converting runs
+  // through the 15-30% rank commission, so this figure must never be presented
+  // as what the wallet would pay out.
+  const totalUSD = (coins * COIN_VALUE_USD) + (gems * GEM_VALUE_USD);
   return (
     <header style={{
       position: 'sticky', top: 0, zIndex: 50,
@@ -505,7 +517,7 @@ function Topbar({ meta, wallet, navigate, onMobileNav, isDesktop }) {
             <div style={{ height: 1, background: WALLET_TOKENS.hairline, margin: '10px 0' }} />
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <span style={{ fontSize: 12, color: WALLET_TOKENS.textSecondary }}>Estimated total</span>
-              <span className="font-dmmono tabular-nums" style={{ fontWeight: 600 }}>{fmtEUR(totalEUR)}</span>
+              <span className="font-dmmono tabular-nums" style={{ fontWeight: 600 }}>{fmtUsd(totalUSD)}</span>
             </div>
           </div>
         )}

@@ -28,10 +28,10 @@ export default {
       h2: "Do I have to verify my identity?"
     },
     {
-      p: "Not to sign up. You can explore, post, stream, and follow people right away. A one-time identity check (a photo of your ID and a selfie) is only needed before you withdraw real earnings, so you can leave that until you actually want to cash out."
+      p: "Not to sign up. You can explore, post, stream, and follow people right away. A one-time identity check (a photo of your ID and a selfie) is only needed before Vergr can pay you a revenue share, so you can leave it until you start earning."
     },
     {
-      note: "VERGR is for ages 18 and up. We check your date of birth at signup and run a full identity check before you use the wallet or withdraw."
+      note: "VERGR is for ages 18 and up. We check your date of birth at signup and run a full identity check before you use the wallet or receive a payment."
     },
     {
       faq: [

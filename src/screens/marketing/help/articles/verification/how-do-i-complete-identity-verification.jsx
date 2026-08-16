@@ -12,7 +12,7 @@ export default {
     },
     {
       steps: [
-        "Open a money feature, for example the wallet or a withdrawal. If you are not verified yet, you will see a Verify identity button instead of the feature.",
+        "Open a money feature, for example the wallet or your earnings. If you are not verified yet, you will see a Verify identity button instead of the feature.",
         "Tap Verify. A secure verification page opens in a new tab, your VERGR session stays open behind it.",
         "Follow the prompts: photograph the front (and back, if asked) of your government ID, then take a short selfie so the system can confirm the ID is really yours.",
         "Close the tab when it says you are done. You do not need to refresh anything: the moment the check is approved, your VERGR account updates by itself and shows a confirmation."

@@ -5,7 +5,7 @@
 // Top-level: summary (1-2 sentences, answer-first), updated (YYYY-MM-DD), body [].
 
 export default {
-  summary: "VP sets your rank, and more VP lowers the commission you pay when converting Coins to Gems, from 30% down to a 15% floor at 100,000 VP. It also unlocks avatar rings, badges, and status across the platform. The practical payoff: the more VP you have, the more of your earnings you keep when you cash out.",
+  summary: "VP sets your rank and unlocks avatar rings, badges, and status across the platform. VP is a status ladder, not a money ladder: the share of revenue Vergr pays a creator is set by their lifetime earnings, not by VP.",
   updated: "2026-06-06",
   body: [
     {
@@ -15,7 +15,7 @@ export default {
       h2: "Lower fees, the big one"
     },
     {
-      p: "Your VP decides the commission taken when you convert Coins into withdrawable Gems. It starts at 30%, and it steps down as your VP grows, reaching a 15% floor at 100,000 VP. For anyone who cashes out regularly, that gap is real money kept in your pocket."
+      p: "VP does not change what you are paid. Your revenue share starts at 50% and rises to 80% as your lifetime earnings grow, and nothing about VP, your rank or your subscription moves it. What VP buys is standing: rings, badges, and progression."
     },
     {
       h2: "Status and recognition"
@@ -31,7 +31,7 @@ export default {
       h2: "What VP is not"
     },
     {
-      p: "VP is not a currency. You cannot spend it, send it, or withdraw it. Its entire job is to track your standing and reward it with lower fees and recognition. So you never have to choose between spending VP and keeping it, just keep earning it."
+      p: "VP is not a currency. You cannot spend it or send it. Its entire job is to track your standing and reward it with a better revenue share and recognition. So you never have to choose between spending VP and keeping it, just keep earning it."
     },
     {
       cta: [

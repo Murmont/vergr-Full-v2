@@ -313,7 +313,9 @@ function RevenueChart({ points, totals }) {
   const innerH = H - PAD_T - PAD_B;
   // Use EUR as primary axis; convert coin revenue to EUR-equiv via 100c ≈ €0.90
   // (rough — purely for visual stacking; treats coin platform-cut as part of revenue).
-  const COIN_TO_EUR = 0.009; // €0.0090 per coin (matches the locked economy floor)
+  // Ladder floor, USD (src/utils/vpSystem.js COIN_VALUE_USD). Was 0.009 EUR,
+  // which understated every admin revenue figure by ~29% after the USD move.
+  const COIN_TO_EUR = 0.01163;
   const dailyTotal = points.map(p => p.revenue.subscriptionEUR + p.revenue.totalPlatformCoins * COIN_TO_EUR);
   const max = Math.max(0.01, ...dailyTotal);
   const barW = innerW / points.length;

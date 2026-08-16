@@ -18,16 +18,28 @@ import { dirname, join } from 'node:path';
 import { loadHelp } from './_helpData.mjs';
 // legalContent.js is plain ESM data with zero imports, so Node can load it
 // directly — no esbuild bundle needed the way helpContent.jsx requires one.
-const { CHILD_SAFETY_STANDARDS } = await import(pathToFileURL(
+const { CHILD_SAFETY_STANDARDS, ACCEPTABLE_USE_POLICY, TERMS_OF_SERVICE } = await import(pathToFileURL(
   join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'screens', 'marketing', 'legal', 'legalContent.js'),
 ).href);
 
-/** Render a legalContent document to static HTML for prerendering. */
+/**
+ * Render a legalContent document to static HTML for prerendering.
+ *
+ * Body entries are either plain strings or `list({ type:'list', items })`
+ * blocks. The list case is NOT optional: the Acceptable Use Policy is mostly
+ * lists, and stringifying one produces "[object Object]" in the static HTML a
+ * crawler reads, which is worse than not prerendering at all.
+ */
 function legalDocHtml(docObj) {
-  const p = (s) => `<p>${escHtml(s)}</p>`;
-  const intro = (Array.isArray(docObj.intro) ? docObj.intro : [docObj.intro]).map(p).join('');
+  const block = (b) => {
+    if (b && typeof b === 'object' && b.type === 'list' && Array.isArray(b.items)) {
+      return `<ul>${b.items.map((i) => `<li>${escHtml(i)}</li>`).join('')}</ul>`;
+    }
+    return `<p>${escHtml(b)}</p>`;
+  };
+  const intro = (Array.isArray(docObj.intro) ? docObj.intro : [docObj.intro]).map(block).join('');
   const body = docObj.sections.map((s) =>
-    `<section id="${escHtml(s.id)}"><h2>${escHtml(s.title)}</h2>${s.body.map(p).join('')}</section>`).join('');
+    `<section id="${escHtml(s.id)}"><h2>${escHtml(s.title)}</h2>${s.body.map(block).join('')}</section>`).join('');
   return `<p>${escHtml(docObj.updated)}</p>${intro}${body}`;
 }
 
@@ -214,69 +226,12 @@ async function main() {
       + `<h2>All guides</h2><ul>${artLinks}</ul></main>`;
     let html = applyHead(shell, {
       title: 'Help Center | VERGR',
-      description: 'Guides and answers for VERGR: streaming, coins, gems, payouts, squads, and account help.',
+      description: 'Guides and answers for VERGR: streaming, coins, creator payouts, squads, and account help.',
       canonical: `${SITE}/platform/help`,
       jsonld: graph([breadcrumbSchema(crumbs)]),
     });
     html = injectBody(html, bodyHtml);
     write('/platform/help', html);
-    count++;
-  }
-
-  // ── Growth / SEO money pages (pillar, legit hub, per-game) ──
-  // Pure-data module, imported directly (no esbuild needed).
-  const growth = await import(pathToFileURL(join(REPO, 'src', 'screens', 'marketing', 'growth', 'growthContent.js')).href);
-  const growthBlocksHtml = (sections) => {
-    const out = [];
-    for (const s of sections) {
-      out.push('<section>');
-      if (s.h2) out.push(`<h2>${esc(s.h2)}</h2>`);
-      for (const b of s.blocks) {
-        if (b.p != null) out.push(`<p>${esc(b.p)}</p>`);
-        else if (Array.isArray(b.tiles)) out.push(b.tiles.map((t) => `<h3>${esc(t.title)}</h3><p>${esc(t.body)}</p>`).join(''));
-        else if (Array.isArray(b.list)) out.push(`<ul>${b.list.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>`);
-        else if (Array.isArray(b.steps)) out.push(`<ol>${b.steps.map((x) => `<li>${esc(x)}</li>`).join('')}</ol>`);
-        else if (Array.isArray(b.faq)) out.push('<section>' + b.faq.map(([q, a]) => `<h3>${esc(q)}</h3><p>${esc(a)}</p>`).join('') + '</section>');
-        else if (b.note != null) out.push(`<p class="vg-note">${esc(b.note)}</p>`);
-        else if (Array.isArray(b.links)) out.push('<nav class="vg-related">' + b.links.map((l) => `<a href="${escAttr(l.to)}">${esc(l.label)}</a>`).join('') + '</nav>');
-      }
-      out.push('</section>');
-    }
-    return out.join('\n');
-  };
-  const growthFaq = (page) => page.sections.flatMap((s) => s.blocks.filter((b) => Array.isArray(b.faq)).flatMap((b) => b.faq));
-  // The growth funnel (Make Money Gaming pillar, the "Is VERGR Legit?" hub and
-  // the per-game /platform/play/* pages) is retired: an earnings-claim page, a
-  // page arguing our own legitimacy, and per-game money pages all read badly to
-  // a payment underwriter. The content module is kept; delete this guard to
-  // bring the pages back.
-  const GROWTH_PRERENDER_DISABLED = true;
-  for (const page of (GROWTH_PRERENDER_DISABLED ? [] : growth.ALL_GROWTH_PAGES)) {
-    const isGame = !!page.game;
-    const crumbs = [
-      { name: 'Home', path: '/platform' },
-      ...(isGame ? [{ name: 'Make Money Gaming', path: growth.PILLAR_PAGE.path }] : []),
-      { name: isGame ? page.game : page.h1, path: page.path },
-    ];
-    const items = [
-      { '@type': 'WebPage', name: page.metaTitle, description: page.metaDescription, url: `${SITE}${page.path}` },
-      breadcrumbSchema(crumbs),
-    ];
-    const qa = growthFaq(page);
-    if (qa.length) items.push(faqSchema(qa));
-    const bodyHtml = `<main><article>${crumbsHtml(crumbs)}`
-      + `<h1>${esc(page.h1)}</h1><p>${esc(page.subtitle)}</p>`
-      + growthBlocksHtml(page.sections)
-      + (page.cta ? `<p><a href="/signup">${esc(page.cta.title)} ${esc(page.cta.label)}</a></p>` : '')
-      + '</article></main>';
-    let html = applyHead(shell, {
-      title: page.metaTitle,
-      description: page.metaDescription,
-      canonical: `${SITE}${page.path}`,
-      jsonld: graph(items),
-    });
-    html = injectBody(html, bodyHtml);
-    write(page.path, html);
     count++;
   }
 
@@ -293,7 +248,7 @@ async function main() {
       description: 'Connect with gamers, live stream in high quality, and share clips on Vergr. Build your squad, follow creators, and support them with tips and memberships.' },
     { path: '/platform/store', h1: 'Shop — Buy VC Coins',
       title: 'Shop — Buy VC Coins | VERGR',
-      description: 'Buy VC Coins to tip streamers, join creator memberships, unlock paid streams, and boost your reach. Eight pack sizes from €0.99 to €224.99. Pay with cryptocurrency or card.' },
+      description: 'Buy VC Coins to tip streamers, join creator memberships, unlock paid streams, and boost your reach. Eight pack sizes from $0.99 to $249.99. Pay with card or cryptocurrency.' },
     { path: '/platform/contact', h1: 'Contact VERGR',
       title: 'Contact — Get in Touch with VERGR',
       description: 'Send the VERGR team a message about support, privacy, legal, abuse, copyright, press, or partnerships. We reply within two business days.' },
@@ -303,12 +258,12 @@ async function main() {
     { path: '/platform/delete-account', h1: 'Delete your VERGR account',
       title: 'Delete Your VERGR Account & Data',
       description: 'How to permanently delete your VERGR account and associated data, what is removed, what is retained and for how long, and how to submit a deletion request.' },
-    { path: '/platform/creators', h1: 'Keep 90% from your first fan',
-      title: 'For Creators — Keep 90% From Your First Fan | VERGR',
-      description: 'VERGR takes a flat 10% on tips and memberships — you keep 90% from day one, no points program, no tier ladder. Mirror your stream to Twitch while you grow here. Trying it costs nothing.' },
+    { path: '/platform/creators', h1: 'Keep up to 80% of what you earn',
+      title: 'For Creators — Keep Up To 80% Of What You Earn | VERGR',
+      description: 'You keep 50% of what you generate from day one, rising to 80% as you earn. One rate, no points program, no tier ladder. Mirror your stream to Twitch while you grow here. Trying it costs nothing.' },
     { path: '/platform/monetization', h1: 'Make Money Gaming',
       title: 'Make Money Gaming — VERGR Creator Monetisation',
-      description: 'Ways to earn on VERGR: tips, memberships, paid streams, and Stream Boost amplification. Flat 10% tip fee. Your conversion commission drops 30% → 10% as you climb the rank ladder.' },
+      description: 'Ways to earn on VERGR: tips, memberships, paid streams, and Stream Boost amplification. You keep 50% of what you generate from day one, rising to 80% as your lifetime earnings grow.' },
     { path: '/platform/learn/live', h1: 'Stream Gameplay & Earn',
       title: 'Stream Gameplay & Earn — Live Streaming on VERGR',
       description: 'Go live in 30 seconds from your browser, no install. Earn real tips while you play, build memberships, and co-stream with a guest at 720p60 (Lite) or 1080p60 (Pro). The Twitch alternative built for gamer monetisation.' },
@@ -318,9 +273,9 @@ async function main() {
     { path: '/platform/learn/clips', h1: 'Gaming Clips — Upload, Share, Earn',
       title: 'Gaming Clips — Upload, Share, Earn | VERGR',
       description: 'Upload your clutch moments or embed YouTube/Twitch clips. Up to 60s (Free), 3min (Lite), or 10min (Pro). Earn VP from views and tips. Discover clips from squads and the global feed.' },
-    { path: '/platform/learn/coins', h1: 'VC Coins — Gaming Currency You Can Cash Out',
-      title: 'VC Coins — Gaming Currency You Can Cash Out | VERGR',
-      description: 'Buy coins from €0.99 to €224.99 with crypto or card. Tip streamers, join memberships, unlock paid streams. Coins are spendable only inside VERGR; creators convert earnings to gems and withdraw.' },
+    { path: '/platform/learn/coins', h1: 'VC Coins — The Currency Behind VERGR',
+      title: 'VC Coins — How the VERGR Coin Economy Works | VERGR',
+      description: 'Buy coins from $0.99 to $249.99 with card or crypto. Tip streamers, join memberships, unlock paid streams. Coins are spendable only inside VERGR and cannot be withdrawn; creators are paid a share of the revenue their content earns.' },
     { path: '/linkinbio', h1: 'Get Your Free Link in Bio',
       title: 'Vergr.me | Get Your Free Link in Bio',
       description: 'Claim your free vergr.me link in bio page: unlimited links, 18+ block types, real design systems, analytics, QR codes and live stream integration. Free forever, no credit card.' },
@@ -328,7 +283,7 @@ async function main() {
     // at runtime) — titles/descriptions authored here, self-canonical is the fix.
     { path: '/platform/streamer', h1: 'For Streamers',
       title: 'For Streamers — Go Live & Get Paid | VERGR',
-      description: 'Stream from your browser or OBS, earn tips with a flat 10% fee, build channel memberships, and mirror to Twitch. Built for gamer monetisation.' },
+      description: 'Stream from your browser or OBS, earn tips and keep 50% to 80% of them, build channel memberships, and mirror to Twitch. Built for gamer monetisation.' },
     { path: '/platform/studio-tools', h1: 'Studio Tools',
       title: 'Studio Tools — Overlays, Clips & Creator Tools | VERGR',
       description: 'VERGR creator studio: stream overlays, clip tools, scheduling, analytics, and monetisation controls in one dashboard.' },
@@ -344,6 +299,36 @@ async function main() {
     { path: '/platform/download', h1: 'Download VERGR',
       title: 'Download VERGR — Windows, Android, iPhone & Web',
       description: 'Get VERGR on any device: Windows desktop app, Android APK, iPhone home-screen app, or straight in your browser.' },
+    { path: '/platform/download/desktop', h1: 'Get the desktop app',
+      title: 'Download VERGR for Windows | VERGR',
+      description: 'Get the VERGR desktop app for Windows 10 and 11. Native window, system notifications, background run and silent auto-updates. Published version, size and SHA-256 checksum.' },
+    { path: '/platform/download/mobile', h1: 'Get the mobile app',
+      title: 'Download the VERGR Android App | VERGR',
+      description: 'Get the native VERGR app for Android as a direct download, with published version, size and SHA-256 checksum. iPhone users can install VERGR from Safari in two taps.' },
+    { path: '/platform/content-moderation', h1: "Content Moderation Policy",
+      title: "Content Moderation Policy | VERGR",
+      description: "How VERGR moderates content: what is prohibited, automated scanning, human review, enforcement and appeals." },
+    { path: '/platform/identity-and-consent', h1: "ID&V and Consent Procedures",
+      title: "ID&V and Consent Procedures | VERGR",
+      description: "How VERGR verifies the identity of people who earn on the platform, and how consent is handled for anyone appearing in content." },
+    { path: '/platform/age-verification', h1: "Age Verification Process",
+      title: "Age Verification Process | VERGR",
+      description: "VERGR is 18+. How we establish age at signup, verify it documentarily before any payout, and act on underage accounts." },
+    { path: '/platform/anti-slavery', h1: "Anti-Modern Slavery and Human Trafficking Statement",
+      title: "Anti-Modern Slavery and Human Trafficking Statement | VERGR",
+      description: "The steps VERGR takes to ensure modern slavery and human trafficking take place neither in our business nor on our platform." },
+    { path: '/platform/csam-policy', h1: "CSAM, Non-Consensual and Illegal Content Procedures",
+      title: "CSAM, Non-Consensual and Illegal Content Procedures | VERGR",
+      description: "Zero tolerance procedures for child sexual abuse material, non-consensual intimate imagery and illegal content, including reporting to authorities." },
+    { path: '/platform/law-enforcement', h1: "Contacting Law Enforcement Guidelines",
+      title: "Contacting Law Enforcement Guidelines | VERGR",
+      description: "Guidance for law enforcement seeking information from VERGR, and when VERGR contacts authorities on its own initiative." },
+    { path: '/platform/aml-policy', h1: "Anti-Money Laundering Policy",
+      title: "Anti-Money Laundering Policy | VERGR",
+      description: "Customer due diligence, sanctions screening, creator payout limits, transaction monitoring and suspicious activity reporting on VERGR." },
+    { path: '/platform/anti-fraud', h1: "Transaction Monitoring, Anti-Fraud and Chargeback Policy",
+      title: "Transaction Monitoring, Anti-Fraud and Chargeback Policy | VERGR",
+      description: "How VERGR monitors transactions, prevents fraud, holds outgoing funds and handles chargebacks and disputes." },
     { path: '/platform/careers', h1: 'Careers',
       title: 'Careers at VERGR',
       description: 'Join the team building the live streaming platform: streaming, clips, squads, and creator monetisation.' },
@@ -352,13 +337,19 @@ async function main() {
       description: 'The VERGR community forums: announcements, feedback, creator discussion, and squad recruitment.' },
     { path: '/platform/terms', h1: 'Terms of Service',
       title: 'Terms of Service | VERGR',
-      description: 'The VERGR terms of service covering accounts, coins and gems, streaming, and payouts.' },
+      description: 'The VERGR terms of service covering accounts, coins, streaming, and creator payouts.',
+      bodyHtml: legalDocHtml(TERMS_OF_SERVICE) },
     { path: '/platform/privacy', h1: 'Privacy Policy',
       title: 'Privacy Policy | VERGR',
       description: 'How VERGR collects, uses, and protects your data, and the controls you have over it.' },
+    // FULL text, not a one-line description. A payment processor's underwriting
+    // review reads this page, and several of them crawl rather than browse: the
+    // SPA shell gave them an empty document, so the policy they were assessing
+    // was invisible to them.
     { path: '/platform/acceptable-use', h1: 'Acceptable Use Policy',
       title: 'Acceptable Use Policy | VERGR',
-      description: 'What is and is not allowed on VERGR: content rules, prohibited behaviour, and enforcement.' },
+      description: 'What is and is not allowed on VERGR: content rules, prohibited behaviour, and enforcement.',
+      bodyHtml: legalDocHtml(ACCEPTABLE_USE_POLICY) },
     { path: '/platform/cookies', h1: 'Cookie Policy',
       title: 'Cookie Policy | VERGR',
       description: 'How VERGR uses cookies and similar technologies, and how to manage them.' },
@@ -386,14 +377,10 @@ async function main() {
   const CRUMB_OVERRIDES = {
     '/platform/store': 'Coins',
     '/platform/delete-account': 'Delete Account',
-    '/platform/legit': 'Is VERGR Legit?',
     '/platform/streamer': 'Become a Streamer',
     '/platform/creators': 'For Creators',
     '/platform/partners': 'Partner Program',
     '/platform/linkinbio': 'Link in Bio',
-    '/platform/play/fc25': 'EA Sports FC',
-    '/platform/play/cs2': 'CS2',
-    '/platform/play/nba2k': 'NBA 2K',
     '/platform/code-of-conduct': 'Code of Conduct',
     '/platform/acceptable-use': 'Acceptable Use',
     '/platform/child-safety': 'Child Safety',
@@ -440,9 +427,9 @@ async function main() {
   // topic hub its children imply — it consolidates internal links to the six
   // guides and is a legitimate ranking page in its own right.
   //
-  // Note /platform/play is NOT given a hub: /platform/make-money-gaming is
-  // already the pillar that links every game page, so a second hub would be
-  // duplicate content competing with it. That one 301s instead (firebase.json).
+  // Note /platform/play is retired along with the rest of the growth funnel,
+  // so it 301s to /platform/creators in firebase.json rather than resolving to
+  // the SPA shell, which Google would class as a soft 404.
   {
     const children = MARKETING_PAGES.filter((p) => p.path.startsWith('/platform/learn/'));
     const crumbs = [{ name: 'Home', path: '/platform' }, { name: 'Learn', path: '/platform/learn' }];

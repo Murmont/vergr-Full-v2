@@ -1,11 +1,11 @@
 // Help center article: Why do I have to be 18+?
 
 export default {
-  summary: "Because VERGR involves real money: a purchasable coin economy, creator earnings, and withdrawals. Nearly every country sets 18 as the legal age for buying and cashing out, and VERGR enforces it with a date-of-birth check at identity verification. It is a hard rule with no exceptions.",
+  summary: "Because VERGR involves real money: a purchasable coin economy and creator payments. Nearly every country sets 18 as the legal age for buying and being paid, and VERGR enforces it with a date-of-birth check at identity verification. It is a hard rule with no exceptions.",
   updated: "2026-07-02",
   body: [
     {
-      p: "Plenty of platforms let younger teens in because nothing of value changes hands. On VERGR, money is real: you can buy Coins, win cash-equivalent prizes, and withdraw earnings. That puts it under adult rules everywhere it operates."
+      p: "Plenty of platforms let younger teens in because nothing of value changes hands. On VERGR money is real: people buy Coins, and creators are paid a share of the revenue they generate. That puts it under adult rules everywhere it operates."
     },
     {
       h2: "Where the rule is enforced"
@@ -26,7 +26,7 @@ export default {
     {
       cta: [
         { to: "/platform/help/is-vergr-gambling", label: "Is VERGR gambling? (No, and here is why)" },
-        { to: "/platform/help/why-can-i-not-withdraw-until-i-am-verified", label: "Why verification exists" }
+        { to: "/platform/help/what-is-kyc-and-why-does-vergr-ask-for-it", label: "Why VERGR asks for ID" }
       ]
     }
   ]

@@ -26,7 +26,7 @@ export default {
       ]
     },
     {
-      note: "Challenge rewards come from what the squad itself puts up, the platform does not mint prizes for them. That keeps challenge rewards real, like everything else in the economy."
+      note: "Challenge rewards come from what the squad itself puts up, the platform does not mint rewards for them. That keeps challenge rewards real, like everything else in the economy."
     },
     {
       cta: [

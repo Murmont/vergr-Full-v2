@@ -5,7 +5,7 @@
 // Top-level: summary (1-2 sentences, answer-first), updated (YYYY-MM-DD), body [].
 
 export default {
-  summary: "Coins keep everyday actions inside the app fast, simple, and consistent for everyone, no matter their currency or country. Real-money movement (cashing out) is kept separate as Gems so it can run through proper verification and safety checks. It is the same split most apps use: an in-app balance for spending, a verified path for payouts.",
+  summary: "Coins keep everyday actions inside the app fast, simple, and consistent for everyone, no matter their currency or country. Paying creators is kept separate, on Vergr's own schedule, so it can run through proper verification and safety checks. It is the same split most apps use: an in-app balance for spending, a verified path for payouts.",
   updated: "2026-06-06",
   body: [
     {
@@ -27,20 +27,20 @@ export default {
       h2: "Real money gets real protection"
     },
     {
-      p: "When it is time to take money out, that is exactly when extra care belongs. So cashing out uses Gems, which sit behind identity verification and a short safety hold. Separating the spend balance from the payout balance is what lets the in-app side stay quick while the money-out side stays secure."
+      p: "When it is time to move money out, that is exactly when extra care belongs. So creator payouts sit behind identity verification and run on Vergr's schedule. Separating spending from earning is what lets the in-app side stay quick while the money-out side stays secure."
     },
     {
-      note: "Nothing is locked away. Coins convert to Gems whenever you want, and Gems withdraw to a wallet address you control."
+      note: "Your share accrues the moment revenue is earned, and Vergr pays it on a published schedule."
     },
     {
       cta: [
         {
-          to: "/platform/help/how-do-coins-gems-and-vp-work-together",
-          label: "How it all fits together"
+          to: "/platform/help/how-do-coins-and-vp-work-together",
+          label: "How Coins and VP work"
         },
         {
-          to: "/platform/help/how-do-i-convert-coins-into-gems",
-          label: "Convert to Gems"
+          to: "/platform/help/how-do-coins-and-vp-work-together",
+          label: "How Coins and VP work"
         }
       ]
     }

@@ -5,7 +5,7 @@ export default {
     { p: "Both give you one link that holds all your links. The difference is what sits behind the page." },
     { h2: "What Vergr.me adds" },
     { list: [
-      "Built-in tip jar: fans can tip you in Coins right from the page (flat 10% fee), no third-party processor.",
+      "Built-in tip jar: fans can tip you in Coins right from the page, no third-party processor.",
       "Live status: when you are streaming, your page can reflect it and send people to watch.",
       "Follower and message buttons: visitors can follow you or message you on VERGR in one tap.",
       "It is free and already part of your account — no separate signup.",

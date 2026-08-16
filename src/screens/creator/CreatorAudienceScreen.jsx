@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useUser } from '../../context/UserContext';
-import { StackSkeleton } from '../../components/skeletons/GlassSkeletons';
+import { PanelListSkeleton } from '../../components/creator/StudioSkeletons';
 import { getFollowers, getTransactions } from '../../firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../../firebase/config';
@@ -165,7 +165,7 @@ export default function CreatorAudienceScreen() {
       </div>
 
       {loading ? (
-        <StackSkeleton rows={5} height={88} />
+        <PanelListSkeleton count={4} />
       ) : (
         <>
           {/* KPIs */}

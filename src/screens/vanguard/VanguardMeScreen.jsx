@@ -506,7 +506,7 @@ function HandbookTab() {
           <li>Your share = <code>(your rank weight × your action count this month) / Σ (everyone's weight × actions)</code> × treasury pool.</li>
           <li>Recruits earn 0× (no share until promoted to Vanguard).</li>
           <li>Vanguard 1×, Senior 1.25×, Commander 1.5×, Overseer 2×.</li>
-          <li>You also earn <strong style={{ color: C.success }}>per-action VP</strong> at your rank's rate (Vanguard +50, Senior +100, Commander +200, Overseer +500). Climbing to VP L100 puts you at the 5% withdrawal-commission floor.</li>
+          <li>You also earn <strong style={{ color: C.success }}>per-action VP</strong> at your rank's rate (Vanguard +50, Senior +100, Commander +200, Overseer +500). While your Vanguard status is active you keep 100% of your creator revenue share.</li>
           <li><strong style={{ color: C.success }}>Coin → Gem conversion is 0% commission</strong> for you. Normal users pay 5–30%.</li>
         </ul>
       </Section>
@@ -523,7 +523,7 @@ function HandbookTab() {
 
       <Section title="Platform rules you should know (FAQ for users)">
         <ul style={{ paddingLeft: 20, fontSize: 13, lineHeight: 1.7, color: C.textDim }}>
-          <li><strong style={{ color: C.text }}>Tips:</strong> 10% flat platform fee at send time. Recipient gets 90%.</li>
+          <li><strong style={{ color: C.text }}>Tips:</strong> nothing is taken at send time. Vergr pays the creator a share of the revenue, 50% to 80% by lifetime earnings, and active Vanguard keep 100%.</li>
           <li><strong style={{ color: C.text }}>Coin → Gem conversion:</strong> tier-based commission (Rookie 30% → Diamond 5%). You're 0%.</li>
           <li><strong style={{ color: C.text }}>Tournaments:</strong> 5% mod cut. Max entry fee 10,000 coins. Max prize pool 500,000 coins (Riot caps).</li>
           <li><strong style={{ color: C.text }}>Payouts:</strong> 7-day hold, 2% spread, crypto-only at launch, min 1,000 gems.</li>

@@ -169,7 +169,7 @@ export default function WalletOnboarding({ open, onComplete }) {
             Welcome to your wallet
           </div>
           <div style={{ color: WALLET_TOKENS.textSecondary, fontSize: 14, lineHeight: 1.6, maxWidth: 420, margin: '0 auto 24px' }}>
-            Coins for spending. Gems for earning. We'll set up a 6-digit PIN and
+            Coins are what you spend on Vergr. We'll set up a 6-digit PIN and
             an optional second factor so you stay in control. Takes about a minute.
           </div>
           <WalletButton variant="primary" size="lg" onClick={() => setStep('pin')} iconRight="arrow_forward">
@@ -183,7 +183,7 @@ export default function WalletOnboarding({ open, onComplete }) {
         <div style={{ textAlign: 'center' }}>
           <Eyebrow>Step 1 · PIN</Eyebrow>
           <Headline>Set a 6-digit PIN</Headline>
-          <Sub>You'll enter this before withdrawing, viewing your deposit address, or changing wallet settings. Not the same as your account password.</Sub>
+          <Sub>You'll enter this before buying Coins or changing wallet settings. Not the same as your account password.</Sub>
           <PinPad value={pin} onChange={setPin} onComplete={handlePinComplete} error={!!error} disabled={submitting} />
           {error && <ErrorLine>{error}</ErrorLine>}
         </div>
@@ -209,7 +209,7 @@ export default function WalletOnboarding({ open, onComplete }) {
         <div style={{ textAlign: 'center' }}>
           <Eyebrow>Step 2 · Two-factor</Eyebrow>
           <Headline>Add 2FA (recommended)</Headline>
-          <Sub>Required for withdrawals over €100, adding withdrawal addresses, and disabling 2FA itself. Takes about 60 seconds.</Sub>
+          <Sub>Required for large Coin purchases, changing your PIN, and disabling 2FA itself. Takes about 60 seconds.</Sub>
           <div style={{
             display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12,
             maxWidth: 460, margin: '0 auto',

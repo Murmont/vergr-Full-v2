@@ -13,12 +13,11 @@ import { getMyWithdrawals, cancelWithdrawal } from '../../../firebase/walletCall
 
 const FILTERS = [
   { id: 'all',          label: 'All',              match: () => true },
-  { id: 'tips',         label: 'Tips',             match: (t) => t.type === 'tip_received' || t.type === 'tip_sent' },
-  { id: 'conversions',  label: 'Conversions',      match: (t) => t.type === 'conversion' || t.type === 'coin_to_gem_conversion' },
-  { id: 'withdrawals',  label: 'Withdrawals',      match: (t) => t.type === 'withdrawal' || t.type === 'gem_withdrawal' || t.type === 'withdrawal_cancelled' },
-  { id: 'purchases',    label: 'Coin purchases',   match: (t) => t.type === 'buy' || t.type === 'coin_purchase' },
+  { id: 'unlocks',      label: 'Unlocks',          match: (t) => /unlock|ticket|season_pass|coaching_payment/.test(String(t.type || '')) },
+  { id: 'tips',         label: 'Tips sent',        match: (t) => t.type === 'tip_sent' },
+  { id: 'purchases',    label: 'Coins bought',     match: (t) => t.type === 'buy' || t.type === 'coin_purchase' },
   { id: 'tournaments',  label: 'Tournament prizes', match: (t) => t.type === 'tournament' || t.type === 'tournament_prize' || t.type === 'tournament_refund' },
-  { id: 'memberships',  label: 'Memberships',      match: (t) => t.type === 'membership' || t.type === 'fan_renewal' },
+  { id: 'memberships',  label: 'Subscriptions',    match: (t) => t.type === 'membership' || t.type === 'fan_renewal' || t.type === 'subscription_payment' },
 ];
 
 export default function HistoryScreen() {

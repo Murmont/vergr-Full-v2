@@ -3,7 +3,7 @@
 // Every section reads from Firestore. Empty sections render a short
 // "nothing here yet" message instead of dummy content.
 import { useEffect, useState } from 'react';
-import { isDiscoverableStream } from '../../utils/streamVisibility';
+import { isDiscoverableStream, streamPremium } from '../../utils/streamVisibility';
 import CachedImg from '../CachedImg';
 import { useNavigate } from 'react-router-dom';
 import { collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
@@ -111,11 +111,31 @@ export default function HomeFeedRail() {
                     {(l.coverUrl || l.thumbnailUrl)
                       ? <img src={l.coverUrl || l.thumbnailUrl} alt="" className="w-full h-full object-cover" />
                       : <Icon name="play_arrow" size={16} className="text-white/90" />}
-                    <span className="absolute top-0.5 left-0.5 px-1 py-[1px] rounded-sm bg-brand-ember text-[8px] font-dmmono font-bold text-white uppercase tracking-wider">Live</span>
+                    {/* A paid stream is discoverable on purpose, so the tile has
+                        to say so before the tap, not after it. */}
+                    {streamPremium(l).isPremium ? (
+                      <span
+                        className="absolute top-0.5 left-0.5 px-1 py-[1px] rounded-sm text-[8px] font-dmmono font-bold text-white uppercase tracking-wider"
+                        style={{ background: 'linear-gradient(135deg, #C87FFF 0%, #7B1FFF 100%)' }}
+                      >
+                        Premium
+                      </span>
+                    ) : (
+                      <span className="absolute top-0.5 left-0.5 px-1 py-[1px] rounded-sm bg-brand-ember text-[8px] font-dmmono font-bold text-white uppercase tracking-wider">Live</span>
+                    )}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="text-[12px] font-semibold text-text-primary truncate">{l.title || l.hostName || 'Untitled stream'}</div>
-                    <div className="text-[10px] text-text-muted font-dmmono truncate">{l.game || 'Stream'}</div>
+                    <div className="text-[10px] text-text-muted font-dmmono truncate flex items-center gap-1">
+                      {streamPremium(l).isPremium && streamPremium(l).priceCoins > 0 && (
+                        <span className="inline-flex items-center gap-0.5 text-brand-gold-light">
+                          <Icon name="paid" size={10} />
+                          <span className="tabular-nums">{streamPremium(l).priceCoins.toLocaleString()}</span>
+                          <span className="text-text-muted">·</span>
+                        </span>
+                      )}
+                      {l.game || 'Stream'}
+                    </div>
                   </div>
                   <div className="flex items-center gap-1 text-[10px] font-dmmono text-brand-ember shrink-0">
                     <Icon name="visibility" size={11} />

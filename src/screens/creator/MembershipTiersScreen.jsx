@@ -45,7 +45,7 @@ export default function MembershipTiersScreen({ embedded = false }) {
 
   const [tiers, setTiers] = useState(null); // null = loading
   const [seasonPass, setSeasonPass] = useState({ enabled: false, name: 'Season Pass', priceCoins: 1500, durationDays: 90 });
-  const [stats, setStats] = useState({ activeMembers: 0, monthlyGross: 0, monthlyNet: 0 });
+  const [stats, setStats] = useState({ activeMembers: 0, monthlyGross: 0 });
   const [fans, setFans] = useState([]);
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -128,7 +128,7 @@ export default function MembershipTiersScreen({ embedded = false }) {
     <div className="max-w-[1100px] mx-auto">
       {/* intro */}
       <div className="flex items-end justify-between gap-4 mb-6 flex-wrap">
-        <p className="text-sm text-text-secondary max-w-lg">Fans pay monthly in coins for perks you choose. <span className="text-white font-semibold">You keep 90%.</span></p>
+        <p className="text-sm text-text-secondary max-w-lg">Fans pay monthly in coins for perks you choose. <span className="text-white font-semibold">You keep 50% to 80%, rising with your lifetime earnings.</span></p>
         <div className="flex gap-2.5">
           <button onClick={handleSave} disabled={saving || !dirty}
             className="h-10 px-4 rounded-xl bg-gradient-to-r from-brand-violet to-brand-pink text-white font-bold text-sm flex items-center gap-2 disabled:opacity-50 hover:brightness-110 transition">
@@ -141,7 +141,7 @@ export default function MembershipTiersScreen({ embedded = false }) {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-9">
         <StatTile label="Active members" value={stats.activeMembers.toLocaleString()} />
         <StatTile label="Monthly recurring" value={compact(stats.monthlyGross)} sub={`≈ ${fmtEur(stats.monthlyGross)} / mo gross`} gold />
-        <StatTile label="Your cut (90%)" value={compact(stats.monthlyNet)} sub={`≈ ${fmtEur(stats.monthlyNet)} / mo net`} gold />
+        <StatTile label="Monthly gross" value={compact(stats.monthlyGross)} sub={`≈ ${fmtEur(stats.monthlyGross)} / mo before your share`} gold />
       </div>
 
       {/* tiers header */}
@@ -202,7 +202,7 @@ export default function MembershipTiersScreen({ embedded = false }) {
         )}
       </div>
 
-      <p className="text-center text-xs text-text-muted mt-8">10% platform fee. Earnings pay in coins, convert to <span className="text-text-secondary">gems</span> to withdraw.</p>
+      <p className="text-center text-xs text-text-muted mt-8">Your <span className="text-text-secondary">revenue share</span> starts at 50% and rises to 80% as your lifetime earnings grow. Vergr pays it on a schedule.</p>
 
       <style>{`.vm-inp{width:100%;padding:8px 12px;border-radius:8px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);color:#fff;font-size:13px;outline:none}.vm-inp:focus{border-color:rgba(180,79,255,0.5)}`}</style>
     </div>

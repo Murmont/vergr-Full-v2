@@ -556,7 +556,7 @@ export default function NativeGoLiveScreen() {
           <SectionHeader>Tips & goal</SectionHeader>
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 11.5, color: C.textDim, lineHeight: 1.45, marginBottom: 12 }}>
             <span className="material-symbols-outlined" style={{ fontSize: 16, color: C.purpleLight }}>volunteer_activism</span>
-            Viewers tip you in coins while live. A flat 10% platform fee applies.
+            Viewers tip you in coins while live. Vergr pays you a share of that revenue, 50% to 80%.
           </div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <span style={{ fontSize: 14, fontWeight: 700 }}>Set a tip goal</span>

@@ -5,7 +5,7 @@
 // Top-level: summary (1-2 sentences, answer-first), updated (YYYY-MM-DD), body [].
 
 export default {
-  summary: "A lot. VERGR is a full platform for gamers: go live and get tipped, post clips and shorts, build a squad, chat and call your friends, run a creator page, and earn real money you can cash out. Think of it as the social and earning sides of gaming in one app.",
+  summary: "A lot. VERGR is a full platform for gamers: go live and get tipped, post clips and shorts, build a squad, chat and call your friends, run a creator page, and earn a real share of the revenue you generate. Think of it as the social and earning sides of gaming in one app.",
   updated: "2026-08-09",
   body: [
     {
@@ -29,10 +29,10 @@ export default {
       ]
     },
     {
-      h2: "Earn and cash out"
+      h2: "Earn a revenue share"
     },
     {
-      p: "Collect tips, charge for access to a stream, sell memberships to fans, share in your squad's treasury, or moderate as part of the Vanguard. Your earnings build up in Coins, which you convert to Gems and withdraw as real money once you are verified."
+      p: "Collect tips, charge for access to a stream, sell memberships to fans, share in your squad's treasury, or moderate as part of the Vanguard. Vergr pays you a share of the revenue that generates, on a schedule, once you are verified."
     },
     {
       note: "You can use VERGR purely as a social app and never spend a cent, or lean into the earning side. It is the same platform either way."

@@ -23,7 +23,7 @@ const FAQS = [
   ['How is Vergr.me different from Linktree?',
     'Vergr.me is built into a gaming platform: your page can show your live stream, tournaments and community in real time, fans can tip or message you directly, and the generous free tier includes analytics and full design systems instead of a single button list.'],
   ['Can I collect emails or sell things?',
-    'Yes, contact form and email pop-up blocks capture leads you can export to CSV, and support/product blocks link out to your storefronts. Tips arrive as VC Coins and you keep 90%.'],
+    'Yes, contact form and email pop-up blocks capture leads you can export to CSV, and support/product blocks link out to your storefronts. Tips arrive as VC Coins, and Vergr pays you a share of that revenue: 50% to start, up to 80%.'],
   ['Does it work on TikTok, Instagram and YouTube?',
     'Yes. vergr.app/u/you is a normal URL you can paste into any bio field. The page loads fast on mobile, where most bio-link taps happen.'],
 ];
@@ -57,7 +57,7 @@ export default function LinkInBioScreen() {
           <Tile icon="qr_code_2" accent={C.violet} title="QR codes + scheduling"
             body="Custom-color QR for print, scheduled links, passcode and age-gated links, whole-page forwarding." />
           <Tile icon="paid" accent={C.gold} title="Get paid on-page"
-            body="Fans tip you right from your bio link. You keep 90%, a flat 10% fee, nothing hidden." />
+            body="Fans tip you right from your bio link. Vergr pays you 50% to 80% of that revenue, rising with your lifetime earnings. Nothing hidden." />
         </Grid>
       </Section>
 
@@ -219,7 +219,7 @@ function ComparisonTable() {
     ['Custom QR codes', true, false],
     ['Link scheduling, passcodes, age gates', true, false],
     ['Live stream + community blocks', true, false],
-    ['Get tipped by fans (keep 90%)', true, false],
+    ['Get tipped by fans (keep 50-80%)', true, false],
   ];
   const Mark = ({ yes }) => yes
     ? <Icon name="check_circle" size={18} style={{ color: '#5EDE8A' }} />

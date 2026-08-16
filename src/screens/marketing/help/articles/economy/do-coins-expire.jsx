@@ -5,7 +5,7 @@
 // Top-level: summary (1-2 sentences, answer-first), updated (YYYY-MM-DD), body [].
 
 export default {
-  summary: "No. Coins do not expire. Whatever you buy, win, or receive as tips stays in your wallet until you choose to spend or convert it. There is no clock counting down and no balance that quietly disappears.",
+  summary: "No. Coins do not expire. Whatever you buy, win, or receive as tips stays in your wallet until you choose to spend it. There is no clock counting down and no balance that quietly disappears.",
   updated: "2026-06-06",
   body: [
     {
@@ -19,7 +19,7 @@ export default {
         "Coins you buy sit in your wallet indefinitely.",
         "Coins you receive as tips or earn from paid streams stay until you use them.",
         "Taking a break does not cost you your balance, it will be there when you come back.",
-        "You decide when to spend Coins or convert them to Gems. Nothing forces your hand."
+        "You decide when to spend your Coins. Nothing forces your hand."
       ]
     },
     {
@@ -35,8 +35,8 @@ export default {
           label: "What are Coins"
         },
         {
-          to: "/platform/help/do-gems-expire",
-          label: "Do Gems expire?"
+          to: "/platform/help/do-coins-expire",
+          label: "Do Coins expire?"
         }
       ]
     }

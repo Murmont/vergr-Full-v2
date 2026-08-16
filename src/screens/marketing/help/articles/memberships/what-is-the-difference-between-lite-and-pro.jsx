@@ -33,7 +33,7 @@ export default {
       ]
     },
     {
-      note: "The tip fee is a flat 10% on both, and on Free. Upgrading buys capability, not a better cut on your earnings."
+      note: "Your revenue share is unaffected on both, and on Free. Upgrading buys capability, not a better rate."
     },
     {
       cta: [

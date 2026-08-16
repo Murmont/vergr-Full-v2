@@ -606,6 +606,10 @@ export default function CreateComposer({ onClose, originRect, editingPost = null
   const [tipOpen, setTipOpen] = useState(true);
   const [loading, setLoading] = useState(false);
   const [topic, setTopic] = useState(null);       // optional CONTENT_TOPICS tag
+  // Adult marker, off by default and never remembered between posts: it has to
+  // be a deliberate act each time, because the cost of it sticking silently is
+  // a creator's ordinary post disappearing from everyone's feed.
+  const [isNsfw, setIsNsfw] = useState(false);
 
   // poll state (lifted)
   const [pollQ, setPollQ] = useState('');
@@ -872,10 +876,12 @@ export default function CreateComposer({ onClose, originRect, editingPost = null
 
       // Destroyed on THIS device before upload. Never blur on the viewer's side:
       // that is a CSS filter over bytes they already downloaded.
-      const previewBlob = await makeBlurredPreview(item.file).catch(() => null);
+      // Dimensions ride back with it so the feed card and the profile grid can
+      // reserve the post's real shape instead of forcing a square.
+      const preview = await makeBlurredPreview(item.file).catch(() => null);
       let previewUrl = '';
-      if (previewBlob) {
-        await putSignedUpload(signed.previewUploadUrl, previewBlob, 'image/jpeg', signed.cacheControl);
+      if (preview?.blob) {
+        await putSignedUpload(signed.previewUploadUrl, preview.blob, 'image/jpeg', signed.cacheControl);
         previewUrl = signed.previewUrl;
       }
 
@@ -884,8 +890,12 @@ export default function CreateComposer({ onClose, originRect, editingPost = null
         previewUrl,
         caption: trimmed,
         priceCoins: lockPrice,
+        contentRating: isNsfw ? 'nsfw' : 'general',
         isVideo,
         audience: visibility === 'followers' ? 'followers' : 'public',
+        previewW: preview?.width || 0,
+        previewH: preview?.height || 0,
+        durationMs: preview?.durationMs || 0,
       });
 
       media.forEach(m => { try { URL.revokeObjectURL(m.preview); } catch {} });
@@ -937,6 +947,7 @@ export default function CreateComposer({ onClose, originRect, editingPost = null
         scheduledFor: scheduled ? new Date(schedule.ms) : null,
         scheduleOptions: scheduled ? schedOpts : null,
         isAnnouncement: announce, topic,
+        contentRating: isNsfw ? 'nsfw' : 'general',
       });
       // Broadcast push to every device (server verifies @Vergr/admin). Never
       // blocks the post; failure is surfaced but the post still went out.
@@ -1137,6 +1148,31 @@ export default function CreateComposer({ onClose, originRect, editingPost = null
         >
           <CIcon name="lock" size={16} />
           {lockPrice > 0 ? `${lockPrice.toLocaleString()}c` : 'Lock'}
+        </button>
+      )}
+      {/* Adult marker. Appears only once the post is LOCKED, because that is the
+          only surface where adult content is permitted: anything published to an
+          audience is scanned and nudity is blocked regardless of this toggle, so
+          offering it on a free post would promise something the server refuses.
+          Terms section 3A. */}
+      {lockPrice > 0 && !isEditing && (
+        <button
+          type="button"
+          onClick={() => setIsNsfw(v => !v)}
+          title={isNsfw
+            ? 'Marked NSFW. Only age-verified viewers who opted in will see it.'
+            : 'Mark as NSFW if this contains adult content'}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px',
+            borderRadius: 999, cursor: 'pointer',
+            border: isNsfw ? '1px solid var(--pink, #C87FFF)' : '1px solid var(--stroke, rgba(255,255,255,.12))',
+            background: isNsfw ? 'rgba(200,127,255,.15)' : 'transparent',
+            color: isNsfw ? 'var(--pink, #C87FFF)' : 'var(--text-3)',
+            font: 'inherit', fontSize: 13, fontWeight: 600,
+          }}
+        >
+          <CIcon name={isNsfw ? 'visibility_off' : 'visibility'} size={16} />
+          NSFW
         </button>
       )}
       {canAnnounce && !isEditing && (

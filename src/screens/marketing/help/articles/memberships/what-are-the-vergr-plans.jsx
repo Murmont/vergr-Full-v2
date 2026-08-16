@@ -9,7 +9,7 @@ export default {
   updated: "2026-06-06",
   body: [
     {
-      p: "VERGR has three plans, and the most important thing to understand is what actually changes when you pay. A plan does not change the cut VERGR takes from your tips, that flat 10% is the same for everyone, free or Pro. What a plan changes is what you can produce and how far you can push: streaming quality, upload sizes, and when you can go live."
+      p: "VERGR has three plans, and the most important thing to understand is what actually changes when you pay. A plan does not change your revenue share, which is set by your lifetime earnings alone, free or Pro. What a plan changes is what you can produce and how far you can push: streaming quality, upload sizes, and when you can go live."
     },
     {
       h2: "Free"
@@ -36,13 +36,13 @@ export default {
       p: "You can pay for Lite or Pro monthly with a card, or buy a plan with Coins, roughly 500 Coins for Lite and 1,000 for Pro. Paying with Coins is handy if you have earned a balance through tips and competition and would rather spend that than reach for a card. You can upgrade, downgrade, or cancel from your settings."
     },
     {
-      note: "The one thing no plan changes is your earnings cut. The tip fee is a flat 10% on every plan. Upgrading buys you capability, never a better rate on what you keep."
+      note: "The one thing no plan changes is your revenue share. Upgrading buys you capability, never a better rate on what you keep."
     },
     {
       faq: [
         [
           "Does Pro mean I keep more of my tips?",
-          "No. The tip fee is a flat 10% for everyone. Paid plans change what you can create and how big you can go, not your cut."
+          "No. Your revenue share is set by your lifetime earnings for everyone. Paid plans change what you can create and how big you can go, not your rate."
         ],
         [
           "Can I pay with Coins instead of a card?",

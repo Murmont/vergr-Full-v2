@@ -21,7 +21,7 @@ export default {
     {
       list: [
         "Your wallet can be locked behind a PIN and two-factor authentication in Wallet Security settings.",
-        "Withdrawals only go to addresses you have whitelisted, so even a compromised login cannot drain earnings to a stranger's wallet.",
+        "Payouts only go to details you set up and verified, so even a compromised login cannot redirect your earnings.",
         "If you ever see a charge you do not recognise, contact support@vergr.app within 30 days: confirmed erroneous charges are refunded to the original payment method."
       ]
     },

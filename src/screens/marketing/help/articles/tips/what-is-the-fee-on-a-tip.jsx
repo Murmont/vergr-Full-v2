@@ -5,26 +5,26 @@
 // Top-level: summary (1-2 sentences, answer-first), updated (YYYY-MM-DD), body [].
 
 export default {
-  summary: "The tip fee is a flat 10%, on every tip, on every plan. The creator receives the other 90%. There is no separate charge layered on top, and no sliding scale, the rate is the same whether the creator is on Free, Lite, or Pro.",
+  summary: "Nothing is taken when you send. The tip is revenue VERGR earns, and VERGR pays the creator a share of it: 50% to start, rising to 80% as their lifetime earnings grow. There is no separate charge layered on top. It is the same whether the creator is on Free, Lite, or Pro.",
   updated: "2026-06-06",
   body: [
     {
-      p: "The fee on a tip is simple and it does not change: a flat 10%. That is the whole rule, and it is deliberately one of the most creator-friendly cuts around."
+      p: "There is no fee on a tip. The whole amount is revenue VERGR earns, and VERGR pays the creator their revenue share of it. That share is the only deduction anywhere in the chain."
     },
     {
       h2: "How it splits"
     },
     {
-      p: "When you send a tip, the platform takes 10% and the creator keeps 90%. So a 100-coin tip means 90 Coins land with the creator. A 1,000-coin tip means 900 Coins. There is nothing hidden and nothing taken twice."
+      p: "When you send a tip, the whole amount is revenue VERGR earns, and the creator accrues their revenue share of it straight away: at least half, and up to 80% once their lifetime earnings have grown. There is nothing hidden and nothing taken twice."
     },
     {
       h2: "It does not change with plan or rank"
     },
     {
-      p: "Unlike the conversion commission, which drops as you rank up, the tip fee is a flat 10% for everyone. A creator on the free plan keeps exactly the same share of a tip as a creator on Pro. VERGR does not charge successful creators more for being successful."
+      p: "A creator on the free plan is paid exactly the same share as a creator on Pro. Only lifetime earnings move the rate. VERGR does not charge successful creators more for being successful."
     },
     {
-      note: "The fee comes out of the tip itself, not from a separate charge to the creator. What the creator sees added to their wallet is already the 90%."
+      note: "Nothing is charged to the creator separately. What the creator sees added to their earnings is already their share."
     },
     {
       cta: [

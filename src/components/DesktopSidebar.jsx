@@ -7,7 +7,8 @@ import { getUserSquads } from '../firebase/firestore';
 import Icon from './Icon';
 import UserAvatar from './UserAvatar';
 import CreateComposer from './composer/CreateComposer';
-import { CoinIcon, VPIcon } from './CoinIcon';
+import { VPIcon } from './CoinIcon';
+import { CoinBalancePill } from './wallet/CoinQuickBuy';
 import { getVPLevel, getVPProgress, getNextVPLevel } from '../utils/vpSystem';
 import { resolveNavForPath, findActiveItem, MAIN_NAV } from '../config/navConfig';
 
@@ -461,12 +462,13 @@ export default function DesktopSidebar() {
               <div className="text-[8.5px] font-dmmono text-text-muted mb-2 tabular-nums">
                 {sbVpNext ? `${compact(Math.max(0, sbVpNext.vpRequired - sbVp))} VP to Lvl ${sbVpNext.level}` : 'Max level'}
               </div>
-              {/* Coins + VP inline */}
+              {/* Coins + VP inline. The coin figure opens the quick-buy shelf
+                  rather than navigating to the wallet: someone glancing at their
+                  balance is usually about to find it insufficient, and sending
+                  them to another screen loses whatever they were doing. VP is
+                  rank progress, not a currency, so it still just navigates. */}
               <div className="flex items-center gap-3 mb-2.5">
-                <button onClick={() => navigate('/wallet')} className="flex items-center gap-1 hover:brightness-110">
-                  <CoinIcon size={14} />
-                  <span className="text-[10px] font-dmmono font-bold text-text-secondary tabular-nums">{compact(wallet?.balance || 0)}</span>
-                </button>
+                <CoinBalancePill size="compact" />
                 <button onClick={() => navigate('/wallet')} className="flex items-center gap-1 hover:brightness-110">
                   <VPIcon size={14} />
                   <span className="text-[10px] font-dmmono font-bold text-text-secondary tabular-nums">{compact(wallet?.vp || 0)}</span>

@@ -10,7 +10,7 @@ export default {
       "Rewards are server-verified to prevent abuse.",
     ]},
     { h2: "Why VP is worth it" },
-    { p: "VP is not withdrawable cash, but it ranks you up, and higher ranks pay a lower commission when you convert Coins to Gems. More referrals means a lower lifetime fee on everything you earn." },
+    { p: "VP is not cash, but it ranks you up, and higher ranks keep a larger share of what you earn. More referrals means a better lifetime rate on everything you earn." },
     { cta: [
       { to: "/platform/help/how-does-the-referral-program-work", label: "How referrals work" },
       { to: "/platform/help/what-does-vp-actually-do-for-me", label: "What VP does for you" }

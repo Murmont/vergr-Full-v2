@@ -14,8 +14,24 @@ import { useEffect, useRef, useState } from 'react';
 import { createPayramPayment, getPayramOrderStatus } from '../../../firebase/firestore';
 import { isTauri } from '../../../utils/platform';
 
-export const MIN_CUSTOM_EUR = 10;
-export const COIN_PRICE_EUR = 0.009;
+// ⚠ MIRRORS functions/payram.js → CUSTOM_COIN_PRICE_USD and CUSTOM_MIN_USD.
+// Keep them identical.
+//
+// These two decide what the custom-amount tab DISPLAYS. The server decides what
+// is CHARGED, and it charges `customCoins * CUSTOM_COIN_PRICE_USD`. So when
+// these drift apart the user is quoted one number and billed another: while this
+// still said 0.009 against the server's 0.0127, typing $10 showed 1,111 coins
+// and would have charged $14.11 for them.
+//
+// The custom rate is deliberately the ladder's WORST per-coin rate (Starter,
+// $0.99 / 78 coins), so a custom amount can never undercut a pack and make the
+// bulk curve pointless.
+export const MIN_CUSTOM_USD = 10;
+export const COIN_PRICE_USD = 0.0127;
+
+/** @deprecated EUR-named aliases. Use the USD names; delete once nothing reads these. */
+export const MIN_CUSTOM_EUR = MIN_CUSTOM_USD;
+export const COIN_PRICE_EUR = COIN_PRICE_USD;
 const POLL_MS = 3000;
 const CHECKOUT_TIMEOUT_MS = 12 * 60 * 1000;
 

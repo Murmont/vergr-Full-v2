@@ -5,7 +5,7 @@ export default {
     { p: "VERGR has two progression systems that work side by side. It is worth understanding the difference." },
     { h2: "VP ranks vs prestige levels" },
     { list: [
-      "VP ranks (Rookie through Immortal) are your core standing. They rise as you earn VP and they directly lower the commission you pay when converting Coins to Gems.",
+      "VP ranks (Rookie through Immortal) are your core standing. They rise as you earn VP and they directly increase the share you keep of what your content earns.",
       "Prestige levels are a separate, longer-horizon badge that recognises sustained, long-term activity on the platform. They are about loyalty and depth, not fees.",
     ]},
     { h2: "Where prestige shows" },

@@ -109,8 +109,8 @@ function CtaCard({ line }) {
         <GuestButton />
       </div>
       <div style={{ marginTop: 14, fontSize: 12.5 }}>
-        <Link to="/platform/make-money-gaming" style={{ color: C.text3, marginRight: 14 }}>How players earn</Link>
-        <Link to="/platform/legit" style={{ color: C.text3 }}>Is VERGR legit?</Link>
+        <Link to="/platform/creators" style={{ color: C.text3, marginRight: 14 }}>How creators earn</Link>
+        <Link to="/platform/about" style={{ color: C.text3 }}>About VERGR</Link>
       </div>
     </div>
   );

@@ -55,8 +55,13 @@ import ChatPollBubble from '../../components/messages/ChatPollBubble';
 import EventTicketCard from '../../components/tournament/EventTicketCard';
 import SendCoinsModal from '../../components/SendCoinsModal';
 import { getWallet, sendCoins, translateContent, groupAllows } from '../../firebase/firestore';
-import { getLockedMessageUploadUrl, sendLockedMessage, putSignedUpload, makeBlurredPreview } from '../../firebase/firestore';
+import { sendLockedMessage, uploadLockedItem, createMediaPack } from '../../firebase/firestore';
+import ContentPacksSheet from '../../components/monetization/ContentPacksSheet';
+
+/** Ceiling on one locked send, mirroring MAX_ITEMS_PER_SEND in the callable. */
+const MAX_LOCKED_ITEMS = 20;
 import LockedMedia from '../../components/monetization/LockedMedia';
+import OneToOneCard from '../../components/monetization/OneToOneCard';
 import ReportPrivate from '../../components/safety/ReportPrivate';
 import PriceSheet from '../../components/monetization/PriceSheet';
 import { translateTarget } from '../../utils/localePrefs';
@@ -2382,40 +2387,63 @@ export default function ChatThreadScreen() {
   // Two steps, because the price has to be known BEFORE the upload: the object
   // goes to a private prefix and the callable that files its key is the same one
   // that writes the price, so there is no "upload now, decide later".
-  const [lockedFile, setLockedFile] = useState(null);
+  const [lockedFiles, setLockedFiles] = useState([]);
   const [lockedSheet, setLockedSheet] = useState(false);
+  const [packsSheet, setPacksSheet] = useState(false);
   const lockedInputRef = useRef(null);
 
-  const handleLocked = () => lockedInputRef.current?.click();
+  // The lock button opens the SAVED PACKS first. A creator with packs almost
+  // always wants one of them, and its empty state is how anybody discovers the
+  // feature exists at all; "New pack" from there falls through to the picker.
+  const handleLocked = () => setPacksSheet(true);
+  const pickLockedFiles = () => lockedInputRef.current?.click();
 
+  // Object URLs for the sheet's media strip. Built in an effect, not in render,
+  // because createObjectURL in a render body leaks a new URL on every pass and
+  // the thumbnail flickers without ever settling.
+  const [lockedThumbs, setLockedThumbs] = useState([]);
+  useEffect(() => {
+    const urls = lockedFiles.map((f) => ({
+      id: `${f.name}:${f.size}:${f.lastModified}`,
+      url: URL.createObjectURL(f),
+      isVideo: (f.type || '').startsWith('video/'),
+    }));
+    setLockedThumbs(urls);
+    return () => urls.forEach((u) => { try { URL.revokeObjectURL(u.url); } catch {} });
+  }, [lockedFiles]);
+
+  // MULTI-SELECT. A locked send can carry a set ("3 PICS") bought once, so the
+  // picker takes several files and adds to whatever is already staged rather
+  // than replacing it — that is what makes the sheet's "+" tile work.
   const onLockedFilePicked = (e) => {
-    const f = e.target.files?.[0];
+    const picked = Array.from(e.target.files || []);
     e.target.value = '';
-    if (!f) return;
-    setLockedFile(f);
+    if (!picked.length) return;
+    setLockedFiles((prev) => [...prev, ...picked].slice(0, MAX_LOCKED_ITEMS));
     setLockedSheet(true);
   };
 
-  const sendLocked = async ({ priceCoins }) => {
-    const file = lockedFile;
-    if (!file) return;
+  const sendLocked = async ({ priceCoins, saveAsPack, packTitle }) => {
+    const files = lockedFiles;
+    if (!files.length) return;
     setLockedSheet(false);
-    setLockedFile(null);
+    setLockedFiles([]);
     try {
-      // R2's CORS exact-matches Content-Type, so a ";codecs=" suffix fails the
-      // signature silently. Strip it.
-      const contentType = (file.type || 'image/jpeg').split(';')[0];
-      const isVideo = contentType.startsWith('video/');
+      // Uploaded in order, so the first file picked is the cover the bubble
+      // draws. Sequential rather than parallel: a set of five videos uploading
+      // at once on a phone connection is how you get five timeouts.
+      const items = [];
+      for (const file of files) {
+        items.push(await uploadLockedItem({ chatId, scope: 'conversation', file }));
+      }
+      const cover = items[0];
 
-      const signed = await getLockedMessageUploadUrl({ chatId, scope: 'conversation', contentType, sizeBytes: file.size });
-      await putSignedUpload(signed.mediaUploadUrl, file, contentType, signed.cacheControl);
-
-      // Destroyed here, on the sender's device, before anything is uploaded.
-      const previewBlob = await makeBlurredPreview(file).catch(() => null);
-      let previewUrl = '';
-      if (previewBlob) {
-        await putSignedUpload(signed.previewUploadUrl, previewBlob, 'image/jpeg', signed.cacheControl);
-        previewUrl = signed.previewUrl;
+      // Saving the set for reuse is a side effect of this send, not a
+      // precondition of it: if the pack write fails the message still goes, so
+      // a bookkeeping error never costs the creator the sale.
+      if (saveAsPack && packTitle) {
+        createMediaPack({ title: packTitle, priceCoins, items })
+          .catch(() => alert('Sent, but the pack could not be saved for reuse.'));
       }
 
       // ONE id, named by us, used by both halves.
@@ -2423,12 +2451,12 @@ export default function ChatThreadScreen() {
       // The chat list on the relay path is built from relay FRAMES and never
       // reads message docs from Firestore, so a callable that only wrote to
       // Firestore produced a message nobody could see. The callable files the
-      // price and the private object key against this id; the frame below is
+      // price and the private object keys against this id; the frame below is
       // what actually appears in the conversation.
       const messageId = `lk_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+      const previewUrl = cover.previewUrl;
       await sendLockedMessage({
-        chatId, scope: 'conversation', messageId,
-        mediaKey: signed.mediaKey, previewUrl, priceCoins, isVideo, caption: '',
+        chatId, scope: 'conversation', messageId, priceCoins, caption: '', items,
       });
       // The blurred preview is a deliberately public object, so it is safe on
       // the wire. The real bytes are not on it, and never leave R2 unsigned.
@@ -2467,24 +2495,20 @@ export default function ChatThreadScreen() {
   const handleOneToOne = () => setOneToOneSheet(true);
 
   /**
-   * Start a 1:1 (or a group session), optionally paid.
+   * Start a 1:1 session in this conversation, optionally paid.
    *
-   * THIS IS A CALL, NOT A STREAM.
+   * A 1:1 IS A PRIVATE ONE-WAY BROADCAST, NOT A TWO-WAY CALL.
    *
-   * The first version of this created an unlisted live stream and dropped a
-   * /watch link in the chat. That was wrong in every way that matters: it put
-   * the host on the broadcast page, it showed them as LIVE, and the other side
-   * had a link rather than a ringing phone. A 1:1 in a DM is a private video
-   * call between two people; in a group or squad it is the same thing with more
-   * seats. Neither is ever public and neither has a viewer.
+   * This was built as a video call once and reverted. The model being copied is
+   * Tango's: the host goes live to an audience of one (or, in a group, to the
+   * people in that group), and the guest watches, chats and tips. It is not a
+   * conversation with two cameras, so it rides the streaming pipeline and gets
+   * ingest, playback, chat, tips and gifts for free.
    *
-   * So this rides the EXISTING call path: one `calls/{chatId}` doc, which
-   * IncomingCallOverlay already watches and rings on. A DM goes peer-to-peer
-   * (/call), a group goes through the SFU (/group-call) because a mesh would
-   * have every phone encoding a stream per peer.
-   *
-   * The only thing new is the price. It rides on the call doc, and the person
-   * ANSWERING pays before they connect (entitlements resourceType 'call').
+   * What makes it private is not obscurity. The server forces it unlisted, caps
+   * it at one concurrent viewer, stamps `sessionType` so moderation can tell it
+   * from a broadcast, withholds the playback URL from the world-readable stream
+   * document, and admits only the uids named below.
    */
   const startOneToOne = async ({ isPaid, priceCoins }) => {
     setOneToOneSheet(false);
@@ -2501,6 +2525,13 @@ export default function ChatThreadScreen() {
         // discovery surface — Explore, Shorts, rails and the avatar LIVE ring
         // all read those flags now, which they did not before.
         sessionType: 'one_to_one',
+        // THE GUEST LIST. Everyone in this conversation, and nobody else.
+        //
+        // Unlisted only removes the session from discovery; the stream document
+        // is world-readable, so without this a forwarded id was a forwarded
+        // session. getAccess checks this list before it will mint a playback
+        // URL, including when the session is free.
+        inviteUids: (chatInfo?.participants || []).filter(Boolean),
         access: isPaid ? { mode: 'paid', priceCoins } : { mode: 'free' },
       });
       const streamId = res.data?.streamId;
@@ -2579,29 +2610,18 @@ export default function ChatThreadScreen() {
       case 'onetoone': {
         const oneToOneId = m.contentUrl;
         const priceC = Math.floor(Number(m.text) || 0);
+        // The card tracks the session's real state (starting / live / ended)
+        // rather than always offering a Join button that may lead nowhere.
         return (
-          <div className="flex flex-col p-3 gap-2 w-[250px] max-w-full">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-full bg-brand-pink/20 flex items-center justify-center shrink-0">
-                <Icon name="videocam" size={16} className="text-brand-pink" />
-              </div>
-              <div className="min-w-0">
-                <div className="text-[13.5px] font-bold text-text-primary">1:1 session</div>
-                <div className="text-[11px] text-text-muted">
-                  {priceC > 0 ? `${priceC.toLocaleString()} coins to join` : 'Free to join'}
-                </div>
-              </div>
-            </div>
-            {!isMe && oneToOneId && (
-              <button
-                onClick={(e) => { e.stopPropagation(); navigate(`/watch/${oneToOneId}`); }}
-                className="w-full rounded-xl bg-brand-violet hover:bg-brand-violet-light text-white font-bold text-[13px] py-2 transition"
-              >
-                Join
-              </button>
-            )}
-            {isMe && <div className="text-[11px] text-text-muted">You started this session.</div>}
-            <span className="flex justify-end items-center gap-1">
+          <div className="flex flex-col">
+            <OneToOneCard
+              streamId={oneToOneId}
+              priceCoins={priceC}
+              isMe={isMe}
+              hostName={isMe ? (profile?.displayName || profile?.username) : resolveReactor(m.senderId).displayName}
+              hostAvatar={isMe ? (profile?.avatar || profile?.photoURL) : resolveReactor(m.senderId).avatar}
+            />
+            <span className="px-2 pb-1.5 flex justify-end items-center gap-1">
               <span className="text-[9px] text-white/55">{time}</span>
               {isMe && <Ticks read={m.read} />}
             </span>
@@ -2623,7 +2643,6 @@ export default function ChatThreadScreen() {
                 resourceId={`${chatId}:${m.id}`}
                 locked={m.locked}
                 previewUrl={m.contentUrl || null}
-                className="aspect-square"
                 compact
               />
             </div>
@@ -3163,6 +3182,13 @@ export default function ChatThreadScreen() {
             const senderProfile = showSender ? memberProfiles[m.senderId] : null;
             const importedOnly = !!m.imported && !m.senderId; // no Vergr account mapped
             const noBubble = m.type === 'sticker' || m.type === 'videonote' || isEmojiOnly(m);
+            // MEDIA IS THE BUBBLE. A photo, a clip, a locked item or a session
+            // card fills its container edge to edge, so the bubble's border and
+            // tinted background only ever appear as a rim tracing the media —
+            // which is the "thick border that makes it look stupid". These keep
+            // the rounding and the shadow and drop the frame.
+            const bareMedia = !noBubble
+              && (m.type === 'image' || m.type === 'video' || m.type === 'locked' || m.type === 'onetoone');
 
             return (
               <Fragment key={m.id}>
@@ -3247,7 +3273,7 @@ export default function ChatThreadScreen() {
                         onSaveMedia={canSaveToGallery ? handleSaveMedia : undefined} />
                     )}
 
-                    <div data-msg-bubble className={`${noBubble ? '' : `rounded-2xl overflow-hidden break-words ${isMe ? `text-white ${runEnd ? 'rounded-br-none' : ''}` : `bg-surface-2 text-white border border-white/[0.06] ${runEnd ? 'rounded-bl-none' : ''}`}`} transition-opacity ${isOptimistic ? 'opacity-60' : ''} ${isFailed ? 'opacity-40 ring-1 ring-red-500/50' : ''} ${m._status === 'queued' ? 'opacity-70 ring-1 ring-yellow-500/40' : ''}`}
+                    <div data-msg-bubble className={`${noBubble ? '' : `rounded-2xl overflow-hidden break-words ${isMe ? `text-white ${runEnd ? 'rounded-br-none' : ''}` : `bg-surface-2 text-white ${bareMedia ? '' : 'border border-white/[0.06]'} ${runEnd ? 'rounded-bl-none' : ''}`}`} transition-opacity ${isOptimistic ? 'opacity-60' : ''} ${isFailed ? 'opacity-40 ring-1 ring-red-500/50' : ''} ${m._status === 'queued' ? 'opacity-70 ring-1 ring-yellow-500/40' : ''}`}
                       {...(autoTranslate && !isMe && m.type === 'text' && m.text ? { 'data-translate-id': m.id, 'data-translate-text': m.text } : {})}
                       style={noBubble ? undefined : isMe ? { background: 'linear-gradient(160deg, #9D4EFF 0%, #6E1FD1 100%)', boxShadow: '0 1px 2px rgba(0,0,0,0.28)' } : { boxShadow: '0 1px 2px rgba(0,0,0,0.22)' }}>
                       {renderMessageContent(m, isMe)}
@@ -3813,17 +3839,38 @@ export default function ChatThreadScreen() {
         onChange={onLockedFilePicked}
         className="hidden"
         accept="image/*,video/*"
+        multiple
       />
 
       <PriceSheet
         open={lockedSheet}
-        onClose={() => { setLockedSheet(false); setLockedFile(null); }}
+        onClose={() => { setLockedSheet(false); setLockedFiles([]); }}
         onConfirm={sendLocked}
+        items={lockedThumbs}
+        onAddMore={pickLockedFiles}
+        onRemoveItem={(i) => setLockedFiles((prev) => prev.filter((_, n) => n !== i))}
+        allowSaveAsPack
         title="Lock this media"
         subtitle="They see a blurred preview and pay coins to open it. The real file never reaches their device until they do."
         confirmLabel="Send locked"
         allowFree={false}
         initialPrice={100}
+      />
+
+      <ContentPacksSheet
+        open={packsSheet}
+        onClose={() => setPacksSheet(false)}
+        chatId={chatId}
+        scope="conversation"
+        onCreateNew={pickLockedFiles}
+        // A pack send writes the message server-side. On the relay path the
+        // list is built from frames and never reads that document, so the frame
+        // is what actually appears — same contract as a fresh locked send.
+        onSent={({ messageId, previewUrl }) => {
+          if (relayEnabled) {
+            hookSend({ id: messageId, type: 'locked', mediaKind: 'locked', contentUrl: previewUrl || '' });
+          }
+        }}
       />
 
       <ReportPrivate
@@ -3849,11 +3896,11 @@ export default function ChatThreadScreen() {
         onClose={() => setOneToOneSheet(false)}
         onConfirm={startOneToOne}
         title="Start a 1:1"
-        subtitle="A private video call. It rings them directly, it is never listed anywhere, and nobody else can join. Tips and gifts work either way."
-        confirmLabel="Start call"
+        subtitle="You go live, just for them. It is never listed anywhere and only people in this chat can join. Tips and gifts work either way."
+        confirmLabel="Go live"
         initialPaid={false}
         initialPrice={250}
-        feeNote="Vergr takes a flat 10% of what they pay to join (8% on Pro). Tips and gifts sent during the session use the normal tip fee."
+        feeNote="What they pay to join is revenue Vergr earns, and Vergr pays you a share of it: 50% to start, rising to 80% as your lifetime earnings grow."
       />
 
       <EventPickerModal

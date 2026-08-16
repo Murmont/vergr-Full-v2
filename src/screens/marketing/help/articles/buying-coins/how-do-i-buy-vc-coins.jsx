@@ -35,7 +35,7 @@ export default {
       p: "There are eight pack sizes, and the bigger packs give you a better rate per Coin. The top two packs also include bonus VP."
     },
     {
-      note: "Coins are for spending inside VERGR. If you want to take value out later, you convert Coins to Gems and withdraw."
+      note: "Coins are for spending inside VERGR. They cannot be transferred or redeemed for money."
     },
     {
       cta: [

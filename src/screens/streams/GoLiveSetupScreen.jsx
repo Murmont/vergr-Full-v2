@@ -92,6 +92,10 @@ export default function GoLiveSetupScreen() {
   // is a creator selling entry to their own broadcast, and it settles through
   // the same entitlement as a locked post. 0 = free.
   const [accessPrice, setAccessPrice] = useState(0);
+  // Adult marker for this broadcast. Only offered once entry is PAID, and
+  // force-cleared if the host drops the price back to free, so it can never be
+  // left set on a stream that then goes out to a public feed.
+  const [isNsfwStream, setIsNsfwStream] = useState(false);
   const [accessSheet, setAccessSheet] = useState(false);
   const [ticketedEventName, setTicketedEventName] = useState('');
   const [showEventPicker, setShowEventPicker] = useState(false);
@@ -365,6 +369,8 @@ export default function GoLiveSetupScreen() {
         // A paid stream's playback URL is withheld from the world-readable
         // stream doc and served only by getAccess. See functions/streaming.js.
         access: accessPrice > 0 ? { mode: 'paid', priceCoins: accessPrice } : { mode: 'free' },
+        // Only meaningful on a paid stream; the server ignores it otherwise.
+        contentRating: accessPrice > 0 && isNsfwStream ? 'nsfw' : 'general',
         tournamentId: audience === 'ticketed' ? ticketedEventId : null, // ticket-gate target
         // "Stream to both" — server validates the RTMP path + mirror secrets.
         twitchMirror: mirrorToTwitch && ingestMode === 'rtmp' && twitchLinked,
@@ -382,7 +388,7 @@ export default function GoLiveSetupScreen() {
           promotedEventId: audience === 'ticketed' ? ticketedEventId : (promotedEventId || null),
           requestedResolution: rendition.label,
           requestedBitrateKbps: rendition.kbps,
-          // Live streams monetize via TIPS (flat 10% fee) + an optional tip goal.
+          // Live streams monetize via TIPS (creator is paid their revenue share) + a tip goal.
           // No entry fee (that's tournaments only).
           goal: (tipGoalOn && tipGoalCoins > 0)
             ? { active: true, scope: 'stream', targetCoins: Math.max(0, tipGoalCoins | 0), reason: tipGoalReason.trim().slice(0, 80) || null, currentCoins: 0 }
@@ -645,7 +651,7 @@ export default function GoLiveSetupScreen() {
                 onChange={(e) => {
                   setMirrorToTwitch(e.target.checked);
                   if (e.target.checked && !twitchNudgeText) {
-                    setTwitchNudgeText(`I'm also live on Vergr — same stream, and tips pay me 90%: https://vergr.app/user/${currentUser?.uid}?ref=${currentUser?.uid}`);
+                    setTwitchNudgeText(`I'm also live on Vergr — same stream, and tips pay me up to 80%: https://vergr.app/user/${currentUser?.uid}?ref=${currentUser?.uid}`);
                   }
                 }}
                 style={{ width: 18, height: 18, accentColor: '#9146FF', flexShrink: 0 }} />
@@ -998,6 +1004,35 @@ export default function GoLiveSetupScreen() {
                   <span className="material-symbols-outlined" style={{ fontSize: 16 }}>chevron_right</span>
                 </button>
               </div>
+              {/* Adult content is permitted on a PAID stream only. A free or
+                  followers-only broadcast still reaches an audience, and Terms
+                  section 3 blocks nudity there. The server enforces the same
+                  rule and ignores this flag when the stream is not paid, so the
+                  two cannot drift. */}
+              {accessPrice > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setIsNsfwStream(v => !v)}
+                  style={{
+                    width: '100%', display: 'flex', alignItems: 'center', gap: 8,
+                    marginTop: 8, padding: '10px 12px',
+                    background: isNsfwStream ? 'rgba(200,127,255,0.14)' : 'rgba(255,255,255,0.04)',
+                    border: isNsfwStream ? '1px solid #C87FFF' : `1px solid ${C.border}`,
+                    borderRadius: 8,
+                    color: isNsfwStream ? '#C87FFF' : C.textDim,
+                    fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                  }}
+                >
+                  <span className="material-symbols-outlined" style={{ fontSize: 16 }}>
+                    {isNsfwStream ? 'visibility_off' : 'visibility'}
+                  </span>
+                  <span style={{ flex: 1, textAlign: 'left' }}>
+                    {isNsfwStream
+                      ? 'Marked NSFW — age-verified viewers only'
+                      : 'Mark as NSFW (adult content)'}
+                  </span>
+                </button>
+              )}
               <div style={{ fontSize: 10, color: C.textMuted, marginTop: 6, lineHeight: 1.4 }}>
                 Squad streams start from your squad dashboard, not here.
               </div>
@@ -1020,7 +1055,7 @@ export default function GoLiveSetupScreen() {
               <PriceSheet
                 open={accessSheet}
                 onClose={() => setAccessSheet(false)}
-                onConfirm={({ isPaid, priceCoins }) => { setAccessPrice(isPaid ? priceCoins : 0); setAccessSheet(false); }}
+                onConfirm={({ isPaid, priceCoins }) => { setAccessPrice(isPaid ? priceCoins : 0); if (!isPaid) setIsNsfwStream(false); setAccessSheet(false); }}
                 title="Charge for entry"
                 subtitle="Viewers pay once to watch this broadcast. Anyone with an active membership that includes your paid streams gets in without paying again."
                 confirmLabel="Set"
@@ -1120,7 +1155,7 @@ export default function GoLiveSetupScreen() {
                 fontSize: 11, color: C.textDim, lineHeight: 1.4,
               }}>
                 <span className="material-symbols-outlined" style={{ fontSize: 16, color: C.purpleLight }}>volunteer_activism</span>
-                Viewers tip you in coins while you're live. A flat 10% platform fee applies to all tips.
+                Viewers tip you in coins while you're live. Vergr pays you a share of that revenue, 50% to 80% by lifetime earnings.
               </div>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
                 <span style={{ fontSize: 13, fontWeight: 600 }}>Set a tip goal</span>
@@ -1285,7 +1320,7 @@ export default function GoLiveSetupScreen() {
               <Stat label="Gems" value={(profile?.todayGemsEarned ?? 0).toLocaleString()} color={C.gemBlue}/>
             </div>
             <div style={{ marginTop: 8, fontSize: 10, color: C.textMuted, lineHeight: 1.4 }}>
-              Tips are subject to a flat 10% platform fee. VP→gem conversion uses your tier rate.
+              Vergr pays you a share of tip revenue: 50% to start, rising to 80% as your lifetime earnings grow.
             </div>
           </PanelSection>
 

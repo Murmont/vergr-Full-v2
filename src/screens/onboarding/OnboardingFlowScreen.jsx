@@ -28,7 +28,7 @@ const REWARDS = {
   profile_banner:    { vp: 300,  title: 'Added a profile banner' },
   profile_bio:       { vp: 200,  title: 'Wrote a bio' },
   profile_interests: { vp: 200,  title: 'Picked your interests' },
-  first_follow_5:    { vp: 300,  title: 'Followed 5 gamers' },
+  first_follow_5:    { vp: 300,  title: 'Followed 5 people' },
 };
 
 const INTEREST_ICONS = {
@@ -208,9 +208,9 @@ export default function OnboardingFlowScreen() {
 
   const stepTitle = ['Make it yours', 'About you', 'Find your people', "You're set"][step];
   const stepSub = [
-    'Your profile is your gamer card — give it a face.',
-    'A line about you + what you play. This tunes your feed.',
-    'Follow a few gamers so your feed starts alive.',
+    'Your profile is the first thing people see. Give it a face.',
+    'A line about you and what you are into. This tunes your feed.',
+    'Follow a few people so your feed starts alive.',
     earnedVp > 0 ? `You earned ${earnedVp.toLocaleString()} VP setting up.` : 'Your account is ready.',
   ][step];
 
@@ -285,7 +285,7 @@ export default function OnboardingFlowScreen() {
               </div>
             </div>
             <p className="text-text-muted text-xs mt-4 leading-relaxed">
-              This is exactly how your profile header looks to other gamers. Both uploads pay VP instantly.
+              This is exactly how your profile header looks to everyone else. Both uploads pay VP instantly.
             </p>
           </div>
         )}
@@ -319,7 +319,11 @@ export default function OnboardingFlowScreen() {
                       on ? 'border-brand-violet bg-brand-violet/15 shadow-[0_0_12px_rgba(123,31,255,0.25)]'
                          : 'border-white/[0.07] bg-surface-2 hover:border-white/20'
                     }`}>
-                    <span className="text-lg">{INTEREST_ICONS[interest] || '🎮'}</span>
+                    {/* Neutral fallback. A game controller as the default icon
+                        made any topic without an explicit emoji read as a gaming
+                        topic, which is exactly backwards now that gaming is one
+                        category of twenty. */}
+                    <span className="text-lg">{INTEREST_ICONS[interest] || '✨'}</span>
                     <span className={`text-[13px] font-medium ${on ? 'text-brand-violet-light' : 'text-text-primary'}`}>{interest}</span>
                     {on && <Icon name="check_circle" filled size={15} className="text-brand-violet-light ml-auto" />}
                   </button>
@@ -341,7 +345,7 @@ export default function OnboardingFlowScreen() {
             {sugLoading ? (
               <div className="flex justify-center py-12"><div className="w-8 h-8 border-4 border-brand-violet border-t-transparent rounded-full animate-spin" /></div>
             ) : suggestions.length === 0 ? (
-              <p className="text-text-muted text-sm text-center py-10">No suggestions right now — find gamers in Explore.</p>
+              <p className="text-text-muted text-sm text-center py-10">No suggestions right now. Find people in Explore.</p>
             ) : (
               <div className="space-y-2.5">
                 {suggestions.map((u) => {

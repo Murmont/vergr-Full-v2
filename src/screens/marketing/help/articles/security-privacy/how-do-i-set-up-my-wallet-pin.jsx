@@ -5,7 +5,7 @@
 // Top-level: summary (1-2 sentences, answer-first), updated (YYYY-MM-DD), body [].
 
 export default {
-  summary: "When you first open the wallet you are prompted to create a PIN. It guards sensitive wallet actions like withdrawals, so even with your phone unlocked nobody can move your money without it. You can set or change it from the wallet security settings.",
+  summary: "When you first open the wallet you are prompted to create a PIN. It guards sensitive wallet actions, so even with your phone unlocked nobody can spend your Coins without it. You can set or change it from the wallet security settings.",
   updated: "2026-06-06",
   body: [
     {
@@ -15,7 +15,7 @@ export default {
       h2: "Setting it up"
     },
     {
-      p: "The first time you open the wallet, you are prompted to create a PIN. Choose something you will remember but others could not guess, and confirm it. From then on, the wallet asks for it when you do something sensitive, like setting up a withdrawal."
+      p: "The first time you open the wallet, you are prompted to create a PIN. Choose something you will remember but others could not guess, and confirm it. From then on, the wallet asks for it when you do something sensitive, like buying a large Coin pack."
     },
     {
       h2: "Changing it"

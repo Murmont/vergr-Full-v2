@@ -5,7 +5,7 @@
 // Top-level: summary (1-2 sentences, answer-first), updated (YYYY-MM-DD), body [].
 
 export default {
-  summary: "Yes. VERGR is a real platform where you stream, post, and earn money you can genuinely withdraw. Payouts are real, identity checks protect the money side, and the fees are stated openly. It is 18+ and runs only where local law permits.",
+  summary: "Yes. VERGR is a real platform where you stream, post, and earn a real share of the revenue you generate. Payouts are real, identity checks protect the money side, and the rates are stated openly. It is 18+ and runs only where local law permits.",
   updated: "2026-06-06",
   body: [
     {
@@ -15,13 +15,13 @@ export default {
       h2: "The money is real and the rules are open"
     },
     {
-      p: "When you get tipped or someone buys access to your stream, you earn Coins. Those convert to Gems, and Gems withdraw to a real payout. Nothing is locked in a points system you can never escape. The fees are stated plainly too: a flat 10% on tips and paid access, and a conversion commission that steps from 30% down to a 15% floor as your VP grows. No hidden cuts."
+      p: "When you get tipped or someone buys access to your stream, that is revenue, and Vergr pays you a share of it on a schedule. Nothing is locked in a points system you can never escape. The rate is stated plainly too: you keep 50% from day one, rising to 80%, and it is the only deduction. There is no second deduction anywhere: no conversion fee, no payout fee, no hidden cuts."
     },
     {
       h2: "Results are verified, not taken on trust"
     },
     {
-      p: "Because real money is on the line, every Coin and Gem movement is written to a wallet ledger you can read yourself, withdrawals only go to a payout address you set up and confirm, and a one-time identity check stands between an account and the money side. Content is moderated by a paid moderation team, not left to hope."
+      p: "Because real money is on the line, every Coin movement is written to a ledger you can read yourself, payouts only go to details you set up and confirm, and a one-time identity check stands between an account and the money side. Content is moderated by a paid moderation team, not left to hope."
     },
     {
       h2: "The guardrails a serious platform has"
@@ -29,13 +29,13 @@ export default {
     {
       list: [
         "Strictly 18 and over, with date-of-birth and identity verification.",
-        "Available only where skill-based competition for cash-equivalent prizes is legal.",
-        "A wallet protected by a PIN, two-factor authentication, and whitelisted withdrawal addresses.",
+        "Available everywhere except a small number of sanctioned or payment-restricted countries.",
+        "A wallet protected by a PIN and two-factor authentication.",
         "A real moderation program (the Vanguard) and a published Code of Conduct."
       ]
     },
     {
-      note: "VERGR is skill-based competition, not gambling. Outcomes come from how you play, and there are no chance-based mechanics anywhere on the platform."
+      note: "VERGR has no betting, wagering, prediction markets, prize competitions or games of chance. There are no chance-based mechanics anywhere on the platform."
     },
     {
       cta: [
@@ -44,8 +44,8 @@ export default {
           label: "Is VERGR a scam?"
         },
         {
-          to: "/platform/help/how-do-i-withdraw-my-earnings",
-          label: "How payouts work"
+          to: "/platform/help/how-do-i-see-my-earnings",
+          label: "See your earnings"
         }
       ]
     }

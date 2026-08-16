@@ -5,7 +5,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Icon from '../Icon';
-import { formatMoneyFromEur } from '../../utils/currency';
+import { formatUsd, formatMoneyFromEur } from '../../utils/currency';
 
 // ── Brand tokens (mirrored from tailwind.config.js for inline-style use) ──
 export const WALLET_TOKENS = {
@@ -65,6 +65,14 @@ export const fmtEUR = (n) => {
   if (n == null || isNaN(n)) return formatMoneyFromEur(0);
   return formatMoneyFromEur(n);
 };
+
+// A USD amount, shown AS USD. Deliberately NOT localised the way fmtEUR is:
+// coin packs are priced natively in USD and USD is what the card is charged, so
+// the dollar figure is the truth and a converted number beside it is only ever
+// an estimate (that is <LocalPrice usd=... />'s job). Formatting a charged
+// amount in a currency it will not be charged in is the displayed-versus-charged
+// mismatch getCoinPriceQuote exists to prevent.
+export const fmtUsd = (n) => formatUsd(n);
 
 // ── AnimatedNumber: ticks from prev to new value over ~600ms ──
 export const AnimatedNumber = ({ value, format = fmtNum, duration = 600 }) => {

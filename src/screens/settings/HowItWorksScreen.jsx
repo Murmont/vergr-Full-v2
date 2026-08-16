@@ -18,26 +18,25 @@ const SECTIONS = [
     icon: 'account_balance',
     color: '#F5C542',
     title: 'The VERGR Economy',
-    content: 'VERGR runs on three currencies. Coins are bought with real money and used to spend. Gems are earned when people spend coins ON YOU — these can be cashed out. VP (VERGR Points) are earned through activity and unlock levels, perks, and discounts.',
+    content: 'VERGR runs on two things you can hold: Coins and VP. Coins are bought with real money and spent inside VERGR. VP (VERGR Points) are earned through activity and unlock levels and perks. There is nothing else to hold, and nothing that can be withdrawn, converted or transferred.',
     items: [
-      { label: 'Coins (●)', value: 'Bought with real money. 1 coin = €0.01. Spend on tips, memberships, paid streams, and boosts. Spendable only inside VERGR.' },
-      { label: 'Gems (◆)', value: 'Earned when someone spends coins on you. Cashable. 1 gem = €0.01. You keep 70% at L1 up to 90% at L100 (Immortal) depending on your VP level.' },
-      { label: 'VP (★)', value: 'Earned through activity. Levels up your profile, unlocks perks, lowers your commission rate.' },
+      { label: 'Coins (\u25CF)', value: 'Bought with real money. 1 coin = $0.01. Spend on tips, memberships, paid streams, and boosts. A licence to use VERGR features: no cash value, non-transferable, and not redeemable for money.' },
+      { label: 'VP (\u2605)', value: 'Earned through activity. Levels up your profile and unlocks perks. VP is not money and cannot be spent or cashed.' },
     ],
-    extra: 'Every gem that exists was funded by coins someone bought with real money. The platform takes a commission (15-30% depending on your level) when coins convert to gems. This keeps the economy sustainable.',
+    extra: 'When a fan spends coins on a creator, that is revenue VERGR earns. VERGR then owes that creator a share of it and pays it on VERGR\u2019s own schedule. Creators never request a payout, and no balance is ever moved by a user.',
   },
   {
     id: 'earning',
     icon: 'diamond',
     color: '#B44FFF',
-    title: 'How to Earn Real Money',
-    content: 'There are two main ways to earn gems (cashable money) on VERGR:',
+    title: 'How Creators Get Paid',
+    content: 'Creators are paid a share of the revenue their content generates:',
     items: [
-      { label: 'Memberships and paid streams', value: 'Members pay in coins for access; you receive gems.' },
-      { label: 'Receive tips', value: 'When someone tips you with coins, you get gems.' },
-      { label: 'Cash out', value: 'Minimum 1000 gems (€10). Paid via Wise/PayPal. ~3% processor fee.' },
+      { label: 'Memberships and paid streams', value: 'Members pay in coins for access. That is revenue VERGR earns, and you are paid a share of it.' },
+      { label: 'Receive tips', value: 'When someone tips you with coins, you accrue your share of that revenue straight away.' },
+      { label: 'Get paid', value: 'VERGR pays automatically once you reach $100, monthly to begin with, then twice monthly and weekly as your account matures. You never request a payout.' },
     ],
-    extra: 'VP (earned from quests, phone-add, referrals, and streaming) lowers your commission rate — at L100 Immortal you keep 90% of every coin converted to gems, versus 70% at L1.',
+    extra: 'Your share starts at 50% and rises to 80% as your lifetime earnings grow, and it never goes down. It is the only deduction: no separate tip fee, conversion fee or payout fee on top. Identity verification and an account at least 30 days old are required before the first payment.',
   },
   {
     id: 'coins',
@@ -47,10 +46,10 @@ const SECTIONS = [
     content: 'You earn small coin bonuses for high-value actions. These are marketing bonuses — the platform covers them.',
     items: [
       { label: '5-day login streak', value: '5 coins + 50 VP' },
-      { label: 'Refer a friend', value: '25 coins + 500 VP each (both need paid sub + friend bought coins)' },
-      { label: 'Lite sub ($9.99/mo)', value: '+1,000 VP + 50 coins / month, 1.5× VP multiplier' },
-      { label: 'Pro sub ($24.99/mo)', value: '+3,000 VP + 150 coins / month, 2× VP multiplier' },
-      { label: 'Buy coin packs', value: '10% bonus coins included' },
+      { label: 'Refer a friend', value: '+5,000 VP for you, +3,000 VP for your friend' },
+      { label: 'Lite sub ($4.99/mo)', value: '+1,000 VP + 50 coins / month, 1.5× VP multiplier' },
+      { label: 'Pro sub ($9.99/mo)', value: '+3,000 VP + 150 coins / month, 2× VP multiplier' },
+      { label: 'Buy coin packs', value: 'Bonus VP on the Titan and Ascendant packs' },
     ],
   },
   {
@@ -58,19 +57,19 @@ const SECTIONS = [
     icon: 'star',
     color: '#7B6FFF',
     title: 'VP Levels & Perks',
-    content: '100 VP levels across 11 ranks. Your coin-to-gem commission steps down with lifetime VP, from 30% to a 15% floor (reached around 100,000 VP). After L100 you can optionally Prestige: reset your visible level with a badge (never forced).',
+    content: '100 VP levels across 11 ranks, each with its own profile ring. VP is a status and perks ladder, not a money ladder: your revenue share is set by your lifetime earnings, not by VP. After L100 you can optionally Prestige: reset your visible level with a badge (never forced).',
     items: [
-      { label: 'Rookie (L1–10)', value: 'No ring, 30% → 20% commission' },
-      { label: 'Contender (L11–20)', value: 'Bronze ring, 20% → 18% commission' },
-      { label: 'Rival (L21–30)', value: 'Silver ring, 18% commission' },
-      { label: 'Challenger (L31–40)', value: 'Gold ring, 18% → 15% commission' },
-      { label: 'Elite (L41–50)', value: 'Platinum ring, 15% commission' },
-      { label: 'Champion (L51–60)', value: 'Diamond ring, 15% commission' },
-      { label: 'Veteran (L61–70)', value: 'Onyx ring, 15% commission' },
-      { label: 'Legend (L71–80)', value: 'Ruby ring, 15% commission' },
-      { label: 'Mythic (L81–90)', value: 'Mythic ring, 15% commission' },
-      { label: 'Ascendant (L91–99)', value: 'Ascendant ring, 15% commission' },
-      { label: 'Immortal (L100)', value: '15% commission floor, prestige unlocked' },
+      { label: 'Rookie (L1\u201310)', value: 'No ring' },
+      { label: 'Contender (L11\u201320)', value: 'Bronze ring' },
+      { label: 'Rival (L21\u201330)', value: 'Silver ring' },
+      { label: 'Challenger (L31\u201340)', value: 'Gold ring' },
+      { label: 'Elite (L41\u201350)', value: 'Platinum ring' },
+      { label: 'Champion (L51\u201360)', value: 'Diamond ring' },
+      { label: 'Veteran (L61\u201370)', value: 'Onyx ring' },
+      { label: 'Legend (L71\u201380)', value: 'Ruby ring' },
+      { label: 'Mythic (L81\u201390)', value: 'Mythic ring' },
+      { label: 'Ascendant (L91\u201399)', value: 'Ascendant ring' },
+      { label: 'Immortal (L100)', value: 'Immortal ring, prestige unlocked' },
     ],
   },
   {
@@ -78,11 +77,11 @@ const SECTIONS = [
     icon: 'workspace_premium',
     color: '#C87FFF',
     title: 'Subscription Tiers',
-    content: 'VERGR has three tiers. Plans do NOT reduce commission — commission is determined by VP level only. Plans give you VP multipliers, monthly bonuses, and feature unlocks so you level up faster and use more of the app.',
+    content: 'VERGR has three tiers. Plans do NOT change your revenue share: the share is set by your lifetime earnings only. Plans give you VP multipliers, monthly bonuses, and feature unlocks.',
     items: [
-      { label: 'Free', value: 'Ads, 25MB, 720p, 50 media/day, no public streaming' },
-      { label: 'Lite ($9.99/mo)', value: 'No ads, 100MB, 1080p, 1.5× VP, +1,000 VP + 50 coins/mo, stream 1080p, create squads' },
-      { label: 'Pro ($24.99/mo)', value: 'No ads, 500MB, 4K, 2× VP, +3,000 VP + 150 coins/mo, stream 1440p60, co-streaming, custom vergr.me domain, advanced analytics, priority support' },
+      { label: 'Free', value: 'Ads, 200MB uploads, 480p streaming, no day-one public streaming' },
+      { label: 'Lite ($4.99/mo)', value: 'No ads, 1GB uploads, 720p60 streaming from day one, 1.5\u00d7 VP, scheduled posts, voice messages' },
+      { label: 'Pro ($9.99/mo)', value: 'No ads, 5GB uploads, 1080p60 streaming, co-streaming, 2\u00d7 VP, custom vergr.me domain, advanced analytics, priority support' },
     ],
   },
   {
@@ -132,11 +131,11 @@ const SECTIONS = [
     content: 'Report any post, comment, or user through the three-dot menu. Reports are reviewed by moderators. Content that hits a report threshold is automatically hidden. Squad Security officers moderate squad chat and can mute or kick members via vote.',
   },
   {
-    id: 'cashout',
+    id: 'payouts',
     icon: 'account_balance',
     color: '#B44FFF',
-    title: 'Cashing Out',
-    content: 'When your wallet has at least 1000 coins (€10), you can request a payout. VERGR takes a 10% platform fee, and the payment processor takes ~3%. You receive the rest via Wise (bank transfer), PayPal, or direct bank deposit. For example: 1000 coins = €10, minus €1 platform fee, minus ~€0.27 processor fee = you receive ~€8.73.',
+    title: 'How Creators Are Paid',
+    content: 'Nothing on VERGR can be withdrawn, converted or transferred by a user. Coins are a licence to use VERGR features and have no cash value. What does happen is this: when fans spend coins on a creator, VERGR earns that revenue and owes the creator a share of it. VERGR works out what it owes and pays it automatically on a schedule, monthly to begin with, once the balance reaches $100. Anything under the minimum rolls over and is never lost.',
   },
 ];
 
@@ -162,7 +161,7 @@ export default function HowItWorksScreen() {
           <h2 className="font-syne text-xl font-bold mb-2">Play. Stream. Earn.</h2>
           <p className="text-text-secondary text-sm leading-relaxed">
             VERGR is built for gamers who want more than just another social feed. 
-            You earn real money for doing what you already do — gaming, posting, competing, and being part of a community.
+            Play, post, stream, and build a squad. Creators are paid a share of the revenue their audience generates.
           </p>
         </div>
 

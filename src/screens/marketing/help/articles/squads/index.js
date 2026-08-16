@@ -23,9 +23,7 @@ import a18 from './how-do-i-pin-something-in-my-squad.jsx';
 import a19 from './how-do-i-change-my-squad-settings.jsx';
 import a20 from './how-do-i-leave-a-squad.jsx';
 import a21 from './how-do-i-delete-a-squad.jsx';
-import a22 from './what-are-squad-rivalries.jsx';
 import a23 from './what-is-the-maximum-squad-size.jsx';
-import a24 from './how-do-squad-champion-votes-work-for-tournaments.jsx';
 
 export default {
   'how-do-i-create-a-squad': a0,
@@ -50,7 +48,5 @@ export default {
   'how-do-i-change-my-squad-settings': a19,
   'how-do-i-leave-a-squad': a20,
   'how-do-i-delete-a-squad': a21,
-  'what-are-squad-rivalries': a22,
   'what-is-the-maximum-squad-size': a23,
-  'how-do-squad-champion-votes-work-for-tournaments': a24,
 };

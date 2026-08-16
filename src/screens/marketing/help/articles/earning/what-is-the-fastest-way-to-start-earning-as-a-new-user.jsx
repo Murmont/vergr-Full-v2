@@ -13,11 +13,11 @@ export default {
     { list: [
       "Post clips and achievements so people discover you.",
       "Go live once you hit the streaming requirements and collect tips.",
-      "Join or form a squad to compete as a team for bigger pooled prizes.",
+      "Join or form a squad: a shared audience means more people seeing what you post and stream.",
     ]},
-    { p: "Then convert your earned Coins to Gems and withdraw once you meet the verification and minimum-payout requirements." },
+    { p: "Vergr then pays your share on a schedule, once you meet the verification and minimum-payout requirements." },
     { cta: [
-      { to: "/platform/help/what-is-brawl-quickplay-and-how-do-i-play-a-quick-1v1", label: "Brawl quickplay" },
+      { to: "/platform/help/how-do-tips-work-and-how-much-do-i-keep", label: "How tips work" },
       { to: "/platform/help/do-i-need-an-audience-to-make-money-on-vergr", label: "Do I need an audience?" }
     ]}
   ]

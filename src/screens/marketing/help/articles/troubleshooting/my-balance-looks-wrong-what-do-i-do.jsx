@@ -1,14 +1,14 @@
 // Help center article: My balance looks wrong, what do I do?
 
 export default {
-  summary: "Open your wallet's transaction history before anything else: every Coin and Gem movement is recorded there, and nine times out of ten the \"missing\" amount is an auto-renewal, a stream pass, a tip fee, or a withdrawal hold you forgot about. If a specific transaction genuinely looks wrong, contact support with its reference.",
+  summary: "Open your wallet's transaction history before anything else: every Coin movement is recorded there, and nine times out of ten the \"missing\" amount is an auto-renewal, a stream pass, or a tip you forgot about. If a specific transaction genuinely looks wrong, contact support with its reference.",
   updated: "2026-07-02",
   body: [
     {
       h2: "Check the history first"
     },
     {
-      p: "The wallet keeps a full ledger: purchases, tips sent and received (with the 10% fee shown), paid stream access, membership renewals, conversions, and withdrawals. Find the moment your balance changed and the line item will usually explain itself."
+      p: "The wallet keeps a full ledger: Coin purchases, tips sent, paid stream access and membership renewals. Find the moment your balance changed and the line item will usually explain itself."
     },
     {
       h2: "The usual suspects"
@@ -16,10 +16,10 @@ export default {
     {
       list: [
         "A creator membership auto-renewed: they renew every 30 days automatically until cancelled.",
-        "Tip maths: sending a tip costs the full amount, but receiving one credits 90% (the flat 10% fee). Both sides are itemised.",
-        "A withdrawal in its hold period: withdrawn Gems leave the balance immediately but pay out after the hold, so the money is in transit, not gone.",
-        "Coins vs Gems confusion: they are separate balances. Converting moves value from one to the other, minus your commission rate.",
-        "A pending withdrawal: requesting one holds the Gems while the security window runs, so they leave your spendable balance before they arrive."
+        "Tip maths: sending a tip costs the full amount, and receiving one credits your revenue share of it. Both sides are itemised.",
+        "A payout in transit: it has left the ledger but has not reached you yet.",
+        "Coins are what you spend; your creator earnings are separate and live in Creator Studio.",
+        "A scheduled payout that has not landed yet."
       ]
     },
     {
@@ -34,7 +34,7 @@ export default {
     },
     {
       cta: [
-        { to: "/platform/help/what-is-the-conversion-commission", label: "How conversion is calculated" },
+        { to: "/platform/help/what-fees-does-vergr-charge", label: "What VERGR charges" },
         { to: "/platform/help/how-do-i-pause-or-cancel-a-creator-membership", label: "Stopping auto-renewals" }
       ]
     }

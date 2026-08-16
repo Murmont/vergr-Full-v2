@@ -16,6 +16,7 @@ import { Routes, Route } from 'react-router-dom';
 import AdminDashboardScreen from '../screens/admin/AdminDashboardScreen';
 import AdminAccessScreen from '../screens/admin/AdminAccessScreen';
 import AdminUsersScreen from '../screens/admin/AdminUsersScreen';
+const AdminCreatorsScreen = lazy(() => import('../screens/admin/AdminCreatorsScreen'));
 import AdminEconomyScreen from '../screens/admin/AdminEconomyScreen';
 import AdminModerationScreen from '../screens/admin/AdminModerationScreen';
 import AdminModerationAuditScreen from '../screens/admin/AdminModerationAuditScreen';
@@ -39,6 +40,7 @@ export default function AdminRoutes() {
       <Route index element={<AdminDashboardScreen />} />
       <Route path="access" element={<AdminAccessScreen />} />
       <Route path="users" element={<AdminUsersScreen />} />
+      <Route path="creators" element={<AdminCreatorsScreen />} />
       <Route path="economy" element={<AdminEconomyScreen />} />
       <Route path="reports" element={<AdminModerationScreen />} />
       <Route path="reports/audit" element={<AdminModerationAuditScreen />} />

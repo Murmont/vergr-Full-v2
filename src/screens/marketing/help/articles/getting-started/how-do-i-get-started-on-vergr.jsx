@@ -49,8 +49,8 @@ export default {
           label: "Ways to make money"
         },
         {
-          to: "/platform/help/what-are-vc-vp-and-gems",
-          label: "VC, VP, and Gems explained"
+          to: "/platform/help/what-are-coins-and-vp",
+          label: "What are Coins and VP?"
         }
       ]
     }

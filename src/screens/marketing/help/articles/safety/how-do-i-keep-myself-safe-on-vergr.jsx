@@ -12,7 +12,7 @@ export default {
         "Use a strong, unique password, and never share your login with anyone.",
         "Turn on two-factor authentication in Settings: it protects password changes, sign-outs, and account deletion even if someone gets your password.",
         "Set a wallet PIN in Wallet Security so your balance has its own lock.",
-        "Whitelist your withdrawal address: payouts can then only ever go to an address you approved."
+        "Keep your payout details current: payouts can only ever go where you set them."
       ]
     },
     {

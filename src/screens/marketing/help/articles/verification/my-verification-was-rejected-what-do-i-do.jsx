@@ -30,7 +30,7 @@ export default {
     {
       cta: [
         { to: "/platform/help/what-documents-do-i-need-for-verification", label: "Accepted documents" },
-        { to: "/platform/help/why-can-i-not-withdraw-until-i-am-verified", label: "Why money features need it" }
+        { to: "/platform/help/what-is-kyc-and-why-does-vergr-ask-for-it", label: "Why VERGR asks for ID" }
       ]
     }
   ]

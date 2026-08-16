@@ -27,7 +27,7 @@ export default {
       h2: "Why bother"
     },
     {
-      p: "VP is rank fuel: it climbs you up the ladder that cuts your Coin-to-Gem conversion commission from 30% down to 15%. Quests are also, not accidentally, a daily checklist of the habits that grow a channel: post, engage, go live, collaborate."
+      p: "VP is rank fuel: it climbs you up the ladder that cuts the share Vergr keeps from 30% down to 15%. Quests are also, not accidentally, a daily checklist of the habits that grow a channel: post, engage, go live, collaborate."
     },
     {
       cta: [

@@ -17,6 +17,8 @@ const pick = (name) => lazy(() => load().then((m) => ({ default: m[name] })));
 export const LandingScreen = pick('LandingScreen');
 export const StoreScreen = pick('StoreScreen');
 export const DownloadScreen = pick('DownloadScreen');
+export const DesktopAppScreen = pick('DesktopAppScreen');
+export const MobileAppScreen = pick('MobileAppScreen');
 export const HelpScreen = pick('HelpScreen');
 export const HelpCategoryScreen = pick('HelpCategoryScreen');
 export const HelpArticleScreen = pick('HelpArticleScreen');
@@ -41,9 +43,3 @@ export const LearnCoinsScreen = pick('LearnCoinsScreen');
 // Vergr.me link-in-bio landing (own module, pulls the marketing shell chunk).
 export const LinkInBioScreen = lazy(() => import('./LinkInBioScreen'));
 
-// Growth / SEO money pages (separate module, shares the marketing chunk graph).
-const loadGrowth = () => import('./growth/GrowthScreens');
-const pickGrowth = (name) => lazy(() => loadGrowth().then((m) => ({ default: m[name] })));
-export const MakeMoneyGamingScreen = pickGrowth('MakeMoneyGamingScreen');
-export const LegitScreen = pickGrowth('LegitScreen');
-export const PlayGameScreen = pickGrowth('PlayGameScreen');

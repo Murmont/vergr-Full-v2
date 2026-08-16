@@ -15,7 +15,7 @@ export default {
       h2: "Identity verification (for the money features)"
     },
     {
-      p: "This is the one-time identity check, sometimes called KYC. You submit a government ID and a selfie, and once approved it unlocks the wallet, receiving tips, and withdrawals. It is required for anything that handles real money, and it protects you and the platform. Most checks are quick."
+      p: "This is the one-time identity check, sometimes called KYC. You submit a government ID and a selfie, and once approved it unlocks the wallet, receiving tips, and being paid your revenue share. It is required for anything that handles real money, and it protects you and the platform. Most checks are quick."
     },
     {
       h2: "The creator verification badge"
@@ -28,7 +28,7 @@ export default {
     },
     {
       list: [
-        "Want to withdraw earnings? You need identity verification.",
+        "Want to be paid your earnings? You need identity verification.",
         "Want the creator badge on your profile? Work toward it in the Creator Studio."
       ]
     },

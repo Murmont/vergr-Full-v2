@@ -5,7 +5,8 @@
 // no desktop max-w column or !isMobile branches. Routed IS_NATIVE_BUILD only.
 
 import { useState, useEffect } from 'react';
-import { isDiscoverableStream } from '../../../utils/streamVisibility';
+import { isDiscoverableStream, streamPremium } from '../../../utils/streamVisibility';
+import StreamStateBadge from '../../../components/streams/StreamStateBadge';
 import { useNavigate } from 'react-router-dom';
 import { collection, query, where, orderBy, limit, getDocs, doc, getDoc } from 'firebase/firestore';
 import { db } from '../../../firebase/config';
@@ -96,6 +97,9 @@ export default function NativeExploreScreen() {
             viewers: (s.viewerCount || 0).toLocaleString(), boosted: !!s.boosted,
             orientation: s.orientation || 'landscape',
             language: s.language || null, country: s.hostCountry || null,
+            // A Premium Live is discoverable on purpose. The card must say it
+            // costs coins, or the paywall is a surprise.
+            ...streamPremium(s),
           };
         }));
       } catch {}
@@ -208,7 +212,7 @@ export default function NativeExploreScreen() {
             const u = await getDoc(doc(db, 'users', s.hostUid));
             if (u.exists()) { hostName = u.data().displayName || u.data().username || hostName; hostAvatar = u.data().avatar || null; }
           } catch {}
-          return { id: sd.id, title: s.title || 'Live', game: s.game || '', viewers: s.viewerCount || 0, hostName, hostAvatar };
+          return { id: sd.id, title: s.title || 'Live', game: s.game || '', viewers: s.viewerCount || 0, hostName, hostAvatar, ...streamPremium(s) };
         }));
         if (!cancelled) setFollowingLive(enriched);
       } catch {}
@@ -344,7 +348,9 @@ function FollowingLiveRail({ rows, navigate }) {
         {rows.map((r) => (
           <button key={r.id} onClick={() => navigate(`/watch/${r.id}`)} className="shrink-0 w-44 text-left" style={{ scrollSnapAlign: 'start' }}>
             <div className="relative aspect-video rounded-xl overflow-hidden" style={{ background: `linear-gradient(135deg, hsl(${(r.id.charCodeAt(0) * 7) % 360}, 45%, 18%), #0B0B14)` }}>
-              <span className="absolute top-2 left-2 px-1.5 py-0.5 rounded text-[9px] font-bold tracking-wider bg-rose-500 text-white">● LIVE</span>
+              <span className="absolute top-2 left-2">
+                <StreamStateBadge isPremium={r.isPremium} priceCoins={r.priceCoins} size="sm" />
+              </span>
               <div className="absolute bottom-2 right-2 flex items-center gap-1 text-[10px] font-bold text-white bg-black/55 px-1.5 py-0.5 rounded">
                 <Icon name="visibility" size={10} className="text-white/80" />{r.viewers.toLocaleString()}
               </div>
@@ -368,8 +374,8 @@ function StreamCard({ stream, tall, onClick }) {
     <div className="cursor-pointer" onClick={onClick}>
       <div className={`relative rounded-xl overflow-hidden ${tall ? 'aspect-[9/16]' : 'aspect-video'}`}
         style={{ background: 'linear-gradient(135deg, hsl(275,50%,15%) 0%, #0B0B14 100%)' }}>
-        <span className="absolute top-2 left-2 flex items-center gap-1 bg-brand-ember text-white text-[10px] font-bold px-1.5 py-0.5 rounded">
-          <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" /> LIVE
+        <span className="absolute top-2 left-2">
+          <StreamStateBadge isPremium={stream.isPremium} priceCoins={stream.priceCoins} />
         </span>
         <p className="absolute bottom-2 left-2 right-2 text-white/80 text-xs font-dmmono tabular-nums">{stream.viewers} viewers</p>
       </div>

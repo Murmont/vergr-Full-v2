@@ -120,7 +120,7 @@ export default function SubscribeSheet({ creatorId, creatorName = 'this creator'
                 : canAfford ? <>Subscribe — <span className="font-dmmono">● {price.toLocaleString()}</span> / month</>
                 : <><Icon name="add_circle" size={17} />Buy coins to subscribe</>}
             </button>
-            <div className="text-center text-[11px] text-text-muted mt-2.5">Renews monthly in coins. 10% platform fee goes to VERGR.</div>
+            <div className="text-center text-[11px] text-text-muted mt-2.5">Renews monthly in coins. VERGR pays the creator a share of this revenue.</div>
           </>
         )}
       </div>

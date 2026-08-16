@@ -5,7 +5,7 @@
 // Top-level: summary (1-2 sentences, answer-first), updated (YYYY-MM-DD), body [].
 
 export default {
-  summary: "Yes. Your account is protected by standard sign-in security, your wallet adds a PIN, two-factor authentication, and whitelisted withdrawal addresses, and your private messages stay on your device rather than being stored on a server. There are also strong tools to block, report, and control who can reach you.",
+  summary: "Yes. Your account is protected by standard sign-in security, your wallet adds a PIN and two-factor authentication, and your private messages stay on your device rather than being stored on a server. There are also strong tools to block, report, and control who can reach you.",
   updated: "2026-06-06",
   body: [
     {
@@ -15,7 +15,7 @@ export default {
       h2: "Your account and wallet"
     },
     {
-      p: "Your login is protected with standard account security, and you can add two-factor authentication for an extra layer. The wallet goes further: a PIN guards sensitive actions, and withdrawals can only go to addresses you have added to a whitelist, so even someone who got into your session could not send your money somewhere new without clearing those checks."
+      p: "Your login is protected with standard account security, and you can add two-factor authentication for an extra layer. The wallet goes further: a PIN guards sensitive actions, and payouts can only go to details you set up yourself, so even someone who got into your session could not send your money somewhere new without clearing those checks."
     },
     {
       h2: "Your privacy"

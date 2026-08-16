@@ -229,7 +229,7 @@ export default function CreatorDashboardScreen() {
     { label: 'Promote',      icon: 'campaign',               path: '/creator/ads',        hue: 'from-fuchsia-500/20 to-pink-500/5',     iconColor: 'text-fuchsia-400' },
     { label: 'Quests',       icon: 'military_tech',          path: '/creator/quests',     hue: 'from-brand-pink/20 to-brand-pink/5',    iconColor: 'text-brand-pink' },
     { label: 'Earnings',     icon: 'paid',                   path: '/creator/earnings',   hue: 'from-emerald-500/20 to-emerald-500/5',  iconColor: 'text-emerald-400' },
-    { label: 'Payout',       icon: 'account_balance_wallet', path: '/request-payout',     hue: 'from-teal-500/20 to-cyan-500/5',        iconColor: 'text-teal-400' },
+    { label: 'Earnings',     icon: 'paid',                   path: '/creator/earnings',     hue: 'from-teal-500/20 to-cyan-500/5',        iconColor: 'text-teal-400' },
   ];
 
   // AI-style insight — picks a real, data-driven observation
@@ -519,18 +519,17 @@ export default function CreatorDashboardScreen() {
 
             {/* Wallet widget */}
             <Card className="p-4 md:p-5">
-              <SectionHeader title="Your wallet" subtitle="Cash out any time" />
+              <SectionHeader title="Your coins" subtitle="Spend on Vergr" />
               <div className="rounded-xl bg-gradient-to-br from-amber-500/15 via-amber-500/5 to-transparent border border-amber-500/20 p-4 mb-3">
                 <p className="text-[10px] uppercase tracking-widest text-amber-400 font-bold mb-1">Balance</p>
                 <p className="font-syne font-extrabold text-3xl text-white tabular-nums">{compactNum(wallet?.balance || 0)}</p>
                 <p className="text-[11px] text-text-muted mt-1">≈ ${((wallet?.balance || 0) * 0.01).toFixed(2)} USD value</p>
               </div>
-              <StatRow label="Lifetime earned" value={compactNum(wallet?.totalEarned || 0)} accent="text-amber-400" />
+              <StatRow label="Coins spent" value={compactNum(wallet?.totalSpent || 0)} accent="text-amber-400" />
               <StatRow label="This period" value={compactNum(earnedThisPeriod)} accent="text-white" />
-              <StatRow label="Pending payout" value={compactNum(wallet?.pendingPayout || 0)} accent="text-text-muted" />
               <div className="flex gap-2 mt-3">
-                <button onClick={() => navigate('/request-payout')} className="flex-1 h-10 rounded-xl bg-amber-500 text-bg-dark font-bold text-xs hover:brightness-110 transition-all">
-                  Request Payout
+                <button onClick={() => navigate('/wallet/buy')} className="flex-1 h-10 rounded-xl bg-amber-500 text-bg-dark font-bold text-xs hover:brightness-110 transition-all">
+                  Buy coins
                 </button>
                 <button onClick={() => navigate('/wallet')} className="h-10 px-3 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] text-text-primary font-bold text-xs transition-all">
                   Wallet

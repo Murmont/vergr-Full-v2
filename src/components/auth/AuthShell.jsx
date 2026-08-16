@@ -8,9 +8,9 @@ import Icon from '../Icon';
 // violet vignette — unchanged. Every auth screen wraps its form in this.
 
 const FEATURES = [
-  { icon: 'emoji_events', title: 'Compete for real', desc: 'Run and join tournaments with real prizes.' },
+  { icon: 'groups',       title: 'Build your squad', desc: 'Find players, form squads and hang out.' },
   { icon: 'sensors',      title: 'Go live to your squad', desc: 'Stream, co-host and clip your best plays.' },
-  { icon: 'toll',         title: 'Earn VP, cash out', desc: 'Rack up rewards and withdraw to crypto.' },
+  { icon: 'toll',         title: 'Earn a revenue share', desc: 'Vergr pays creators a share of what their content makes.' },
 ];
 
 function Vignette({ subtle = false }) {

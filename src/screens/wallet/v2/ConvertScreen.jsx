@@ -8,13 +8,112 @@ import { useUser } from '../../../context/UserContext';
 import { useWalletUnlock } from '../../../context/WalletUnlockContext';
 import {
   WalletCard, WalletButton, SectionLabel, Pill, FeeBreakdown,
-  CoinGlyph, GemGlyph, WALLET_TOKENS, fmtNum, fmtEUR, AnimatedNumber,
+  CoinGlyph, GemGlyph, WALLET_TOKENS, fmtNum, fmtEUR, fmtUsd, AnimatedNumber,
 } from '../../../components/wallet/primitives';
 import Icon from '../../../components/Icon';
-import { getVPLevel, getNextVPLevel, getCommission } from '../../../utils/vpSystem';
-import { convertCoinsToGems } from '../../../firebase/firestore';
+// GEM_VALUE_USD imported, never re-declared: this file used to hardcode 0.009
+// and understate every conversion by 10%. It mirrors the withdrawal rate that
+// actually pays out (functions/withdrawals.js GEM_TO_MICRO_USDC).
+import { getVPLevel, getNextVPLevel, getCommission, GEM_VALUE_USD } from '../../../utils/vpSystem';
+import { convertCoinsToGems, buyCoinsWithGems } from '../../../firebase/firestore';
 
-const GEM_TO_EUR = 0.009;
+/**
+ * Gems back into coins, flat 1:1.
+ *
+ * This is the counterpart to auto-convert-at-receipt: earned money now lands as
+ * gems, and gems are withdrawal-only, so without a way back a creator cannot tip
+ * anyone, buy a subscription, or unlock content with money they earned. Shipping
+ * auto-convert without this surface would strand every creator on the platform.
+ *
+ * Rate is flat and rank-independent, and the server is the authority. It is NOT
+ * shown as "a good deal" because it is not one: converting out and back costs
+ * commission each way. It is shown as what it is, a way to spend what you earned.
+ */
+function GemsToCoins() {
+  const { wallet, profile } = useUser();
+  const gemsHeld = Math.max(0, Math.floor(wallet?.gems || 0));
+  const [open, setOpen] = useState(false);
+  const [gems, setGems] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  const [ok, setOk] = useState(null);
+
+  const MIN = 10; // mirrors functions/gemBuyback.js MIN_GEMS
+  const valid = gems >= MIN && gems <= gemsHeld && !busy;
+
+  const run = async () => {
+    if (!valid) return;
+    setBusy(true); setErr(null);
+    try {
+      const r = await buyCoinsWithGems(gems);
+      setOk(r?.coins ?? gems);
+      setGems(0);
+    } catch (e) {
+      setErr(e?.message || 'Could not convert. Try again.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!profile) return null;
+
+  return (
+    <WalletCard style={{ marginTop: 20 }}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          width: '100%', background: 'none', border: 'none', cursor: 'pointer',
+          color: WALLET_TOKENS.text, padding: 0, textAlign: 'left',
+        }}
+        aria-expanded={open}
+      >
+        <span>
+          <span style={{ fontWeight: 700, fontSize: 14 }}>Need coins to spend?</span>
+          <span style={{ display: 'block', fontSize: 12, color: WALLET_TOKENS.textSecondary, marginTop: 2 }}>
+            Turn gems back into coins at 1:1. {fmtNum(gemsHeld)} gems available.
+          </span>
+        </span>
+        <Icon name={open ? 'expand_less' : 'expand_more'} size={20} />
+      </button>
+
+      {open && (
+        <div style={{ marginTop: 14 }}>
+          <div className="vg-buyback-row" style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            <input
+              type="number" min={MIN} max={gemsHeld} value={gems || ''}
+              onChange={(e) => setGems(Math.max(0, Math.floor(Number(e.target.value) || 0)))}
+              placeholder={`Gems (min ${MIN})`}
+              style={{
+                flex: 1, height: 44, borderRadius: 10, padding: '0 12px',
+                background: WALLET_TOKENS.surface2, color: WALLET_TOKENS.text,
+                border: `1px solid ${WALLET_TOKENS.hairline}`, fontSize: 14,
+              }}
+            />
+            <WalletButton variant="secondary" onClick={() => setGems(gemsHeld)}>Max</WalletButton>
+            <WalletButton variant="primary" disabled={!valid} onClick={run}>
+              {busy ? 'Converting…' : `Get ${fmtNum(gems || 0)} coins`}
+            </WalletButton>
+          </div>
+
+          <p style={{ fontSize: 11.5, color: WALLET_TOKENS.textMuted, marginTop: 10, lineHeight: 1.5 }}>
+            Coins can be spent anywhere on Vergr. Converting them back to gems
+            later charges your usual commission, so only convert what you plan to
+            spend.
+          </p>
+
+          {err && <div style={{ marginTop: 10, fontSize: 12.5, color: '#FCA5A5' }}>{err}</div>}
+          {ok != null && (
+            <div style={{ marginTop: 10, fontSize: 12.5, color: '#86EFAC' }}>
+              {fmtNum(ok)} coins added to your wallet.
+            </div>
+          )}
+        </div>
+      )}
+    </WalletCard>
+  );
+}
 
 export default function ConvertScreen() {
   const { profile, wallet } = useUser();
@@ -195,7 +294,7 @@ export default function ConvertScreen() {
             <AnimatedNumber value={gemsOut} />
           </div>
           <div className="font-dmmono" style={{ fontSize: 13, color: WALLET_TOKENS.textMuted, marginTop: 12 }}>
-            Worth ≈ {fmtEUR(gemsOut * GEM_TO_EUR)}
+            Worth ≈ {fmtUsd(gemsOut * GEM_VALUE_USD)}
           </div>
         </WalletCard>
       </div>
@@ -208,7 +307,7 @@ export default function ConvertScreen() {
             { label: `Commission (${vpInfo.name} L${vpInfo.level}, ${commissionPct}%)`, value: `-${fmtNum(amount - gemsOut)} c` },
             { label: 'Conversion rate', value: `1 c → ${(1 - commission).toFixed(2)} gems`, tone: 'muted' },
           ]}
-          total={`+${fmtNum(gemsOut)} gems · ≈ ${fmtEUR(gemsOut * GEM_TO_EUR)}`}
+          total={`+${fmtNum(gemsOut)} gems · ≈ ${fmtUsd(gemsOut * GEM_VALUE_USD)}`}
         />
       </div>
 
@@ -253,6 +352,14 @@ export default function ConvertScreen() {
           {submitting ? 'Converting…' : 'Convert'}
         </WalletButton>
       </div>
+
+      <GemsToCoins />
+
+      <style>{`
+        @media (max-width: 760px) {
+          .vg-buyback-row { flex-direction: column !important; align-items: stretch !important; }
+        }
+      `}</style>
 
       <style>{`
         @media (max-width: 760px) {

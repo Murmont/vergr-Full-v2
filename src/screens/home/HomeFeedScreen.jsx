@@ -7,7 +7,10 @@ import { useUI } from '../../context/UIContext';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { getFeedPosts, getTrendingPosts, getFollowingFeedPosts, getActiveFirestoreAds, getNewerFeedPosts, getVergrPinnedPosts, getVergrUid, getFollowing, getFeedPrefs, saveFeedPrefs } from '../../firebase/firestore';
-import { buildForYouCtx, rankForYouStable, topicsFromText } from '../../utils/feedRank';
+import { buildForYouCtx, rankForYouStable, topicsFromText, inferPostTopics } from '../../utils/feedRank';
+import { CONTENT_TOPICS } from '../../utils/constants';
+import { viewerAllowsNsfw, getLocalNsfwPref } from '../../utils/nsfw';
+import useNsfwPlatformFlag, { nsfwCfgFrom } from '../../hooks/useNsfwPlatformFlag';
 import { setFollowingCache, isFollowingLoaded } from '../../utils/followingCache';
 import { initPrefsSync, mergeRemotePrefs, flushNow } from '../../utils/feedPrefs';
 import CachedImg from '../../components/CachedImg';
@@ -94,6 +97,12 @@ export default function HomeFeedScreen({ initialTab, nativeFullWidth = false }) 
   const [ads, setAds] = useState([]);
   const [adsLoading, setAdsLoading] = useState(false);
   const { profile, wallet } = useUser();
+  // Remote kill switch for adult content on store builds. Defaults to false
+  // while it loads, so the first frame is always the conservative one.
+  const nsfwPlatformOk = useNsfwPlatformFlag();
+  // Category narrowing. null = everything, which is the default and the only
+  // state that existed before this shipped.
+  const [activeTopic, setActiveTopic] = useState(null);
   const { currentUser } = useAuth();
   const { unreadNotifCount } = useNotifications();
   const navigate = useNavigate();
@@ -728,12 +737,45 @@ export default function HomeFeedScreen({ initialTab, nativeFullWidth = false }) 
   // as "the feed keeps changing". shownOrderRef is cleared on an explicit
   // refresh (pull-to-refresh), which is the one moment a full re-rank is wanted.
   const forYouRanked = useMemo(() => {
-    const ctx = buildForYouCtx({ profile, vergrUid });
+    // Adult content is filtered OUT unless ALL THREE hold: the viewer asked
+    // for it, the viewer is age-verified, and this build is permitted to show
+    // it. The third comes from app_config so a store build can be made clean
+    // remotely, and defaults to hidden while the flag is still loading.
+    const allowNsfw = viewerAllowsNsfw({
+      profile, pref: getLocalNsfwPref(), cfg: nsfwCfgFrom(nsfwPlatformOk),
+    });
+    const ctx = buildForYouCtx({ profile, vergrUid, allowNsfw });
     const out = rankForYouStable([...forYouPosts], ctx, shownOrderRef.current);
     shownOrderRef.current = out.map((p) => p.id);
+
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [forYouPosts, vergrUid, profile?.gameTags, profile?.games]);
+  }, [forYouPosts, vergrUid, profile?.gameTags, profile?.games, nsfwPlatformOk]);
+
+  // Category narrowing lives in its OWN memo, deliberately downstream of the one
+  // above and of the cache write below it.
+  //
+  // It was briefly folded into forYouRanked, which was a bug: writeFeedCache
+  // persists that value, so a viewer who filtered to "Music" and closed the app
+  // would have had a Music-only feed restored on the next cold open, presented
+  // as their whole feed with no chip selected to explain it.
+  //
+  // Applied AFTER ranking so the chips reorder nothing: picking a topic shows
+  // the same feed with everything else removed, in the order it already had.
+  //
+  // `inferPostTopics` rather than a bare `post.topic` check, because the tag is
+  // optional. Most posts carry no explicit topic and are matched from their text
+  // and hashtags, so an equality check would make every chip look broken.
+  const forYouVisible = useMemo(() => {
+    if (!activeTopic) return forYouRanked;
+    const want = activeTopic.toLowerCase();
+    return forYouRanked.filter((p) => {
+      for (const t of inferPostTopics(p)) {
+        if (String(t).toLowerCase() === want) return true;
+      }
+      return false;
+    });
+  }, [forYouRanked, activeTopic]);
 
   // Persist the RANKED order (not the raw chronological merge) so the next cold
   // open paints in exactly the order it was left in and has nothing to correct.
@@ -746,7 +788,7 @@ export default function HomeFeedScreen({ initialTab, nativeFullWidth = false }) 
       return <FeedSkeleton count={3} />;
     }
 
-    let feedItems = [...forYouRanked];
+    let feedItems = [...forYouVisible];
     if (ads.length > 0 && !adsLoading) {
       feedItems = injectAdsRandomly(feedItems, ads, 3, 6);
     }
@@ -923,6 +965,40 @@ export default function HomeFeedScreen({ initialTab, nativeFullWidth = false }) 
                 />
               )}
               <span className="relative z-10">{tab}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+      {/* Category row. A SEPARATE row under the tab bar rather than more chips
+          inside it: the tab bar already scrolls horizontally, and folding twenty
+          topics into it would push For You / Following out of view on a phone.
+          Adult content is NOT a category here. It is a rating on its own axis
+          (utils/nsfw.js), because a topic is an interest and mixing the two
+          would make "likes Gaming" start pulling NSFW through the same weight
+          map the ranker uses. */}
+      <div className="sticky z-20 glass-header px-2" style={{ top: 'auto', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+        <div className="flex items-center gap-1 overflow-x-auto no-scrollbar px-2 py-1.5">
+          <button
+            onClick={() => setActiveTopic(null)}
+            className={`flex-none px-3 py-1 text-[11px] font-semibold whitespace-nowrap rounded-full transition-colors ${
+              activeTopic === null
+                ? 'bg-white/[0.10] text-white'
+                : 'text-text-muted hover:text-text-primary hover:bg-white/[0.04]'
+            }`}
+          >
+            All
+          </button>
+          {CONTENT_TOPICS.map((t) => (
+            <button
+              key={t}
+              onClick={() => setActiveTopic((prev) => (prev === t ? null : t))}
+              className={`flex-none px-3 py-1 text-[11px] font-semibold whitespace-nowrap rounded-full transition-colors ${
+                activeTopic === t
+                  ? 'bg-white/[0.10] text-white'
+                  : 'text-text-muted hover:text-text-primary hover:bg-white/[0.04]'
+              }`}
+            >
+              {t}
             </button>
           ))}
         </div>
@@ -1157,7 +1233,9 @@ export function HomeStoriesStrip({ onNavigate }) {
               onClick={() => onNavigate(`/watch/${info.streamId}`)}
               className="flex flex-col items-center gap-1.5 shrink-0 w-[64px]"
             >
-              <UserAvatar src={info.avatar} size={56} isLive />
+              {/* A paid stream rings violet and reads PREMIUM, so the circle
+                  itself says it costs coins before anyone taps in. */}
+              <UserAvatar src={info.avatar} size={56} isLive isPremiumLive={info.isPremium} />
               <span className="text-[10px] font-dmmono text-text-secondary truncate w-full text-center">
                 {info.name || 'Live'}
               </span>
@@ -1182,6 +1260,7 @@ export function HomeStoriesStrip({ onNavigate }) {
                   vpLevel={a?.vpLevel || 1}
                   isVerified={a?.isVerified}
                   isLive={liveHostIds.has(g.uid)}
+                  isPremiumLive={!!allLiveHosts.get(g.uid)?.isPremium}
                 />
                 {/* Story ring: bright violet = unseen, dim = already viewed.
                     z-20 so the avatar img (z-10) doesn't paint over it. */}

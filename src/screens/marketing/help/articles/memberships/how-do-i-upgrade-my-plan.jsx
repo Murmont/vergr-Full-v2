@@ -32,10 +32,10 @@ export default {
       h2: "What you unlock"
     },
     {
-      p: "Higher streaming quality and no follower gate to go live, faster VP (which lowers your conversion commission sooner), bigger uploads, and on Pro, co-streaming, a custom Vergr.me domain, advanced analytics, and more."
+      p: "Higher streaming quality and no follower gate to go live, faster VP (which ranks you up sooner), bigger uploads, and on Pro, co-streaming, a custom Vergr.me domain, advanced analytics, and more."
     },
     {
-      note: "Upgrading never changes the flat 10% tip fee. It changes what you can produce and how far you can push, not your cut."
+      note: "Upgrading never changes your revenue share. It changes what you can produce and how far you can push, not your rate."
     },
     {
       cta: [

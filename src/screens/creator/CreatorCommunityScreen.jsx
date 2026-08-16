@@ -4,7 +4,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { StackSkeleton } from '../../components/skeletons/GlassSkeletons';
+import { PanelListSkeleton } from '../../components/creator/StudioSkeletons';
 import { useUser } from '../../context/UserContext';
 import { getTransactions } from '../../firebase/firestore';
 import CreatorLayout from '../../components/creator/CreatorLayout';
@@ -133,7 +133,7 @@ export default function CreatorCommunityScreen() {
   return (
     <CreatorLayout page="community" title="Community" subtitle="Stay connected with your fans">
       {loading ? (
-        <StackSkeleton rows={5} height={88} />
+        <PanelListSkeleton count={4} />
       ) : (
         <>
           {/* KPIs */}

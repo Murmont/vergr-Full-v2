@@ -72,7 +72,7 @@ export function ShopOverviewScreen() {
     <div className="flex flex-col gap-4">
       <div>
         <h1 className="font-syne font-extrabold text-2xl">Overview</h1>
-        <p className="text-text-secondary text-sm mt-0.5">Your shop at a glance. Proceeds land as gems, 8% flat fee, no withdraw fee.</p>
+        <p className="text-text-secondary text-sm mt-0.5">Your shop at a glance. You keep 92% of each sale, credited to your earnings.</p>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -463,7 +463,7 @@ export function ShopSettingsScreen() {
         <p className="text-text-secondary text-sm mt-0.5">How your shop works.</p>
       </div>
       <div className="bg-surface-1 border border-white/[0.06] rounded-2xl overflow-hidden">
-        <Row icon="diamond" title="You keep 92%" body="A flat 8% fee per sale. Proceeds are credited as gems (the withdrawable currency) instantly, with no withdraw fee on top. Shipping you charge passes through to you in full." />
+        <Row icon="diamond" title="You keep 92%" body="A flat 8% fee per sale. Your share is credited to your earnings instantly and is paid to you on your payout schedule. Shipping you charge passes through to you in full." />
         <Row icon="download_for_offline" title="Digital products" body="Files are stored privately. Buyers get a short-lived, expiring download link — never a public URL." />
         <Row icon="local_shipping" title="Physical products" body="Buyers pay in coins and enter a shipping address. Fulfil from Orders. Cancelling an unshipped order refunds the buyer in full." />
         <Row icon="bolt" title="Connected stores" body="Sell your Shopify or WooCommerce catalog on Vergr. Inventory stays in sync so you never oversell." />

@@ -6,11 +6,13 @@ import { useAuth } from '../../context/AuthContext';
 import { useUser } from '../../context/UserContext';
 import { useUI } from '../../context/UIContext';
 import { useLayout } from '../../context/LayoutContext';
-import { updateUserSettings, getBlockedUsers } from '../../firebase/firestore';
+import { updateUserSettings, getBlockedUsers, saveFeedPrefs, getFeedPrefs } from '../../firebase/firestore';
 import TopBar from '../../components/TopBar';
 import useResponsive from '../../hooks/useResponsive';
 import { C, Toggle, SelectDropdown, SectionLabel, PageShell } from './_settingsUI';
 import { PRIVACY_DEFAULTS } from '../../utils/privacy';
+import { getLocalNsfwPref, setLocalNsfwPref, isAgeVerified, platformAllowsNsfw } from '../../utils/nsfw';
+import useNsfwPlatformFlag, { nsfwCfgFrom } from '../../hooks/useNsfwPlatformFlag';
 
 const VIS_OPTIONS = ['Everyone', 'Friends & Followers', 'Only me'];
 
@@ -27,6 +29,15 @@ export default function PrivacySettingsScreen() {
   const navigate = useNavigate();
   const [vals, setVals] = useState(DEFAULTS);
   const [blockedCount, setBlockedCount] = useState(0);
+  // Adult content preference. Deliberately NOT part of `vals`: it does not live
+  // in profile.settings.privacy, it needs a device-local mirror so the very
+  // first feed frame can filter before any Firestore read lands, and turning it
+  // ON has a precondition the other rows do not have.
+  const [showNsfw, setShowNsfw] = useState(() => getLocalNsfwPref());
+  const nsfwPlatformOk = useNsfwPlatformFlag();
+  // Whether this build may show adult content at all. Hides the row entirely
+  // rather than showing a switch that silently does nothing.
+  const nsfwAvailable = platformAllowsNsfw(nsfwCfgFrom(nsfwPlatformOk));
   const saveTimer = useRef(null);
 
   useEffect(() => {
@@ -38,6 +49,17 @@ export default function PrivacySettingsScreen() {
   useEffect(() => {
     if (profile?.settings?.privacy) setVals(prev => ({ ...prev, ...profile.settings.privacy }));
   }, [profile]);
+
+  // The account is the source of truth; localStorage is only a fast mirror.
+  // A device that has never seen this account starts OFF and is corrected here.
+  useEffect(() => {
+    if (!currentUser) return;
+    getFeedPrefs(currentUser.uid).then((p) => {
+      if (!p || typeof p.showNsfw !== 'boolean') return;
+      setShowNsfw(p.showNsfw);
+      setLocalNsfwPref(p.showNsfw);
+    }).catch(() => {});
+  }, [currentUser]);
 
   useEffect(() => {
     if (!currentUser) return;
@@ -58,6 +80,37 @@ export default function PrivacySettingsScreen() {
       }, 800);
       return updated;
     });
+  };
+
+  /**
+   * Turning adult content ON has a precondition the other rows do not: the
+   * viewer must be age-verified. Self-declaring 18 at signup is not age
+   * assurance, and the server refuses to serve the media either way
+   * (functions/entitlements.js), so letting the switch flip without
+   * verification would just produce a feed of items that fail to open.
+   *
+   * Turning it OFF is unconditional and instant. A safety control must never
+   * be harder to engage than to disengage.
+   */
+  const toggleNsfw = async (next) => {
+    if (!next) {
+      setShowNsfw(false);
+      setLocalNsfwPref(false);
+      if (currentUser) saveFeedPrefs(currentUser.uid, { showNsfw: false });
+      return;
+    }
+    if (!nsfwAvailable) {
+      showToast('Adult content is not available in this version of the app.', 'info');
+      return;
+    }
+    if (!isAgeVerified(profile)) {
+      showToast('Verify your age first to turn this on.', 'info');
+      navigate('/creator/verify');
+      return;
+    }
+    setShowNsfw(true);
+    setLocalNsfwPref(true);
+    if (currentUser) saveFeedPrefs(currentUser.uid, { showNsfw: true });
   };
 
   const RowSelect = ({ label, desc, k }) => (
@@ -107,6 +160,21 @@ export default function PrivacySettingsScreen() {
               <RowToggle label="Show online status" desc="Let others see when you're online." k="onlineStatus" icon="circle"/>
               <RowToggle label="Show activity feed" desc="Allow others to see your recent activity in the feed." k="activityFeed" icon="bar_chart"/>
               <RowToggle label="Allow friend requests" desc="Let others send you friend requests." k="friendReq" icon="group_add"/>
+              {/* Not a RowToggle: this one is gated on age verification and is
+                  mirrored to localStorage, so it cannot be bound to `vals`. */}
+              {nsfwAvailable && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 0' }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, color: C.text }}>Show adult content</div>
+                    <div style={{ fontSize: 13, color: C.textDim, marginTop: 2 }}>
+                      {isAgeVerified(profile)
+                        ? 'Include content marked NSFW in your feed. Off by default.'
+                        : 'Requires age verification. Off by default.'}
+                    </div>
+                  </div>
+                  <Toggle checked={showNsfw} onChange={toggleNsfw} />
+                </div>
+              )}
               <div
                 style={{ ...rowStyle, cursor: 'pointer' }}
                 onClick={() => navigate('/settings/export-data')}

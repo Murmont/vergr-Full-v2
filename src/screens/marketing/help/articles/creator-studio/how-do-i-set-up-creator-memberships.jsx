@@ -1,7 +1,7 @@
 // Help center article: How do I set up creator memberships?
 
 export default {
-  summary: "Creator Studio, then Membership Tiers (a Pro plan feature, and identity verification is required first). Build one or more tiers: name, monthly Coin price, perks, an optional member badge, optional seat limit, and optionally a private community group that paying members join automatically. Publish, and the tiers appear on your profile for fans to subscribe. You keep 90% of every payment.",
+  summary: "Creator Studio, then Membership Tiers (a Pro plan feature, and identity verification is required first). Build one or more tiers: name, monthly Coin price, perks, an optional member badge, optional seat limit, and optionally a private community group that paying members join automatically. Publish, and the tiers appear on your profile for fans to subscribe. VERGR pays you 50% to 80% of every payment.",
   updated: "2026-07-02",
   body: [
     {
@@ -31,7 +31,7 @@ export default {
     {
       list: [
         "Fans pay in Coins, monthly, auto-renewing every 30 days.",
-        "You receive 90% of every payment: the platform fee is a flat 10%.",
+        "VERGR pays you a share of every payment: 50% to start, rising to 80% as your lifetime earnings grow.",
         "Cancellations keep their perks until the paid period ends, then drop off automatically."
       ]
     },

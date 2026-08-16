@@ -13,6 +13,7 @@
 // Use this anywhere we'd otherwise render `<video ... controls />`.
 import { useRef, useState } from 'react';
 import Icon from '../Icon';
+import { pickVideoUrl, primeAdaptiveConfig } from '../../utils/adaptiveVideo';
 
 const fmtClock = (s) => {
   s = Number(s);
@@ -43,6 +44,9 @@ export default function InlineVideoPlayer({
   // (Instagram model) with a centered heart pop; the single tap (play/pause) is
   // deferred 250ms so the 2nd tap can cancel it. Absent = instant play as before.
   onDoubleTapLike,
+  // Optional adaptive renditions (`post.adaptiveRenditions`). ABSENT or empty
+  // means this component behaves EXACTLY as it always has: it plays `src`.
+  renditions,
 }) {
   const videoRef = useRef(null);
   const containerRef = useRef(null);
@@ -122,7 +126,7 @@ export default function InlineVideoPlayer({
     >
       <video
         ref={videoRef}
-        src={src}
+        src={resolvedSrc}
         poster={poster}
         playsInline
         preload="metadata"

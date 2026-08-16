@@ -5,7 +5,7 @@
 // Top-level: summary (1-2 sentences, answer-first), updated (YYYY-MM-DD), body [].
 
 export default {
-  summary: "Not for the social side. You can sign up, post, stream, watch, and chat without identity verification. You only need a one-time ID check to use the wallet, receive tips you cash out, or withdraw earnings.",
+  summary: "Not for the social side. You can sign up, post, stream, watch, and chat without identity verification. You only need a one-time ID check to use the wallet or to be paid a revenue share.",
   updated: "2026-06-06",
   body: [
     {
@@ -26,9 +26,9 @@ export default {
     },
     {
       list: [
-        "Using the wallet and converting Coins to Gems.",
+        "Using the wallet and buying Coins.",
         "Selling paid access to your streams.",
-        "Withdrawing your earnings."
+        "Seeing your earnings."
       ]
     },
     {

@@ -11,7 +11,7 @@ export default {
       "Set a new PIN."
     ]},
     { h2: "If you cannot reset it" },
-    { p: "If you have lost access to your account or 2FA as well, contact support at support@vergr.app. Your Coins and Gems remain in your wallet the whole time — a forgotten PIN never causes loss of funds." },
+    { p: "If you have lost access to your account or 2FA as well, contact support at support@vergr.app. Your Coins remain in your wallet the whole time — a forgotten PIN never causes loss of Coins." },
     { note: "Never share your PIN. VERGR support will never ask you for it." },
     { cta: [
       { to: "/platform/help/how-do-i-set-up-my-wallet-pin", label: "Setting up your PIN" },

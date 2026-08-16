@@ -24,6 +24,7 @@ import HlsPlayer from '../../components/streams/HlsPlayer';
 import LadderPlayer from './LadderPlayer';
 import TwitchMirrorPlayer from '../../components/streams/TwitchMirrorPlayer';
 import { getPlaybackUrl } from '../../utils/streamConfig';
+import { streamPremium } from '../../utils/streamVisibility';
 import { withRef } from '../../utils/shareRef';
 import { useAuth } from '../../context/AuthContext';
 import UserAvatar from '../../components/UserAvatar';
@@ -510,21 +511,63 @@ export function LiveSlide({ stream, navigate }) {
   const viewers = stream.viewerCount || 0;
   const enter = () => navigate(`/watch/${stream.id}`);
 
+  // A PREMIUM live never autoplays here.
+  //
+  // Not merely because it cannot (the server withholds hlsUrl from a paid
+  // stream, so there is nothing to play) but because it MUST NOT: a looping
+  // preview of paid content is the paywall leaking, handing every scroller a
+  // free sample of the thing they are being asked to buy. It shows a still and
+  // a price instead, which is also how Tango presents these.
+  const { isPremium, priceCoins } = streamPremium(stream);
+  const still = stream.thumbnailUrl || stream.coverUrl || stream.thumbUrl || null;
+
   return (
     <div className="absolute inset-0 bg-black" onClick={enter}>
-      {isTwitch ? (
+      {isPremium ? (
+        <>
+          {still
+            ? <img src={still} alt="" className="w-full h-full object-cover opacity-60" />
+            : <div className="w-full h-full bg-gradient-to-br from-brand-violet/30 via-black to-brand-pink/20" />}
+          <div className="absolute inset-0 flex items-center justify-center">
+            <Icon name="lock" className="text-white/85 text-[56px] drop-shadow-lg" />
+          </div>
+        </>
+      ) : isTwitch ? (
         <TwitchMirrorPlayer username={stream.twitchChannel} autoplay muted fill />
       ) : playbackUrl ? (
         <HlsPlayer src={playbackUrl} controls={false} muted autoPlay className="w-full h-full" />
       ) : (
         <div className="w-full h-full flex items-center justify-center text-white/40 text-sm">Live</div>
       )}
-      <div className="absolute top-20 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1.5 px-3 py-1 rounded-full bg-brand-ember text-white text-[11px] font-bold tracking-wider shadow-lg">
-        <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" /> LIVE
+
+      <div
+        className="absolute top-20 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1.5 px-3 py-1 rounded-full text-white text-[11px] font-bold tracking-wider shadow-lg"
+        style={{ background: isPremium ? 'linear-gradient(135deg, #C87FFF 0%, #7B1FFF 100%)' : '#F04060' }}
+      >
+        {isPremium ? (
+          <>
+            PREMIUM
+            {priceCoins > 0 && (
+              <>
+                <Icon name="paid" size={12} className="text-brand-gold-light" />
+                <span className="font-dmmono tabular-nums">{priceCoins.toLocaleString()}</span>
+              </>
+            )}
+          </>
+        ) : (
+          <><span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" /> LIVE</>
+        )}
       </div>
+
       <div className="absolute bottom-0 left-0 right-0 z-10 px-4 pb-10 bg-gradient-to-t from-black/85 via-black/40 to-transparent safe-bottom">
         <div className="flex items-center gap-2.5 mb-3">
-          <UserAvatar src={stream.hostAvatar} size={44} isLive className="border-2 border-brand-ember" />
+          <UserAvatar
+            src={stream.hostAvatar}
+            size={44}
+            isLive
+            isPremiumLive={isPremium}
+            className={isPremium ? 'border-2 border-brand-violet-light' : 'border-2 border-brand-ember'}
+          />
           <div className="min-w-0">
             <p className="text-white font-bold text-sm truncate">{stream.hostUsername || 'Live now'}</p>
             <p className="text-white/60 text-[11px] font-dmmono flex items-center gap-2">
@@ -533,8 +576,19 @@ export function LiveSlide({ stream, navigate }) {
             </p>
           </div>
         </div>
-        <button onClick={(e) => { e.stopPropagation(); enter(); }} className="w-full py-3 rounded-2xl bg-brand-ember text-white font-bold text-sm flex items-center justify-center gap-2">
-          <Icon name="play_arrow" size={20} /> Tap to watch live
+        <button
+          onClick={(e) => { e.stopPropagation(); enter(); }}
+          className="w-full py-3 rounded-2xl text-white font-bold text-sm flex items-center justify-center gap-2"
+          style={{ background: isPremium ? 'linear-gradient(135deg, #C87FFF 0%, #7B1FFF 100%)' : '#F04060' }}
+        >
+          {isPremium ? (
+            <>
+              <Icon name="lock_open" size={18} />
+              {priceCoins > 0 ? `Join for ${priceCoins.toLocaleString()} coins` : 'Join'}
+            </>
+          ) : (
+            <><Icon name="play_arrow" size={20} /> Tap to watch live</>
+          )}
         </button>
       </div>
     </div>
@@ -544,11 +598,27 @@ export function LiveSlide({ stream, navigate }) {
 // Cheap placeholder for a live slide that is NOT the active slot (avoids
 // spinning up extra HLS players in the prev/next window slots).
 function LivePoster({ stream }) {
+  const { isPremium, priceCoins } = streamPremium(stream);
   return (
     <div className="absolute inset-0 bg-black flex items-center justify-center">
-      {stream.thumbnailUrl && <img src={stream.thumbnailUrl} alt="" className="w-full h-full object-cover opacity-70" />}
-      <div className="absolute top-20 left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-3 py-1 rounded-full bg-brand-ember text-white text-[11px] font-bold tracking-wider">
-        <span className="w-1.5 h-1.5 rounded-full bg-white" /> LIVE
+      {stream.thumbnailUrl && <img src={stream.thumbnailUrl} alt="" className={`w-full h-full object-cover ${isPremium ? 'opacity-50' : 'opacity-70'}`} />}
+      <div
+        className="absolute top-20 left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-3 py-1 rounded-full text-white text-[11px] font-bold tracking-wider"
+        style={{ background: isPremium ? 'linear-gradient(135deg, #C87FFF 0%, #7B1FFF 100%)' : '#F04060' }}
+      >
+        {isPremium ? (
+          <>
+            PREMIUM
+            {priceCoins > 0 && (
+              <>
+                <Icon name="paid" size={12} className="text-brand-gold-light" />
+                <span className="font-dmmono tabular-nums">{priceCoins.toLocaleString()}</span>
+              </>
+            )}
+          </>
+        ) : (
+          <><span className="w-1.5 h-1.5 rounded-full bg-white" /> LIVE</>
+        )}
       </div>
     </div>
   );

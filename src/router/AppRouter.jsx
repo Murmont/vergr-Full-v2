@@ -140,6 +140,29 @@ function RouteFallback() {
   );
 }
 
+/**
+ * Suspense fallback for a Creator Studio route.
+ *
+ * The global RouteFallback renders a full-width, full-height feed skeleton with
+ * NO layout around it. On a studio route that painted edge-to-edge and then
+ * jumped sideways the moment CreatorLayout mounted and the sidebar appeared.
+ *
+ * CreatorLayout is imported eagerly, so it can render inside the fallback while
+ * the screen's lazy chunk is still in flight. The nav is therefore present from
+ * the first frame and nothing shifts when the screen arrives.
+ */
+function creatorChunk(page, title, subtitle, Skeleton, children) {
+  return (
+    <Suspense fallback={
+      <CreatorLayout page={page} title={title} subtitle={subtitle}>
+        <Skeleton />
+      </CreatorLayout>
+    }>
+      {children}
+    </Suspense>
+  );
+}
+
 function SplashHandoff() {
   const { loading } = useAuth();
   useEffect(() => {
@@ -228,6 +251,7 @@ function RootRoute() {
 // Auth
 const SplashScreen = lazy(() => import('../screens/auth/SplashScreen'));
 import LoginScreen from '../screens/auth/LoginScreen';
+import ProSubscriptionSite from '../screens/marketing/ProSubscriptionSite';
 const SignUpStep1 = lazy(() => import('../screens/auth/SignUpStep1'));
 const SignUpStep2 = lazy(() => import('../screens/auth/SignUpStep2'));
 const InviteLandingScreen = lazy(() => import('../screens/auth/InviteLandingScreen'));
@@ -246,6 +270,8 @@ import {
   LandingScreen,
   StoreScreen,
   DownloadScreen,
+  DesktopAppScreen,
+  MobileAppScreen,
   HelpScreen as MarketingHelpScreen,
   HelpCategoryScreen,
   HelpArticleScreen,
@@ -266,9 +292,6 @@ import {
   LearnSquadsScreen,
   LearnClipsScreen,
   LearnCoinsScreen,
-  MakeMoneyGamingScreen,
-  LegitScreen,
-  PlayGameScreen,
   LinkInBioScreen,
 } from '../screens/marketing/marketingLazy';
 
@@ -464,8 +487,6 @@ const TransactionFiltersScreen = lazy(() => import('../screens/wallet/Transactio
 const RequestPayoutScreen = lazy(() => import('../screens/wallet/RequestPayoutScreen'));
 const PayoutSuccessScreen = lazy(() => import('../screens/wallet/PayoutSuccessScreen'));
 const WalletSecurityScreen = lazy(() => import('../screens/wallet/WalletSecurityScreen'));
-const PayoutStatusScreen = lazy(() => import('../screens/wallet/PayoutScreens').then((m) => ({ default: m.PayoutStatusScreen })));
-const PayoutHistoryScreen = lazy(() => import('../screens/wallet/PayoutScreens').then((m) => ({ default: m.PayoutHistoryScreen })));
 const SavedAddressesScreen = lazy(() => import('../screens/wallet/PayoutScreens').then((m) => ({ default: m.SavedAddressesScreen })));
 
 // Wallet v2 (Session 1 redesign) — own layout, own routes, own onboarding.
@@ -486,9 +507,6 @@ const WalletBuyScreen = lazy(() => import('../screens/wallet/v2/BuyScreen'));
 // Mobile basket. Desktop uses the slide-in drawer instead; both render the same
 // CartContents so the lines and totals cannot diverge.
 const WalletCartScreen = lazy(() => import('../screens/wallet/v2/CartScreen'));
-const WalletConvertScreen = lazy(() => import('../screens/wallet/v2/ConvertScreen'));
-const WalletWithdrawScreen = lazy(() => import('../screens/wallet/v2/WithdrawScreen'));
-const WalletNewAddressScreen = lazy(() => import('../screens/wallet/v2/NewAddressScreen'));
 const WalletHistoryScreen = lazy(() => import('../screens/wallet/v2/HistoryScreen'));
 const WalletSettingsV2Screen = lazy(() => import('../screens/wallet/v2/SettingsScreen'));
 const WalletKycScreen = lazy(() => import('../screens/wallet/v2/KycScreen'));
@@ -496,23 +514,23 @@ const WalletHelpV2Screen = lazy(() => import('../screens/wallet/v2/HelpScreen'))
 // NATIVE-APP-ONLY wallet screens (single-column, immune to the Android WebView's
 // inflated layout width). Desktop + mobile-web keep the v2 screens above.
 const NativeHomeScreen = lazy(() => import('../screens/wallet/native/NativeWalletScreens').then((m) => ({ default: m.NativeHomeScreen })));
-const NativeConvertScreen = lazy(() => import('../screens/wallet/native/NativeWalletScreens').then((m) => ({ default: m.NativeConvertScreen })));
 const NativeSettingsScreen = lazy(() => import('../screens/wallet/native/NativeWalletScreens').then((m) => ({ default: m.NativeSettingsScreen })));
 const NativeHistoryScreen = lazy(() => import('../screens/wallet/native/NativeWalletScreens').then((m) => ({ default: m.NativeHistoryScreen })));
 const NativeKycScreen = lazy(() => import('../screens/wallet/native/NativeWalletScreens').then((m) => ({ default: m.NativeKycScreen })));
 const NativeBuyScreen = lazy(() => import('../screens/wallet/native/NativeWalletScreens').then((m) => ({ default: m.NativeBuyScreen })));
-const NativeDepositScreen = lazy(() => import('../screens/wallet/native/NativeWalletScreens').then((m) => ({ default: m.NativeDepositScreen })));
 import {
   SecurityScreen          as WalletSecurityHubScreen,
   SecurityPinScreen       as WalletSecurityPinScreen,
   SecurityTotpScreen      as WalletSecurityTotpScreen,
-  SecurityAddressesScreen as WalletSecurityAddressesScreen,
-  SecurityDepositScreen   as WalletSecurityDepositScreen,
 } from '../screens/wallet/v2/SecurityScreens';
 
 // Creator
 const CreatorDashboardScreen = lazy(() => import('../screens/creator/CreatorDashboardScreen'));
+const CreatorHomeScreen = lazy(() => import('../screens/creator/CreatorHomeScreen'));
 const CreatorEarningsScreen = lazy(() => import('../screens/creator/CreatorEarningsScreen'));
+const BecomeCreatorScreen = lazy(() => import('../screens/creator/BecomeCreatorScreen'));
+const PayoutSetupScreen = lazy(() => import('../screens/creator/PayoutScreens').then((m) => ({ default: m.PayoutSetupScreen })));
+const PayoutStatementScreen = lazy(() => import('../screens/creator/PayoutScreens').then((m) => ({ default: m.PayoutStatementScreen })));
 const CreatorContentScreen = lazy(() => import('../screens/creator/CreatorContentScreen'));
 const CreatorScheduleScreen = lazy(() => import('../screens/creator/CreatorScheduleScreen'));
 const CreatorAudienceScreen = lazy(() => import('../screens/creator/CreatorAudienceScreen'));
@@ -565,6 +583,7 @@ function VergrMeHostRoute() {
 }
 const VerificationPendingScreen = lazy(() => import('../screens/creator/VerificationPendingScreen'));
 import CreatorLayout from '../components/creator/CreatorLayout';
+import { AnalyticsSkeleton, EarningsSkeleton, HomeSkeleton, PayoutSetupSkeleton, StatementSkeleton, PanelListSkeleton } from '../components/creator/StudioSkeletons';
 
 // Streams
 const GoLiveSetupScreen = lazy(() => import('../screens/streams/GoLiveSetupScreen'));
@@ -610,6 +629,7 @@ const CreateTournamentScreen = lazy(() => import('../screens/tournaments/CreateT
 // CreateTournamentScreen in the /create-tournament route below.
 const CreateTournamentV2 = lazy(() => import('../screens/tournaments/CreateTournamentV2'));
 const EventLandingScreen = lazy(() => import('../screens/events/EventLandingScreen'));
+const CreateEventScreen = lazy(() => import('../screens/events/CreateEventScreen'));
 const ModeratorMatchControlScreen = lazy(() => import('../screens/tournaments/ModeratorMatchControlScreen'));
 const TournamentListScreen = lazy(() => import('../screens/tournaments/TournamentListScreen'));
 const TournamentApplicationsScreen = lazy(() => import('../screens/tournaments/TournamentApplicationsScreen'));
@@ -686,6 +706,17 @@ function NavOriginTracker() {
 }
 
 export default function AppRouter() {
+  // pro.vergr.app is the SUBSCRIPTION product on its own domain, and it is a
+  // completely separate surface: its own nav, its own footer, its own copies of
+  // Terms/Refund/Privacy, and no route anywhere near Coins or the wallet. See
+  // ProSubscriptionSite.jsx for why that separation is load-bearing.
+  //
+  // Gated on hostname and returned BEFORE the providers so none of the app
+  // shell, auth, presence or cart mounts on that host. Every other hostname is
+  // untouched by this branch.
+  const host = typeof window !== 'undefined' ? window.location.hostname : '';
+  if (host === 'pro.vergr.app') return <ProSubscriptionSite />;
+
   return (
     <BrowserRouter>
       <AuthProvider>
@@ -727,6 +758,8 @@ export default function AppRouter() {
                     <Route path="/platform" element={<LandingScreen />} />
                     <Route path="/platform/store" element={<StoreScreen />} />
                     <Route path="/platform/download" element={<DownloadScreen />} />
+                    <Route path="/platform/download/mobile" element={<MobileAppScreen />} />
+                    <Route path="/platform/download/desktop" element={<DesktopAppScreen />} />
                     <Route path="/platform/help" element={<MarketingHelpScreen />} />
                     <Route path="/platform/help/category/:catId" element={<HelpCategoryScreen />} />
                     <Route path="/platform/help/:slug" element={<HelpArticleScreen />} />
@@ -735,6 +768,17 @@ export default function AppRouter() {
                     <Route path="/platform/acceptable-use"        element={<LegalScreen type="acceptable_use" />} />
                     <Route path="/platform/cookies"               element={<LegalScreen type="cookies" />} />
                     <Route path="/platform/refunds"              element={<LegalScreen type="refunds" />} />
+                    {/* Compliance policies. Payment partners and app stores ask for these
+                        by name, so each one keeps its own URL and its checklist title. */}
+                    <Route path="/platform/content-moderation" element={<LegalScreen type="content_moderation" />} />
+                    <Route path="/platform/identity-and-consent" element={<LegalScreen type="idv_consent" />} />
+                    <Route path="/platform/age-verification" element={<LegalScreen type="age_verification" />} />
+                    <Route path="/platform/anti-slavery" element={<LegalScreen type="anti_slavery" />} />
+                    <Route path="/platform/csam-policy" element={<LegalScreen type="csam" />} />
+                    <Route path="/platform/law-enforcement" element={<LegalScreen type="law_enforcement" />} />
+                    <Route path="/platform/aml-policy" element={<LegalScreen type="aml" />} />
+                    <Route path="/platform/anti-fraud" element={<LegalScreen type="anti_fraud" />} />
+                    <Route path="/platform/creator-agreement" element={<LegalScreen type="creator_agreement" />} />
                     {/* Required by Google Play's Child Safety Standards policy —
                         the declaration points at this URL, so it must stay live
                         and publicly reachable. */}
@@ -754,11 +798,11 @@ export default function AppRouter() {
                     <Route path="/platform/learn/squads" element={<LearnSquadsScreen />} />
                     <Route path="/platform/learn/clips" element={<LearnClipsScreen />} />
                     <Route path="/platform/learn/coins" element={<LearnCoinsScreen />} />
-                    {/* /platform/make-money-gaming, /platform/legit and
-                        /platform/play are retired: an earnings-claim page, a
-                        page arguing our own legitimacy, and a per-game landing
-                        page all read badly to a payment underwriter. Screen
-                        files are kept; re-add the routes to restore. */}
+                    {/* The growth funnel (/platform/make-money-gaming, /platform/legit,
+                        /platform/play) was REMOVED 2026-08-16, not just unrouted: an
+                        earnings-claim page, a page arguing our own legitimacy, and
+                        per-game money pages, all built on tournament prize pools,
+                        money matches and withdrawal, none of which exist. */}
                     <Route path="/linkinbio" element={<LinkInBioScreen />} />
 
                     {/* Public ticketed-event landing page (share target, works logged-out) */}
@@ -931,20 +975,20 @@ export default function AppRouter() {
                       <Route path="/transaction/:txId" element={<TransactionReceiptScreen />} />
                       <Route path="/transactions/filter" element={<TransactionFiltersScreen />} />
                       <Route path="/payout-success"          element={<PayoutSuccessScreen />} />
-                      <Route path="/wallet/payout/history"   element={<PayoutHistoryScreen />} />
-                      <Route path="/wallet/payout/:payoutId" element={<PayoutStatusScreen />} />
 
                       {/* Legacy → v2 redirects (kept inside MainLayout block
                           so they're caught by the same ProtectedRoute gate). */}
                       <Route path="/buy-coins"          element={<Navigate to="/wallet/buy" replace />} />
-                      <Route path="/request-payout"     element={<Navigate to="/wallet/withdraw" replace />} />
-                      <Route path="/wallet/payout"      element={<Navigate to="/wallet/withdraw" replace />} />
-                      <Route path="/wallet/addresses"   element={<Navigate to="/wallet/security/addresses" replace />} />
+                      <Route path="/request-payout"     element={<Navigate to="/creator/earnings" replace />} />
+                      <Route path="/wallet/payout"      element={<Navigate to="/creator/earnings" replace />} />
 
                       <Route path="/verification-pending" element={<VerificationPendingScreen />} />
 
                       {/* Streams */}
                       <Route path="/go-live" element={<GuestRouteGate action="go live">{IS_NATIVE_BUILD ? <NativeGoLiveScreen /> : <GoLiveSetupScreen />}</GuestRouteGate>} />
+                      {/* Create a ticketed EVENT (live show, watch party, Q&A, class...).
+                          Not a tournament: createTournamentSecure is retired and throws. */}
+                      <Route path="/events/create" element={<GuestRouteGate action="create an event"><CreateEventScreen /></GuestRouteGate>} />
                       <Route path="/go-live/co-stream" element={<GuestRouteGate action="co-stream">{IS_NATIVE_BUILD ? <NativeCoStreamingScreen /> : <CoStreamingScreen />}</GuestRouteGate>} />
                       <Route path="/co-stream/invite/:inviteId" element={<GuestRouteGate action="co-stream">{IS_NATIVE_BUILD ? <NativeCoStreamInviteScreen /> : <CoStreamInviteScreen />}</GuestRouteGate>} />
                       <Route path="/stream/:streamId" element={<LiveStreamScreen />} />
@@ -1039,16 +1083,11 @@ export default function AppRouter() {
                           alternative billing, so the basket offers both rails and the
                           buyer picks; see PaymentMethodPicker. */}
                       <Route path="/wallet/cart"                     element={<WalletCartScreen />} />
-                      <Route path="/wallet/convert"                  element={IS_NATIVE_BUILD ? <NativeConvertScreen /> : <WalletConvertScreen />} />
-                      <Route path="/wallet/withdraw"                 element={<WalletWithdrawScreen />} />
-                      <Route path="/wallet/withdraw/new-address"     element={<WalletNewAddressScreen />} />
                       <Route path="/wallet/history"                  element={IS_NATIVE_BUILD ? <NativeHistoryScreen /> : <WalletHistoryScreen />} />
                       <Route path="/wallet/settings"                 element={IS_NATIVE_BUILD ? <NativeSettingsScreen /> : <WalletSettingsV2Screen />} />
                       <Route path="/wallet/security"                 element={<WalletSecurityHubScreen />} />
                       <Route path="/wallet/security/pin"             element={<WalletSecurityPinScreen />} />
                       <Route path="/wallet/security/totp"            element={<WalletSecurityTotpScreen />} />
-                      <Route path="/wallet/security/addresses"       element={<WalletSecurityAddressesScreen />} />
-                      <Route path="/wallet/security/deposit"         element={IS_NATIVE_BUILD ? <NativeDepositScreen /> : <WalletSecurityDepositScreen />} />
                       <Route path="/wallet/kyc"                      element={IS_NATIVE_BUILD ? <NativeKycScreen /> : <WalletKycScreen />} />
                       <Route path="/wallet/referral"                 element={<WalletReferralScreen />} />
                       <Route path="/wallet/help"                     element={<WalletHelpV2Screen />} />
@@ -1099,13 +1138,17 @@ export default function AppRouter() {
                     {/* ---------- CREATOR STUDIO (own layout — sidebar + topbar) ---------- */}
                     <Route element={<ProtectedRoute><Outlet /></ProtectedRoute>}>
                       <Route path="/creator" element={<Navigate to="/creator/dashboard" replace />} />
-                      <Route path="/creator/dashboard"  element={IS_NATIVE_BUILD ? <NativeCreatorDashboardScreen /> : <CreatorDashboardScreen />} />
-                      <Route path="/creator/earnings"   element={IS_NATIVE_BUILD ? <NativeCreatorEarningsScreen /> : <CreatorEarningsScreen />} />
+                      <Route path="/creator/dashboard"  element={IS_NATIVE_BUILD ? <NativeCreatorDashboardScreen /> : creatorChunk('home', 'Home', 'What happened, and what to do next', HomeSkeleton, <CreatorHomeScreen />)} />
+                      <Route path="/creator/dashboard/old" element={<CreatorDashboardScreen />} />
+                      <Route path="/creator/apply"      element={<BecomeCreatorScreen />} />
+                      <Route path="/creator/earnings"   element={IS_NATIVE_BUILD ? <NativeCreatorEarningsScreen /> : creatorChunk('earnings', 'Earnings', 'Your revenue share and payouts', EarningsSkeleton, <CreatorEarningsScreen />)} />
+                      <Route path="/creator/earnings/setup" element={creatorChunk('earnings', 'Payout setup', 'Four steps, once', PayoutSetupSkeleton, <PayoutSetupScreen />)} />
+                      <Route path="/creator/earnings/statement/:runId" element={creatorChunk('earnings', 'Statement', null, StatementSkeleton, <PayoutStatementScreen />)} />
                       <Route path="/creator/content"    element={IS_NATIVE_BUILD ? <NativeCreatorContentScreen /> : <CreatorContentScreen />} />
                       <Route path="/creator/schedule"   element={IS_NATIVE_BUILD ? <NativeCreatorScheduleScreen /> : <CreatorScheduleScreen />} />
-                      <Route path="/creator/audience"   element={IS_NATIVE_BUILD ? <NativeCreatorAudienceScreen /> : <CreatorAudienceScreen />} />
+                      <Route path="/creator/audience"   element={IS_NATIVE_BUILD ? <NativeCreatorAudienceScreen /> : creatorChunk('audience', 'Audience', 'Who is watching', PanelListSkeleton, <CreatorAudienceScreen />)} />
                       <Route path="/creator/community"  element={IS_NATIVE_BUILD ? <NativeCreatorCommunityScreen /> : <CreatorCommunityScreen />} />
-                      <Route path="/creator/analytics"  element={IS_NATIVE_BUILD ? <NativeCreatorAnalyticsScreen /> : <CreatorLayout page="analytics" title="Analytics" subtitle="Deep dive into your performance" requiredTier="lite" lockDescription="Detailed monthly analytics with growth, engagement and revenue breakdowns. Upgrade to Lite to unlock."><MonthlyAnalyticsScreen embedded /></CreatorLayout>} />
+                      <Route path="/creator/analytics"  element={IS_NATIVE_BUILD ? <NativeCreatorAnalyticsScreen /> : creatorChunk('analytics', 'Analytics', 'What is working, and when', AnalyticsSkeleton, <MonthlyAnalyticsScreen />)} />
                       <Route path="/creator/quests"     element={IS_NATIVE_BUILD ? <NativeCreatorQuestsScreen /> : <CreatorLayout page="quests" title="Creator Quests" subtitle="Earn VP — level up your creator rank"><CreatorQuestsScreen embedded /></CreatorLayout>} />
                       <Route path="/creator/membership" element={IS_NATIVE_BUILD ? <NativeCreatorMembershipScreen /> : <CreatorLayout page="memberships" title="Membership Tiers" subtitle="Offer paid perks to your fans" requiredTier="pro" lockDescription="Build paid tiers with perks, Discord roles and monthly earnings caps. Upgrade to Pro to enable."><MembershipTiersScreen embedded /></CreatorLayout>} />
                       <Route path="/creator/ads"        element={IS_NATIVE_BUILD ? <NativeCreatorAdsScreen /> : <CreatorLayout page="ads" title="Ad Center" subtitle="Run targeted in-feed campaigns"><AdCenterScreen embedded /></CreatorLayout>} />

@@ -5,7 +5,7 @@
 // Top-level: summary (1-2 sentences, answer-first), updated (YYYY-MM-DD), body [].
 
 export default {
-  summary: "You can delete your account from your settings under account deletion. It is permanent: your profile, posts, and data are removed. Before you delete, withdraw any Gem balance, because you cannot recover funds after the account is gone. Verification may be required to confirm it is really you.",
+  summary: "You can delete your account from your settings under account deletion. It is permanent: your profile, posts, and data are removed. Any unpaid earnings are lost, because you cannot recover funds after the account is gone. Verification may be required to confirm it is really you.",
   updated: "2026-06-06",
   body: [
     {
@@ -16,9 +16,9 @@ export default {
     },
     {
       list: [
-        "Cash out first. Convert any Coins to Gems and withdraw your balance, because funds cannot be recovered once the account is deleted.",
+        "Settle up first. Any unspent Coins and any unpaid revenue share are lost when the account is deleted, and cannot be recovered afterwards.",
         "Download your data if you want a copy of anything.",
-        "Settle anything in progress, like an active membership or a pending withdrawal."
+        "Settle anything in progress, like an active membership or a pending payout."
       ]
     },
     {
@@ -44,8 +44,8 @@ export default {
           label: "What happens to my data"
         },
         {
-          to: "/platform/help/how-do-i-withdraw-my-earnings",
-          label: "Cash out first"
+          to: "/platform/help/how-do-i-see-my-earnings",
+          label: "See your earnings"
         }
       ]
     }

@@ -22,7 +22,7 @@ export default {
     },
     {
       list: [
-        "To unlock the wallet, creator earnings, and withdrawals safely.",
+        "To unlock the wallet and creator earnings safely.",
         "To stop fraud and stop anyone draining a stolen account.",
         "To keep underage users out of the money features.",
         "To stay compliant with the rules that apply to real-money platforms."

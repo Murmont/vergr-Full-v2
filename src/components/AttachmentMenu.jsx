@@ -30,7 +30,7 @@ const ACTIONS = [
   { id: 'music',    icon: 'music_note',           label: 'Audio',    color: 'text-brand-gold',         bg: 'bg-brand-gold/10' },
   { id: 'location', icon: 'location_on',          label: 'Location', color: 'text-green-400',          bg: 'bg-green-400/10' },
   { id: 'contact',  icon: 'person',               label: 'Contact',  color: 'text-brand-pink',         bg: 'bg-brand-pink/10' },
-  { id: 'ticket',   icon: 'confirmation_number',  label: 'Ticket',   color: 'text-brand-violet-light', bg: 'bg-brand-violet/10' },
+  { id: 'ticket',   icon: 'confirmation_number',  label: 'Event',   color: 'text-brand-violet-light', bg: 'bg-brand-violet/10' },
   // Priced media. Same PriceSheet as a locked post and a paid stream, so the
   // gesture is learned once and works everywhere a price is set.
   { id: 'locked',   icon: 'lock',                 label: 'Locked',   color: 'text-brand-gold',         bg: 'bg-brand-gold/10' },

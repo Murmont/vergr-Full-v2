@@ -4,7 +4,6 @@
 import a0 from './are-my-direct-messages-private.jsx';
 import a1 from './does-vergr-sell-my-data.jsx';
 import a2 from './does-vergr-store-my-messages.jsx';
-import a3 from './how-do-i-add-or-remove-a-withdrawal-address.jsx';
 import a4 from './how-do-i-block-someone.jsx';
 import a5 from './how-do-i-block-words-i-do-not-want-to-see.jsx';
 import a6 from './how-do-i-control-who-can-message-me.jsx';
@@ -21,7 +20,6 @@ import a16 from './how-does-vergr-keep-my-information-private.jsx';
 import a17 from './i-forgot-my-wallet-pin-what-do-i-do.jsx';
 import a18 from './is-my-vergr-wallet-secure.jsx';
 import a19 from './what-happens-to-my-data-when-i-delete-my-account.jsx';
-import a20 from './what-is-a-whitelisted-withdrawal-address-and-why-do-i-need-one.jsx';
 import a21 from './what-is-the-phone-allow-list.jsx';
 import a22 from './will-my-profile-show-up-on-google.jsx';
 
@@ -29,7 +27,6 @@ export default {
   'are-my-direct-messages-private': a0,
   'does-vergr-sell-my-data': a1,
   'does-vergr-store-my-messages': a2,
-  'how-do-i-add-or-remove-a-withdrawal-address': a3,
   'how-do-i-block-someone': a4,
   'how-do-i-block-words-i-do-not-want-to-see': a5,
   'how-do-i-control-who-can-message-me': a6,
@@ -46,7 +43,6 @@ export default {
   'i-forgot-my-wallet-pin-what-do-i-do': a17,
   'is-my-vergr-wallet-secure': a18,
   'what-happens-to-my-data-when-i-delete-my-account': a19,
-  'what-is-a-whitelisted-withdrawal-address-and-why-do-i-need-one': a20,
   'what-is-the-phone-allow-list': a21,
   'will-my-profile-show-up-on-google': a22,
 };

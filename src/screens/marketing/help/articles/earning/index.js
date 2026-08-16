@@ -9,7 +9,6 @@ import a4 from './how-do-i-earn-from-memberships.jsx';
 import a5 from './how-do-i-earn-from-my-squad.jsx';
 import a6 from './how-do-i-earn-from-referrals.jsx';
 import a7 from './how-do-i-earn-from-streaming.jsx';
-import a8 from './how-do-i-earn-from-tournaments.jsx';
 import a9 from './how-do-tips-work-and-how-much-do-i-keep.jsx';
 import a10 from './how-much-money-can-i-realistically-make.jsx';
 import a11 from './what-are-all-the-ways-to-make-money-on-vergr.jsx';
@@ -24,7 +23,6 @@ export default {
   'how-do-i-earn-from-my-squad': a5,
   'how-do-i-earn-from-referrals': a6,
   'how-do-i-earn-from-streaming': a7,
-  'how-do-i-earn-from-tournaments': a8,
   'how-do-tips-work-and-how-much-do-i-keep': a9,
   'how-much-money-can-i-realistically-make': a10,
   'what-are-all-the-ways-to-make-money-on-vergr': a11,

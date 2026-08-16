@@ -1,0 +1,232 @@
+/* src/styles/surface.css
+ *
+ * The material layer. This is the answer to "every box is a 1px outline".
+ *
+ * A surface should read as a SUBSTANCE, not a fill with a line around it. Four
+ * things do that and none of them need an image asset:
+ *
+ *   1. gradient   a real light field with a direction. Measured off the
+ *                 reference: 2x luminance range, brightest upper-left. This is
+ *                 what stops a surface reading as flat. An earlier pass added
+ *                 diagonal brushing; the reference has none (see below).
+ *   2. grain      inline feTurbulence, at the measured amplitude only. Almost
+ *                 subliminal, it is not a texture you should be able to see.
+ *   3. beam       the edge is a conic gradient rotating through a registered
+ *                 custom property, masked to a 1px ring, so light travels the
+ *                 perimeter instead of a dead hairline sitting on it.
+ *   4. washes     every coloured surface in the reference is anchored top-left
+ *                 and dies to near-black bottom-right. See .vg-wash.
+ *
+ * Deliberately generic class names: these are the app-wide replacement for
+ * `border border-white/[0.06]`, not one screen's private styling.
+ */
+
+/* Registered so it can be animated. Unregistered custom properties are strings
+ * and will not interpolate, which is why the naive version of this never moves. */
+@property --vg-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+/* ── Material surface ─────────────────────────────────────────────────────
+ * MEASURED off the founder's mockup, do not re-invent:
+ *   background is a plane from lum 14.3 at the top-left to 7.2 at the right,
+ *   a 2x range, hue cool (B exceeds R by ~1.5). Light comes from the UPPER
+ *   LEFT and falls off horizontally more than vertically.
+ *   Detrended grain sd is 0.43-0.71, i.e. +/-0.5 levels. Barely there.
+ *   Directional autocorrelation 0.34 / 0.30 / 0.29 / 0.11: NO brushing. An
+ *   earlier pass had visible diagonal streaks, which is not in the reference.
+ * The panel is not flat because of the GRADIENT, not because of texture. */
+.vg-material {
+  position: relative;
+  isolation: isolate;
+  background-color: #07080B;
+  overflow: hidden;
+}
+
+.vg-material::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    /* Key light, upper left. Alpha solved so the corner lands on #0E0E12. */
+    radial-gradient(125% 185% at 0% 0%, rgba(190, 205, 255, 0.030), transparent 64%),
+    /* Secondary fill down the left edge, where the measured field stays lifted. */
+    radial-gradient(60% 120% at 2% 45%, rgba(255, 255, 255, 0.016), transparent 72%),
+    /* Slight vertical fall, top brighter. */
+    linear-gradient(180deg, rgba(255, 255, 255, 0.010), transparent 58%);
+}
+
+/* Grain. feTurbulence rendered inline, no network request, no asset to ship.
+ * soft-light keeps it as tooth on the surface rather than grey haze on top. */
+.vg-grain::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.07;   /* measured grain is +/-0.5 levels, not a texture */
+  mix-blend-mode: soft-light;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 160px 160px;
+}
+
+/* ── Traveling edge light ───────────────────────────────────────────────────
+ * Masked to a 1px ring via xor compositing so it is a border, not a backdrop.
+ * Without @property support the conic still paints, it just does not rotate:
+ * a graceful loss of motion, never a missing edge. */
+.vg-beam::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  border-radius: inherit;
+  padding: 1px;
+  pointer-events: none;
+  background: conic-gradient(
+    from var(--vg-angle),
+    rgba(255, 255, 255, 0.11)  0deg,
+    rgba(255, 255, 255, 0.11) 26deg,
+    rgba(240, 190, 70, 0.26)  50deg,
+    rgba(240, 190, 70, 0.45)  70deg,
+    rgba(240, 190, 70, 0.24)  94deg,
+    rgba(255, 255, 255, 0.11) 150deg,
+    rgba(255, 255, 255, 0.055) 250deg,
+    rgba(255, 255, 255, 0.11) 360deg
+  );
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+          mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+          mask-composite: exclude;
+  animation: vg-orbit 7s linear infinite;
+}
+
+.vg-beam-violet::after {
+  background: conic-gradient(
+    from var(--vg-angle),
+    rgba(255, 255, 255, 0.05)  0deg,
+    rgba(255, 255, 255, 0.05) 24deg,
+    rgba(123, 31, 255, 0.45)  52deg,
+    rgba(180, 79, 255, 0.95)  70deg,
+    rgba(123, 31, 255, 0.40)  92deg,
+    rgba(255, 255, 255, 0.06) 150deg,
+    rgba(255, 255, 255, 0.05) 360deg
+  );
+}
+
+@keyframes vg-orbit { to { --vg-angle: 360deg; } }
+
+/* ── Additive bloom layer ──────────────────────────────────────────────────
+ * Emission is light ADDING to what is behind it. A semi-transparent blurred
+ * copy just averages with the backdrop and reads as smudge. plus-lighter sums
+ * the channels, which is what makes a hot core actually look hot.
+ * screen is the universally supported near-equivalent and is the floor here. */
+.vg-bloom { mix-blend-mode: screen; }
+@supports (mix-blend-mode: plus-lighter) {
+  .vg-bloom { mix-blend-mode: plus-lighter; }
+}
+
+/* ── Rules that fade out instead of stopping dead ───────────────────────────
+ * A divider that terminates at full strength reads as a box edge. One that
+ * fades at both ends reads as light and is why the reference has no "cage". */
+.vg-rule-v {
+  width: 1px;
+  align-self: stretch;
+  /* Measured: 1px, peak lum 89 (contrast 79 over the panel), warm, ramping in
+   * by 18% and out from 76%, and warming toward the bottom. Ran at a third of
+   * this strength before, which is why the zones read as unseparated. */
+  background: linear-gradient(
+    180deg,
+    transparent,
+    rgba(255, 246, 228, 0.34) 18%,
+    rgba(255, 238, 205, 0.35) 76%,
+    transparent
+  );
+}
+
+.vg-rule-h {
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 246, 228, 0.30) 18%,
+    rgba(255, 238, 205, 0.30) 76%,
+    transparent
+  );
+}
+
+/* ── Raised inner tile. No stroke: it lifts by value and shadow. ─────────── */
+/* Measured: fill sits only +4 lum over the panel (#0B0D11 against #07090D),
+ * with a lit top edge at lum 22 and a bottom edge DARKER than the panel at 6.
+ * It is a shallow lift, not a raised card. Ran ~3x too strong before. */
+.vg-tile {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.022), rgba(255, 255, 255, 0.008));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.055),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.55),
+    0 6px 18px -10px rgba(0, 0, 0, 0.9);
+  transition: transform 140ms cubic-bezier(.2, .8, .3, 1), background 140ms ease;
+}
+.vg-tile:hover  { background: linear-gradient(180deg, rgba(255,255,255,0.085), rgba(255,255,255,0.04)); }
+.vg-tile:active { transform: scale(0.985); }
+
+/* ── Ring segments draw in on mount ─────────────────────────────────────── */
+.vg-seg {
+  opacity: 0;
+  animation: vg-seg-in 420ms cubic-bezier(.2, .8, .3, 1) forwards;
+}
+@keyframes vg-seg-in {
+  from { opacity: 0; transform: scale(0.88); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+/* ── Knob halo pulse on the progress track ──────────────────────────────── */
+.vg-knob { animation: vg-knob-pulse 2.6s ease-in-out infinite; }
+@keyframes vg-knob-pulse {
+  0%, 100% { box-shadow: 0 0 0 3px rgba(240,165,0,0.16), 0 0 12px 1px rgba(240,165,0,0.55); }
+  50%      { box-shadow: 0 0 0 6px rgba(240,165,0,0.08), 0 0 20px 3px rgba(240,165,0,0.80); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vg-beam::after,
+  .vg-knob,
+  .vg-seg { animation: none; }
+  .vg-seg { opacity: 1; }
+}
+
+
+/* ── Coloured wash + lit edge ───────────────────────────────────────────────
+ * The single most repeated construction in the reference. Measured on all
+ * three stat cards and on the current tier row:
+ *   fill   a colour wash anchored TOP-LEFT, dying to near-black bottom-right
+ *          (green card: #1A3718 -> #060A0D, gold: #231B0B -> #0A0B0A,
+ *           violet: #190D21 -> #080710)
+ *   border 1px, saturated at the TOP (#33552D / #5C431B / #4F245F) and gone
+ *          by the bottom (#000105). It is a gradient, never a stroke.
+ * Drive it with --vg-accent (the border colour) and --vg-wash (the fill tint). */
+.vg-wash {
+  position: relative;
+  background:
+    radial-gradient(120% 150% at 0% 0%, var(--vg-wash, rgba(255,255,255,0.10)), transparent 66%),
+    #08090C;
+}
+.vg-wash::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
+  padding: 1px;
+  pointer-events: none;
+  background: linear-gradient(160deg,
+    var(--vg-accent, rgba(255,255,255,0.28)) 0%,
+    color-mix(in srgb, var(--vg-accent, rgba(255,255,255,0.28)) 45%, transparent) 34%,
+    transparent 72%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+          mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+          mask-composite: exclude;
+}

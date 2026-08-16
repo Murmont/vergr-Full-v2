@@ -171,7 +171,7 @@ export default function EarnCoinsScreen() {
     { img: '/brand/earn/quest-phone.webp', bg: '/brand/earn/bg-phone.webp', icon: 'phone', title: 'Add Phone Number', desc: 'Unlock contact invites', reward: '1000 VP', color: 'text-brand-violet-light', action: () => navigate('/messages/new') },
     { img: '/brand/earn/quest-tournaments.webp', bg: '/brand/earn/bg-tournaments.webp', icon: 'live_tv', title: 'Go Live', desc: 'Stream and receive tips from viewers', reward: 'Coins + VP', color: 'text-brand-ember', action: () => navigate('/go-live') },
     { img: '/brand/earn/quest-refer.webp', bg: '/brand/earn/bg-refer.webp', icon: 'person_add', title: 'Refer Friends', desc: 'Invite a friend who sets up properly', reward: '5000 VP (+3000 VP for them)', color: 'text-brand-pink', action: () => setActiveTab('special') },
-    { img: '/brand/earn/quest-levelup.webp', bg: '/brand/earn/bg-levelup.webp', icon: 'trending_up', title: 'Level Up', desc: 'Lower commission as you rank up: 30% → 10%', reward: 'Ranks 1–100', color: 'text-brand-gold', action: () => navigate('/settings/ranks') },
+    { img: '/brand/earn/quest-levelup.webp', bg: '/brand/earn/bg-levelup.webp', icon: 'trending_up', title: 'Level Up', desc: 'Rings, badges and standing as you rank up', reward: 'Ranks 1–100', color: 'text-brand-gold', action: () => navigate('/settings/ranks') },
     { bg: '/brand/earn/bg-liteplans.webp', icon: 'workspace_premium', title: 'Lite / Pro Plans', desc: '1.5×/2× VP + monthly VP & coins', reward: '+1k–3k VP / mo', color: 'text-brand-violet', action: () => navigate('/settings/subscription') },
   ];
 
@@ -203,8 +203,8 @@ export default function EarnCoinsScreen() {
             </div>
             <div className="p-3 rounded-xl bg-surface-2/50 text-center">
               <div className="mx-auto mb-1 w-fit"><VPIcon size={20} /></div>
-              <p className="text-brand-violet-light text-lg font-black font-dmmono">{wallet?.gems || 0}</p>
-              <p className="text-text-secondary text-[9px]">Gems (cashable)</p>
+              <p className="text-brand-violet-light text-lg font-black font-dmmono">{wallet?.totalEarnedCoinsGross || 0}</p>
+              <p className="text-text-secondary text-[9px]">Coins earned</p>
             </div>
             <div className="p-3 rounded-xl bg-surface-2/50 text-center">
               <div className="mx-auto mb-1 w-fit"><CoinIcon size={20} /></div>
@@ -249,9 +249,9 @@ export default function EarnCoinsScreen() {
       <WatchToEarnQuest />
 
       <div className="mx-4 lg:mx-6 mt-3">
-        <InfoTooltip id="earn_intro" icon="diamond" color="#B44FFF" title="Earning real money on VERGR" rightImage="/brand/earn/icon-real-money.webp">
-          Receive tips, memberships, and paid-stream access to earn <strong>coins</strong>, then convert coins to <strong>gems</strong> — gems are the cashable currency.
-          Complete quests, refer friends, and level up to earn <strong>VP</strong> — this levels up your profile and lowers your commission rate, meaning you keep more from every cash-out.
+        <InfoTooltip id="earn_intro" icon="diamond" color="#B44FFF" title="How earning works on VERGR" rightImage="/brand/earn/icon-real-money.webp">
+          Receive tips, memberships, and paid-stream access. That is revenue VERGR earns, and VERGR pays you a share of it on a schedule.
+          Complete quests, refer friends, and level up to earn <strong>VP</strong> — this levels up your profile and unlocks rings, badges and perks.
         </InfoTooltip>
       </div>
 
@@ -438,8 +438,8 @@ export default function EarnCoinsScreen() {
               </div>
               <div className="flex flex-col items-center text-center gap-1.5">
                 <div className="w-10 h-10 rounded-xl bg-brand-violet/15 flex items-center justify-center"><Icon name="diamond" size={20} className="text-brand-violet-light" /></div>
-                <p className="text-text-primary text-xs font-semibold">Cash Out</p>
-                <p className="text-text-muted text-[10px] leading-snug">Convert gems to real money</p>
+                <p className="text-text-primary text-xs font-semibold">Revenue share</p>
+                <p className="text-text-muted text-[10px] leading-snug">Vergr pays creators a share of what they make</p>
               </div>
               <div className="flex flex-col items-center text-center gap-1.5">
                 <div className="w-10 h-10 rounded-xl bg-brand-gold/15 flex items-center justify-center"><Icon name="verified_user" size={20} className="text-brand-gold" /></div>

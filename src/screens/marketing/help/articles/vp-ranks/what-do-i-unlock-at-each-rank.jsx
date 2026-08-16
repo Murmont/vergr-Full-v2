@@ -5,17 +5,17 @@
 // Top-level: summary (1-2 sentences, answer-first), updated (YYYY-MM-DD), body [].
 
 export default {
-  summary: "Climbing ranks lowers the commission you pay to convert Coins to Gems (from 30% down to a 15% floor), and gives you a colored avatar ring plus a collectible rank badge (30 in total). The higher you go, the more you keep and the more your status shows.",
+  summary: "Climbing ranks increases the share you keep of what your content earns (Vergr keeps 30% at the bottom, down to a 15% floor), and gives you a colored avatar ring plus a collectible rank badge (30 in total). The higher you go, the more you keep and the more your status shows.",
   updated: "2026-06-16",
   body: [
     {
       p: "Rank is not just a label, it comes with real perks that grow as you climb. Here is what gets better as you rank up."
     },
     {
-      h2: "Lower conversion commission"
+      h2: "Better revenue share"
     },
     {
-      p: "The headline perk. The cut taken when you convert Coins into Gems steps down with your lifetime VP, from 30% at the bottom to a 15% floor reached at 100,000 VP. For anyone who cashes out, this is money kept."
+      p: "The headline perk. The share Vergr keeps steps down with your lifetime VP, from 30% at the bottom to a 15% floor reached at 100,000 VP. For any earning creator, this is money kept."
     },
     {
       h2: "Avatar rings and badges"

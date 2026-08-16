@@ -15,7 +15,7 @@ const VP_HELP = [
   { slug: 'how-does-rank-lower-my-fees', icon: 'savings', label: 'How rank lowers your fees' },
   { slug: 'what-do-i-unlock-at-each-rank', icon: 'lock_open', label: 'What you unlock at each rank' },
   { slug: 'what-are-prestige-levels-and-how-are-they-different-from-vp-ranks', icon: 'workspace_premium', label: 'Prestige levels' },
-  { slug: 'how-do-i-convert-coins-into-gems', icon: 'currency_exchange', label: 'Convert coins into gems' },
+  { slug: 'how-do-i-check-my-coin-balance', icon: 'account_balance_wallet', label: 'Check your coin balance' },
 ];
 
 export default function PrestigeLevelsScreen() {

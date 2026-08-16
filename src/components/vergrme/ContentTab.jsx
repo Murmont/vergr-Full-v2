@@ -125,7 +125,7 @@ const BLOCK_DESC = {
   embed: 'Embed any iframe',
   email: 'A mailto contact button',
   message: 'Let visitors DM you on Vergr',
-  tip: 'Accept coin tips (keep 90%)',
+  tip: 'Accept coin tips (you keep 50-80%)',
   vergr_stream: 'Auto-shows when you go live',
   vergr_tournament: 'Promote one of your tournaments',
   vergr_event: 'Sell tickets to your event',

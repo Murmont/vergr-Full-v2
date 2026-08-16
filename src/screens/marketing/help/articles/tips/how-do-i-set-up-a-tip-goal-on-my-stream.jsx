@@ -31,7 +31,7 @@ export default {
       p: "Every tip during the stream adds to the goal, and the progress bar updates in real time for you and your viewers. When the goal is reached, it celebrates the milestone. Tip alerts also pop on screen as tips come in, so the room can see who is contributing."
     },
     {
-      note: "Tips still carry the standard flat 10% fee, so the creator receives 90% of each tip. The goal bar tracks the tipped amounts toward your target."
+      note: "Nothing is taken at send time; the creator accrues their revenue share of each tip. The goal bar tracks the tipped amounts toward your target."
     },
     {
       cta: [

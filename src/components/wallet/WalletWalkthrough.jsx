@@ -15,10 +15,10 @@ import { useEffect, useMemo, useRef, useState, memo } from 'react';
 import Icon from '../Icon';
 import { CoinGlyph, GemGlyph, WALLET_TOKENS } from './primitives';
 
-const TOTAL_BEATS = 8;
+const TOTAL_BEATS = 5;
 const BEAT_DURATION_MS = 4500;
 const CROSSFADE_MS = 400;
-const BEAT_LABELS = ['ARRIVAL', 'TWO CURRENCIES', 'EARNINGS', 'CASH OUT', 'PROTECTION', 'SEVEN DAYS', 'TRUST', 'BEGIN'];
+const BEAT_LABELS = ['ARRIVAL', 'EARNINGS', 'PROTECTION', 'TRUST', 'BEGIN'];
 
 const FONT_DISPLAY = 'Syne, system-ui, sans-serif';
 const FONT_MONO = 'DM Mono, monospace';
@@ -781,12 +781,9 @@ export default function WalletWalkthrough({ onComplete, onSkip }) {
 
   const renderBeat = () => {
     if (beat === 0) return <Beat1 />;
-    if (beat === 1) return <Beat2 />;
-    if (beat === 2) return <Beat3 />;
-    if (beat === 3) return <Beat4 />;
-    if (beat === 4) return <Beat5 />;
-    if (beat === 5) return <Beat6 />;
-    if (beat === 6) return <Beat7 />;
+    if (beat === 1) return <Beat3 />;
+    if (beat === 2) return <Beat5 />;
+    if (beat === 3) return <Beat7 />;
     return <Beat8 onBegin={onComplete} />;
   };
 

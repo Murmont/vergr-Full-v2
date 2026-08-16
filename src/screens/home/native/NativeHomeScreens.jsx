@@ -351,9 +351,8 @@ export function NativeEarnCoinsScreen() {
         <div className="absolute top-0 right-0 w-32 h-32 bg-brand-violet/5 rounded-full -translate-y-1/2 translate-x-1/2" />
         <div className="relative z-10">
           <p className="text-text-secondary text-xs uppercase tracking-wider font-bold mb-2">How You Earn</p>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 gap-3">
             <div className="p-3 rounded-xl bg-surface-2/50 text-center"><Icon name="star" size={20} className="text-brand-violet mx-auto mb-1" /><p className="text-brand-violet text-lg font-black font-dmmono">{wallet?.vp || 0}</p><p className="text-text-secondary text-[9px]">VP</p></div>
-            <div className="p-3 rounded-xl bg-surface-2/50 text-center"><div className="mx-auto mb-1 w-fit"><VPIcon size={20} /></div><p className="text-brand-violet-light text-lg font-black font-dmmono">{wallet?.gems || 0}</p><p className="text-text-secondary text-[9px]">Gems</p></div>
             <div className="p-3 rounded-xl bg-surface-2/50 text-center"><div className="mx-auto mb-1 w-fit"><CoinIcon size={20} /></div><p className="text-brand-gold text-lg font-black font-dmmono">{wallet?.balance || 0}</p><p className="text-text-secondary text-[9px]">Coins</p></div>
           </div>
           <button onClick={() => navigate('/settings/subscription')} className={`mt-3 w-full flex items-center justify-center gap-2 text-[11px] font-semibold py-2 rounded-full border ${vpMultiplier > 1 ? 'bg-brand-violet/15 border-brand-violet/30 text-brand-violet-light' : 'bg-brand-violet/15 border-brand-violet/30 text-brand-violet'}`}>
@@ -363,7 +362,7 @@ export function NativeEarnCoinsScreen() {
         </div>
       </div>
       <WatchToEarnQuest />
-      <div className="mx-4 mt-3"><InfoTooltip id="earn_intro" icon="diamond" color="#B44FFF" title="Earning real money on VERGR">Win tournaments to earn <strong>coins</strong>, then convert coins to <strong>gems</strong> (the cashable currency). Quests, referrals, and leveling up earn <strong>VP</strong> (lowers your commission).</InfoTooltip></div>
+      <div className="mx-4 mt-3"><InfoTooltip id="earn_intro" icon="diamond" color="#B44FFF" title="Earning real money on VERGR">Buy <strong>coins</strong> to support creators, and earn <strong>VP</strong> from quests, referrals and levelling up. If people pay for your content, Vergr pays you a share of that revenue on a schedule.</InfoTooltip></div>
       <div className="px-4 mt-6">
         <h3 className="font-syne font-bold text-lg mb-3">Ways to Earn</h3>
         <div className="grid grid-cols-2 gap-3">
@@ -512,9 +511,9 @@ export function NativeReferralScreen() {
         <div className="relative rounded-2xl overflow-hidden min-h-[160px] bg-surface-1 border border-surface-3">
           <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: "url('/brand/refer-hero-bg.webp')" }} />
           <div className="absolute inset-0 pointer-events-none" style={{ background: 'linear-gradient(100deg, rgba(11,11,20,0.82) 0%, rgba(13,5,32,0.55) 45%, rgba(13,5,32,0.10) 100%)' }} />
-          <div className="relative z-10 p-6"><h2 className="font-syne text-2xl font-black text-text-primary mb-2">Invite a friend, you both get VP</h2><p className="text-text-secondary text-sm">The more VP you have, the less commission you pay when you cash out.</p></div>
+          <div className="relative z-10 p-6"><h2 className="font-syne text-2xl font-black text-text-primary mb-2">Invite a friend, you both get VP</h2><p className="text-text-secondary text-sm">The more VP you have, the larger the share you keep of what your content earns.</p></div>
         </div>
-        <InfoTooltip id="refer_vp_explainer" icon="diamond" color="#B44FFF" title="What's VP?">VP is your Vergr progression score. The higher your VP, the lower the commission you pay when cashing out coins to gems, and the faster your profile levels up.</InfoTooltip>
+        <InfoTooltip id="refer_vp_explainer" icon="diamond" color="#B44FFF" title="What's VP?">VP is your Vergr progression score. The higher your VP, the larger the revenue share you keep as a creator, and the faster your profile levels up.</InfoTooltip>
         <div className="grid grid-cols-1 gap-4">
           <RewardCard label="You Earn" amount={REFERRAL_VP_REFERRER} color="#B44FFF" description="Your friend signs up via your link and verifies a phone number. Then you come back here and claim 5,000 VP." />
           <RewardCard label="Friend Earns" amount={REFERRAL_VP_REFEREE} color="#3D7FFF" description="After your friend verifies a phone number, they automatically get 3,000 VP, no need to claim anything." />

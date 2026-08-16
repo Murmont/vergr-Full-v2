@@ -10,7 +10,7 @@ export default {
     {
       steps: [
         "They visit your profile and see your membership tiers with prices and perks.",
-        "They pick a tier and confirm. The Coins move immediately: 90% to you, 10% platform fee.",
+        "They pick a tier and confirm. Your revenue share accrues immediately, at your current rate.",
         "Perks activate instantly: their chat badge shows in your streams, and if the tier has a linked private group, they are added to it automatically.",
         "Every 30 days the membership renews itself from their Coin balance until they cancel."
       ]

@@ -1,7 +1,7 @@
 // Help center article: What is VERGRs refund policy?
 
 export default {
-  summary: "Coin purchases and subscription payments are final once delivered, like most digital goods, with two big exceptions: charges made in error (duplicates, unauthorised use) are refundable within 30 days via support, and if a paid stream you bought access to never happens, that purchase is refunded in full. Withdrawals that have been sent are irreversible.",
+  summary: "Coin purchases and subscription payments are final once delivered, like most digital goods, with two big exceptions: charges made in error (duplicates, unauthorised use) are refundable within 30 days via support, and if a paid stream you bought access to never happens, that purchase is refunded in full.",
   updated: "2026-07-02",
   body: [
     {
@@ -21,12 +21,12 @@ export default {
       ]
     },
     {
-      h2: "Subscriptions and withdrawals"
+      h2: "Subscriptions and creator payouts"
     },
     {
       list: [
         "Subscriptions: cancel any time, you keep the benefits until the end of the period you paid for. No partial refunds for unused time.",
-        "Withdrawals: once a payout has been sent to your address, it cannot be recalled by anyone, including VERGR. Double-check the destination before confirming."
+        "Payouts: once Vergr has sent a payout it cannot be recalled. Keep your payout details accurate."
       ]
     },
     {

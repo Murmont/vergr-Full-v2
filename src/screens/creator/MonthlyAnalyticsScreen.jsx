@@ -2,12 +2,35 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useUser } from '../../context/UserContext';
 import { getUserPosts, getTransactions, getFollowers } from '../../firebase/firestore';
-import TopBar from '../../components/TopBar';
+import CreatorLayout from '../../components/creator/CreatorLayout';
 import CoinDisplay from '../../components/CoinDisplay';
-import { StackSkeleton } from '../../components/skeletons/GlassSkeletons';
+import { AnalyticsSkeleton } from '../../components/creator/StudioSkeletons';
 import Icon from '../../components/Icon';
+import { TrendLineChart, DonutChart, ActivityHeatmap, PALETTE } from '../../components/creator/charts';
+import '../../styles/surface.css';
 import { useLayout } from '../../context/LayoutContext';
 import useResponsive from '../../hooks/useResponsive';
+
+/**
+ * Panel surface, matched to Creator Studio home and Earnings.
+ *
+ * `.vg-material` + `.vg-grain` rather than a hairline border on `surface-1`:
+ * the founder ruling is that an outline on every box reads as cheap, and the
+ * fix is to separate surfaces by value and light instead of by stroke.
+ * See the material surface system notes in CLAUDE.md.
+ */
+function Section({ title, sub, children, className = '' }) {
+  return (
+    <div className={`vg-material vg-grain rounded-2xl overflow-hidden mb-3 ${className}`}>
+      <div className="relative z-[1] p-5">
+        {title && <h3 className="font-syne font-bold text-sm text-text-primary">{title}</h3>}
+        {sub && <p className="text-[11px] text-text-muted mt-0.5 mb-3">{sub}</p>}
+        {!sub && title && <div className="mb-3" />}
+        {children}
+      </div>
+    </div>
+  );
+}
 
 export default function MonthlyAnalyticsScreen({ embedded = false }) {
   const { isDesktop } = useResponsive();
@@ -55,6 +78,32 @@ export default function MonthlyAnalyticsScreen({ embedded = false }) {
           })
           .reduce((sum, tx) => sum + tx.amount, 0);
 
+        // Daily trend across the selected period.
+        const dayKey = (ms) => new Date(ms).toISOString().slice(0, 10);
+        const byDay = {};
+        const days = Math.round(periodMs / 86400000);
+        for (let d = days - 1; d >= 0; d--) {
+          const k = dayKey(Date.now() - d * 86400000);
+          byDay[k] = { name: k.slice(5), views: 0, likes: 0, comments: 0 };
+        }
+        // Per-format breakdown. Does not exist anywhere else in the studio,
+        // and it is the question an analytics tab is opened to answer.
+        const byFormat = {};
+        // 7x24 posting heatmap: which slots actually earn engagement.
+        const heat = Array.from({ length: 7 }, () => Array(24).fill(0));
+        for (const post of periodPosts) {
+          const t = post.createdAt?.toDate ? post.createdAt.toDate().getTime() : 0;
+          if (!t) continue;
+          const k = dayKey(t);
+          const v = post.viewCount || 0, li = post.likeCount || 0, c = post.commentCount || 0;
+          if (byDay[k]) { byDay[k].views += v; byDay[k].likes += li; byDay[k].comments += c; }
+          const fmt = post.type || 'text';
+          byFormat[fmt] = byFormat[fmt] || { posts: 0, views: 0, engagement: 0 };
+          byFormat[fmt].posts++; byFormat[fmt].views += v; byFormat[fmt].engagement += li + c;
+          const d = new Date(t);
+          heat[(d.getDay() + 6) % 7][d.getHours()] += li + c;
+        }
+
         const totalViews = periodPosts.reduce((s, p) => s + (p.viewCount || 0), 0);
         const totalLikes = periodPosts.reduce((s, p) => s + (p.likeCount || 0), 0);
         const totalComments = periodPosts.reduce((s, p) => s + (p.commentCount || 0), 0);
@@ -65,6 +114,13 @@ export default function MonthlyAnalyticsScreen({ embedded = false }) {
           followers: followers.length,
           engagement,
           postsCreated: periodPosts.length,
+          trend: Object.values(byDay),
+          formats: Object.entries(byFormat)
+            .map(([name, f]) => ({ name, ...f }))
+            .sort((a, b) => b.engagement - a.engagement),
+          // ActivityHeatmap wants 0-1, and its rows start on Monday.
+          heatMax: Math.max(1, ...heat.flat()),
+          heat,
           totalViews,
           totalLikes,
           totalComments,
@@ -100,34 +156,82 @@ export default function MonthlyAnalyticsScreen({ embedded = false }) {
       </div>
 
       {loading ? (
-        <StackSkeleton rows={5} height={88} />
+        <AnalyticsSkeleton />
       ) : stats ? (
         <div>
           {/* Summary cards */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
             {[
-              { label: 'Revenue', value: stats.revenue, icon: 'paid', color: 'text-brand-gold', bg: 'bg-brand-gold/10', prefix: '' },
+              { label: 'Views', value: formatNum(stats.totalViews), icon: 'visibility', color: 'text-brand-gold', bg: 'bg-brand-gold/10' },
               { label: 'Followers', value: formatNum(stats.followers), icon: 'group', color: 'text-brand-violet-light', bg: 'bg-brand-violet/10' },
               { label: 'Engagement', value: `${stats.engagement}%`, icon: 'trending_up', color: 'text-brand-pink', bg: 'bg-brand-pink/10' },
               { label: 'Posts Created', value: stats.postsCreated, icon: 'edit', color: 'text-brand-violet', bg: 'bg-brand-violet/10' },
             ].map(stat => (
-              <div key={stat.label} className="p-4 rounded-2xl bg-surface-1 border border-white/[0.06]">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-[10px] text-text-muted uppercase tracking-wider">{stat.label}</p>
-                  <div className={`w-7 h-7 rounded-lg ${stat.bg} flex items-center justify-center`}>
-                    <Icon name={stat.icon} filled size={16} className={stat.color} />
+              <div key={stat.label} className="vg-material vg-grain rounded-2xl overflow-hidden">
+                <div className="relative z-[1] p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-[10px] text-text-muted uppercase tracking-wider">{stat.label}</p>
+                    <div className={`w-7 h-7 rounded-lg ${stat.bg} flex items-center justify-center`}>
+                      <Icon name={stat.icon} filled size={16} className={stat.color} />
+                    </div>
                   </div>
+                  <p className={`font-dmmono text-2xl font-bold tabular-nums ${stat.color}`}>
+                    {stat.prefix || ''}{typeof stat.value === 'number' ? formatNum(stat.value) : stat.value}
+                  </p>
                 </div>
-                <p className={`font-dmmono text-lg font-bold ${stat.color}`}>
-                  {stat.prefix || ''}{typeof stat.value === 'number' ? formatNum(stat.value) : stat.value}
-                </p>
               </div>
             ))}
           </div>
 
+          {/* FIXED 2026-08-14: everything from here to the heatmap used to be
+              nested INSIDE the .map() above, between a tile's label and its
+              icon. Each of the four KPI tiles was therefore rendering the whole
+              lower half of the page inside itself, four times over, inside a
+              flex row. That is what made this screen look broken. */}
+
+          {/* Trend. The single question "is this working" needs a line, not a tile. */}
+          <Section title="Views, likes and comments over time">
+            <TrendLineChart
+              data={stats.trend || []}
+              series={[
+                { key: 'views', label: 'Views', color: PALETTE.violet },
+                { key: 'likes', label: 'Likes', color: PALETTE.pink },
+                { key: 'comments', label: 'Comments', color: PALETTE.gold },
+              ]}
+            />
+          </Section>
+
+          {/* Per-format. Which KIND of thing you make is worth making more of. */}
+          <div className="grid gap-3 lg:grid-cols-2 mb-3">
+            <Section title="What format works" sub="Engagement by content type">
+              {(stats.formats || []).length ? (
+                <DonutChart
+                  data={(stats.formats || []).map((f, n) => ({
+                    name: f.name, value: f.engagement,
+                    color: [PALETTE.violet, PALETTE.pink, PALETTE.gold, PALETTE.blue, PALETTE.emerald][n % 5],
+                  }))}
+                />
+              ) : <p className="text-xs text-text-muted py-8 text-center">No posts in this period.</p>}
+            </Section>
+            <Section title="Per format" sub="Per post, so volume does not flatter a format">
+              {(stats.formats || []).length ? (stats.formats || []).map((f) => (
+                <div key={f.name} className="flex items-center justify-between py-2 border-b border-white/[0.04] last:border-0">
+                  <span className="text-sm capitalize text-text-secondary">{f.name}</span>
+                  <span className="text-xs text-text-muted font-dmmono tabular-nums">
+                    {f.posts} posts · {Math.round(f.views / Math.max(1, f.posts))} views/post · {Math.round(f.engagement / Math.max(1, f.posts))} eng/post
+                  </span>
+                </div>
+              )) : <p className="text-xs text-text-muted py-8 text-center">No posts in this period.</p>}
+            </Section>
+          </div>
+
+          <Section title="When your posts land" sub="Engagement by the day and hour you published">
+            <ActivityHeatmap values={(stats.heat || []).map((row) => row.map((v) => v / (stats.heatMax || 1)))} />
+          </Section>
+
           {/* Engagement breakdown */}
-          <h3 className="font-syne font-bold text-base mb-3">Engagement Breakdown</h3>
-          <div className="p-4 rounded-2xl bg-surface-1 border border-white/[0.06] mb-6 space-y-3">
+          <Section title="Engagement breakdown">
+          <div className="space-y-3">
             {[
               { label: 'Views', value: stats.totalViews, icon: 'visibility', color: 'text-brand-violet' },
               { label: 'Likes', value: stats.totalLikes, icon: 'favorite', color: 'text-brand-ember' },
@@ -142,14 +246,15 @@ export default function MonthlyAnalyticsScreen({ embedded = false }) {
               </div>
             ))}
           </div>
+          </Section>
 
           {/* Top posts */}
           {topPosts.length > 0 && (
             <>
-              <h3 className="font-syne font-bold text-base mb-3">Top Performing</h3>
+              <Section title="Top performing">
               <div className="space-y-2">
                 {topPosts.map((post, i) => (
-                  <div key={post.id} className="flex items-center gap-3 p-3 rounded-xl bg-surface-1 border border-white/[0.06]">
+                  <div key={post.id} className="flex items-center gap-3 p-3 rounded-xl" style={{ background: 'rgba(255,255,255,0.02)' }}>
                     <span className="font-dmmono text-text-muted text-sm w-6 text-center">#{i + 1}</span>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm truncate">{post.content}</p>
@@ -161,6 +266,7 @@ export default function MonthlyAnalyticsScreen({ embedded = false }) {
                   </div>
                 ))}
               </div>
+              </Section>
             </>
           )}
         </div>
@@ -172,12 +278,24 @@ export default function MonthlyAnalyticsScreen({ embedded = false }) {
     </>
   );
 
+  // `embedded` means the caller supplies the chrome. Only the native wrapper
+  // (NativeCreatorAnalyticsScreen) does that now; the web route renders this
+  // component bare and gets the Creator Studio layout below.
   if (embedded) return shell;
 
+  // Moved out of AppRouter 2026-08-14. The layout, page title, subtitle and tier
+  // gate used to be written inline on the route, which meant this page's chrome
+  // was defined in a file nobody would look in, and it was the only Creator
+  // Studio screen that worked that way.
   return (
-    <div className={isDesktop ? "min-h-screen pb-8" : "screen-container min-h-screen pb-8"}>
-      <TopBar title="Analytics" showBack />
-      <div className="px-4 py-3">{shell}</div>
-    </div>
+    <CreatorLayout
+      page="analytics"
+      title="Analytics"
+      subtitle="What is working, and when"
+      requiredTier="lite"
+      lockDescription="Growth, engagement, per-format breakdowns and your best posting times. Upgrade to Lite to unlock."
+    >
+      {shell}
+    </CreatorLayout>
   );
 }

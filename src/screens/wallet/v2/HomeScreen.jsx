@@ -1,11 +1,11 @@
 // Wallet Home (v2) — ports the design's HomeScreen layout from
 // _wallet3_tmp/src/screens.jsx. Single unified wallet for everyone; KYC is
-// the only gate on the Withdraw card.
+// the only gate on payouts, which now live in Creator Studio under Earnings.
 //
 // Layout (matches design):
 //   ┌───────────────────────────────────────┬──────────┐
 //   │ Greeting + security chips             │ Right    │
-//   │ 3-col balance grid (Coins/VP/Gems)    │ rail:    │
+//   │ 2-col balance grid (Coins/VP)         │ rail:    │
 //   │ 4-up quick actions                    │ Limits   │
 //   │ Recent activity                       │ Security │
 //   │                                       │ Help     │
@@ -17,12 +17,12 @@ import { useUser } from '../../../context/UserContext';
 import { useWalletUnlock } from '../../../context/WalletUnlockContext';
 import {
   WalletCard, WalletButton, SectionLabel, Pill, Callout,
-  CoinGlyph, GemGlyph, VPGlyph, LimitProgressBar, AnimatedNumber, StatusPill,
-  WALLET_TOKENS, fmtNum, fmtEUR,
+  CoinGlyph, VPGlyph, AnimatedNumber, StatusPill,
+  WALLET_TOKENS, fmtNum, fmtEUR, fmtUsd,
 } from '../../../components/wallet/primitives';
 import Icon from '../../../components/Icon';
 import { getTransactions } from '../../../firebase/firestore';
-import { getVPLevel, getNextVPLevel, getCommission } from '../../../utils/vpSystem';
+import { getVPLevel, getNextVPLevel, COIN_VALUE_USD } from '../../../utils/vpSystem';
 import { getMyWalletSecurityStatus } from '../../../firebase/walletCallables';
 
 const useGreeting = () => {
@@ -48,7 +48,7 @@ export default function HomeScreen() {
   }, [profile?.uid]);
 
   const coins = wallet?.balance || 0;
-  const gems  = wallet?.gems    || 0;
+
   const vp    = wallet?.vp      || 0;
   const vpInfo = getVPLevel(vp);
   const vpNext = getNextVPLevel(vp);
@@ -56,7 +56,7 @@ export default function HomeScreen() {
 
   const kycLevel = secStatus?.kycLevel ?? 0;
   const frozen = !!secStatus?.walletFrozen;
-  const canWithdraw = kycLevel >= 1 && !frozen;
+
 
   const tryGo = (path) => requirePin(() => navigate(path));
 
@@ -72,7 +72,7 @@ export default function HomeScreen() {
           <div style={{ marginBottom: 20 }}>
             <Callout tone="danger" icon="report" title="Your wallet is frozen"
                      action={<WalletButton variant="danger" size="sm">Contact support</WalletButton>}>
-              Withdrawals and conversions are paused. Reach support to resolve.
+              Payouts are paused. Reach support to resolve.
             </Callout>
           </div>
         )}
@@ -103,7 +103,7 @@ export default function HomeScreen() {
         {/* 3-col balance grid */}
         <div className="vg-walletHome-bals" style={{
           display: 'grid', gap: 16,
-          gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+          gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
         }}>
           {/* Coins */}
           <BalCard
@@ -113,11 +113,11 @@ export default function HomeScreen() {
             labelColor={WALLET_TOKENS.gold}
             value={coins}
             valueColor={WALLET_TOKENS.goldLight}
-            fiat={fmtEUR(coins * 0.009)}
+            fiat={fmtUsd(coins * COIN_VALUE_USD)}
             actions={
               <>
                 <WalletButton size="sm" variant="primary" onClick={() => navigate('/wallet/buy')}>Buy</WalletButton>
-                <WalletButton size="sm" variant="secondary" onClick={() => tryGo('/wallet/convert')}>Convert</WalletButton>
+                <WalletButton size="sm" variant="secondary" onClick={() => navigate('/wallet/history')}>History</WalletButton>
               </>
             }
           />
@@ -149,58 +149,29 @@ export default function HomeScreen() {
                     }} />
                   </div>
                 )}
-                <div style={{ fontSize: 12, color: WALLET_TOKENS.textSecondary, marginTop: 10 }}>
-                  Conversion rate <span className="font-dmmono" style={{ color: WALLET_TOKENS.text, fontWeight: 600 }}>
-                    {Math.round(getCommission(vp) * 100)}%
-                  </span>
-                </div>
+                {/* The conversion-commission line that lived here was the ONE
+                    economic perk of rank. Revenue share is now keyed to lifetime
+                    earnings, not VP, so quoting a rate here would be false.
+                    Rank is cosmetic until a replacement perk is decided. */}
               </div>
             }
           />
 
-          {/* Gems */}
-          <BalCard
-            tint="gem"
-            glyph={<GemGlyph size={32} />}
-            label="Gems"
-            labelColor={WALLET_TOKENS.gemBlue}
-            value={gems}
-            valueColor="#7CA3FF"
-            fiat={fmtEUR(gems * 0.009)}
-            actions={
-              <>
-                <WalletButton size="sm" variant="primary" disabled={!canWithdraw} icon="north_east" onClick={() => tryGo('/wallet/withdraw')}>
-                  Withdraw
-                </WalletButton>
-                <WalletButton size="sm" variant="ghost" onClick={() => navigate('/wallet/history')}>History</WalletButton>
-              </>
-            }
-            lockOverlay={!canWithdraw && {
-              icon: frozen ? 'report' : 'lock',
-              title: frozen ? 'Wallet frozen' : 'Verify identity to withdraw',
-              body: frozen
-                ? 'Reach support to resolve.'
-                : 'Confirm who you are so we can release earnings to your wallet or bank.',
-              actionLabel: frozen ? 'Contact support' : 'Verify identity',
-              onAction: () => navigate('/wallet/kyc'),
-            }}
-          />
+          {/* The Gems card was removed 2026-08-14. Gems are no longer a
+              balance a user holds; they are accrued revenue share Vergr
+              owes a creator, paid on a schedule. It lives in Creator
+              Studio under Earnings, not in a spending wallet. */}
         </div>
 
         {/* 4-up quick actions */}
         <div className="vg-walletHome-quick" style={{
           display: 'grid', gap: 12, marginTop: 24,
-          gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
+          gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
         }}>
           <QuickAction icon="shopping_cart" color={WALLET_TOKENS.gold}
             title="Buy coins" sub="Card or bank" onClick={() => navigate('/wallet/buy')} />
-          <QuickAction icon="swap_horiz" color={WALLET_TOKENS.violetLight}
-            title="Convert" sub="Coins to gems" onClick={() => tryGo('/wallet/convert')} />
-          <QuickAction icon="north_east" color={WALLET_TOKENS.gemBlue}
-            title="Withdraw" sub="Gems to crypto/bank" onClick={() => tryGo('/wallet/withdraw')}
-            locked={!canWithdraw} />
-          <QuickAction icon="qr_code_2" color={WALLET_TOKENS.success}
-            title="Receive USDC" sub="On Base network" onClick={() => tryGo('/wallet/security/deposit')} />
+          <QuickAction icon="workspace_premium" color={WALLET_TOKENS.success}
+            title="Subscriptions" sub="Creators you support" onClick={() => navigate('/memberships')} />
         </div>
 
         {/* Recent activity */}
@@ -294,30 +265,41 @@ function BalCard({ tint, glyph, label, labelColor, value, valueColor, fiat, belo
           {actions}
         </div>
       )}
+      {/* A BANNER, not a cover.
+          This used to be `position:absolute; inset:0` with a blurred backdrop,
+          which hid the balance entirely: a user could not see their coin balance
+          until they finished KYC. The balance is THEIRS and was never the thing
+          being gated. Hiding it reads as "your money is gone" rather than "one
+          more step to finish". Nothing here can be withdrawn in any case.
+          The gate is enforced by the server either way, so nothing is
+          concealed here. */}
       {lockOverlay && (
         <div style={{
-          position: 'absolute', inset: 0,
-          background: 'rgba(11,11,20,0.78)',
-          backdropFilter: 'blur(2px)',
-          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-          padding: 20, textAlign: 'center',
+          marginTop: 12, padding: '10px 12px', borderRadius: 12,
+          background: 'rgba(123,31,255,0.08)',
+          border: '1px solid rgba(123,31,255,0.24)',
+          display: 'flex', alignItems: 'flex-start', gap: 10,
         }}>
-          <div style={{
-            width: 44, height: 44, borderRadius: '50%',
-            background: 'rgba(123,31,255,0.10)',
-            border: '1px solid rgba(123,31,255,0.30)',
-            display: 'grid', placeItems: 'center', color: WALLET_TOKENS.violetLight,
-            marginBottom: 10,
-          }}><Icon name={lockOverlay.icon} size={20} /></div>
-          <div style={{ fontFamily: 'Syne, sans-serif', fontWeight: 700, fontSize: 15, marginBottom: 4 }}>
-            {lockOverlay.title}
+          <Icon name={lockOverlay.icon} size={18} style={{ color: WALLET_TOKENS.violetLight, flexShrink: 0, marginTop: 1 }} />
+          <div style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
+            <div style={{ fontWeight: 700, fontSize: 12.5, marginBottom: 2 }}>
+              {lockOverlay.title}
+            </div>
+            <div style={{ fontSize: 11.5, color: WALLET_TOKENS.textSecondary, lineHeight: 1.45 }}>
+              {lockOverlay.body}
+            </div>
+            <button
+              type="button"
+              onClick={lockOverlay.onAction}
+              style={{
+                marginTop: 8, padding: '6px 12px', borderRadius: 8, border: 0,
+                cursor: 'pointer', font: 'inherit', fontWeight: 700, fontSize: 12,
+                background: WALLET_TOKENS.violet, color: '#fff',
+              }}
+            >
+              {lockOverlay.actionLabel}
+            </button>
           </div>
-          <div style={{ fontSize: 12, color: WALLET_TOKENS.textSecondary, lineHeight: 1.5, marginBottom: 12 }}>
-            {lockOverlay.body}
-          </div>
-          <WalletButton variant="primary" size="sm" onClick={lockOverlay.onAction}>
-            {lockOverlay.actionLabel}
-          </WalletButton>
         </div>
       )}
     </div>
@@ -406,7 +388,7 @@ function TxRow({ tx }) {
         fontWeight: 600, fontSize: 14, textAlign: 'right',
         color: credit ? '#86EFAC' : WALLET_TOKENS.text,
       }}>
-        {credit ? '+' : ''}{fmtNum(amount)} {currency === 'gems' ? 'gems' : 'c'}
+        {credit ? '+' : ''}{fmtNum(amount)} {currency === 'gems' ? '' : 'c'}
       </div>
       {tx.status && tx.status !== 'settled' && tx.status !== 'completed'
         ? <StatusPill status={tx.status} />
@@ -418,20 +400,11 @@ function TxRow({ tx }) {
 function RightRail({ navigate, kycLevel, secStatus }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>
-      {/* Withdrawal limits */}
-      <WalletCard>
-        <SectionLabel>Withdrawal limits</SectionLabel>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <LimitProgressBar used={0} max={kycLevel >= 2 ? 500 : 0} label="Today" money />
-          <LimitProgressBar used={0} max={kycLevel >= 2 ? 2500 : (kycLevel >= 1 ? 50 : 0)} label="This month" money />
-        </div>
-        <div style={{ fontSize: 12, color: WALLET_TOKENS.textMuted, marginTop: 14 }}>
-          KYC Level {kycLevel} ·{' '}
-          <a onClick={() => navigate('/wallet/kyc')} style={{
-            color: WALLET_TOKENS.violetLight, cursor: 'pointer',
-          }}>Raise limits</a>
-        </div>
-      </WalletCard>
+      {/* Earnings pointer.
+          This was a "Withdrawal limits" card. The KYC tiers still cap money
+          leaving, but they now cap what VERGR PAYS a creator on a schedule,
+          not what a user pulls from a balance, so they belong beside the payout
+          schedule in Creator Studio rather than in a spending wallet. */}
 
       {/* Security */}
       <WalletCard>
@@ -453,8 +426,7 @@ function RightRail({ navigate, kycLevel, secStatus }) {
       <WalletCard>
         <SectionLabel>Need a hand?</SectionLabel>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <a onClick={() => navigate('/wallet/help')} style={{ fontSize: 13, color: WALLET_TOKENS.textSecondary, cursor: 'pointer' }}>How withdrawals work</a>
-          <a onClick={() => navigate('/wallet/help')} style={{ fontSize: 13, color: WALLET_TOKENS.textSecondary, cursor: 'pointer' }}>Where do my gems come from?</a>
+          <a onClick={() => navigate('/wallet/help')} style={{ fontSize: 13, color: WALLET_TOKENS.textSecondary, cursor: 'pointer' }}>What coins are and how to use them</a>
           <a onClick={() => navigate('/wallet/help')} style={{ fontSize: 13, color: WALLET_TOKENS.textSecondary, cursor: 'pointer' }}>Contact support</a>
         </div>
       </WalletCard>

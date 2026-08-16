@@ -185,6 +185,47 @@ export function usdcToEur(usdc) {
   return Number(usdc) / rate;
 }
 
+// ── USD-priced things ───────────────────────────────────────────────
+// Coin packs went native USD on 2026-08-11: USD is the currency displayed AND
+// charged, and the local figure beside it is an ESTIMATE only, never the charged
+// amount. The rate table here is keyed off EUR, so a USD amount has to be routed
+// back through EUR to reach the buyer's currency.
+//
+// Returns null when rates are not loaded. Callers must fall back to showing the
+// plain USD price rather than printing a wrong local figure: an estimate that is
+// silently wrong is worse than no estimate, because it is the number the buyer
+// will quote back when the statement disagrees.
+
+/** USD → the user's local currency. `{ currency, amount }` or null. */
+export function convertFromUsd(usd) {
+  if (usd == null || isNaN(usd)) return null;
+  if (!_currency || !_rates) return null;
+  const usdRate = _rates.USD;
+  const target = _rates[_currency];
+  if (!usdRate || !target) return null;
+  return { currency: _currency, amount: (Number(usd) / usdRate) * target };
+}
+
+/** "≈ £7.85" for a USD amount, or null when no conversion applies. */
+export function formatMoneyFromUsd(usd, { prefix = '' } = {}) {
+  const c = convertFromUsd(usd);
+  if (!c) return null;
+  try {
+    return prefix + new Intl.NumberFormat(navigator.language || 'en', {
+      style: 'currency', currency: c.currency,
+    }).format(c.amount);
+  } catch {
+    return null;
+  }
+}
+
+/** "$9.99". The charged figure for anything priced in USD. */
+export function formatUsd(n) {
+  if (n == null || isNaN(n)) return '$0.00';
+  try { return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n); }
+  catch { return `$${Number(n).toFixed(2)}`; }
+}
+
 // Synchronous "format a EUR amount in the user's currency", falling back to
 // plain EUR. This is what the app-wide money formatters delegate to.
 export function formatMoneyFromEur(eur, { prefix = '' } = {}) {

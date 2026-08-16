@@ -244,9 +244,9 @@ function ReferralHub({ variant }) {
         <div className="relative z-10 p-7">
           <div className="flex items-center gap-2 mb-2">
             <h2 className="font-syne text-3xl font-black text-text-primary">Invite a friend, you both get VP</h2>
-            <InfoTip text="VP is your Vergr progression score. The higher your VP, the lower the commission you pay when cashing out coins to gems, and the faster your profile levels up." />
+            <InfoTip text="VP is your Vergr progression score. The higher your VP, the larger the revenue share you keep as a creator, and the faster your profile levels up." />
           </div>
-          <p className="text-text-secondary text-sm max-w-[34rem]">The more VP you have, the less commission you pay when you cash out.</p>
+          <p className="text-text-secondary text-sm max-w-[34rem]">The more VP you have, the larger the share you keep of what your content earns.</p>
         </div>
       </div>
 

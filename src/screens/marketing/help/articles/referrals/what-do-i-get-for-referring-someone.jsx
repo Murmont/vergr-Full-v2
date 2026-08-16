@@ -5,7 +5,7 @@ export default {
   updated: "2026-07-02",
   body: [
     {
-      p: "Referrals pay in VP, VERGR's rank points. VP is not something you spend and lose, it permanently counts toward your rank, and a higher rank lowers the commission you pay whenever you convert Coins to Gems. So every referral keeps paying off long after your friend joins."
+      p: "Referrals pay in VP, VERGR's rank points. VP is not something you spend and lose, it permanently counts toward your rank, and a higher rank increases the share you keep of what your content earns. So every referral keeps paying off long after your friend joins."
     },
     {
       h2: "The rewards"

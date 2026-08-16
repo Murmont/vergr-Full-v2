@@ -99,7 +99,7 @@ export default function DiditVerify({ onVerified, onCancel, compact = false }) {
       <h2 className="font-syne text-xl font-bold mb-2">Verify your identity</h2>
       <p className="text-text-muted text-sm leading-relaxed mb-6">
         VERGR requires a one-time identity check before you can access the
-        wallet, enter tournaments, or withdraw earnings. The process takes
+        wallet or be paid your creator revenue share. The process takes
         about 90 seconds — you'll photograph a government ID and take a
         quick selfie. Verification is handled by Didit; your ID image is
         stored by Didit, not by VERGR.
