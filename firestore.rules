@@ -2,6 +2,14 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // Creator applications. Written only by the applyForCreator /
+    // adminDecideCreatorApplication callables; a client must never be able to
+    // approve itself. Readable by the applicant so they can see their status.
+    match /creator_applications/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow write: if false;
+    }
+
     // ============================================================
     // HELPER FUNCTIONS (now inside the match, so they can use $(database))
     // ============================================================
@@ -121,10 +129,27 @@ service cloud.firestore {
         // own, routing around the ownership check in createLockedPost. Owner
         // read is denied too: the keys are useless without a signature, and a
         // readable key is one screenshot away from being a support problem.
+        //
+        // mediaPackFiles is the same hazard in a different shape: it is the key
+        // list a saved Content Pack sends from, so a writable copy would let a
+        // creator point their own pack at another creator's private objects.
         allow read, write: if isOwner(userId)
           && docId != 'shopIntegration'
           && docId != 'lockedPostFiles'
-          && docId != 'lockedMessageFiles';
+          && docId != 'lockedMessageFiles'
+          && docId != 'mediaPackFiles';
+      }
+
+      // Content Packs — a creator's saved, priced sets.
+      //
+      // Owner-readable so the picker can list them without a callable round
+      // trip, and CALLABLE-ONLY for writes: `createMediaPack` is what proves the
+      // named objects belong to this creator, and a client-writable pack
+      // document would make that check optional. The document holds blurred
+      // previews and a price, never an object key.
+      match /mediaPacks/{packId} {
+        allow read: if isOwner(userId);
+        allow write: if false;
       }
 
       match /blocked/{blockedId} {
@@ -1415,6 +1440,18 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Publish credentials, keyed BY the credential so vergr-rtmp-auth resolves
+    // one with a document get. Denied to every client without exception: the
+    // stream key is what authorises publishing to a broadcast (browser ingest
+    // sends it as a Bearer token, OBS types it in), and it is also the path
+    // segment in the HLS playback URL, so a reader of one could both hijack the
+    // broadcast and walk straight past a paid stream's paywall. It used to be a
+    // field on the world-readable stream document below, which is exactly the
+    // problem this collection exists to fix. Do not add a read rule here.
+    match /stream_keys/{streamKey} {
+      allow read, write: if false;
+    }
+
     match /streams/{streamId} {
       allow read: if true;
 
@@ -1501,6 +1538,49 @@ service cloud.firestore {
     // entry for the matched tournament); all writes go through callables.
     match /brawl_queue/{queueId} {
       allow read: if isAuth();
+      allow write: if false;
+    }
+
+    // ── Creator payouts (revenue share) ──────────────────────────────
+    // All three are written ONLY by functions/creatorPayouts.js. A client that
+    // could write any of them could grant itself a payout, change its own
+    // cadence, or mark an unpaid statement paid, so every write is `false`
+    // rather than a validated rule: there is no legitimate client write here.
+
+    // A creator sees their own payout setup (cadence, tax-form status, strikes)
+    // because the Earnings screen has to explain why they are or are not
+    // getting paid. Nobody else can see it: strikes are moderation data.
+    match /payout_accounts/{uid} {
+      allow read: if isAuth() && (request.auth.uid == uid || isAdmin());
+      allow write: if false;
+    }
+
+    // Run totals are platform financials, admin only.
+    match /payout_runs/{runId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    // A statement is the creator's remittance advice and their tax record, so
+    // they must be able to read their own. Doc id is `{runId}__{uid}`, which is
+    // not something a rule can parse reliably, so ownership is checked against
+    // the `uid` field written into the doc by the payout run.
+    match /payout_statements/{statementId} {
+      allow read: if isAuth() && (resource.data.uid == request.auth.uid || isAdmin());
+      allow write: if false;
+    }
+
+    // Solvency ledger: aggregate platform financials. Admin only, server-written.
+    match /platform_ledger/{docId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+    match /platform_ledger_daily/{dayKey} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+    match /solvency_alerts/{alertId} {
+      allow read: if isAdmin();
       allow write: if false;
     }
 
@@ -1676,6 +1756,34 @@ service cloud.firestore {
     match /kyc_audit_log/{eventId} {
       allow read:  if isAdmin();
       allow write: if false; // functions only
+    }
+
+    // ── Profit ledger (functions/platformRevenue.js) ────────────────────
+    // Every line of platform margin: what a sale grossed, what the rails took,
+    // what liability it accrued, what a sink released. Admin-readable so the
+    // economy screen can show it; NEVER client-writable, because a wallet that
+    // can write its own revenue row is not a ledger.
+    //
+    // Nothing here is per-user data a user is entitled to see: `uid` is on the
+    // rows only so a figure can be traced back, and exposing them would leak
+    // other people's purchase amounts through the daily rollups.
+    match /platform_revenue/{rowId} {
+      allow read:  if isAdmin();
+      allow write: if false; // functions only
+    }
+    match /platform_revenue_daily/{dayKey} {
+      allow read:  if isAdmin();
+      allow write: if false; // functions only
+    }
+
+    // ── Adaptive video transcode queue (infra/transcode/worker.js) ──────
+    // Written by Cloud Functions, claimed and completed by the worker boxes
+    // using the Admin SDK, which bypasses rules entirely. No client has any
+    // reason to see or touch this: a client that could write here could point
+    // a transcode job at an arbitrary URL and make our boxes fetch it.
+    match /transcode_jobs/{jobId} {
+      allow read:  if isAdmin();
+      allow write: if false; // functions + admin-SDK workers only
     }
   }
 }

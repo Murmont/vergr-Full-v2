@@ -4,13 +4,51 @@ Keep this current. Condensed 2026-05-22 (full historical detail preserved in `CL
 
 ---
 
+## ⚠⚠ READ BEFORE TRUSTING ANYTHING BELOW (audited 2026-08-16)
+
+This file was found stale in five places on 2026-08-16, and a session repeated the stale facts to a
+payment processor. **When this file and the source disagree, the SOURCE WINS. Grep before you assert.**
+
+The four things most often gotten wrong, all verified against code on 2026-08-16:
+
+1. **NOBODY CAN WITHDRAW ANYTHING, EVER.** No convert, no withdraw, no gem transfer, no gems-to-coins.
+   `functions/withdrawals.js:280`, `functions/gemTransfer.js:91`. Coins are a revocable licence to
+   access features, no cash value, non-transferable. Gems are revenue share Vergr OWES, not a balance.
+   Any sentence in this file implying otherwise is stale — fix it rather than repeat it.
+2. **Vergr is the PRINCIPAL, not a marketplace.** See "What Vergr IS" below and
+   `docs/REVENUE_SHARE_PLAN.md` §1.4. Never write "marketplace", "multi-vendor", "selling on behalf
+   of others", "forwarding funds" or "stored value" about Vergr. `sellerUid` in
+   `functions/entitlements.js` is PRE-MIGRATION NAMING, not the legal relationship.
+3. **Tournaments are DEAD and UNROUTED.** `AppRouter.jsx` has exactly one tournament route,
+   `/vanguard/lookup/tournament`, admin-only. The enormous tournaments section immediately below is
+   DEAD-CODE DOCUMENTATION kept for the files on disk. It is NOT a build queue and NOT current work.
+4. **The UI and the public help centre HAVE now caught up (done + deployed 2026-08-16).** 31 help
+   articles removed, ~178 sentence rewrites, ToS + privacy + AML + anti-fraud corrected, the crypto
+   deposit surface unrouted, 14 live components rewritten. Removed URLs return HTTP 410 via
+   `functions/gone.js`. **Full record, with tick-boxes so you do not redo finished work:**
+   `docs/WITHDRAWAL_REMOVAL_LIST.md`. Handover prompt: `docs/HANDOVER_WITHDRAWAL_CLEANUP.md`.
+
+**Rule going forward: do not write "removed", "shipped" or "done" in this file without grepping for
+the callsites first.** A claim here that the code contradicts is worse than no claim at all, because
+it gets repeated to founders, processors and future sessions as fact.
+
+---
+
 ## ▶ Active build queue (READ FIRST each session)
 
 Work **one item per session**; checkpoint to this file before `/clear`. Founder tracks granular completion in a Google Doc (a "Done =" acceptance test per task). **Do NOT trust "batch done" — verify each task** (show the diff, run `npm run build`, deploy if user-facing) and state plainly what was NOT done.
 
 ---
 
-## 🏆 TOURNAMENTS — FULL FUNCTIONAL TODO (read first, work top-down)
+## 🏆 TOURNAMENTS — ❌ DEAD SECTION, NOT CURRENT WORK (retired 2026-08-09, verified unrouted 2026-08-16)
+
+> **Do not work from this section and do not cite it.** Tournaments were retired from the product.
+> `AppRouter.jsx` mounts exactly ONE tournament route and it is admin-only
+> (`/vanguard/lookup/tournament`). `public/llms.txt` states publicly that Vergr has no betting,
+> wagering, prediction markets, prize competitions, loot boxes or games of chance. The screens and
+> Cloud Functions remain on disk under the no-deletion rule. Everything below is kept ONLY as a record
+> of what those files do, should they ever be revived. It is not a queue, not a TODO, and nothing in
+> it is "next up".
 
 Comprehensive audit 2026-05-25. Tournaments are functional but have real gaps before they're ready for real users. Don't trust prior "shipped" labels — verify each item with code reads + smoke tests.
 
@@ -168,7 +206,7 @@ The list above is the source of truth. Move items to "done" only after verifying
 |---|---|---|
 | Inbound onramp (card/Apple Pay/bank → USDC) | **PayRam** embedded checkout on Base | Self-hosted node live; no merchant KYB; end-user KYC via PayRam's onramp partners. |
 | Outbound — crypto cashout | **Circle Wallets API** → user's whitelisted Base address | Code ready. |
-| Outbound — fiat/bank | **NONE.** Confirmed 2026-05-21: PayRam has no crypto→fiat offramp; Circle Mint can't pay arbitrary user banks. | User cashout is **crypto-only**. Withdraw screen's "to my bank" tab is honest guidance + `FiatCashoutHelper` recommending Coinbase (verified Base-USDC + bank withdrawal). A dedicated offramp provider is a future founder decision. |
+| Outbound — user cashout | **DOES NOT EXIST.** Removed 2026-08-15. | ❌ There is no user cashout of any kind, fiat or crypto. `requestWithdrawal` throws. The only outbound path is Vergr paying a CREATOR their revenue share, on Vergr's schedule, via `functions/creatorPayouts.js`. The old "crypto-only cashout" / `FiatCashoutHelper` / Coinbase guidance rows are stale and deleted. |
 | Custody (all float) | **Circle Programmable Wallets** (developer-controlled MPC), Circle-only + software guards | Operating omnibus + insurance reserve. No hardware/multisig in v1; software guards = per-tx caps + destination whitelist + timelock + auto-freeze + insurance fund. Upgrade to Safe + Ledger when monthly revenue OR insurance fund > €5,000. |
 | KYC | **Didit** (`src/components/verify/KycWizard.jsx`) | Wired. Extend per KYC tiers below. |
 | Settlement chain | **Base USDC ONLY**, contract `0x833589fcd6edb6e08f4c7c32d4f71b54bda02913` | Per-user attribution via PayRam `refId` (→ `payram_orders/{ref}`) or hex-encoded `vergr:{uid}` in tx `data` field. EVM ERC-20 has no native memo. |
@@ -190,7 +228,10 @@ VERGR_SYSINFO_TOKEN           set (in-box sysinfo agent)
 ```
 PENDING secrets: `CIRCLE_NOTIFICATIONS_PUBLIC_KEY` (mainnet webhook signature verify — `pollCircleDeposits` covers inbound until then), `CIRCLE_WEBHOOK_TOKEN`. PayRam needs no webhook secret (API-Key header auth). Gemini moderation keys: `GEMINI_CHAT_KEY`, `GEMINI_POST_TEXT_KEY`, `GEMINI_POST_IMAGE_KEY`, `GEMINI_POST_VIDEO_KEY`. OAuth/wrapper secrets: `STEAM_API_KEY`, `TWITCH_*`, `YOUTUBE_*`, `DISCORD_*`, `BATTLENET_*`, `OPENXBL_*`, `APEX_API_KEY` (placeholder — founder must register at apexlegendsapi.com). Use `printf`/`echo -n` (never `echo`) when setting secrets — trailing newlines broke R2 once (see R2 section).
 
-### 🚦 GO-LIVE READINESS — remaining steps (gated on ~$1–2 Base ETH gas)
+### 🚦 ~~GO-LIVE READINESS~~ — ✅ COMPLETE. Payments are LIVE.
+
+⚠ **Never say "gated on Base gas" again** (memory `project-payments-live`). The steps below are kept
+as a record of what was done, not as outstanding work.
 
 Everything codeable without spending money is done + deployed on mainnet. Remaining to flip live:
 1. Fund the MetaMask **master wallet `0x59b5277E6fb2128eee9D4FdFBC2882e8Cb358763`** with ~$1–2 ETH on **Base mainnet** (chain 8453). (In progress 2026-05-22 — founder buying via MetaMask card on-ramp; ZAR card may hit "no quotes" → raise amount ~R450 or use VALR→withdraw on Base network.)
@@ -266,9 +307,54 @@ Docker container `payram` (image `payramapp/payram:latest`), host ports `127.0.0
 
 Prices come from `src/utils/tierSystem.js` (USD $4.99 / $9.99, matching what is actually charged, not the EUR figures elsewhere in this file).
 
+### What Vergr IS (canonical, use this for ANY processor / underwriter / partner form)
+
+**READ THIS AND `docs/REVENUE_SHARE_PLAN.md` §1.4 BEFORE answering any question about what the
+business does.** Not just before touching earnings code. Getting this wrong on an application is
+how you get declined, and a session did exactly that on 2026-08-16 by describing Vergr from
+memory instead of from the docs.
+
+**Vergr is a live streaming and creator platform, and Vergr is the PRINCIPAL in every transaction.**
+The official one-liner is in `public/llms.txt` and `index.html`: "a live streaming and social
+platform for gamers and creators."
+
+The value path, which is the part that gets misread:
+
+1. A viewer buys Coins **from Vergr**. That is Vergr revenue at that moment. There is no third-party seller.
+2. The viewer spends Coins on **Vergr** features: unlocks, memberships, paid stream access, tips.
+3. Vergr owes the creator a **share of the revenue their content generated**, as a supplier.
+4. Vergr pays its suppliers **on Vergr's schedule**, as accounts payable.
+
+This is the Twitch / YouTube / Patreon / App Store structure. Paying your own suppliers is not
+money transmission and is not a marketplace.
+
+**Things that are therefore FALSE and must never be written on a form:**
+
+| Do NOT say | Why it is wrong |
+|---|---|
+| "marketplace", "multi-vendor", "selling on behalf of others" | Vergr sells its own product. Defeating this characterization is the entire point of the revenue-share migration. |
+| "forwarding funds" / "user-to-user payments" | No buyer money is forwarded. Buyer money is Vergr revenue; creator payment is an expense on Vergr's schedule. |
+| "stored value" / "wallet balance the user can call on" | Coins are a revocable licence to access features, no cash value, non-transferable. Withdrawals throw (`functions/withdrawals.js:280`), gem transfer throws (`functions/gemTransfer.js:91`). |
+| "dating" / "a place to meet people" | Vergr is broadcast and creator-led, one-to-many. Reads as a dating app to an underwriter and makes acceptance harder. |
+| anything about tournaments, prizes, predictions or betting | **Retired and UNROUTED.** `AppRouter.jsx` has exactly one tournament route, `/vanguard/lookup/tournament`, admin-only. The huge tournaments section further up this file is DEAD CODE documentation. `llms.txt` states plainly: no betting, wagering, prediction markets, prize competitions, loot boxes or games of chance. |
+
+⚠ The `sellerUid` variable in `functions/entitlements.js` is **pre-migration naming**, not the legal
+relationship. Do not read a variable name and conclude Vergr is a marketplace.
+
+⚠ The two Shopify surfaces are NOT Vergr taking third-party money. `functions/shopifyApp.js` is a
+public App Store "link in bio" app where **buyers check out inside Shopify**; `functions/shopSync.js`
+is the coin-paid Vergr Shop on our own checkout. `createOrder` (physical merch, `functions/index.js:3551`)
+**has no payment path and nothing in `src/` calls it.**
+
+What IS honestly disclosable and should never be hidden: Coins are an in-app credit; the inbound rail
+(PayRam) settles in USDC on Base and payouts run through Circle, so crypto involvement is real and gets
+ticked on any form that asks.
+
 ### PADDLE: coins never, subscriptions maybe (checked 2026-08-14)
 
 Vergr hits SIX prohibited categories in Paddle's AUP: virtual currency/stored value, digital marketplaces enabling non-Paddle sellers, donations/community access, crypto, regulated financial services, and dating. More fundamentally Paddle is a Merchant of Record: it buys your product and resells it, so it structurally cannot carry user-to-user money. Removing adult content changes none of it. Detail in memory `project-paddle-rejected`.
+
+⚠ **That category list is PADDLE'S READING, not a description of Vergr, and it misled a later session into repeating it to a different processor.** Two of those labels are wrong about us and must not be reused: Vergr is not a marketplace and does not sell on behalf of others (see "What Vergr IS" below), and Vergr is not a dating product. Cite this paragraph only as "what Paddle concluded", never as fact about the business.
 
 ⚠ Trap: marketing Vergr as "a place to meet people" reads as a dating app to an underwriter and makes mainstream acceptance HARDER. Copy Tango's rules, not Tango's marketing line.
 
@@ -414,10 +500,10 @@ Status legend: ✅ done · 🟢 in progress · 🟡 planned · 🟡 Partial · �
 - **Don't wander.** Only do what's asked. No proactive docs/refactors/tangents.
 - **Always update this file when work completes** (move shipped → done, add new follow-ups). Don't wait to be asked.
 - **Material Symbols:** loaded font is `material-symbols-outlined`. Never use `material-symbols-rounded` (not loaded → renders raw text). Use `<Icon name="..." />`.
-- **Tournament caps (Riot-disclosed, do not raise without re-notifying Riot):** entry fee ≤10,000 coins; prize pool ≤500,000 coins; mod cut 5%. Source: `src/utils/tournamentTypes.js` (`validateTournamentLimits`). Enforced in `CreateTournamentScreen` UI + `createTournament` + must be called by any Cloud Function creating tournaments.
-- **Tournament prize payout (LOCKED 2026-05-25): WINNER-TAKES-ALL coins for every bracket type.** Solo wins → winner's wallet; squad wins → winning squad's treasury (`squadTreasuryPct:100`). No 2nd/3rd/4th coin payouts. Multi-place rewards happen only in (a) Tournament Points on the global leaderboard (1000/600/400/250/175/100/50/25 by `tournamentPointsFor`) and (b) placement XP/VP for top 3 (`squadXpByPlace`/`vpByPlace` in `finalizeInternal`) — these are separate from coins. Source: `src/utils/tournamentTypes.js` + `functions/tournamentRules.js` PRIZE_DISTRIBUTION, payout loop in `functions/tournaments.js → finalizeInternal`.
-- **Coin economy floor: €0.0090/coin.** Packs never below. Starter anchors €0.0099. No coin-purchase discounts. Source: `src/utils/vpSystem.js` `COIN_PACKS`. Gems are the only withdrawable currency. Min payout 1,000 gems. Referral: referrer +5,000 VP, referee +3,000 VP, server-gated.
-- **Tip economy: flat 10% platform fee at send time.** Recipient gets `floor(N×0.90)`. Conversion coin→gem applies a separate VP-tier commission. Source: `firestore.js → sendCoins`.
+- **TOURNAMENTS DO NOT EXIST. Stop re-raising them.** Retired 2026-08-09, unrouted, and on 2026-08-16 the founder ordered the CONTENT deleted too: the 37-article help category, 7 tournament articles hiding in other categories, the `TOURNAMENT_RULES` legal document, and the growth funnel that was built on prize pools and money matches. `AppRouter.jsx` mounts exactly ONE tournament route and it is admin-only (`/vanguard/lookup/tournament`). The huge tournaments section above is DEAD-CODE DOCUMENTATION for files still on disk. Never cite entry fees, prize pools, mod cuts or prize payouts as current.
+- **[RETIRED, see above]** Tournament prize payout (was: winner-takes-all for every bracket type). Solo wins → winner's wallet; squad wins → winning squad's treasury (`squadTreasuryPct:100`). No 2nd/3rd/4th coin payouts. Multi-place rewards happen only in (a) Tournament Points on the global leaderboard (1000/600/400/250/175/100/50/25 by `tournamentPointsFor`) and (b) placement XP/VP for top 3 (`squadXpByPlace`/`vpByPlace` in `finalizeInternal`) — these are separate from coins. Source: `src/utils/tournamentTypes.js` + `functions/tournamentRules.js` PRIZE_DISTRIBUTION, payout loop in `functions/tournaments.js → finalizeInternal`.
+- **Coin ladder is NATIVE USD** (re-denominated 2026-08-11). 8 packs, $0.99/78 coins to $249.99/21,500 coins, floor $0.01163/coin, one worldwide price. Source: `src/utils/vpSystem.js:325-332`. **NOTHING IS WITHDRAWABLE. Users can never withdraw anything, ever.** Coins are a revocable licence to access features, no cash value, non-transferable; gems are accrued revenue share Vergr owes, not a balance. `requestWithdrawal` throws (`functions/withdrawals.js:280`), `sendGems`/`quoteGemSend` throw (`functions/gemTransfer.js:91`), `buyCoinsWithGems` disabled. The old €0.0090 floor, "gems are the only withdrawable currency" and "min payout 1,000 gems" lines were all stale and are deleted. Regional pricing applies to SUBSCRIPTIONS ONLY (`functions/geoPricing.js`), never coins. Referral: referrer +5,000 VP, referee +3,000 VP, server-gated.
+- **Revenue share is the ONLY model. There is no fee on any surface.** A tip, membership, ticket, season pass, locked-content unlock, ad reward and referral all credit the FULL amount as gross revenue; Vergr's share is taken ONCE, when the creator accrues. Creator keeps **50% rising to 80%**, keyed to LIFETIME GROSS EARNED, never to VP and never to plan (`functions/coinLedger.js:169` `REVENUE_SHARE_RATES` + `shareForEarnings`). Active Vanguard keep 100%. `entitlements.js feePctFor()` returns **0**. ⚠ The old "flat 10% at send time, recipient gets floor(N×0.90)" rule is **DEAD** (removed from all copy 2026-08-16) and `firestore.js` `sendCoins` merely forwards to the `sendTip` callable. The ONE genuinely different rate is Vergr.me shop sales: flat 8%, seller keeps 92%, credited directly (`vergrMeShop.js:39`, founder-locked).
 - **Creator quests award VP only, never coins.**
 - **Revenue categories:** Tips, Memberships, Tournament prizes, Boosts. No Ads/Sponsored/Gifts category.
 - **Content types:** Text, Photo, Clip, Article, Short, Achievement, LFG, TierList, Quote, Live Stream. No "Reels".
@@ -446,6 +532,106 @@ Status legend: ✅ done · 🟢 in progress · 🟡 planned · 🟡 Partial · �
 ```
 Chart palette: `src/components/creator/charts.jsx → PALETTE`. Note: settings/wallet/admin/composer redesigns deliberately use inline-style scoped palettes (not Tailwind tokens) — not brand drift; don't "reskin to match" without asking.
 
+### Material surface system (`src/styles/surface.css`, added 2026-08-15)
+**Founder ruling: hairline outlines on every box read as cheap AI design. Vergr is a social/entertainment app, not a fintech dashboard. Do NOT use Stripe/Linear/Revolut as visual references.**
+
+Root cause of the border habit: page `#0B0B14` to surface-1 `#14141F` is only a 3.5% value step and `tailwind.config.js` has no boxShadow scale, so a 1px stroke was the only way to make a surface visible. Fix the ladder, not the symptom.
+
+Reusable classes (compose them, they are independent):
+- `.vg-material` offset radial sheens (warm high left, cool low right) over a near-black base, so light has a direction.
+- `.vg-grain` inline feTurbulence noise at 42% on soft-light. **This is the single biggest cheap-to-designed lever on a dark UI** and costs zero assets.
+- `.vg-beam` / `.vg-beam-violet` conic gradient rotated via a registered `@property --vg-angle`, masked to a 1px ring, so light travels the perimeter. Degrades to a static gradient edge without `@property`.
+- `.vg-rule-v` / `.vg-rule-h` dividers that fade at both ends. A rule that stops at full strength reads as a cage edge.
+- `.vg-tile` raised inner surface with NO stroke: lifts by value plus inset highlight plus shadow, with press-scale.
+- `.vg-seg` / `.vg-knob` ring-segment draw-in and track-knob halo pulse. All motion respects `prefers-reduced-motion`.
+
+First adopter: `TierHero` in `CreatorEarningsScreen.jsx` (4 zones, 12-segment gauge ring via `pathLength=100`, glowing track knob, raised lifetime tile). Native re-exports the web screen so one edit covers both. **Art slot** at `/brand/earnings/tier-vault.webp` (1x 25KB) + `@2x.webp` (61KB), founder-supplied render trimmed from 1536x1024/300KB. Served via `<picture>` with a `media:(min-width:1024px)` source so phones never fetch it, plus a 370-byte inlined LQIP as the sub-lg src and first-frame paint. Still self-hides via onError.
+
+⚠️ **`firebase.json` has a catch-all `**` rule of `no-cache, no-store, must-revalidate`.** Any new static directory under `public/` is therefore re-downloaded on EVERY load until it gets its own headers entry. `/brand/**` now mirrors `/media/**` (7d browser, 30d CDN). Check this before blaming an image for being slow.
+
+**Gold is NEVER a solid fill.** Flat `#F0A500` reads as orange paint. Real gold is the ramp `#FCEFB4 → #F5C842 → #E9A517 → #C97F12`: `GOLD_TEXT` clips it to glyphs (glow must be a `filter`, not `text-shadow`, since the text is transparent), an SVG `linearGradient` fills the ring segments, and the track fill uses the same stops. Same rule for violet and pink when those surfaces get built.
+
+**The gauge plots the SHARE, the track plots progress-to-next-tier.** They are different numbers. Conflating them shipped a ring sitting at 0% next to a label reading 50%. Ring segments are chunky (strokeWidth 15 at r44 in a 120 viewBox, 16 butt-capped segments) and unlit segments sit at `rgba(255,255,255,0.13)` so the empty part of the gauge is legible charcoal, not invisible.
+
+**Carved, not painted (`.vg-deboss` / `.vg-hub` + the SVG `carve` filter).** Dark neumorphism: the plate is charcoal (a DIFFERENT value from the material around it, never the same grey), lit from the upper left, so the top-left inner wall falls to shadow and the bottom-right catches light. Reverse those and it pops out instead of sinking in. The track blocks run through an inner-shadow filter (offset the alpha down, subtract, flood black = a dark top wall; offset up = a lit bottom wall) and the hub sits inside casting onto the groove floor, which is what gives the channel two walls.
+
+**Glow must be ONE blurred copy of the whole lit arc, not a per-segment `drop-shadow`.** Per-block shadows on butt-capped rectangles give every segment its own square halo, which reads as blocky.
+
+**Superseded, keep both facts.** One blurred copy is still just a blur. Emission is ADDITIVE: three passes (stdDeviation 1.1 / 3.6 / 9, opacity .42 / .34 / .22, hottest and narrowest at the core) in their own overlay layer carrying `.vg-bloom` (`mix-blend-mode: plus-lighter`, `screen` fallback) so light SUMS with the panel behind it. The bloom layer must sit UNDER the sharp blocks: painted over them it washes each face flat and destroys the bevel.
+
+**A recess must fade to zero BEFORE it reaches an edge.** Shading a hard-edged disc gives a black circle pasted on the surface, and the eye reads the boundary instead of the depth. The recess element is `-inset-[30px]` (larger than the ring) so its falloff has room to die outside the ring bounds. Directional walls (dark upper, lit lower) are masked to the annulus with a feathered `radial-gradient` mask.
+
+**Each block is beveled with three concentric strokes** (face, outer highlight, inner shade). `pathLength=100` normalises per-circle, so a bevel stroke at a different radius lines up angularly with its own face for free.
+
+⚠️ **Do not ship this class of work unrendered.** Three consecutive versions shipped blind and all three were wrong. Screenshot loop that works here: a scratch `preview.cjs` serving the real markup against the real `surface.css` on a fresh port, then `chrome.exe --headless=new --screenshot --force-device-scale-factor=2`, writing to a path OUTSIDE the scratchpad (Chrome gets Access Denied there). Reuse it before touching this panel again.
+
+### MEASURE the reference, never eyeball it (2026-08-15, learned the expensive way)
+
+Five rejected passes on this one ring, all the same root cause: working from an impression of the founder mockup instead of its pixels. Numbers pulled with `sharp` (circle-fit the gold pixels for the centre, radial profile for the band edges, angular walk at band-centre for the block count and duty, direct sampling for colour):
+
+| Property | Measured | What had shipped |
+|---|---|---|
+| Segments | 12 | 12 ✓ (had drifted to 16 once) |
+| thickness / mid-radius | **0.159** | 0.368 (2.3x too thick) |
+| Duty cycle (block/pitch) | **0.935** | 0.72 (gaps far too wide) |
+| Unlit block | **#20232A** | #3A3D46 |
+| Gold ramp | **#FAE177 top → #EDAB2A bottom** | #FFF6D4 → #DE9A0C |
+| Interior vs page | lum 9.5 vs 7.5, **no disc** | a black pool |
+
+**A blur is not a glow, and no amount of tuning a blur fixes that.** The measured falloff is amber, ~33% of source luminance immediately beside the block, dead within one band-width. Drawn as four concentric strokes sharing the block dash pattern: gaps stay dark (a Gaussian floods them), the falloff is exact, and there is zero filter cost. `feGaussianBlur` is now absent from this screen and should stay absent.
+
+The measuring scripts are worth rewriting whenever a pixel-accurate mockup arrives. Run them from the repo root so `sharp` resolves.
+
+#### Measured 2026-08-15 from three founder mockups (hero panel, tier list, stat cards)
+
+**The one construction repeated everywhere:** a coloured fill anchored TOP-LEFT dying to near-black bottom-right, inside a 1px border that is saturated at the TOP and gone by the BOTTOM. It is never a stroke. Stat cards: border top #33552D / #5C431B / #4F245F against a bottom of #000105; fill #1A3718 / #231B0B / #190D21 to #060A0D. Shipped as `.vg-wash` (drive with `--vg-accent` and `--vg-wash`).
+
+**Hero panel background:** plane from lum 14.3 top-left to 7.2 right, a 2x range, cool hue (B over R by ~1.5). Light upper-left, falls off horizontally more than vertically.
+- Detrended grain sd 0.43-0.71, i.e. ±0.5 levels. Grain must be almost subliminal (opacity 0.07, was 0.40).
+- Directional autocorrelation 0.34 / 0.30 / 0.29 / 0.11. **NO brushing.** An earlier pass added diagonal streaks that are not in the reference; they are removed. Radial washes plus a real gradient is what stops it reading flat, not texture.
+
+**Border:** 1px, radius ~7px at 847px panel width. Neutral base #1C1D1E (solved: white at 0.11), amber peak #715B21 on the LEFT edge at 60% height (solved: rgba(240,190,70,0.45)), secondary amber on the top edge above the ring. The founder explicitly asked for light that travels the perimeter, so `.vg-beam` stays animated, retuned to this palette (it was running a #F8D24E peak at 0.95, far too hot).
+
+**Dividers:** 1px, peak lum 89 = contrast 79 over the panel, warm, ramping in by 18% and out from 76%, warming toward the bottom. `.vg-rule-*` had been running at ~a third of that.
+
+**Inner tile:** fill only +4 lum over the panel (#0B0D11 vs #07090D), lit top edge lum 22, bottom edge DARKER than the panel at 6. A shallow lift, not a raised card. `.vg-tile` was ~3x too strong.
+
+**Tier list** (`TierLadder` in CreatorEarningsScreen): rows on a 26px pitch, **no separator lines between rows**, only the current row has a border, only the current row's percentage is gold (#E7CC28) while the rest are white (#E0E0E3). Current row is NOT glass: an amber wash anchored LEFT (lum 20.3 at x=30 falling to 10.9 by x=700) inside a 1px amber border brightest on the left (135), then top (87), then bottom (55). Rail: 6 dots at 84.6px pitch, 7px diameter, lit #F5C53B / unlit #343942, 2px connector #191C21. Badge ring per tier: gold / silver / silver / bronze #CC9650 / olive #B7C367 / cyan #37B2D1 / violet.
+- ⚠️ **Tier 6 cyan comes from the mockup and conflicts with [[project-brand-no-cyan]].** Isolated in `TIER_ACCENT` as a one-line change if the brand rule wins.
+- ⚠️ Rail fills in the mockup (43/9/7/5/4/3/3 percent against a lifetime of $0.00) match no formula and are placeholder. Implemented as real progress toward each tier threshold instead; rows 2-7 look identical, row 1 differs because it shows a true number.
+- **Rows must be a GRID, never a flex line.** The CURRENT pill only exists on one row, so as flex it pushed that row's threshold, rail and percentage ~90px right of every other row. Columns are `26px 46px 66px 128px minmax(0,1fr) 48px` and the pill column is RENDERED EMPTY on non-current rows so nothing reflows.
+
+#### Earnings screen, remaining mockups (founder supplied 2026-08-15, in `Downloads/vergr-mockups/`)
+
+DONE: `PayoutSpeed` (replaces `CadenceLadder`) and `InfoDot`.
+- `InfoDot` is a transient hover/tap popover. Do NOT wire a per-figure "i" to `components/InfoTooltip`: that is a dismissible banner that writes a localStorage flag, so the icon would vanish permanently after one read.
+- **The mockup labels the first requirement "Account age". The server does not gate on account age.** `resolveCadence()` gates on days since FIRST PAYOUT + successful payouts + KYC level + no strikes. The mockup also omits the KYC row entirely. This surface decides when someone gets money, so it follows the rule, not the picture. `getPayoutAccount` now returns `daysSinceFirstPayout` and `nextCadence {key,label,minDaysSinceFirstPayout,minSuccessfulPayouts,minKyc}` so the UI can never drift from the server. Deployed.
+
+NOT DONE, still only mockups:
+- **Set up payouts hero** (`ChatGPT Image Aug 14 11_32_08 PM`, top half). Needs a 3D wallet render, same slot pattern as `/brand/earnings/tier-vault.webp`.
+- **Earnings over time** (`Aug 14 11_38_09 PM` bar + `11_37_48 PM` line). 4 KPI cards with coloured icon chips (gold/violet/blue/green), a bar-vs-line toggle, gold gradient bars with value labels, footer note. Recharts is already in the stack.
+- **Where it came from** (`Aug 15 12_03_22 AM`, top). Source list + donut + right-hand table + "Top source" callout + date-range picker. `DonutChart` and `SOURCE_DEFS` already exist.
+- **Statements table** (same image, middle). Columns, green status pills, per-row download/view actions, pagination. `Statements` component exists and needs the design pass.
+
+**ALL SHIPPED 2026-08-15.** `SetUpPayouts` (enrolment banner, art at `/brand/earnings/payout-wallet.webp` 1x 27KB + @2x 68KB from the founder-supplied render), `EarningsOverTime` (4 KPI cards, bar/line toggle, Recharts), `WhereItCameFrom` (source list + donut + table + Top source), `Statements` (table, status pills, pagination), plus shared `HexIcon` / `PanelHead` / `RangePicker` / `KpiCard`.
+
+**TWO gate sets exist in `functions/creatorPayouts.js` and only one was being shown:**
+- `blockingReason()` decides whether you get paid AT ALL: 3+ active strikes, frozen, kycLevel < 1, tax form not on file, no `partnerPayeeId`, balance under `MIN_PAYOUT_GEMS`.
+- `resolveCadence()` decides HOW FAST: any active strike drops to standard, then days since **firstPayoutAt** (90/180), successfulPayouts (3/12), kycLevel >= 2.
+Showing only the second lets someone see green ticks while an unshown condition holds their money. `PayoutSpeed` now renders both groups.
+
+✅ **ACCOUNT-AGE GATE SHIPPED 2026-08-15 (founder-instructed, non-negotiable).** `MIN_ACCOUNT_AGE_DAYS = 30` in `functions/creatorPayouts.js`. Enforced inside `blockingReason()`, which means it gates the payout RUN (`buildRunPlan`) and not just the screen. **Fails CLOSED:** an unreadable `users/{uid}.createdAt` is treated as too new, because holding a legitimate payout one cycle costs far less than releasing one to a fraudulent fresh account. Rationale from the founder: abuse (DM scams, chargeback rings) surfaces days after signup, not on day one, and the account must be old enough for a report against it to have been filed and actioned. Reason code `account_too_new`; `getPayoutAccount` returns `accountAgeDays` + `minAccountAgeDays`. The screen renders a "your first payout unlocks soon" state, NOT "finish setup", because there is nothing to finish. Deployed with `runCreatorPayouts` + `previewCreatorPayoutRun`.
+
+⚠️ Statement docs carry `runId, gems, amountMicroUsd, cadence, periodFromMs, status, createdAt`. There is **no earnings/fees split** (the share is applied upstream, `amountMicroUsd` is already net), so the mockup's EARNINGS and FEES columns are deliberately absent rather than fabricated.
+
+**Rotate the `<g>`, never the `<svg>`.** Rotating the root carries the gradients with it and tilts the light source off the panel's own.
+
+**Metal needs direction.** Radial washes alone still read as a flat fill with a glow on it. `.vg-material` layers two frequencies of anisotropic brushing at 114deg plus one broad specular band, over a base that falls vertically. **Segment count and colour come from the founder's mockup: 12 segments, gold ramp `#FFF0BC → #F8D24E → #EFB01C → #DC9A10` (no brown).** Do not adjust either without being asked.
+
+⚠️ `var(--brand-gold)` is NOT defined globally (only inside `TournamentOverlayNeon.jsx`). Using it elsewhere silently voids the whole declaration. Use literal hex. Fixed one such dead gradient on the earnings progress bar.
+
+App-wide sweep is agreed but NOT done: 2,211 border declarations across 383 files, no shared Card primitive. Order: PostCard/feed, Shorts, live viewer, profile, messages, create, wallet, settings. Admin stays boxed (dense tables are the one place a rule helps).
+
 ### Key paths
 | Path | Purpose |
 |---|---|
@@ -470,23 +656,25 @@ All wrap in `<CreatorLayout page=... title=... subtitle=...>`. Routes: `/creator
 | 1 | Wallet UX: `WalletLayout` shell + onboarding + 13 screens (`src/screens/wallet/v2/*`) + walkthrough | ✅ |
 | 2 | PIN + 2FA gates (`WalletUnlockContext.requirePin` 5-min HMAC window, `PinUnlockModal`, `useWalletUnlock`) | ✅ |
 | 3 | Deposit detection (`circleWalletsWebhook` + `pollCircleDeposits`, idempotent) | ✅ |
-| 4 | Crypto withdrawal pipeline (`requestWithdrawal` → 3-day hold → `processReadyWithdrawals` → Circle) + History UI | ✅ |
-| 4b | Bank withdrawal | ⛔ not possible (no offramp — crypto-only) |
+| 4 | ~~Crypto withdrawal pipeline~~ | ❌ **REMOVED 2026-08-15.** `requestWithdrawal` throws. Body retained ONLY for the scheduled creator-payout path. |
+| 4b | ~~Bank withdrawal~~ | ❌ never existed, never will |
 | 5 | Compliance: geo-block, Chainalysis sanctions on Base, Travel Rule data, SAR cron, ToS/Privacy | 🟡 |
 | 6 | Software guards: TimelockController on Base, Alchemy auto-freeze watcher, reconciliation cron, PoR publisher, insurance Circle wallet, bug bounty page | 🟡 |
 | 7 | Commission extraction admin screen (three-bucket ledger + 5% insurance auto-route + TOTP gate, 80% cap, 24h cooldown, 7-day whitelisted founder dest) | 🟡 |
 
-**Wallet UI = its own navigation** ("Exit Wallet" button), single UI for everyone (no persona branching). KYC is the only gate on Withdraw. Coin packs = 8 fixed SKUs (`COIN_PACKS`) + custom amount (soft min €10, configurable `app_config/general.payramMinEUR`). Buy = in-app PayRam popup (card/crypto) with status polling. Use real `RANK_TIERS` (11 tiers), real `commissionForLevel()` (Rookie 30% → Immortal 5%).
+**Wallet UI = its own navigation** ("Exit Wallet" button), single UI for everyone (no persona branching). **There is no Withdraw screen and no Convert screen** (routes removed 2026-08-15). Coin packs = 8 fixed SKUs (`COIN_PACKS`, native USD) + custom amount, `MIN_CUSTOM_USD = 10` (`src/screens/wallet/v2/buyCheckout.js:29`). Buy = in-app PayRam popup (card/crypto) with status polling. Use real `RANK_TIERS` (11 tiers), real `commissionForLevel()`. **The floor is 15%, NOT 5%, and it is keyed to TOTAL VP, not level:** `COMMISSION_RATES = [0.30,0.28,0.25,0.22,0.20,0.18,0.15]` against `VP_THRESHOLDS = [0,500,2000,5000,15000,40000,100000]`, mirrored byte-identical in `src/utils/vpSystem.js:86`, `functions/economy.js:31`, `functions/coinLedger.js:194`. Active Vanguard are exempt (0%).
 
 **KYC tiers (Didit, extend `KycWizard.jsx` with flow types):**
 | Level | Verification | Unlocks |
 |---|---|---|
 | L0 | none | buy/tip/earn/deposit. Cannot withdraw. |
-| L1 | ID + selfie | convert coins→gems; crypto withdraw <€50/mo |
-| L2 | + proof of address | crypto withdraw €500/day, €2,500/mo |
-| L3 | + source-of-funds (first deposit >€1k) | crypto withdraw €2,500/day, €15,000/mo |
+| L1 | ID + selfie | required before Vergr pays a creator their revenue share |
+| L2 | + proof of address | higher lifetime payout ceiling |
+| L3 | + source-of-funds | highest payout ceiling |
 
-**Commission accrual:** tip 10% fee, coin→gem VP-tier commission, withdrawal 2% spread — all credit `platform_revenue` (integer micro-USDC, atomic). Three-bucket ledger: `user_balances` + `platform_revenue` + `insurance_reserve`. Daily reconciliation invariant: `circle_operating == user_balances + platform_revenue`; drift >€5 → freeze + page.
+⚠ **This table used to describe user-initiated crypto withdrawal limits. That is gone.** KYC now gates only whether Vergr can pay a creator on Vergr's own schedule. The remaining caps live in `functions/creatorPayouts.js`, not here — read them there.
+
+**Commission accrual:** tip 10% fee and the VP-tier revenue-share rate credit `platform_revenue`. (The "withdrawal 2% spread" that used to be listed here died with the withdrawal flow; `PLATFORM_SPREAD_BPS` is vestigial.) (integer micro-USDC, atomic). Three-bucket ledger: `user_balances` + `platform_revenue` + `insurance_reserve`. Daily reconciliation invariant: `circle_operating == user_balances + platform_revenue`; drift >€5 → freeze + page.
 
 **Threats not fully defendable (honest):** founder personal compromise, GCP root breach (bounded by ≤10% hot + caps), Circle issuer failure, regulatory action against unlicensed CASP (mitigated by KYC tiers + geo-block + OFAC + Travel Rule + clear ToS), signer-code bug, cold-key-holder loss. Biggest control = keep hot wallet small + insurance fund.
 
@@ -683,3 +871,127 @@ User checks the LIVE site — "build passes" isn't visible to them; you MUST dep
 - Broad greps when the request names a specific file.
 - Asking confirmation for already-specified tasks.
 - Trailing "here's what I did" summaries after edits — the diff shows it.
+
+
+#### Two bugs worth not repeating (2026-08-15)
+
+⚠️ **`String.replace` treats `$$` in the REPLACEMENT as an escaped `$`.** Splicing JSX containing `` `$${value}` `` silently collapsed it to `` `${value}` ``, so every currency symbol on the earnings screen vanished and a KPI shipped reading "10.01" with no unit. **Always pass a function: `s.replace(from, () => to)`.** Applies to every codegen/splice script in this repo.
+
+⚠️ **A positive gems row is NOT income.** `coin_to_gem_conversion` credits gems from coins the creator BOUGHT; so do admin grants and refunds. The old filter was `amount > 0 && currency === "gems"`, which reported $10.01 of "earnings" to an account that had earned nothing. There is now ONE definition, `isEarning()` in CreatorEarningsScreen, excluding `NOT_EARNINGS = /conversion|purchase|grant|reward|refund|revers|topup|payout|commission|_fee|_sent$/i`. Every total on the screen uses it.
+
+**Language: never "platform cut", "commission" or "fee" to a creator.** It is a revenue share and the creator-facing framing is what they KEEP. Founder ruling: that vocabulary reads as a casino. Say "your share", "what you kept", "your revenue share rate".
+
+#### Earnings figures: one basis per number (2026-08-15, after three contradicted each other live)
+
+The screen showed Lifetime earned $0, Available $0.01 and chart Total $0.00 at the same time. Root causes:
+
+1. **`coinsToUsd` floors to whole dollars.** `Math.floor(coins/100)` turns 1 coin ($0.01) into "$0". New `unitsToUsd()` is cents-accurate and is the ONLY formatter allowed for a balance. `coinsToUsd` is now reserved for tier THRESHOLDS, which are round by construction.
+2. **Lifetime totals were summed from a CAPPED query.** `getTransactions(uid, 500)` returns at most 500 rows; summing it for a lifetime figure silently under-reports past the cap. **Lifetime money must come from the wallet aggregates, never from the ledger.**
+
+**The data model (functions/coinLedger.js → `earnedGemCredit`).** A creator earns GROSS COINS. One transaction increments all three: `totalEarnedCoinsGross += gross`, `gems += floor(gross * share)`, `totalGemsEarned += that`. Coins and gems are both worth $0.01.
+
+| Figure on screen | Source of truth | Basis |
+|---|---|---|
+| Lifetime earned, before your share | `wallets/{uid}.totalEarnedCoinsGross` | gross coins |
+| Your share, all time | `wallets/{uid}.totalGemsEarned` | kept, lifetime |
+| Available now | `wallets/{uid}.gems` via `availableMicroUsd` | kept, unspent, unpaid |
+| Paid to date | `wallets/{uid}.totalPaidOut` | gems already sent |
+| Monthly chart | ledger, `isEarning()` rows | time series only, capped at TX_WINDOW |
+
+These are DIFFERENT numbers by design and every label now states its basis. If "Your share, all time" is $0.00 while "Available now" is $0.01, that gem entered the wallet by a route other than earning (coin→gem conversion, admin grant, purchase) — which is now visible instead of looking like a bug.
+
+**Rule: never put two different bases on one screen without naming each one in its label.**
+
+#### Money filters must be ALLOWLISTS (2026-08-15)
+
+The earnings chart reported **$10.01 to an account that had earned nothing**. Cause: the filter was a denylist (`NOT_EARNINGS` regex). **A denylist fails OPEN** — every row type it had not anticipated counted as income. It let through `gem_transfer_received` (gemTransfer.js has an explicit comment saying these "must never get counted as creator earnings in the Studio breakdowns") and `withdrawal_cancelled` (the user's own held gems being returned).
+
+Now `EARNING_TYPES`, an explicit Set verified against every writer of a positive gems row in `functions/`: `tip_received`, `earned_auto_converted` (the shared `settleEarnedToGems` path), `content_unlock_sale`, `event_ticket_sale`, `season_pass_sale`, `vergrme_sale`, `coaching_earning`, `coin_to_gem_conversion` (gem side; only EARNED coins can convert). Anything unrecognised is NOT income.
+
+**DURABLE FIX, not done:** have the server stamp `earning: true` on those rows so the client filters on a fact rather than a name.
+
+`totalGemsEarned` was checked and IS sound as "your share, all time": only `earnedGemCredit`, `settleEarnedToGems`, `convertCoinsToGems` and `vergrMeShop` increment it. `gemTransfer` and admin withdrawal-cancel deliberately do not.
+
+#### READ docs/REVENUE_SHARE_*.md BEFORE touching earnings or wallet
+
+Four docs, and they are the spec: `REVENUE_SHARE_PLAN.md` (why), `PART2_DECISIONS.md` (locked founder decisions), `PART3_SCREENS.md`, `MOCKUP_BRIEF.md`. Key facts I got wrong by not reading them:
+- **Gems are NOT a currency.** Per §3.1 they are "accrued revenue share owed by Vergr", not transferable, not a balance the user calls on. Coins are "a licence to access Vergr features, revocable, no cash value".
+- **Conversion is NOT a user action.** It is "automatic accrual at the moment revenue is earned". `ConvertScreen` is slated to RETIRE.
+- **`gemTransfer` is REMOVE** (locked decision 4, founder: "its a red flag"). `sendGems`/`quoteGemSend` are already disabled server-side.
+- Murmont LLC has **no money transmitter licence**, and balances + on-demand withdrawal + arbitrary crypto destinations are the three things that look like transmission. Never describe or design toward user-invoked conversion or withdrawal.
+
+⚠️ ~~STATE AS OF 2026-08-15: the WALLET FRONTEND IS NOT GUTTED~~ — **superseded.** Re-verified 2026-08-16: `/wallet/convert`, `/wallet/withdraw`, `/wallet/withdraw/new-address`, `/wallet/addresses` and `/wallet/security/addresses` are all UNROUTED, and `WalletScreen.jsx` (which still holds "Convert Coins" CTAs) is lazy-imported at `AppRouter.jsx:486` but NEVER MOUNTED. **What IS still live and must come out: the crypto deposit surface** (`/wallet/security/deposit`, `AppRouter.jsx:1092`, linked from 4 places) **and 21 indexed public help articles documenting withdrawal.** See `docs/WITHDRAWAL_REMOVAL_LIST.md`.
+
+#### The $10.01 that would not die (2026-08-15) — root cause: admin grants counted as earnings
+
+`adminEconomy.js` `grantCurrency()` had `totalMap = { coins: "totalEarned", gems: "totalGemsEarned" }`, so **every admin gem grant incremented the lifetime EARNINGS total**. The founder account had been granted 1001 gems, so the Earnings screen reported $10.01 earned against zero real earnings. Not a display bug: the aggregate itself was polluted, which is why it survived a display fix and then survived switching the KPI TO that aggregate.
+
+Fixed at the source: grants now land in `totalGrantedCoins` / `totalGrantedGems`. A grant is a comp, a support credit or test data. It is never revenue and must never appear in an earnings figure.
+
+**No migration.** Existing wallets still carry inflated `totalGemsEarned`. Part 2 decision 7 says balances today are test data and the cutover is clean, so nothing is being rewritten.
+
+**Therefore the Earnings screen derives lifetime from the LEDGER, not the aggregate.** The ledger is auditable line by line (type, amount, timestamp) so a questioned figure can be reconciled; an aggregate cannot be. This reverses the earlier note about capped queries: the cap is a real limitation, but a wrong number is worse than an incomplete window, and the window is flagged in the footer when it is hit.
+
+**Rule: an aggregate counter is only trustworthy if you have checked EVERY writer.** Three writers were checked and cleared (`earnedGemCredit`, `settleEarnedToGems`, `convertCoinsToGems`); the fourth, sitting in a different file, was not, and it was the one doing the damage.
+
+#### Part 3 wallet gutting — started 2026-08-15
+
+Spec: `docs/REVENUE_SHARE_PART3_SCREENS.md` §15.3 and §18. **Nothing deleted; screens stay on disk and routes redirect**, per the hard rule.
+
+DONE:
+- `requestWithdrawal` **DISABLED server-side** (`functions/withdrawals.js`). On-demand pull is the shape §1.5 calls "the single highest-leverage change". The body is retained because the Circle plumbing, sanctions screening and hold logic are still wanted by the scheduled payout path. `cancelWithdrawal` and `getMyWithdrawals` stay LIVE on purpose so anyone with an in-flight request can see and cancel it.
+- ~~Routes redirecting to `/creator/earnings`~~ — superseded by the section below: `/wallet/convert`, `/wallet/withdraw` and `/wallet/withdraw/new-address` were later removed outright rather than redirected. Only `/request-payout` and `/wallet/payout` still redirect (`AppRouter.jsx:986-987`).
+- Verified already done by earlier work: Gems tile, Convert button, Withdraw button and Withdrawal-limits card are gone from `wallet/v2/HomeScreen.jsx`; `SendGemsModal` is no longer mounted anywhere (only referenced in a comment in SendCoinsModal); `sendGems`/`quoteGemSend` already disabled server-side.
+
+STILL OUTSTANDING on Part 3:
+- `HistoryScreen` should become an earnings statement rather than a transaction list.
+- Wallet labelled "Coins" throughout (§18 copy change).
+- "You have earnings, view in Creator Studio" row for users with earnings.
+- `gemBuyback` (gems→coins) still makes gems look like a currency; §4.1 flags it as needing a founder call.
+- `withdrawals.js` `PLATFORM_SPREAD_BPS = 200` dies with the flow, not before.
+- Native mirrors batch into ONE APK at the end ([[feedback-batch-native-work]]).
+
+#### Convert / withdraw / address book are GONE (2026-08-15, founder-instructed)
+
+**"The ONLY way to make money on Vergr is revenue share."** Users cannot convert coins to gems and cannot start a withdrawal. These are not redirects, the routes do not exist:
+`/wallet/convert`, `/wallet/withdraw`, `/wallet/withdraw/new-address`, `/wallet/payout/history`, `/wallet/payout/:payoutId`, `/wallet/security/addresses`, `/wallet/addresses`.
+
+Also removed: Convert/Withdraw from `WalletLayout` desktop + mobile nav and breadcrumbs; the Convert card on `VanguardWalletScreen`; Convert/Withdraw controls in `NativeWalletScreens`; the address-book link in wallet Settings.
+
+⚠ **2026-08-16: the "Receive USDC" removal claimed here originally DID NOT LAND, and has now been
+done properly.** The crypto deposit route `/wallet/security/deposit` is unmounted, both lazy imports
+and the `WalletLayout` breadcrumb are gone, and all four entry points are cut
+(`NativeWalletScreens` QuickAction + LinkCard, wallet `SettingsScreen` card, `SecurityScreens` block).
+The "Whitelisted addresses" block and the Vanguard "Request Payout / Withdraw" card went with them.
+Screens remain on disk, unreachable. Verified by grep, not by assumption. Record:
+`docs/WITHDRAWAL_REMOVAL_LIST.md` section B.
+
+Server-side, which is what actually enforces it: `requestWithdrawal` throws (body retained for the scheduled payout path), `sendGems`/`quoteGemSend` already disabled. `cancelWithdrawal` + `getMyWithdrawals` stay live so in-flight requests can be cancelled.
+
+**Screen FILES stay on disk** (ConvertScreen, WithdrawScreen, NewAddressScreen, SecurityScreens address book) per the no-delete rule. They are unrouted and unreachable; their internal links to dead routes are harmless.
+
+**The wallet is the BUYER surface only:** coins held, buy coins, purchase/spend history, who you sent to, active subscriptions, security. Nothing that holds or moves cashable value.
+
+⚠️ **The wallet does NOT link to Creator Studio.** A wallet user is not a creator, and `/creator/earnings` sits behind `lock:'lite'`, so an Earnings link pointed most users at a locked surface. Removed: the Earnings quick action, the Earnings card in the right rail, and the "How creators get paid" help link. Part 3 §18 proposes a conditional "you have earnings" row; founder rejected even that, so there is no wallet-to-earnings path at all.
+
+⚠️ Native mirrors are edited in source but NOT shipped: one APK at the end ([[feedback-batch-native-work]]).
+
+#### NEVER paywall access to money already owed (2026-08-15, founder ruling)
+
+`/creator/earnings` was gated `lock:'lite'` in `CreatorLayout` NAV plus `requiredTier="lite"` on the screen. Both removed. Earnings is now free for every account.
+
+**Why this is not a pricing preference.** Two separate reasons:
+1. Commercially: nobody pays a company they do not know for the opportunity to earn. It kills creator acquisition at the exact moment you are asking someone to try.
+2. Legally: a fee standing between a creator and money already accrued to them is the worst possible shape for the principal/revenue-share argument in `docs/REVENUE_SHARE_PLAN.md` §1.5. Revenue share is the ONLY way to make money on Vergr, so paywalling it paywalls the entire creator proposition.
+
+**CORRECTED by the founder 2026-08-15, the earlier distinction was wrong.** Memberships is not an "upsell", it IS revenue share, so it cannot be charged for. **Nothing that lets a creator earn, see earnings, or get paid may sit behind a paid tier, full stop.** Now free: Earnings, Memberships, Payout setup, Statements. Legitimate Lite upsells are TOOLS that do not move money: Analytics, Schedule, Audience.
+
+✅ `memberships` gate REMOVED 2026-08-15 on founder instruction, along with `requiredTier="lite"` on PayoutScreens (payout setup + statements), which was charging creators to get paid.
+
+#### Buyer/creator split completed 2026-08-15
+
+`buyCoinsWithGems` DISABLED server-side: spending accrued revenue share treated it as a held balance, the stored-value shape §1.5 removes. Body retained.
+
+Wallet is **"Coins"** everywhere (sidebar, titles, all breadcrumbs) and its History is now the BUYER ledger: Coins bought, Tips sent, Unlocks, Subscriptions. Conversion and withdrawal filters removed, they could only ever be empty. Money RECEIVED is revenue share and appears only in Creator Studio.
+
+The internal accrual unit is never printed next to a user-facing amount. Remaining references live in unrouted screens only.
