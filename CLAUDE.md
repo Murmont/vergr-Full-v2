@@ -950,6 +950,29 @@ unlabelled mystery number, and on a small platform it mainly advertised that
 nobody has followers yet. **Do not put a metric back on that card.**
 
 
+✅ **ENGAGEMENT VERIFIED AS AN INTERACTION (2026-08-28).** Measured on @Vergr
+against @Verion's live Profile Boost, all three counters zeroed first:
+
+| step | views | engagement | shows |
+|---|---|---|---|
+| after reset | 0 | 0 | 0 |
+| card RENDERED, not touched | 1 | **0** | 4 |
+| card CLICKED | 1 | **1** | 4 |
+
+Engagement moved only on the click, and the browser landed on
+`/user/dosQs...` confirming a real profile open. Views held at 1 throughout.
+
+⚠ **THE FIRST ATTEMPT AT THIS TEST WAS CONTAMINATED AND LOOKED LIKE A BUG.** It
+read `views=0 shows=2` with an EMPTY seen-key, which is impossible under the new
+code, and the temptation was to go hunting in the source. The real cause was the
+test: the block rendered during the page load BEFORE the seen-key was cleared, so
+`markSeen` correctly matched the previous run and counted no view, and the
+already-pending 20s flush then landed AFTER the counters had been reset, carrying
+its impressions onto a freshly-zeroed doc. **A batched, timer-flushed counter
+cannot be tested by resetting mid-flight.** Clear storage, reload, let the
+in-flight flush land, THEN reset, THEN act.
+
+
 ✅ **VIEWS ARE NOW DEVICES, PROVEN BY MEASUREMENT (2026-08-28).** Founder caught
 the fault by arithmetic, not by reading code: a boost claimed 5 viewers on a
 platform with 2 accounts. `seenThisSession` was an in-memory Set, so every page
