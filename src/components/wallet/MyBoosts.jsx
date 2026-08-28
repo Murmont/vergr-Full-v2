@@ -67,19 +67,20 @@ function RunningBoost({ row }) {
         }}>{formatBoostRemaining(left)} left</span>
       </div>
       <div style={{ display: 'flex', gap: 18 }}>
-        {row.followersGained != null && stat(row.followersGained, 'new followers')}
-        {stat(row.impressions, 'feed shows')}
-        {stat(row.views, 'feed viewers')}
+        {stat(row.views, 'views')}
+        {stat(row.impressions, 'engagement')}
+        {row.followersGained != null && stat(row.followersGained, 'follows')}
       </div>
-      {/* ⚠ THE LABEL CARRIES THE LIMIT, because the number cannot. Only the
-          in-feed suggestion block reports; the home rail, discovery strip,
-          right sidebar, both Explore screens and onboarding show the boost and
-          count nothing. Calling these "impressions" claimed a total reach we do
-          not measure. Founder decision 2026-08-28: keep the partial count and
-          make the copy honest rather than pay to count everywhere. */}
+      {/* ⚠ EVERY WORD HERE IS DEFINED, because the last two labels were not.
+          "feed viewers" claimed people while the counter counted PAGE LOADS, and
+          the founder caught it by noticing a boost claimed 5 viewers on a
+          platform with 2 accounts. views = devices (localStorage-deduped per
+          boost run), engagement = total times shown including repeats, follows =
+          real follows and the only COMPLETE number of the three. */}
       <div style={{ color: WALLET_TOKENS.textMuted, fontSize: 10, lineHeight: 1.4 }}>
-        Feed placements only. Your boost also runs in Explore, the sidebar and
-        suggestions, which are not counted here. New followers counts them all.
+        Views counts devices, once per boost. Engagement counts every time it was
+        shown, repeats included. Both are counted in the feed only, so they are a
+        floor, not your total reach. Follows counts every surface.
       </div>
     </div>
   );

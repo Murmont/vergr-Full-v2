@@ -58,7 +58,9 @@ export default function SuggestedPeopleBlock({ slotKey }) {
         // UNDERCOUNTS on purpose. Do not "fix" this by counting everywhere
         // without asking: that is a spend decision and it is not yours.
         recordBoostImpressions(rows.filter((u) => isBoosted(u)).map((u) => ({
-          target: 'user', targetId: u.id,
+          // runId identifies THIS boost run so a refresh cannot re-count a view
+          // while a NEW boost on the same profile still can.
+          target: 'user', targetId: u.id, runId: u.boostExpiresAt,
         })));
       } catch { /* the feed must never break over a suggestion block */ }
     })();

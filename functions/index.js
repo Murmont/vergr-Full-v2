@@ -185,6 +185,7 @@ exports.adminSendPasswordReset = adminUsers.adminSendPasswordReset;
 // Manual guest cleanup, replacing a daily cron sweep that would have cost reads
 // forever to do a job the founder can do in one click when he sees one.
 exports.adminDeleteGuestAccount = adminUsers.adminDeleteGuestAccount;
+exports.adminResetBoostStats   = adminUsers.adminResetBoostStats;
 
 // Official announcement channels. Vergr's own accounts appear in the user's
 // message list as chats. ONE shared doc + ONE shared messages subcollection per

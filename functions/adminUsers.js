@@ -12,6 +12,7 @@
 //   adminUnbanUser       — clear ban flags
 //   adminMuteUser        — set mutedUntil
 //   adminUnmuteUser      — clear mutedUntil
+//   adminResetBoostStats — zero boostImpressions/boostViews on a boost target
 //   adminSetUserRole     — set users/{uid}.role
 //   adminForceLogoutUser — revoke refresh tokens (forces re-auth)
 //   adminSendPasswordReset — emails the user a reset link
@@ -498,6 +499,46 @@ exports.adminUnmuteUser = functions.https.onCall(
       actor: uid,
       action: 'admin_unmute',
       target: { type: 'user', id: targetUid },
+      ip: meta.ip, userAgent: meta.userAgent,
+      stepUpEnforced: false, stepUpFresh: false,
+    });
+    return { ok: true };
+  }
+);
+
+// Zero a boost's delivery counters.
+//
+// ⚠ EXISTS BECAUSE A COUNTER WAS INFLATED BY A BUG AND THERE WAS NO WAY TO
+// CORRECT IT. On 2026-08-28 impression counting was briefly live on all six
+// suggestion surfaces instead of one, and separately "views" counted page loads
+// rather than devices, so a boost on a 2-account platform reported 5 viewers.
+// Both are fixed, but the accumulated numbers were wrong and server-only, so
+// nothing short of an admin write could clean them.
+//
+// Scoped deliberately: it only ever writes zeroes, and only to the two delivery
+// counters. It cannot grant, move or destroy anything else.
+exports.adminResetBoostStats = functions.https.onCall(
+  { region: REGION, cors: true },
+  async (request) => {
+    const uid = request.auth?.uid;
+    await guardCaller(uid, 'users');
+    await adminRateLimit(uid, 'admin_reset_boost_stats', { perHour: 30, perDay: 100 });
+
+    const { target, targetId } = request.data || {};
+    const COL = { user: 'users', post: 'posts', squad: 'squads', stream: 'streams' };
+    if (!COL[target] || !targetId) {
+      throw new HttpsError('invalid-argument', 'target (user|post|squad|stream) and targetId required.');
+    }
+
+    await db.collection(COL[target]).doc(String(targetId)).set({
+      boostImpressions: 0, boostViews: 0,
+    }, { merge: true });
+
+    const meta = extractRequestMeta(request);
+    await auditAdminAction({
+      actor: uid,
+      action: 'admin_reset_boost_stats',
+      target: { type: target, id: String(targetId) },
       ip: meta.ip, userAgent: meta.userAgent,
       stepUpEnforced: false, stepUpFresh: false,
     });
