@@ -920,6 +920,24 @@ been wrong: `cronEvery6h` was redeployed at **15:45 UTC**, so the 12:00 run
 executed the OLD code that had no drain in it. Check the function's update time
 before concluding anything from a scheduled run.
 
+✅ **THE RECEIPT IS VERIFIED LIVE ON @Verion (2026-08-28).** Three running boosts
+render (two Post Boosts, one Profile Boost). The Profile Boost card reads
+**0 new followers / 10 feed shows / 5 feed viewers**, with the pack NAME resolved
+and the qualifier line beneath it. Before the fix that same card rendered a blank
+name, 0, 0 and no followers row at all, because the reader fell back to
+`posts/{uid}` and `followersGained` is gated on `target === 'user'`. So all three
+halves are confirmed: the normaliser, the counters coming off the users doc, and
+the followers query actually running. No ErrorBoundary.
+
+✅ **THE DRAIN IS VERIFIED END TO END.** The 18:00 UTC run logged
+`[aggregatePostViews] drained 10 views across 8 posts`, with no failure line
+beside it. `_runJobs` logs failures, and the log statement sits after every
+`batch.commit()`, so the Firestore writes landed. Post view counting is proven
+across the whole path: client batches (~20s) to `recordPostViews`, RTDB holds the
+hot counter, `cronEvery6h` rolls it into `posts.viewCount` four times a day. This
+was only observable because the job was given a log line first; before that a
+healthy run and a run that never happened looked identical.
+
 `eslint no-undef` caught a real one again in transit: the normaliser called
 `tsMs`, which is a `const` declared **inside a different function** in the same
 file. Third instance of that exact shape (`EditProfileScreen`,
