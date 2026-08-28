@@ -101,8 +101,217 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // ── Equippable rank cosmetics ────────────────────────────────────
+    // Mirrors the `equip: true` rows of src/utils/rankUnlocks.js. The client
+    // hides options above your level, but a client gate is advisory: rules are
+    // the boundary, so the level requirement is repeated here.
+    //
+    // Read against resource.data.vpLevel (the value ALREADY on the doc, written
+    // only by the syncVpLevel trigger), never request.resource, or a caller
+    // could raise their level and equip in the same write.
+    //
+    // KEEP IN SYNC with rankUnlocks.js. If you add a cosmetic there and not
+    // here it will be rejected at write time, which is the safe direction.
+    function cosmeticMinLevel(kind, id) {
+      return kind == 'accent'
+        ? ({ 'violet': 2, 'pink': 6, 'ember': 12, 'gold': 18, 'mint': 24,
+            'azure': 33, 'rose': 44, 'onyx': 57, 'ruby': 68, 'aurora': 79,
+            'mythic': 88, 'immortal': 100 }).get(id, 999)
+        : kind == 'theme'
+        ? ({ 'default': 1, 'deep': 6, 'grain': 16, 'beam': 27, 'carved': 38,
+            'aurora': 52, 'eclipse': 66, 'nebula': 84 }).get(id, 999)
+        : kind == 'nameEffect' ? 63
+        : kind == 'nameFont'   ? 3
+        : kind == 'nameColor'  ? 12
+        : kind == 'audioClip'  ? 35
+        : kind == 'typingStyle' ? 32
+        : kind == 'ambiance'   ? 81
+        // Effect 11. Mirrors the squad_environment / squad_weather rows in
+        // rankUnlocks.js (Champion LV2 = 52, Legend LV3 = 73).
+        : kind == 'squadEnvironment' ? 52
+        : kind == 'squadWeather'     ? 73
+        : 999;
+    }
+
+    // ⚠ THE CALLER'S OWN LEVEL, for unlocks that are written onto SOMEONE
+    // ELSE'S document. Every cosmetic above lives on the user's own doc, so
+    // `resource.data.vpLevel` is the right read there. A squad environment is
+    // written onto the SQUAD doc, which has no vpLevel, so the setter's level
+    // has to be fetched.
+    //
+    // ⚠ THIS IS A DOCUMENT READ, so it is billed. It is confined to the squad
+    // update rule, which fires only when someone changes squad settings, not on
+    // any hot path. Do NOT lift it into a broadly-applied helper.
+    function myVpLevel() {
+      let u = get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+      return u.get('role', '') == 'admin' ? 100 : u.get('vpLevel', 1);
+    }
+
+    // Squad environments (effect 11). True for any write that is NOT setting an
+    // environment, so it never restricts the existing squad-settings paths, and
+    // true for an environment write only when the SETTER has earned the tier and
+    // the id is one we actually ship.
+    //
+    // ⚠ Mirrors ENVIRONMENT_IDS in src/utils/squadEnvironments.js. Add an
+    // environment there and here together, or the picker offers something the
+    // server refuses — the same trap NAME_FONTS documents.
+    //
+    // ⚠ The level is the SETTER's, read from their own user doc. The unlock
+    // belongs to a person; the room belongs to the squad. Every member sees it
+    // whatever their own level, which is the entire point of a shared room.
+    function envWriteOk() {
+      return request.resource.data.get('chatBackground', '') != 'environment'
+        || (
+          request.resource.data.get('chatBackgroundValue', '') in
+            ['nightfall', 'ember', 'frost', 'downpour', 'verdant', 'void']
+          && cosmeticMinLevel('squadEnvironment', 'x') <= myVpLevel()
+          && (request.resource.data.get('chatBackgroundWeather', false) != true
+              || cosmeticMinLevel('squadWeather', 'x') <= myVpLevel())
+        );
+    }
+    // A gradient stop is either absent or a plain 6-digit hex colour.
+    function hexOrAbsent(m, k) {
+      return m.get(k, null) == null
+          || (m[k] is string && m[k].matches('^#[0-9a-fA-F]{6}$'));
+    }
+    // The stop LIST. Rules have no iteration, so this validates TYPE and SIZE
+    // only.
+    //
+    // ⚠ PER-ITEM VALIDATION THEREFORE HAPPENS ON THE READ PATH, in
+    // nameGradientFor() (src/utils/rankUnlocks.js), which hex-checks every stop
+    // and DROPS any that fails. That is not a shortcut: a stop is interpolated
+    // into a `linear-gradient()`, so it must be proven hex before it reaches
+    // CSS, and the only place able to check each element is the reader. The size
+    // cap here is what stops someone storing a huge array.
+    function stopsOk(g) {
+      return g.get('stops', null) == null
+          || (g.stops is list && g.stops.size() >= 2 && g.stops.size() <= 6);
+    }
+    function cosmeticsAllowed() {
+      let c = request.resource.data.get('cosmetics', {});
+      // Admin sees the whole set so cosmetics can be judged without levelling
+      // an account to 100. Read off the doc BEING WRITTEN, so it costs no
+      // extra document read, unlike the isAdmin() helper above which does a get().
+      let lvl = resource.data.get('role', '') == 'admin' ? 100 : resource.data.get('vpLevel', 1);
+      // The animated name gradient. What is EARNED is the unlock (L63); the three
+      // COLOURS are then the user's own free choice, so this validates SHAPE, not
+      // entitlement.
+      //
+      // ⚠ Each value is interpolated into a `linear-gradient()` through a CSS
+      // custom property, so it MUST be a plain 6-digit hex. A custom property can
+      // carry arbitrary tokens, so an unvalidated string would rewrite the
+      // gradient rather than colour it. The picker validates too, but the picker
+      // is not the boundary — a direct Firestore write is.
+      let g = c.get('nameGradient', {});
+      return (c.get('accent', null) == null      || cosmeticMinLevel('accent', c.accent) <= lvl)
+          && (c.get('theme', null) == null       || cosmeticMinLevel('theme', c.theme) <= lvl)
+          && (c.get('nameEffect', false) != true || cosmeticMinLevel('nameEffect', 'x') <= lvl)
+          && (c.get('audioClip', null) == null   || cosmeticMinLevel('audioClip', 'x') <= lvl)
+          // Profile music (effect 09). Two shapes, both level-gated:
+          //   { source: 'audius', trackId, title, artist, ... }  streamed from
+          //     Audius, so Vergr stores metadata only and no URL of ours.
+          //   { source: 'upload', url }  the owner's own file, and that URL IS
+          //     handed to an <audio> element, so it is PINNED to our own CDN.
+          //     Without the pin, a profile could point every visitor's browser
+          //     at a third-party host of the owner's choosing. The report path
+          //     covers CONTENT; this covers WHERE IT LOADS FROM, which a report
+          //     cannot undo after the fact.
+          //
+          // ⚠ An Audius trackId is NOT a URL and must never be treated as one.
+          // It is an opaque id the client turns into api.audius.co/...; nothing
+          // the user writes here reaches the DOM as a src.
+          && (c.get('profileAudio', null) == null
+              || (cosmeticMinLevel('ambiance', 'x') <= lvl
+                  && c.profileAudio.source in ['audius', 'upload']
+                  && (c.profileAudio.source != 'upload'
+                      || (c.profileAudio.get('url', '') is string
+                          && c.profileAudio.url.matches('https://cdn[.]vergr[.]app/.*')))
+                  && (c.profileAudio.source != 'audius'
+                      || (c.profileAudio.get('trackId', '') is string
+                          && c.profileAudio.trackId.size() > 0
+                          && c.profileAudio.trackId.size() < 64))
+                  // Denormalised display strings are shown to visitors, so they
+                  // are length-capped rather than trusted.
+                  && c.profileAudio.get('title', '').size() <= 200
+                  && c.profileAudio.get('artist', '').size() <= 120))
+          // The typeface is an ENUM, never a free string: an arbitrary value
+          // would be an arbitrary webfont load on the busiest surface in the app.
+          // MIRRORS `NAME_FONTS` in src/utils/nameFonts.js — add there and here
+          // together, or the picker offers a face the server refuses to store.
+          && (c.get('nameFont', null) == null || (
+                cosmeticMinLevel('nameFont', 'x') <= lvl
+             && c.nameFont in ['default', 'display', 'mono', 'orbitron', 'audiowide',
+                               'russo', 'blackops', 'chakra', 'michroma', 'bungee',
+                               'arcade', 'terminal', 'neon', 'faster', 'glitch',
+                               'pixel', 'tourney', 'creep']
+          ))
+          // A FREE-HEX accent. The 12 presets stay level-gated by `accent`; this
+          // is the picker's output and is gated on the same level as the highest
+          // thing it could imitate would be pointless, so it is gated on the
+          // ACCENT unlock itself (level 2, the first accent).
+          && (c.get('accentHex', null) == null || (
+                cosmeticMinLevel('accent', 'violet') <= lvl
+             && hexOrAbsent(c, 'accentHex')
+          ))
+          && (c.get('nameColor', null) == null || (
+                cosmeticMinLevel('nameColor', 'x') <= lvl
+             && hexOrAbsent(c, 'nameColor')
+          ))
+          // The typing indicator style. An ENUM, mirroring TYPING_STYLES in
+          // src/utils/rankUnlocks.js — add there and here together, or the
+          // picker offers a style the server refuses to store.
+          // `dots` is deliberately absent from the level gate's reach: it is
+          // the default everybody already has, so storing it is how you turn
+          // the cosmetic OFF and must work at any level.
+          && (c.get('typingStyle', null) == null || c.typingStyle == 'dots' || (
+                cosmeticMinLevel('typingStyle', 'x') <= lvl
+             && c.typingStyle in ['dots', 'wave', 'bars', 'orbit', 'pixel', 'comet']
+          ))
+          && (c.get('nameGradient', null) == null || (
+                cosmeticMinLevel('nameEffect', 'x') <= lvl
+             && stopsOk(g)
+             && hexOrAbsent(g, 'a') && hexOrAbsent(g, 'b') && hexOrAbsent(g, 'c')
+          ));
+    }
+
     match /users/{userId} {
-      allow read: if true;
+      // PROFILE VISIBILITY IS ENFORCED HERE, not only on the screen.
+      //
+      // Settings → Privacy → "Who can see my profile" offers Everyone /
+      // Friends & Followers / Only me. It was enforced inline in
+      // PublicProfileScreen and NativeProfileScreens ONLY, so one
+      // `getDoc(doc(db,'users',uid))` returned the full profile of someone who
+      // had set "Only me" (audit A30). A privacy control the data layer ignores
+      // is a control in name.
+      //
+      // `get` and `list` are DELIBERATELY SPLIT, and this is the crux:
+      // a `resource.data` condition on a LIST is evaluated per returned
+      // document and fails the WHOLE query if any single row fails. `users` is
+      // bulk-queried all over the app (Explore reads 300, search, the
+      // leaderboard's orderBy), so gating `read` would not have hidden one
+      // profile — it would have broken Explore, search and the leaderboard
+      // outright for everybody the moment one person chose "Only me".
+      //
+      // So: `get` (opening a profile) is gated, `list` (bulk) stays open.
+      // Discovery surfaces already filter opted-out users client-side via
+      // hiddenFromDiscovery + searchVis, which are separate controls.
+      //
+      // ⚠ Residual, stated plainly: a bulk query can still return the profile
+      // FIELDS of a "Only me" user. Closing that needs the profile split into
+      // public and private documents, which is a data migration, not a rule.
+      // The genuinely sensitive fields have already been moved out (phone →
+      // private/contact, KYC personal data → private/kyc).
+      //
+      // Cost: the follow lookups only run when profileVis is NOT 'Everyone',
+      // because `||` short-circuits and 'Everyone' is the default. The common
+      // path costs zero extra reads.
+      allow get: if isOwner(userId)
+        || resource.data.get('settings', {}).get('privacy', {}).get('profileVis', 'Everyone') == 'Everyone'
+        || (isAuth() && (
+              exists(/databases/$(database)/documents/follows/$(request.auth.uid + '_' + userId))
+              || exists(/databases/$(database)/documents/follows/$(userId + '_' + request.auth.uid))
+           ));
+      allow list: if true;
       allow create: if isOwner(userId)
         // Block self-referral on initial doc create
         && (!('referredBy' in request.resource.data) || request.resource.data.referredBy != userId);
@@ -112,6 +321,38 @@ service cloud.firestore {
         ) && (
           // Cannot self-refer
           !('referredBy' in request.resource.data) || request.resource.data.referredBy != userId
+        ) && (
+          // Server-only. `kycLevel` decides whether someone may become a creator
+          // and be paid, `pendingCreatorCoins` is revenue received before the
+          // creator agreement was accepted, `vp` is now minted only by the
+          // claimCreatorQuest callable, and `creator` is the program status the
+          // admin decision writes, and `kyc.verified` is what assertKycVerified
+          // trusts. All five were owner-writable.
+          // `vpLevel` joined them 2026-08-23: it is derived from wallets.vp by
+          // the syncVpLevel trigger and it GATES REWARDS (the equippable
+          // cosmetics below, the stream entry tier, the chat name colour), so an
+          // owner-writable copy would be a one-line self-promotion to Immortal.
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+            'kycLevel', 'kyc', 'pendingCreatorCoins', 'vp', 'creator', 'vpLevel',
+            // Milestone counter. Badges are evaluated CLIENT-side (free, zero
+            // reads), so the badge a visitor sees is only as honest as the
+            // counter it reads. Owner-writable would make every badge a claim
+            // rather than an achievement.
+            'clipCount', 'streamMinutes',
+            // VP bonus packs. Bought with COINS through the purchaseVpBonus
+            // callable, or granted free by the ladder. Owner-writable would let
+            // anyone stamp themselves a 3x VP multiplier with no expiry, which is
+            // a one-line route to Immortal and to every reward it gates.
+            'vpBonuses',
+            // Paid Profile Boost. Same reasoning: the owner may write most of
+            // their own doc, and a self-stamped boost is a free slot in the
+            // suggested-users rail.
+            'boostExpiresAt', 'boostedAt', 'boostBucket',
+            // Delivery counters shown to the BUYER as proof the boost ran.
+            'boostImpressions', 'boostViews'
+          ])
+        ) && (
+          cosmeticsAllowed()
         ))
         || isModerator()
         || (isAuth() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['followerCount', 'followingCount']));
@@ -187,10 +428,20 @@ service cloud.firestore {
         allow write: if isOwner(userId);
       }
 
-      // vergr.me (Linktree-style) page config. Public read so the
-      // /u/:username renderer works for anyone; only the owner writes.
+      // vergr.me (Linktree-style) page config.
+      //
+      // `page` is world-read so /u/:username renders for anyone, including
+      // logged-out visitors. `draft` is NOT: it holds unpublished edits, and
+      // the whole point of a Publish button is that nothing is public until it
+      // is pressed.
+      //
+      // The draft used to be a FIELD on the public `page` doc, so anyone could
+      // read `users/{uid}/vergrMe/page` and see every unpublished change as it
+      // was typed (audit A30). It now lives in its own document, which is the
+      // only way to make it private: Firestore rules gate documents, never
+      // fields.
       match /vergrMe/{docId} {
-        allow read:  if true;
+        allow read:  if docId != 'draft' || isOwner(userId);
         allow write: if isOwner(userId);
       }
 
@@ -251,9 +502,21 @@ service cloud.firestore {
       // counter on the post doc alongside writing their own like/save subdoc —
       // are not denied. The subcollection rules still gate who can actually
       // create a like/save, so this can't be used to forge engagement records.
-      allow update: if isRegisteredOwner(resource.data.authorId) || isModerator()
+      // ⚠ `boostExpiresAt` is SERVER-ONLY. The author branch above grants write
+      // on ANY field, so without this a user could stamp their own post with a
+      // boost and take the paid 3x For You multiplier for free. Written only by
+      // purchaseBoost, after it has debited the coins.
+      allow update: if ((isRegisteredOwner(resource.data.authorId) || isModerator())
+          && !request.resource.data.diff(resource.data).affectedKeys()
+                .hasAny(['boostExpiresAt', 'boostedAt', 'boostImpressions', 'boostViews']))
         || (isAuth() && request.resource.data.diff(resource.data).affectedKeys()
-              .hasOnly(['likeCount', 'commentCount', 'saveCount', 'shareCount', 'viewCount', 'repostCount']));
+              // ⚠ `viewCount` REMOVED from this allowlist 2026-08-28. It let any
+              // signed-in user write any post's view count — including someone
+              // else's. Nothing displayed it (incrementViewCount had zero callers),
+              // but Creator Studio already SORTS and TOTALS by it, and a visible
+              // number that anyone can inflate is worse than no number at all.
+              // Counting is server-side from now on: docs/BOOST_DELIVERY_PLAN.md §6.
+              .hasOnly(['likeCount', 'commentCount', 'saveCount', 'shareCount', 'repostCount']));
       allow delete: if isRegisteredOwner(resource.data.authorId) || isModerator();
 
       match /comments/{commentId} {
@@ -338,7 +601,15 @@ service cloud.firestore {
       allow read: if true;
       allow create: if isRegistered();
 
-      allow update: if isSquadAdmin(squadId) || isModerator() || (
+      // ⚠ `envWriteOk()` is AND-ed onto the privileged branches, NOT added as a
+      // separate `allow update`. Rules OR their allow clauses, so a second
+      // clause could only ever GRANT access — a gate written that way gates
+      // nothing, which is the same defect as the three inert kill switches.
+      // ⚠ `boostExpiresAt` is SERVER-ONLY here too — a squad admin may write every
+      // other field, and a self-stamped boost is a free slot in Explore.
+      allow update: if ((isSquadAdmin(squadId) || isModerator()) && envWriteOk()
+          && !request.resource.data.diff(resource.data).affectedKeys()
+                .hasAny(['boostExpiresAt', 'boostedAt', 'boostImpressions', 'boostViews'])) || (
         get(/databases/$(database)/documents/squads/$(squadId)).data.isPublic == true &&
         request.auth.uid != null &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberIds', 'memberCount', 'updatedAt']) &&
@@ -351,10 +622,38 @@ service cloud.firestore {
       );
       allow delete: if isSquadOwner(squadId) || isAdmin();
 
+      // These three rules used to chain into a coin mint. `create` let ANY
+      // signed-in user write their own member doc in ANY squad with no field
+      // validation, so they could write role:'president'; isSquadAdmin() reads
+      // `role` off that very doc, so it then returned true; and the treasury
+      // below was writable by any member. distributeVanguardTreasury pays that
+      // balance out as real spendable coins.
       match /members/{memberId} {
         allow read: if true;
-        allow create: if isAuth() && (request.auth.uid == memberId || isSquadAdmin(squadId));
-        allow update: if isAuth() && (request.auth.uid == memberId || isSquadAdmin(squadId));
+        allow create: if isAuth() && (
+          isSquadAdmin(squadId)
+          // The squad creator seeding their own president doc at createSquad
+          // time, when no member doc exists yet so isSquadAdmin is still false.
+          || isSquadOwner(squadId)
+          // Self-join. Only your own doc, only as a plain member, and only into
+          // a PUBLIC squad — private squads go through join_requests, which is
+          // already gated correctly. isRegistered, not isAuth: squad data is
+          // UGC and guests are excluded from it by the project's own rule.
+          || (isRegistered() && request.auth.uid == memberId
+              && request.resource.data.role == 'member'
+              && get(/databases/$(database)/documents/squads/$(squadId)).data.get('isPublic', false) == true)
+        );
+        // Role is admin-only, or self-promotion to president is one write away.
+        // Mute fields ride the same list so a muted member cannot unmute
+        // themselves. No client path self-updates a member doc today
+        // (joinSquad creates, leaveSquad deletes, role/mute are admin actions),
+        // so the self branch only exists to keep cosmetic fields writable.
+        allow update: if isAuth() && (
+          isSquadAdmin(squadId)
+          || (request.auth.uid == memberId
+              && !request.resource.data.diff(resource.data).affectedKeys()
+                    .hasAny(['role', 'mutedUntil', 'muteReason']))
+        );
         allow delete: if isAuth() && (request.auth.uid == memberId || isSquadAdmin(squadId));
       }
 
@@ -405,11 +704,27 @@ service cloud.firestore {
         allow write: if isSquadAdmin(squadId);
       }
 
-      // ✅ Votes subcollection – open to any authenticated user (for debugging)
+      // Squad polls and the kick/election votes. This was isAuth() with a
+      // "(for debugging)" comment, i.e. any signed-in account — a guest, or
+      // someone who has never been near the squad — could create AND overwrite
+      // ballots in every squad on the platform.
+      //
+      // One doc per POLL (auto-id), not one per voter, so the voter is
+      // identified by the `voterIds` array rather than the doc id. Casting is
+      // the only legitimate update: your own uid joins voterIds and the tallies
+      // move, nothing else. Refusing the write when you are already in
+      // voterIds makes one-ballot-per-member structural instead of something
+      // the client is trusted about (castSquadVote checks it, VotePollCard
+      // does not).
       match /votes/{voteId} {
-        allow read: if isAuth();
-        allow create: if isAuth();
-        allow update: if isAuth();
+        allow read: if isSquadMember(squadId);
+        allow create: if isSquadMember(squadId)
+          && request.resource.data.createdBy == request.auth.uid;
+        allow update: if isSquadMember(squadId)
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['voteCounts', 'voterIds', 'totalVotes'])
+          && (request.auth.uid in request.resource.data.voterIds)
+          && !(request.auth.uid in resource.data.get('voterIds', []));
         allow delete: if false;
       }
 
@@ -419,18 +734,27 @@ service cloud.firestore {
         allow create, update, delete: if isAuth() && request.auth.uid == userId && isSquadMember(squadId);
       }
 
+      // THE SQUAD TREASURY. `wallet/main.balance` is what contributeToSquad,
+      // vanguard.js and squadChallenges.js move, and what
+      // distributeVanguardTreasury pays out as spendable coins. It is
+      // server-only: nothing in src/ writes it (firestore.js:2064 and :2468 are
+      // getDoc), and contributeToSquad moved into walletActions.js in the
+      // 2026-08-16 server-only-money pass — this rule was never tightened to
+      // match, which is the gap.
+      //
+      // The trailing `allow write: if false` this replaces was INERT. Firestore
+      // allow statements are OR'd, never AND'd, so a later false cannot revoke
+      // an earlier grant. It read as a lock and was not one.
       match /wallet/{docId} {
         allow read: if isSquadMember(squadId);
-        allow create: if isSquadMember(squadId);
-        allow update: if isSquadMember(squadId);
         allow write: if false;
       }
 
+      // Server-only for the same reason: a forgeable ledger can be made to
+      // corroborate a tampered treasury. Only read from src/ (firestore.js:2079).
       match /transactions/{txId} {
         allow read: if isSquadMember(squadId);
-        allow create: if isSquadMember(squadId);
-        allow update: if false;
-        allow delete: if false;
+        allow write: if false;
       }
 
       match /announcements/{annId} {
@@ -790,8 +1114,58 @@ service cloud.firestore {
     // CONVERSATIONS (DIRECT MESSAGES)
     // ============================================================
 
+    // Chat-theme write guard. Either the theme fields are untouched, or the
+    // theme is cleared, or it is a known id credited to the writer themselves.
+    // MIRRORS `CHAT_THEMES` in src/utils/chatThemes.js — add an id there and
+    // here together, or the picker offers what the server refuses.
+    function chatThemeWriterIsSelf() {
+      return !request.resource.data.diff(resource.data).affectedKeys()
+               .hasAny(['chatTheme', 'chatThemeBy', 'chatThemeColors', 'chatThemeMotion'])
+          || (
+            (request.resource.data.get('chatTheme', null) == null
+             || (request.resource.data.chatTheme in ['arcade', 'dracula', 'gaia', 'chatter',
+                                                   'cosmos', 'neon', 'vault', 'studio']
+                 && request.resource.data.get('chatThemeBy', '') == request.auth.uid))
+            // Custom colours: SIZE only. Rules have no iteration, so each value
+            // is proven hex on the READ path (chatThemeCustomColors), which is
+            // the same split the name gradient uses — the values end up in
+            // canvas pixels, so they must be validated somewhere that can see
+            // each one. This cap is what stops a huge array being stored.
+            && (request.resource.data.get('chatThemeColors', null) == null
+                || (request.resource.data.chatThemeColors is list
+                    && request.resource.data.chatThemeColors.size() >= 3
+                    && request.resource.data.chatThemeColors.size() <= 4))
+            // Movement preset. MIRRORS CHAT_MOTIONS in src/utils/chatThemes.js.
+            && (request.resource.data.get('chatThemeMotion', null) == null
+                || request.resource.data.chatThemeMotion in ['drift', 'tide', 'pulse', 'wander', 'orbit'])
+          );
+    }
+
     match /conversations/{convoId} {
-      allow get: if isAuth();
+      // `get` used to be a bare isAuth(), which leaked the newest message of
+      // EVERY thread on the platform: the doc carries `lastMessage` as the full
+      // message BODY (firestore.js sendMessage), and the ids are derivable —
+      // a DM is the two uids sorted and joined with '_', a support thread is
+      // the literal `support_<channelId>_<uid>`, and uids are enumerable
+      // because /users is world-read. Confirmed live 2026-08-18: a real account
+      // read a DM it was not part of.
+      //
+      // It cannot simply become participants-only. A NON-participant legitimately
+      // reads a group's doc on the invite landing page (`getGroupForJoin`,
+      // firestore.js:3202) to show its name before joining, and the self-join
+      // rule below depends on that flow. That applies to PRIVATE groups too:
+      // they show the same preview, then go through joinRequests.
+      //
+      // So: participants always; group previews stay open EXCEPT support
+      // threads, which are groups (supportChannel.js sets isGroup + a private
+      // visibility) but whose ids are guessable. Group ids are addDoc auto-ids,
+      // so a group preview already requires an unguessable id — the same bar
+      // the invite code itself sits behind.
+      allow get: if isAuth() && (
+        request.auth.uid in resource.data.participants
+        || (resource.data.isGroup == true
+            && resource.data.get('supportThread', false) != true)
+      );
       allow list: if isAuth() && request.auth.uid in resource.data.participants;
       allow create: if isAuth() && request.auth.uid in request.resource.data.participants;
       // Group-management fields (name/icon/admins/membership) are ADMIN-only
@@ -801,7 +1175,22 @@ service cloud.firestore {
       // `ttlSeconds` (disappearing messages) rides this same list: in a GROUP
       // only an admin/creator may arm the timer; in a 1:1 DM either party may
       // (isGroup != true short-circuits below), which is the Telegram model.
-      allow update: if isAuth() && request.auth.uid in resource.data.participants && (
+      allow update: if isAuth() && request.auth.uid in resource.data.participants
+        // ── CHAT THEME (effect 12) ────────────────────────────────────
+        // Rules enforce IDENTITY; the read path enforces ENTITLEMENT. Neither
+        // costs a document read.
+        //
+        // Whether you may use themes depends on your vpLevel or your Pro plan,
+        // and checking that here would mean get()-ing your user doc on every
+        // conversation write. Instead every viewer resolves the theme from the
+        // SETTER's profile at render time (chatThemeFor), against fields that
+        // are server-written and server-only.
+        //
+        // ⚠ That only holds if you cannot claim to BE somebody else. Without
+        // this clause a free account could write chatThemeBy = <some Pro user>
+        // and get the theme anyway. So: you may only name yourself.
+        && chatThemeWriterIsSelf()
+        && (
         !request.resource.data.diff(resource.data).affectedKeys()
           .hasAny(['groupName', 'groupIcon', 'admins', 'participants', 'onlyAdminsPost', 'ttlSeconds',
                    'permissions', 'banned', 'requireInvite'])
@@ -894,7 +1283,29 @@ service cloud.firestore {
 
       match /messages/{messageId} {
         allow read: if isAuth() && request.auth.uid in get(/databases/$(database)/documents/conversations/$(convoId)).data.participants;
-        allow create: if isAuth() && request.resource.data.senderId == request.auth.uid;
+        // ⚠ SECURITY: this used to be `senderId == request.auth.uid` and NOTHING
+        // else. Owning the senderId proves who you are, not that you belong in
+        // the thread, so ANY signed-in account could write a message into ANY
+        // conversation on the platform. Read, update and delete all check
+        // membership on the line above and below; create did not.
+        //
+        // It is trivially targetable, by this file's own admission 120 lines up:
+        // a DM id is "the two uids sorted and joined with '_'" and uids are
+        // enumerable because /users is world-read. So it was an unsolicited-DM
+        // and harassment vector that bypassed blocks, privacy tiers and the
+        // stranger-media gate, because none of those are enforced here.
+        //
+        // The squad equivalent (line ~447) has always required isSquadMember,
+        // so this was an oversight rather than a deliberate asymmetry.
+        //
+        // Cost: one get() per message CREATE. Read/update/delete already pay the
+        // same get(), and creates are far rarer than reads. `sendMessage` only
+        // ever batch.update()s the conversation, and `createConversation`
+        // awaits its setDoc separately, so the parent doc always exists by the
+        // time a message is written and this get() cannot spuriously fail.
+        allow create: if isAuth()
+          && request.resource.data.senderId == request.auth.uid
+          && request.auth.uid in get(/databases/$(database)/documents/conversations/$(convoId)).data.participants;
         allow update: if isAuth() && (
           resource.data.senderId == request.auth.uid ||
           (request.auth.uid in get(/databases/$(database)/documents/conversations/$(convoId)).data.participants
@@ -944,17 +1355,55 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // A call doc holds both WebRTC session descriptions. This app uses
+    // NON-TRICKLE ICE, so the host/srflx candidates — which carry IP
+    // ADDRESSES — are embedded in the SDP on this document, not in the
+    // candidate subcollections (verified on a live call 2026-08-18: both
+    // subcollections were empty while offer+answer were present).
+    //
+    // The whole block used to be a bare isAuth(), which meant: enumerate every
+    // call on the platform and read who called whom plus both SDPs (the
+    // enumeration half was confirmed live); write your own `answer` before the
+    // real callee and have the caller negotiate with YOU; and end or forge any
+    // call. `calls_history` directly above already had the right shape.
     match /calls/{callId} {
-      allow read: if isAuth();
-      allow create: if isAuth();
-      allow update: if isAuth();
+      allow get: if isAuth() && request.auth.uid in resource.data.participants;
+      // NOT `if false`. IncomingCallManager subscribes with
+      // where('participants','array-contains',me) + where('status','==','ringing'),
+      // which is a LIST and is evaluated against THIS rule, not `get` — denying
+      // list outright would stop every incoming call from ringing. Gating list
+      // on the same participant condition is what closes enumeration: an
+      // unconstrained getDocs(collection('calls')) cannot satisfy it.
+      allow list: if isAuth() && request.auth.uid in resource.data.participants;
+      allow create: if isAuth()
+        && request.auth.uid in request.resource.data.participants
+        && request.resource.data.callerId == request.auth.uid;
+      allow update: if isAuth() && (
+        // Signalling on a live call: you must ALREADY be a participant of this
+        // exact call. This is what blocks the answer-injection hijack.
+        (request.auth.uid in resource.data.participants
+         && request.auth.uid in request.resource.data.participants)
+        // Starting a NEW call on the same doc. The id is the stable chat id, so
+        // every call between the same people reuses one document and the client
+        // setDoc()s it whole. For a group that rewrites the roster, so a member
+        // who joined since the last call is not in resource.data.participants
+        // yet and would otherwise be unable to start one. Only allowed once the
+        // previous call is over, and only naming yourself as the caller.
+        || (resource.data.get('status', 'ended') == 'ended'
+            && request.resource.data.callerId == request.auth.uid
+            && request.auth.uid in request.resource.data.participants)
+      );
       allow delete: if false;
 
+      // Gated on the parent call's participants. `write` (not read/create) is
+      // deliberate: webrtc.js deletes these on teardown.
       match /callerCandidates/{candidateId} {
-        allow read, write: if isAuth();
+        allow read, write: if isAuth() && request.auth.uid in
+          get(/databases/$(database)/documents/calls/$(callId)).data.participants;
       }
       match /calleeCandidates/{candidateId} {
-        allow read, write: if isAuth();
+        allow read, write: if isAuth() && request.auth.uid in
+          get(/databases/$(database)/documents/calls/$(callId)).data.participants;
       }
     }
 
@@ -967,6 +1416,117 @@ service cloud.firestore {
       allow update: if isAuth() && resource.data.recipientId == request.auth.uid;
       allow delete: if isAuth() && resource.data.recipientId == request.auth.uid;
       allow create: if false;
+    }
+
+    // ============================================================
+    // OFFICIAL CHANNELS (admin-to-user broadcast threads)
+    // ============================================================
+    // Vergr's own accounts appear in the message list as chats. ONE shared
+    // channel doc and ONE shared messages subcollection serve every user, so a
+    // send costs one write no matter how many users there are. Per-user state
+    // (read / mute / clear / delete) lives in channel_state/{uid}.
+    //
+    // Consequence of the shared model, and the reason nothing personal may ever
+    // be posted to a channel: these messages are world-readable. Anything
+    // per-user has to be a notification or a real DM.
+
+    // Two visibility modes, and the difference is REAL, not cosmetic:
+    //
+    //   restricted != true  → an OPEN channel. The doc and its messages are
+    //     world-readable. A `visibility.segment` on an open channel is a SOFT
+    //     render filter (curation: "this is aimed at creators"), never secrecy.
+    //
+    //   restricted == true  → a CLOSED channel. Rules enforce membership on both
+    //     the channel doc and its messages, so a non-member cannot read the
+    //     content, the preview, or even learn the channel exists. Membership is a
+    //     tiny doc per member, written server-side only.
+    //
+    // Anything that must actually be private has to be a closed channel. Putting
+    // it in an open one with a segment set is a filter, not a lock.
+    // Campaigns. ONE shared document per announcement, read by every client, so
+    // a campaign to the whole platform costs the reads of a single doc. Only
+    // SENT campaigns are readable: a draft is unfinished work and must not leak
+    // before it goes out.
+    //
+    // The segment on a campaign is applied client-side and is CURATION, not
+    // secrecy. Anything genuinely private belongs in a restricted channel, which
+    // is gated above by real membership.
+    // Transactional email templates. Server-only: these decide what a password
+    // reset says, so a client that could write them could phish every user.
+    match /email_templates/{templateId} {
+      allow read, write: if false;
+      match /versions/{v} { allow read, write: if false; }
+    }
+    // Coin sale promos. Read by nobody directly: the store asks
+    // getActiveCoinPromo, which is what stops a client from reading a promo
+    // that is scheduled but not live, or computing its own bonus.
+    match /coin_promos/{promoId} {
+      allow read, write: if false;
+    }
+    // Redemption records exist to make the cap and the idempotency provable.
+    // Server-written only; a client that could touch these could mint bonuses.
+    match /promo_redemptions/{id} {
+      allow read, write: if false;
+    }
+    match /announcements/{campaignId} {
+      allow read: if isAuth() && resource.data.status == 'sent';
+      allow write: if false; // adminUpsertCampaign / adminSendCampaign only
+    }
+
+    // Per-user engagement with a campaign. Owner-written because the client is
+    // what knows an impression happened, but the id is bound to the caller's uid
+    // so nobody can write a read receipt on someone else's behalf, and the
+    // aggregate counters live on the campaign doc, which stays server-only.
+    match /announcement_reads/{readId} {
+      allow read: if isAuth() && resource.data.uid == request.auth.uid;
+      allow create, update: if isAuth()
+        && request.resource.data.uid == request.auth.uid
+        && readId.split('__')[1] == request.auth.uid;
+      allow delete: if false;
+    }
+
+    match /official_channels/{channelId} {
+      allow read: if resource.data.restricted != true
+        || (isAuth() && exists(/databases/$(database)/documents/official_channels/$(channelId)/members/$(request.auth.uid)));
+      // Server only. Written by adminUpsertChannel / adminSendChannelMessage.
+      allow write: if false;
+
+      match /messages/{messageId} {
+        allow read: if get(/databases/$(database)/documents/official_channels/$(channelId)).data.restricted != true
+          || (isAuth() && exists(/databases/$(database)/documents/official_channels/$(channelId)/members/$(request.auth.uid)));
+        allow write: if false;
+      }
+
+      // Membership for closed channels. A member may confirm their own row, which
+      // is what lets the client resolve a closed channel it belongs to.
+      match /members/{memberUid} {
+        allow read: if isOwner(memberUid);
+        allow write: if false;
+      }
+    }
+
+    // Per-user index of the CLOSED channels this user belongs to.
+    //
+    // Needed because a broad query for closed channels can never satisfy a
+    // membership rule (Firestore requires a query to be provably allowed for the
+    // whole result set, so it would be denied outright). The client reads this
+    // list and fetches those channels by id instead. Server-written.
+    match /channel_members/{userId} {
+      allow read: if isOwner(userId);
+      allow write: if false;
+    }
+
+    // Per-user channel state. One doc per user holding every channel's state, so
+    // the client reads it once on app open. Deliberately NOT a map keyed by uid
+    // on the channel doc: that would have every user writing one shared document.
+    //
+    // There is NO unsubscribe field, by design (founder decision D1). A user can
+    // mute, clear or delete their view of a channel; they cannot stop delivery.
+    match /channel_state/{userId} {
+      allow read: if isOwner(userId);
+      allow create, update: if isOwner(userId)
+        && request.resource.data.keys().hasOnly(['channels', 'updatedAt']);
+      allow delete: if false;
     }
 
     // ============================================================
@@ -1034,11 +1594,12 @@ service cloud.firestore {
     match /wallets/{userId} {
       allow read: if isOwner(userId);
       allow create: if isOwner(userId);
-      // Server-only fields cannot be written from the client. The full list
-      // is documented in CLAUDE.md → Option 1 / Wallet UX. They include the
-      // Circle USDC ledger, KYC level, TOTP state, withdrawal limits, and
-      // PIN lockout tracking. Owner-writable fields (balance, vp, gems,
-      // chatBackground, etc) keep the legacy free-write behaviour.
+      // Server-only fields cannot be written from the client.
+      //
+      // As of 2026-08-16 EVERY money field is on this list. What the owner may
+      // still write is preferences carried on the wallet doc for convenience
+      // (chatBackground and friends). If you are adding a field that represents
+      // value, it belongs here, and the write belongs in a Cloud Function.
       allow update: if isOwner(userId)
         && !request.resource.data.diff(resource.data).affectedKeys().hasAny([
           'usdcBalance', 'usdcPending',
@@ -1048,7 +1609,49 @@ service cloud.firestore {
           'walletFrozen', 'walletFrozenAt', 'walletFrozenReason',
           'whitelistedAddresses',
           'withdrawalLimits',
-          'pinFailedAttempts', 'pinLockedUntil', 'pinLastFailedAt'
+          'pinFailedAttempts', 'pinLockedUntil', 'pinLastFailedAt',
+          // Revenue-share accrual, server-only. `owedMicroUsd` IS the payable
+          // that functions/creatorPayouts.js pays out; the rest are the lifetime
+          // aggregates the Earnings screen and the rate ladder read. None has a
+          // legitimate client writer: every increment comes from coinLedger.js
+          // through the Admin SDK. Left owner-writable, a client could mint the
+          // liability Vergr owes it.
+          //
+          // The old `gems` / `totalGemsEarned` names are kept in this list on
+          // purpose. The unit was removed on 2026-08-16, and a stale client
+          // holding the old field name must not be able to write it either.
+          // Stream Boost tokens, granted by the VP ladder (syncVpLevel) and
+          // spent in createStreamSession INSTEAD of 50 coins. That makes them
+          // worth exactly 50 coins each, so an owner-writable copy is a coin
+          // printer. Server-only from the moment they existed.
+          'boostTokens',
+          // The typed boost INVENTORY that replaced the flat count above.
+          // Each entry is worth its coin price, so an owner-writable map is a
+          // coin printer with extra steps. Written only by purchaseBoostPack
+          // and applyBoost, and by syncVpLevel for the ladder grants.
+          'boosts',
+          // Milestone counters, written only by claimDailyReward. Badges are
+          // evaluated client-side from these, so owner-writable would turn
+          // every loyalty badge into a self-declaration.
+          'consecutiveDays', 'bestConsecutiveDays', 'distinctDaysActive',
+          'owedMicroUsd', 'totalOwedMicroUsd', 'totalPaidMicroUsd',
+          'earnedBalance', 'totalEarnedCoinsGross',
+          'gems', 'totalGemsEarned', 'totalPaidOut', 'gemsInEscrow',
+          // COINS AND VP, server-only since 2026-08-16.
+          //
+          // These were the last owner-writable money fields, left open because
+          // three legacy helpers in src/firebase/firestore.js wrote them from
+          // the browser (awardVP, recordAdWatch, contributeToSquad) plus seven
+          // dead ones nothing called. All ten are gone: the three live paths
+          // are now callables in functions/walletActions.js and the dead ones
+          // were deleted.
+          //
+          // `balance` matters as much as the payable. Self-minted coins buy
+          // real things, and a tip funded by minted coins accrues a real
+          // revenue-share liability against Vergr, so leaving it writable was a
+          // way to manufacture the payable indirectly.
+          'balance', 'vp', 'totalEarned', 'totalSpent',
+          'totalReceived', 'totalTipped'
         ]);
       allow delete: if false;
 
@@ -1162,7 +1765,26 @@ service cloud.firestore {
         resource.data.recipientId == request.auth.uid ||
         isAdmin()
       );
-      allow create: if isAuth() && request.resource.data.userId == request.auth.uid;
+      // Server-only, like every other money collection here. `create` only
+      // ever checked that userId matched the caller — nothing constrained
+      // `type`, `amount`, `currency` or the `earning` flag, so any account
+      // could write itself a tip_received row. That matters because the
+      // Earnings screen was deliberately moved onto the LEDGER rather than the
+      // wallet aggregate, on the grounds that a ledger is auditable line by
+      // line. That only holds if the ledger is server-written.
+      //
+      // Payouts were never at risk: creatorPayouts pays from
+      // wallets.owedMicroUsd and the share tier keys off totalEarnedCoinsGross,
+      // both already server-only. What was at risk is the audit trail.
+      //
+      // Nothing live writes this from src/. BoostScreen.jsx:75 does, but its
+      // wallet debit two statements earlier already hits the server-only
+      // denylist and throws, so the ledger row is unreachable (A31). The two
+      // writers in firestore.js (finalizeTournament, recordModeratorPayout) are
+      // tournament-era dead code whose userId is a DIFFERENT user, so they
+      // could never satisfy even the old rule. When A31 rewrites the boost
+      // purchase as a callable, its ledger row goes in that transaction.
+      allow create: if false;
       allow update: if false;
       allow delete: if false;
     }
@@ -1489,14 +2111,33 @@ service cloud.firestore {
         allow write: if isOwner(resource.data.streamerId);
       }
 
-      // Join announcements (JoinAnnouncer overlay). Viewers write their OWN
-      // join doc when entering a stream; everyone watching reads the feed.
-      // Ephemeral hype data: no updates; author or mods can delete.
+      // Join announcements (JoinAnnouncer entry ribbons).
+      //
+      // CREATE IS SERVER-ONLY as of 2026-08-23. It used to be `isAuth() &&
+      // uid == request.auth.uid`, which validated ONLY the uid: every other
+      // field was whatever the client sent. That let any signed-in account
+      // write `kind:'subscriber', tier:'pro'` into ANY stream to get the gold
+      // entrance without subscribing, spam unlimited join docs into a stream it
+      // did not own (announcement spam plus a write-cost attack), and supply an
+      // arbitrary display name and avatar. Now that the entrance is keyed to VP
+      // rank, that would have meant "anyone can be Immortal in anyone's room".
+      // `announceStreamJoin` (functions/streamJoins.js) resolves follower state,
+      // subscription tier and rank server-side and owns dedupe, rate limiting
+      // and block suppression. See docs/ENTRY_ANNOUNCEMENTS_SPEC.md.
       match /joins/{joinId} {
         allow read: if true;
-        allow create: if isAuth() && request.resource.data.uid == request.auth.uid;
-        allow update: if false;
+        allow create, update: if false;
         allow delete: if isModerator() || isOwner(resource.data.uid);
+      }
+
+      // Per-user announce dedupe and the per-stream rate window. Server-owned.
+      match /joinLocks/{lockId} {
+        allow read: if false;
+        allow write: if false;
+      }
+      match /meta/{metaId} {
+        allow read: if false;
+        allow write: if false;
       }
 
       // Vanguard presence — written when a Vanguard viewer mounts the

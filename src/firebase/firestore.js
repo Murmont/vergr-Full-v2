@@ -1,14 +1,20 @@
 import { db, storage, auth } from './config';
+import { mergeBoostedFirst } from '../utils/promoBoost';
+import { boostById } from '../utils/boosts';
+import { pickBucket, needsFallback, rankBoostedForViewer } from '../utils/boostDelivery';
+import { reportSnapshotSource } from './resync';
 import {
   collection, collectionGroup, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, addDoc,
   query, where, orderBy, limit, startAfter, startAt, endAt, documentId, onSnapshot, serverTimestamp,
   increment, arrayUnion, arrayRemove, writeBatch, runTransaction, deleteField,
 } from 'firebase/firestore';
 import { uploadToR2 } from '../utils/r2Storage';
-import { compressMedia } from '../utils/mediaCompression';
+import { compressMedia, postPresetForTier, compressVideo } from '../utils/mediaCompression';
 import { ADS_CONFIG } from '../config/ads';
 import { PLAN_VP_MULTIPLIER } from '../utils/vpSystem';
 import { resolveTier } from '../utils/tierSystem';
+// Level-OR-Pro gate for the animated avatar (scope-table effect 20).
+import { canUseAnimatedAvatar, canUseAnimatedBanner, unlockLevel } from '../utils/rankUnlocks';
 import { addFollowingCache, removeFollowingCache } from '../utils/followingCache';
 import { VERGR_PIN_HOURS } from '../utils/feedRank';
 import { bumpAuthor } from '../utils/feedPrefs';
@@ -100,6 +106,40 @@ export const updateUser = async (uid, data) => {
   await updateDoc(doc(db, 'users', uid), { ...data, updatedAt: serverTimestamp() });
 };
 
+/**
+ * Denormalise "this person has a status" onto their user doc.
+ *
+ * ⚠ THIS EXISTS SO THE AVATAR RING COSTS NOTHING. The ring priority is
+ * LIVE > STATUS > ORBIT (src/utils/avatarRing.js). Answering "does this person
+ * have a status I have not seen?" by QUERYING would be a Firestore read on every
+ * profile view and every avatar in a list — exactly the per-view cost the whole
+ * unlock system is designed to avoid.
+ *
+ * Instead two fields ride the user doc, which every one of those surfaces has
+ * ALREADY loaded:
+ *   statusUntil   ms epoch the newest status expires (24h)
+ *   statusLastId  id of the newest status
+ *
+ * The viewer then compares `statusUntil > Date.now()` against `isGroupSeen()`
+ * from utils/statusSeen, which is localStorage. Zero reads, zero queries.
+ *
+ * Cost of the write: ONE per status posted, which is rare, and it replaces an
+ * unbounded number of reads. `statusUntil` needs no cleanup cron — it simply
+ * falls into the past.
+ *
+ * Never throws into the caller: a failed denormalisation must not lose a status
+ * the user just published.
+ */
+export const markStatusPosted = async (uid, statusId, expiresAtMs) => {
+  if (!uid || !statusId) return;
+  try {
+    await updateDoc(doc(db, 'users', uid), {
+      statusUntil: expiresAtMs || (Date.now() + 24 * 60 * 60 * 1000),
+      statusLastId: statusId,
+    });
+  } catch { /* the status is posted; the ring hint is not worth failing over */ }
+};
+
 export const completeOnboarding = async (uid, { username, displayName, bio, gameTags, linkedAccounts }) => {
   await updateDoc(doc(db, 'users', uid), {
     username,
@@ -123,13 +163,26 @@ export const updateUserCoins = async (uid, amount) => {
   });
 };
 
+/**
+ * The signed-in user's own profile, live.
+ *
+ * Carries the same metadata reporting as the wallet: this doc holds the VP
+ * balance, the tier and the KYC state, so a silently cache-only copy misstates
+ * things the user acts on. See `subscribeToWallet` for why the flag is needed at
+ * all.
+ */
 export const subscribeToUser = (uid, callback) => {
   return onSnapshot(
     doc(db, 'users', uid),
-    (snap) => callback(snap.exists() ? { id: snap.id, ...snap.data() } : null),
+    { includeMetadataChanges: true },
+    (snap) => {
+      reportSnapshotSource(snap.metadata.fromCache === true);
+      callback(snap.exists() ? { id: snap.id, ...snap.data(), _fromCache: snap.metadata.fromCache === true } : null);
+    },
     (err) => {
       // Sign-out / auth-handoff race; recovers when auth re-attaches.
       if (err?.code !== 'permission-denied') console.warn('user subscribe:', err);
+      reportSnapshotSource(true);
     },
   );
 };
@@ -182,6 +235,20 @@ export const unfollowUser = async (followerId, followingId) => {
 export const isFollowing = async (followerId, followingId) => {
   const snap = await getDoc(doc(db, 'follows', `${followerId}_${followingId}`));
   return snap.exists();
+};
+
+// Announce that you have entered a live stream (the JoinAnnouncer ribbon).
+// The client sends ONLY the stream id: follower state, subscription tier and VP
+// rank are resolved server-side, because the entrance is keyed to rank and the
+// old client-written join doc let anyone forge a Pro subscriber entrance in any
+// room. The callable also owns dedupe, rate limiting and block suppression.
+// See docs/ENTRY_ANNOUNCEMENTS_SPEC.md.
+export const announceStreamJoin = async (streamId) => {
+  if (!streamId) return { announced: false };
+  const { httpsCallable } = await import('firebase/functions');
+  const { functions } = await import('./config');
+  const res = await httpsCallable(functions, 'announceStreamJoin')({ streamId });
+  return res?.data || { announced: false };
 };
 
 export const getFollowing = async (uid) => {
@@ -535,7 +602,10 @@ export const editPost = async (postId, authorId, { content, mediaUrls, mediaMeta
 // Without persistence we'd re-fetch all 20+ authors on every cold page load,
 // which was ~40 reads per feed open per user. With it, repeat loads cost 0 reads.
 const _authorCache = new Map();
-const AUTHOR_CACHE_LS_KEY = 'vergr_author_cache_v1';
+// ⚠ BUMPED TO v2 when vpLevel/cosmetics/role/vanguard joined the projection.
+// Without a new key every existing user keeps serving the OLD six-field shape
+// out of localStorage for up to the 6h TTL, so the fix would appear not to work.
+const AUTHOR_CACHE_LS_KEY = 'vergr_author_cache_v2';
 const AUTHOR_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 
 (function _restoreAuthorCache() {
@@ -558,7 +628,23 @@ const _scheduleAuthorCacheFlush = () => {
     try {
       const obj = {};
       // Only persist truthy entries — skip nulls so we re-try them next time
-      _authorCache.forEach((v, k) => { if (v) obj[k] = { displayName: v.displayName, avatar: v.avatar, username: v.username, isVerified: v.isVerified, verificationTier: v.verificationTier, id: v.id }; });
+      // ⚠ `vpLevel`, `cosmetics`, `role` and `vanguard` MUST persist with the rest.
+      //
+      // `_hydrateAuthors` replaces post.author with the FULL user doc, so a warm
+      // feed had every name cosmetic (colour, typeface, gradient) and now the
+      // rank crest too. This projection dropped them, so a COLD load restored
+      // from localStorage rendered plain names for up to the 6h TTL and then
+      // silently changed once a refetch landed — inconsistent, which reads as a
+      // bug rather than as a missing feature.
+      //
+      // Exactly the defect chatIdentity.js already fixed for DMs: "slimUser()
+      // now persists vpLevel + cosmetics. Without them a COLD start lost name
+      // colour, typeface and gradient on every chat surface until the refetch
+      // landed." Same cache-projection mistake, a second time, in a second file.
+      //
+      // `vanguard` rides along because applyVanguardMask() needs it: without it
+      // a cold feed would show a moderator's REAL name until the refetch.
+      _authorCache.forEach((v, k) => { if (v) obj[k] = { displayName: v.displayName, avatar: v.avatar, username: v.username, isVerified: v.isVerified, verificationTier: v.verificationTier, id: v.id, vpLevel: v.vpLevel, cosmetics: v.cosmetics, role: v.role, vanguard: v.vanguard }; });
       localStorage.setItem(AUTHOR_CACHE_LS_KEY, JSON.stringify({ savedAt: Date.now(), authors: obj }));
     } catch {}
   }, 500);
@@ -959,7 +1045,44 @@ export const getComments = async (postId, limitCount = 20) => {
   return comments;
 };
 
+// Thrown when the post owner's `commentContent` privacy setting forbids this
+// viewer. Callers surface `err.message`; the code lets the UI branch on it.
+export const COMMENT_BLOCKED = 'comment-blocked';
+
 export const addComment = async (postId, authorId, content, media = null, parentId = null) => {
+  // Settings → Privacy → "Who can comment on my content" had ZERO callers, so
+  // the user chose a value, the UI confirmed it saved, and nothing ever changed
+  // (audit A18). This is the single choke point for every comment.
+  //
+  // Dynamic import on purpose: utils/privacy.js imports isFollowing from THIS
+  // module, so a static import would be a cycle. Same pattern the wallet
+  // helpers use.
+  //
+  // ⚠ Honest limit: this is client-side, like every other privacy control in
+  // this codebase. It stops the app from writing a comment the owner does not
+  // want, not a determined caller hitting Firestore directly. A rules-level
+  // gate would need the owner's setting readable from the post, which is a
+  // bigger change than this finding.
+  try {
+    const postSnap = await getDoc(doc(db, 'posts', postId));
+    const ownerId = postSnap.exists() ? postSnap.data().authorId : null;
+    if (ownerId && ownerId !== authorId) {
+      const [{ canCommentOn }, owner] = await Promise.all([
+        import('../utils/privacy'),
+        getUser(ownerId).catch(() => null),
+      ]);
+      if (owner && !(await canCommentOn(authorId, owner))) {
+        const e = new Error('This person only allows comments from people they follow.');
+        e.code = COMMENT_BLOCKED;
+        throw e;
+      }
+    }
+  } catch (e) {
+    if (e?.code === COMMENT_BLOCKED) throw e;
+    // A failed privacy LOOKUP must not block commenting: falling closed here
+    // would break every comment on a transient read error.
+  }
+
   const data = {
     authorId,
     content: content || '',
@@ -1308,6 +1431,10 @@ export const getConversations = async (uid) => {
     const convos = [];
     for (const d of snap.docs) {
       const convo = { id: d.id, ...d.data() };
+      // Support agents are participants in every open ticket so they can answer
+      // it; those belong in /admin/support, not in their own message list. The
+      // user who opened it still gets their own copy.
+      if (convo.supportThread === true && convo.supportUserId !== uid) continue;
       const otherIds = convo.participants.filter(id => id !== uid);
       convo.otherUsers = await Promise.all(otherIds.map(id => getUser(id)));
       convos.push(convo);
@@ -1500,14 +1627,58 @@ export const logCallEnd = async ({ chatId, callerId, type, startedAtMs, answered
   } catch (e) { console.error('logCallEnd failed:', e); }
 };
 
+// Ordered + limited server-side. The old version fetched EVERY call row the user
+// had ever been part of and sorted client-side, so the screen got slower with
+// every call ever made (measured at ~16s). Needs the composite index
+// calls_history(participants array-contains, startedAtMs desc) — the fallback
+// keeps the list populated while that index builds rather than showing nothing.
 export const getCallHistory = async (uid, max = 100) => {
+  const toRows = (snap) => snap.docs.map(d => ({ id: d.id, ...d.data() }));
   try {
-    const q = query(collection(db, 'calls_history'), where('participants', 'array-contains', uid));
-    const snap = await getDocs(q);
-    const rows = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    rows.sort((a, b) => (b.startedAtMs || 0) - (a.startedAtMs || 0));
-    return rows.slice(0, max);
-  } catch (e) { console.error('getCallHistory failed:', e); return []; }
+    const q = query(
+      collection(db, 'calls_history'),
+      where('participants', 'array-contains', uid),
+      orderBy('startedAtMs', 'desc'),
+      limit(max),
+    );
+    return toRows(await getDocs(q));
+  } catch (e) {
+    console.warn('getCallHistory indexed query failed, falling back:', e);
+    try {
+      const q = query(collection(db, 'calls_history'), where('participants', 'array-contains', uid));
+      const rows = toRows(await getDocs(q));
+      rows.sort((a, b) => (b.startedAtMs || 0) - (a.startedAtMs || 0));
+      return rows.slice(0, max);
+    } catch (e2) { console.error('getCallHistory failed:', e2); return []; }
+  }
+};
+
+// Calls belonging to ONE conversation, live, for rendering call rows inside the
+// chat thread the way WhatsApp does. Derived from `calls_history` rather than
+// written as chat messages on hang-up, which means: no duplicate row when both
+// sides log the same call, no relay involvement, every PAST call shows up
+// immediately, and the thread can never disagree with the Calls tab because
+// there is only one source of truth.
+//
+// The `participants array-contains` clause is NOT redundant with `chatId ==`.
+// firestore.rules gates `calls_history` list on the caller being in
+// `participants`, and rules are evaluated against the QUERY, so without it the
+// whole subscription is rejected.
+export const subscribeCallsForChat = (chatId, cb, max = 60) => {
+  const uid = auth.currentUser?.uid;
+  if (!uid || !chatId) { cb([]); return () => {}; }
+  const q = query(
+    collection(db, 'calls_history'),
+    where('participants', 'array-contains', uid),
+    where('chatId', '==', chatId),
+    orderBy('startedAtMs', 'desc'),
+    limit(max),
+  );
+  return onSnapshot(
+    q,
+    (snap) => cb(snap.docs.map(d => ({ id: d.id, ...d.data() }))),
+    (e) => { console.warn('subscribeCallsForChat failed:', e); cb([]); },
+  );
 };
 
 // Saved Messages — Telegram-style self-chat. One per user, deterministic id,
@@ -1620,7 +1791,7 @@ export const searchUsers = async (searchTerm, limitCount = 10) => {
 // WALLET
 // ═══════════════════════════════════════════
 
-const DEFAULT_WALLET = { balance: 0, gems: 0, vp: 0, totalEarned: 0, totalSpent: 0, totalGemsEarned: 0 };
+const DEFAULT_WALLET = { balance: 0, vp: 0, totalEarned: 0, totalSpent: 0, owedMicroUsd: 0, totalOwedMicroUsd: 0 };
 
 export const getWallet = async (uid) => {
   const snap = await getDoc(doc(db, 'wallets', uid));
@@ -1643,12 +1814,37 @@ export const getUserVP = async (uid) => {
   }
 };
 
+/**
+ * The wallet, live.
+ *
+ * `includeMetadataChanges` is not optional here and is the difference between a
+ * balance you can trust and one you cannot. With `persistentLocalCache` on, a
+ * stalled realtime channel does NOT error: onSnapshot keeps serving the last
+ * cached document indefinitely, so the screen shows an old number and looks
+ * perfectly healthy. Asking for metadata is the only way to know which of the
+ * two you are holding.
+ *
+ * The flag is passed through as `_fromCache` and reported to the resync watcher,
+ * which forces a fresh connection when the app next has a chance to reconnect.
+ * That recovers every other listener too, because the stall is at the transport.
+ */
 export const subscribeToWallet = (uid, callback) => {
   return onSnapshot(
     doc(db, 'wallets', uid),
-    (snap) => callback(snap.exists() ? { ...DEFAULT_WALLET, ...snap.data() } : DEFAULT_WALLET),
+    { includeMetadataChanges: true },
+    (snap) => {
+      const fromCache = snap.metadata.fromCache === true;
+      reportSnapshotSource(fromCache);
+      const data = snap.exists() ? { ...DEFAULT_WALLET, ...snap.data() } : DEFAULT_WALLET;
+      callback({ ...data, _fromCache: fromCache, _pendingWrites: snap.metadata.hasPendingWrites === true });
+    },
     (err) => {
       if (err?.code !== 'permission-denied') console.warn('wallet subscribe:', err);
+      // Mark the connection stalled so the resync watcher retries, but do NOT
+      // call back: emitting DEFAULT_WALLET here would flash the balance to zero
+      // on a transient error, which is worse than showing a stale number. The
+      // last known value stays on screen, labelled as unverified by the UI.
+      reportSnapshotSource(true);
     },
   );
 };
@@ -1659,12 +1855,13 @@ export const getTransactions = async (uid, limitCount = 30) => {
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 };
 
-// Award VP to a user (called from frontend for actions like posting, commenting, etc.)
-export const awardVP = async (userId, amount, reason = '') => {
-  if (!userId || amount <= 0) return;
-  await updateDoc(doc(db, 'wallets', userId), {
-    vp: increment(amount),
-  }).catch(() => {});
+// awardVP moved SERVER-SIDE 2026-08-16. It wrote wallets.vp with a
+// client-supplied amount, which is why that field could not be locked.
+export const awardVP = async (_userId, _amount, _reason = "") => {
+  const { httpsCallable } = await import("firebase/functions");
+  const { functions } = await import("./config");
+  // The action is named, never priced. See ACTION_VP in functions/walletActions.js.
+  await httpsCallable(functions, "awardActionVp")({ action: "profile_boost" });
 };
 
 // ────────────────────────────────────────────────────────────
@@ -1711,86 +1908,16 @@ export const getAdQuestState = async (uid) => {
  *
  * Returns the credited VP totals so the UI can flash a confirmation.
  */
+// recordAdWatch moved SERVER-SIDE 2026-08-16. The streak arithmetic, the VP
+// amounts and the per-day count are all decided on the server now, and the
+// quest-state read/write runs in a transaction so two ads finishing together
+// cannot both collect the daily bonus.
 export const recordAdWatch = async (uid) => {
   if (!uid) return { creditedVp: 0 };
-
-  const state = await getAdQuestState(uid);
-  const today = todayKey();
-
-  // ── Roll over the day if needed ──
-  let { todayDate, todayCount, todayBonusClaimed, weekStreak, monthStreak, lastWatchDate } = state;
-  if (todayDate !== today) {
-    // First ad of a new day — figure out streak continuation.
-    if (lastWatchDate) {
-      const gap = daysBetween(lastWatchDate, today);
-      if (gap === 1) {
-        weekStreak += 1;
-        monthStreak += 1;
-      } else if (gap > 1) {
-        // Missed a day → streaks reset (this watch starts a fresh run).
-        weekStreak = 1;
-        monthStreak = 1;
-      }
-    } else {
-      weekStreak = 1;
-      monthStreak = 1;
-    }
-    todayDate = today;
-    todayCount = 0;
-    todayBonusClaimed = false;
-  }
-
-  todayCount += 1;
-  lastWatchDate = today;
-
-  let creditedVp = ADS_CONFIG.watchToEarnVp;
-
-  // Daily bonus
-  if (!todayBonusClaimed && todayCount >= ADS_CONFIG.dailyAdBonusThreshold) {
-    creditedVp += ADS_CONFIG.dailyAdBonusVp;
-    todayBonusClaimed = true;
-  }
-
-  // Week milestone (every full 7-day streak)
-  let weekBonusHit = false;
-  if (weekStreak > 0 && weekStreak % 7 === 0 && todayCount === 1) {
-    creditedVp += 1000; // 7-day perfect-week bonus
-    weekBonusHit = true;
-  }
-
-  // Month milestone (every full 30-day streak)
-  let monthBonusHit = false;
-  if (monthStreak > 0 && monthStreak % 30 === 0 && todayCount === 1) {
-    creditedVp += 5000; // 30-day perfect-month bonus
-    monthBonusHit = true;
-  }
-
-  // Subscriber VP multiplier (Free 1× / Lite 1.5× / Pro 2×). Paid users rarely
-  // see ads, but apply for honesty/consistency with every other VP grant.
-  creditedVp = await planVpMultiply(uid, creditedVp);
-
-  // Persist quest state + wallet VP in a single batch.
-  const batch = writeBatch(db);
-  batch.set(adQuestRef(uid), {
-    todayDate, todayCount, todayBonusClaimed,
-    weekStreak, monthStreak, lastWatchDate,
-    updatedAt: serverTimestamp(),
-  }, { merge: true });
-  batch.update(doc(db, 'wallets', uid), {
-    vp: increment(creditedVp),
-    totalEarned: increment(creditedVp),
-  });
-  await batch.commit();
-
-  return {
-    creditedVp,
-    todayCount,
-    weekStreak,
-    monthStreak,
-    dailyBonusJustHit: todayBonusClaimed && todayCount === ADS_CONFIG.dailyAdBonusThreshold,
-    weekBonusHit,
-    monthBonusHit,
-  };
+  const { httpsCallable } = await import("firebase/functions");
+  const { functions } = await import("./config");
+  const res = await httpsCallable(functions, "recordAdWatch")({});
+  return res.data;
 };
 
 // ═══════════════════════════════════════════
@@ -1805,56 +1932,10 @@ export const getService = async (serviceId) => {
   return data;
 };
 
-// Buyer purchases a service — coins go to escrow, not directly to seller
-export const purchaseService = async (buyerId, serviceId) => {
-  const serviceSnap = await getDoc(doc(db, 'services', serviceId));
-  if (!serviceSnap.exists()) throw new Error('Service not found');
-  const service = serviceSnap.data();
-  if (service.sellerId === buyerId) throw new Error('Cannot buy your own service');
-
-  const buyerWalletRef = doc(db, 'wallets', buyerId);
-
-  return runTransaction(db, async (tx) => {
-    const buyerWallet = await tx.get(buyerWalletRef);
-    if (!buyerWallet.exists()) throw new Error('Wallet not found');
-    if (buyerWallet.data().balance < service.priceCoins) throw new Error('Insufficient coins');
-
-    // Deduct from buyer
-    tx.update(buyerWalletRef, {
-      balance: increment(-service.priceCoins),
-      totalSpent: increment(service.priceCoins),
-    });
-
-    // Create order (coins held in escrow)
-    const orderRef = doc(collection(db, 'service_orders'));
-    tx.set(orderRef, {
-      serviceId,
-      buyerId,
-      sellerId: service.sellerId,
-      title: service.title,
-      category: service.category,
-      priceCoins: service.priceCoins,
-      sellerCommission: service.sellerCommission || 0.30,
-      deliveryDays: service.deliveryDays,
-      status: 'in_progress', // in_progress → delivered → completed / disputed
-      createdAt: serverTimestamp(),
-      deadline: new Date(Date.now() + (service.deliveryDays || 3) * 86400000),
-    });
-
-    tx.set(doc(collection(db, 'transactions')), {
-      userId: buyerId, type: 'service_payment', amount: -service.priceCoins,
-      description: `Purchased: ${service.title}`, serviceId, createdAt: serverTimestamp(),
-    });
-
-    tx.set(doc(collection(db, 'notifications')), {
-      recipientId: service.sellerId, type: 'system',
-      title: 'New order!', body: `Someone purchased your service: ${service.title}`,
-      read: false, data: { serviceId, type: 'service_order' }, createdAt: serverTimestamp(),
-    });
-
-    return orderRef.id;
-  });
-};
+// REMOVED 2026-08-16: client-side money movers with no UI caller. Each wrote
+// wallets.balance / wallets.vp straight from the browser, which is why those
+// fields could not be locked in firestore.rules. Nothing in src/ called any of
+// them. If any of these features returns, it returns as a Cloud Function.
 
 // Seller marks order as delivered
 export const deliverServiceOrder = async (orderId, sellerId, deliveryMessage = '') => {
@@ -1878,89 +1959,7 @@ export const deliverServiceOrder = async (orderId, sellerId, deliveryMessage = '
   });
 };
 
-// Buyer approves delivery → seller gets gems
-export const approveServiceOrder = async (orderId, buyerId) => {
-  const orderRef = doc(db, 'service_orders', orderId);
 
-  return runTransaction(db, async (tx) => {
-    const snap = await tx.get(orderRef);
-    if (!snap.exists()) throw new Error('Order not found');
-    const order = snap.data();
-    if (order.buyerId !== buyerId) throw new Error('Not your order');
-    if (order.status !== 'delivered') throw new Error('Order not delivered yet');
-
-    const coinsEarned = order.priceCoins;
-
-    // Plan-multiply the seller's service-completion VP (Free 1× / Lite 1.5× /
-    // Pro 2×). Read inside the tx so the amount is consistent with the write.
-    const sellerSnap = await tx.get(doc(db, 'users', order.sellerId));
-    const sellerPlan = resolveTier(sellerSnap.exists() ? sellerSnap.data() : null);
-    const serviceVp = Math.round(30 * (PLAN_VP_MULTIPLIER[sellerPlan] || 1));
-
-    // Pay seller in COINS (full amount). Commission applies later on coin→gem conversion.
-    tx.update(doc(db, 'wallets', order.sellerId), {
-      balance: increment(coinsEarned),
-      totalEarned: increment(coinsEarned),
-      vp: increment(serviceVp), // VP for completing a service (plan-multiplied)
-    });
-
-    tx.update(orderRef, { status: 'completed', completedAt: serverTimestamp() });
-
-    // Update service stats
-    tx.update(doc(db, 'services', order.serviceId), {
-      completedCount: increment(1),
-    });
-
-    tx.set(doc(collection(db, 'transactions')), {
-      userId: order.sellerId, type: 'service_earned', amount: coinsEarned, currency: 'coins',
-      description: `Service completed: ${order.title}`,
-      orderId, createdAt: serverTimestamp(),
-    });
-
-    tx.set(doc(collection(db, 'notifications')), {
-      recipientId: order.sellerId, type: 'coins',
-      title: `+${coinsEarned} coins earned!`,
-      body: `Service approved: ${order.title}`,
-      read: false, data: { amount: coinsEarned, type: 'service_earned' }, createdAt: serverTimestamp(),
-    });
-  });
-};
-
-// Buyer disputes — refund coins, no gems to seller
-export const disputeServiceOrder = async (orderId, buyerId, reason = '') => {
-  const orderRef = doc(db, 'service_orders', orderId);
-
-  return runTransaction(db, async (tx) => {
-    const snap = await tx.get(orderRef);
-    if (!snap.exists()) throw new Error('Order not found');
-    const order = snap.data();
-    if (order.buyerId !== buyerId) throw new Error('Not your order');
-    if (!['delivered', 'in_progress'].includes(order.status)) throw new Error('Cannot dispute');
-
-    // Refund buyer
-    tx.update(doc(db, 'wallets', order.buyerId), {
-      balance: increment(order.priceCoins),
-      totalSpent: increment(-order.priceCoins),
-    });
-
-    tx.update(orderRef, {
-      status: 'disputed',
-      disputeReason: reason.substring(0, 500),
-      disputedAt: serverTimestamp(),
-    });
-
-    tx.set(doc(collection(db, 'transactions')), {
-      userId: order.buyerId, type: 'service_refund', amount: order.priceCoins,
-      description: `Refund: ${order.title}`, orderId, createdAt: serverTimestamp(),
-    });
-
-    tx.set(doc(collection(db, 'notifications')), {
-      recipientId: order.sellerId, type: 'system',
-      title: 'Order disputed', body: `Buyer disputed: ${order.title}`,
-      read: false, data: { orderId, type: 'service_dispute' }, createdAt: serverTimestamp(),
-    });
-  });
-};
 
 // Get user's orders (as buyer or seller)
 export const getServiceOrders = async (userId, role = 'buyer', limitCount = 20) => {
@@ -1980,10 +1979,151 @@ export const getCoinPackages = async () => {
 // SQUADS
 // ═══════════════════════════════════════════
 
+// ⚠ A BOOSTED SQUAD NEEDS ITS OWN QUERY. Ordering the top N by memberCount can
+// never surface a boosted squad with four members, which is exactly why the paid
+// Squad Boost was worthless until 2026-08-28. `boostExpiresAt > now` is a
+// single-field inequality, so this second read needs NO composite index.
+/**
+ * Boosted PROFILES for one viewer, fairly rotated and interest-ranked.
+ *
+ * ⚠ ONE random bucket, then an unsharded fallback when that bucket is empty.
+ * See docs/BOOST_DELIVERY_PLAN.md §2.1 — the old deterministic
+ * `orderBy(boostExpiresAt).limit(2)` delivered the same two boosts to everyone
+ * and nothing at all to everybody else.
+ *
+ * ⚠ EVERY suggestion surface must call THIS, never its own boost query. Two of
+ * six surfaces were wired by hand on 2026-08-28 and the other four silently did
+ * not honour a paid boost.
+ */
+export const getBoostedUsers = async ({ viewerUid = null, want = 2 } = {}) => {
+  const now = Date.now();
+  const take = Math.max(6, want * 4);   // a pool to rank, not the final slots
+  const shape = (snap) => snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+    .filter((u) => u.isGuest !== true && u.hideFromEnumeration !== true);
+
+  let pool = [];
+  try {
+    const bq = query(
+      collection(db, 'users'),
+      where('boostBucket', '==', pickBucket()),
+      where('boostExpiresAt', '>', now),
+      limit(take),
+    );
+    pool = shape(await getDocs(bq));
+  } catch { /* index still building: fall through to the unsharded read */ }
+
+  if (needsFallback(pool)) {
+    try {
+      const fq = query(
+        collection(db, 'users'),
+        where('boostExpiresAt', '>', now),
+        orderBy('boostExpiresAt', 'asc'),
+        limit(take),
+      );
+      pool = shape(await getDocs(fq));
+    } catch { pool = []; }
+  }
+
+  return rankBoostedForViewer(pool, { viewerUid }).slice(0, want);
+};
+
+/**
+ * The boosts I have running right now, with what they have delivered.
+ *
+ * ⚠ THE BUYER MUST BE ABLE TO SEE WHAT THEY BOUGHT. Founder, 2026-08-28: the
+ * result has to be tangible or there is no point paying for it. Impressions and
+ * views come off the target document (server-written, see recordBoostImpressions);
+ * FOLLOWERS GAINED is the headline because it is the outcome rather than the
+ * activity, and because it is FREE — the follow writes already happen, so this
+ * is a count of documents nobody had to create for the purpose.
+ *
+ * Reads are bounded by how many boosts YOU have running, not by platform size.
+ */
+export const getMyActiveBoosts = async (uid) => {
+  if (!uid) return [];
+  const now = Date.now();
+  const snap = await getDocs(query(
+    collection(db, 'boosts'),
+    where('userId', '==', uid),
+    where('expiresAt', '>', now),
+    orderBy('expiresAt', 'asc'),
+    limit(20),
+  ));
+
+  const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  const COL = { post: 'posts', user: 'users', squad: 'squads', stream: 'streams' };
+
+  // ⚠ TWO WRITERS, TWO SHAPES, AND THE RECEIPT ONLY UNDERSTOOD ONE.
+  //
+  // applyBoost (functions/boosts.js) writes  { boostId, target, startedAt }.
+  // purchaseBoost (functions/walletActions.js) writes { type, ... } and NEITHER
+  // target NOR startedAt. So a Profile Boost bought from the shop tab, which is
+  // the only boost sold there, rendered with a blank name (row.boostId absent),
+  // 0 impressions and 0 people: COL[undefined] fell back to 'posts' and the
+  // reader went looking for posts/{uid}, while the real counters sat on the
+  // USERS doc. followersGained never ran either, because it is gated on
+  // target === 'user'.
+  //
+  // purchaseBoost now writes the canonical fields too, so this normaliser is
+  // only load-bearing for boosts already live at the time of that deploy. It
+  // costs nothing and it is what makes an existing buyer's receipt correct
+  // without a data migration.
+  const norm = (b) => {
+    const boostId = b.boostId || b.type || null;
+    const spec = boostId ? boostById(boostId) : null;
+    return {
+      ...b,
+      boostId,
+      target: b.target || spec?.target || null,
+      startedAt: b.startedAt || (b.createdAt?.toMillis ? b.createdAt.toMillis() : 0),
+    };
+  };
+
+  return Promise.all(rows.map(norm).map(async (b) => {
+    let impressions = 0, views = 0, followersGained = null;
+    try {
+      const t = await getDoc(doc(db, COL[b.target] || 'posts', b.targetId));
+      if (t.exists()) {
+        impressions = Number(t.data().boostImpressions) || 0;
+        views = Number(t.data().boostViews) || 0;
+      }
+    } catch { /* stats are decoration; never fail the list over them */ }
+
+    // Only a PROFILE boost can gain followers, so only that one pays for the
+    // extra query.
+    if (b.target === 'user' && b.startedAt) {
+      try {
+        const f = await getDocs(query(
+          collection(db, 'follows'),
+          where('followingId', '==', b.targetId),
+          where('createdAt', '>', new Date(b.startedAt)),
+          limit(200),
+        ));
+        followersGained = f.size;
+      } catch { /* needs a composite index; absent until it exists */ }
+    }
+    return { ...b, impressions, views, followersGained };
+  }));
+};
+
 export const getSquads = async (limitCount = 20) => {
+  const now = Date.now();
+  let boosted = [];
+  try {
+    const bq = query(
+      collection(db, 'squads'),
+      where('boostExpiresAt', '>', now),
+      orderBy('boostExpiresAt', 'asc'),
+      limit(6),
+    );
+    boosted = (await getDocs(bq)).docs
+      .map((d) => ({ id: d.id, ...d.data() }))
+      .filter((sq) => sq.isPublic !== false);
+  } catch { /* a boost must never break the list */ }
+
   const q = query(collection(db, 'squads'), where('isPublic', '==', true), orderBy('memberCount', 'desc'), limit(limitCount));
   const snap = await getDocs(q);
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  return mergeBoostedFirst(boosted, snap.docs.map(d => ({ id: d.id, ...d.data() })), limitCount, now);
 };
 
 // Phase 3 — supply gating. Counts squads platform-wide with at least
@@ -2219,52 +2359,14 @@ export const getSquadWallet = async (squadId) => {
   return snap.exists() ? snap.data() : { balance: 0, totalContributed: 0, totalWon: 0 };
 };
 
-export const contributeToSquad = async (squadId, userId, amount) => {
-  const userWalletRef = doc(db, 'wallets', userId);
-  const squadWalletRef = doc(db, 'squads', squadId, 'wallet', 'main');
-  const memberRef = doc(db, 'squads', squadId, 'members', userId);
-
-  await runTransaction(db, async (transaction) => {
-    const userWallet = await transaction.get(userWalletRef);
-    if (!userWallet.exists() || userWallet.data().balance < amount) {
-      throw new Error('Insufficient balance');
-    }
-
-    transaction.update(userWalletRef, {
-      balance: increment(-amount),
-      totalSpent: increment(amount),
-      updatedAt: serverTimestamp(),
-    });
-
-    transaction.set(squadWalletRef, {
-      balance: increment(amount),
-      totalContributed: increment(amount),
-      updatedAt: serverTimestamp(),
-    }, { merge: true });
-
-    transaction.update(memberRef, {
-      totalContributed: increment(amount),
-      updatedAt: serverTimestamp(),
-    });
-
-    const userTxRef = doc(collection(db, 'transactions'));
-    transaction.set(userTxRef, {
-      userId,
-      type: 'squad_contribution',
-      amount: -amount,
-      desc: `Squad contribution`,
-      squadId,
-      createdAt: serverTimestamp(),
-    });
-
-    const squadTxRef = doc(collection(db, 'squads', squadId, 'transactions'));
-    transaction.set(squadTxRef, {
-      userId,
-      type: 'contribution',
-      amount,
-      createdAt: serverTimestamp(),
-    });
-  });
+// contributeToSquad moved SERVER-SIDE 2026-08-16. It debited the member wallet
+// and credited the squad treasury from the browser, and trusted whatever
+// squadId it was given. The callable re-checks membership.
+export const contributeToSquad = async (squadId, _userId, amount) => {
+  const { httpsCallable } = await import("firebase/functions");
+  const { functions } = await import("./config");
+  const res = await httpsCallable(functions, "contributeToSquad")({ squadId, amount });
+  return res.data;
 };
 
 export const getSquadTransactions = async (squadId, limitCount = 30) => {
@@ -2486,10 +2588,15 @@ export const createSquadAnnouncement = async (squadId, authorId, content, pinned
 };
 
 // Added: function to set squad chat background
-export const setSquadChatBackground = async (squadId, type, value) => {
+// ⚠ `weather` is the effect-11 tier-2 flag and is ALWAYS written, never left
+// undefined. Omitting it would let a stale true survive a switch to a colour
+// background, and the chat would keep running a particle loop behind a flat
+// fill. Doc: docs/effects/11-squad-environments.md
+export const setSquadChatBackground = async (squadId, type, value, weather = false) => {
   await updateDoc(doc(db, 'squads', squadId), {
     chatBackground: type,
-    chatBackgroundValue: value
+    chatBackgroundValue: value,
+    chatBackgroundWeather: type === 'environment' ? !!weather : false,
   });
 };
 
@@ -3055,20 +3162,8 @@ export const getMyPayoutStatements = async (uid, max = 24) => {
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 };
 
-export const convertCoinsToGems = async (uid, amount) => {
-  if (!Number.isFinite(amount) || amount <= 0) {
-    throw new Error('Invalid conversion amount');
-  }
-  const { httpsCallable } = await import('firebase/functions');
-  const { functions: fns } = await import('./config');
-  const fn = httpsCallable(fns, 'convertCoinsToGems');
-  // Idempotency key — prevents double-debit if the network blips
-  const idempotencyKey = (typeof crypto !== 'undefined' && crypto.randomUUID)
-    ? crypto.randomUUID()
-    : `${Date.now()}_${Math.random().toString(36).slice(2)}`;
-  const res = await fn({ amount, idempotencyKey });
-  return res.data;
-};
+// convertCoinsToGems REMOVED 2026-08-16. The callable is deleted: revenue share
+// accrues automatically at receipt and is never a conversion a user performs.
 
 // `createStripeCheckout` lived here and was removed 2026-08-13 with the rest of
 // the Stripe rail. Card checkout is `createPayramPayment`; the rule it carried
@@ -3076,25 +3171,8 @@ export const convertCoinsToGems = async (uid, amount) => {
 // a cart of `{sku, qty}`), so the server re-prices every line from COIN_PACKS
 // and a tampered client changes what it draws on screen, not what it is charged.
 
-// Convert gems → coins at a flat 1:1, via the server callable.
-//
-// Gems are withdrawal-only, so this is how earned money becomes spendable in-app
-// again: tips, subscriptions, locked content and 1:1 sessions all cost coins.
-//
-// The rate is FLAT and rank-independent by design. It is not configurable from
-// Firestore either, because a remotely-tunable buyback rate pushed past ~1.18
-// coins per gem turns the gem→coin→gem round trip profitable and becomes a money
-// pump. See functions/gemBuyback.js for the full arithmetic.
-export const buyCoinsWithGems = async (gems) => {
-  if (!Number.isFinite(gems) || gems <= 0) {
-    throw new Error('Invalid gem amount');
-  }
-  const { httpsCallable } = await import('firebase/functions');
-  const { functions: fns } = await import('./config');
-  const fn = httpsCallable(fns, 'buyCoinsWithGems');
-  const res = await fn({ gems: Math.floor(gems) });
-  return res.data;
-};
+// buyCoinsWithGems REMOVED 2026-08-16. Turning accrued revenue share back into
+// spending credit is what made the payable look like a held balance.
 
 // Tip / send coins.
 // Sender pays N coins. NO fee is taken at send time: the whole tip is gross
@@ -3141,83 +3219,12 @@ export const sendCoins = async (fromUid, toUid, amount, desc = '', extra = {}) =
   }
 };
 
-// Creator quests award VP ONLY — never coins (hard economy rule).
-// VP lives on the users doc (`vp` field); coins are never minted here.
-export const claimQuestReward = async (uid, questId, rewardAmount, questTitle) => {
-  const userRef = doc(db, 'users', uid);
-  const questClaimRef = doc(db, 'quest_claims', `${uid}_${questId}_${new Date().toISOString().split('T')[0]}`);
-  const vpAmount = await planVpMultiply(uid, rewardAmount); // plan-multiplied
+// claimQuestReward (client transaction) REMOVED 2026-08-16. It took the VP
+// amount as an argument and firestore.rules denies client writes to
+// quest_claims, so it could only ever fail. Creator quests now go through the
+// claimCreatorQuest callable; profile quests already used the server callable
+// of the same name in functions/index.js.
 
-  await runTransaction(db, async (transaction) => {
-    const claimSnap = await transaction.get(questClaimRef);
-    if (claimSnap.exists()) throw new Error('Quest already claimed today');
-
-    transaction.update(userRef, {
-      vp: increment(vpAmount),
-      updatedAt: serverTimestamp(),
-    });
-
-    transaction.set(questClaimRef, {
-      userId: uid,
-      questId,
-      vp: vpAmount,
-      reward: 'vp',
-      claimedAt: serverTimestamp(),
-    });
-  });
-};
-
-export const requestPayout = async (uid, amount, method, details) => {
-  const COIN_TO_EUR = 0.01;
-  const PLATFORM_FEE_PCT = 0.10;
-  const PROCESSOR_FEE_PCT = 0.03;
-  const MIN_PAYOUT = 1000;
-
-  if (amount < MIN_PAYOUT) throw new Error(`Minimum payout is ${MIN_PAYOUT} coins`);
-
-  const eurTotal = amount * COIN_TO_EUR;
-  const platformFee = parseFloat((eurTotal * PLATFORM_FEE_PCT).toFixed(2));
-  const processorFee = parseFloat((eurTotal * PROCESSOR_FEE_PCT).toFixed(2));
-  const userReceives = parseFloat((eurTotal - platformFee - processorFee).toFixed(2));
-
-  const walletRef = doc(db, 'wallets', uid);
-
-  await runTransaction(db, async (transaction) => {
-    const walletSnap = await transaction.get(walletRef);
-    if (!walletSnap.exists()) throw new Error('Wallet not found');
-    if (walletSnap.data().balance < amount) throw new Error('Insufficient balance');
-
-    transaction.update(walletRef, {
-      balance: increment(-amount),
-      totalSpent: increment(amount),
-      updatedAt: serverTimestamp(),
-    });
-
-    const payoutRef = doc(collection(db, 'payouts'));
-    transaction.set(payoutRef, {
-      userId: uid,
-      coinAmount: amount,
-      eurTotal,
-      platformFee,
-      processorFee,
-      userReceives,
-      method,
-      details,
-      status: 'pending',
-      createdAt: serverTimestamp(),
-    });
-
-    const txRef = doc(collection(db, 'transactions'));
-    transaction.set(txRef, {
-      userId: uid,
-      type: 'payout',
-      amount: -amount,
-      description: `Payout of $${userReceives} via ${method}`,
-      status: 'pending',
-      createdAt: serverTimestamp(),
-    });
-  });
-};
 
 // ═══════════════════════════════════════════
 // USER SETTINGS
@@ -3300,6 +3307,28 @@ export const getBlockedUsers = async (uid) => {
   return users;
 };
 
+/**
+ * Which of the given ONE-TIME quests has this user already claimed?
+ *
+ * `getQuestClaims` below is for DAILY quests: it filters to claims made today,
+ * so a profile quest claimed in July never comes back from it. Profile quests
+ * are one-time and their claim id is deterministic (`${uid}_${questId}`, no
+ * date — see claimQuestReward), so they are fetched by id. No query, no index,
+ * and exact. `quest_claims` is `allow read: if isAuth()`, so this needs no
+ * callable.
+ *
+ * Used by ProfileCompletionCard, whose claim state used to live ONLY in
+ * localStorage — so it read as unclaimed on any new device or after clearing
+ * site data, while the VP had in fact been granted months earlier (audit A11).
+ */
+export const getOneTimeQuestClaims = async (uid, questIds) => {
+  if (!uid || !Array.isArray(questIds) || !questIds.length) return [];
+  const snaps = await Promise.all(
+    questIds.map((qid) => getDoc(doc(db, 'quest_claims', `${uid}_${qid}`)).catch(() => null)),
+  );
+  return questIds.filter((_, i) => snaps[i]?.exists());
+};
+
 export const getQuestClaims = async (uid) => {
   const today = new Date().toISOString().split('T')[0];
   const q = query(
@@ -3311,23 +3340,8 @@ export const getQuestClaims = async (uid) => {
   return snap.docs.map(d => d.data().questId);
 };
 
-// Once-ever milestone reward (VP only). Unlike daily quests, the claim doc id is
-// date-less so each milestone level can be claimed exactly once, ever.
-export const claimMilestoneReward = async (uid, milestoneId, rewardAmount, title) => {
-  const userRef = doc(db, 'users', uid);
-  const claimRef = doc(db, 'quest_claims', `${uid}_${milestoneId}`);
-  const vpAmount = await planVpMultiply(uid, rewardAmount); // plan-multiplied
-  await runTransaction(db, async (transaction) => {
-    const claimSnap = await transaction.get(claimRef);
-    if (claimSnap.exists()) throw new Error('Milestone already claimed');
-    transaction.update(userRef, { vp: increment(vpAmount), updatedAt: serverTimestamp() });
-    transaction.set(claimRef, {
-      userId: uid, questId: milestoneId, milestone: true,
-      vp: vpAmount, reward: 'vp', title: title || milestoneId,
-      claimedAt: serverTimestamp(),
-    });
-  });
-};
+// claimMilestoneReward REMOVED 2026-08-16, same reason, and its only caller was
+// the tournament earnings ladder which is gone.
 
 // All-time milestone claims for a user (returns array of milestoneIds).
 export const getMilestoneClaims = async (uid) => {
@@ -3340,20 +3354,9 @@ export const getMilestoneClaims = async (uid) => {
   return snap.docs.map(d => d.data().questId);
 };
 
-// Coins earned from winning tournaments (lifetime), summed from the transaction
-// ledger. finalizeInternal writes positive prize rows tagged with a tournament
-// type/source; we match the same classification the dashboard uses.
-export const getTournamentCoinsEarned = async (uid) => {
-  const txs = await getTransactions(uid, 500);
-  let total = 0;
-  for (const tx of txs) {
-    const amt = tx.amount || 0;
-    if (amt <= 0) continue;
-    const t = `${tx.type || ''} ${tx.source || ''} ${tx.description || ''}`.toLowerCase();
-    if (t.includes('tournament') || t.includes('prize') || tx.tournamentId) total += amt;
-  }
-  return total;
-};
+// getTournamentCoinsEarned REMOVED 2026-08-16. It scanned the ledger for rows
+// whose type or description mentioned a tournament, and tournaments are retired,
+// so it returned 0 for everyone.
 
 // ═══════════════════════════════════════════
 // STREAMS
@@ -3526,6 +3529,9 @@ export const getGroupForJoin = async (chatId) => {
     id: snap.id,
     groupName: data.groupName || 'Group',
     groupIcon: data.groupIcon || null,
+    // Server-created rooms (supportChannel/officialChannels) set groupAvatar,
+    // not groupIcon. Carry it through or the join preview renders no picture.
+    groupAvatar: data.groupAvatar || null,
     description: data.description || '',
     visibility: data.visibility || 'private',
     memberCount: (data.participants || []).length,
@@ -4247,99 +4253,7 @@ export const subscribeTournament = (tournamentId, cb) => {
   }, (err) => console.warn('subscribeTournament', err.message));
 };
 
-export const joinTournament = async (tournamentId, userId) => {
-  const tournamentRef = doc(db, 'tournaments', tournamentId);
-  const walletRef = doc(db, 'wallets', userId);
 
-  await runTransaction(db, async (transaction) => {
-    const tournamentSnap = await transaction.get(tournamentRef);
-    if (!tournamentSnap.exists()) throw new Error('Tournament not found');
-    const t = tournamentSnap.data();
-
-    if (t.status !== 'open') throw new Error('Tournament is not open for registration');
-    if (t.participants?.includes(userId)) throw new Error('Already registered');
-    if (t.participants?.length >= t.maxParticipants) throw new Error('Tournament is full');
-
-    // Collect entry fee
-    if (t.entryFee > 0) {
-      const walletSnap = await transaction.get(walletRef);
-      if (!walletSnap.exists()) throw new Error('Wallet not found');
-      if (walletSnap.data().balance < t.entryFee) throw new Error('Insufficient coins for entry fee');
-
-      transaction.update(walletRef, {
-        balance: increment(-t.entryFee),
-        totalSpent: increment(t.entryFee),
-        updatedAt: serverTimestamp(),
-      });
-
-      // Record transaction
-      const txRef = doc(collection(db, 'transactions'));
-      transaction.set(txRef, {
-        userId,
-        type: 'tournament_entry',
-        amount: -t.entryFee,
-        description: `Entry fee: ${t.name}`,
-        tournamentId,
-        createdAt: serverTimestamp(),
-      });
-    }
-
-    // Add to participants and prize pool
-    transaction.update(tournamentRef, {
-      participants: arrayUnion(userId),
-      prizePool: increment(t.entryFee || 0),
-      updatedAt: serverTimestamp(),
-    });
-
-    // Notify admin
-    if (t.adminId && t.adminId !== userId) {
-      transaction.set(doc(collection(db, 'notifications')), {
-        recipientId: t.adminId, type: 'tournament',
-        title: 'Player joined', body: `Someone joined ${t.name}`,
-        read: false, data: { tournamentId }, createdAt: serverTimestamp(),
-      });
-    }
-  });
-};
-
-export const leaveTournament = async (tournamentId, userId) => {
-  const tournamentRef = doc(db, 'tournaments', tournamentId);
-  const walletRef = doc(db, 'wallets', userId);
-
-  await runTransaction(db, async (transaction) => {
-    const tournamentSnap = await transaction.get(tournamentRef);
-    if (!tournamentSnap.exists()) throw new Error('Tournament not found');
-    const t = tournamentSnap.data();
-
-    if (t.status !== 'open') throw new Error('Cannot leave after tournament starts');
-    if (!t.participants?.includes(userId)) throw new Error('Not registered');
-
-    // Refund entry fee
-    if (t.entryFee > 0) {
-      transaction.update(walletRef, {
-        balance: increment(t.entryFee),
-        totalSpent: increment(-t.entryFee),
-        updatedAt: serverTimestamp(),
-      });
-
-      const txRef = doc(collection(db, 'transactions'));
-      transaction.set(txRef, {
-        userId,
-        type: 'tournament_refund',
-        amount: t.entryFee,
-        description: `Refund: ${t.name}`,
-        tournamentId,
-        createdAt: serverTimestamp(),
-      });
-    }
-
-    transaction.update(tournamentRef, {
-      participants: arrayRemove(userId),
-      prizePool: increment(-(t.entryFee || 0)),
-      updatedAt: serverTimestamp(),
-    });
-  });
-};
 
 export const startTournament = async (tournamentId, adminId) => {
   const tournamentRef = doc(db, 'tournaments', tournamentId);
@@ -4555,100 +4469,6 @@ const advanceBracket = async (tournamentId, completedRound) => {
   await batch.commit();
 };
 
-// Prize distribution: coins → gems conversion
-// Entry fees paid in coins. Winners receive gems. Platform keeps commission.
-// Commission based on each winner's VP (30% stepping down to a 15% floor at 100k VP)
-export const distributePrizePool = async (tournamentId) => {
-  const tournamentRef = doc(db, 'tournaments', tournamentId);
-  const snap = await getDoc(tournamentRef);
-  if (!snap.exists()) throw new Error('Tournament not found');
-  const t = snap.data();
-  if (!t.prizePool || t.prizePool <= 0) return;
-
-  // Commission lookup
-  const getCommission = (vp) => {
-    const rates = [[100000, 0.15], [40000, 0.18], [15000, 0.20], [5000, 0.22], [2000, 0.25], [500, 0.28], [0, 0.30]];
-    for (const [threshold, rate] of rates) { if (vp >= threshold) return rate; }
-    return 0.30;
-  };
-
-  // Split pool: 60/25/7.5/7.5 — mod gets 5% off top
-  const modFee = Math.floor(t.prizePool * 0.05);
-  const playerPool = t.prizePool - modFee;
-  const splits = { first: Math.floor(playerPool * 0.60), second: Math.floor(playerPool * 0.25), third: Math.floor(playerPool * 0.075) };
-
-  const placements = t.placements || {};
-  const batch = writeBatch(db);
-  const squadId = t.squadId || null;
-
-  const awardPrize = async (userId, coinAllocation, placement) => {
-    if (!userId || coinAllocation <= 0) return;
-
-    // Squad contribution: 10% of the coin prize goes to the squad wallet.
-    let squadCut = 0;
-    let netCoins = coinAllocation;
-    if (squadId) {
-      squadCut = Math.floor(coinAllocation * 0.10);
-      netCoins = coinAllocation - squadCut;
-    }
-
-    // Pay winner in COINS at full amount. Commission applies later on conversion.
-    batch.update(doc(db, 'wallets', userId), {
-      balance: increment(netCoins),
-      totalEarned: increment(netCoins),
-      vp: increment(placement === '1st' ? 200 : placement === '2nd' ? 100 : 50),
-    });
-    batch.set(doc(collection(db, 'transactions')), {
-      userId, type: 'tournament_prize', amount: netCoins, currency: 'coins',
-      description: `${placement} place: ${t.name}${squadCut > 0 ? ` · ${squadCut} to squad` : ''}`,
-      tournamentId, createdAt: serverTimestamp(),
-    });
-    batch.set(doc(collection(db, 'notifications')), {
-      recipientId: userId, type: 'coins',
-      title: `+${netCoins} coins — ${placement} place!`,
-      body: `Prize from ${t.name}`,
-      read: false, data: { amount: netCoins, tournamentId, type: 'tournament_prize' },
-      createdAt: serverTimestamp(),
-    });
-
-    if (squadId && squadCut > 0) {
-      batch.update(doc(db, 'squads', squadId), {
-        'wallet.balance': increment(squadCut),
-        'wallet.totalReceived': increment(squadCut),
-      });
-    }
-  };
-
-  await awardPrize(placements.first, splits.first, '1st');
-  await awardPrize(placements.second, splits.second, '2nd');
-  if (Array.isArray(placements.third)) {
-    for (const uid of placements.third) await awardPrize(uid, splits.third, '3rd');
-  }
-
-  // Mod fee → coins for the mod (full amount, no commission)
-  if (t.adminId && modFee > 0) {
-    batch.update(doc(db, 'wallets', t.adminId), {
-      balance: increment(modFee),
-      totalEarned: increment(modFee),
-      vp: increment(30),
-    });
-    batch.set(doc(collection(db, 'transactions')), {
-      userId: t.adminId, type: 'mod_payout', amount: modFee, currency: 'coins',
-      description: `Moderator fee: ${t.name}`, tournamentId, createdAt: serverTimestamp(),
-    });
-    batch.set(doc(collection(db, 'notifications')), {
-      recipientId: t.adminId, type: 'coins',
-      title: `+${modFee} coins — moderator fee`,
-      body: `For running ${t.name}`, read: false, data: { amount: modFee, type: 'mod_payout' }, createdAt: serverTimestamp(),
-    });
-  }
-
-  batch.update(tournamentRef, {
-    status: 'completed', prizeDistributed: true, modFee, finalizedAt: serverTimestamp(),
-  });
-
-  await batch.commit();
-};
 
 // ═══════════════════════════════════════════
 // LEADERBOARDS
@@ -4687,21 +4507,119 @@ export const uploadFile = async (path, file, { preset = 'post', compress = true,
   return url;
 };
 
+// Formats that carry animation. compressImage() draws to a canvas and encodes
+// JPEG, which keeps frame one and throws the rest away, so an animated avatar
+// has to skip compression entirely or it arrives as a still.
+const ANIMATED_IMAGE_TYPES = new Set(['image/gif', 'image/webp', 'image/apng']);
+// An avatar renders at 384px. 8MB is far more than that needs even as an
+// animation, and it stops a 60MB GIF being uploaded and served on every row of
+// every list. The server cap in functions/r2.js still applies on top.
+const MAX_ANIMATED_AVATAR_BYTES = 8 * 1024 * 1024;
+
 export const uploadAvatar = async (uid, file) => {
-  const compressed = file?.type?.startsWith('image/')
-    ? await compressMedia(file, 'free', 'avatar')
-    : file;
-  const { url } = await uploadToR2(compressed, 'avatar');
+  // Animated avatars are EARNED AT L45 **OR** included with Pro. Everyone else's
+  // avatar goes through the canvas and comes out a still JPEG, which is also
+  // what makes an accidental 12MP phone photo cheap to serve. Note that someone
+  // entitled who uploads a STATIC webp still lands here and is passed through:
+  // that is fine, and uploadToR2 + the R2 content-type allowlist still apply.
+  //
+  // ⚠ IT USED TO ASK `tier === 'pro'` ONLY. The founder overruled the Pro-only
+  // gate (scope-table effect 20), so the question moved to canUseAnimatedAvatar,
+  // which answers level-OR-plan in one place. Nothing else changed: the
+  // passthrough it guards was already built.
+  let out = file;
+  if (file?.type?.startsWith('image/')) {
+    let tier = 'free';
+    let me_doc = null;
+    try {
+      const me = auth.currentUser?.uid || uid;
+      if (me) {
+        const snap = await getDoc(doc(db, 'users', me));
+        // ⚠ ONE read, two answers. The tier and the unlock both come off this
+        // snapshot, so the new gate costs nothing on top of what was here.
+        me_doc = snap.exists() ? snap.data() : null;
+        tier = resolveTier(me_doc);
+      }
+    } catch { /* fall through to the compressed path */ }
+
+    const wantsAnimated = canUseAnimatedAvatar(me_doc)
+      && ANIMATED_IMAGE_TYPES.has(file.type)
+      && file.size <= MAX_ANIMATED_AVATAR_BYTES;
+
+    out = wantsAnimated ? file : await compressMedia(file, tier, 'avatar');
+  }
+  const { url } = await uploadToR2(out, 'avatar');
   return url;
 };
 
-export const uploadBanner = async (uid, file) => {
-  const compressed = file?.type?.startsWith('image/')
-    ? await compressMedia(file, 'free', 'background')
-    : file;
-  const { url } = await uploadToR2(compressed, 'banner');
+// Animated banner (scope-table effect 16). A banner renders in a ~1049x220 strip
+// and AUTOPLAYS on every visit, so it is compressed hard and kept short.
+export const BANNER_VIDEO_MAX_SECONDS = 8;
+export const BANNER_VIDEO_MAX_BYTES = 6 * 1024 * 1024;   // mirrors functions/r2.js
+// ⚠ 480 is the SHORT side, i.e. the height. The banner displays at 220px, so
+// 480 is already 2x for retina and there is nothing to gain above it.
+const BANNER_VIDEO_OPTS = { maxShortSide: 480, videoBitrate: 1_200_000 };
+
+/**
+ * @param {File} file image, or a video for an animated banner (L13+).
+ *
+ * ⚠ THE VIDEO PATH USED TO PASS THROUGH UNCOMPRESSED. `uploadBanner` only
+ * compressed `image/*` and handed anything else straight to R2, where `banner`
+ * inherited the PLAN cap — up to 200MB on the free tier, re-downloaded on every
+ * profile visit. Founder, 2026-08-27: "videos need to be compressed or it will
+ * slow the page down and probably cost me money in the form of storage."
+ */
+export const uploadBanner = async (uid, file, onProgress) => {
+  if (file?.type?.startsWith('image/')) {
+    const compressed = await compressMedia(file, 'free', 'background');
+    const { url } = await uploadToR2(compressed, 'banner');
+    return url;
+  }
+
+  if (file?.type?.startsWith('video/')) {
+    let me_doc = null;
+    try {
+      const me = auth.currentUser?.uid || uid;
+      if (me) {
+        const snap = await getDoc(doc(db, 'users', me));
+        me_doc = snap.exists() ? snap.data() : null;
+      }
+    } catch { /* treated as not unlocked below */ }
+    if (!canUseAnimatedBanner(me_doc)) {
+      throw new Error(`Animated banners unlock at level ${unlockLevel('animated_banner')}.`);
+    }
+
+    // ⚠ DURATION IS CHECKED BEFORE RE-ENCODING, NOT AFTER. compressVideo runs in
+    // REAL TIME (a 60s clip takes ~60s), so accepting a long file and trimming
+    // afterwards would make the user wait a minute to be told no.
+    const secs = await videoDurationSeconds(file).catch(() => 0);
+    if (secs > BANNER_VIDEO_MAX_SECONDS + 0.5) {
+      throw new Error(`An animated banner must be ${BANNER_VIDEO_MAX_SECONDS} seconds or shorter (yours is ${Math.round(secs)}s).`);
+    }
+
+    const out = await compressVideo(file, 'free', onProgress, 'short', BANNER_VIDEO_OPTS);
+    if (out.size > BANNER_VIDEO_MAX_BYTES) {
+      throw new Error('That clip is still too large after compression. Try something shorter or simpler.');
+    }
+    const { url } = await uploadToR2(out, 'banner');
+    return url;
+  }
+
+  const { url } = await uploadToR2(file, 'banner');
   return url;
 };
+
+/** Duration without downloading the whole file — metadata is enough. */
+function videoDurationSeconds(file) {
+  return new Promise((res, rej) => {
+    const url = URL.createObjectURL(file);
+    const v = document.createElement('video');
+    v.preload = 'metadata';
+    v.onloadedmetadata = () => { URL.revokeObjectURL(url); res(v.duration); };
+    v.onerror = () => { URL.revokeObjectURL(url); rej(new Error('unreadable')); };
+    v.src = url;
+  });
+}
 
 export const uploadTournamentBanner = async (uid, file) => {
   const compressed = file?.type?.startsWith('image/')
@@ -4715,9 +4633,25 @@ export const uploadPostMedia = async (postId, file) => {
   // Without this a raw phone photo (multi-MB, sometimes HEIC / odd mime) could
   // be rejected by the R2 content-type allowlist or time out on a slow mobile
   // connection — the "image won't post" bug. Videos pass through (server cap).
-  const blob = file?.type?.startsWith('image/')
-    ? await compressMedia(file, 'free', 'post')
-    : file;
+  //
+  // The plan is resolved HERE rather than passed in, because this helper has
+  // nine callers across web and native and the previous hardcoded 'free' meant
+  // Pro photos were silently downscaled to 1600px like everyone else's, which
+  // made the "4K photos" line on the pricing page untrue. Reading one user doc
+  // on a post upload is negligible next to the upload itself, and a failed read
+  // falls back to the free preset rather than blocking the post.
+  let blob = file;
+  if (file?.type?.startsWith('image/')) {
+    let tier = 'free';
+    try {
+      const uid = auth.currentUser?.uid;
+      if (uid) {
+        const snap = await getDoc(doc(db, 'users', uid));
+        tier = resolveTier(snap.exists() ? snap.data() : null);
+      }
+    } catch { /* keep 'free' — a downscaled photo beats a failed post */ }
+    blob = await compressMedia(file, tier, postPresetForTier(tier));
+  }
   const { url } = await uploadToR2(blob, 'post');
   return url;
 };
@@ -4936,7 +4870,10 @@ export const getActiveFirestoreAds = async (limitCount = 5) => {
       isFirestoreAd: true,
     }));
   } catch (err) {
-    console.error('Error fetching Firestore ads:', error);
+    // Was `error`, which does not exist here (audit A41 #5): the error HANDLER
+    // threw a ReferenceError, turning a handled ad-fetch failure into an
+    // unhandled one. Valid JavaScript, so the build never complained.
+    console.error('Error fetching Firestore ads:', err);
     return [];
   }
 };
@@ -5267,3 +5204,20 @@ export const getStreamIngest = (streamId) => callFn('getStreamIngest', { streamI
  * Throws if no trustworthy FX rate is available, exactly as the payment does.
  */
 export const getCoinPriceQuote = (args) => callFn('getCoinPriceQuote', args);
+
+// ── Creator quests ────────────────────────────────────────────────────
+// Server-authoritative. The client sends WHICH quest, never how much, and the
+// server verifies the quest was actually completed before granting VP.
+export const getCreatorQuests = async () => {
+  const { httpsCallable } = await import('firebase/functions');
+  const { functions } = await import('./config');
+  const res = await httpsCallable(functions, 'getCreatorQuests')({});
+  return res.data;
+};
+
+export const claimCreatorQuest = async ({ questId }) => {
+  const { httpsCallable } = await import('firebase/functions');
+  const { functions } = await import('./config');
+  const res = await httpsCallable(functions, 'claimCreatorQuest')({ questId });
+  return res.data;
+};

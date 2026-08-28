@@ -12,7 +12,7 @@ payment processor. **When this file and the source disagree, the SOURCE WINS. Gr
 The four things most often gotten wrong, all verified against code on 2026-08-16:
 
 1. **NOBODY CAN WITHDRAW ANYTHING, EVER.** No convert, no withdraw, no gem transfer, no gems-to-coins.
-   `functions/withdrawals.js:280`, `functions/gemTransfer.js:91`. Coins are a revocable licence to
+   Those modules are DELETED and their callables undeployed (2026-08-16). Coins are a revocable licence to
    access features, no cash value, non-transferable. Gems are revenue share Vergr OWES, not a balance.
    Any sentence in this file implying otherwise is stale — fix it rather than repeat it.
 2. **Vergr is the PRINCIPAL, not a marketplace.** See "What Vergr IS" below and
@@ -28,9 +28,1740 @@ The four things most often gotten wrong, all verified against code on 2026-08-16
    `functions/gone.js`. **Full record, with tick-boxes so you do not redo finished work:**
    `docs/WITHDRAWAL_REMOVAL_LIST.md`. Handover prompt: `docs/HANDOVER_WITHDRAWAL_CLEANUP.md`.
 
+### Second audit, 2026-08-23. Seven MORE stale claims, one of which caused a live bug.
+
+The 2026-08-16 audit above did not catch these. Each was checked against source, not memory:
+
+| Claim in this file | Truth |
+|---|---|
+| "React 18 + Vite SPA, **HashRouter**" (twice) and a TODO to "kill HashRouter" | **BrowserRouter since before 2026-08-23.** `AppRouter.jsx:750`. The migration was listed as outstanding launch work long after it shipped. |
+| the repo has no source for `vergr-sfu`/`vergr-ingest`/`vergr-rtmp-auth`/`vergr-chat` | **All four have full source** in `infra/*/src/`. Only `stream-node-agent` genuinely lacks it. |
+| "1.0.198 SHIPPED" as the current-version header | **1.0.203.** |
+| Subscriptions section selling tournaments, a vergr.me custom domain, IP-masked streaming, priority support, co-streaming as a Pro perk, EUR prices | All four were deleted or never existed; co-streaming is FREE; the charge is USD. The 2026-08-19 audit in this same file already said so and the tier section was never updated to match. |
+| "tip 10% fee ... credits platform_revenue" | **No tip fee exists.** `feePctFor()` returns 0. |
+| Vanguard perks: 5% tournament mod cut + conversion fee waived | Both are against deleted features. Vanguard have no working comp. |
+
+⚠ **The HashRouter one was not harmless.** `ErrorBoundary.jsx` set `window.location.hash = '#/'` for its
+"Go home" button, which under BrowserRouter appends `#/` to the crashed path and reloads the SAME
+crash. The only escape hatch on the crash screen was dead. Fixed 2026-08-23.
+
+**So the rule below is not enough on its own.** A stale line here does not just misinform, it gets
+DESIGNED AGAINST: the "no source for the relay" line caused a per-message Firestore read to be
+built for rank crests in chat, when the relay already loads the user doc once per connection and
+the field was free. **If this file tells you something is impossible or missing, verify it exists
+or does not exist on disk before you architect around it.**
+
 **Rule going forward: do not write "removed", "shipped" or "done" in this file without grepping for
 the callsites first.** A claim here that the code contradicts is worse than no claim at all, because
 it gets repeated to founders, processors and future sessions as fact.
+
+---
+
+## 🏛 THE OPERATING ENTITY IS **VERGR LLC (KENTUCKY)** (2026-08-20, shipped)
+
+Murmont LLC (Wyoming) is **superseded**. Never write it on a form, a policy, a
+processor application or a statement again.
+
+| Field | Value | Source |
+|---|---|---|
+| Legal name | **Vergr LLC** | Articles of Organization, Article I ("VERGR LLC") |
+| Formed | Commonwealth of Kentucky, **20 August 2026** | Articles, filed 8/20/2026 2:14 PM |
+| Organization Number | **1622652** | Kentucky's own term, and the ONLY entity id it issues. Verified 2026-08-20 in the SoS business search: VERGR LLC, Active, standing Good. The Articles stamp reads `1622652.06`; **.06 is a per-document suffix, not part of the number**. Northwest's Initial Resolutions call it a "filing number" only because that template is generic across 50 states |
+| Registered office + mailing address | **212 N. 2nd St, Ste 100, Richmond, KY 40475** | Articles, Articles II and III (they give the same address) |
+| Registered agent | **Northwest Registered Agent LLC** | Articles, Article II |
+| Management | **Member-managed**, sole member Damien Ashton, 100% | Articles Article IV + Operating Agreement 4.1 + Certification of Member |
+| EIN | ⚠ **NOT YET ISSUED.** Application pending. | founder, 2026-08-20 |
+
+**Three different numbers, do not mix them up.** The **Organization Number**
+(1622652, KY SoS) is the company registration number a processor or app store
+asks for. The **EIN** is the federal tax id, still pending. The **CBI**
+(Commonwealth Business Identifier, 10 digits, KY Department of Revenue via the
+One Stop portal) is a state TAX account number that only appears once the LLET
+registration happens; it is never the answer to "company registration number".
+
+⚠ **Murmont's EIN was 35-2825718. That belongs to a DIFFERENT COMPANY.** It must
+never appear on a Vergr LLC document. Any form asking for a tax ID gets "applied
+for, not yet issued" until the IRS CP 575 arrives, then this table gets the real
+number and `docs/processors/nextgen-precheck-answers.html` gets its row back.
+
+**One place decides all of this: `OPERATOR` in
+`src/screens/marketing/legal/legalContent.js`.** Terms, Privacy, AUP, Refunds,
+Cookies, Child Safety and all eight compliance policies interpolate it, as do
+the marketing footer, the Business Details block, ProSubscriptionSite, the
+checkout disclosure in `CartContents.jsx` and the payout statement header in
+`PayoutScreens.jsx`. **Never hardcode the company name in a component** — the
+last two were hardcoded and were the only things this change could not fix by
+editing one constant.
+
+`LEGAL_VERSION` went **5 → 6**, because the counterparty to the user's contract
+changed, which is the most material term there is. `TosVersionGate` therefore
+shows every signed-in user a blocking re-accept modal on next load. That is
+intended; do not roll it back to 5 to make the modal go away.
+
+**Two things that did NOT change and need a founder decision:**
+- **Governing law is still `jurisdiction: 'Republic of South Africa'`** with
+  exclusive jurisdiction in the Johannesburg courts (ToS §27). That is a
+  deliberate pre-existing choice, separate from `formationState`, so it was left
+  alone. A US-formed entity electing SA law is unusual and an underwriter will
+  ask about it.
+- **The Play Console developer name.** The Child Safety Standards page must name
+  the developer as it appears on the store listing (Google checks this). If the
+  Play account is still registered to Murmont LLC, the page and the listing now
+  disagree. Same for AdMob, Relay banking, PayRam and Circle: every account
+  opened in Murmont's name needs the entity updated or reopened.
+
+### Migrating the PLAY account off Murmont: the order is forced (researched 2026-08-21)
+
+D-U-N-S for Vergr LLC arrived 2026-08-21. **EIN still pending, and it blocks everything below.**
+
+**This is NOT a rename, it is a new payments profile.** Google cannot update the
+country, the account type, or the **D-U-N-S number** on an existing payments
+profile (only name and address). Murmont and Vergr are separate entities with
+separate D-U-N-S numbers, so the path is: create a NEW Google payments profile
+for Vergr LLC, verify it, then **link the verified profile to the EXISTING
+developer account**.
+
+✅ **No app transfer is required.** Apps, reviews, install base, Play Billing
+products and subscription SKUs all stay on the same developer account. Do not
+reach for the app-transfer process; it is the wrong tool here.
+
+**The EIN gates it because a seller profile is a MERCHANT profile:**
+- Tax info is a **W-9**, and Google requires LLCs to give the **federal EIN** plus
+  the business name so they match what it reports to the IRS. Cannot be completed
+  without the EIN.
+- The payout **bank account name must MATCH the legal name on the profile**, so the
+  Murmont-named Relay account cannot receive Vergr LLC payouts.
+
+Forced order: **EIN → Vergr bank account → new payments profile → Play identity.**
+
+⚠ **Do NOT start and stall.** A name/address mismatch against D&B raises a
+"no longer verified" banner with a deadline, and Google's stated consequence is
+account restriction and **removal of all apps from Google Play**. Waiting costs
+nothing; a half-finished switch risks the listing.
+
+⚠ **Do NOT rename the Murmont D-U-N-S record at D&B.** Google's "update D&B first"
+flow is for ONE entity changing its own name/address. There is now a separate Vergr
+D-U-N-S. Renaming Murmont's record would produce a D-U-N-S matching neither EIN.
+
+⚠ **Play is one of five.** AdMob keeps its own payments profile; Relay, PayRam and
+Circle were all opened in Murmont's name too. Changing Play changes none of them.
+
+**EIN timing depends on one fact nobody has recorded yet:** whether the SS-4
+responsible party has an SSN/ITIN. With one, the IRS online assistant issues the EIN
+immediately. Without one, the online tool is unavailable and it is fax (~4 business
+weeks) or mail (4-6 weeks). If it is the second case, faxing the SS-4 is the
+critical-path item for the whole entity migration.
+
+Known live inconsistency, deliberately NOT fixed early: in-app legal pages already
+say Vergr LLC (the `OPERATOR` constant shipped) while the Play listing still says
+Murmont, so the Child Safety Standards page and the store listing disagree. Google
+does check that pair. It is a smaller risk than a half-finished payments profile,
+so it gets fixed as part of the single coordinated switch.
+
+Sources: Play Console Help 16260648 (identity details managed by a payments
+profile), 13634888 (keeping account info up to date), 13634081 (view/manage account
+info), payments center 7163598 (merchant tax information).
+
+Corporate documents regenerated for the new entity (unsigned, print/date/sign
+before sending): `docs/corporate/{member-register.html,
+certificate-of-ownership.html, ownership-structure.svg}`.
+
+---
+
+## 📦 CURRENT VERSION IS **1.0.203** (`appVersion.js` + `tauri.conf.json`, verified 2026-08-23)
+
+The 1.0.198 record below is kept for the artifact detail. **Do not read it as current.** Anything
+in this file that says "not yet in a build" against 1.0.198 or 1.0.201 has been superseded by at
+least one version bump since; check `src/utils/appVersion.js` before repeating a version claim.
+
+### 1.0.198 shipped 2026-08-18 (desktop + sideload APK + Play AAB)
+
+Announcements system complete (all seven founder decisions D1-D7). Full record:
+`docs/ANNOUNCEMENTS_PLAN.md` section 19.
+
+| Artifact | Where | Verified from the ARTIFACT |
+|---|---|---|
+| Desktop installer | `cdn.vergr.app/downloads/VERGR-Setup.exe` (103.7 MB) | signed, 416-char sig in the live `latest.json` |
+| Sideload APK | `cdn.vergr.app/downloads/VERGR.apk` (128.3 MB) | arm64-v8a ONLY, `beforeBuildCommand: npm run build:android`, assetProtocol on with 4 scope entries, pruned assets absent |
+| Play AAB | `C:UsersdamieDownloadsVERGR-1.0.198.aab` (183.1 MB) | arm64-v8a + armeabi-v7a, `build:android:store`, **REQUEST_INSTALL_PACKAGES absent**, versionName 1.0.198 |
+
+Version fields moved together: `tauri.conf.json` 1.0.198, `appVersion.js`
+APP_VERSION 1.0.198 + APP_VERSION_CODE 198, `version.json` notes. `Cargo.toml`
+deliberately left at 1.0.1 (touching it invalidates the whole Rust cache).
+
+⚠ The native builds overwrite `dist/` with the native-mode bundle. `npm run build`
+was re-run before `firebase deploy --only hosting`, or the WEBSITE would have
+been served the app bundle. Check this on every future native release.
+
+---
+
+## 🤖 PLAY CONSOLE "5 actions recommended" ON 1.0.201, TRIAGED (2026-08-21)
+
+Play showed five advisories against the 1.0.201 bundle. Three needed no code, two
+were real and are fixed in source. **NOT YET IN A BUILD:** 1.0.201 is already
+uploaded, so shipping these needs a version bump (`tauri.conf.json`,
+`appVersion.js` APP_VERSION + APP_VERSION_CODE, `version.json`) and a new AAB.
+
+| Advisory | Verdict |
+|---|---|
+| Edge-to-edge may not display for all users | **Already correct, no action.** `MainActivity.kt:103` calls `enableEdgeToEdge()` before `super.onCreate`, `index.html:174` sets `viewport-fit=cover`, and the web layer consumes `env(safe-area-inset-*)` throughout. Play cannot statically prove inset handling in a WebView app, so it advises every SDK 35+ app. |
+| Deprecated edge-to-edge APIs | **Not ours, not fixable, harmless.** All six call sites are library code: `androidx.activity.o.b/p.b/r.b` are the obfuscated `EdgeToEdgeApi*` classes INSIDE `enableEdgeToEdge()` (they set `statusBarColor` for API 24-34 back-compat), plus MaterialDatePicker and Huawei's `BridgeActivity`. Checked the androidx.activity release notes through **1.13.0**: no version stops calling them, so upgrading does nothing. On Android 15+ these are no-ops, not crashes. Our own `themes.xml` also sets `android:statusBarColor`/`navigationBarColor`, deliberately kept because minSdk is 24 and they still do work below API 35. |
+| Resizability / orientation restrictions | **REAL, ours, fixed.** See the long comment now in `AndroidManifest.xml`. |
+| Bitmap image optimization | **REAL, ours, fixed.** See below. |
+| R8 optimization | **Half fixed.** `isShrinkResources = true` added. **AGP 9.0 deliberately NOT taken**, see below. |
+
+### Orientation: opt-out taken, with an expiry date
+
+`ScannerActivity` and `ArCameraActivity` are `screenOrientation="portrait"` and have
+no landscape layout. Targeting SDK 36 means that attribute is **ignored on any
+display >= 600dp smallest width** (tablets, unfolded foldables), so today a tablet
+user rotating either screen gets a portrait UI rendered sideways, and because
+neither activity declared `configChanges`, the activity was also destroyed and
+recreated mid-capture.
+
+Both now carry Google's own opt-out property
+`android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY = true`, plus
+`configChanges="screenSize|screenLayout|smallestScreenSize|keyboardHidden"`.
+
+⚠ **`orientation` is deliberately absent from `configChanges`**, because claiming to
+handle a rotation we have no layout for is worse than being recreated.
+⚠ **The opt-out DIES AT targetSdk 37.** A real landscape pass on those two capture
+screens is required before that bump. `LifecycleCameraController` + a MATCH_PARENT
+`PreviewView` already re-lay out on a size change, so the work is layout, not camera.
+Huawei's `BridgeActivity` (`screenOrientation="BEHIND"`) is third-party and left
+alone; overriding a vendor bridge activity's orientation is not worth the risk.
+
+### Bitmap decode was an OOM waiting to happen (fixed)
+
+`VergrMessagingService` called `BitmapFactory.decodeStream(input)` with **no
+Options** on both the notification photo and the sender avatar. That allocates at
+FULL source resolution before any downscale runs, so a 4000x3000 CDN photo was a
+48MB ARGB_8888 allocation **inside a background FCM service**, the smallest heap
+the app ever gets. The avatar path was worse: it circle-cropped and PNG-encoded at
+full resolution (two 16MB bitmaps plus a multi-megabyte lossless PNG in cache) for
+something the OS draws at 64dp.
+
+Now: `downloadToFile()` streams to a temp file, `decodeBounded()` does the canonical
+two-pass `inJustDecodeBounds` + `inSampleSize` decode (`PHOTO_MAX_DIM` 1024,
+`AVATAR_MAX_DIM` 512), and `downscale`/`circleCrop` recycle their intermediates.
+**No image library was added.** Play suggests Coil/Glide; that is a dependency and
+APK weight for two call sites, and the manual two-pass decode is the same fix.
+
+### R8: resource shrinking yes, AGP 9 no
+
+`isShrinkResources = true` is safe here **because nothing resolves a resource by
+name at runtime** (`getIdentifier` appears nowhere in the Kotlin, verified). The
+win is `com.google.android.material`, which ships every component's resources while
+this app uses it for one theme parent and instantiates no Material widgets. Tauri's
+web bundle lives in `assets/`, which resource shrinking does not touch.
+
+**AGP 9.0 was declined, not forgotten.** We are on AGP 8.11.0 / Gradle 8.14.3 /
+Kotlin **1.9.25**, and that Kotlin pin is load-bearing: `build.gradle.kts` documents
+that billing-ktx and newer core-splashscreen ship Kotlin 2.x metadata which fails
+this module outright. AGP 9 also needs Gradle 9.x, which would drag in the
+`buildSrc` Rust plugin and the Tauri subprojects. That is a release-breaking
+migration for a marginal optimisation gain. Revisit when the Tauri Android template
+supports it.
+
+Kotlin changes compile-verified with
+`./gradlew :app:compileUniversalReleaseKotlin` (ANDROID_HOME=C:\Android\sdk).
+Useful fact: **the Rust build is wired into `merge*JniLibFolders`, NOT into Kotlin
+compilation** (`buildSrc/.../RustPlugin.kt:60,78`), so that task is a ~40s syntax
+check and does not trigger a 20-minute cargo build.
+
+---
+## 💳 LITE / PRO AUDITED AND MADE TRUE (2026-08-19, SHIPPED + DEPLOYED)
+
+Driver: the founder was entering the subscriptions into Google Play and needed
+the advertised benefits confirmed. Every Lite and Pro claim was traced to the
+code that enforces it. **Most of Pro was not real.** Source of truth for the
+plans is `src/utils/tierSystem.js`, now annotated line by line.
+
+**Play Console product ids are NOT free choice** (`functions/playBilling.js:67`):
+`sub_lite` → Lite $4.99, `sub_pro` → Pro $9.99. Create them as SUBSCRIPTIONS
+with one monthly base plan each. Redemption, acknowledge-before-grant,
+account binding and the daily reconcile were already correct.
+
+### Claims DELETED because nothing gated them (founder decision: they stay free)
+Squad creation, voice messages, video messages, post boosts, custom banners,
+paid streams, **co-streaming** (founder: it drives tips on live streams, gating
+it costs revenue). All are now `true` for every tier in `TIER_FEATURES` and are
+gone from the Lite/Pro bullets, the comparison table, and the help centre.
+`MAX_SQUAD_OWN` is a flat 1 for everyone and squad `maxMembers` a flat 100.
+
+### Claims DELETED because nothing implemented them
+"Private streaming, IP masked" (`streaming.js` returns `privateTurn`, no client
+ever read it) and "priority support + early access".
+
+### Comparison-table rows deleted (limits that existed only in that file)
+mediaPerDay, maxShortSeconds, maxClipMinutes, streamHoursPerMonth,
+maxPinnedChats, draftsLimit. **Zero consumers each.** Do not re-add a tier flag
+without a caller.
+
+### Claims KEPT and BUILT this session
+| Claim | What was actually wrong, and the fix |
+|---|---|
+| Pro 4K photos | `uploadPostMedia` hardcoded `'free'` + a fixed 1600px preset, so every plan got the same photo. New `PRESETS.post4k` (3840px) + `postPresetForTier()`; the helper now resolves the caller's plan itself, so all 9 callsites got it. |
+| Pro 90-day replays | **Was completely dead** and did not need box 2. See below. |
+| Pro animated avatar | `uploadAvatar` canvas-encoded JPEG, which keeps frame one. Pro GIF/WebP/APNG under 8MB now passes through uncompressed. |
+| Pro badge | `profileBadge` was a flag nothing rendered. New `src/components/PlanBadge.jsx`, shown next to the handle on the public profile, suppressed on a Vanguard persona. |
+| Pro advanced analytics | Flag with zero consumers. Now three real things in `MonthlyAnalyticsScreen`: follower online-times (via the existing `getAudienceActivity`, with its honest not-enough-data state), a 12-month window vs Lite's 90 days, and every post in the period in one sortable table. |
+| Pro custom vergr.me domain | UI said "Contact support". Now self-serve, see below. |
+
+### ⚠ PRO REPLAYS: box 2 is NOT required, and this corrects two stale claims
+`vodArchive.js` was pointed at `archive.vergr.app`, which returns **503**, and
+`dispatchStreamVodArchive` had **never been deployed**. But a finished broadcast
+is ALREADY a playable VOD on R2: vergr-ingest writes `#EXT-X-ENDLIST` and
+r2-sync only ever copies. The only thing killing replays was
+`streamingCleanup.js` deleting `streams/<key>/*` at 24h.
+
+So a replay is a **retention decision, not a rendering job**. Now: the dispatcher
+stamps the manifest and `streamingCleanup` holds those objects until
+`vodExpiresAt` (`replayHeldKeys`, keyed on `vodKind === 'hls'`). Zero ffmpeg,
+zero new spend. The remux path is kept behind `app_config/general.streamVodRemux`
+for when a box exists; **do not flip it on without checking the box answers.**
+
+**OBS is covered too.** nginx-rtmp's playlist is a sliding 18s window, so
+`buildRtmpVodManifest()` rebuilds a VOD playlist from the R2 object listing
+(sorted numerically, EXTINF = duration / segment count, since fragments are
+uniform by construction). `ARCHIVABLE_INGEST` now includes `rtmp`.
+
+Two corrections to this file's own claims, both verified on the box:
+- **`/opt/vergr-vod-archive` and ffmpeg are BOTH present on box 1.** The Box 2
+  section saying archiving lived only on box 2 is wrong. The unit is `inactive`
+  and `disabled`, not absent.
+- Live nginx is `hls_fragment 1s`, `hls_playlist_length 18s`, `hls_nested on`.
+
+Also fixed in passing: `InlineVideoPlayer` now lazy-loads hls.js for `.m3u8`
+sources (it is a plain `<video>`, so an HLS replay would have shown a black
+frame everywhere except Safari), and `isRestricted()` is one shared helper that
+now includes `access.mode === 'paid'` — a paid stream's replay was being
+published to the public `archiveVodUrl`.
+
+### ❌ CUSTOM DOMAINS: REMOVED AS A FEATURE 2026-08-20 (founder decision)
+
+**Cloudflare for SaaS is NOT available on this account.** Queried live with a
+real token scoped to the vergr.app zone:
+
+```
+GET /zones/{id}/custom_hostnames/fallback_origin
+  → 1456 "Access to configure this resource has not been granted for this
+     zone. This feature is available with SSL for SaaS."
+GET /zones/{id}/custom_hostnames
+  → 1404 "No quota has been allocated for this zone or for this account...
+     contact our sales team" (Enterprise)
+```
+
+⚠ **Cloudflare's public plans page says every tier including Free gets 100
+custom hostnames. That is NOT true for this account.** I quoted that page as
+fact before testing it, which is the second time in one session I asserted a
+docs figure without checking it against the real thing. Test the API, not the
+pricing table.
+
+Also learned while checking: **`api.vergr.app` is NOT a spare hostname.** It is
+the live geo-blocking endpoint (`src/utils/geoBlocks.js:41` →
+`https://api.vergr.app/getRegionStatus`, live since 2026-07-28) and its
+`AAAA 100::` record is a Worker binding, not a leftover. Do not reuse it.
+
+**What was removed:** the Pro bullet, the comparison row, the vergr.me settings
+card, `CustomDomainSite` + the host gate in `AppRouter`, the `vergrme_domains`
+Firestore rule, the boot guard in `main.jsx`, `infra/vergr-custom-domains/`, and
+ten copy references across the help centre and marketing. The three callables
+are **deleted from the project**, `functions/vergrMeDomains.js` is on disk but
+is deliberately NOT required by `index.js`, and both `CLOUDFLARE_*` secrets are
+destroyed.
+
+**If it is ever revived** it needs either Cloudflare Enterprise, or the Firebase
+Hosting custom-domain API instead (which sidesteps the Host-header problem
+entirely because Firebase would own the domain, but caps at 20 subdomains per
+apex due to cert minting limits). Do not re-add the claim to any plan copy until
+a `POST /zones/{id}/custom_hostnames` actually succeeds.
+
+<details><summary>Superseded: the build that was done before this was cancelled</summary>
+`functions/vergrMeDomains.js` (Cloudflare for SaaS custom hostnames) +
+`CustomDomainPanel` in `SettingsPanel.jsx` + `vergrme_domains/{hostname}`
+(public read, callable write) + host resolution in `AppRouter`'s `RootRoute`.
+Cost checked, not assumed: **Cloudflare for SaaS is on the FREE plan, 100
+hostnames included, then $0.10/hostname/month.**
+
+**Both secrets exist holding the literal string `unset`**, which the code treats
+as absent, so the callables deploy and the UI shows "being switched on". To go
+live there is NO code change and NO redeploy, just:
+```
+firebase functions:secrets:set CLOUDFLARE_API_TOKEN        # SSL and Certificates: Edit
+firebase functions:secrets:set CLOUDFLARE_ZONE_ID          # the vergr.app zone id
+```
+Then enable Cloudflare for SaaS on the zone and set the fallback origin.
+
+</details>
+
+### Other real bugs found while auditing
+- The create screens rendered literal **"undefinedp"** and **"undefinedMB"**:
+  four screens read `tierConfig.videoMaxHeight` / `imageMaxDim` /
+  `maxFileUploadMB`, none of which existed on `TIERS`.
+- **`commissionForVP` has ZERO callers.** The 30%→15% VP ladder charges nothing.
+  The help article `do-paid-plans-change-the-fees-i-pay` stated it as fact and
+  contradicted its own summary; rewritten. The only real rate is the revenue
+  share, 50%→80% by lifetime gross earnings.
+- `what-does-each-plan-include` claimed paid plans reach a better revenue share
+  sooner. **False** and against the locked rule. Rewritten.
+- Euro prices (€4.99/€9.99) in four help articles and the animated-emoji upsell,
+  where the charge is USD. Fixed.
+- `adminSubscriptions.js` plan seeds still advertised "Tournaments to 256
+  players" and co-streaming.
+
+### ⚠ THREE KILL SWITCHES WERE INERT (found + wired 2026-08-19)
+
+`payoutsPaused`, `conversionsPaused` and `tipsPaused` are offered as toggles on
+**both** `/admin/config` and `/admin/economy`, are in the `adminConfig.js`
+write allowlist, and were **read by nothing**. Flipping "Pause creator payouts"
+did not pause payouts. Flipping "Pause Tipping" did not stop tips. A safety
+control that is trusted and does nothing is worse than no control.
+
+Now enforced: `payoutsPaused` in `creatorPayouts.runCreatorPayouts` (before
+`buildRunPlan`, records a `blocked` run so the reason is visible),
+`tipsPaused` in `sendTip`, `conversionsPaused` in `coinLedger.settleEarnedShare`
+(defers, does not discard — the settlement marker is only written on success,
+so clearing the switch lets the same sourceId accrue normally).
+
+⚠ **The accrual gate lives in `coinLedger.js`, which is bundled into every
+function that requires it.** Redeploying one caller does NOT update the others.
+The accrual entry points that had to be redeployed together: `sendTip`,
+`purchaseAccess`, `purchaseEventTicket`, `purchaseSeasonPass`,
+`subscribeMembership`, `admobSsvCallback`, `cronDaily`
+(`renewMemberSubscriptions`). Add any new accrual surface to that list.
+`creditReferralPurchaseBonus` is an internal helper, NOT a deployed function —
+passing it to `--only` aborts the whole deploy.
+
+The two admin screens also **disagreed about what the same flag meant**:
+`/admin/config` called `conversionsPaused` "Pause Coin → Gem Conversions"
+(a deleted feature) while `/admin/economy` correctly calls it "Pause
+revenue-share accrual". An operator reading the first would have halted creator
+earnings thinking they were stopping something dead. Both now match.
+
+### ⚠ "Commission" copy was still live on five screens (fixed 2026-08-19)
+
+`commissionForVP` / `COMMISSION_RATES` (30%→15% by VP) **charges nothing** — no
+caller anywhere debits it. But the COPY was still live and telling users they
+paid it: `BuyCoinsScreen` ("Higher VP = lower commission when you convert coins
+→ gems"), `VanguardMeScreen` (x2), `VanguardInvitationScreen`,
+`VanguardHandbookScreen`, `LevelUpCelebration`, `VanguardStubs`. All described
+gems, conversion and withdrawals, which are deleted, and the numbers did not
+even agree (5–30% in the Vanguard screens vs 15–30% in the constant).
+
+**Grepping for the FUNCTION name is not enough. Grep for the WORD in copy.**
+Finding zero callers and calling it dead is how five live screens kept selling a
+model the business does not have. The constants now carry a do-not-display
+warning; the stale "still imported by VPRanksScreen / wallet v2 / marketing rate
+tables" note on them was itself wrong and was acting as cover.
+
+Also corrected: the coin floor rationale in `storePricing.js` and `vpSystem.js`
+was derived from "Immortal 15% commission, then the 2% withdrawal spread" and
+coins converting to gems. **The floor number is UNCHANGED** (that is a founder
+decision); only the reasoning was rewritten so nobody re-derives a price from a
+dead model.
+
+---
+
+---
+
+## 🎖 VP LADDER, PROFILE COSMETICS + ENTRY RIBBONS — VERIFIED END TO END (2026-08-24, SHIPPED + DEPLOYED)
+
+Run `node scripts/vp-mirror-check.mjs` before touching any of this. 68 assertions,
+`--list` prints every one so a green run can be shown to be real rather than vacuous.
+It fails the build if a client promise and a server payment ever drift apart.
+
+### Profile THEMES were reverted to plain gradients, and the reason matters
+
+The multi-surface theme system (nameplates, collections, paper/carved treatments,
+`ThemeLayer.jsx`, `rankCollections.js`) is **GONE**, on founder instruction after
+it consumed a full session. **A theme has to restyle EVERY surface** (left nav,
+right rail, post cards, and hundreds of inline colours), and every surface missed
+looked like a bug rather than a theme. That is a whole-app design system, not a
+background picker. Do not attempt it again without that being the explicit scope.
+
+What a theme IS now: **one gradient, plus the user's accent colour.** Nothing else.
+
+⚠ **Two defects were found by MEASURING the live page, both of which made themes
+do literally nothing. Neither was visible from reading the source.**
+
+1. `THEME_TOKENS` in `profileThemes.js` only ever had `default` and `deep`, so
+   **six of the eight themes fell back to `default`** and painted identically to
+   Standard on the owner's own profile. The swatch on `/prestige` previewed a
+   gradient the profile never drew. `THEME_TOKENS` is now ONE shared surface set
+   for every theme, so there is no second place for a theme to half-apply.
+2. The header block and an uploaded banner `<img>` occupy the **identical rect**
+   (measured x241 y0 1049x220, `object-fit:cover`, `opacity:1`), so a gradient
+   drawn on the header paints **zero visible pixels** for anyone with a banner.
+   And every gradient anchored its light at the TOP (`at 18% 0%`, `at -5% 0%`),
+   which is exactly the occluded part.
+
+The fix is `themeSeamStyle(themeId)` in `profileThemes.js`: a per-theme signature
+glow drawn as a band **directly below the banner, anchored at y=0 so it rises from
+the seam and falls downward**. It never touches the user's art and is visible with
+or without a banner. Wired identically in `ProfileScreen`, `PublicProfileScreen`
+and `NativeProfileScreens` (native banner is 176px, not 220px).
+
+⚠ `.vg-profile { position: relative }` in `surface.css` is **load-bearing** — the
+band is absolutely positioned against it. Without it the band escapes to the
+nearest positioned ancestor and paints across the whole app shell, which is how
+an earlier pass leaked a profile treatment onto the left nav.
+
+`PublicProfileScreen` also lost `backgroundAttachment: 'fixed'`, which was pinning
+the theme behind the whole page and reading as wallpaper with content sliding
+over it.
+
+Also fixed while measuring: the profile tab row used `border-b`, a hard 1px rule
+running the full 1049px content width and terminating at full strength against
+the nav's own 0.8px right border. Two hard rules meeting at a bare corner is the
+"cage edge" this file already warns about. It is now a gradient rule that ramps
+in and out at both ends.
+
+### The 12 "How to earn VP" rows all have a real server writer (each traced)
+
+| Advertised | Pays it |
+|---|---|
+| Host a live event +150 | `creatorQuests.js:93` `creator_host_event` |
+| Gift / tip +1 per 25c | `index.js:3709` `GIFT_COINS_PER_VP` |
+| Go live +30 | `engagementVp` ← `index.js:2889` |
+| Complete a quest +20 | `creatorQuests.js:143` |
+| Buy coins +25 | `payram.js:506`, `playBilling.js:226` |
+| Per hour streamed +20 | `engagementVp` `stream_hour` |
+| Create a post +15 | `engagementVp` ← `index.js:3103` |
+| 5-day login streak +50 | `index.js:1178` |
+| Boost a post +10 | `walletActions` `purchaseBoost` |
+| Daily login +10 | `walletActions.js:86` |
+| Get a comment +5 | `engagementVp` ← `index.js:3040` |
+| Get a like +2 | `index.js:1817` |
+
+Rewards verified live: rank VP bonus (+0.5%/level, cap 1.5x) mirrored in BOTH
+`engagementVp.js:71` and `walletActions.js:51`; boost tokens granted at
+[5,14,26,41,50,76,93] by `vpLevel.js` counting every level CROSSED (not just the
+one landed on) and spent in `streaming.js:366` with a **token** refund at :587 (a
+coin refund would mint coins); `vp_level_up` notification written by
+`vpLevel.js:104` and push-allowlisted at `index.js:2121`.
+
+`LevelUpCelebration` smoke-tested on the live site by rewinding
+`localStorage['vergr.lastVpLevel.<uid>']`: it fires and reads the real ladder
+(lists what the level granted, names the next unlock). Marker restored after.
+
+### Entry ribbons: art wired, and the name size is now MEASURED
+
+Founder art for all 11 ranks built to `/brand/entry/{rankId}.webp` + `@2x` by
+`scripts/build-entry-banners.mjs` (sources 4128x1024 JPEG ~2-4MB each → 258KB
+total for 22 files). `/brand/**` already has cache headers in `firebase.json`;
+check that before adding any new `public/` directory, because the catch-all `**`
+rule is `no-store`.
+
+⚠ **The username size took THREE attempts. Do not "improve" it by eye.**
+- A hand-tuned step ladder by character count truncated `nova_kill` to `NOVA_...`
+  with visible space to spare.
+- Replacing it with one measured constant (1.017 x fontSize per character) made
+  MORE names truncate, because 1.017 was the NARROWEST sample, not the average.
+- Measured spread of Syne 800 italic uppercase, per char per unit font-size:
+  `nova_kill` 1.017 · `Sable` 1.072 · `ALEX` 1.086 · `DrLupo` 1.197 ·
+  `Vergr` 1.211 · `xQcOW` 1.368. **A 34% spread — character count does not
+  predict width**, so no constant can ever be right.
+
+`nameSizeFor(name, w, h)` in `rankBanners.js` now measures the actual string with
+canvas `measureText`, which costs nothing and is exact. `scripts/entry-ribbon-preview.mjs`
+renders all 11 ribbons at the real 280x70 against the real art and re-measures in
+the browser, because node has no canvas and would otherwise show the fallback.
+
+---
+
+### 🚀 STREAM BOOST WAS A BADGE. NOW IT IS REAL (2026-08-27, SHIPPED + DEPLOYED)
+
+⚠ **UNTIL THIS DATE, THE 50-COIN STREAM BOOST BOUGHT NOTHING.** `boosted` was
+read only to draw a badge; all four live lists queried `orderBy(viewerCount)`
+directly; the 1.5x multiplier sat in `getLiveDiscoveryFeed`, **a deployed
+callable nothing in `src/` ever called**. The help centre said it pushed your
+stream in discovery. Add it to the inert-controls list beside the three kill
+switches. `src/utils/streamBoost.js` + `functions/streamBoost.js`.
+
+**Three tiers (50/150/500 coins → 1.5x/2.5x/4x, 15/30/60 min).** An earned VP
+token spends as a boost on ANY stream, including someone else's — that is the
+point of the founder's change, so a non-broadcaster still has a use for the
+reward. Stacking is capped at **3.0x** and is **additive on the excess**, never
+multiplicative. Every boost expires and the countdown is visible.
+
+⚠ **THE DURATIONS AND THE CEILING ARE MY NUMBERS, NOT THE FOUNDER'S.** Everything
+else in the tier table came from him. They are one-line constants.
+
+⚠ **A LIST SURFACE MUST RUN `rankStreams()` AND FIRE THE SECOND BOOST QUERY.**
+Ordering the top-24-by-viewers cannot surface a boosted stream with three
+viewers, which is exactly why the old boost was worthless. `boostExpiresAt` is a
+single-field inequality — no composite index. `LiveUsersContext` is deliberately
+NOT wired: it loads all 300 live streams to light up avatars, so ranking there
+means nothing.
+
+⚠ **`inferStreamTopics` IS THE ONE DEFINITION** of what a stream is about,
+extracted out of `captureStreamInterest`. Interest matching costs zero reads —
+affinity is device-local in `feedPrefs`. Do not write a second copy.
+
+⚠ **BOOST TOKENS ARE NOW 11, ONE PER RANK BAND** (was 7, with two in Elite and
+none in Challenger/Champion/Veteran/Mythic). Founder-authorised economy change.
+Mirrored in `functions/vpLevel.js`; the guard fails on drift.
+
+### 📊 THE LADDER WAS HALF EMPTY — 44/100 → 70/100 (2026-08-27, SHIPPED + DEPLOYED)
+
+**56 of 100 levels gave nothing but the +0.5% VP earn rate.** Full record and the
+remaining options: `docs/effects/26-LADDER-COVERAGE.md`.
+
+⚠ **`assertNoDeadLevels` IS NOT COVERAGE.** It proves every level has a ROW, and
+every level always did, because every level carries a `vprate_` row. It was green
+the entire time the ladder was half hollow. Do not cite it as evidence the ladder
+is populated; count rows that are NOT `vprate_`.
+
+⚠ **THE CAUSE WAS 32 SHIPPED ITEMS GRANTED BY 3 ROWS** — 18 typefaces at L3, 8
+chat themes at L23, 6 typing styles at L32 — while `PROFILE_ACCENTS` and
+`PROFILE_THEMES` were drip-fed one per level from the start. The pattern existed
+and was applied inconsistently. Fixing it filled 26 levels with **zero new
+content**. **Adding a reward pool means assigning a level to every ITEM, never to
+the pool**; `npm run check` now fails if two items share a level.
+
+⚠ **`nameFontFor` NEVER CHECKED THE LEVEL.** A bare `fontById()` lookup, harmless
+while one row granted all 18 faces, wrong the moment they were spread. Now
+mirrors `typingStyleFor`: firestore.rules enforces the floor and the enum, the
+resolver enforces the per-item level at render time.
+
+⚠ **THE RE-SPREAD WINDOW IS CLOSED AFTER LAUNCH.** Spreading a pool REMOVES items
+from anyone already past the new levels. Free today (test data, nobody above L2);
+after real users it needs a grandfather clause.
+
+⚠ **L94-99 IS STILL SIX HOLLOW LEVELS AND 66,000 VP**, right before L100 — the
+longest dry stretch, at the worst place. Nothing in the existing pools is an
+Ascendant-worthy reward. **More boost tokens would fix it and is an ECONOMY
+change, so it is a founder decision, not a session decision.**
+
+### ⚡ VP BONUS PACKS — BUILT, SHIPPED + DEPLOYED (2026-08-28)
+
+Nine timed VP multipliers. `src/utils/vpBonuses.js` is the source of truth,
+`functions/vpBonuses.js` is the mirror that charges for them, shop at
+`/prestige` → **VP bonuses** tab (`src/components/prestige/BonusShop.jsx`).
+
+⚠ **COINS ONLY. THERE IS NO VP PRICE AND NONE MAY BE ADDED.** Founder,
+2026-08-28. It is not only a preference: **a VP-priced VP multiplier is an
+infinite loop.** Price it above what it returns and nobody buys it; below, and
+VP inflates without limit. There is no price that works. `vp-mirror-check.mjs`
+asserts no `vp:` price exists on either side.
+
+⚠ **PACKS ARE ALSO LADDER REWARDS, AND THAT IS WHAT FIXED THE FILLED LADDER.**
+`BONUS_LADDER_LEVELS` hands 14 levels a pack instead of a boost token, so
+**L93-99 is no longer seven identical rows** and no two consecutive levels grant
+the same thing anywhere on the ladder. Boost tokens 37 levels → 23 levels,
+47 tokens total.
+
+⚠ **THE BONUS LIVES ON `users/{uid}.vpBonuses`, NOT THE WALLET.** Both VP credit
+paths already `tx.get(userRef)` for the plan tier and `vpLevel` and neither ever
+READS the wallet, so the multiplier **costs zero extra reads**. Expiry is
+evaluated at read time; there is no cron and none is wanted.
+
+⚠ **SCOPED PACKS TAKE THE ACTION KEY.** `planMultiplier(uid, action)` gained a
+second argument for exactly this: a Watcher Surge must not pay on posting. A
+call site that forgets it silently turns a focused pack into a blanket one.
+
+⚠ **`vpBonuses.js` IS BUNDLED INTO EVERY FUNCTION THAT REQUIRES THE VP PATHS.**
+Redeploying one caller does NOT update the others — same trap as `coinLedger.js`.
+The set: `purchaseVpBonus`, `syncVpLevel`, `awardActionVp`, `recordAdWatch`,
+`purchaseBoost`, `contributeToSquad`, `onStreamWentLive`, `onNewComment`,
+`onPostCreatedAwardVp`, `endStreamSession`.
+
+⚠ **`vpBonuses` IS SERVER-ONLY IN firestore.rules.** Owner-writable would let
+anyone stamp themselves a 3x with no expiry, which is a one-line route to
+Immortal and to every reward `vpLevel` gates.
+
+⚠ Stacking is **additive on the excess, ceiling 3.0** — deliberately the same
+rule `boostReach()` uses, so the product has ONE stacking model. It multiplies
+on top of plan (Pro 2x) and rank, so 3.0 already reaches 6x base.
+
+⚠ **NOT BUILT and each is a DIFFERENT mechanic, not another table row:** Open Bar
+(daily-cap lift), Streak Shield (streak counters), Squad Surge (treasury +
+fan-out). The L100 answer is still unanswered.
+
+⚠ **THE ART DOES NOT EXIST YET.** `PackArt` falls back to the multiplier set in
+the gold ramp, deliberately NOT a Material Symbols glyph on a tinted square —
+that is what got the milestone badges rejected. Prompts and the output spec are
+in `docs/VP_BONUS_PACKS_PLAN.md` §12; drop the renders at
+`public/brand/bonuses/<art-id>.webp` 288px + `@2x` and they appear.
+
+### 👁 PUBLIC POST VIEW COUNTS — BUILT ON RTDB, NOT FIRESTORE (2026-08-28, SHIPPED + DEPLOYED)
+
+`incrementViewCount()` had ZERO callers since the day it was written, so
+`viewCount` was always 0 and the PostCard display code never rendered. The reason
+it was never built is real: **Firestore bills per WRITE** (20k/day free), so one
+write per view means a single popular post spends the whole platform budget.
+
+⚠ **THE ANSWER IS THE REALTIME DATABASE, WHICH IS NOT BILLED PER OPERATION.**
+RTDB charges storage + bandwidth only. It was ALREADY in the stack (presence uses
+it), so no new connection is opened.
+
+```
+client (batched ~20s) -> recordPostViews callable -> RTDB /postViewDeltas/{postId}
+cronEvery6h           -> drain deltas            -> ONE Firestore write per post
+```
+
+**Measured, not estimated: 25.2 bytes per post in RTDB.** Cost at 100k views/day
+is **$0.54/mo** vs **$2.16/mo** writing straight to Firestore; at 1M views/day
+**$4.86 vs $26.46**. The saving scales with VIEWS PER POST — a post seen 10,000
+times costs 4 writes/day instead of 10,000.
+
+⚠ **ACCURACY IS EXACT, ONLY FRESHNESS LAGS.** RTDB holds the true per-post count
+and is incremented immediately; the 6h drain just moves the accumulated total.
+The Firestore copy exists ONLY so Creator Studio can SORT by viewCount. To show a
+live number, read RTDB directly — do not add Firestore writes for freshness.
+
+⚠ **THE ADMIN SDK BYPASSES RTDB RULES**, which is why the write is a callable.
+That also means `database.rules.json` needs no change — and it must not get one
+casually: there is NO rules file checked in, so deploying one would REPLACE
+whatever presence depends on.
+
+⚠ **THE DRAIN SUBTRACTS WHAT IT APPLIED** instead of deleting the key, so a view
+arriving mid-drain is counted on the next run rather than thrown away. It is
+piggybacked on the EXISTING `cronEvery6h`; a new Cloud Scheduler job is one of the
+few things that actually costs money here.
+
+⚠ **REUSES THE EXISTING OBSERVER.** `useImpressionTracker` already fired at >=50%
+visible for 1s on every post card. A second IntersectionObserver would be
+duplicated work that could drift.
+
+⚠ **A HIDDEN TAB FIRES NO INTERSECTIONOBSERVER CALLBACKS**, so this cannot be
+tested through CDP unless the Chrome window is actually visible on screen. A
+minimised window reports `visibilityState: 'hidden'` even when `hasFocus()` is
+true. Verified working once the founder scrolled with the window foregrounded:
+six posts, one view each.
+
+⚠ **HETZNER IS THE ALTERNATIVE IF COSTS EVER BITE.** The box is already paid for,
+so a counter service there is genuinely zero marginal cost. Against it: box 1 is
+NOT backed up, it is a single point of failure, and it is another service to
+deploy and watch. Swapping is contained — only the callable's implementation
+changes.
+
+### 📡 BOOST DELIVERY: FAIR, TARGETED, AND ON ALL SIX SURFACES (2026-08-28, SHIPPED + DEPLOYED)
+
+Founder opened Explore, the profile he had boosted was not there, and the model
+turned out to be worse than one missing surface. Plan: `docs/BOOST_DELIVERY_PLAN.md`.
+
+⚠ **THE OLD READER DELIVERED NOTHING TO ALMOST EVERYONE.** Every surface ran
+`orderBy('boostExpiresAt').limit(2)`, which is DETERMINISTIC: the two boosts
+expiring soonest went to every viewer everywhere. With 1,000 boosts live, 998
+people had paid and got ZERO impressions. Not an unfair split — a total failure
+to deliver, getting worse the better the product does.
+
+⚠ **I WIRED 2 OF 6 SUGGESTION SURFACES.** Same failure as the avatar orbit. The
+six are HomeFeedRail, DiscoveryStrip, ExploreScreen, NativeExploreScreen,
+RightSidebarPanel and OnboardingFlowScreen. **They now all call ONE
+`getBoostedUsers()`**, and `vp-mirror-check` fails the build if any of them
+stops calling it or hand-rolls its own boost query. Negative-tested.
+
+⚠ **FAIRNESS IS IN THE DATA LAYOUT, NOT A COUNTER.** Each boost gets a random
+`boostBucket` (0-99); a reader queries ONE random bucket. **The empty-bucket
+fallback is not optional** — with three live boosts a random bucket is empty
+~97% of the time and nobody would ever be shown, so an empty bucket re-runs
+unsharded. Self-tuning with no threshold to remember.
+
+⚠ **RELEVANCE IS THE ONLY TIEBREAK** (founder). Ordering by spend would make it
+an ad auction. A guard asserts no spend term enters `rankBoostedForViewer`.
+Ranking uses device-local affinity, so it costs **zero reads**, and it shards the
+pool a second time by interest.
+
+⚠ **A RAIL CANNOT SCALE; THE FEED CAN.** Four slots is a hard ceiling however
+many people buy. `SuggestedPeopleBlock` appears every 14 posts, so inventory
+grows with scroll depth. Labelled and dismissible: an unlabelled paid suggestion
+in the feed is an ad pretending to be content.
+
+⚠ **ONE WRITE PER IMPRESSION IS UNAFFORDABLE** (20k writes/day; one popular item
+would spend all of them). So impressions are BATCHED (~20s, flushed on
+`visibilitychange` — mobile often never fires `unload`) and **counted only while
+a boost is live**. That bounds cost by boosts SOLD rather than by content volume.
+Counters are server-only and clamped.
+
+⚠ **`viewCount` WAS CLIENT-WRITABLE BY ANYONE, ON ANY POST** — it sat in the same
+allowlist as the like and comment counters. Nothing displayed it, but Creator
+Studio already sorted and totalled by it. Now server-only. `incrementViewCount()`
+still has zero callers: **public post view counts are deliberately NOT built**,
+because counting every post is the cost we cannot carry.
+
+⚠ **THE COPY MUST NOT PROMISE A SLOT.** "Shown first" or "guaranteed placement"
+cannot be kept the moment two people buy the same boost. The wording is about
+REACH and about who sees it, never about position.
+
+### 🎫 BOOSTS ARE TOKENS YOU OWN (2026-08-28, SHIPPED + DEPLOYED)
+
+Founder: *"users can keep boosts, you should see them like tokens. I could have
+10 boosts all different or multiple of the same one... and I should be able to
+apply a boost to my own or anyone else's content."* The first build got all three
+halves wrong: it fired at checkout, locked you to your own content, and gave you
+nowhere to look.
+
+**`src/utils/boosts.js` is now the ONE catalogue** and replaced two that had
+drifted: `BOOST_COSTS` (post/profile/lfg/squad) and `BOOST_TIERS` (three stream
+tiers). Mirrored in `functions/boosts.js`.
+
+| | |
+|---|---|
+| Inventory | `wallets/{uid}.boosts = { [id]: count }` |
+| Buy | `purchaseBoostPack({boostId, qty})` — coins in, inventory up. Applies NOTHING. |
+| Apply | `applyBoost({boostId, targetId})` — inventory down, target stamped |
+
+⚠ **NO OWNERSHIP CHECK IN `applyBoost`, AND THAT IS DELIBERATE.** You may boost
+anyone. The check I added the day before belonged to the old buy-for-a-target
+model and is wrong here. Do not "restore" it.
+
+⚠ **STREAMS TAKE AN ARRAY, EVERYTHING ELSE TAKES AN EXPIRY.** `boostReach()` sums
+each entry's `reach` to stack and `hasFeedRail()` matches `tier === 'mega'`, so
+writing only `boostExpiresAt` on a stream would show a countdown on a stream that
+was never ranked — a boost that buys a badge, exactly what this replaced.
+`applyBoost` writes the same shape `boostStream` does.
+
+⚠ **THE CATALOGUE ID AND THE STREAM TIER ID DIFFER ON PURPOSE.** `stream_boost` /
+`stream_super` / `stream_mega` map to the shipped `boost` / `super` / `mega` tier
+strings via `STREAM_TIER`. Renaming those would un-boost every live stream.
+
+⚠ **LEGACY `boostTokens` IS FOLDED IN AT READ TIME, NOT MIGRATED.**
+`boostInventory()` adds it to `stream_boost`, and `applyBoost` spends the typed
+inventory first and the legacy counter second. No backfill job, nothing lost.
+
+⚠ **`wallets.boosts` IS SERVER-ONLY.** Each entry is worth its coin price, so an
+owner-writable map is a coin printer with extra steps.
+
+**Entry points, all four profile views included:** post (own = a visible button
+only the author sees, others = three-dot menu), profile (web own + public, native
+own + public), squad page, and the live-stream gift menu.
+
+⚠ **`BoostSheet` HAS AN `embedded` MODE** for the gift menu, which already owns a
+scrim and a dismiss. Nesting a second fixed overlay gives two backdrops and two
+competing click-to-close targets.
+
+⚠ **QUICK BUY NEVER NAVIGATES.** Founder: *"if I am on a stream I won't want to
+leave the stream in order to purchase more coins."* The sheet buys the boost in
+place, and if you are short on coins it opens the basket over the page you are
+on. **`GlobalCartDrawer` is mounted in `AppRouter`** — `CartProvider` was already
+global but `CartDrawer` was trapped inside `wallet/v2/BuyScreen`, so a basket
+opened anywhere else had nowhere to render. It renders nothing while closed.
+
+### 🧾 THE BUYER'S RECEIPT WAS BLANK, AND PROFILE BOOSTS WERE UNSHARDED (2026-08-28, SHIPPED + DEPLOYED)
+
+Four defects found by auditing the paths the previous session listed as NEVER
+EXERCISED (squad boost, stream boost, buyer receipt). Three were real and all
+three sat on the SAME callable, `purchaseBoost` in `functions/walletActions.js`,
+which is the one that sells the **Profile Boost, the only boost sold from the
+shop tab.** Squad-boost ownership (`ownerId`) and the whole stream-boost path
+(`STREAM_TIER`, `boostReach`, the array shape) were checked and are correct.
+
+| Defect | Effect |
+|---|---|
+| `purchaseBoost` never wrote `boostBucket` | Only `applyBoost` stamped one. A users doc MISSING that field matches NO bucket query, so every profile boost bought from the shop survived purely on the empty-bucket fallback. That fallback stops firing once buckets are non-empty, so the boost would have gone dark **exactly when the platform finally had an audience.** |
+| `purchaseBoost` wrote `type`, the receipt reads `target` + `boostId` + `startedAt` | `getMyActiveBoosts` fell back to `posts/{uid}` while the real counters sat on the USERS doc, so RUNNING NOW rendered a **blank name, 0 impressions, 0 people**, and `followersGained` never ran (it is gated on `target === 'user'`). Verion's live boost had `boostImpressions 2 / boostViews 1` that the receipt could never read. |
+| 1 of 6 surfaces counted an impression | `SuggestedPeopleBlock` was the ONLY caller of `recordBoostImpressions`. The home rail, discovery strip, right sidebar, both Explore screens and onboarding all showed boosted users and counted nothing. Same "wired 2 of 6" shape as the avatar orbit. |
+| `aggregatePostViews` chunk guard used a cumulative counter | `if (posts === 0)` is the RUNNING TOTAL, so after any chunk had written, a later all-zero chunk still committed an empty batch and called `rtdb().update({})` with no paths. |
+
+⚠ **IMPRESSIONS ARE NOW COUNTED INSIDE `getBoostedUsers`, NOT PER SURFACE.** That
+is the one function all six already share, so a new surface gets counting for
+free the moment it calls it. `SuggestedPeopleBlock`'s own call was REMOVED in the
+same commit; leaving it would have double-counted that one surface against the
+other five. A guard now fails the build on either half.
+
+⚠ **`purchaseBoost` NOW WRITES BOTH SHAPES' FIELDS, and the reader normalises.**
+The normaliser (`b.boostId || b.type`, target resolved from the catalogue) is only
+load-bearing for boosts that were already live at deploy time, but it is what
+makes an existing buyer's receipt correct **without a data migration**, which
+matters because there is no service-account key on this machine and no way to
+backfill Firestore from here.
+
+⚠ **THE GUARD I WROTE FIRST WAS USELESS AND I ONLY FOUND OUT BY NEGATIVE-TESTING
+IT.** `check(read('functions/boosts.js').includes('boostBucket'))` is a substring
+test over a WHOLE FILE, comments included, and it was green the entire time
+`purchaseBoost` had no bucket. Its replacement then ALSO passed with the field
+deleted, because `purchaseBoost`'s return statement says `boostId: boostRef.id`
+twenty lines below the ledger row. The working version slices out the
+`tx.set(boostRef, {...})` block and asserts inside THAT. **Assert the code, in the
+right scope, and prove the guard fails before believing it passes.**
+
+⚠ **A template literal eats regex escapes.** `` new RegExp(`\b${field}\s*:`) ``
+inside a template literal is a BACKSPACE character followed by a literal `s`, so
+the guard matched nothing and reported a fault that was not there. Replaced with
+a plain `row.includes(field + ':')`: no escaping to get wrong, and the slice is
+one object literal so `target:` cannot collide with `targetId:`.
+
+⚠ **`_runJobs` LOGS ONLY FAILURES**, so a healthy `aggregatePostViews` was
+completely silent and "ran with nothing to do" was indistinguishable from "never
+ran". That ambiguity is the entire reason the drain sat unverified after
+shipping. It now logs both outcomes. **A cron job nobody can observe cannot be
+called verified.**
+
+⚠ **THE 12:00 UTC RUN PROVED NOTHING**, and reading it as a failure would have
+been wrong: `cronEvery6h` was redeployed at **15:45 UTC**, so the 12:00 run
+executed the OLD code that had no drain in it. Check the function's update time
+before concluding anything from a scheduled run.
+
+`eslint no-undef` caught a real one again in transit: the normaliser called
+`tsMs`, which is a `const` declared **inside a different function** in the same
+file. Third instance of that exact shape (`EditProfileScreen`,
+`NativeProfileScreens`, now `firestore.js`).
+
+`npm run check` is **2154**.
+
+⚠ **A DOTTED KEY IN `set()` IS NOW GUARDED**, because that is the bug that cost 50
+coins and produced an inventory the buyer could not see. Only `update()` resolves
+a dotted path; `set()` creates a field whose NAME is the literal string "a.b". The
+guard scans each `.set(` up to its OWN closing `);` and is regex-free on purpose:
+three separate attempts to generate the check as a regex through a template
+literal silently lost their backslashes and matched nothing.
+
+⚠ **ITS FIRST VERSION FAILED ITS CONTROL RUN.** A fixed 300-character window bled
+out of the `set()` into the NEXT statement and flagged a perfectly legal dotted
+`update()` sitting below it. Both directions are now proven: it fails on a dotted
+key inside `set()`, and passes with a legal dotted `update()` present.
+
+⚠ **EVERY FILE IN THIS FEATURE IS UNTRACKED IN GIT, INCLUDING THE GUARD ITSELF.**
+`functions/{boosts,postViews,streamBoost,vpBonuses}.js`,
+`src/utils/{boosts,boostDelivery,boostStats,promoBoost,streamBoost,postViews,vpBonuses}.js`,
+`src/components/boost/*`, `src/components/wallet/MyBoosts.jsx` and
+`scripts/vp-mirror-check.mjs` are all `??` to git. This is the SAME EXPOSURE that
+deleted the four `src-tauri/tauri.*.conf.json` files and shipped a web-mode APK: a
+`git checkout`, `reset` or `clean` takes the lot, nothing fails loudly, and here
+`npm run check` and `prebuild` would break outright because the guard script would
+be gone. **Committing this work is a founder call, so it has NOT been done.**
+
+### 🚨 EVERY PAID BOOST BOUGHT NOTHING. NOW WIRED (2026-08-28, SHIPPED + DEPLOYED)
+
+Founder asked what an LFG boost even is. The answer turned out to be worse than
+jargon: **`collection('boosts')` appeared EXACTLY ONCE in the whole repo** — the
+write in `purchaseBoost`. Nothing read it, and the callable never touched the
+target post/profile/squad, so Post, Profile, LFG and Squad Boost were all coin
+debits with no effect. Same defect as the old Stream Boost that bought a badge,
+and the three inert kill switches.
+
+**The mechanic is the one `streamBoost.js` already uses:** the server stamps
+`boostExpiresAt` (millis) on the TARGET doc, expiry is evaluated at read time, no
+cron, and `boostExpiresAt > now` is a single-field inequality so **no composite
+index is needed**. Reader side: `src/utils/promoBoost.js`.
+
+| Boost | Target | Reader |
+|---|---|---|
+| Post | `posts/{id}` | `feedRank.scorePost` × `POST_BOOST_REACH` (3) |
+| Teammate Search (was LFG) | `posts/{id}` | same — an LFG post IS a post |
+| Profile | `users/{uid}` | `HomeFeedRail` who-to-follow + `DiscoveryStrip` |
+| Squad | `squads/{id}` | `getSquads` |
+
+⚠ **A BOOSTED ITEM MUST COME FROM ITS OWN QUERY.** Ranking the top N by the
+primary sort (followers, memberCount) can never surface something that just paid
+to be seen. Every reader runs a second `where('boostExpiresAt','>',now)` query and
+merges via `mergeBoostedFirst`. This is the same lesson the stream boost left.
+
+⚠ **THE POST MULTIPLIER IS GUARDED ON `s > 0`.** Multiplying a NEGATIVE score by
+3 pushes a muted author further down, which is not what was bought.
+
+⚠ **OWNERSHIP WAS NEVER CHECKED.** `targetId` came straight off the request. That
+was harmless only while nothing read the result; the moment a boost does
+something it lets anyone promote someone else's post. `purchaseBoost` now reads
+the target in the transaction and rejects a non-owner.
+
+⚠ **`boostExpiresAt` IS SERVER-ONLY IN firestore.rules ON ALL THREE COLLECTIONS.**
+`posts` granted the AUTHOR write on any field and `squads` granted a squad admin
+the same, so without this lock a user self-stamps the boost and takes the paid 3x
+for free. This was the single biggest hole in the feature.
+
+⚠ **BOOSTS EXTEND, THEY DO NOT RESET.** Buying a second while one runs adds time
+rather than replacing a longer window with a shorter one.
+
+⚠ **`BOOST_COSTS.stream` NOW REFUSES** and says where the real one is. It is
+60c/4h "pinned to the Live tab" while `BOOST_TIERS.boost` is 50c/15min of
+discovery reach: two products, one name. Taking coins for the dead duplicate is
+worse than refusing it.
+
+⚠ **COPY NAMES THE OUTCOME, NOT OUR SURFACES.** Was "3x visibility in For You",
+"Shown in Suggested Users", "Pinned to top of LFG". **There is no LFG list to pin
+to** — an LFG post is a post, so that boost is now a cheaper, shorter post boost
+named "Teammate Search Boost".
+
+### 🛒 THE SHOP IS ONE CARD, THREE TONES (2026-08-28)
+
+Founder: *"The card design should be the same as the coin packs but with a
+different colour."* So `src/components/wallet/StorePackCard.jsx` lifts the coin
+pack treatment verbatim — top-lit gradient, bloom behind the art, fixed 132px art
+box, footer price shelf — and only the TONE changes.
+
+| Tone | For | Why |
+|---|---|---|
+| `gold` | coins | the existing packs |
+| `violet` | VP bonuses | **already the VP tone**: `COIN_PACKS` with `badgeStyle: 'vp'` render violet on the buy screen today |
+| `ember` | boosts | the hottest of the three, so a boost never reads as a coin pack at a glance |
+
+⚠ **DO NOT HAND-ROLL A SECOND SHOP CARD.** Give it a tone here instead. A second
+visual language in one shop is what got the milestone badges rejected.
+
+⚠ **Tabs are on `/wallet/buy` (web AND native) as well as `/prestige`**, all
+rendering the same `StoreTabs.jsx`. The founder asked why the shop had no bonus
+tab and where the other packs were; the answer to the second was that
+`BoostScreen` existed at `/boost` and nothing in the wallet pointed at it.
+
+⚠ **`src/screens/wallet/BuyCoinsScreen.jsx` IS UNROUTED DEAD CODE.** The live buy
+screen is `wallet/v2/BuyScreen.jsx`. The dead one still references
+`FIRST_PURCHASE_DISCOUNT` and NOWPayments, both long gone. Do not edit it by
+mistake.
+
+⚠ **ONLY `profile` BOOST IS SOLD FROM THE TAB.** Post, squad and LFG boost a
+SPECIFIC thing, and selling one with `targetId: null` takes coins for a boost
+that promotes nothing, so those route to `/boost` where the target is picked.
+
+⚠ **`BOOST_COSTS.stream` IS DELIBERATELY ABSENT FROM THE TAB.** It is 60 coins /
+4h "pinned to the Live tab" while `BOOST_TIERS.boost` is 50 coins / 15min of
+discovery reach: **two products, one name, different prices.** Still on `/boost`.
+**Resolve the collision before either shop lists both.**
+
+Plan, pricing derivation and the rejected alternatives:
+`docs/VP_BONUS_PACKS_PLAN.md`.
+
+### 📜 VP BONUS PACKS + THE L100 SINK — PLANNED, NOT BUILT (2026-08-27)
+
+`docs/VP_BONUS_PACKS_PLAN.md`. Founder rejected an indefinite VP rate increase in
+favour of **timed bonuses** (6h / 12h / 24h / 48h / 7d), a **VP shop** so VP has a
+use at L100, and **coin-bought bonuses**.
+
+⚠ **THE FLAT +0.5%/LEVEL RATE PAYS LITERALLY NOTHING FOR MOST OF THE LADDER.**
+Measured, not assumed: awards run through `Math.round()`, so `like_post` and
+`squad_message` (1 VP) **never** change at any level, `get_like` (2 VP) changes
+**once** in 100 levels (L51), `get_comment` twice. And `VP_BONUS_MAX = 1.5` is
+never reached — L100 pays 1.495x. The cap is dead code.
+
+⚠ **THE BONUS BELONGS ON `users/{uid}`, NOT ON THE WALLET.** Both VP credit paths
+already `tx.get(userRef)` for the plan tier and `vpLevel`, and neither ever READS
+the wallet. Putting it there makes the multiplier cost zero extra reads; putting
+it on the wallet adds one to every VP award in the product.
+
+⚠ **A MULTIPLIER ALREADY LIFTS THE DAILY CAP** (`engagementVp.js:74`), which is
+correct and must stay. It also means a cap-lift pack is a genuinely different
+lever, not a duplicate.
+
+⚠ **`GIFT_COINS_PER_VP = 25` IS THE CONSTRAINT ON SELLING BONUSES FOR COINS.** Its
+own comment says coins must not buy rank. The ARBITRAGE loop is fine (the ladder
+prices VP at ~0.006 coins each, so any price over ~20 coins is strictly lossy),
+but buying rank progression with money is a VALUES call and is unanswered.
+**Three options in §6.2 of the plan; recommendation is that coins never buy a VP
+rate.**
+
+⚠ **`vpSystem.js:122` ALREADY ANTICIPATES PRESTIGE** (`0 at L100 unless prestige`).
+The recommended L100 answer is **Legacy VP** (§7.2): past L100 VP keeps accruing
+into a spendable balance. It needs NO NEW ART, which matters because prestige
+crests, reaction packs, milestone badges and the entry ribbon are all parked on
+art the founder cannot author.
+
+### ✅ THE LADDER IS COMPLETE: 100/100, NO HOLLOW LEVELS (2026-08-27, SHIPPED + DEPLOYED)
+
+Founder: *"I have already told you how boosts will work in the VP ladder, we are
+using them to fill empty gaps."* The 26 levels still paying nothing but the +0.5%
+earn rate now grant a Stream Boost token. **`BOOST_TOKEN_LEVELS` 11 -> 37**,
+mirrored in `functions/vpLevel.js` (redeployed, not just built).
+
+⚠ **NOTHING ELSE COULD HAVE FILLED THEM, and this was checked rather than
+assumed.** Fonts 18 built (15 drip-fed + 3 free), chat themes 8/8, accents 12/12,
+profile gradients 7 + 1 free, typing styles 5 + 1 free: **every built cosmetic
+already had a level.** The only available fillers were boost tokens or content
+that does not exist. Do not go looking for unplaced content; there is none.
+
+⚠ **`assertNoDeadLevels` IS STILL NOT COVERAGE** and must never be cited as such.
+New **`assertNoHollowLevels()`** counts rows that are NOT `vprate_` and
+`vp-mirror-check.mjs` fails the build on any level returning zero.
+Negative-tested: deleting two levels made it name 95 and 96.
+
+⚠ Fixed in passing: the boost mirror check split the server array on `,` with no
+blank filter, so the trailing comma on the now-multi-line array invented a
+**phantom level 0** and failed a mirror that was correct. A guard that cries wolf
+gets ignored.
+
+⚠ **L93-99 IS SEVEN CONSECUTIVE BOOST TOKENS** (shorter runs at 42-43, 58-59,
+76-78). No level is hollow, which was the goal, but the top band pays the same
+reward seven times. Breaking it up means either granting MORE tokens at high
+levels (a level->count map, no schema change) or a HIGHER TIER token (a real
+schema change: the wallet holds one flat `boostTokens` count and `boostStream`
+always redeems at `TOKEN_TIER_ID`). **Both are economy decisions, founder only.**
+
+⚠ The boost row copy said "so a public stream costs you nothing", which died with
+the 50-coin gate. It now reads as what the token actually does: spend it on your
+own stream or anyone else's. `public/version.json` release notes still carry the
+old "seven levels" claim and must be rewritten before the next APK.
+
+Full table and the options: `docs/effects/26-LADDER-COVERAGE.md`.
+
+### 🏅 THE LIVING CREST — effect 21, L62 (2026-08-27, SHIPPED + DEPLOYED)
+
+`animated_crest`. The rank crest in live chat gains an intermittent sweep of
+light, masked to the badge art that already ships. No new art, because the art
+route is blocked: the founder cannot author it and rejected the existing badge
+art, which is what parks effects 10 and 18.
+
+⚠ **THE DUTY CYCLE IS THE DESIGN, NOT A TUNING KNOB.** 900ms of a 5,600ms cycle,
+phase hashed per uid, so 84% of the time nothing moves and two crests almost
+never sweep together. That is the answer to the founder's standing question
+about "multiple users who have unlocked it". **Twitch does not allow animated
+chat badges at all** (PNG, 25 KB, no animation) — not a reason to refuse, but it
+is the restraint bar. Widening the sweep fails `npm run check`.
+
+⚠ **THE CREST ART IS 1024x1024 AND AVERAGES 167 KB, TO PAINT A 13-PIXEL ICON.**
+A chat with eight rank bands present pulled ~1.4 MB and decoded eight 4 MB RGBA
+surfaces. Worse, **`/badges/` had no `firebase.json` headers entry**, so the
+catch-all no-store rule re-downloaded all of it on EVERY page load.
+`scripts/build-badge-sizes.mjs` now emits 64px variants (1.9 KB avg, -98.9%) to
+`public/badges/sm/` and the path has real cache headers. `RankBadge` uses the
+small art; `/prestige` renders at 96px and keeps the full-size files. **Check
+`firebase.json` before adding any directory under `public/`.**
+
+⚠ **THREE VISUAL DEFECTS SHIPPED PAST A GREEN RUN, all found by rendering it:**
+(1) `overflow: hidden` on a box sized exactly to the icon squared off the crest's
+own glow into a hard grey rectangle — every probe read OUTSIDE the box and the
+damage was inside it; (2) the gradient and the mask were on one element, and a
+transform drags an element's mask with it, so the sweep was a white cut-out of
+the badge sliding over the badge; (3) semi-transparent white over dark art
+averages to grey, so it occluded the crest instead of lighting it — `.vg-bloom`
+in the same stylesheet already recorded that fix and it had not been applied.
+**The mask now lives on a static parent and only `::before` moves.** Full
+account, including the three times the TESTS were wrong, in
+`docs/effects/21-animated-crest.md` §9.
+
+⚠ **A RAMP EXPRESSED IN PERCENTAGES DOES NOT SURVIVE A TINY BOX.** A band with
+20% falloff is 1.5 real pixels at 13px, so the "soft" edge was hard. R3 in
+another costume.
+
+Harness: `node scripts/crest-preview.mjs --measure` (24 assertions, reads the
+framebuffer over CDP). Every probe carries a control run that proves it can see
+the fault it exists to catch — the first R1 probe reported 255 in both runs
+because it was reading the username glyphs beside the crest. `npm run check` is
+**1,844**.
+
+### 🧹 ESLINT INSTALLED, AND IT FOUND EIGHT REAL DEFECTS ON ITS FIRST RUN (2026-08-27, SHIPPED + DEPLOYED)
+
+`eslint.config.mjs` + `npm run lint`, wired as the FIRST step of `npm run check`,
+so it gates every build. Three rules only, and **every one of them catches a
+crash, not a style preference**:
+
+| Rule | The defect it exists for |
+|---|---|
+| `no-undef` | `canUseAnimatedAvatar` / `compressVideo` / `useRef` / `rankStreams` all shipped unimported in one session. The bundler compiled every one. |
+| `react/jsx-no-undef` | an unimported `<Component />` is legal JSX and builds green |
+| `react-hooks/rules-of-hooks` | the React #310 hook-order crash that took the profile to ErrorBoundary |
+
+⚠ **`exhaustive-deps` is deliberately OFF and this is NOT a style linter.** Every
+rule added here is a rule someone satisfies on every future edit. Add one only
+when a BUG got through, the way these three did. Negative-tested: a probe file
+with all three faults reports all three, and it is deleted after the test.
+
+**What the first run found. Three were on LIVE screens:**
+
+| Where | Defect |
+|---|---|
+| `EditProfileScreen.jsx` | `ProfileImagesTab` read `myVpLevel`, a const declared inside `EditProfileScreen`, a SIBLING function. The Profile Images tab threw `myVpLevel is not defined` on render, on web and native. Now one module-scope `ownVpLevel(wallet, profile)`. |
+| `NativeProfileScreens.jsx` | `NativePublicProfileScreen` read `accentHex` from the OTHER component in the file, so the profile-music block threw for every visitor. It would also have painted the VIEWER's accent. Now `accentFor(user)`, the profile owner's. |
+| `StreamShareSheet.jsx` | `useState` sat BELOW `if (!streamId) return null`, so a render without an id called one fewer hook and #310 fires when the id arrives. Hoisted. |
+| `SeriesScoreboard.jsx` | the `bo1` early return sat above a `useMemo`, and `seriesFormat` is read off the LIVE match doc, so a bo1 match restamped bo3 changes the hook count. |
+| `SpectatorPanels.jsx` | `if (IS_STORE_BUILD) return null` before every hook. The effect now skips its listener instead, so the Play build still opens no subscription. |
+| `BRScoreboard.jsx` | `<Header>` used 4x, never defined. That component has thrown on render for its entire life. |
+| `MatchDetailsScreen.jsx` | `applyVanguardMask(rawUser, profile)` with no `profile` destructured. |
+| `seed-firestore.js` | a stray `}` closed `seed()` 31 lines early. `node seed-firestore.js` has been a SyntaxError for months. |
+
+⚠ **The two profile ones are the same shape and it is worth naming: a const in
+one component is invisible to a sibling component in the same file, and nothing
+in the build says so.** Both files read fine top to bottom. Only a scope-aware
+tool sees it.
+
+⚠ **The config reads the `__VERGR_*__` defines out of `vite.config.js` rather than
+restating them**, and throws if it finds none, so adding a define cannot leave a
+stale globals list behind. Same reason the VP guards read the real tables.
+
+Cost: ~31s added to `npm run check`. `scripts/` carries BOTH node and browser
+globals on purpose, because puppeteer `page.evaluate()` callbacks are real
+browser code living in a node file.
+
+### Effect 22 documented, and writing it SHRANK it (2026-08-27, DOC ONLY)
+
+`docs/effects/22-accent-presence.md`. **Not built, and it needs a founder answer
+before it is.** The scope table said "accent tints presence app-wide"; the
+document argues that is the theme system deleted on 2026-08-24 wearing a smaller
+palette, and that the argument which cut effect 17 ("a second accent on the same
+card would give a rainbow feed") generalises to every surface showing more than
+one user at a time.
+
+What survives is **one-owner surfaces**, which in practice means the LIVE STREAM:
+the one large surface in the app that belongs to a single person and carries no
+personalisation at all. Both viewers already load the host's full user doc
+(`ViewerStreamScreen.jsx:221`, `MobileLiveViewer.jsx:377`), so it would cost zero
+extra reads. Checked, not assumed: Discord tints the NAME only, Twitch and
+YouTube tint the CHANNEL PAGE only, TikTok has no per-user accent. Vergr already
+ships both halves except on the stream.
+
+⚠ **It fills ONE hollow level (proposed L94), not six.** L95-99 stay hollow.
+
+### Milestone badges (2026-08-24, SHIPPED + DEPLOYED)
+
+⚠ **THE BADGE ART IS REJECTED. Founder, 2026-08-24: "those look like shit."**
+The SYSTEM is sound (counters, evaluator, zero-cost contract, mirror check) and
+none of that needs revisiting. What needs redoing is the FACE: currently a
+Material Symbols glyph on a tinted rounded square, which reads as a settings row,
+not as something earned. Come back to this and design real badge art. Do NOT
+rebuild the data layer while doing it.
+
+
+`src/utils/milestones.js` + `src/components/profile/MilestoneCase.jsx`, mounted on
+all four profile views (web own/public, native own/public). 24 threshold badges in
+6 families + 3 rare one-offs.
+
+**Evaluation is CLIENT-SIDE and costs nothing.** `milestonesFor()` is a pure pass
+over a static table using counters already on the user and wallet docs the screen
+has loaded. No cron, no trigger, no `earned` collection. That is only safe because
+every counter is server-written AND server-only in `firestore.rules`; the worst a
+tampering user achieves is lying to themselves on their own screen, because a
+visitor's view evaluates from the OWNER's real doc.
+
+⚠ **`users.streamMinutes` was read by the whole "On air" family and written by
+NOTHING.** Four badges were permanently unearnable. A name grep looked fine
+because `streamMinutesPerDay` in `streaming.js` is a per-tier LIMIT with a
+confusingly similar name. It is now incremented in `endStreamSession` next to the
+existing `stream_hour` VP award, in MINUTES so a 40-minute stream still counts.
+
+⚠ **`dailyStreak` is a REWARD LOOP, not a record.** It caps at 5 and resets to 0
+so the +50 can recur, so a "longest streak" read from it can never exceed 5.
+`claimDailyReward` now also writes uncapped `consecutiveDays` /
+`bestConsecutiveDays` / `distinctDaysActive`, all riding the write that already
+happens once per user per day.
+
+⚠ **`claimDailyReward` did `tx.set(walletRef, walletData)` with NO merge**, which
+REPLACES the document: every wallet field not enumerated was destroyed on each
+daily check-in, `boostTokens` included (granted by the VP ladder, then wiped the
+next time the user opened the app). Fixed; do not remove that `{ merge: true }`.
+
+New counters, all locked server-only: `users.clipCount`, `users.streamMinutes`,
+`wallets.{consecutiveDays,bestConsecutiveDays,distinctDaysActive}`.
+`users.referrals.allTime` already existed.
+
+⚠ `PUBLIC_LAUNCH_MS` in `milestones.js` gates the two rare badges (Day One,
+Founder Era) and is a PLACEHOLDER (2026-09-01). Set it once to the real launch
+instant and never move it: shifting it retroactively grants or revokes a badge on
+live accounts.
+
+`scripts/vp-mirror-check.mjs` is now 91 assertions and asserts every badge's
+counter against the file that writes it. Each badge NAMES its writer file rather
+than the script pattern-matching for `field: FieldValue.increment` — that first
+attempt produced two false negatives (`bestConsecutiveDays: Math.max(...)` and the
+dotted `'referrals.allTime':`), and a check that cries wolf gets ignored.
+Negative-tested: pointing a badge at a nonexistent field fails the run.
+
+**Not the daily-login bug the founder reported.** Measured: only 3 `vp`
+notifications exist on that account ever (2026-08-02, 08-07, 08-22), none
+duplicated, and `'vp'` is not in `PUBLIC_NOTIFICATION_TYPES` so it cannot push.
+The 08-22 milestone notification is still `read: false` and resurfaces at the top
+of the drawer on every login. It is never re-created, only never cleared.
+
+---
+
+### `src/components/effects/` — the unlockable-effects layer (2026-08-24)
+
+Founder's architecture call, and the right one. Read
+`src/components/effects/README.md` before adding anything here.
+
+**The split, and why it exists.** The theme system failed because TWO files both
+claimed to define a theme (`profileThemes.js` and `rankCollections.js`), so the
+`/prestige` swatch previewed one thing and the profile drew another, and neither
+file showed the disagreement.
+
+| Owns | Where |
+|---|---|
+| WHEN you get it | `EFFECTS` in `src/utils/rankUnlocks.js` — data, not logic |
+| HOW it looks | one file per effect under `effects/{visual,audio,triggers}/` |
+| WHAT is on now | `users/{uid}.cosmetics.fx` |
+
+Screens import from `effects/index.js` only, never a deep path, and call
+`useEffectEnabled(id, ownerProfile)`. An effect never learns what a level is.
+
+⚠ **`cosmetics.fx` stores OPT-OUTS only and therefore needs NO firestore rule.**
+`{ ambilight: false }` means "I turned this off". Writing `true` for something
+unlocked buys nothing: `isEffectOn()` ANDs it against `vpLevel`, which is
+server-written and server-only, and a visitor's client evaluates the PROFILE
+OWNER's vpLevel.
+
+Shipped: `orbit` (L6) and `ambilight` (L21).
+
+**`AvatarOrbit`** isolates the existing `.vg-orbit` from `surface.css`. The
+static ring stays STATE (live / unseen); the travelling light is IDENTITY. Two
+behaviours, so they never compete. It was previously hardcoded always-on.
+
+### Ambilight — REWRITTEN 2026-08-24 after the first version was rejected
+
+⚠ **The first version was "a gradient blur" and the founder was right.** It is
+recorded here because the mistakes are the instructive part.
+
+Reference: https://www.smashingmagazine.com/2023/07/recreating-youtube-ambient-mode-glow-effect/
+
+| | Correct | First version |
+|---|---|---|
+| Canvas | **10x6** | 32x18 — you could still make out the picture |
+| Blur | **`ctx.filter` at SOURCE scale**, before the upscale | CSS blur on the upscaled result |
+| Extent | canvas **larger than the content**, content inset inside it | four separate edge strips |
+| Edges | `box-shadow: inset` feathers it into the page | hard-edged strips |
+| Opacity | ~0.4-0.7 | 0.75 with per-edge zone colours |
+
+The 10x6 canvas is THE EFFECT, not a performance compromise: downscaling that
+far discards every detail and keeps only dominant colour, so the upscale is huge
+soft fields. And a 1px blur on a 10px-wide canvas covers a tenth of the image;
+the same 1px after upscaling covers nothing.
+
+The per-edge "zone glows" were invented, not researched. They cannot produce a
+corner, so they always read as four gradients meeting.
+
+**Doing it correctly DELETED the CORS problem.** The old version called
+`getImageData` to compute per-edge colours, which taints on cross-origin media
+and needed a cache-busting query param. `drawImage` has no such restriction, so
+with nothing read back, cdn.vergr.app media works with no crossOrigin attribute,
+no extra fetch and no cache trickery. (For the record, since it cost a round of
+debugging: cdn.vergr.app DOES send `Access-Control-Allow-Origin` on a real
+object. An earlier probe hit a 404, which never carries it.)
+
+⚠ **BOTH LIGHT LAYERS MUST BE `z-index: -1`.** At 0 they are positioned
+siblings, and positioned elements paint above non-positioned ones, so the glow
+washed over the stats row and made the follower counts and the VP figure
+unreadable. A negative z-index child paints above the parent's BACKGROUND but
+below its in-flow content, which is exactly what a light layer needs.
+
+⚠ **STRUCTURAL LIMIT, NOT YET FIXED.** The profile banner is FULL-BLEED: it
+touches the top of the page and both content edges. So three of the four
+directions are clipped and the light can only travel DOWNWARD, which is
+inherently a gradient no matter how well the sampling is done. YouTube's video
+is inset with padding, which is why its glow surrounds the content. Making this
+effect genuinely impressive needs the banner inset (margin + radius) so light
+spills on all four sides. That is a profile-header design change and needs a
+founder decision.
+
+**Where ambilight runs (2026-08-24):** profile banner (own + public + native), `InlineVideoPlayer` (our own video: PostCard feed, MediaLightbox, LockedMedia, VergrMeView, MobileLiveViewer, native screens) and `EmbedVideoPlayer`.
+
+⚠ **A YOUTUBE EMBED IS A CROSS-ORIGIN IFRAME AND ITS PIXELS CANNOT BE READ.**
+No flag, proxy or permission changes that; it is a browser security boundary.
+So an embed samples the POSTER FRAME (`img.youtube.com/vi/<id>/hqdefault.jpg`,
+which the component already resolves) and its glow is STATIC — right colours,
+not following playback. Our own videos sample live, because we own the pixels.
+Do not file this as a bug or try to "fix" it.
+
+⚠ **The theme seam-band is DELETED**, not suppressed: themes are gone (founder,
+2026-08-24). The 8 gradients survive as the Profile gradient unlockable.
+
+⚠ **A LIGHT LAYER MUST NEVER REACH OUTSIDE ITS OWN BOX.** Rejected twice for
+this. `inset: -spread` means the glow covers whatever in-flow siblings sit above
+and below it: the post text above a video, the link card below it. And
+`isolation: isolate` on the wrapper makes it worse, because the wrapper then
+paints as one unit above every PRECEDING sibling.
+
+The reference does not do this. YouTube gives the video PADDING and the glow
+fills the padded box, so the light occupies space the layout already reserved
+and nothing can be washed, by construction. Ambilight is now always
+`inset: 0`; the CALLER pads or sizes the wrapper. Verified on the live profile:
+the glow box is exactly its reserved box and stops 253px above the next heading.
+
+### ⌨ Custom typing indicator — SHIPPED + DEPLOYED 2026-08-25 (doc 06)
+
+`typing_style` at **L32**, six styles (`dots` default, `wave`, `bars`, `orbit`,
+`pixel`, `comet`), picked on `/prestige` → Effects. Look lives in
+`src/components/effects/triggers/TypingStyles.{jsx,css}`; WHEN in
+`TYPING_STYLES` (`rankUnlocks.js`); resolver `typingStyleFor(typistProfile)`.
+
+⚠ **The DM typing bubble had NEVER rendered.** `ChatThreadScreen` mounted
+`<TypingIndicator />` with no `users` prop against a component that opens
+`if (users.length === 0) return null`. Fixed.
+
+⚠ **`grep -rl 'TypingIndicator'` returns 2 files and the real answer is 6.**
+That grep finds the component's consumers, not the surfaces that DRAW an
+indicator: squad chat hand-rolled `.typing-dots` (`squad.css:452`) and three
+inbox rows built the sentence as a string. **Grep for the THING, not for the
+component you expect to be there.**
+
+⚠ **The relay has no typing feature** (`grep -rn 'typing' infra/chat/src` = one
+comment). Typing rides the `conversations/{id}.typingUsers` doc. Doc 06's
+original research argued for deriving the style from `vpLevel` to avoid a Go
+redeploy that was never needed; the style is a free user choice instead.
+
+⚠ **A defect can pass every numeric assertion.** `comet` shipped as a SOLID BAR
+through the first measurement round: `.vg-typing i` sets a background *colour*
+and comet only overrode background-*image*. It animated, it travelled, and it
+looped byte-identically, because a uniform bar does. Only rendering it showed
+it. `scripts/typing-preview.mjs --measure` now also asserts mid-cycle differs
+from the start (29 assertions); `npm run check` is 114.
+
+⚠ **`slimUser()` now persists `vpLevel` + `cosmetics`** (`chatIdentity.js`).
+Without them a COLD start lost name colour, typeface and gradient on every chat
+surface until the refetch landed.
+
+✅ **VERIFIED LIVE ON TWO ACCOUNTS.** @vergr typing, @Verion watching: three
+indicators measured on the visitor's screen, all carrying the TYPIST's accent
+(`#f04060`), equip persisted across a reload, and @Verion at L1 correctly sees
+"unlocks at level 32". Doc 06 §8.2.
+
+⚠ **`useTyping` DIED ON EVERY COLD LOAD** (found live, fixed, deployed). It read
+`auth.currentUser` with `[chatId]` deps, so a reload / pasted link / push-launch
+bailed before subscribing and never re-ran: **the thread's typing listener was
+dead for the whole session** while the inbox row kept working. Now tracks
+`onAuthStateChanged`. Same class as [[reference-auth-null-is-not-signed-out]].
+
+⚠ **THERE ARE TWO REDUCED-MOTION SWITCHES AND A MEDIA QUERY ONLY CATCHES ONE.**
+Settings → Appearance sets `html[data-reduced-motion="true"]` and `index.css`
+answers with `animation-duration: 0.001ms; iteration-count: 1`, which does not
+stop an animation, it **fast-forwards it to its final keyframe**. For anything
+whose last frame is its resting pose that means invisible: `pixel` measured 0.20
+opacity, `dots` 0.42. Any future animated effect must declare static poses for
+BOTH switches.
+
+⚠ **SQUAD TYPING HAS NEVER WORKED AND NEEDS A FOUNDER DECISION.**
+`SquadChatThreadScreen:298` never takes `setTyping`, and `useTyping(squadId)`
+listens to `conversations/{squadId}`, a doc nothing creates. Not a regression;
+the `.typing-dots` markup there was dead. Squad messages are Firestore, not the
+relay, so typing state would most naturally ride the squad doc — where every
+member already has a listener, so each keystroke burst bills a read per member.
+Doc 06 §8.2.3.
+
+### 🎵 PROFILE MUSIC (effect 09): SHIPPED + LIVE-VERIFIED 2026-08-25
+
+The MySpace idea. A track the profile OWNER picks, playing for VISITORS, artist
+credited. L81. `users/{uid}.cosmetics.profileAudio`. Two sources, owner chooses:
+**Audius** (~1M real tracks, free, no ads, whole track plays) or **upload**
+(30s/2MB, DMCA safe harbour).
+
+⚠ **YOUTUBE AND SPOTIFY ARE RULED OUT. DO NOT RE-SUGGEST THEM.** YouTube ads on
+embeds are unavoidable and got MORE frequent in Aug 2024 (`rel=0`/
+`modestbranding` no longer help), plus it reports playback data to Google on
+page load. Spotify embeds give a 30-SECOND PREVIEW unless the visitor is
+desktop + logged in + Premium; mobile always gets the preview.
+
+⚠ **A PAID PLAN ON THE SOURCE DOES NOT REMOVE ADS FOR VISITORS.** YouTube
+Premium / SoundCloud Go+ remove ads for the LISTENER only. What controls ads is
+the TRACK OWNER's monetisation setting. Never put "get a paid plan" in help copy.
+
+⚠ **Audius needs NO API KEY and NO iframe.** Its stream endpoint is CORS-open
+`audio/mpeg` with range support, so a plain `<audio>` element plays it. That is
+why there is no third-party player, no tracking pixel and no consent problem.
+
+⚠ **`isPlayable()` IS NOT OPTIONAL.** Measured: `is_streamable` was FALSE on 1
+of 10 search results and that track 404s. It also rejects `is_stream_gated`
+(artist deliberately withheld) and non-empty `allowed_api_keys`.
+
+⚠ **THE FAB POPUP IS THE ATTRIBUTION** (artist, title, artwork, licence, link
+back). Remove it and the credit goes with it.
+
+⚠ **A DOUBLE-PLAY BUG SHIPPED AND ONLY TESTING FOUND IT.** One mounted component
+produced TWO Audio objects playing in lockstep: `play()`'s rejection handler
+outlived its cleanup and armed a second gesture listener on a dead element.
+Nothing in the source looked wrong. Fixed with a `cancelled` flag AND a
+module-level `liveAudio` singleton.
+
+✅ **Verified live on two accounts:** locked below L81, silent on the owner's own
+profile, FAB + credit popup for the visitor, plays (0:14 of 3:17), exactly one
+audio, stops on navigation, survives breakpoint remounts. Masked persona and
+native are NOT yet verified.
+### 🏅 L100 `name_glow` WAS AN INERT LADDER ROW (fixed 2026-08-25)
+
+`RANK_UNLOCKS` promised "Immortal name glow" at L100 and **nothing read it**.
+`UserName.jsx` resolved font, colour, chat colour and the gradient, and had no
+glow. Same shape as the inert `cosmetics.nameEffect` toggle and the three inert
+kill switches. Now a two-pass `drop-shadow` (a FILTER, not `text-shadow`: on the
+gradient path the glyphs are transparent), static on purpose so it needs no
+reduced-motion handling.
+
+⚠ **`assertNoDeadLevels` DID NOT CATCH IT and could not.** It only proves every
+LEVEL 1-100 has a row, never that the row's reward EXISTS. `vp-mirror-check.mjs`
+now maps every ladder id to the file that implements it (`REWARD_OWNERS`) and
+fails the build on a row with no owner. It caught a real error on its first run
+(`vpLevel.js` is in `functions/`, not `src/utils/`). Negative-tested. **Adding a
+ladder row now means naming the file that honours it.** `npm run check` is 447 +
+216 + 31 + 34 assertions.
+
+⚠ **ANIMATION CANNOT BE MEASURED IN A HIDDEN TAB.** Chrome freezes animation
+timelines at `visibilityState === "hidden"`, so `Animation.currentTime` stops
+advancing and a perfectly healthy animation looks dead. Check visibility before
+concluding anything about motion.
+### 🎨 CHAT THEMES: 8 SHIPPED + DEPLOYED 2026-08-25 (doc 12)
+
+Arcade / Dracula / Gaia / Chatter / Cosmos / Neon / Vault / Studio. One id on the
+conversation doc, seen by BOTH people, the SETTER's unlock decides, DMs only.
+Each theme = 4 gradient colours + an icon pattern + `out`/`in`/`accent` bubbles.
+
+⚠ **THE TILES ARE ON R2, NOT HOSTING, AND MUST STAY THERE.** Founder: "hosting
+costs me money". ~300KB per tile, one fetched per themed chat. The generator
+writes to **`chat-pattern-tiles/`** at the repo root, NOT `public/`, because
+Firebase hosting `ignore` globs were tried and DID NOT exclude them. Publish
+with `node scripts/publish-chat-patterns.mjs`.
+
+⚠ **A 200 FROM HOSTING PROVES NOTHING** — the SPA rewrite answers any unmatched
+path with index.html at 200. Check `content-type`, not status. See
+[[reference-spa-rewrite-masks-404]].
+
+⚠ **BLANK-SPOT RATIO CANNOT SEE A ROUND HOLE.** It blurs over a neighbourhood,
+so specks around a gap still average fine. The founder spotted holes the metric
+called clean. Measure the **largest inscribed empty circle** instead (cosmos was
+r=24.7, a ~23px bald patch). And measure INK, not circle geometry: a first fix
+measured distance to the nearest circle EDGE and changed nothing, because the
+holes sit INSIDE the packing circles where a sparse glyph fails to fill its own.
+
+⚠ **FIVE MOTION MODELS, and "Lissajous" is not automatically non-circular.** The
+first fix used frequency ratios near 1:1, and a Lissajous at 1:1 with a phase
+offset IS AN ELLIPSE. `drift`/`tide`/`pulse`/`wander`/`orbit` are structurally
+different; `orbit` is deliberately circular and is the control that validates
+the measurement (it scores 0.912 radius min/max where the others score <0.12).
+Motion is chosen PER CONVERSATION and is separate from the theme.
+⚠ **THE ICONS CARRY A LICENCE OBLIGATION.** 174 icons: 120 Phosphor (MIT, no
+credit needed) + 54 game-icons.net (**CC BY 3.0, artists MUST be credited**).
+`/platform/credits` names Lorc, Delapouite, Skoll, Caro Asercion, Darkzaitzev.
+`scripts/chat-contrast-check.mjs` reads the icon manifest and **fails the build**
+if that page stops naming an artist whose work ships. Do not delete that page.
+
+⚠ **DO NOT RETUNE THE PATTERN PACKING.** `BANDS`, the void-fill loop and the
+palettes in `build-chat-patterns.mjs` are founder-approved. Swapping the icon
+source is NOT licence to touch them; that was tried and rejected 2026-08-25
+("all you needed to do was copy and then replace the icons"). The generator now
+draws `Path2D` from SVG instead of font glyphs, and nothing else changed.
+
+⚠ **THE 7 WALLPAPERS ARE UNTOUCHED AND MUST STAY THAT WAY.** Founder: "i dont
+want you messing with the existing backgrounds since users will still need
+them". `public/backgrounds/static/` is a separate shipped feature; themes are
+ADDITIVE. The build guard asserts all seven files still exist.
+
+⚠ **The bubble contrast floor is ENFORCED IN CODE**, not trusted to the palette.
+`chatBubbleColors()` runs every colour through `ensureContrast(c, "#FFFFFF", 4.5)`,
+so a free-hex custom colour cannot produce an unreadable bubble. It caught two
+preset accents that were under the 3:1 floor. NO `backdrop-filter` on bubbles.
+
+⚠ Source SVGs live in `scripts/chat-pattern-icons/`, **never `public/`** — they
+are build inputs and only the generated tile is served. `/chat-patterns/**` has
+its own cache headers in `firebase.json`; the catch-all `**` rule is `no-store`.
+
+`npm run check` is now **354 assertions** across four guards.
+📄 **`docs/effects/` — ONE DOCUMENT PER EFFECT.** Start at
+`docs/effects/00-RULES.md` (nine rules, each one a defect that shipped, plus the
+build order and the definition of done). Then the numbered doc for the effect
+you are about to build.
+
+⚠ **DO NOT START AN EFFECT WITHOUT ITS DOCUMENT BEING COMPLETE:** researched
+technique with cited sources, an EXHAUSTIVE surface inventory, an implementation
+plan, and a MEASURABLE verification step. Ambilight was rejected three times
+because each pass discovered one more surface from a bug report instead of from
+an inventory.
+
+### ⚠ THE AVATAR ORBIT WAS INVISIBLE TO EVERYONE BUT ITS OWNER (fixed 2026-08-24)
+
+`grep -rn 'AvatarOrbit' src` returned ONE file: `ProfileScreen.jsx`, your own
+profile. So a cosmetic whose whole purpose is to be seen by other people was
+seen by nobody, for its entire life. Found by inventorying mount points while
+writing `docs/effects/15-avatar-orbit.md`, not from a report.
+
+**Rule this leaves: when an effect ships, grep its mount points and confirm it
+renders on the VISITOR-facing screen, not just the owner's.** An unlock only
+you can see is not a reward.
+
+Two things were needed and either alone still looks broken: the orbit must
+render there, AND `themeTokens()` must run there, because `.vg-orbit` consumes
+`--vg-accent-faint/-dim/-bloom` and `PublicProfileScreen` never called it.
+
+⚠ **`useEffectEnabled` calls `useMemo`, so it must sit ABOVE every early
+return.** Placing it next to the accent put it after
+`if (loading) return <ProfileSkeleton/>`; the hook count then changed between
+renders, React threw **#310**, and the screen went to ErrorBoundary. The
+Vanguard mask is applied at the use site as a plain boolean — a mask must never
+gate a hook.
+
+⚠ `NativeProfileScreens` still has NO orbit. Remaining gap.
+
+### 🎛 The Appearance panel is THREE TABS, not one long page (2026-08-24)
+
+`CosmeticEquip.jsx` = **Name / Profile / Effects**. Founder: "I don't want a 100
+mile long page that users need to scroll through just to make a change." Every
+unlock had been appended as one more full-width Row, so the page grew with every
+ship. A new unlock now joins a tab instead of lengthening the page.
+
+⚠ **NO OUTLINE-ONLY SELECTED STATES IN THIS PANEL.** Founder: "I HATE THE
+OUTLINE FAKE GLASS you used for the selected/active typeface, this is bad UI and
+I can't stand how cheap it looks." Selection is a SOLID accent fill plus a real
+value step, never a hairline ring on a transparent box. Same rule as
+[[feedback-no-border-soup]].
+
+⚠ **The animated-name TOGGLE lives WITH the gradient it switches on.** They were
+two separate sections for one feature, which is what made the page feel endless.
+
+⚠ **"Profile theme" is now "Profile gradient", and the copy is honest.** The
+multi-surface theme system was deleted 2026-08-24; what survives is exactly one
+gradient behind the profile plus the accent. The heading still said "theme" and
+"surface treatment" long after that stopped being true, which is why it read as
+dead UI.
+
+⚠ **`accentFor()` in `rankUnlocks.js` is THE ONE ACCENT RESOLVER.** All three
+profile screens hand-rolled `PROFILE_ACCENTS.find(...)`, so a free-hex accent
+would have worked in the picker and silently done nothing on two of them — and
+desynced the avatar orbit, which reads the same token. Free hex is
+`cosmetics.accentHex`; the 12 presets stay as `cosmetics.accent`.
+
+### 🔤 18 typefaces, demand-loaded (2026-08-24)
+
+`src/utils/nameFonts.js`. Founder: "there are only 3 options for typeface? can't
+we add cool and weird fonts". The old three-font list used cost as an excuse to
+avoid work.
+
+⚠ **The cost concern was real; the conclusion was lazy.** The risk is a chat
+with 30 speakers pulling 30 fonts. The fix is DEMAND LOADING, not fewer fonts:
+`ensureNameFont(id)` injects a family's stylesheet the FIRST time a name using
+it renders, once per page, weight 400 only, `display=swap` so a name is never
+invisible mid-load. Verified live: all 18 render, and the app's own three
+(DM Sans / Syne / DM Mono) never trigger a fetch.
+
+⚠ **NO CSP CHANGE WAS NEEDED — checked, not assumed.** `tauri.conf.json`
+already allows `fonts.googleapis.com` in `style-src` and `fonts.gstatic.com` in
+`font-src`, so this works in the native build too. Cost to Vergr is zero;
+Google serves the files.
+
+⚠ **The enum is mirrored in `firestore.rules`.** Add a face to `NAME_FONTS` and
+to that list together, or the picker offers something the server refuses.
+
+### 🎨 Name colour + typeface — SHIPPED + DEPLOYED 2026-08-24 (doc 04)
+
+`cosmetics.nameColor` (free hex, L12 `name_color`) and `cosmetics.nameFont`
+(enum, L3 `name_font`). Both resolve in `<UserName>`.
+
+⚠ **DO NOT USE `inkFor()` FROM `profileThemes.js` FOR ANY NAME OR TEXT COLOUR.**
+It ONLY DARKENS (`c * 0.95`, 40 times), which is right for dark ink on a light
+surface and catastrophic on Vergr's near-black ones: it drives a dim colour to
+invisible. It is also not exported. Use `ensureContrast()` in `utils/color.js`,
+which picks the direction from the background luminance.
+
+⚠ **The font is a CURATED ENUM and must stay one.** A free font choice is a
+webfont download, and live chat with 30 speakers would be up to 30 font loads on
+the busiest surface in the app. The three options are the families already
+loaded (Syne / DM Sans / DM Mono). Verified live: equipping one loads ZERO new
+families. Enforced in firestore.rules as `in ['default','display','mono']`.
+
+⚠ **Colour precedence, since three systems now colour the same text:** gradient
+(L63) > user's chosen colour (L12) > rank colour (L3) > inherit. The Vanguard
+mask beats all of them; `context="plain"` opts out entirely.
+
+`scripts/name-contrast-check.mjs` (34 assertions) is in `npm run check`, so the
+build fails if any name colour could render illegibly. Measurement corrected the
+doc's own guesses: `violet` 3.25:1 and `ruby` 4.12:1 really did fail, but `onyx`
+— flagged as the likeliest failure — measures 6.03:1 and was always fine.
+
+### 🎨 Animated name gradient — SHIPPED + DEPLOYED 2026-08-24 (doc 03)
+
+⚠ **The user picks the colours AND how many** (2 to 6). Founder: "what if the
+user doesn't want 3 colours? why must you try to force things", and "forcing the
+user to select from swatches is bad UX". So: ONE `GradientEditor` with a ramp,
+a chip per stop, add/remove, and a shared `ColorField` picker carrying a
+**screen eyedropper** (`EyeDropper` API, Chromium-only, feature-detected) —
+"most people don't know the codes".
+
+⚠ **The gradient IMAGE is built in JS** (`nameSweepImage()`), not from CSS
+custom properties, because the stop count varies and CSS cannot loop.
+`.vg-name-sweep` still owns the clip, fill, size and animation, so the
+seamless-loop maths lives in exactly one place.
+
+Three colours the USER PICKS, sweeping through their name on every surface.
+Founder: "it is after all their achievement and not our choice", and "forcing
+the user to select from swatches is bad UX". So the UNLOCK is earned (L63
+`name_effect`); the colours are free hex via a real picker
+(`src/components/prestige/ColorPicker.jsx`: SV field, hue slider, hex input,
+accents demoted to presets). Stored at `users/{uid}.cosmetics.nameGradient
+{a,b,c}`.
+
+⚠ **A LOOPING GRADIENT MUST TRANSLATE BY EXACTLY ONE PERIOD OF A PERIODIC
+IMAGE, or it flickers, and no easing hides it.** The old one ran
+`background-size: 220%` animated `220% → -20%` — a 240% journey across a 220%
+image, so every cycle snapped to a new phase. Now: a `200%` image holding TWO
+identical A→B→C→A cycles, starting and ending on A, animated `0% → 100%`, which
+is exactly `(element − image)` = one period. Verified by pausing via
+`getAnimations()` and comparing a zoomed screenshot at `0%` and `100%`:
+pixel-identical.
+
+⚠ **The gradient is `90deg` on purpose.** An angled one has a vertical
+component, so horizontal translation would not land on the same pixels and the
+seam comes back. A tilt is worth less than a clean loop.
+
+⚠ **Colours are hex-validated in THREE places** (`isHexColor`,
+`nameGradientFor`, and `hexOrAbsent` in firestore.rules) because they are
+interpolated into a `linear-gradient()` through a CSS custom property, which can
+carry arbitrary tokens. The picker is not the boundary.
+
+⚠ **`cosmetics.nameEffect` had been an INERT toggle** on /prestige — nothing
+read it, ever. Now honoured as an OPT-OUT (undefined = on), matching
+`isEffectOn()`. Add to the list of controls that were trusted and did nothing.
+
+Full record, including the two-colour version that could not read on a short
+name: `docs/effects/03-name-gradient.md`.
+
+✅ **`<UserName>` IS BUILT, MIGRATED AND GUARDED (2026-08-24, SHIPPED + DEPLOYED).**
+167 instances. Username font, username colour, the animated name gradient and
+the animated chat crest are now one edit to one file each.
+Full record: `docs/effects/01-username-component.md`.
+
+Proven on the live `@vergr` account rather than by inspection: one display-name
+change in `/edit-profile` propagated to three `<UserName>` renders at 12px, 14px
+and 22px, with 0 computed-style mismatches. `npm run check` (31 assertions,
+negative-tested both ways) now runs as `prebuild`, so a build cannot pass while a
+name is rendered outside the component.
+
+⚠⚠ **THE CODEMOD SHIPPED 36 BROKEN SITES AND `npm run build` WAS GREEN EVERY
+TIME.** The single most valuable lesson of that session. `{a.displayName}` means
+three different things depending on the character before the `{`:
+
+- JSX child — the only place it may become an element
+- `` `Invited ${a.displayName}` `` — the `$` is stranded and the element text
+  lands INSIDE the string; a toast read literally ``Invited $<UserName ... />``
+- `alt={a.displayName}` — **JSX legally accepts an element as an attribute
+  value, so it COMPILES.** `alt`/`title` became `[object Object]`;
+  `value=<UserName/>` broke the display-name input on `/edit-profile` and on
+  vergr.me; `CoinCard`'s `otherName` calls `.toUpperCase()` on it and **crashed
+  the DM thread**; and 13 sites put raw JSX into `<title>` and `og:title` on the
+  indexed SEO pages.
+
+`scripts/username-repair.mjs` undid it by replaying the patterns against HEAD.
+The codemod now carries `CTX = (?<![$=])` on every `displayName` pattern.
+**A green build proves the syntax parsed, never that the app works.**
+
+⚠ **`scripts/username-sites.mjs` OVER-REPORTS** — its OBJECT regex also matches
+`${x.username}` and `alt={x.username}`. Trust the codemod's own dry-run count.
+And a name is only migratable if a USER OBJECT is in scope: a `.toUpperCase()`d
+string, a `chatPartner()` `{name, avatar}`, a stream doc's `hostName` and a
+post's denormalised author snapshot all correctly stay strings. A NICKNAME must
+never carry the other person's cosmetics: it is your private label, not their
+identity.
+
+### ⚠ Every deploy broke the whole SEO surface for 10 minutes (fixed 2026-08-24)
+
+Found while verifying the above, and it is not a migration bug.
+`functions/ugcRenderer.js` cached the SPA shell for **10 minutes**. Vite
+content-hashes every chunk, so a deploy DELETES the old ones, and for ten
+minutes `/u/**`, `/post/**`, `/clip/**` and `/live/**` — exactly the pages
+Googlebot crawls — booted a bundle that no longer existed. The route chunk 404s,
+the SPA rewrite answers that 404 with `index.html` (**HTTP 200, text/html**), the
+dynamic import fails on the MIME type, and ErrorBoundary paints "Something went
+wrong". Nothing reported it.
+
+Fixed with a conditional GET: Hosting serves `index.html` as `no-cache` WITH an
+ETag, so revalidation costs a 304 with no body. 5s burst guard for crawl spikes;
+the ETag, not the clock, is what keeps it correct. Verified 8s after a deploy:
+static and both SSR routes all reported the same new bundle hash.
+
+⚠ A 200 on a missing asset does NOT mean the asset exists — the SPA rewrite
+returns `index.html` for anything unmatched. Check `content-type`, not status.
+## 🤝 HANDOVER: profile cosmetics + effects — `docs/HANDOVER_PROFILE_COSMETICS.md`
+
+A NEW SESSION PICKING UP THE EFFECTS WORK READS THAT FILE FIRST. It carries the
+process the founder requires (research with sources -> exhaustive file
+inventory -> doc -> build -> verify by measurement in Chrome), the full list of
+mistakes that shipped, and the remaining checklist.
+
+⚠ The single most repeated error it exists to stop: **there are FOUR profile
+views, not one** (web own, web public, native own, native public). Work done on
+`ProfileScreen.jsx` alone leaves the page every OTHER user sees untouched, which
+is how the avatar orbit shipped visible to nobody but its owner.
+
+---
+## 📒 SESSION-BY-SESSION RECORD: `docs/UPDATE_LOG.md`
+
+Newest first, and every entry is labelled **SHIPPED**, **DEPLOYED** or **SOURCE
+ONLY**. Two sessions now run against this repo (two Claude accounts), so append
+there rather than only editing sections of this file, or the two lose track of
+each other. "Done" with no deployment state is banned in that file for the same
+reason it is banned here.
 
 ---
 
@@ -206,7 +1937,7 @@ The list above is the source of truth. Move items to "done" only after verifying
 |---|---|---|
 | Inbound onramp (card/Apple Pay/bank → USDC) | **PayRam** embedded checkout on Base | Self-hosted node live; no merchant KYB; end-user KYC via PayRam's onramp partners. |
 | Outbound — crypto cashout | **Circle Wallets API** → user's whitelisted Base address | Code ready. |
-| Outbound — user cashout | **DOES NOT EXIST.** Removed 2026-08-15. | ❌ There is no user cashout of any kind, fiat or crypto. `requestWithdrawal` throws. The only outbound path is Vergr paying a CREATOR their revenue share, on Vergr's schedule, via `functions/creatorPayouts.js`. The old "crypto-only cashout" / `FiatCashoutHelper` / Coinbase guidance rows are stale and deleted. |
+| Outbound, user cashout | **DOES NOT EXIST.** Removed 2026-08-15. | ❌ There is no user cashout of any kind, fiat or crypto. `requestWithdrawal` is DELETED (2026-08-16). The only outbound path is Vergr paying a CREATOR their revenue share, on Vergr's schedule, via `functions/creatorPayouts.js`. The old "crypto-only cashout" / `FiatCashoutHelper` / Coinbase guidance rows are stale and deleted. |
 | Custody (all float) | **Circle Programmable Wallets** (developer-controlled MPC), Circle-only + software guards | Operating omnibus + insurance reserve. No hardware/multisig in v1; software guards = per-tx caps + destination whitelist + timelock + auto-freeze + insurance fund. Upgrade to Safe + Ledger when monthly revenue OR insurance fund > €5,000. |
 | KYC | **Didit** (`src/components/verify/KycWizard.jsx`) | Wired. Extend per KYC tiers below. |
 | Settlement chain | **Base USDC ONLY**, contract `0x833589fcd6edb6e08f4c7c32d4f71b54bda02913` | Per-user attribution via PayRam `refId` (→ `payram_orders/{ref}`) or hex-encoded `vergr:{uid}` in tx `data` field. EVM ERC-20 has no native memo. |
@@ -307,6 +2038,176 @@ Docker container `payram` (image `payramapp/payram:latest`), host ports `127.0.0
 
 Prices come from `src/utils/tierSystem.js` (USD $4.99 / $9.99, matching what is actually charged, not the EUR figures elsewhere in this file).
 
+
+### GEMS ARE DELETED (2026-08-16, founder-instructed, SHIPPED + DEPLOYED)
+
+**"Gems dont have a purpose any more therefore they need to be removed everywhere."**
+
+The accrued revenue share is now stored as MONEY, in micro-USD, on the wallet.
+There is no second currency anywhere in the money path.
+
+| Was | Is |
+|---|---|
+| `wallets/{uid}.gems` | `wallets/{uid}.owedMicroUsd` |
+| `wallets/{uid}.totalGemsEarned` | `wallets/{uid}.totalOwedMicroUsd` |
+| `wallets/{uid}.totalPaidOut` (gems) | `wallets/{uid}.totalPaidMicroUsd` |
+| ledger `currency:'gems'`, `amount` | `currency:'usd'`, `amountMicroUsd`, `earning:true` |
+| `earnedGemCredit` / `settleEarnedToGems` | `earnedShareCredit` / `settleEarnedShare` |
+| `earned_gem_settlements/` | `revenue_share_settlements/` |
+| tx type `earned_auto_converted` | `revenue_share_accrued` |
+
+**No rate, threshold or cap changed.** 50-80% ladder, $100 minimum, KYC caps: all
+identical. Gems were an integer-cent unit that `creatorPayouts.js` converted back
+into dollars before doing anything, so deleting them removed an intermediate, not
+a policy.
+
+**ONE deliberate behavioural delta:** accrual now keeps sub-cent precision
+(`floor(coins * share * 10_000)` micro-USD instead of `floor(coins * share)`
+whole cents). The old truncation was an artifact of gems being integers and the
+remainder was silently kept by the platform. Strictly in the creator's favour.
+Revert by flooring to whole cents in `coinLedger.js` if that is not wanted.
+
+**DELETED outright** (source gone AND undeployed, not left throwing):
+`functions/gemTransfer.js`, `gemBuyback.js`, `withdrawals.js`, `nowpayments.js`;
+callables `convertCoinsToGems`, `sendGems`, `quoteGemSend`, `buyCoinsWithGems`,
+`requestWithdrawal`, `cancelWithdrawal`, `getMyWithdrawals`,
+`processReadyWithdrawals`, `adminReleaseWithdrawalNow`, `adminGetWithdrawalContext`.
+Also the PayRam **buy-and-send** branch (card payment minting value straight into
+someone else's wallet, the clearest transmission shape in the product), and
+screens `WithdrawScreen`, `ConvertScreen`, `ConvertCoinsScreen`, `SendGemsModal`,
+`RequestPayoutScreen`, `WalletScreen`, `wallet/PayoutScreens`, `NativeConvertScreen`.
+
+⚠ `adminGetNavBadges` was moved OUT of withdrawals.js into `adminEconomy.js`
+before deletion. AdminShell calls it on every load.
+
+**What still contains the letters "gem" and is NOT currency:** `BadgeGem`
+(membership badge SHAPE), `gemBlue` (a colour token), `cheerGem` (an emote),
+`/brand/gems.webp` (art), and `gem_transfer` entries in notification-icon maps
+for a type nothing writes any more. Left alone deliberately.
+
+**No migration was run.** Part 2 decision 7: balances are test data, clean
+cutover, founder re-confirmed 2026-08-16.
+
+---
+
+### Creator program end-to-end audit (2026-08-16, SHIPPED + DEPLOYED)
+
+The program was **unenterable and unpayable**. Both ends failed on the same
+field: `users/{uid}.kycLevel` had readers and NO writer. Didit wrote
+`users/{uid}.kyc.verified` and nothing else, so `creatorProgram.measureRequired`
+never passed (Apply button permanently disabled) and `creatorPayouts.blockingReason`
+returned `kyc_required` forever with a KYC cap of 0.
+
+| Fixed | Detail |
+|---|---|
+| kycLevel | `diditWebhook` now writes `users.kycLevel = 1` + mirrors to the wallet on a verified decision. Only ever raises. L2/L3 stay admin-set. |
+| Identity UI | `/creator/verify` mounted `KycWizard` (uploads ID images to Firebase Storage, writes `verification_applications`), a SECOND identity system. Now mounts `DiditVerify`. Note `/wallet/kyc` still routes its Start button to `/onboarding/identity`, which is a **profile form with no KYC in it**. NOT fixed. |
+| Payout destroys funds | `payOne` debited the payable then called `disbursePayout()`, which throws unconditionally, and the catch deliberately leaves the debit. Added `PAYOUT_PARTNER_CONFIGURED = false`, checked BEFORE anything is reserved; the run marks itself `blocked` and moves nothing. **Flip that flag in the same commit that implements `disbursePayout`.** |
+| Approval double-credit | `adminDecideCreatorApplication` credited the share for `pendingCreatorCoins` without removing the coins, which are still in the wallet. Creator got 100% as coins AND ~50% as share. Now debits balance/earnedBalance, clamped, and no longer double-increments `totalEarnedCoinsGross`. |
+| Rate ladder stuck at 50% | Only `entitlements.js` used `earnedCoinCredit()`. Memberships (x2), tickets, season passes, ad rewards, referral revenue and Vanguard treasury all hand-rolled the wallet write and omitted `totalEarnedCoinsGross`, so those earnings never moved a creator up a tier. All six now use the helper. |
+| Unlock revenue stranded | `entitlements.js` was the ONLY earning surface that never called the settle helper: unlock revenue sat as spendable coins forever, never payable, and invisible on Earnings. Now settles post-commit, idempotent on the entitlement id. |
+| Notification never delivered | `entitlements.js` addressed "someone unlocked your content" with `userId`; the drawer queries `recipientId`. (`refundOutstandingPicks.js:124` has the same bug, untouched.) |
+| Memberships paywalled | `requiredTier="pro"` was still on the route AND the native screen despite the founder ruling. The NAV lock had been removed, so there was no warning before the wall. Both gone. |
+| Quests always failed | `claimQuestReward` was a CLIENT transaction taking the VP amount as an argument, and rules deny client writes to `quest_claims`, so every claim threw. New `functions/creatorQuests.js`: server owns amounts, per-quest verifiers, idempotent per UTC day, VP to `wallets.vp`. Unverifiable quests are not offered. |
+| Earnings filter | `isEarning()` required `currency === 'gems'` against a hand-kept type allowlist; four of its eight types never carried that field so could never match. Server now stamps `earning: true`. |
+| Native dashboard | `/creator/dashboard` re-exported the DEPRECATED `CreatorDashboardScreen` while web rendered `CreatorHomeScreen`. |
+| Fabricated data | `CreatorCommunityScreen` shipped four invented fans, three invented pending comments and a hardcoded 74/21/5 sentiment split as live data. Removed; honest empty states. |
+| Quests hero | Was a tournament-earnings ladder reading a ledger scan that could only return 0, advertising prize competitions the compliance pages say do not exist. Removed. |
+| Undeployed admins | `adminSetPayoutAccountState` / `adminRecordPayoutStrike` / `adminReversePayoutStrike` existed in source and index.js but were never deployed. Now deployed. They are still the ONLY way to set `partnerPayeeId` / `taxFormStatus`, and there is no admin UI for them. |
+
+**Rules hardened + deployed.** `wallets`: the payable and every lifetime
+aggregate are now server-only (they were owner-writable, so a client could mint
+the liability Vergr owes it). `users`: `kycLevel`, `kyc`, `pendingCreatorCoins`,
+`vp` and `creator` are server-only. `users.kyc` matters most: `assertKycVerified`
+trusts `kyc.verified`, and the owner could set it on themselves.
+
+✅ **EVERY money field on `wallets` is now server-only** (2026-08-16). `balance`,
+`vp`, `totalEarned`, `totalSpent`, `totalReceived`, `totalTipped` joined the
+denylist once the three live client writers moved into
+`functions/walletActions.js` (`awardActionVp`, `recordAdWatch`,
+`contributeToSquad`) and seven DEAD client money movers were deleted from
+`firestore.js` (`purchaseService`, `approveServiceOrder`, `disputeServiceOrder`,
+`requestPayout`, `joinTournament`, `leaveTournament`, `distributePrizePool`, all
+zero-caller). The only owner-writable fields left on the wallet are preferences.
+
+⚠ Watch-to-Earn still TRUSTS that an ad was watched: Monetag Direct Link has no
+server callback. What moved server-side is the AMOUNT, the per-day count and the
+streak maths. AdMob rewarded video (`admobReward.js`) has real SSV and is the
+verified path.
+
+⚠ **THE PAYOUT PARTNER IS STILL NOT WIRED.** Nobody can be paid, by design, and
+the run now refuses to move anything rather than destroying the payable. That is
+the one remaining blocker to money actually reaching a creator.
+
+
+### Box 2 (`vergr-stream-2` / `edge2`) DELETED 2026-08-17
+
+**Hetzner is now €5.49/mo net + €0.07 snapshot, down from €40.98.** Saved ~€35.42/mo.
+
+Box 2 was a `cpx32` (4 dedicated vCPU, €35.49 net) running as the PRIMARY stream
+edge (`stream_nodes/edge2`, `priority: 10`), at load 0.00 for its entire 74-day
+life, with zero live streams and zero HLS output ever.
+
+**What went with it:** adaptive transcode (`vergr-transcode`), VOD archiving AND
+server-side clip cutting (`vergr-vod-archive`, the Safari/iOS fallback for the
+Clip button), and ALL translation (LibreTranslate). Streaming itself survived:
+box 1 is `priority: 0` and `pickStreamNode` fails over to it automatically.
+
+`archive.vergr.app` on box 1 was a reverse proxy to box 2's private IP
+(`10.0.0.2:8097` and `:5000`). It is now a **fast 503** rather than a 30s hang,
+because `contentAi.js` calls the translate endpoint on EVERY post create and a
+hang there is far worse than an error. Original vhost kept at
+`/etc/nginx/sites-available/archive.vergr.app.box2-era.bak` on box 1 and in the
+restore bundle.
+
+**Full restore bundle: `infra/box2-restore/`** (43 files, secrets gitignored) and
+a second copy WITH secrets at `~/Downloads/vergr-box2-backup-2026-08-17/`.
+`RESTORE.md` is an 11-step runbook. All 8 executables sha256-verified against the
+live box before deletion. Hetzner snapshot `420931000` (4.69GB) also retained.
+
+⚠ **CORRECTED 2026-08-23. THIS SECTION WAS WRONG AND MISLED SESSIONS.** It said
+the repo had no source for `vergr-sfu`, `vergr-ingest`, `vergr-rtmp-auth`,
+`stream-node-agent` or `vergr-chat`. Verified by listing the directories:
+
+| Service | Source in repo? |
+|---|---|
+| `vergr-sfu` | ✅ `infra/sfu/src/main.go` |
+| `vergr-ingest` | ✅ `infra/ingest/src/main.go` |
+| `vergr-rtmp-auth` | ✅ `infra/rtmp-auth/src/main.go` |
+| `vergr-chat` | ✅ `infra/chat/src/` (main.go, dm.go, store.go, history.go, search.go, twitch.go, …) |
+| `vergr-ocr` | ✅ `infra/vergr-ocr/` |
+| `vergr-cohost-launcher` | ✅ `infra/cohost-launcher/` |
+| `vergr-community-import` | ✅ `infra/community-import/` |
+| `stream-node-agent` | ❌ only `node_modules`, no source |
+
+So **only `stream-node-agent` genuinely lacks source.** Do NOT plan around
+"we cannot change the relay": `vergr-chat` is fully editable, and on 2026-08-23 it
+was edited (VP level added to the wire format) precisely because a session had
+read this stale warning and designed an expensive client-side workaround instead.
+There are still **no `infra/*/deploy.sh` scripts**; deploy is scp + go build +
+systemctl restart, as documented per service.
+
+⚠ **BOX 1 IS STILL NOT BACKED UP.** That part stands: if box 1 dies the running
+binaries and their env/systemd config are gone, even though the source survives here.
+
+Still to do: `edge2.vergr.app` DNS still points at the released IP `178.105.238.230`
+(Cloudflare, founder access).
+
+### Payments reality check (2026-08-17)
+
+Measured, not assumed:
+- `payram_orders`: **23 rows, ALL `expired`, zero settled, ever** (21 May - 11 Aug).
+  Founder confirms all 23 were his own tests. So PayRam is **unproven, not proven
+  broken**, it has never completed a payment end to end, not even once.
+- The only two completed coin purchases in the platform's history were **Stripe**,
+  on 12 Aug, the day before the account closed.
+- Circle omnibus (`0xbb1b…2240`, BASE, LIVE): **balance zero**.
+- **Total creator liability platform-wide: $0.01.** Zero wallets with
+  `owedMicroUsd > 0`; one wallet holds 1 legacy gem.
+
+**Vergr currently has no proven way to take money.** That is the priority item,
+ahead of any feature work.
+
 ### What Vergr IS (canonical, use this for ANY processor / underwriter / partner form)
 
 **READ THIS AND `docs/REVENUE_SHARE_PLAN.md` §1.4 BEFORE answering any question about what the
@@ -334,7 +2235,7 @@ money transmission and is not a marketplace.
 |---|---|
 | "marketplace", "multi-vendor", "selling on behalf of others" | Vergr sells its own product. Defeating this characterization is the entire point of the revenue-share migration. |
 | "forwarding funds" / "user-to-user payments" | No buyer money is forwarded. Buyer money is Vergr revenue; creator payment is an expense on Vergr's schedule. |
-| "stored value" / "wallet balance the user can call on" | Coins are a revocable licence to access features, no cash value, non-transferable. Withdrawals throw (`functions/withdrawals.js:280`), gem transfer throws (`functions/gemTransfer.js:91`). |
+| "stored value" / "wallet balance the user can call on" | Coins are a revocable licence to access features, no cash value, non-transferable. The withdrawal and gem-transfer modules are deleted and their callables undeployed (2026-08-16). |
 | "dating" / "a place to meet people" | Vergr is broadcast and creator-led, one-to-many. Reads as a dating app to an underwriter and makes acceptance harder. |
 | anything about tournaments, prizes, predictions or betting | **Retired and UNROUTED.** `AppRouter.jsx` has exactly one tournament route, `/vanguard/lookup/tournament`, admin-only. The huge tournaments section further up this file is DEAD CODE documentation. `llms.txt` states plainly: no betting, wagering, prediction markets, prize competitions, loot boxes or games of chance. |
 
@@ -442,7 +2343,7 @@ Measured from the artifact itself (`aapt dump badging` + `unzip -l`), not inferr
 
 ### TODO before public indexing (do not forget)
 - **Google Safe Browsing check** — 2026-05-25 an old tab loaded `vergr.app` and showed Chrome "Dangerous site" phishing warning; a fresh tab loaded fine. Recheck via `transparencyreport.google.com/safe-browsing/search?url=vergr.app` once the app is feature-complete + before any user invite/marketing push. **2026-08-14: recheck NOT completed** (the transparency report is a JS app; WebFetch returns no verdict and the in-app browser was denied that origin). Founder must open the link himself, it is a 5-second check. If flagged: find offending URL via Search Console → Security Issues, remove (likely R2 user upload), submit review request (24-72h). Also harden: scan R2 uploads through Gemini BEFORE the public URL goes live (currently lives during scan window).
-- **Kill HashRouter → BrowserRouter** — every URL is `vergr.app/#/…` which looks broken/old. Migrate `src/router/AppRouter.jsx` to `BrowserRouter`, add Firebase Hosting rewrite `"source":"**","destination":"/index.html"` in `firebase.json` (or confirm it's already there), QA every `navigate()` + `window.location` callsite for hard hash assumptions, regenerate any external links that use `#/` (push notifications, email templates, FCM `actionUrl` fields). Founder wants the `#` gone before launch.
+- ~~**Kill HashRouter → BrowserRouter**~~ ✅ **DONE.** `AppRouter.jsx:750` mounts `<BrowserRouter>` and `firebase.json` carries the SPA rewrite. Verified 2026-08-23. This entry sat here as outstanding work long after it shipped, and CLAUDE.md still described the stack as HashRouter in two places, which is how `ErrorBoundary.jsx` kept a `window.location.hash = '#/'` "Go home" button that could not go home (fixed 2026-08-23). Residual `#/` in `CreateTournamentScreen.jsx:866` is inside unrouted dead code and is deliberately left alone.
 
 ### P2 — post-launch hardening
 | Status | Build |
@@ -457,7 +2358,7 @@ Measured from the artifact itself (`aapt dump badging` + `unzip -l`), not inferr
 | ✅ | Tournament esports polish batch 1: animated 3-2-1 lobby-code reveal, UFC-style walk-on intro, trophy ceremony podium, hardware fingerprint binding (`tournamentFingerprint.js` + `enrollOrCheckFingerprint`), trust score (hidden until ≥5 verified matches), rivalry auto-detect trigger, AI match summarizer (Gemini multimodal), 1% sportsmanship bonus routing, dispute timeline, match-card share PNG generator, mandatory webcam for >5,000 coin tournaments. Backend `functions/tournamentTrust.js`. Components in `src/components/tournament/`. |
 | ✅ | Tournament esports polish batch 2: Mod Wall (`/vanguard/wall`, V/R/D/J shortcuts, live grid with severity badges); Personal stats (`/tournaments/me/stats`, per-game W/L, rivals); LeaderboardScreen extended with `tournamentTrust.score`/`tournamentPrizeCoins`/`tournamentTrust.verifiedMatches` categories; `<StartingSoonCarousel>` + `<TournamentOfTheDayCard>` + `<CrossTournamentLeaderboard>` (DiscoveryStrip.jsx); live betting + tip-underdog + hype aggregator (`tournamentExtras.js` + `<SpectatorBetPanel>` + `<TipUnderdogButton>` + `<BracketChat>` + `<PiPCohost>`); warmup-lobby launcher, scheduling DM, replay-on-demand, double-or-nothing rematch (`MatchFlowExtras.jsx`); squad-funded prize pools + sponsor slots (`HostingExtras.jsx`); AI cheat-flag VOD trigger (`aiCheatFlagVod`) writes `tournament_review_queue`; tournament-of-the-day cron + starting-soon push cron + VOD highlights auto-cut. Backend `functions/tournamentExtras.js` + `functions/tournamentDiscovery.js`. |
 | 🟢 | Tournament native batch (Tauri/Rust) — **v1 shipped**: Second Tauri webview window (`label:"hud"`, transparent, alwaysOnTop, skipTaskbar, click-through default) renders `/hud` route with 4-light status strip (REC/OCR/MOD/OPP), heartbeat pulse, lobby code, mod presence. Rust commands `scan_processes`/`open_hud`/`close_hud`/`set_hud_click_through`/`set_hud_position`. Cross-window pub/sub via Tauri events (`vergr:hud:set-match` / `vergr:hud:clear`) with localStorage fallback. Game-only capture via `getDisplayMedia({ displaySurface: 'window' })` (OS-enforced). Anti-cheat: `functions/antiCheat.js` ingests scans, matches against admin-managed `cheat_signatures/`. Admin CRUD at `/admin/cheat-signatures` with route guard + Seed-Defaults button populating ~40 known cheat tools (`seedCheatSignatures.js`). Auto-runs scan pre-match + every 30s; **gated by explicit consent modal** (`AntiCheatConsentModal`, scope version stamped on `users.tournamentScanConsent`). Mod heartbeat callable `vanguardHeartbeat` keeps HUD MOD light fresh. **Deferred to native batch v2:** wgpu native overlay, Windows.Graphics.Capture, Cronus/XIM USB fingerprinting, capture-card PCI enum, foreign-DLL-in-game-process detection. |
-| ✅ | Tournament VOD archive pipeline: `functions/vodArchive.js` triggers on tournament-stream end → POSTs Hetzner `vergr-vod-archive` launcher (`infra/vod-archive/` — Node service, ffmpeg downscale to 480p H.264 + AAC 64k, R2 upload at `archives/tournaments/{matchId}.mp4`) → `markVodArchived` HTTP webhook writes `archiveVodUrl` on match. Unblocks `aiCheatFlagVod` + `autoCutVodHighlights`; 7-day retention path in `streamingCleanup.js` already reads `tournamentMatchId`/`tournamentId` for TTL. **Deployed 2026-05-25** on Hetzner `vergr-stream-1` (91.98.79.244): systemd unit `vergr-vod-archive` on `127.0.0.1:8097` (NOT 8095 — that's `vergr-chat`; 8096 is `vergr-cohost-launcher`), env at `/etc/vergr-vod-archive.env` (HOST_OPS_TOKEN + R2 creds), nginx vhost `archive.vergr.app` → SSL via certbot (renews ~2026-08-23). Cloud Fns `dispatchTournamentVodArchive` (`streams/{streamId}` onUpdate trigger) + `markVodArchived` (HTTP callback) live in europe-west1. Verified: HTTPS 200 on `/healthz`, 401 without Bearer, 202+schema-validation with Bearer. **Update `infra/vod-archive/deploy.sh` port from 8095→8097 if re-deploying.** |
+| ✅ | Tournament VOD archive pipeline: `functions/vodArchive.js` triggers on tournament-stream end → POSTs Hetzner `vergr-vod-archive` launcher (`infra/vod-archive/` — Node service, ffmpeg downscale to 480p H.264 + AAC 64k, R2 upload at `archives/tournaments/{matchId}.mp4`) → `markVodArchived` HTTP webhook writes `archiveVodUrl` on match. Unblocks `aiCheatFlagVod` + `autoCutVodHighlights`; 7-day retention path in `streamingCleanup.js` already reads `tournamentMatchId`/`tournamentId` for TTL. **Deployed 2026-05-25** on Hetzner `vergr-stream-1` (91.98.79.244): systemd unit `vergr-vod-archive` on `127.0.0.1:8097` (NOT 8095 — that's `vergr-chat`; 8096 is `vergr-cohost-launcher`), env at `/etc/vergr-vod-archive.env` (HOST_OPS_TOKEN + R2 creds), nginx vhost `archive.vergr.app` → SSL via certbot (renews ~2026-08-23). Cloud Fns `dispatchTournamentVodArchive` (`streams/{streamId}` onUpdate trigger) + `markVodArchived` (HTTP callback) were live in europe-west1 **at the time of writing (2026-05-25). BOTH ARE NOW GONE:** `dispatchTournamentVodArchive` was deleted with the tournament backend on 2026-08-17, and `markVodArchived` is undeployed because the box behind it (BOX 2) was deleted on 2026-08-17. Do not cite this line as current. Verified: HTTPS 200 on `/healthz`, 401 without Bearer, 202+schema-validation with Bearer. **Update `infra/vod-archive/deploy.sh` port from 8095→8097 if re-deploying.** |
 | ✅ | Vanguard Review Queue (`/vanguard/queue`) — single mod surface with 3 tabs: AI Review (`tournament_review_queue`), Anti-Cheat (`anti_cheat_alerts`), Replay Requests (`replay_review_requests`). Live counters + focused detail pane + confirm/clear/open-match actions. Mod heartbeat fires automatically from ModWallScreen. |
 | ✅ | Tournament integrity hardening — bet settlement now hooked into ALL match-completion paths (recordMatchResultInternal, admin override, dispute resolution); bet refund on tournament cancel; `modVerifyMatchPlayer` requires either active tournament assignment OR Commander+ rank; TrophyCeremony wired to tournament completion (top-3 finishers + host) with winnerId fallback; WalkOnIntro persistence via `match.walkOnShownAt`; HUD auto-closes on TournamentMatchScreen unmount regardless of match status; Anti-cheat consent decline now actually calls `leaveTournamentSecure` + refunds entry. |
 | ✅ | **All 7 tournament types from `Tournament System.docx` are server-generated end-to-end** (no client-side bracket generation reliance). At `startTournamentSecure`: single-elim/squad-single-elim use `buildSingleElimRound1`; double-elim uses `buildDoubleElimBracket` (full WB+LB+GF skeleton with `feedFrom` metadata; `fillDoubleElimFeeders` populates downstream slots on each completion with crossed pairing in even LB rounds; GF reset emerges from "2 losses out" rule via `advanceDoubleElimIfNeeded`); squad/solo round-robin uses `buildRoundRobinSchedule` (circle method, every pair exactly once); battle royale uses `buildBattleRoyaleGames` (creates `brGameCount` FFA game slots, host/admin records placements via new `reportBattleRoyaleGame` callable, points 15/12/10/8/6/5/4/3/2/1/0); swiss uses `buildSwissRound1` random + `advanceSwissIfNeeded` triggered when each round completes (greedy fold pairing within score buckets, rematch avoidance); invitational treats participants array as host-defined seed and uses single-elim path (no random shuffle). Unknown types throw rather than silently fail. **Squad tournaments route 100% of placement to `squads/{squadId}.treasury`**; 48h per-match timeout cron `detectMatchTimeouts` auto-forfeits/disputes/cancels; bracket-tab UI renders real match docs via `tournamentBracketShape.js`; per-match `<NextMatchHint>` shows winner/loser destinations with click-to-jump. |
@@ -502,9 +2403,10 @@ Status legend: ✅ done · 🟢 in progress · 🟡 planned · 🟡 Partial · �
 - **Material Symbols:** loaded font is `material-symbols-outlined`. Never use `material-symbols-rounded` (not loaded → renders raw text). Use `<Icon name="..." />`.
 - **TOURNAMENTS DO NOT EXIST. Stop re-raising them.** Retired 2026-08-09, unrouted, and on 2026-08-16 the founder ordered the CONTENT deleted too: the 37-article help category, 7 tournament articles hiding in other categories, the `TOURNAMENT_RULES` legal document, and the growth funnel that was built on prize pools and money matches. `AppRouter.jsx` mounts exactly ONE tournament route and it is admin-only (`/vanguard/lookup/tournament`). The huge tournaments section above is DEAD-CODE DOCUMENTATION for files still on disk. Never cite entry fees, prize pools, mod cuts or prize payouts as current.
 - **[RETIRED, see above]** Tournament prize payout (was: winner-takes-all for every bracket type). Solo wins → winner's wallet; squad wins → winning squad's treasury (`squadTreasuryPct:100`). No 2nd/3rd/4th coin payouts. Multi-place rewards happen only in (a) Tournament Points on the global leaderboard (1000/600/400/250/175/100/50/25 by `tournamentPointsFor`) and (b) placement XP/VP for top 3 (`squadXpByPlace`/`vpByPlace` in `finalizeInternal`) — these are separate from coins. Source: `src/utils/tournamentTypes.js` + `functions/tournamentRules.js` PRIZE_DISTRIBUTION, payout loop in `functions/tournaments.js → finalizeInternal`.
-- **Coin ladder is NATIVE USD** (re-denominated 2026-08-11). 8 packs, $0.99/78 coins to $249.99/21,500 coins, floor $0.01163/coin, one worldwide price. Source: `src/utils/vpSystem.js:325-332`. **NOTHING IS WITHDRAWABLE. Users can never withdraw anything, ever.** Coins are a revocable licence to access features, no cash value, non-transferable; gems are accrued revenue share Vergr owes, not a balance. `requestWithdrawal` throws (`functions/withdrawals.js:280`), `sendGems`/`quoteGemSend` throw (`functions/gemTransfer.js:91`), `buyCoinsWithGems` disabled. The old €0.0090 floor, "gems are the only withdrawable currency" and "min payout 1,000 gems" lines were all stale and are deleted. Regional pricing applies to SUBSCRIPTIONS ONLY (`functions/geoPricing.js`), never coins. Referral: referrer +5,000 VP, referee +3,000 VP, server-gated.
+- **Coin ladder is NATIVE USD** (re-denominated 2026-08-11). 8 packs, $0.99/78 coins to $249.99/21,500 coins, floor $0.01163/coin, one worldwide price. Source: `COIN_PACKS` in `src/utils/vpSystem.js` (line numbers drift, grep the name). **NOTHING IS WITHDRAWABLE. Users can never withdraw anything, ever.** Coins are a revocable licence to access features, no cash value, non-transferable; the accrued revenue share Vergr owes lives in micro-USD on `wallets/{uid}.owedMicroUsd` and is NOT a balance. GEMS NO LONGER EXIST (deleted 2026-08-16, see that section). `requestWithdrawal`, `sendGems`, `quoteGemSend`, `buyCoinsWithGems` and `convertCoinsToGems` are all deleted and undeployed. The old €0.0090 floor, "gems are the only withdrawable currency" and "min payout 1,000 gems" lines were all stale and are deleted. Regional pricing applies to SUBSCRIPTIONS ONLY (`functions/geoPricing.js`), never coins. Referral: referrer +5,000 VP, referee +3,000 VP, server-gated.
 - **Revenue share is the ONLY model. There is no fee on any surface.** A tip, membership, ticket, season pass, locked-content unlock, ad reward and referral all credit the FULL amount as gross revenue; Vergr's share is taken ONCE, when the creator accrues. Creator keeps **50% rising to 80%**, keyed to LIFETIME GROSS EARNED, never to VP and never to plan (`functions/coinLedger.js:169` `REVENUE_SHARE_RATES` + `shareForEarnings`). Active Vanguard keep 100%. `entitlements.js feePctFor()` returns **0**. ⚠ The old "flat 10% at send time, recipient gets floor(N×0.90)" rule is **DEAD** (removed from all copy 2026-08-16) and `firestore.js` `sendCoins` merely forwards to the `sendTip` callable. The ONE genuinely different rate is Vergr.me shop sales: flat 8%, seller keeps 92%, credited directly (`vergrMeShop.js:39`, founder-locked).
 - **Creator quests award VP only, never coins.**
+- **What a LEVEL gives you lives in `src/utils/rankUnlocks.js`, and nowhere else.** Built 2026-08-23. Two locked rules: (1) rank shows in LIVE CHAT and the STREAM ENTRANCE RIBBON only, never on an avatar ring (that ring means live or status); (2) every reward resolves from `users/{uid}.vpLevel` alone, so it costs ZERO reads. The chat crest is free because the relay already loads the sender profile once per connection; the VP earn bonus is free because both credit paths already read the user doc for the plan multiplier. ⚠ **Do not add a row to that table for something that does not exist yet.** Eight rewards were cut before shipping for exactly that reason (emote packs, pinned-post slots, comment tint/pin, audio clip, profile links, trophy case, post reactions): none had a system behind it. Build the system, then add the row. Full record: `docs/GAMIFICATION_PLAN.md` build-state block.
 - **Revenue categories:** Tips, Memberships, Tournament prizes, Boosts. No Ads/Sponsored/Gifts category.
 - **Content types:** Text, Photo, Clip, Article, Short, Achievement, LFG, TierList, Quote, Live Stream. No "Reels".
 - **Moderation UI belongs to Mod/Manager/Owner dashboards, NOT the creator dashboard.** Creator dashboard must work mobile + desktop. Mod/Manager/Super-Admin dashboards are desktop-only-actions.
@@ -518,7 +2420,7 @@ Status legend: ✅ done · 🟢 in progress · 🟡 planned · 🟡 Partial · �
 
 ## Stack + conventions
 
-- React 18 + Vite SPA, HashRouter. Tailwind (no `grid-cols-24` — use inline `gridTemplateColumns`). Firebase v10.14 (Firestore **named DB `vgrdb`**, Functions `europe-west1`, Hosting, FCM). Recharts, Dexie. Tauri desktop wrapper. Material Symbols via `<Icon name="..."/>`. Fonts: Syne (headings), DM Sans (body), DM Mono (numbers + `tabular-nums`).
+- React 18 + Vite SPA, **BrowserRouter** (migrated; the `#/` era is over, and `firebase.json` already has the SPA rewrite). Tailwind (no `grid-cols-24` — use inline `gridTemplateColumns`). Firebase v10.14 (Firestore **named DB `vgrdb`**, Functions `europe-west1`, Hosting, FCM). Recharts, Dexie. Tauri desktop wrapper. Material Symbols via `<Icon name="..."/>`. Fonts: Syne (headings), DM Sans (body), DM Mono (numbers + `tabular-nums`).
 - **Cloud Functions use `getFirestore('vgrdb')`** (named DB), not default. `admin.initializeApp()` runs in `index.js` before module requires. New scheduled crons: `functions.scheduler.onSchedule({ schedule, region:'europe-west1', timeZone:'UTC' }, fn)` in a module, re-exported from `index.js`.
 - Numbers: `font-dmmono font-bold tabular-nums`. Empty states always present. Firestore timestamps: normalize via `tsMs(t)`. Currency: coins `compactNum`+`"c"`, USD shown alongside not instead.
 - **Never create new files unless necessary.** Prefer editing. No unsolicited README/docs.
@@ -656,7 +2558,7 @@ All wrap in `<CreatorLayout page=... title=... subtitle=...>`. Routes: `/creator
 | 1 | Wallet UX: `WalletLayout` shell + onboarding + 13 screens (`src/screens/wallet/v2/*`) + walkthrough | ✅ |
 | 2 | PIN + 2FA gates (`WalletUnlockContext.requirePin` 5-min HMAC window, `PinUnlockModal`, `useWalletUnlock`) | ✅ |
 | 3 | Deposit detection (`circleWalletsWebhook` + `pollCircleDeposits`, idempotent) | ✅ |
-| 4 | ~~Crypto withdrawal pipeline~~ | ❌ **REMOVED 2026-08-15.** `requestWithdrawal` throws. Body retained ONLY for the scheduled creator-payout path. |
+| 4 | ~~Crypto withdrawal pipeline~~ | ❌ **DELETED 2026-08-16.** `functions/withdrawals.js` is gone and every withdrawal callable is undeployed. |
 | 4b | ~~Bank withdrawal~~ | ❌ never existed, never will |
 | 5 | Compliance: geo-block, Chainalysis sanctions on Base, Travel Rule data, SAR cron, ToS/Privacy | 🟡 |
 | 6 | Software guards: TimelockController on Base, Alchemy auto-freeze watcher, reconciliation cron, PoR publisher, insurance Circle wallet, bug bounty page | 🟡 |
@@ -674,7 +2576,7 @@ All wrap in `<CreatorLayout page=... title=... subtitle=...>`. Routes: `/creator
 
 ⚠ **This table used to describe user-initiated crypto withdrawal limits. That is gone.** KYC now gates only whether Vergr can pay a creator on Vergr's own schedule. The remaining caps live in `functions/creatorPayouts.js`, not here — read them there.
 
-**Commission accrual:** tip 10% fee and the VP-tier revenue-share rate credit `platform_revenue`. (The "withdrawal 2% spread" that used to be listed here died with the withdrawal flow; `PLATFORM_SPREAD_BPS` is vestigial.) (integer micro-USDC, atomic). Three-bucket ledger: `user_balances` + `platform_revenue` + `insurance_reserve`. Daily reconciliation invariant: `circle_operating == user_balances + platform_revenue`; drift >€5 → freeze + page.
+**Platform revenue accrual:** ⚠ **THERE IS NO TIP FEE.** The "tip 10% fee" this line used to claim is dead (see the locked rule: revenue share is the only model, `entitlements.js feePctFor()` returns 0). Platform revenue is the share Vergr retains at accrual time in `coinLedger.js`, i.e. `1 - shareForEarnings(...)`, credited once when a creator accrues. (The "withdrawal 2% spread" that used to be listed here died with the withdrawal flow; `PLATFORM_SPREAD_BPS` is vestigial.) (integer micro-USDC, atomic). Three-bucket ledger: `user_balances` + `platform_revenue` + `insurance_reserve`. Daily reconciliation invariant: `circle_operating == user_balances + platform_revenue`; drift >€5 → freeze + page.
 
 **Threats not fully defendable (honest):** founder personal compromise, GCP root breach (bounded by ≤10% hot + caps), Circle issuer failure, regulatory action against unlicensed CASP (mitigated by KYC tiers + geo-block + OFAC + Travel Rule + clear ToS), signer-code bug, cold-key-holder loss. Biggest control = keep hot wallet small + insurance fund.
 
@@ -715,7 +2617,7 @@ Anonymous moderator collective — public persona = "Vanguard" + rank badge; rea
 | Commander | 4 | permaban, promote Recruit→Vanguard | +200 | 4.0× | 1,000,000 (founder approval) |
 | Overseer | 5 | full control, see real IDs, unlimited squads | +500 | 8.0× | 5,000,000 (founder approval) |
 
-**Perks:** 5% tournament mod cut → Vanguard squad treasury (when `vanguardModerated:true`), auto-split monthly by `rank_weight × monthly_actions`; coin→gem conversion fee waived to 0% for active Vanguard. MRR-gated stipend ladder dormant until MRR ≥€10k. Referral VP milestones in `vanguardRanks.js`.
+**Perks:** ⚠ both headline perks are against DELETED features and neither can pay out today. The 5% tournament mod cut needs tournaments (retired, 70 callables deleted 2026-08-17) and the "coin→gem conversion fee waived to 0%" needs gems and conversion (both deleted 2026-08-16). The treasury cron and its `rank_weight × monthly_actions` split are still deployed and still correct, they just have no inflow. **Vanguard compensation needs a founder decision.** MRR-gated stipend ladder dormant until MRR ≥€10k. Referral VP milestones in `vanguardRanks.js`.
 
 **Treasury cron** `distributeVanguardTreasury` (`5 0 1 * *` UTC) — settles previous month via `distributeMonth(db, monthKey)`: idempotent (`vanguard_payouts/{YYYY-MM}`), largest-remainder rounding, refunds to platform if no eligible recipients. Founder manual trigger on `/admin/vanguard`. **TODO:** extend cron to consume `assignmentWeightBonus[month]` (from tournament check-ins) in the share formula.
 
@@ -731,9 +2633,133 @@ Anonymous moderator collective — public persona = "Vanguard" + rank badge; rea
 
 Replaces old card-grid. Permission model: founder (`role:'admin'`) = full; sub-admins = `admin_users/{uid}.allowedScreens[]` (founder-managed via `/admin/access`; invites in `admin_invites/`). Foundation: `functions/adminAccess.js` (`requireAdminScreen(uid, screen)`), `useAdminAccess` hook, `AdminShell.jsx` (`ADMIN_NAV`, `ADMIN_COLORS`), `_adminGuarded.jsx` (`useGuardedCall` auto-prompts TOTP on STEP_UP_REQUIRED, `KpiCard`, `Tabs`, formatters).
 
-**Shipped screens:** Dashboard (real KPIs + Revenue/User-Growth charts from `daily_metrics/` rollup), Users (`adminUsers.js` ban/mute/role/force-logout/pw-reset; founder protected), Economy (grants, withdrawals — **no refunds concept; cancel returns held gems; sent withdrawals irreversible**, transactions, kill switches), Moderation queue + audit sub-screen (`/admin/reports`, `/admin/reports/audit`, appeals via `submitAppeal`), App Config (`/admin/config`, 9 tabs, field whitelist + history + sensitive-field step-up), Audit Log (`/admin/audit`, CSV export), Subscriptions (pass 1+2: overview/list/billing/plans/comp/settings/logs, `plans/` + `subscription_overrides/`), Tournaments (pass 1+2: overview/all/VGT/announcements/cancel-refund/disputes/overrides/settings/logs — tournament entry-fee refunds DO exist, distinct from withdrawal no-refund rule), Announcements redesign, Live Stats (`/admin/stats`: overview/system/geography wired; Pion `/healthz` + Hetzner API + `presence_snapshots/` + Firebase doc-counts + `vergr-sysinfo` agent all real).
+**Shipped screens:** Dashboard, Users, Creators, Economy, Moderation queue + audit sub-screen (`/admin/reports`, `/admin/reports/audit`, appeals via `submitAppeal`), App Config (`/admin/config`, 9 tabs, field whitelist + history + sensitive-field step-up), Audit Log (`/admin/audit`, CSV export), Subscriptions (pass 1+2: overview/list/billing/plans/comp/settings/logs, `plans/` + `subscription_overrides/`), Announcements, Stream Preview, Live Stats (`/admin/stats`: overview/system/geography wired; Pion `/healthz` + Hetzner API + `presence_snapshots/` + Firebase doc-counts + `vergr-sysinfo` agent all real). Secondary nav: Admin Security, Admin Access, News Bots, Vanguard.
 
-**Remaining punchlists:** Subscriptions pass-3 (discount consumption at renewal, logs CSV); Tournaments pass-3 (`adminListTournaments` return `participantUids`, spectator broadcast, VGT health rail, bulk CSV seeding); Live Stats pass-2 (Users/Engagement/Transactions/Errors tabs, world map); Moderation pass-3 (reports-by-type donut needs reason enum, CSV, per-mod timeline, surface handbook on `/vanguard/me`, user-side appeal UI).
+**Remaining punchlists:** Subscriptions pass-3 (discount consumption at renewal, logs CSV); Live Stats pass-2 (Transactions/Errors tabs, world map); Moderation pass-3 (reports-by-type donut needs reason enum, CSV, per-mod timeline, surface handbook on `/vanguard/me`, user-side appeal UI).
+
+### Admin: Tournaments + Cheat Signatures REMOVED, Users + Economy corrected (2026-08-17, founder-instructed, SHIPPED + DEPLOYED)
+
+**Nav:** `/admin/tournaments` and `/admin/cheat-signatures` are unmounted and their
+sidebar entries are gone. Screen files stay on disk per the no-deletion rule but
+nothing imports them, so they are out of the admin chunk (435 KB -> 392 KB).
+`'tournaments'` is out of `ADMIN_SCREENS` in `functions/adminAccess.js`;
+`'creators'` was ADDED, because it was in the sidebar and never in that list, so
+`normalizeScreens()` silently dropped it and a sub-admin could never be granted
+the Creators screen.
+
+**70 Cloud Functions deleted** (verified by diffing `firebase functions:list`
+against the source exports, then re-listing: 404 -> 335). All 18 `adminTournaments`
+callables, the 3 cheat-signature ones, the whole player-facing tournament
+backend, the GSI hooks, the wrapper match-poller, and `aggregateTournamentStats`.
+**10 tournament jobs removed from the cron dispatchers**, six of them from
+`cronMinute`, which had been sweeping for tournament work every 60 seconds
+forever. 15 now-dead `require()`s dropped, so those modules stop loading on
+every cold start.
+
+⚠ `aggregateStreamHype` could NOT be deleted: it is a scheduled function whose
+Cloud Scheduler job is already missing, and `functions:delete` 404s on the job
+before it removes the function. It has no scheduler job so it never fires.
+Needs `gcloud functions delete` (gcloud is not installed on this machine).
+
+**KEPT deliberately, and this is a decision left open for the founder:** the
+Vanguard tournament-moderation callables, because `/vanguard/schedule`,
+`/vanguard/wall`, `/vanguard/queue` and `/vanguard/moderation-room` are all still
+ROUTED and call them (`vanguardClaimTournament`, `vanguardCheckIn`,
+`vanguardCompleteAssignment`, `vanguardClaimMatch`, `vanguardReleaseMatchClaim`,
+`commanderResolveMatchReview`, `modVerifyMatchPlayer`, `vanguardHeartbeat`,
+`analyzeTournamentMatch`, `vanguardCallTournamentWinner`, `onTournamentCreated`,
+`detectTournamentNoShows`, `notifyUpcomingAssignments`). They will have nothing
+to operate on. Retiring those Vanguard screens is a separate call. Steam
+(`linkSteamAccount` / `unlinkSteamAccount` / `getSteamGsiConfig`) is also kept:
+the live Linked Accounts screen uses it.
+
+⚠ **The `tournaments` COLLECTION is where ticketed EVENTS live** and is still
+read by `adminGetEventLoad` + the doc-count tiles. Do not sweep it up. The admin
+labels now say "Events".
+
+**Users screen, four real bugs fixed:**
+
+| Bug | Detail |
+|---|---|
+| Active was never activity | `lastActiveAt` is written ONCE at account creation (`index.js` signup) and never again. The Active tab, the Active KPI and the Last Active column all read it, so "Active (7d)" meant "signed up in the last 7 days" and every older account showed Inactive with a Last Active equal to its signup date. The real field is `lastSeen` (AuthContext on sign-in + UsePresence). `ACTIVITY_FIELD` in `adminUsers.js` is now the single decider. |
+| Load more re-served page one | `loadMore` did `setCursor(next)` then immediately called `loadPage()`, which had already closed over the OLD cursor. Cursor is now an argument, never state, plus a uid de-dupe and a request-id guard. Same bug existed in the Economy Transactions tab; fixed there too. |
+| nextCursor was unconditional | The server returned a cursor even on a short final page, and computed it from the pre-filter array, so Load more never went away. It now over-fetches in a loop until the page is full and only returns a cursor when a spare row proves more exist. |
+| Username search was exact-match | `where('username','<=', term + '')`, an EMPTY upper bound, so the "prefix" query matched only exact handles, and it ran against `username` (original case) not `usernameLower`. Now `usernameLower` with the `\uf8ff` sentinel. |
+
+**Guests are no longer counted as users.** A guest is an anonymous Firebase auth
+session from "continue without an account", not a signup. They now have their own
+**Guests tab** and their own KPI, and are subtracted from Total on both the Users
+screen and the Dashboard (which was also counting bots, and comparing its
+`lastSeen` filter against a raw millis NUMBER instead of a Date, so "Active (7d)"
+on the dashboard was always 0).
+
+**Why some guests read `Guest` and others `playerxxxx`** (the founder's question,
+answered from the generator, not guessed): `signInAsGuest` writes
+`displayName:'Guest'` + `username: guest_<uid6>`. When a doc arrives with NO
+username, `maintainUsernameIndex` assigns one, `guest_<uid6>` if `isGuest` is
+set, otherwise `baseHandle()` derives from displayName then email, and with
+neither it falls back to `'player'`, which is in `RESERVED`, so the loop produces
+`player` + 4 random chars. So `playerxxxx` = an anonymous session that never got
+the `isGuest` flag. Those are invisible to `purgeStaleGuests` (it only queries
+`isGuest == true`) and sit in the user table indefinitely.
+
+⚠ **The fix for that is a BUTTON, not a cron.** I first added a daily
+`reclassifyAnonymousSessions()` sweep to `cronDaily` and the founder rejected it
+on cost: *"Did I ask you to add user cleanup things to the cron which will cost me
+money? a free and simple solution would be to add a delete account button for
+guest account next to ban etc"*. That function is reverted and `guestCleanup.js`
+is byte-identical to before. **Do not reintroduce a scheduled scan for this.**
+
+Shipped instead: **`adminDeleteGuestAccount`** + a "Delete guest account" row in
+the user drawer beside Temp ban / Permaban. Costs nothing until clicked. It is
+scoped to guests and refuses anything else, and guest-ness is proved against the
+**Firebase Auth record** (anonymous = an Auth user with no email and no
+providers), never the doc flag alone, because a missing `isGuest` is the whole
+reason those `playerxxxx` docs exist. Also refuses `convertedFromGuestAt` (a real
+account that merely started as a guest, same uid) and anything with an email. An
+ORPHAN doc with no Auth record at all IS deletable, which is the other thing the
+button is for. It calls `guestCleanup._purgeGuest` so the manual and daily paths
+delete identically: Auth first, then a recursive doc delete. TOTP step-up +
+audited as `admin_delete_guest`.
+
+The user drawer also shows the sign-in method read off the Auth record, which is
+the only authoritative way to tell a guest from an abandoned real signup.
+
+**Economy screen:** the "Withdrawals" tab is now **Creator payouts** and shows the
+real pipeline (`payout_runs`, `payout_statements`, `payout_accounts`, a dry-run
+button on `previewCreatorPayoutRun`, and a loud banner while
+`PAYOUT_PARTNER_CONFIGURED` is false). The legacy `payout_requests` table is
+collapsed at the bottom, labelled as the deleted flow, with Cancel still working
+so a row stuck non-terminal can return its held amount. New
+`adminGetPayoutOverview` + `adminListPayoutStatements`; the partner flag is read
+out of `creatorPayouts._internal` so the screen can never claim a partner is
+wired when the code refuses to send.
+
+⚠ **`adminGrantGems` renamed to `adminGrantOwed` and its cap was BROKEN.** The cap
+came across untranslated when gems were deleted: `100_000` meant 100,000 gems
+($1,000) before and 100,000 micro-USD (**$0.10**) after, so every real correction
+was rejected as too large. Now `MAX_OWED_GRANT_MICRO_USD` = $1,000, and the Grant
+form takes DOLLARS and converts, because nobody is going to type 25000000 to mean
+$25. `adminGrantGems` is deleted and undeployed.
+
+Also fixed: `adminStats.js` counted guests as `accountType == 'guest'`, which
+nothing has ever written, so that tile always read 0. Dead transaction-type
+filters (conversion, withdrawal_*) replaced with the types the server actually
+writes. `tournamentsEnabled` removed from App Config (a toggle reading ON for a
+retired feature is worse than no toggle).
+
+⚠ Found while diffing: `dispatchStreamVodArchive`, `markVodArchived` and
+`onTournamentCreated` are exported in source but not deployed. **This is
+expected, not a bug:** `vergr-vod-archive` lived on BOX 2, which was deleted on
+2026-08-17 to save ~€35/mo (see the Box 2 section above). A webhook with no box
+behind it has nothing to receive. The tournaments-section line claiming both are
+"live in europe-west1" is dated 2026-05-25 and is superseded by the box 2
+deletion. **Read the Box 2 section before concluding anything about archive,
+transcode, clip-cutting or translate being missing.**
+
+9 Firestore composite indexes added and deployed for the new tab/filter
+combinations (`users` isGuest/banned/role/subscription x createdAt/lastSeen,
+`payout_statements` runId/status x createdAt).
 
 ### PLANNED — Cloudflare cost-visibility (`/admin/stats` r2/cdn tiles)
 Build `fetchCloudflareStats()` in `adminStats.js` using Cloudflare **GraphQL Analytics API** (`api.cloudflare.com/client/v4/graphql`): `r2StorageAdaptiveGroups` + `r2OperationsAdaptiveGroups` (split actionType into Class A writes / Class B reads) + zone `httpRequests1dGroups` for CDN egress/cache-hit. Secrets (read-only): `CLOUDFLARE_API_TOKEN` (Account Analytics:Read + Zone Analytics:Read), `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_ZONE_ID`. Free-tier alerts: R2 storage >80% of 10GB, Class A >80% of 10M/mo, Class B >80% of 1M/mo, cache-hit <60%. CDN egress is unlimited-free (monitor only). ~3-4h. (Full draft adapter in `CLAUDE.md.bak`.)
@@ -801,9 +2827,11 @@ All user media → R2, served `https://cdn.vergr.app` ($0 egress). KYC docs stay
 
 ## Subscriptions + tiers (`src/utils/tierSystem.js`)
 
-- **Free** €0: core social + tournaments, free squad streaming, public stream after 100 followers + 50-coin boost, 480p30 stream, 200MB uploads.
-- **Lite** €4.99/mo: no ads, day-1 public streaming 720p60, 1.5× VP, 1GB uploads, voice messages, post boosts, scheduled posts, custom banner, squads/tournaments ≤32 players.
-- **Pro** €9.99/mo: 1080p60 + co-streaming, 2× VP, tournaments ≤256 + all bracket formats, Vergr.me custom domain, advanced analytics, IP-masked private streaming (Cloudflare TURN), animated avatar, 5GB uploads, priority support.
+- **Free** $0: core social + live streaming, squads, voice messages, **co-streaming and post boosts** (those are free, not paid perks), free squad streaming, public stream after 100 followers + 50-coin boost, 480p30, 200MB uploads, ads between posts.
+- **Lite** $4.99/mo: no ads, day-1 public streaming at 720p, 4h/day, 1.5× VP + 1,000 VP and 50 coins monthly, 1GB uploads, scheduled posts and DMs, auto-translate, creator analytics and content calendar, hide Vergr branding on vergr.me.
+- **Pro** $9.99/mo: 1080p with no daily limit, 90-day replays, 2× VP + 3,000 VP and 150 coins monthly, 5GB uploads + 4K photos, full vergr.me design kit, lead capture/pixels/webhooks, advanced analytics, animated avatar + Pro badge.
+⚠ **This section was stale for months and is now read straight off `TIERS[].features`.** It used to sell tournaments (retired), a vergr.me custom domain (removed 2026-08-20, Cloudflare for SaaS is unavailable on this account), IP-masked private streaming and priority support (never built), and co-streaming as a Pro perk (it is free). It also quoted EUR while the charge is USD. **Re-read `tierSystem.js` before repeating any tier claim; the 2026-08-19 audit section above is the authority on why each bullet exists.**
+
 - Both paid tiers buyable with coins (~500=Lite, ~1000=Pro) or PayRam card popup. Top-5 `features` array entries = headline perks. Subscription field is `profile.subscription.tier`. `getTierConfig(t)`, `checkFileSizeAccess`. Daily renewal cron handles coin-funded renewals. **Scheduled posts are a Lite/Pro feature** (free sees the entry with an upgrade pill + prompt to `/settings/subscription`).
 
 ---
@@ -918,7 +2946,7 @@ Four docs, and they are the spec: `REVENUE_SHARE_PLAN.md` (why), `PART2_DECISION
 - **Gems are NOT a currency.** Per §3.1 they are "accrued revenue share owed by Vergr", not transferable, not a balance the user calls on. Coins are "a licence to access Vergr features, revocable, no cash value".
 - **Conversion is NOT a user action.** It is "automatic accrual at the moment revenue is earned". `ConvertScreen` is slated to RETIRE.
 - **`gemTransfer` is REMOVE** (locked decision 4, founder: "its a red flag"). `sendGems`/`quoteGemSend` are already disabled server-side.
-- Murmont LLC has **no money transmitter licence**, and balances + on-demand withdrawal + arbitrary crypto destinations are the three things that look like transmission. Never describe or design toward user-invoked conversion or withdrawal.
+- Vergr LLC has **no money transmitter licence**, and balances + on-demand withdrawal + arbitrary crypto destinations are the three things that look like transmission. Never describe or design toward user-invoked conversion or withdrawal.
 
 ⚠️ ~~STATE AS OF 2026-08-15: the WALLET FRONTEND IS NOT GUTTED~~ — **superseded.** Re-verified 2026-08-16: `/wallet/convert`, `/wallet/withdraw`, `/wallet/withdraw/new-address`, `/wallet/addresses` and `/wallet/security/addresses` are all UNROUTED, and `WalletScreen.jsx` (which still holds "Convert Coins" CTAs) is lazy-imported at `AppRouter.jsx:486` but NEVER MOUNTED. **What IS still live and must come out: the crypto deposit surface** (`/wallet/security/deposit`, `AppRouter.jsx:1092`, linked from 4 places) **and 21 indexed public help articles documenting withdrawal.** See `docs/WITHDRAWAL_REMOVAL_LIST.md`.
 
@@ -966,7 +2994,7 @@ The "Whitelisted addresses" block and the Vanguard "Request Payout / Withdraw" c
 Screens remain on disk, unreachable. Verified by grep, not by assumption. Record:
 `docs/WITHDRAWAL_REMOVAL_LIST.md` section B.
 
-Server-side, which is what actually enforces it: `requestWithdrawal` throws (body retained for the scheduled payout path), `sendGems`/`quoteGemSend` already disabled. `cancelWithdrawal` + `getMyWithdrawals` stay live so in-flight requests can be cancelled.
+Server-side, which is what actually enforces it: as of 2026-08-16 all of these are DELETED, not disabled. `functions/withdrawals.js` and `functions/gemTransfer.js` no longer exist and no withdrawal or gem callable is deployed.
 
 **Screen FILES stay on disk** (ConvertScreen, WithdrawScreen, NewAddressScreen, SecurityScreens address book) per the no-delete rule. They are unrouted and unreachable; their internal links to dead routes are harmless.
 
