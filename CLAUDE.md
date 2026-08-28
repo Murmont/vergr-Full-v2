@@ -679,11 +679,40 @@ on top of plan (Pro 2x) and rank, so 3.0 already reaches 6x base.
 (daily-cap lift), Streak Shield (streak counters), Squad Surge (treasury +
 fan-out). The L100 answer is still unanswered.
 
-⚠ **THE ART DOES NOT EXIST YET.** `PackArt` falls back to the multiplier set in
-the gold ramp, deliberately NOT a Material Symbols glyph on a tinted square —
-that is what got the milestone badges rejected. Prompts and the output spec are
-in `docs/VP_BONUS_PACKS_PLAN.md` §12; drop the renders at
-`public/brand/bonuses/<art-id>.webp` 288px + `@2x` and they appear.
+✅ **PLACEHOLDER ART SHIPPED FOR ALL 16 STORE CARDS (2026-08-28).** Generator:
+`scripts/build-store-art.mjs`, re-runnable, writes 288px + `@2x` to
+`public/brand/boosts/` and `public/brand/bonuses/`. Founder: *"at least make it
+look good enough so we can replace it later."* **The filenames are the contract:
+drop a real render at the same path and it takes over with no code change**,
+because `boostArt()` / `bonusArt()` resolve by art id.
+
+- **The 9 VP packs use the REAL VP icon** (`/brand/vp-gem.webp`), on founder
+  instruction, so they look finished rather than placeholder. Only the bloom
+  intensity varies, scaled by multiplier, so a 3x reads hotter than a 1.5x
+  without inventing nine arts.
+- **The 7 boosts use the SVGs already in `scripts/chat-pattern-icons`** (Phosphor
+  MIT + game-icons CC BY, already credited on `/platform/credits`), so there is
+  no new dependency and **no new licence obligation**. Rocket, chats, sparkle,
+  shield, broadcast, star, crown.
+
+⚠ **THE FIRST RENDER WAS EXACTLY THE REJECTED BADGE LOOK** — flat pastel glyphs
+on faint circles — and it took rendering a contact sheet to see it. Two causes:
+a 50% white specular over the top half (**semi-transparent white over a saturated
+fill averages toward grey**, the same lesson `.vg-bloom` already records), and a
+near-invisible white plate that gave the glyph nothing to separate it from the
+card. Depth now comes from the RAMP RANGE plus a DARK WELL behind, with a rim lit
+from the upper left. **Do not put a white overlay back on these.**
+
+⚠ **`density` SCALES AN SVG BUT NOT WHAT YOU COMPOSITE ONTO IT.** Passing
+`density: 384` to a 288px background rasterised it to 1536px while the gem stayed
+224px, so every VP pack rendered a speck floating in a violet cloud. Rasterise
+the canvas at the size you want, then size the overlay against THAT.
+
+⚠ Quality 80, ~24KB at 1x, against 19KB for the coin pack art beside it.
+`/brand/**` already carries cache headers, so no `firebase.json` change was
+needed. Check that before adding any new directory under `public/`.
+
+
 
 ### 👁 PUBLIC POST VIEW COUNTS — BUILT ON RTDB, NOT FIRESTORE (2026-08-28, SHIPPED + DEPLOYED)
 
