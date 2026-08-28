@@ -26,7 +26,15 @@ import { boostById } from '../../utils/boosts';
  *
  * ⚠ FOLLOWERS GAINED IS THE HEADLINE, deliberately. Impressions say the thing
  * is running; followers say it worked. It is also the only one of the three
- * that costs nothing extra to produce — the follow documents already exist.
+ * that costs nothing extra to produce (the follow documents already exist) AND
+ * the only one that is COMPLETE: a follow counts wherever the boost was seen,
+ * while the other two only ever count the in-feed suggestion block.
+ *
+ * ⚠ THE OTHER TWO NUMBERS ARE PARTIAL BY DESIGN AND THE COPY MUST SAY SO.
+ * Only SuggestedPeopleBlock calls recordBoostImpressions. Counting on all six
+ * surfaces was tried on 2026-08-28 and REVERTED: it is a spend decision and the
+ * founder's answer was to keep the cheap count and relabel it honestly. If you
+ * ever make counting complete, remove the qualifier below in the same commit.
  *
  * ⚠ NO DISPLAY FLOOR HERE, unlike a public view count. This is a receipt shown
  * only to the person who paid, so there is nobody to be embarrassed in front of,
@@ -60,8 +68,18 @@ function RunningBoost({ row }) {
       </div>
       <div style={{ display: 'flex', gap: 18 }}>
         {row.followersGained != null && stat(row.followersGained, 'new followers')}
-        {stat(row.impressions, 'impressions')}
-        {stat(row.views, 'people')}
+        {stat(row.impressions, 'feed shows')}
+        {stat(row.views, 'feed viewers')}
+      </div>
+      {/* ⚠ THE LABEL CARRIES THE LIMIT, because the number cannot. Only the
+          in-feed suggestion block reports; the home rail, discovery strip,
+          right sidebar, both Explore screens and onboarding show the boost and
+          count nothing. Calling these "impressions" claimed a total reach we do
+          not measure. Founder decision 2026-08-28: keep the partial count and
+          make the copy honest rather than pay to count everywhere. */}
+      <div style={{ color: WALLET_TOKENS.textMuted, fontSize: 10, lineHeight: 1.4 }}>
+        Feed placements only. Your boost also runs in Explore, the sidebar and
+        suggestions, which are not counted here. New followers counts them all.
       </div>
     </div>
   );

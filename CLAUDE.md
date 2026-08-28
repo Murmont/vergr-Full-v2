@@ -872,12 +872,14 @@ of SESSIONS that report at all, from "those that scrolled to the feed block" to
 "every session that opens the app". Bounded by live boosts, but real, and
 growing with users.
 
-**The receipt therefore UNDERCOUNTS impressions ON PURPOSE.** That is a live
-product problem, not a resolved one: selling a boost and showing the buyer a
-fraction of its reach is a trust issue. **The measurement model is an open
-founder decision** (lead on followers-gained, which the plan already calls the
-free headline; or label the partial number honestly; or pay to count everywhere).
-Do NOT "fix" it by counting on more surfaces without being asked.
+**The receipt therefore UNDERCOUNTS impressions ON PURPOSE, and the COPY now says
+so.** Founder decision 2026-08-28: keep the cheap count, relabel it honestly,
+rather than pay to count everywhere. `MyBoosts.jsx` shows **feed shows** and
+**feed viewers** (not "impressions" and "people"), under a qualifier naming the
+surfaces that are not counted. **New followers is the headline precisely because
+it is the one number that is COMPLETE**: a follow counts wherever the boost was
+seen, while the other two only ever count the in-feed suggestion block. If
+counting is ever made complete, delete that qualifier in the same commit.
 
 ⚠ **`followersGained` NOW RUNS FOR `purchaseBoost` ROWS TOO**, because they
 finally carry `target: 'user'` and `startedAt`. It already ran for `applyBoost`
