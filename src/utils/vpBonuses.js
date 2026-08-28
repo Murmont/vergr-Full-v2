@@ -191,9 +191,24 @@ export const formatRemaining = (msLeft) => {
   return `${s}s`;
 };
 
-/** Pack art path. Founder supplies the render; self-hides until it exists. */
+export const ART_V = 2;
+
+/**
+ * Art path, with a version stamp.
+ *
+ * ⚠ THE VERSION IS NOT DECORATION. `/brand/**` carries 7-day browser and 30-day
+ * CDN cache headers, and Firebase's SPA rewrite answers a MISSING asset with
+ * index.html at HTTP 200 rather than a 404. So anyone who opened the shop before
+ * the art existed cached an HTML response at the image URL, and their <img>
+ * quietly fails onError for the life of that cache. Measured on the live site
+ * 2026-08-28: naturalWidth 0 and visibility hidden on every card, while the same
+ * URL with a cache-buster loaded fine.
+ *
+ * The same trap fires when art is REPLACED: drop a new render at the same path
+ * and nobody sees it for up to 30 days. **Bump ART_V whenever the art changes.**
+ */
 export const bonusArt = (pack, x2 = false) =>
-  `/brand/bonuses/${pack.art}${x2 ? '@2x' : ''}.webp`;
+  `/brand/bonuses/${pack.art}${x2 ? '@2x' : ''}.webp?v=${ART_V}`;
 
 /** "1 hour" / "12 hours" / "7 days" for display. */
 export const formatDuration = (hours) => {

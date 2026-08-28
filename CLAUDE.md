@@ -708,6 +708,25 @@ from the upper left. **Do not put a white overlay back on these.**
 224px, so every VP pack rendered a speck floating in a violet cloud. Rasterise
 the canvas at the size you want, then size the overlay against THAT.
 
+⚠⚠ **THE ART URLS CARRY `ART_V` AND IT IS LOAD-BEARING. BUMP IT WHENEVER THE ART
+CHANGES.** `/brand/**` has 7-day browser and 30-day CDN cache headers, and
+Firebase's SPA rewrite answers a MISSING asset with `index.html` at **HTTP 200**,
+not a 404. So every session that opened the shop BEFORE the art existed cached an
+HTML body at the image URL, and `PackArt`'s `onError` hid the image for the life
+of that cache. Measured live 2026-08-28 right after deploying the art: **9 of 9
+bonus images `naturalWidth: 0`, `visibility: hidden`**, while the identical URL
+with a cache-buster loaded at 288. The files were correct on disk and on the CDN
+the whole time.
+
+**The same trap fires on REPLACEMENT**, which is the part that matters later: drop
+a founder render at the same path and nobody sees it for up to 30 days. `ART_V`
+in `src/utils/boosts.js` and `src/utils/vpBonuses.js` is the fix; both were
+verified after the bump at **9/9 and 7/7 loaded, 0 hidden**.
+
+This is [[reference-spa-rewrite-masks-404]] in a new place. A contact sheet of the
+generated files proves nothing about what the browser has cached.
+
+
 ⚠ Quality 80, ~24KB at 1x, against 19KB for the coin pack art beside it.
 `/brand/**` already carries cache headers, so no `firebase.json` change was
 needed. Check that before adding any new directory under `public/`.
