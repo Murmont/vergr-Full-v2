@@ -920,6 +920,38 @@ been wrong: `cronEvery6h` was redeployed at **15:45 UTC**, so the 12:00 run
 executed the OLD code that had no drain in it. Check the function's update time
 before concluding anything from a scheduled run.
 
+✅ **VIEWS ARE NOW DEVICES, PROVEN BY MEASUREMENT (2026-08-28).** Founder caught
+the fault by arithmetic, not by reading code: a boost claimed 5 viewers on a
+platform with 2 accounts. `seenThisSession` was an in-memory Set, so every page
+load started a fresh session and re-counted the same person, while the comment
+directly above it said a refresh must not re-count.
+
+Now deduped in `localStorage` under `vergr.boostSeen`, keyed by target AND the
+boost's `boostExpiresAt`, so a refresh cannot re-count while a NEW boost on the
+same target still counts fresh. Costs nothing and only ever lowers the number.
+
+Verified live on @Vergr against @Verion's live Profile Boost, counters zeroed
+first with the new `adminResetBoostStats`:
+
+| | views | engagement |
+|---|---|---|
+| after reset | 0 | 0 |
+| one session, scrolled | 1 | 2 |
+| **after a full page reload**, scrolled again | **1** | 4 |
+
+Views held while engagement doubled. Under the old code views would read 2.
+
+⚠ **THE LABELS NOW DEFINE THEMSELVES.** views = devices, once per boost run;
+engagement = every showing including repeats; follows = real follows and the only
+COMPLETE number, because a follow counts on every surface while the other two are
+counted in the feed block alone. Founder rejected "feed shows"/"feed viewers" as
+still vague. A number on a paid receipt has to say what it counts.
+
+⚠ **`adminResetBoostStats` EXISTS BECAUSE THESE COUNTERS ARE SERVER-ONLY AND A BUG
+HAD INFLATED THEM WITH NO WAY TO CORRECT IT.** It writes zeroes to
+`boostImpressions`/`boostViews` and nothing else, admin-gated and audited.
+
+
 ✅ **THE RECEIPT IS VERIFIED LIVE ON @Verion (2026-08-28).** Three running boosts
 render (two Post Boosts, one Profile Boost). The Profile Boost card reads
 **0 new followers / 10 feed shows / 5 feed viewers**, with the pack NAME resolved
