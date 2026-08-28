@@ -920,6 +920,36 @@ been wrong: `cronEvery6h` was redeployed at **15:45 UTC**, so the 12:00 run
 executed the OLD code that had no drain in it. Check the function's update time
 before concluding anything from a scheduled run.
 
+⚠ **"ENGAGEMENT" MUST MEAN AN INTERACTION. IT WAS POINTED AT THE RENDER COUNT.**
+Founder, 2026-08-28: *"how can engagement be two if we didn't engage in anyway
+with the post?"* He was right and it was my error: he asked for the three stats
+to read views / engagement / follows, and I mapped "engagement" onto
+`boostImpressions`, which counts how many times the card was DRAWN. Showing
+someone a card is an impression. Engagement is them acting on it. There was no
+interaction signal in the product at all, so the label named a number that could
+never mean what it said.
+
+`boostEngagements` now counts a real interaction: opening the profile from a
+boosted card, or following from it. **It costs essentially nothing by
+construction** — it rides the SAME pending row and the SAME 20s flush as the
+impression that must already have happened, because you cannot click a card that
+was never shown. So it adds a FIELD to a write that was already going to happen,
+not a new write, and clicks are orders of magnitude rarer than renders anyway.
+
+⚠ **ONLY A BOOSTED CARD REPORTS.** An organic suggestion has no buyer owed a
+number, so counting it would be a write with nothing attached to it.
+
+⚠ `boostEngagements` is **server-only in firestore.rules** beside the other two,
+and clamped hardest of the three (20, against 50): nobody legitimately clicks one
+card twenty times in a twenty-second window.
+
+⚠ **THE FOLLOWER COUNT IS GONE FROM THE RIGHT-RAIL SUGGESTION CARD**, number and
+label. Founder: it is not appropriate there, it belongs on the public profile.
+`{c.handle} · {compact(c.followers)}` in `HomeFeedRail.jsx` was also an
+unlabelled mystery number, and on a small platform it mainly advertised that
+nobody has followers yet. **Do not put a metric back on that card.**
+
+
 ✅ **VIEWS ARE NOW DEVICES, PROVEN BY MEASUREMENT (2026-08-28).** Founder caught
 the fault by arithmetic, not by reading code: a boost claimed 5 viewers on a
 platform with 2 accounts. `seenThisSession` was an in-memory Set, so every page

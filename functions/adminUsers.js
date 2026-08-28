@@ -12,7 +12,7 @@
 //   adminUnbanUser       — clear ban flags
 //   adminMuteUser        — set mutedUntil
 //   adminUnmuteUser      — clear mutedUntil
-//   adminResetBoostStats — zero boostImpressions/boostViews on a boost target
+//   adminResetBoostStats — zero the three boost delivery counters on a target
 //   adminSetUserRole     — set users/{uid}.role
 //   adminForceLogoutUser — revoke refresh tokens (forces re-auth)
 //   adminSendPasswordReset — emails the user a reset link
@@ -515,7 +515,7 @@ exports.adminUnmuteUser = functions.https.onCall(
 // Both are fixed, but the accumulated numbers were wrong and server-only, so
 // nothing short of an admin write could clean them.
 //
-// Scoped deliberately: it only ever writes zeroes, and only to the two delivery
+// Scoped deliberately: it only ever writes zeroes, and only to the three delivery
 // counters. It cannot grant, move or destroy anything else.
 exports.adminResetBoostStats = functions.https.onCall(
   { region: REGION, cors: true },
@@ -531,7 +531,7 @@ exports.adminResetBoostStats = functions.https.onCall(
     }
 
     await db.collection(COL[target]).doc(String(targetId)).set({
-      boostImpressions: 0, boostViews: 0,
+      boostImpressions: 0, boostViews: 0, boostEngagements: 0,
     }, { merge: true });
 
     const meta = extractRequestMeta(request);
