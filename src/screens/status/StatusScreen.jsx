@@ -5,7 +5,7 @@ import { collection, query, where, orderBy, limit, getDocs, addDoc, serverTimest
 import { db } from '../../firebase/config';
 import { useAuth } from '../../context/AuthContext';
 import { useUser } from '../../context/UserContext';
-import { getUser, loadFollowingStatuses, createConversation } from '../../firebase/firestore';
+import { getUser, loadFollowingStatuses, createConversation, markStatusPosted } from '../../firebase/firestore';
 import { sendRelayMessageTo } from '../../utils/relaySend';
 import { isGroupSeen, markGroupSeen } from '../../utils/statusSeen';
 import { openArCamera, isArCameraSupported } from '../../utils/nativeArCamera';
@@ -20,6 +20,7 @@ import { useUI } from '../../context/UIContext';
 import useResponsive from '../../hooks/useResponsive';
 import { timeAgo } from '../../utils/helpers';
 import { resolveTier } from '../../utils/tierSystem';
+import UserName from '../../components/UserName';
 
 const STATUS_COLORS = [
   'bg-gradient-to-br from-brand-violet-light to-brand-violet',
@@ -209,7 +210,7 @@ export default function StatusScreen() {
                   <div className={`absolute inset-0 z-20 rounded-full ring-2 ring-offset-2 ring-offset-bg-dark pointer-events-none ${seen ? 'ring-white/15' : 'ring-brand-violet-light'}`} />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-text-primary truncate">{group.author?.displayName || 'User'}</p>
+                  <p className="text-sm font-semibold text-text-primary truncate"><UserName user={group.author} masked fallback={'User'} /></p>
                   <p className="text-text-muted text-[10px]">{group.items.length} update{group.items.length > 1 ? 's' : ''} · {timeAgo(group.items[0]?.createdAt)}</p>
                 </div>
               </button>
@@ -344,7 +345,7 @@ function StatusViewer({ userGroup, startIndex = 0, onClose, currentUser, navigat
       <div className="absolute top-6 left-0 right-0 flex items-center gap-3 px-4 z-10">
         <UserAvatar src={userGroup.author?.avatar} size={32} />
         <div className="flex-1 min-w-0">
-          <p className="text-white text-sm font-bold truncate drop-shadow">{userGroup.author?.displayName}</p>
+          <p className="text-white text-sm font-bold truncate drop-shadow"><UserName user={userGroup.author} masked /></p>
           <p className="text-white/70 text-[10px] drop-shadow">{current?.createdAt ? timeAgo(current.createdAt) : ''}</p>
         </div>
         <button onClick={onClose} className="w-8 h-8 rounded-full bg-black/30 flex items-center justify-center">
@@ -494,6 +495,9 @@ function CreateStatusModal({ onClose, currentUser, profile, onCreated }) {
         expiresAt: Timestamp.fromDate(new Date(Date.now() + 24 * 60 * 60 * 1000)),
       };
       const docRef = await addDoc(collection(db, 'statuses'), statusData);
+      // Denormalise onto the user doc so the avatar ring can show an unseen
+      // status without a query. See markStatusPosted().
+      await markStatusPosted(currentUser.uid, docRef.id, Date.now() + 24 * 60 * 60 * 1000);
       onCreated({ id: docRef.id, ...statusData, createdAt: new Date() });
     } catch (err) {
       console.error(err);

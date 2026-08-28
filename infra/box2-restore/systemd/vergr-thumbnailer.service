@@ -1,0 +1,13 @@
+[Unit]
+Description=VERGR live discovery thumbnailer (60s frame grab per active stream)
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/vergr-thumbnailer.sh
+Restart=always
+RestartSec=5
+Nice=10
+
+[Install]
+WantedBy=multi-user.target

@@ -134,7 +134,7 @@ export default function JoinGroupScreen() {
       {group && (
         <div className="max-w-sm w-full">
           <div className="mx-auto mb-5">
-            <UserAvatar src={group.groupIcon} size={96} isGroup />
+            <UserAvatar src={group.groupIcon || group.groupAvatar} size={96} isGroup />
           </div>
           <p className="text-[10px] font-dmmono uppercase tracking-[0.2em] text-brand-violet-light mb-2">
             {group.visibility === 'public' ? 'Public group' : 'Private group'}

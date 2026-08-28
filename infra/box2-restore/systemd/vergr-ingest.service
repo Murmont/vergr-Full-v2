@@ -1,0 +1,15 @@
+[Unit]
+Description=VERGR ingest — browser fMP4 chunked uploader → HLS segments
+After=network-online.target nginx.service
+Wants=network-online.target
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/vergr-ingest
+ExecStart=/opt/vergr-ingest/vergr-ingest -listen :8089 -creds /etc/vergr-sfu/firebase-admin.json -streams-dir /var/www/streams
+Restart=always
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+[Install]
+WantedBy=multi-user.target

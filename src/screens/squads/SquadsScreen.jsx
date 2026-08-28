@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { collection, query, where, onSnapshot, orderBy, limit as fbLimit } from 'firebase/firestore';
-import { db } from '../../firebase/config';
+import { db, auth } from '../../firebase/config';
 import SquadShell from '../../components/squad/SquadShell';
 import { compact, initials } from '../../components/squad/squadHelpers';
 
@@ -62,15 +62,20 @@ export default function SquadsScreen() {
     }, () => setLoading(false));
   }, []);
 
+  const meUid = auth.currentUser?.uid;
   const filtered = useMemo(() => {
-    let list = squads;
+    // "Discover public squads recruiting now" was listing squads the viewer is
+    // ALREADY IN, shown in "Your squads" in the sidebar at the same moment
+    // (audit A12). Same pattern as A10 on Explore: a discovery surface has to
+    // subtract the viewer's existing relationships.
+    let list = meUid ? squads.filter((s) => !(s.memberIds || []).includes(meUid)) : squads;
     if (game !== 'All Games') list = list.filter((s) => (s.game || '').toLowerCase().includes(game.toLowerCase()));
     if (q.trim()) {
       const needle = q.trim().toLowerCase();
       list = list.filter((s) => (s.name || '').toLowerCase().includes(needle) || (s.description || '').toLowerCase().includes(needle));
     }
     return list;
-  }, [squads, game, q]);
+  }, [squads, game, q, meUid]);
 
   return (
     <SquadShell mode="global" activeId="find">

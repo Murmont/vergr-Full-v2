@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { auth } from '../../firebase/config';
 import { useNotifications } from '../../context/NotificationContext';
 import { useUser } from '../../context/UserContext';
-import { resolveChatUsers, chatPartner } from '../../utils/chatIdentity';
+import { resolveChatUsers, chatPartner, peekChatUser } from '../../utils/chatIdentity';
+import TypingIndicator from '../../components/TypingIndicator';
 import UserAvatar from '../../components/UserAvatar';
 import Icon from '../../components/Icon';
 import { timeAgo, getTier } from '../../utils/helpers';
@@ -14,6 +15,11 @@ import {
   isChatPinnedFor, setChatPinned, isChatArchivedFor, setChatArchived, sortInboxChats,
 } from '../../utils/chatOps';
 import { ensureSavedMessages, subscribeToUserVoiceChannels } from '../../firebase/firestore';
+import {
+  subscribeOfficialChannels, subscribeChannelState, buildOfficialRows,
+  setChannelPinned, setChannelArchived, resolveChannelTarget, syncChannelPushSubscriptions,
+} from '../../firebase/officialChannels';
+import { getPushToken } from '../../utils/pushNotifications';
 import { activeVoiceMembers } from '../../utils/voiceSession';
 import useGlobalChatSearch from '../../hooks/useGlobalChatSearch';
 import { peekSharedText, clearSharedText, peekSharedMedia, clearSharedMedia } from '../../utils/shareIn';
@@ -33,7 +39,14 @@ export default function MessagesInboxScreen() {
   const [menuOpen, setMenuOpen] = useState(false);
   // Conversations come from the single shared NotificationContext listener.
   // The screen used to mount its own onSnapshot, doubling Firestore reads.
-  const { conversations } = useNotifications();
+  const {
+    conversations, squadUnreadCount = 0, missedCallCount = 0, requestCount = 0,
+  } = useNotifications();
+  // Count for everything reachable from the hamburger menu but NOT visible on
+  // this screen: calls, squad activity and message requests. All Chats is
+  // deliberately excluded because that list is what the user is already looking
+  // at, so badging the menu for it would be telling them to go where they are.
+  const menuBadgeCount = squadUnreadCount + missedCallCount + requestCount;
   const { profile } = useUser();
   const loading = !conversations;
   const [search, setSearch] = useState('');
@@ -44,6 +57,23 @@ export default function MessagesInboxScreen() {
   // frozen at creation, so it shows stale names/avatars after a rename. Resolve
   // the live docs (module-level TTL cache) and prefer them everywhere.
   const [liveUsers, setLiveUsers] = useState({});
+  // Official channels: a handful of shared docs plus this user's single state
+  // doc. Two listeners total, regardless of how many announcements exist.
+  const [officialChannels, setOfficialChannels] = useState([]);
+  const [channelState, setChannelState] = useState({});
+
+  useEffect(() => {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return undefined;
+    // uid is needed to resolve members-only channels, which cannot come back
+    // from the broad query (see subscribeOfficialChannels).
+    return subscribeOfficialChannels(uid, setOfficialChannels);
+  }, [profile?.uid]);
+  useEffect(() => {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return undefined;
+    return subscribeChannelState(uid, setChannelState);
+  }, [profile?.uid]);
 
   useEffect(() => {
     const me = auth.currentUser?.uid;
@@ -96,13 +126,39 @@ export default function MessagesInboxScreen() {
     return next;
   });
 
+  // Official Vergr channels are SYNTHETIC rows, not conversation docs: one
+  // shared channel doc serves every user, and `getConversations` filters on
+  // `participants array-contains uid`, so a shared doc could never appear here.
+  // They are built into the exact shape chatOps reads, so from this point down
+  // every filter, sort, folder and archive path treats them as ordinary chats.
+  const officialRows = buildOfficialRows(officialChannels, channelState, me, profile);
+  // See MessagesListPanel: the synthetic support row steps aside once a real
+  // support ticket exists, so "Vergr Support" appears exactly once and the
+  // surviving row is the one carrying unread state (audit A36).
+  const hasSupportThread = (conversations || []).some(c => c.supportThread === true);
+  const visibleOfficial = hasSupportThread
+    ? officialRows.filter(r => r.kind !== 'support')
+    : officialRows;
+  const allChats = [...visibleOfficial, ...(conversations || [])];
+
+  // Subscribe this device to the topic behind each channel it is in, and drop
+  // the topic when the channel is muted. Without this a channel post writes to
+  // the thread and pushes to nobody, because a topic send only reaches
+  // subscribed devices. No-ops entirely once the device is already in step.
+  useEffect(() => {
+    if (!me || !officialChannels.length) return;
+    const token = getPushToken();
+    if (!token) return;
+    syncChannelPushSubscriptions(officialChannels, channelState, token).catch(() => {});
+  }, [me, officialChannels, channelState]);
+
   const searched = search
-    ? (conversations || []).filter(c => {
+    ? allChats.filter(c => {
         const { name, username } = chatPartner(c, auth.currentUser.uid, profile, liveUsers);
         const q = search.toLowerCase();
         return name?.toLowerCase().includes(q) || username.toLowerCase().includes(q);
       })
-    : (conversations || []);
+    : allChats;
   // Saved Messages gets its own static row — keep the convo doc out of the list.
   const visible = searched.filter(c => !c.isSaved);
   // Archived chats live behind a collapsed section; everything else is
@@ -111,8 +167,10 @@ export default function MessagesInboxScreen() {
   const filtered = sortInboxChats(visible.filter(c => !isChatArchivedFor(c, me)), me);
   // Split into DMs and Groups so the mobile inbox matches the desktop rail
   // (separate sections, each with its own "+" action).
-  const dms = filtered.filter(c => !c.isGroup);
-  const groups = filtered.filter(c => c.isGroup);
+  // A support ticket is a group technically, not to the user. It lists with the
+  // official channel row it replaces, never under GROUPS.
+  const dms = filtered.filter(c => !c.isGroup || c.supportThread === true);
+  const groups = filtered.filter(c => c.isGroup && c.supportThread !== true);
   // Folder tabs (Telegram-style, incl. user custom folders) drive which
   // sections show + unread scoping + hand-picked chat restriction.
   const customFolders = profile?.settings?.chatFolders || [];
@@ -211,8 +269,17 @@ export default function MessagesInboxScreen() {
       <header className="sticky top-0 z-40 glass-header" style={IS_NATIVE_BUILD ? { paddingTop: 'calc(env(safe-area-inset-top, 0px) + 8px)' } : undefined}>
         <div className="flex items-center justify-between px-4 h-[52px]">
           <div className="flex items-center gap-2">
-            <button onClick={() => setMenuOpen(true)} className="w-8 h-8 rounded-full flex items-center justify-center text-text-secondary hover:text-text-primary transition-colors" aria-label="Messages menu">
+            {/* The hamburger carries a count for everything BEHIND it (calls,
+                squads, requests) but not for All Chats, which is the list
+                already on screen. Without this there was no sign the menu had
+                anything in it. The drawer then shows which row it belongs to. */}
+            <button onClick={() => setMenuOpen(true)} className="relative w-8 h-8 rounded-full flex items-center justify-center text-text-secondary hover:text-text-primary transition-colors" aria-label="Messages menu">
               <Icon name="menu" size={22} />
+              {menuBadgeCount > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-brand-ember text-white flex items-center justify-center text-[9px] font-black tabular-nums leading-none">
+                  {menuBadgeCount > 99 ? '99+' : menuBadgeCount}
+                </span>
+              )}
             </button>
             <h1 className="font-syne text-[17px] font-bold text-text-primary">Messages</h1>
           </div>
@@ -460,25 +527,46 @@ function InboxRow({ conv, me, navigate, liveUsers, viewerProfile, archivedView =
   // One shared resolver for every chat surface (see chatIdentity.chatPartner).
   const displayData = chatPartner(conv, me, viewerProfile, liveUsers);
   const otherId = displayData.otherId;
-  const tier = !conv.isGroup ? getTier(displayData.coinsSpent || 0) : null;
+  const official = !!conv.isOfficial;
+  const tier = (!conv.isGroup && !official) ? getTier(displayData.coinsSpent || 0) : null;
   const unread = conv.unreadCount?.[me] || 0;
   const mentioned = !!conv.mentions?.[me]; // group @mention awaiting open
-  const { isOnline: otherOnline } = useOnlineStatus(!conv.isGroup ? otherId : null);
-  const isOnline = !conv.isGroup && otherOnline;
+  // A channel has no user doc and is never "online". Passing its id here would
+  // subscribe to presence for a document that does not exist.
+  const { isOnline: otherOnline } = useOnlineStatus((!conv.isGroup && !official) ? otherId : null);
+  const isOnline = !conv.isGroup && !official && otherOnline;
   const pinned = isChatPinnedFor(conv, me);
   // Live "typing…" — typingUsers rides the conversation doc, so this is free.
   // freshTypers drops stale ghosts (backgrounded-WebView never cleared them).
   const typers = freshTypers(conv.typingUsers, me);
 
+  // A channel row does not always point at the channel thread. Support opens
+  // the user's OWN conversation (created on first tap) and community opens the
+  // group room, so the destination is resolved rather than assumed.
+  const openOfficial = async () => {
+    try {
+      const path = await resolveChannelTarget(conv);
+      if (path) navigate(path);
+    } catch {
+      navigate(`/messages/c/${conv.channelId}`);
+    }
+  };
+
+  // Official rows keep their per-user state in channel_state/{uid} rather than on
+  // a conversation doc, so pin and archive route to the channel helpers.
   return (
     <SwipeableRow
       rightIcon={pinned ? 'keep_off' : 'keep'} rightLabel={pinned ? 'Unpin' : 'Pin'}
       leftIcon={archivedView ? 'unarchive' : 'archive'} leftLabel={archivedView ? 'Unarchive' : 'Archive'}
-      onSwipeRight={() => setChatPinned(conv.id, !pinned).catch(() => {})}
-      onSwipeLeft={() => setChatArchived(conv.id, !archivedView).catch(() => {})}
+      onSwipeRight={() => (official
+        ? setChannelPinned(me, conv.channelId, !pinned)
+        : setChatPinned(conv.id, !pinned)).catch(() => {})}
+      onSwipeLeft={() => (official
+        ? setChannelArchived(me, conv.channelId, !archivedView)
+        : setChatArchived(conv.id, !archivedView)).catch(() => {})}
     >
       <button
-        onClick={() => navigate(`/messages/${conv.id}`)}
+        onClick={() => (official ? openOfficial() : navigate(`/messages/${conv.id}`))}
         className={`w-full flex items-center gap-3.5 px-4 py-3.5 transition-all text-left group border-b border-white/[0.04] ${
           unread > 0 ? 'bg-brand-violet/[0.02]' : 'hover:bg-surface-1/40'
         }`}
@@ -490,7 +578,10 @@ function InboxRow({ conv, me, navigate, liveUsers, viewerProfile, archivedView =
           className="relative cursor-pointer shrink-0 flex"
           onClick={(e) => {
             e.stopPropagation();
-            if (!conv.isGroup && otherId) navigate(`/user/${otherId}`);
+            // A channel has no profile page, so its avatar opens the thread
+            // rather than dead-ending on /user/<channelId>.
+            if (official) openOfficial();
+            else if (!conv.isGroup && otherId) navigate(`/user/${otherId}`);
           }}
         >
           <UserAvatar
@@ -499,6 +590,15 @@ function InboxRow({ conv, me, navigate, liveUsers, viewerProfile, archivedView =
             tier={tier}
             isGroup={conv.isGroup}
           />
+          {official && (
+            <div
+              className="absolute bottom-0 right-0 z-20 w-4 h-4 rounded-full flex items-center justify-center border-2 border-bg-dark"
+              style={{ background: conv.accentColor || '#7B1FFF' }}
+              title="Official Vergr channel"
+            >
+              <Icon name="verified" size={9} className="text-white" />
+            </div>
+          )}
           {isOnline && (
             <div className="absolute bottom-0 right-0 z-20 w-3.5 h-3.5 bg-green-500 border-[2.5px] border-bg-dark rounded-full"  />
           )}
@@ -525,9 +625,13 @@ function InboxRow({ conv, me, navigate, liveUsers, viewerProfile, archivedView =
                 <Icon name="done_all" size={14} className="text-brand-violet-light/50 shrink-0" />
               )}
               {typers.length > 0 ? (
-                <p className="text-sm truncate leading-none text-brand-violet-light animate-pulse">
-                  {conv.isGroup ? `${typers[0].name || 'Someone'} is typing…` : 'typing…'}
-                </p>
+                <TypingIndicator
+                  variant="inline"
+                  className="text-sm leading-none text-brand-violet-light"
+                  users={typers}
+                  typist={peekChatUser(typers[0]?.uid)}
+                  label={conv.isGroup ? `${typers[0].name || 'Someone'} is typing…` : 'typing…'}
+                />
               ) : (
                 <p className={`text-sm truncate leading-none ${
                   unread > 0 ? 'text-text-secondary font-medium' : 'text-text-muted'

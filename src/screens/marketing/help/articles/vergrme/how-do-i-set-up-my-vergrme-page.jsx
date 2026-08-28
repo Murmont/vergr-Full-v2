@@ -37,7 +37,7 @@ export default {
       p: "The editor shows a live phone-style preview, so what you see is what visitors get. Nothing publishes until you make the page public, so you can take your time getting it right."
     },
     {
-      note: "Your page lives at your handle. Pro members can attach a custom domain for an even cleaner link."
+      note: "Your page lives at your handle. Pro members can restyle it completely with custom themes, colours and CSS."
     },
     {
       cta: [

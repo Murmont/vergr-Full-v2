@@ -23,6 +23,7 @@ import { getUser } from '../../firebase/firestore';
 import UserAvatar from '../../components/UserAvatar';
 import Icon from '../../components/Icon';
 import { useKeepAwake } from '../../utils/keepAwake';
+import UserName from '../../components/UserName';
 
 // A <video> element can't take a MediaStream through a src attribute — it has to
 // be assigned to .srcObject in an effect.

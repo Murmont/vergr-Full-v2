@@ -273,7 +273,26 @@ exports.createStreamSession = functions.https.onCall({ region: REGION }, async (
   // Boost charge — required for free public streams; optional for paid.
   // Admins never get charged a boost (forced off).
   // boost arg: null = use default (free=true, paid=false), true/false = explicit
-  const willBoost = isAdmin
+  // ⚠⚠ THE ADMIN SWITCH WAIVES THE BOOST FEE TOO, AND THAT IS THE WHOLE POINT.
+  //
+  // `streamFollowerGateEnabled` is labelled in /admin/config as:
+  //     "ON = free users need 100 followers to stream public. OFF = anyone can
+  //      go live."
+  //
+  // It did not mean that. Turning it off cleared the FOLLOWER check and left the
+  // 50-coin Stream Boost charge standing, so a free account with 0 coins still
+  // could not go live and the switch had not delivered what it says on the tin.
+  // Found 2026-08-27 when the founder turned it off and was then told he needed
+  // 50 coins.
+  //
+  // A control must mean what it claims. "Anyone can go live" waives BOTH gates
+  // for free public streams, or the label is a lie.
+  //
+  // ⚠ THIS DOES NOT CHANGE ANY PRICE. The switch defaults to ON (undefined !==
+  // false), so on a normal deployment the 100-follower requirement and the
+  // 50-coin boost both stand exactly as before. It only makes the OFF position
+  // do what it advertises.
+  const willBoost = isAdmin || !followerGateOn
     ? false
     : (boost === null
       ? (plan === 'free' && kindRules.visibility === 'public')
@@ -284,7 +303,7 @@ exports.createStreamSession = functions.https.onCall({ region: REGION }, async (
     throw new functions.https.HttpsError('invalid-argument', 'Stream Boost only applies to public streams.');
   }
 
-  if (planRules.requiresBoost && kindRules.visibility === 'public' && !willBoost) {
+  if (followerGateOn && planRules.requiresBoost && kindRules.visibility === 'public' && !willBoost) {
     throw new functions.https.HttpsError('failed-precondition',
       `Free public streams require a ${BOOST_FEE_COINS}-coin Stream Boost. It's refunded by your first ${BOOST_FEE_COINS} coins of tips.`);
   }
@@ -347,20 +366,36 @@ exports.createStreamSession = functions.https.onCall({ region: REGION }, async (
   // Atomic transaction: charge boost (if applicable) + create stream doc
   await db.runTransaction(async (tx) => {
     let boostCharged = false;
+    let boostPaidWithToken = false;
     if (willBoost) {
       const walletRef = db.collection('wallets').doc(uid);
       const wallet = await tx.get(walletRef);
       if (!wallet.exists) throw new functions.https.HttpsError('failed-precondition', 'Wallet not found.');
-      const balance = wallet.data().balance || 0;
-      if (balance < BOOST_FEE_COINS) {
-        throw new functions.https.HttpsError('failed-precondition',
-          `Need ${BOOST_FEE_COINS} coins for Stream Boost. You have ${balance}.`);
+      const w = wallet.data();
+      const balance = w.balance || 0;
+      // A Stream Boost token spends BEFORE coins do. Tokens are granted by the
+      // VP ladder (syncVpLevel) and are the only rank reward with real economic
+      // value, so they are deliberately scarce: 7 across 100 levels.
+      //
+      // Spending the token instead of the coins keeps the boost's own economics
+      // intact: the stream is still boosted, still refundable by tips, and the
+      // sink ledger below still records a boost. What changes is who paid.
+      const tokens = Number(w.boostTokens) || 0;
+      if (tokens > 0) {
+        tx.update(walletRef, { boostTokens: FieldValue.increment(-1) });
+        boostCharged = true;
+        boostPaidWithToken = true;
+      } else {
+        if (balance < BOOST_FEE_COINS) {
+          throw new functions.https.HttpsError('failed-precondition',
+            `Need ${BOOST_FEE_COINS} coins for Stream Boost. You have ${balance}.`);
+        }
+        tx.update(walletRef, {
+          balance: FieldValue.increment(-BOOST_FEE_COINS),
+          totalSpent: FieldValue.increment(BOOST_FEE_COINS),
+        });
+        boostCharged = true;
       }
-      tx.update(walletRef, {
-        balance: FieldValue.increment(-BOOST_FEE_COINS),
-        totalSpent: FieldValue.increment(BOOST_FEE_COINS),
-      });
-      boostCharged = true;
     }
 
     tx.set(db.collection('streams').doc(streamId), {
@@ -442,7 +477,10 @@ exports.createStreamSession = functions.https.onCall({ region: REGION }, async (
       lowLatencyHlsUrl: (isPaidStream || isOneToOne) ? null : lowLatencyHlsUrl,
       status: 'created',
       boosted: boostCharged,
-      boostChargedCoins: boostCharged ? BOOST_FEE_COINS : 0,
+      // Coins only if coins were actually taken. A token-paid boost charged
+      // zero coins, so refunding coins for it would MINT them out of nothing.
+      boostChargedCoins: (boostCharged && !boostPaidWithToken) ? BOOST_FEE_COINS : 0,
+      boostPaidWithToken,
       boostRefunded: false,
       tipsReceivedDuringStream: 0,
       maxViewerRenditionForViewers: planRules.maxViewerRendition,
@@ -548,21 +586,30 @@ exports.endStreamSession = functions.https.onCall({ region: REGION }, async (req
   const { streamId } = req.data || {};
   if (!streamId) throw new functions.https.HttpsError('invalid-argument', 'streamId required.');
 
+  let streamStartMs = 0;
   const endResult = await db.runTransaction(async (tx) => {
     const streamRef = db.collection('streams').doc(streamId);
     const streamSnap = await tx.get(streamRef);
     if (!streamSnap.exists) throw new functions.https.HttpsError('not-found', 'Stream not found.');
     const stream = streamSnap.data();
+    streamStartMs = stream.startedAt?.toMillis?.() ?? (typeof stream.startedAt === 'number' ? stream.startedAt : 0);
     if (stream.hostUid !== uid) throw new functions.https.HttpsError('permission-denied', 'Only the host can end this stream.');
     if (stream.status === 'ended') return { ok: true, alreadyEnded: true, refunded: stream.boostRefunded };
 
     let refunded = false;
     if (stream.boosted && !stream.boostRefunded && (stream.tipsReceivedDuringStream || 0) >= BOOST_FEE_COINS) {
       const walletRef = db.collection('wallets').doc(uid);
-      tx.update(walletRef, {
-        balance: FieldValue.increment(BOOST_FEE_COINS),
-        totalSpent: FieldValue.increment(-BOOST_FEE_COINS),
-      });
+      // Refund WHAT WAS SPENT. A boost paid with a VP ladder token gets the
+      // token back; refunding 50 coins for it would create coins nobody bought,
+      // which is a hole straight through the coin supply.
+      if (stream.boostPaidWithToken) {
+        tx.update(walletRef, { boostTokens: FieldValue.increment(1) });
+      } else {
+        tx.update(walletRef, {
+          balance: FieldValue.increment(BOOST_FEE_COINS),
+          totalSpent: FieldValue.increment(-BOOST_FEE_COINS),
+        });
+      }
       refunded = true;
     }
 
@@ -626,6 +673,39 @@ exports.endStreamSession = functions.https.onCall({ region: REGION }, async (req
       });
     } catch (e) {
       console.error('bookPlatformSink (boost refund) failed', streamId, e?.message || e);
+    }
+  }
+
+  // Engagement VP: reward whole hours streamed (capped per UTC day). Only on the
+  // real end (not an idempotent repeat) and only when we know when it started.
+  if (!endResult?.alreadyEnded && streamStartMs > 0) {
+    const elapsedMs = Date.now() - streamStartMs;
+    const hours = Math.floor(elapsedMs / 3_600_000);
+    if (hours > 0) {
+      try {
+        const { creditEngagementVp } = require('./engagementVp');
+        await creditEngagementVp(db, uid, 'stream_hour', hours);
+      } catch (e) { console.error('stream_hour VP failed', streamId, e?.message || e); }
+    }
+
+    // ── Lifetime minutes, for the "On air" milestone badges ──────────
+    //
+    // ⚠ `users/{uid}.streamMinutes` was READ by the badge table and written by
+    // NOTHING, so the whole On air family was permanently unearnable. (The
+    // `streamMinutesPerDay` values elsewhere in this file are per-tier LIMITS,
+    // a different thing with a confusingly similar name.)
+    //
+    // Minutes, not hours, so a 40-minute stream still counts toward First
+    // Light instead of rounding to nothing — the VP award above deliberately
+    // pays whole hours only, but a milestone that ignores every short stream
+    // would misrepresent what somebody actually did.
+    const minutes = Math.floor(elapsedMs / 60_000);
+    if (minutes > 0) {
+      try {
+        await db.collection('users').doc(uid).set({
+          streamMinutes: FieldValue.increment(minutes),
+        }, { merge: true });
+      } catch (e) { console.error('streamMinutes failed', streamId, e?.message || e); }
     }
   }
 

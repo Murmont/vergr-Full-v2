@@ -109,7 +109,7 @@ export function VanguardWalletScreen() {
   return (
     <VanguardLayout page="wallet">
       <VanguardPageHeader title="VP & Wallet" subtitle="Your Vanguard Points, coins and wallet actions." />
-      <StubBody icon="wallet" title="VP & Wallet — coming next" blurb="Big VP balance + rank progress bar to L100 / next mod-rank. Convert (0% fee perk), Request Payout (5% commission), Buy Coins. Per-action VP table." designFile="Vanguard VP & Wallet.png" />
+      <StubBody icon="wallet" title="VP & Wallet — coming next" blurb="Big VP balance + rank progress bar to L100 / next mod-rank, Buy Coins, and the per-action VP table. (Convert and Request Payout are gone from the product: there is no conversion and no user-initiated withdrawal.)" designFile="Vanguard VP & Wallet.png" />
     </VanguardLayout>
   );
 }

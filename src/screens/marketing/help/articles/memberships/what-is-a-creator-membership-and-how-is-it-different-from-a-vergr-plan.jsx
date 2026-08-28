@@ -8,7 +8,7 @@ export default {
       h2: "VERGR plans: upgrading yourself"
     },
     {
-      p: "Free, Lite (€4.99), and Pro (€9.99) are the platform's own plans. They change what your account can do: streaming quality (480p on Free, 720p60 on Lite, 1080p60 plus co-streaming on Pro), upload size limits, VP earning multipliers, and no ads on paid plans. A plan applies everywhere on VERGR."
+      p: "Free, Lite ($4.99), and Pro ($9.99) are the platform's own plans. They change what your account can do: streaming quality (480p on Free, 720p on Lite, 1080p on Pro), how long you can stream each day, upload size limits, VP earning multipliers, and no ads on paid plans. A plan applies everywhere on VERGR."
     },
     {
       h2: "Creator memberships: supporting someone else"

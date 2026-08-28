@@ -32,8 +32,12 @@
 //   • This is platform-drafted compliance documentation, not a substitute for
 //     review by qualified counsel before public launch.
 
-export const LEGAL_VERSION = 5;
-export const LEGAL_UPDATED = 'July 29, 2026';
+// ⚠ v6 (2026-08-20) changes the CONTRACTING PARTY: the operator of VERGR is now
+// Vergr LLC (Kentucky), not Murmont LLC (Wyoming). Who you are contracting with
+// is the most material term there is, so the version was bumped and every
+// signed-in user is re-prompted by TosVersionGate. Do not roll this back to 5.
+export const LEGAL_VERSION = 6;
+export const LEGAL_UPDATED = 'August 20, 2026';
 export const LEGAL_EFFECTIVE = 'May 13, 2026';
 
 // ─────────────────────────────────────────────────────────────────────
@@ -43,47 +47,76 @@ export const LEGAL_EFFECTIVE = 'May 13, 2026';
 
 export const OPERATOR = {
   // The operating entity behind VERGR. VERGR is a product/brand; the legal
-  // entity that owns and operates it is Murmont LLC (Wyoming, USA).
+  // entity that owns and operates it is Vergr LLC (Kentucky, USA), registered
+  // 20 August 2026. It REPLACES Murmont LLC (Wyoming), which was the operator
+  // through LEGAL_VERSION 5.
+  //
   // `jurisdiction` is the GOVERNING LAW of the Terms and is deliberately
   // separate from `formationState` (where the company is incorporated) —
   // changing governing law is a material terms change and requires a
   // LEGAL_VERSION bump + forced re-acceptance. Do not conflate the two.
-  legalName:       'Murmont LLC',
+  //
+  // ⚠ Every value below was read out of the filed Kentucky documents
+  // (Articles of Organization + Initial Resolutions, both dated 08/20/2026).
+  // Do not "correct" one from memory or from an older processor form.
+  legalName:       'Vergr LLC',
 
   // ⚠ DO NOT reintroduce "trading as" / "d/b/a" wording anywhere.
   //
-  // Murmont LLC has NO registered trade name (no DBA / fictitious business name
-  // filing in Wyoming), and the founder has decided not to file one. Claiming to
-  // "trade as VERGR" asserts a registration that does not exist, and it was one
-  // of the things Stripe asked us to substantiate during underwriting — an
+  // Vergr LLC has NO registered trade name (no DBA / fictitious business name
+  // filing in Kentucky), and the founder has decided not to file one. Claiming
+  // to "trade as VERGR" asserts a registration that does not exist, and it was
+  // one of the things Stripe asked us to substantiate during underwriting — an
   // unprovable claim in our own Terms is worse than no claim at all.
   //
   // A company may market a PRODUCT under a brand name without any trade-name
   // filing. So the accurate framing is ownership, not trading identity: Vergr is
-  // a product operated by Murmont LLC. That needs no registration and is exactly
-  // what the OPERATOR comment above already said.
+  // a product operated by Vergr LLC. That needs no registration and is exactly
+  // what the OPERATOR comment above already said. (The entity name and the
+  // brand now match, which makes the point moot in practice — but a reviewer
+  // still asks, so the framing stays ownership, not trading identity.)
   brandName:       'VERGR',
-  /** Reads correctly in a sentence: "Murmont LLC, the operator of VERGR". */
+  /** Reads correctly in a sentence: "Vergr LLC, the operator of VERGR". */
   operatorPhrase:  'the operator of VERGR',
-  // Wyoming Secretary of State entity number, from the filed Articles of
-  // Organization. Published because acquirer and payment-provider compliance
-  // checklists require a company registration number to be displayed on the
-  // site, and because it is the number that lets anyone verify the entity
-  // independently at wyobiz.wyo.gov.
-  registrationNumber: '2023-001339075',
-  formationState:  'State of Wyoming, United States of America',
-  jurisdiction:    'Republic of South Africa',
-  // ⚠ Ste 11930, NOT Ste 1200. Verified 2026-08-12 against the filed Articles of
-  // Organization (WY SoS, filed 2 Oct 2023, entity 2023-001339075), which give
-  // 1309 Coffeen Avenue STE 11930 as BOTH the mailing address and the principal
-  // office address of the company.
+  // Kentucky's ORGANIZATION NUMBER. That is the state's own term for it, and it
+  // is the only entity identifier Kentucky issues — the SoS business search box
+  // is labelled "Business Name or Organization Number". The Initial Resolutions
+  // call it an "assigned filing number" only because Northwest's template is
+  // generic across 50 states; there is no second number to wait for.
   //
-  // Ste 1200 appears in two places and is neither of those: it is the ORGANIZER's
-  // address in Article V (Andrew Pierce, the formation agent), and it is on the
-  // IRS CP 575 EIN notice because that agent filed the SS-4 under their own suite.
-  // Publishing it as our registered address contradicts the state filing, which is
-  // the record a card underwriter or a process server actually checks.
-  registeredAddress: '1309 Coffeen Ave, Ste 11930, Sheridan, WY 82801, United States',
+  // Published because acquirer and payment-provider compliance checklists
+  // require a company registration number on the site, and because this is the
+  // number that lets anyone verify the entity independently at
+  // sosbes.sos.ky.gov/BusSearchNProfile/Search.aspx. Confirmed against that
+  // search on 2026-08-20: VERGR LLC, Organization Number 1622652, status
+  // Active, standing Good, organized 8/20/2026, managed by Members.
+  //
+  // ⚠ The filing stamp on the Articles reads "1622652.06". The trailing .06 is
+  // a per-document suffix, not part of the organization number. Publish 1622652.
+  //
+  // ⚠ Do NOT confuse this with the Kentucky CBI (Commonwealth Business
+  // Identifier), a 10-digit Department of Revenue number issued via the One Stop
+  // portal for tax registration. The CBI is a tax account number, never the
+  // company registration number a processor is asking for.
+  registrationNumber: '1622652',
+  formationState:  'Commonwealth of Kentucky, United States of America',
+  // Bare state name, for sentences like "a Kentucky limited liability company".
+  // A real field, because the marketing footer used to derive this by chaining
+  // .replace('State of ', '') on formationState — which silently produced
+  // "a Commonwealth of Kentucky, United States of America limited liability
+  // company" the moment the state stopped starting with "State of".
+  formationStateShort: 'Kentucky',
+  jurisdiction:    'Republic of South Africa',
+  // Article II/III of the Articles of Organization give 212 N. 2nd St. Ste 100,
+  // Richmond, KY 40475 as BOTH the initial registered office and the mailing
+  // address of the principal office. It is also the address on the member
+  // certification in the Operating Agreement, so it is the one address that
+  // every filed document agrees on.
+  registeredAddress: '212 N. 2nd St, Ste 100, Richmond, KY 40475, United States',
+  // The agent appointed in Article II. Named on the law-enforcement page
+  // because service of process goes to the registered agent, not to a support
+  // inbox, and a process server will look for exactly this.
+  registeredAgent: 'Northwest Registered Agent LLC',
   supportEmail:    'support@vergr.app',
   privacyEmail:    'support@vergr.app',
   legalEmail:      'support@vergr.app',
@@ -969,7 +1002,8 @@ export const COOKIE_POLICY = {
 // Child Safety Standards — REQUIRED by Google Play for apps in the Social
 // category (Child Safety Standards policy). Play checks that the URL loads,
 // mentions CSAE/child safety, and names the app or developer as they appear
-// on the store listing, so DO NOT rename VERGR or Murmont LLC out of it.
+// on the store listing, so DO NOT rename VERGR or the operating entity
+// (OPERATOR.legalName, now Vergr LLC) out of it.
 //
 // Every commitment below is one the product already keeps: 18+ only (Terms
 // 4.1), Gemini CSAM screening at a 0.30 confidence threshold with fail-safe

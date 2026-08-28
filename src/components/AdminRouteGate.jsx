@@ -2,7 +2,7 @@
 // a sub-admin with the named screen permission. Pure client-side gate;
 // real authority lives in Firestore rules + Cloud Function checks.
 //
-// Usage:  <AdminRouteGate screen="cheat-signatures"><Screen /></AdminRouteGate>
+// Usage:  <AdminRouteGate screen="economy"><Screen /></AdminRouteGate>
 
 import { Navigate } from 'react-router-dom';
 import useAdminAccess from '../hooks/useAdminAccess';

@@ -5,7 +5,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { SUPPORTED_LANGS, LANG_LABELS, languageForCountry } from '../../utils/localePrefs';
 import { useNavigate } from 'react-router-dom';
 import { getFunctions, httpsCallable } from 'firebase/functions';
-import { doc, updateDoc, serverTimestamp, addDoc, collection } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, serverTimestamp, addDoc, collection } from 'firebase/firestore';
 import { db } from '../../firebase/config';
 import { useAuth } from '../../context/AuthContext';
 import { useUser } from '../../context/UserContext';
@@ -329,7 +329,35 @@ export default function GoLiveSetupScreen() {
   const isAdmin = profile?.role === 'admin' || (currentUser?.email || '').toLowerCase() === 'vergenerd@gmail.com';
   const planTier = resolveTier(profile);
   const followerCount = profile?.followerCount || 0;
-  const followerGated = !isAdmin && planTier === 'free' && followerCount < STREAM_FOLLOWER_GATE;
+
+  // ⚠⚠ THE ADMIN KILL SWITCH WAS DEAD ON THIS SCREEN (found 2026-08-27).
+  //
+  // `/admin/config` offers "Min-Follower Requirement (Go Live)", it writes
+  // `app_config/general.streamFollowerGateEnabled`, it is in the adminConfig
+  // write allowlist, and `functions/streaming.js:256` honours it correctly:
+  //   const followerGateOn = cfg.streamFollowerGateEnabled !== false;
+  //
+  // But THIS SCREEN never read it. It hardcoded the 100 and disabled the button
+  // locally, so the server — which would have allowed the stream — was never
+  // asked. The founder had the toggle OFF the entire time and was still gated,
+  // with no way to tell the switch was doing nothing.
+  //
+  // Same class as the three inert kill switches in CLAUDE.md (payoutsPaused,
+  // conversionsPaused, tipsPaused): a control that is trusted and does nothing
+  // is worse than no control. A server-side gate needs its CLIENT to read the
+  // same switch, or the client silently becomes the real policy.
+  const [gateEnabled, setGateEnabled] = useState(true);   // fail CLOSED while loading
+  useEffect(() => {
+    let alive = true;
+    getDoc(doc(db, 'app_config', 'general'))
+      .then((s) => { if (alive) setGateEnabled(s.data()?.streamFollowerGateEnabled !== false); })
+      // ⚠ On a read failure the gate STAYS ON. Failing open would let anyone
+      // stream publicly whenever the config read hiccups.
+      .catch(() => { if (alive) setGateEnabled(true); });
+    return () => { alive = false; };
+  }, []);
+
+  const followerGated = gateEnabled && !isAdmin && planTier === 'free' && followerCount < STREAM_FOLLOWER_GATE;
   const followersToGo = Math.max(0, STREAM_FOLLOWER_GATE - followerCount);
 
   const goLive = async () => {
@@ -1314,10 +1342,9 @@ export default function GoLiveSetupScreen() {
           </PanelSection>
 
           <PanelSection title="Earnings · Today">
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
               <Stat label="Coins" value={(profile?.todayCoinsEarned ?? 0).toLocaleString()} color="#fff" iconColor={C.purpleLight}/>
               <Stat label="VP" value={(profile?.todayVPEarned ?? 0).toLocaleString()} color={C.purpleLight}/>
-              <Stat label="Gems" value={(profile?.todayGemsEarned ?? 0).toLocaleString()} color={C.gemBlue}/>
             </div>
             <div style={{ marginTop: 8, fontSize: 10, color: C.textMuted, lineHeight: 1.4 }}>
               Vergr pays you a share of tip revenue: 50% to start, rising to 80% as your lifetime earnings grow.

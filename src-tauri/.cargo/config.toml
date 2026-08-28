@@ -1,0 +1,57 @@
+# 16 KB memory page size support for Android.
+#
+# Play flags any AAB whose 64-bit native libraries are not 16 KB aligned:
+#   "Your app does not support 16 KB memory page sizes."
+# It is a warning you can "Proceed anyway" past today, and becomes a HARD BLOCK
+# on 2026-02-01 for apps targeting Android 15+ (API 35), after which updates
+# cannot be released at all.
+#
+# NDK r28+ aligns by default. We are on r27.1.12297006, which does not, so the
+# linker flags have to be passed explicitly. AGP is 8.11.0, comfortably above
+# the 8.5.1 that made the zip-alignment side automatic, so no Gradle change is
+# needed to go with this.
+#
+# VERIFY THE ARTIFACT, not this file. After a build:
+#   llvm-readelf --wide --program-headers <lib.so> | awk '/LOAD/{print $NF}'
+# every LOAD segment must read 0x4000 (16384). 0x1000 is the 4 KB default.
+#
+# ⚠ THIS ONLY FIXES OUR OWN libvergr_desktop_lib.so. Measured 2026-08-20 on the
+# 1.0.200 AAB, the arm64 libs were:
+#   libbarhopper_v3.so            0x4000  ok
+#   libgpupixel.so                0x4000  ok
+#   libmars-face-kit.so           0x4000  ok
+#   libxeno_native.so             0x4000  ok
+#   libvergr_desktop_lib.so       0x1000  ← fixed by this file
+#   libimage_processing_util_jni.so 0x1000 ← CameraX, NOT fixable here
+# libimage_processing_util_jni.so ships prebuilt inside androidx.camera:camera-core
+# (pinned at 1.3.4 in gen/android/app/build.gradle.kts). Clearing the Play
+# warning entirely needs that dependency bumped to a release that ships 16 KB
+# aligned, which is an API-surface change and wants its own camera regression
+# pass. Until then the warning persists even with this file in place.
+#
+# armeabi-v7a is 32-bit and exempt from the requirement; the flags are harmless
+# there and are set for all four targets so nothing depends on build order.
+
+[target.aarch64-linux-android]
+rustflags = [
+  "-C", "link-arg=-Wl,-z,max-page-size=16384",
+  "-C", "link-arg=-Wl,-z,common-page-size=16384",
+]
+
+[target.armv7-linux-androideabi]
+rustflags = [
+  "-C", "link-arg=-Wl,-z,max-page-size=16384",
+  "-C", "link-arg=-Wl,-z,common-page-size=16384",
+]
+
+[target.x86_64-linux-android]
+rustflags = [
+  "-C", "link-arg=-Wl,-z,max-page-size=16384",
+  "-C", "link-arg=-Wl,-z,common-page-size=16384",
+]
+
+[target.i686-linux-android]
+rustflags = [
+  "-C", "link-arg=-Wl,-z,max-page-size=16384",
+  "-C", "link-arg=-Wl,-z,common-page-size=16384",
+]

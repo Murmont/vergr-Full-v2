@@ -26,7 +26,10 @@
 
 import { OPERATOR, LEGAL_VERSION } from './legalContent';
 
-const POLICY_UPDATED = 'Last updated: August 14, 2026';
+// 2026-08-20: revised only to name the new operating entity (Vergr LLC,
+// Kentucky) in place of Murmont LLC. No control, threshold or timeframe in
+// these documents changed.
+const POLICY_UPDATED = 'Last updated: August 20, 2026';
 const POLICY_EFFECTIVE = 'Effective: August 14, 2026';
 
 const list = (items) => ({ type: 'list', items });
@@ -182,9 +185,9 @@ export const IDV_AND_CONSENT_PROCEDURES = {
         'Verification depth increases with the amount being paid out.',
         list([
           'Level 0, no verification: no payment permitted.',
-          'Level 1, identity document and selfie: payment up to 50 euro per month.',
-          'Level 2, adds proof of address: payment up to 2,500 euro per month, and eligibility for a faster payout schedule.',
-          'Level 3, adds source of funds evidence: payment up to 15,000 euro per month.',
+          'Level 1, identity document and selfie: payment up to 50 US dollars per month.',
+          'Level 2, adds proof of address: payment up to 2,500 US dollars per month, and eligibility for a faster payout schedule.',
+          'Level 3, adds source of funds evidence: payment up to 15,000 US dollars per month.',
         ]),
         'Limits are enforced on the server against a rolling window. A request that would exceed the cap for the account\'s current level is refused, not queued.',
       ],
@@ -453,6 +456,7 @@ export const LAW_ENFORCEMENT_GUIDELINES = {
       body: [
         `${OPERATOR.legalName}, a limited liability company registered in the ${OPERATOR.formationState} under registration number ${OPERATOR.registrationNumber}.`,
         `Registered address: ${OPERATOR.registeredAddress}.`,
+        `Registered agent for service of process: ${OPERATOR.registeredAgent}, at the registered address above.`,
         `Email for legal process: ${OPERATOR.legalEmail}.`,
       ],
     },
@@ -553,9 +557,9 @@ export const AML_POLICY = {
         'Payout limits by verification level. These cap what VERGR pays a creator in a calendar month. Users cannot withdraw, so there is no user-initiated limit to state:',
         list([
           'Unverified: no payment is made.',
-          'Identity verified: up to 50 euro per month.',
-          'Identity and address verified: up to 2,500 euro per month.',
-          'Identity, address and source of funds verified: up to 15,000 euro per month.',
+          'Identity verified: up to 50 US dollars per month.',
+          'Identity and address verified: up to 2,500 US dollars per month.',
+          'Identity, address and source of funds verified: up to 15,000 US dollars per month.',
         ]),
         'Caps are enforced server-side by the payout engine against the calendar month. Earnings above the cap remain owed and carry into a later run rather than being paid.',
       ],

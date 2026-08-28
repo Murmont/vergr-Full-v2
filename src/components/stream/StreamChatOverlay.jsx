@@ -26,7 +26,7 @@ export default function StreamChatOverlay({ messages = [], onSend, onTip, onClos
           <input value={msg} onChange={e => setMsg(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSend()}
             placeholder="Send a message..." className="flex-1 bg-transparent text-white text-sm outline-none placeholder:text-white/40" />
           <button onClick={handleSend} className="text-primary"><Icon name="send" size={18} /></button>
-          <button onClick={onTip} className="text-yellow-400"><Icon name="coins" size={18} /></button>
+          <button onClick={onTip} className="text-yellow-400"><Icon name="paid" size={18} /></button>
         </div>
       </div>
     </div>

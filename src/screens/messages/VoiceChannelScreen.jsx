@@ -27,6 +27,7 @@ import { IS_NATIVE_BUILD } from '../../utils/platform';
 import UserAvatar from '../../components/UserAvatar';
 import Icon from '../../components/Icon';
 import InviteVoiceChannelModal from '../../components/InviteVoiceChannelModal';
+import UserName from '../../components/UserName';
 
 export default function VoiceChannelScreen() {
   const { slug: channelId } = useParams(); // route param historically named slug
@@ -269,7 +270,7 @@ export default function VoiceChannelScreen() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-semibold text-text-primary truncate">
-                    {profile?.displayName || profile?.username || 'You'} (you)
+                    <UserName user={profile} masked fallback={'You'} /> (you)
                   </div>
                   <div className={`text-[11px] ${speaking.me ? 'text-green-400' : 'text-brand-violet-light'}`}>{speaking.me ? 'Speaking…' : micOn ? 'Mic on' : 'Muted'}</div>
                 </div>
@@ -287,7 +288,7 @@ export default function VoiceChannelScreen() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="text-sm font-semibold text-text-primary truncate">
-                          {u?.displayName || u?.username || 'Member'}
+                          <UserName user={u} masked fallback={'Member'} />
                         </div>
                         <div className={`text-[11px] ${isSpeaking ? 'text-green-400' : 'text-text-muted'}`}>{isSpeaking ? 'Speaking…' : p.audio ? 'Connected' : 'Joining…'}</div>
                       </div>

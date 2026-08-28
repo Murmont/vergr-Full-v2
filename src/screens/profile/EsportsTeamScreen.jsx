@@ -8,6 +8,7 @@ import UserAvatar from '../../components/UserAvatar';
 import Icon from '../../components/Icon';
 import { useLayout } from '../../context/LayoutContext';
 import useResponsive from '../../hooks/useResponsive';
+import UserName from '../../components/UserName';
 
 export default function EsportsTeamScreen() {
   const { isDesktop } = useResponsive();
@@ -71,8 +72,8 @@ export default function EsportsTeamScreen() {
             <button key={player.id} onClick={() => navigate(`/user/${player.id}`)} className="flex items-center gap-3 w-full p-3 rounded-2xl bg-surface-1 border border-white/[0.06] text-left">
               <UserAvatar src={player.avatar} size="md" />
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold truncate">{player.displayName || player.username}</p>
-                <p className="text-xs text-text-muted">@{player.username}</p>
+                <p className="text-sm font-semibold truncate"><UserName user={player} masked /></p>
+                <p className="text-xs text-text-muted"><UserName user={player} masked handle /></p>
               </div>
             </button>
           ))}

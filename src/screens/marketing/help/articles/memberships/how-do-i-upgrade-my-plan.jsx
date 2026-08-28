@@ -17,8 +17,8 @@ export default {
     {
       steps: [
         "Open your settings and go to subscription or plan.",
-        "Choose Lite (€4.99/mo) or Pro (€9.99/mo).",
-        "Pay with a card, or with Coins, roughly 500 for Lite and 1,000 for Pro.",
+        "Choose Lite ($4.99/mo) or Pro ($9.99/mo).",
+        "Pay with a card, through Google Play on the Android app, or with Coins, roughly 500 for Lite and 1,000 for Pro.",
         "Confirm. Your new plan is active right away."
       ]
     },
@@ -26,13 +26,13 @@ export default {
       h2: "Paying with Coins"
     },
     {
-      p: "If you have built a Coin balance from tips and competition, you can spend that on a plan instead of using a card. It is the same plan either way, just a different way to pay."
+      p: "If you already hold a Coin balance, you can spend that on a plan instead of using a card. It is the same plan either way, just a different way to pay."
     },
     {
       h2: "What you unlock"
     },
     {
-      p: "Higher streaming quality and no follower gate to go live, faster VP (which ranks you up sooner), bigger uploads, and on Pro, co-streaming, a custom Vergr.me domain, advanced analytics, and more."
+      p: "Higher streaming quality and no follower gate to go live, a longer daily streaming allowance, no ads, faster VP with a monthly VP and coin bonus, bigger uploads, and scheduling and analytics tools. On Pro you also get 1080p with no daily limit, 90-day replays of your broadcasts and advanced analytics."
     },
     {
       note: "Upgrading never changes your revenue share. It changes what you can produce and how far you can push, not your rate."

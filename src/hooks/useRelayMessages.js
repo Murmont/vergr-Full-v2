@@ -241,6 +241,10 @@ export default function useRelayMessages(chatId, messageLimit = 80) {
             contentUrl: existing?.contentUrl || m.contentUrl || '',
             videoUrl: existing?.videoUrl || m.videoUrl || '',
             ...(existing?.waveform || m.waveform ? { waveform: existing?.waveform || m.waveform } : {}),
+            // Structured payloads from the sender's frame (see sendMessage).
+            ...(m.location || existing?.location ? { location: m.location || existing?.location } : {}),
+            ...(m.wallet || existing?.wallet ? { wallet: m.wallet || existing?.wallet } : {}),
+            ...(m.contact || existing?.contact ? { contact: m.contact || existing?.contact } : {}),
             fileName: existing?.fileName || '',
             fileSize: existing?.fileSize || 0,
             replyToId: m.replyToId || existing?.replyToId || '',
@@ -397,6 +401,13 @@ export default function useRelayMessages(chatId, messageLimit = 80) {
       contentUrl: p.contentUrl || '',
       videoUrl: p.videoUrl || '',
       ...(p.waveform ? { waveform: p.waveform } : {}),
+      // Structured payloads for non-text bubbles. Without these the relay used
+      // to forward only text+type, so a location arrived with no lat/lng (dead,
+      // untappable bubble) and a coin tip arrived with no amount. Kept in the
+      // cached row so they survive a reload from Dexie too.
+      ...(p.location ? { location: p.location } : {}),
+      ...(p.wallet ? { wallet: p.wallet } : {}),
+      ...(p.contact ? { contact: p.contact } : {}),
       fileName: p.fileName || '',
       fileSize: p.fileSize || 0,
       replyToId: p.replyToId || p.replyTo?.id || '',
@@ -427,9 +438,20 @@ export default function useRelayMessages(chatId, messageLimit = 80) {
       // type that legitimately has no media URL: a locked message whose blurred
       // preview failed to generate (every video does this) would arrive with an
       // empty mediaKind, be rebuilt as `text`, and render as an empty bubble.
+      // `mediaKind` carries the message TYPE across the wire (receiver reads
+      // `type: m.mediaKind`). It must forward ANY non-text type, not just media
+      // and 'system' — otherwise a 'wallet' or 'location' arrives with an empty
+      // mediaKind, is rebuilt as 'text' on the recipient, and renders as a plain
+      // bubble instead of its card. An explicit mediaKind still wins.
       mediaKind: p.mediaKind
-        || (p.contentUrl ? (p.type || 'file') : (p.type === 'system' ? 'system' : '')),
+        || (p.contentUrl ? (p.type || 'file') : (p.type && p.type !== 'text' ? p.type : '')),
       hasMedia: !!p.contentUrl,
+      // Structured payloads cross the wire so the RECIPIENT can render the real
+      // bubble (a location's map link, a tip's amount) rather than a bare line
+      // of text. Small JSON, same forward-not-persist model as text/media.
+      ...(p.location ? { location: p.location } : {}),
+      ...(p.wallet ? { wallet: p.wallet } : {}),
+      ...(p.contact ? { contact: p.contact } : {}),
       replyToId: localRow.replyToId,
     };
     const sent = connRef.current?.send(frame);

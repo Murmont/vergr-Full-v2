@@ -15,6 +15,7 @@ import AddPhoneModal from '../../../components/AddPhoneModal';
 import { getTier } from '../../../utils/helpers';
 import { contactsSupported, pickContacts } from '../../../utils/nativeContacts';
 import PermissionDisclosure, { DISCLOSURES } from '../../../components/permissions/PermissionDisclosure';
+import UserName from '../../../components/UserName';
 
 const matchContactHashes = httpsCallable(functions, 'matchContactHashes');
 
@@ -314,8 +315,8 @@ export default function NativeNewMessageScreen() {
                   className="flex items-center gap-4 w-full p-3 rounded-2xl active:bg-surface-1 transition-all">
                   <UserAvatar src={u.avatar} size={46} tier={tier} />
                   <div className="flex-1 text-left min-w-0">
-                    <p className={`font-bold text-[15px] truncate ${tier.holographic ? 'text-brand-violet-light' : 'text-white'}`}>{u.displayName || u.username}</p>
-                    <p className="text-text-muted text-xs font-dmmono truncate">@{u.username}</p>
+                    <p className={`font-bold text-[15px] truncate ${tier.holographic ? 'text-brand-violet-light' : 'text-white'}`}><UserName user={u} masked /></p>
+                    <p className="text-text-muted text-xs font-dmmono truncate"><UserName user={u} masked handle /></p>
                   </div>
                   <Icon name="chevron_right" size={20} className="text-text-muted" />
                 </button>

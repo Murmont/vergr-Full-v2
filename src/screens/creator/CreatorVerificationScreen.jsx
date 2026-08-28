@@ -1,71 +1,91 @@
-// Creator Verification — hosts the KYC wizard or a status card if already applied.
-// Offers a desktop-to-mobile QR handoff for better camera UX.
+// Creator Verification — identity check required before a creator can be paid.
+//
+// CANONICAL PROVIDER IS DIDIT. This screen used to mount `KycWizard`, which
+// uploads encrypted ID images to Firebase Storage and writes
+// `verification_applications` for a human to review. That is a second,
+// document-storing identity system running alongside the real one, and it
+// wrote none of the fields the platform actually gates on, so a creator could
+// finish it and still be blocked forever.
+//
+// The state that matters is `users/{uid}.kyc`, written only by Didit's webhook
+// (`functions/didit.js`), which also sets `users/{uid}.kycLevel = 1`. That
+// level is what `creatorProgram.js` requires to apply and what
+// `creatorPayouts.js` requires to pay.
 import { useEffect, useState } from 'react';
-import { doc, getDoc, onSnapshot, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, onSnapshot, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../firebase/config';
 import { useAuth } from '../../context/AuthContext';
-import { useUser } from '../../context/UserContext';
 import Icon from '../../components/Icon';
 import TopBar from '../../components/TopBar';
-import KycWizard from '../../components/verify/KycWizard';
-import DesktopQRHandoff from '../../components/verify/DesktopQRHandoff';
-
-const isMobileDevice = () => /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+import DiditVerify from '../../components/verify/DiditVerify';
 
 export default function CreatorVerificationScreen({ embedded = false, sessionId = null }) {
   const { currentUser } = useAuth();
-  const { profile } = useUser();
-  const [existing, setExisting] = useState(null);
+  const [kyc, setKyc] = useState(null);
+  const [kycLevel, setKycLevel] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [forceHere, setForceHere] = useState(false);
+
+  // `country` moved off the public user doc to users/{uid}/private/kyc, which
+  // only the owner can read (audit A30): users/{uid} is world-readable, and
+  // the KYC payload carried the age and government-ID country of every
+  // verified user. The status half (`verified`, `failureReason`) stays on the
+  // user doc, which is what the rest of the app gates on.
+  const [kycPrivate, setKycPrivate] = useState(null);
 
   useEffect(() => {
     if (!currentUser) return;
-    const unsub = onSnapshot(doc(db, 'verification_applications', currentUser.uid), (snap) => {
-      setExisting(snap.exists() ? { id: snap.id, ...snap.data() } : null);
+    const unsub = onSnapshot(doc(db, 'users', currentUser.uid), (snap) => {
+      const d = snap.data() || {};
+      setKyc(d.kyc || null);
+      setKycLevel(Number(d.kycLevel || 0));
       setLoading(false);
     }, () => setLoading(false));
-    return () => unsub();
+    const unsubPriv = onSnapshot(doc(db, 'users', currentUser.uid, 'private', 'kyc'),
+      (snap) => setKycPrivate(snap.exists() ? snap.data() : null),
+      () => setKycPrivate(null));
+    return () => { unsub(); unsubPriv(); };
   }, [currentUser]);
 
-  // On mobile handoff page, flip the session status to 'scanned'
+  // Mobile handoff page: mark the session scanned so the desktop tab updates.
   useEffect(() => {
     if (!sessionId) return;
     updateDoc(doc(db, 'verification_sessions', sessionId), { status: 'scanned' }).catch(() => {});
   }, [sessionId]);
 
-  const handleComplete = async () => {
-    if (sessionId) {
-      try { await updateDoc(doc(db, 'verification_sessions', sessionId), { status: 'completed', completedAt: serverTimestamp() }); } catch {}
-    }
+  const markSessionComplete = async () => {
+    if (!sessionId) return;
+    try {
+      await updateDoc(doc(db, 'verification_sessions', sessionId), {
+        status: 'completed', completedAt: serverTimestamp(),
+      });
+    } catch { /* handoff session is best-effort */ }
   };
 
   const Body = () => {
     if (loading) return <Spinner />;
 
-    if (existing && existing.status !== 'rejected') {
-      const isApproved = existing.status === 'approved' || profile?.verified;
-      const pending    = !isApproved;
-      const needsManual = !!existing.needsManualReview;
+    if (kyc?.verified === true) {
       return (
         <div className="max-w-xl mx-auto">
-          <div className={`rounded-2xl border p-6 ${isApproved ? 'border-green-500/30 bg-green-500/5' : 'border-yellow-500/30 bg-yellow-500/5'}`}>
+          <div className="rounded-2xl border border-green-500/30 bg-green-500/5 p-6">
             <div className="flex items-start gap-4">
-              <div className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 ${isApproved ? 'bg-green-500/15' : 'bg-yellow-500/15'}`}>
-                <Icon name={isApproved ? 'verified' : 'hourglass_top'} filled size={24} className={isApproved ? 'text-green-400' : 'text-yellow-400'} />
+              <div className="w-12 h-12 rounded-full flex items-center justify-center shrink-0 bg-green-500/15">
+                <Icon name="verified" filled size={24} className="text-green-400" />
               </div>
               <div className="flex-1">
-                <h3 className="font-syne font-bold text-white text-lg">{isApproved ? 'Verified creator' : needsManual ? 'Under manual review' : 'Under review'}</h3>
+                <h3 className="font-syne font-bold text-white text-lg">Identity verified</h3>
                 <p className="text-text-secondary text-sm mt-1">
-                  {isApproved && 'You can launch ad campaigns, request payouts and offer membership tiers.'}
-                  {pending && !needsManual && 'Automated checks passed. Final approval usually within 48 hours.'}
-                  {pending && needsManual && 'A reviewer will take a closer look — this is normal for some lighting, document layouts or edge cases.'}
+                  You can apply to the creator program, set up payouts and offer membership tiers.
                 </p>
                 <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
-                  <Tile label="Status" value={isApproved ? 'Approved' : existing.status} />
-                  <Tile label="Country" value={existing.country || '—'} />
+                  <Tile label="Level" value={`Level ${kycLevel || 1}`} />
+                  {/* Falls back to kyc.country for anyone verified before the
+                      split, whose value is still on the old doc. */}
+                  <Tile label="Country" value={kycPrivate?.country || kyc.country || '—'} />
                 </div>
-                <p className="text-[11px] text-text-muted mt-4">Raw documents are encrypted and auto-delete 90 days after a decision.</p>
+                <p className="text-[11px] text-text-muted mt-4">
+                  Verified by Didit. Vergr never stores your documents.
+                </p>
               </div>
             </div>
           </div>
@@ -73,20 +93,29 @@ export default function CreatorVerificationScreen({ embedded = false, sessionId 
       );
     }
 
-    // New or rejected: offer mobile handoff on desktop, else wizard directly
-    if (!isMobileDevice() && !forceHere && !sessionId) {
-      return <DesktopQRHandoff onContinueHere={() => setForceHere(true)} />;
-    }
+    // Not verified: a previous attempt may have failed, which is worth saying
+    // before showing the button again.
+    const failed = kyc?.failureReason && kyc?.checkedAt;
+    const FAILURE_TEXT = {
+      underage: 'You must be at least 18 to verify.',
+      blocked_country: 'Your country is not eligible for verification.',
+      declined: 'That attempt was declined. A clearer photo of your ID usually fixes it.',
+      abandoned: 'The last attempt was not finished.',
+      incomplete: 'The last attempt was not finished.',
+    };
+
     return (
-      <>
-        {existing?.status === 'rejected' && (
-          <div className="max-w-2xl mx-auto mb-6 rounded-2xl border border-brand-ember/30 bg-brand-ember/5 p-4">
-            <p className="text-brand-ember font-bold text-sm">Previous application rejected</p>
-            <p className="text-text-secondary text-xs mt-1">{existing.rejectionReason || 'Please review your details and resubmit.'}</p>
+      <div className="max-w-2xl mx-auto">
+        {failed && (
+          <div className="mb-6 rounded-2xl border border-brand-ember/30 bg-brand-ember/5 p-4">
+            <p className="text-brand-ember font-bold text-sm">Last attempt was not approved</p>
+            <p className="text-text-secondary text-xs mt-1">
+              {FAILURE_TEXT[kyc.failureReason] || 'Verification was not approved. You can try again.'}
+            </p>
           </div>
         )}
-        <KycWizard onComplete={handleComplete} />
-      </>
+        <DiditVerify onVerified={markSessionComplete} />
+      </div>
     );
   };
 

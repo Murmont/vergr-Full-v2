@@ -1,0 +1,1 @@
+{"_comment":"Firebase service account for project vergr-44494. Regenerate: Firebase Console > Project Settings > Service Accounts > Generate new private key. Identical file is used by BOTH vergr-sfu and vergr-rtmp-auth, and box 1 has the same one at /etc/vergr-sfu/firebase-admin.json"}

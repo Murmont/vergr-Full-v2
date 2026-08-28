@@ -15,10 +15,15 @@ import { removeCachedMessage } from '../../utils/messageCache';
 import { IS_NATIVE_BUILD } from '../../utils/platform';
 import { startVoiceRecording, stopVoiceRecording, startVideoRecording, stopVideoRecording, uploadMediaFile, uploadBlob, getYouTubeID } from '../../utils/mediaHelpers';
 import { getChatBgStyle, preloadBackground } from '../../utils/chatBackgrounds';
+import { ChatGradient } from '../../components/effects';
+import { chatThemeFor, chatThemeColors, chatPatternUrl, chatBubbleColors, chatBubbleVars, chatBubbleStyles, chatMotionFor } from '../../utils/chatThemes';
 import { compressVideo } from '../../utils/mediaCompression';
 import { faststartOnly } from '../../utils/nativeTranscode';
 import useVideoDownload from '../../hooks/useVideoDownload';
 import Icon from '../../components/Icon';
+import { CoinIcon } from '../../components/CoinIcon';
+import { reverseGeocode, openInMaps, parseGeo, geoContentUrl } from '../../utils/geo';
+import '../../styles/surface.css';
 import CachedImg from '../../components/CachedImg';
 import ReactorsSheet from '../../components/messages/ReactorsSheet';
 import ScheduleMessageSheet from '../../components/messages/ScheduleMessageSheet';
@@ -54,7 +59,7 @@ import CreatePollSheet from '../../components/messages/CreatePollSheet';
 import ChatPollBubble from '../../components/messages/ChatPollBubble';
 import EventTicketCard from '../../components/tournament/EventTicketCard';
 import SendCoinsModal from '../../components/SendCoinsModal';
-import { getWallet, sendCoins, translateContent, groupAllows } from '../../firebase/firestore';
+import { getWallet, sendCoins, translateContent, groupAllows, subscribeCallsForChat } from '../../firebase/firestore';
 import { sendLockedMessage, uploadLockedItem, createMediaPack } from '../../firebase/firestore';
 import ContentPacksSheet from '../../components/monetization/ContentPacksSheet';
 
@@ -74,6 +79,8 @@ import { TTL_OPTIONS, ttlLabel, ttlShort, filterExpired } from '../../utils/disa
 import { consumeSharedText, consumeSharedMedia, sharedMediaToFile } from '../../utils/shareIn';
 import { useUI } from '../../context/UIContext';
 import { isGallerySaveSupported, saveMediaToGallery, isMediaSaved, getAutoSavePhotos, getAutoSaveVideos, autoAlbumFor } from '../../utils/saveToGallery';
+import UserName from '../../components/UserName';
+import RankBadge from '../../components/RankBadge';
 
 /* ═══════ AudioPlayer (voice notes + audio files) ═══════ */
 const AudioPlayer = ({ url, isMe, label, waveform }) => {
@@ -145,13 +152,19 @@ const AudioPlayer = ({ url, isMe, label, waveform }) => {
     <div className={`flex flex-col p-3 min-w-[240px] ${isMe ? 'text-white' : 'text-white'}`}>
       {label && <p className={`text-[10px] font-bold uppercase tracking-wider mb-2 truncate ${isMe ? 'text-white/50' : 'text-text-muted'}`}><Icon name="audio_file" size={12} className="inline mr-1" />{label}</p>}
       <div className="flex items-center gap-3">
-        <button onClick={togglePlay} className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 transition-transform active:scale-90 ${isMe ? 'bg-white/20 text-white' : 'bg-brand-violet/20 text-brand-violet-light'}`}>
+        <button onClick={togglePlay}
+          className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 transition-transform active:scale-90"
+          style={isMe
+            ? { background: 'rgba(255,255,255,0.20)', color: '#fff' }
+            : { background: 'var(--vg-chat-accent-28, rgba(123,31,255,0.20))', color: 'var(--vg-chat-accent, #B44FFF)' }}>
           <Icon name={isPlaying ? 'pause' : 'play_arrow'} size={28} />
         </button>
         <div className="flex-1 min-w-0">
           <div className="flex items-end gap-[2px] h-7 cursor-pointer touch-none"
             onPointerDown={onScrubDown} onPointerMove={onScrubMove} onPointerUp={onScrubUp} onPointerCancel={onScrubUp}>
-            {barsRef.current.map((h, i) => (<div key={i} className={`flex-1 rounded-full transition-colors duration-75 ${isMe ? ((i / barsRef.current.length) * 100 < progress ? 'bg-white/70' : 'bg-white/20') : ((i / barsRef.current.length) * 100 < progress ? 'bg-brand-violet' : 'bg-white/15')}`} style={{ height: `${h * 100}%`, minWidth: 2 }} />))}
+            {barsRef.current.map((h, i) => (<div key={i} className={`flex-1 rounded-full transition-colors duration-75 ${isMe ? ((i / barsRef.current.length) * 100 < progress ? 'bg-white/70' : 'bg-white/20') : 'bg-white/15'}`} style={{ height: `${h * 100}%`, minWidth: 2,
+              ...(!isMe && (i / barsRef.current.length) * 100 < progress
+                ? { background: 'var(--vg-chat-accent, #7B1FFF)' } : null) }} />))}
           </div>
           <div className="flex justify-between items-center mt-1 px-0.5">
             <span className="text-[10px] font-bold opacity-60">{isPlaying ? fmt(audioRef.current?.currentTime) : fmt(duration)}</span>
@@ -494,6 +507,253 @@ const DaySeparator = ({ date }) => {
   return (<div className="sticky top-1 z-20 flex items-center justify-center py-3 pointer-events-none"><span className="px-4 py-1.5 bg-bg-dark/70 backdrop-blur-sm rounded-full text-[10px] font-bold text-text-muted uppercase tracking-[0.15em] border border-white/[0.04]" >{label}</span></div>);
 };
 
+/* ═══════ Call row — a call that happened in THIS conversation ═══════ */
+// WhatsApp puts calls in the thread, not only in the Calls tab. These are read
+// live out of `calls_history` (see subscribeCallsForChat) rather than written as
+// messages, so past calls appear too and the two surfaces can never disagree.
+// Tapping one calls back with the SAME media type, which is what the icon
+// promises.
+const CallRow = ({ call, meUid, onCallBack }) => {
+  const isVideo = call.type === 'video';
+  const outgoing = call.callerId === meUid;
+  const answered = !!call.answered;
+  // An unanswered call you RECEIVED is "missed" (red, the thing you want to
+  // spot). An unanswered call you PLACED is just "no answer" and is not an
+  // alert, so it stays neutral.
+  const missed = !answered && !outgoing;
+  const kind = isVideo ? 'video' : 'voice';
+  const label = answered
+    ? (outgoing ? `Outgoing ${kind} call` : `Incoming ${kind} call`)
+    : (missed ? `Missed ${kind} call` : `No answer`);
+  const dirIcon = missed ? 'call_missed' : outgoing ? 'call_made' : 'call_received';
+  const secs = Math.max(0, Math.round(call.durationSec || 0));
+  const dur = answered && secs > 0 ? `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}` : '';
+  const at = call.startedAtMs
+    ? new Date(call.startedAtMs).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+    : '';
+  return (
+    <div className="flex justify-center py-1.5">
+      <button
+        type="button"
+        onClick={() => onCallBack?.(isVideo ? 'video' : 'voice')}
+        title={`Call back (${kind})`}
+        className="group flex items-center gap-3 pl-3 pr-3.5 py-2 rounded-2xl bg-surface-1/70 backdrop-blur-sm hover:bg-surface-2/70 transition-colors max-w-[85%] text-left"
+      >
+        <span className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${missed ? 'bg-brand-ember/15' : 'bg-brand-violet/12'}`}>
+          <Icon name={isVideo ? 'videocam' : 'call'} size={16} className={missed ? 'text-brand-ember' : 'text-brand-violet'} />
+        </span>
+        <span className="min-w-0">
+          <span className={`block text-[12.5px] font-semibold truncate ${missed ? 'text-brand-ember' : 'text-text-primary'}`}>{label}</span>
+          <span className="flex items-center gap-1 text-[10.5px] text-text-muted">
+            <Icon name={dirIcon} size={11} className={missed ? 'text-brand-ember' : 'text-text-muted'} />
+            {at}{dur ? ` · ${dur}` : ''}
+          </span>
+        </span>
+        <Icon name="chevron_right" size={16} className="text-text-muted opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+      </button>
+    </div>
+  );
+};
+
+/* ═══════ Coin transfer + Location — designed cards, matched to the founder's
+   mockups pixel for pixel (map widget.png, coin send-recieve *.png). Both sit
+   in a violet neon bubble whose glow TRAVELS the border (surface.css
+   .vg-beam-violet, the same moving light as the earnings ring; it stops under
+   prefers-reduced-motion). ═══════ */
+
+const VC_COIN = '/brand/vc-coin.webp';       // the ornate VC medallion asset
+const COIN_LARGE_THRESHOLD = 1000;           // >= this uses the grand centred layout
+
+// Coin amount + optional note ride `contentUrl` as `vergrcoin:<amount>:<note>`
+// because the relay server strips unknown objects but forwards contentUrl. The
+// amount also lives in `text` ("Sent N coins") as a preview + fallback.
+function coinContentUrl(amount, note) { return `vergrcoin:${amount}:${encodeURIComponent(note || '')}`; }
+function parseCoin(contentUrl) {
+  const m = /^vergrcoin:(\d+):?(.*)$/.exec(contentUrl || '');
+  if (!m) return null;
+  let note = ''; try { note = decodeURIComponent(m[2] || ''); } catch { note = ''; }
+  return { amount: Number(m[1]) || 0, note };
+}
+
+// Shared little pieces
+const CoinTicks = () => (
+  <svg viewBox="0 0 24 16" width="17" height="12" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" className="text-brand-violet-light shrink-0"><path d="M2 8l4 4 8-9"/><path d="M9 12l1 1 8-9"/></svg>
+);
+const HeartIcon = ({ size = 18 }) => (
+  <svg viewBox="0 0 24 24" width={size} height={size} fill="currentColor"><path d="M12 21s-7.5-4.9-10-9.6C.3 8 1.6 4.6 4.8 4.1 7 3.8 8.9 5 10 6.7 11.1 5 13 3.8 15.2 4.1c3.2.5 4.5 3.9 2.8 7.3C19.5 16.1 12 21 12 21z"/></svg>
+);
+// A note/time footer row shared by both coin layouts. Shows the heart + message
+// when a note exists; always shows time + read ticks.
+function CoinNoteRow({ note, timeStr, read, boxed }) {
+  const inner = (
+    <>
+      {note ? (
+        <>
+          <span className={boxed ? 'shrink-0 text-brand-violet-light' : 'w-7 h-7 rounded-full grid place-items-center shrink-0 bg-brand-violet/15 text-brand-violet-light'}>
+            <HeartIcon size={boxed ? 17 : 15} />
+          </span>
+          <span className="flex-1 min-w-0 truncate text-[12.5px] text-text-secondary">{note}</span>
+        </>
+      ) : <span className="flex-1" />}
+      <span className="font-dmmono text-[11px] text-text-muted shrink-0">{timeStr}</span>
+      {read ? <CoinTicks /> : null}
+    </>
+  );
+  return boxed
+    ? <div className="mt-3 flex items-center gap-2.5 px-3 py-2.5 rounded-2xl bg-white/[0.035] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.05)]">{inner}</div>
+    : <div className="mt-3 pt-3 border-t border-white/[0.07] flex items-center gap-2.5">{inner}</div>;
+}
+
+// The gold number, using the rounded heavy face (Baloo 2) + gold clip, matching
+// the mockup exactly.
+const goldNum = (fontSize) => ({
+  fontFamily: "'Baloo 2', cursive", fontWeight: 800, fontSize, lineHeight: 0.85,
+  background: 'linear-gradient(180deg,#ffeaa0,#f7c81e 42%,#d99500)',
+  WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent',
+  filter: 'drop-shadow(0 2px 1px rgba(120,70,0,.35)) drop-shadow(0 0 8px rgba(245,197,24,.3))',
+});
+function CoinCard({ amount, note, isMe, otherName, timeStr, read }) {
+  const n = Number(amount || 0);
+  const large = n >= COIN_LARGE_THRESHOLD;
+  const name = (otherName || 'Someone').toUpperCase();
+  // Direction, matching the mockup ("VERGR SENT YOU"): the OTHER party's name is
+  // the violet word.
+  const line = isMe
+    ? <><span className="text-white/80">YOU SENT</span> <span className="text-brand-violet-light vg-brandmark">{name}</span></>
+    : <><span className="text-brand-violet-light vg-brandmark">{name}</span> <span className={large ? 'text-white' : 'text-text-secondary'}>SENT YOU</span></>;
+
+  const shell = 'vg-beam vg-beam-violet relative overflow-hidden bg-[#151321]';
+  // Inline, not a Tailwind arbitrary shadow, so it can read the chat theme's
+  // accent. Falls back to the original violet when no theme is set.
+  const shellGlow = {
+    boxShadow: '0 0 0 1.5px var(--vg-chat-accent-28, rgba(176,107,255,0.5)),'
+             + '0 0 18px var(--vg-chat-accent-28, rgba(147,51,234,0.32)),'
+             + '0 0 46px var(--vg-chat-accent-12, rgba(147,51,234,0.14))',
+  };
+
+  if (large) {
+    return (
+      <div className={`${shell} rounded-[26px]`} style={{ width: 300, padding: '22px 22px 12px', ...shellGlow }}>
+        {/* medallion + ripple */}
+        <div className="relative h-[128px] grid place-items-center mb-1">
+          <div className="absolute" style={{ bottom: 16, width: 190, height: 48, background: 'radial-gradient(ellipse at center,rgba(150,70,255,.5),rgba(150,70,255,.10) 55%,transparent 72%)', filter: 'blur(3px)' }} />
+          <img src={VC_COIN} alt="" width={124} height={124} draggable={false} style={{ position: 'relative', objectFit: 'contain', filter: 'drop-shadow(0 5px 11px rgba(0,0,0,.5)) drop-shadow(0 0 13px rgba(245,190,60,.42))' }} />
+        </div>
+        <div className="text-center font-extrabold tracking-[1.5px]" style={{ fontSize: 19 }}>{line}</div>
+        <div className="flex items-center justify-center gap-3 mt-2">
+          <span className="flex items-center gap-1.5"><span className="w-5 h-0.5" style={{ background: 'linear-gradient(90deg,transparent,rgba(155,107,255,.6))' }} /><span className="w-1.5 h-1.5 rotate-45" style={{ background: '#9b6bff', boxShadow: '0 0 7px rgba(155,107,255,.8)' }} /></span>
+          <span style={goldNum(58)}>{n.toLocaleString()}</span>
+          <span className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rotate-45" style={{ background: '#9b6bff', boxShadow: '0 0 7px rgba(155,107,255,.8)' }} /><span className="w-5 h-0.5" style={{ background: 'linear-gradient(90deg,rgba(155,107,255,.6),transparent)' }} /></span>
+        </div>
+        <div className="text-center font-extrabold text-text-muted mt-1.5" style={{ fontSize: 15, letterSpacing: '4px' }}>COINS</div>
+        <CoinNoteRow note={note} timeStr={timeStr} read={read} boxed={false} />
+      </div>
+    );
+  }
+  // small — horizontal
+  return (
+    <div className={`${shell} rounded-[24px]`} style={{ width: 320, padding: '14px 16px 12px', ...shellGlow }}>
+      {/* faint dot grid deco, top-right */}
+      <div className="absolute pointer-events-none" style={{ right: 14, top: 16, width: 52, height: 40, opacity: .5, backgroundImage: 'radial-gradient(var(--vg-chat-accent-45, rgba(176,107,255,.5)) 1.2px,transparent 1.4px)', backgroundSize: '11px 11px' }} />
+      <div className="flex items-center gap-3.5 relative">
+        <div className="relative shrink-0 grid place-items-center" style={{ width: 62, height: 62 }}>
+          <div className="absolute rounded-full" style={{ width: 58, height: 58, background: 'radial-gradient(circle,rgba(245,190,60,.5),rgba(245,190,60,.1) 55%,transparent 72%)', filter: 'blur(3px)' }} />
+          <img src={VC_COIN} alt="" width={62} height={62} draggable={false} style={{ position: 'relative', objectFit: 'contain', filter: 'drop-shadow(0 0 8px rgba(245,190,60,.5))' }} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="font-extrabold truncate" style={{ fontSize: 14, letterSpacing: '.8px' }}>{line}</div>
+          <div className="flex items-center gap-2.5 mt-1.5">
+            <span style={goldNum(42)}>{n.toLocaleString()}</span>
+            <span className="font-extrabold text-white self-end" style={{ fontSize: 18, letterSpacing: '.5px', marginBottom: 5 }}>COINS</span>
+          </div>
+        </div>
+      </div>
+      <CoinNoteRow note={note} timeStr={timeStr} read={read} boxed={true} />
+    </div>
+  );
+}
+
+/* ═══════ Location — a shared place, with a real map thumbnail ═══════ */
+// Matches map widget.png: a 3x3 CARTO-Voyager tile grid, darkened to the mockup
+// tone (tile.openstreetmap.org is a fallback), centred on the exact point under
+// a glowing gradient pin, an "Open map" pill, and a footer with a glowing pin
+// badge + address. Tapping the map opens the device's own map app on native.
+const LOC_W = 300, LOC_MAP_H = 150, TILE = 256;
+function LocationBubble({ lat, lng, title, subtitle, isMe, timeStr, read }) {
+  // Map source falls back gracefully: Google dark-styled static (via our proxy,
+  // no key exposed) → free OSM tiles → a plain gradient, so the map is never
+  // blank even if a provider is down.
+  const [mapMode, setMapMode] = useState('google');
+  const z = 15;
+  const nn = 2 ** z, latR = Number(lat) * Math.PI / 180;
+  const xf = (Number(lng) + 180) / 360 * nn;
+  const yf = (1 - Math.log(Math.tan(latR) + 1 / Math.cos(latR)) / Math.PI) / 2 * nn;
+  const cx = Math.floor(xf), cy = Math.floor(yf);
+  const originX = LOC_W / 2 - (xf - cx) * TILE, originY = LOC_MAP_H / 2 - (yf - cy) * TILE;
+  const line1 = title || `${Number(lat).toFixed(5)}, ${Number(lng).toFixed(5)}`;
+  const line2 = subtitle || 'Shared location';
+  const gmap = `/maptile?lat=${lat}&lng=${lng}&w=${LOC_W}&h=${LOC_MAP_H}&z=${z}`;
+  const tiles = [];
+  for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
+    tiles.push({ dx, dy, url: `https://a.basemaps.cartocdn.com/rastertiles/voyager/${z}/${cx + dx}/${cy + dy}.png` });
+  }
+  return (
+    <div className="vg-beam vg-beam-violet relative overflow-hidden rounded-[26px] bg-[#141320]"
+      style={{
+        width: LOC_W,
+        boxShadow: '0 0 0 1.5px var(--vg-chat-accent-28, rgba(176,107,255,0.5)),'
+                 + '0 0 18px var(--vg-chat-accent-28, rgba(147,51,234,0.32)),'
+                 + '0 0 46px var(--vg-chat-accent-12, rgba(147,51,234,0.14))',
+      }}>
+      <button type="button" onClick={(e) => { e.stopPropagation(); openInMaps(lat, lng, title, IS_NATIVE_BUILD); }} className="block w-full text-left">
+        <div className="relative overflow-hidden" style={{ height: LOC_MAP_H, background: '#12203a' }}>
+          {mapMode === 'google' && (
+            <img src={gmap} alt="" draggable={false} onError={() => setMapMode('osm')}
+              className="absolute inset-0 w-full h-full object-cover" />
+          )}
+          {mapMode === 'osm' && tiles.map((t, i) => (
+            <img key={i} src={t.url} alt="" draggable={false} onError={i === 0 ? () => setMapMode('gradient') : undefined}
+              style={{ position: 'absolute', width: TILE, height: TILE, left: originX + t.dx * TILE, top: originY + t.dy * TILE, maxWidth: 'none', filter: 'brightness(.82) saturate(1.15) contrast(1.02)' }} />
+          ))}
+          {mapMode === 'gradient' && <div className="absolute inset-0" style={{ background: 'linear-gradient(135deg,#1b2440,#2a1b40)' }} />}
+          {/* The Google map is already dark-styled; the OSM/gradient fallbacks
+              get a light tone for cohesion with the bubble. */}
+          {mapMode !== 'google' && <div className="absolute inset-0" style={{ background: 'linear-gradient(180deg,rgba(10,8,22,.10),rgba(12,9,26,.30))' }} />}
+          {/* glowing gradient pin, centred on the point */}
+          <svg viewBox="0 0 58 74" width="40" height="51" className="absolute left-1/2 top-1/2" style={{ transform: 'translate(-50%,-100%)', filter: 'drop-shadow(0 0 8px rgba(215,95,255,.8)) drop-shadow(0 4px 6px rgba(0,0,0,.5))' }}>
+            <defs><radialGradient id="lpin" cx="42%" cy="30%" r="75%">
+              <stop offset="0" stopColor="var(--vg-chat-accent, #f5a3ff)" stopOpacity="0.75" />
+              <stop offset="42%" stopColor="var(--vg-chat-accent, #d24bff)" />
+              <stop offset="100%" stopColor="var(--vg-chat-accent, #8b23e6)" stopOpacity="0.85" />
+            </radialGradient></defs>
+            <path d="M29 2C15.6 2 4 13 4 27c0 18 25 45 25 45s25-27 25-45C54 13 42.4 2 29 2z" fill="url(#lpin)"/>
+            <circle cx="29" cy="26" r="9.5" fill="#3a1560" opacity=".5"/>
+            <circle cx="29" cy="26" r="9.5" fill="none" stroke="rgba(255,255,255,.25)" strokeWidth="1.5"/>
+          </svg>
+          <span className="absolute right-2.5 bottom-2.5 flex items-center gap-1.5 px-3 py-1.5 rounded-2xl text-white font-bold text-[12px]" style={{ background: 'rgba(16,12,26,.85)', boxShadow: 'inset 0 0 0 1px var(--vg-chat-accent-45, rgba(176,107,255,.4)),0 4px 12px rgba(0,0,0,.5)' }}>
+            <Icon name="open_in_new" size={14} className="text-brand-violet-light" /> Open map
+          </span>
+        </div>
+        <div className="flex items-center gap-3 px-3.5 pt-3 pb-1.5">
+          <span className="w-10 h-10 rounded-full grid place-items-center shrink-0" style={{ background: 'radial-gradient(circle at 50% 38%,#271c3d,#15101e)', boxShadow: '0 0 0 1.5px var(--vg-chat-accent-70, rgba(176,107,255,.6)),0 0 13px var(--vg-chat-accent-45, rgba(160,60,240,.5))' }}>
+            <Icon name="location_on" size={20} className="text-[#c489ff]" style={{ filter: 'drop-shadow(0 0 4px rgba(180,90,255,.85))' }} />
+          </span>
+          <div className="min-w-0 flex-1">
+            {/* 2-line clamp, not truncate: a real address ("Bridge Street,
+                Millbank") was getting cut off at one line. */}
+            <div className="font-syne font-bold text-white" style={{ fontSize: 13.5, lineHeight: 1.2, letterSpacing: '-.1px', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{line1}</div>
+            <div className="text-text-muted truncate mt-0.5" style={{ fontSize: 11.5 }}>{line2}</div>
+          </div>
+        </div>
+      </button>
+      <div className="flex items-center justify-end gap-2 px-3.5 pb-2.5">
+        <span className="font-dmmono text-[11px] text-text-muted">{timeStr}</span>
+        {read ? <CoinTicks /> : null}
+      </div>
+    </div>
+  );
+}
+
 /* ═══════ Delivery ticks (single grey = sent, double blue = read) ═══════ */
 // A tiny scale pop when the state flips (sent → read) sells reliability; the
 // first render never pops so opening a thread doesn't twitch every row.
@@ -805,6 +1065,11 @@ export default function ChatThreadScreen() {
   // full-screen details route (Telegram-mobile pattern).
   const openContactInfo = () => {
     if (chatInfo?.isSaved) return;
+    // A support ticket is a group under the hood, so tapping its header used to
+    // open the full group-management screen: member list with roles, Invite
+    // Members, rename, leave (audit A4). There is nothing there a person
+    // raising a ticket should see or be able to do, so the header is inert.
+    if (chatInfo?.supportThread === true) return;
     if (chatInfo?.isGroup) { navigate(`/messages/${chatId}/group`); return; }
     if (isDesktop) {
       setSearchParams((prev) => {
@@ -850,6 +1115,24 @@ export default function ChatThreadScreen() {
   }, [messages, canSaveToGallery]);
 
   const [chatInfo, setChatInfo] = useState(null);
+
+  // Calls in this conversation, rendered inline in the thread. Live, so a call
+  // that just ended appears without a reload. Groups are excluded: 1:1 calling
+  // is the only kind these rows describe.
+  //
+  // ⚠ This MUST sit below `chatInfo`'s declaration. The dependency array is
+  // evaluated during render, so reading `chatInfo?.isGroup` from above the
+  // `useState` line puts it in the temporal dead zone and throws
+  // "Cannot access 'chatInfo' before initialization" on every mount. The build
+  // passes either way — it is a runtime crash, caught here by the error
+  // boundary as "Something went wrong".
+  const [callRows, setCallRows] = useState([]);
+  useEffect(() => {
+    if (!chatId || chatInfo?.isGroup) { setCallRows([]); return undefined; }
+    const unsub = subscribeCallsForChat(chatId, setCallRows);
+    return () => unsub && unsub();
+  }, [chatId, chatInfo?.isGroup]);
+
   const otherUserId = chatInfo?.participants?.find(id => id !== auth.currentUser?.uid);
   // `metadata` is a snapshot stored on the conversation doc — it doesn't
   // include the live `vanguard` rank. We fetch the live user doc once so
@@ -907,11 +1190,42 @@ export default function ChatThreadScreen() {
     };
   }, [chatInfo, chatId]);
 
+  // In a SUPPORT thread every participant except the person who opened it is an
+  // agent, and they answer AS the channel. The user should see "Vergr Support",
+  // not the name of whichever member of staff happened to pick it up: it keeps
+  // the agent's identity private and stops the thread reading as a stranger
+  // messaging them. Same masking rule as Vanguard. The real uid stays on the
+  // message, so who answered is always recoverable internally.
+  const supportUserId = chatInfo?.supportThread === true ? chatInfo.supportUserId : null;
+  const isSupportAgent = (uid) => !!supportUserId && uid !== supportUserId;
+  const supportLabel = chatInfo?.groupName || 'Support';
+
+  // A support ticket is deliberately a GROUP conversation (functions/
+  // supportChannel.js): the DM relay path is ciphertext, so only the two
+  // endpoints could read it, and support has to be readable by whichever agent
+  // picks it up next. That decision is correct and must not be reverted.
+  //
+  // What was never done is suppressing the group UI it inherits (audit A4). A
+  // user raising a ticket was offered Invite Members (add a stranger to your
+  // own private support conversation, who then reads the whole history), a
+  // MEMBERS panel with OWNER/ADMIN roles (exposing support staffing to the
+  // person raising the ticket), Auto-delete (set your own support record to
+  // self-destruct) and Report (aimed at the support team answering you).
+  const isSupportThread = chatInfo?.supportThread === true;
+
   // Name resolution for a message sender (nickname → live profile → snapshot).
   const senderNameOf = (uid) => {
     if (uid === auth.currentUser?.uid) return 'You';
+    if (isSupportAgent(uid)) return supportLabel;
     return chatDisplayName(uid, memberProfiles[uid] || (uid === otherUserId ? otherUserLive : null), profile, chatInfo?.metadata?.[uid]?.name || 'User');
   };
+
+  // The live user doc behind a uid in this thread, or null. Everything here is
+  // already loaded for names and avatars, so this is a property read and never
+  // a fetch — which is what lets the typing indicator show the TYPIST's
+  // cosmetics for free (docs/effects/06-typing-indicator.md §4.1).
+  const profileOf = (uid) =>
+    (uid ? (memberProfiles[uid] || (uid === otherUserId ? (otherUserLive || otherUser) : null) || peekChatUser(uid)) : null);
 
   // Resolve a reactor uid → { displayName, avatar } for the "who reacted" sheet.
   const resolveReactor = (uid) => {
@@ -1659,7 +1973,59 @@ export default function ChatThreadScreen() {
     return () => clearTimeout(timer);
   }, [chatId, rawMessages]);
 
-  const bgStyle = getChatBgStyle(chatInfo?.chatBackground, chatInfo?.chatBackgroundImage, { isDesktop });
+  // ── Chat theme (effect 12) ──────────────────────────────────────────
+  // ⚠ Resolved from the profile of whoever SET it, not the viewer's, and not at
+  // write time. If they drop below the level or their Pro lapses, the theme
+  // stops rendering by itself — no cleanup job. See chatThemes.js.
+  // The setter's profile is already loaded for their name and avatar, so this
+  // costs nothing (docs/effects/12 §2b).
+  const chatTheme = chatThemeFor(chatInfo, profileOf(chatInfo?.chatThemeBy));
+  const isLightApp = typeof document !== 'undefined'
+    && document.documentElement.getAttribute('data-theme') === 'light';
+  const themeColors = chatThemeColors(chatTheme, isLightApp);
+  // One phase step per message YOU send, which is Telegram's rule. Counting my
+  // own messages means the prop changes exactly on send, and it is stable on
+  // load so the thread does not animate when you open it.
+  const mySendCount = messages.filter((m) => m.senderId === auth.currentUser?.uid).length;
+
+  // ── BUBBLE COLOURS ──────────────────────────────────────────────
+  // A theme resolves to the gradient PLUS the bubbles (doc 12 §2b). Null when
+  // no theme is set, so the default violet is untouched for everyone who has
+  // not chosen one.
+  const bubble = chatBubbleColors(chatTheme);
+
+  // ⚠ ANCHORED TO THE THREAD, NOT THE BUBBLE (doc 12 §0.3). Telegram's shader
+  // spans the whole chat background and each bubble paints the SLICE at its own
+  // scroll position, so a bubble high in the thread is a different colour from
+  // one lower down and the colour shifts as you scroll. The doc calls this "the
+  // single most recognisable detail of a Telegram chat theme", and the thing
+  // that gets missed if you copy "gradient bubbles" literally by putting a
+  // gradient on each bubble.
+  //
+  // `background-attachment: fixed` buys it for ONE property: the gradient is
+  // laid out against the viewport rather than the element, so every bubble
+  // samples whatever slice it happens to sit over.
+  //
+  // ⚠ WebKit treats `fixed` as `scroll`, so on iOS the gradient is per-bubble.
+  // That is a graceful degradation to the obvious behaviour, not a bug to chase,
+  // and it is why the gradient still reads correctly on its own.
+  // Built in chatThemes.js, not here, so the doc-12 §8 rules (no
+  // backdrop-filter, opacity never below the floor) can actually be ASSERTED by
+  // scripts/chat-contrast-check.mjs. See the comment on chatBubbleStyles.
+  const { out: outBubbleStyle, in: inBubbleStyle } = chatBubbleStyles(bubble);
+  // ⚠ A noBubble MESSAGE STILL NEEDS THE THEME VARS. Media, location and file
+  // cards render with no bubble chrome, so they used to get   // and therefore none of the custom properties. Their icons then fell back to
+  // the global brand violet, which is why a live probe kept finding violet
+  // inside a Dracula thread no matter how many call sites were fixed. The
+  // scoped CSS rule in surface.css was correct all along; the variable simply
+  // was not there to read.
+  const bubbleVarsOnly = chatBubbleVars(bubble) || undefined;
+
+  // The wallpaper is suppressed while a theme is on. It is NOT removed: clear
+  // the theme and the user's chosen wallpaper is exactly as it was.
+  const bgStyle = chatTheme
+    ? { backgroundColor: isLightApp ? '#FFFFFF' : '#000000' }
+    : getChatBgStyle(chatInfo?.chatBackground, chatInfo?.chatBackgroundImage, { isDesktop });
 
   // Preload the chosen background as soon as we know it. Browser puts it in
   // the HTTP cache so the actual background-image paint is instant.
@@ -1694,6 +2060,14 @@ export default function ChatThreadScreen() {
           videoUrl: payload.videoUrl || '',
           fileName: payload.fileName || '',
           fileSize: payload.fileSize || 0,
+          // Structured payloads for card bubbles (location pin, coin transfer,
+          // contact). This wrapper used to forward only the fields above, so a
+          // location/wallet object was dropped here before it ever reached the
+          // relay hook — the amount/coordinates never arrived and the bubble
+          // fell back to a plain line of text.
+          ...(payload.location ? { location: payload.location } : {}),
+          ...(payload.wallet ? { wallet: payload.wallet } : {}),
+          ...(payload.contact ? { contact: payload.contact } : {}),
           replyTo: replyPayload || null,
           replyToId: replyPayload?.id || '',
         });
@@ -2137,12 +2511,22 @@ export default function ChatThreadScreen() {
   // stream per peer. Both ring through the same `calls` doc.
   const startCall = async (type) => {
     if (!chatInfo) return;
+    // Defence in depth for the header gate above: a support thread's
+    // participants are the support AGENTS' personal uids, so a call here rings
+    // staff directly. Refuse at the source too, so no other entry point (or a
+    // render against stale chatInfo) can start one.
+    if (chatInfo.supportThread || chatInfo.isOfficial) return;
     const isGroupCall = !!chatInfo.isGroup;
     try {
       await setDoc(doc(db, 'calls', chatId), {
         callerId: auth.currentUser.uid,
-        callerName: auth.currentUser.displayName || profile?.displayName || 'Anonymous Pilot',
-        callerAvatar: auth.currentUser.photoURL || profile?.avatar || '',
+        // A82: the Vergr PROFILE is the identity, not the Firebase Auth record.
+        // `auth.currentUser.displayName` is whatever the auth provider last set
+        // (often a single initial, or a stale Google name), and putting it first
+        // is what made incoming calls ring showing a bare "V". CallsScreen has
+        // always used the profile; these two are now consistent.
+        callerName: profile?.displayName || profile?.username || 'Vergr user',
+        callerAvatar: profile?.avatar || '',
         type,
         status: 'ringing',
         participants: chatInfo.participants,
@@ -2296,12 +2680,19 @@ export default function ChatThreadScreen() {
       return;
     }
     navigator.geolocation.getCurrentPosition(
-      (position) => {
+      async (position) => {
         const { latitude, longitude } = position.coords;
+        // Turn the raw pair into a human address (free, key-less). Showing
+        // "40.758, -73.9855" as a shared location is unreadable; a place name
+        // is what every messenger shows. Falls back to the pair if offline.
+        const { title, subtitle } = await reverseGeocode(latitude, longitude);
         sendMsg({
           type: 'location',
-          text: `📍 Current location: ${latitude}, ${longitude}`,
-          location: { lat: latitude, lng: longitude, type: 'current' },
+          text: title, // inbox-preview + fallback label
+          location: { lat: latitude, lng: longitude, title, subtitle, type: 'current' },
+          // The relay server strips the `location` object; contentUrl survives,
+          // so coords + address ride there and the recipient reconstructs them.
+          contentUrl: geoContentUrl(latitude, longitude, title, subtitle),
         });
       },
       (error) => {
@@ -2315,11 +2706,14 @@ export default function ChatThreadScreen() {
     setShowLocationPicker(true);
   };
 
-  const handleLocationConfirm = (coords, address) => {
+  const handleLocationConfirm = (coords, addr) => {
+    const title = addr?.title || addr?.address || (typeof addr === 'string' ? addr : `${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}`);
+    const subtitle = addr?.subtitle || '';
     sendMsg({
       type: 'location',
-      text: `📍 ${address}`,
-      location: { lat: coords.lat, lng: coords.lng, address, type: 'pinned' },
+      text: title, // inbox-preview + fallback label
+      location: { lat: coords.lat, lng: coords.lng, title, subtitle, type: 'pinned' },
+      contentUrl: geoContentUrl(coords.lat, coords.lng, title, subtitle),
     });
   };
 
@@ -2729,28 +3123,41 @@ export default function ChatThreadScreen() {
         return (
           <div>{forwardedLabel}<QuotedReply replyTo={m.replyTo} isMe={isMe} />
           <a href={m.contentUrl} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="flex items-center gap-3 px-4 py-3 hover:opacity-80 transition-opacity min-w-[200px]">
-            <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${isMe ? 'bg-white/15' : 'bg-brand-violet/10'}`}><Icon name="description" size={20} className={isMe ? 'text-white/70' : 'text-brand-violet-light'} /></div>
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+              style={{ background: isMe ? 'rgba(255,255,255,0.15)' : 'var(--vg-chat-accent-12, rgba(123,31,255,0.10))' }}>
+              <Icon name="description" size={20}
+                className={isMe ? 'text-white/70' : ''}
+                style={isMe ? undefined : { color: 'var(--vg-chat-accent, #B44FFF)' }} />
+            </div>
             <div className="min-w-0 flex-1"><p className="text-sm font-medium truncate">{m.fileName || m.text || 'File'}</p>{m.fileSize && <p className={`text-[10px] ${isMe ? 'text-white/50' : 'text-text-muted'}`}>{m.fileSize < 1048576 ? `${(m.fileSize / 1024).toFixed(1)} KB` : `${(m.fileSize / 1048576).toFixed(1)} MB`}</p>}</div>
             <Icon name="download" size={18} className={isMe ? 'text-white/40' : 'text-text-muted'} />
           </a></div>
         );
 
-      case 'location':
-        const { lat, lng, address } = m.location || {};
-        const mapUrl = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
-        return (
-          <div>
-            {forwardedLabel}
-            <QuotedReply replyTo={m.replyTo} isMe={isMe} />
-            <a href={mapUrl} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="block px-4 py-2.5">
-              <div className="flex items-center gap-2">
-                <Icon name="location_on" size={20} className="text-brand-violet-light" />
-                <span className="text-sm">{m.text || `${address || `${lat}, ${lng}`}`}</span>
+      case 'location': {
+        // Sender holds the full `location` object; the RECIPIENT gets only the
+        // relay-forwarded fields, so lat/lng + address ride `contentUrl` as
+        // geo:lat,lng|title|subtitle and are parsed back here.
+        const geo = m.location || parseGeo(m.contentUrl) || {};
+        const lat = geo.lat, lng = geo.lng;
+        const title = m.location?.title || geo.title || m.text;
+        const subtitle = m.location?.subtitle || geo.subtitle || '';
+        // Truly legacy rows (no coords anywhere) show their text, not a broken card.
+        if (lat == null || lng == null) {
+          return (
+            <div>
+              {forwardedLabel}
+              <QuotedReply replyTo={m.replyTo} isMe={isMe} />
+              <div className="px-4 py-2.5 flex items-center gap-2">
+                <Icon name="location_on" size={20} style={{ color: 'var(--vg-chat-accent, #B44FFF)' }} />
+                <span className="text-sm">{m.text || 'Shared a location'}</span>
               </div>
-            </a>
-            {timeEl}
-          </div>
-        );
+              {timeEl}
+            </div>
+          );
+        }
+        return <LocationBubble lat={lat} lng={lng} title={title} subtitle={subtitle} isMe={isMe} timeStr={time} read={isMe} />;
+      }
 
       case 'contact':
         const { type, username, name, phone } = m.contact || {};
@@ -2759,7 +3166,7 @@ export default function ChatThreadScreen() {
             {forwardedLabel}
             <QuotedReply replyTo={m.replyTo} isMe={isMe} />
             <div className="px-4 py-2.5 flex items-center gap-2">
-              <Icon name="contact_mail" size={20} className="text-brand-violet-light" />
+              <Icon name="contact_mail" size={20} style={{ color: 'var(--vg-chat-accent, #B44FFF)' }} />
               <span className="text-sm">
                 {type === 'vergr' ? `👤 @${username}` : `📞 ${name}: ${phone}`}
               </span>
@@ -2768,19 +3175,20 @@ export default function ChatThreadScreen() {
           </div>
         );
 
-      case 'wallet':
-        const { amount } = m.wallet || {};
+      case 'wallet': {
+        // Amount + optional note ride `contentUrl` (vergrcoin:amount:note) since
+        // the relay strips the structured object; `text` ("Sent N coins") is the
+        // preview + a last-ditch amount fallback for legacy rows.
+        const parsed = parseCoin(m.contentUrl);
+        const amt = Number(
+          (m.wallet && m.wallet.amount) ?? parsed?.amount ??
+          (String(m.text || '').match(/([\d,]+)/)?.[1] || '0').replace(/,/g, '')
+        ) || 0;
+        const note = m.wallet?.note ?? parsed?.note ?? '';
         return (
-          <div>
-            {forwardedLabel}
-            <QuotedReply replyTo={m.replyTo} isMe={isMe} />
-            <div className="px-4 py-2.5 flex items-center gap-2">
-              <Icon name="attach_money" size={20} className="text-brand-violet-light" />
-              <span className="text-sm">{m.text || `💸 Sent ${amount} coins`}</span>
-            </div>
-            {timeEl}
-          </div>
+          <CoinCard amount={amt} note={note} isMe={isMe} otherName={otherUser?.displayName} timeStr={time} read={isMe} />
         );
+      }
 
       case 'poll':
         return (
@@ -2849,11 +3257,32 @@ export default function ChatThreadScreen() {
   // it vanishes on its timer instead of whenever the relay's 60s sweep next
   // runs (the sweep is what actually deletes the body server-side). `expireTick`
   // re-renders on a timer so a message open on screen disappears on its own.
-  const allMessages = filterExpired(
+  const baseMessages = filterExpired(
     [...messages, ...optimisticMsgs.filter(opt => { const last5 = messages.slice(-5); return !last5.some(m => m.text === opt.text && m.senderId === opt.senderId && m.type === opt.type); })].filter(m => !m.deleted),
     chatTtl,
     expireTick,
   );
+
+  // Splice call rows into the conversation (WhatsApp behaviour: a call you made
+  // or missed is part of the thread, not only of the Calls tab). Day separators
+  // are rebuilt after the merge, otherwise a call landing on a day with no
+  // messages would sit under the wrong date heading.
+  const allMessages = (() => {
+    if (!callRows.length) return baseMessages;
+    const msMsg = (m) => (m.createdAt?.toDate ? m.createdAt.toDate().getTime() : (m.createdAt ? new Date(m.createdAt).getTime() : 0));
+    const merged = [
+      ...baseMessages.filter(m => m._type !== 'separator'),
+      ...callRows.map(c => ({ ...c, _type: 'call', id: `call_${c.id}`, createdAt: new Date(c.startedAtMs || 0) })),
+    ].sort((a, b) => msMsg(a) - msMsg(b));
+    const out = [];
+    let lastDate = null;
+    for (const m of merged) {
+      const dateStr = new Date(msMsg(m) || Date.now()).toDateString();
+      if (dateStr !== lastDate) { out.push({ _type: 'separator', date: dateStr, id: 'sep_' + dateStr }); lastDate = dateStr; }
+      out.push(m);
+    }
+    return out;
+  })();
   const displayMessages = searchQuery ? allMessages.filter(m => m._type === 'separator' || (m.text && m.text.toLowerCase().includes(searchQuery.toLowerCase()))) : allMessages;
 
   // All viewable media in this chat (for the lightbox's swipe-between).
@@ -2916,6 +3345,9 @@ export default function ChatThreadScreen() {
       avatar: otherUser?.avatar,
       name:   nick || otherUser?.name || otherUser?.displayName || 'Chat',
       rank:   null,
+      // Crest in the DM header. No extra read: otherUserLive is the live user doc.
+      vpLevel: otherUser?.vpLevel || null,
+      role: otherUser?.role || null,
     };
     const masked = applyVanguardMask(live, profile);
     return {
@@ -2923,6 +3355,11 @@ export default function ChatThreadScreen() {
       name:   (!masked?.isVanguardPersona && nick) || masked?.displayName || otherUser?.name || 'Chat',
       rank:   live?.vanguard?.rank || null,
       isVanguardPersona: masked?.isVanguardPersona,
+      // ⚠ NULL UNDER THE MASK. A Vanguard persona is anonymous, and a rank crest
+      // beside a masked name would leak exactly what the mask exists to hide.
+      vpLevel: masked?.isVanguardPersona ? null : (live?.vpLevel || null),
+      // ⚠ Also null under the mask: an admin allowance would out a masked mod.
+      role: masked?.isVanguardPersona ? null : (live?.role || null),
     };
   })();
 
@@ -2930,7 +3367,14 @@ export default function ChatThreadScreen() {
     <div
       className={`flex flex-col overflow-hidden ${isDesktop ? 'h-screen relative' : 'fixed inset-0'}`}
       style={isDesktop
-        ? bgStyle
+        // ⚠ `isolation: isolate` IS REQUIRED, not decorative. The chat-theme
+        // layer below is `z-index: -1`, and a negative-z child paints above its
+        // parent's background ONLY if that parent forms a stacking context.
+        // Without it the gradient rendered perfectly and was invisible, behind
+        // an opaque ancestor: measured as a correct 824x686 canvas with the
+        // mask loaded and nothing on screen. This is R6 in docs/effects/00-RULES.md.
+        // The mobile branch always had it, which is why only desktop broke.
+        ? { ...bgStyle, isolation: 'isolate' }
         : { height: 'var(--chat-vh, 100dvh)', isolation: 'isolate' }}
     >
       {/* Background layer — sized to the large viewport (ignoring the virtual
@@ -2946,6 +3390,35 @@ export default function ChatThreadScreen() {
         />
       )}
 
+      {/* Chat theme (effect 12). Sits in the same slot as the wallpaper: fixed
+          to the viewport so it does not scroll away, zIndex -1 inside the
+          parent's stacking context so every message paints above it. */}
+      {chatTheme && (
+        <div
+          aria-hidden="true"
+          style={{
+            position: isDesktop ? 'absolute' : 'fixed',
+            inset: 0,
+            height: isDesktop ? '100%' : '100lvh',
+            zIndex: -1,
+            pointerEvents: 'none',
+          }}
+        >
+          <ChatGradient
+            colors={themeColors}
+            motion={chatMotionFor(chatInfo)}
+            patternUrl={chatPatternUrl(chatTheme)}
+            sendCount={mySendCount}
+            sheet={isLightApp ? '#FFFFFF' : '#000000'}
+            // ⚠ The tile is 768 design units. Drawing it near 1:1 made the
+            // icons chunky on screen and opened visible gaps between them.
+            // Drawing it smaller shrinks every icon and tightens the field,
+            // which is what makes it read as texture rather than as objects.
+            tileSize={isDesktop ? 430 : 360}
+          />
+        </div>
+      )}
+
       {/* Header */}
       <header className="shrink-0 flex items-center gap-3 px-4 z-20" style={{ height: 'auto', minHeight: 52, paddingTop: IS_NATIVE_BUILD ? 'calc(env(safe-area-inset-top, 0px) + 8px)' : 'env(safe-area-inset-top, 0px)', background: 'rgba(7,8,13,0.55)', backdropFilter: 'blur(20px) saturate(1.4)', WebkitBackdropFilter: 'blur(20px) saturate(1.4)', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
         <button onClick={() => navigate('/messages')} className={isDesktop ? 'hidden' : 'shrink-0 text-text-secondary'}><Icon name="arrow_back" size={22} /></button>
@@ -2955,7 +3428,7 @@ export default function ChatThreadScreen() {
               <Icon name="bookmark" size={19} className="text-brand-violet-light" />
             </div>
           ) : (
-            <UserAvatar src={chatInfo?.isGroup ? chatInfo.groupIcon : maskedDM.avatar} size={38} isGroup={chatInfo?.isGroup} isLive={!chatInfo?.isGroup && !maskedDM?.isVanguardPersona && isUserLive(otherUserId)} />
+            <UserAvatar src={chatInfo?.isGroup ? (chatInfo.groupIcon || chatInfo.groupAvatar || null) : maskedDM.avatar} size={38} isGroup={chatInfo?.isGroup} isLive={!chatInfo?.isGroup && !maskedDM?.isVanguardPersona && isUserLive(otherUserId)} />
           )}
           {!chatInfo?.isSaved && otherOnline && <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 border-2 border-bg-dark rounded-full" />}
         </div>
@@ -2963,18 +3436,39 @@ export default function ChatThreadScreen() {
           <h2 className="text-text-primary font-semibold text-sm truncate group-hover:text-text-primary transition-colors flex items-center gap-1.5">
             {chatInfo?.isSaved ? 'Saved Messages' : chatInfo?.isGroup ? chatInfo.groupName : maskedDM.name}
             {maskedDM.rank && <VanguardBadge rank={maskedDM.rank} size={13} />}
+            {/* Rank crest. Only on a 1:1 thread — a group header shows the group
+                name, and "Saved Messages" is yourself. Static, like every
+                surface except live chat. */}
+            {!chatInfo?.isSaved && !chatInfo?.isGroup && (
+              <RankBadge level={maskedDM.vpLevel} role={maskedDM.role} size={13} />
+            )}
           </h2>
           <p className="text-[10px] font-bold uppercase tracking-tighter">
             {chatInfo?.isSaved ? (
               <span className="text-text-muted opacity-60">Only you can see these</span>
             ) : chatInfo?.isGroup ? (
               typingUsers.length > 0 ? (
-                <span className="text-brand-violet-light animate-pulse">{senderNameOf(typingUsers[0]?.uid)} is typing...</span>
+                // The glyph carries the motion now, so the old `animate-pulse`
+                // on the text came off: two unsynchronised animations on one
+                // line read as a fault rather than as one indicator.
+                <TypingIndicator
+                  variant="inline"
+                  className="text-brand-violet-light"
+                  users={typingUsers}
+                  typist={profileOf(typingUsers[0]?.uid)}
+                  label={`${senderNameOf(typingUsers[0]?.uid)} is typing...`}
+                />
               ) : (
                 <span className="text-text-muted opacity-60">{(chatInfo?.participants || []).length} members</span>
               )
             ) : typingUsers.some(u => u.uid === otherUserId) ? (
-              <span className="text-brand-violet-light animate-pulse">typing...</span>
+              <TypingIndicator
+                variant="inline"
+                className="text-brand-violet-light"
+                users={typingUsers}
+                typist={profileOf(otherUserId)}
+                label="typing..."
+              />
             ) : otherOnline ? (
               <span className="text-green-400">Active now</span>
             ) : (
@@ -2996,7 +3490,15 @@ export default function ChatThreadScreen() {
             </button>
           )}
           <button onClick={() => setShowSearch(s => !s)} className="text-text-muted hover:text-text-secondary transition-colors p-1.5"><Icon name="search" size={20} /></button>
-          {!chatInfo?.isSaved && (
+          {/* Call buttons were gated only on isSaved (the self-chat), so they
+              also rendered on a SUPPORT thread — and startCall() copies
+              `chatInfo.participants` onto the call doc, which for a support
+              thread is [the user, ...support agents]. IncomingCallManager
+              listens for `calls` where participants array-contains uid and
+              status == 'ringing', so tapping the video icon rang every support
+              agent's PERSONAL account, unsolicited, from any user at any time.
+              A support conversation is a ticket, not a contact. */}
+          {!chatInfo?.isSaved && !chatInfo?.supportThread && !chatInfo?.isOfficial && (
             <>
               <button onClick={() => startCall('video')} className="text-text-muted hover:text-text-secondary transition-colors p-1.5"><Icon name="videocam" size={20} /></button>
               <button onClick={() => startCall('voice')} className="text-text-muted hover:text-text-secondary transition-colors p-1.5"><Icon name="call" size={18} /></button>
@@ -3026,7 +3528,9 @@ export default function ChatThreadScreen() {
                 : { icon: 'notifications_off', label: 'Mute…', action: () => setShowMuteOptions(s => !s) },
               { icon: 'translate', label: autoTranslate ? 'Auto-translate: On' : 'Auto-translate', action: toggleAutoTranslate },
               { icon: 'event', label: 'Jump to date', action: openJumpToDate },
-              canSetTtl && {
+              // Not on a support ticket: it would let the user set their own
+              // support record to self-destruct (audit A4).
+              canSetTtl && !isSupportThread && {
                 icon: 'timer',
                 label: chatTtl ? `Auto-delete: ${ttlLabel(chatTtl)}` : 'Auto-delete',
                 action: () => { setShowHeaderMenu(false); setTtlSheetOpen(true); },
@@ -3051,11 +3555,17 @@ export default function ChatThreadScreen() {
               // so a participant reporting is the ONLY way anything in here
               // reaches a human. Blocking stops the messages reaching YOU and
               // tells nobody at Vergr that anything happened; this does.
-              { icon: 'flag', label: 'Report', danger: true, action: () => {
+              // Hidden on a support ticket: it points the reporting flow at the
+              // support team the user is currently talking to (audit A4).
+              !isSupportThread && { icon: 'flag', label: 'Report', danger: true, action: () => {
                   setReportOpen(true);
                   setShowHeaderMenu(false);
                 } },
-              { icon: 'delete', label: 'Delete Chat', danger: true, action: () => {
+              // Also hidden on support: deleting orphans the user's side while
+              // the agent's queue row survives, so the ticket lives on with
+              // nobody able to see it. Support threads follow the official
+              // channel rule instead (they reappear on the next message).
+              !isSupportThread && { icon: 'delete', label: 'Delete Chat', danger: true, action: () => {
                   setAlsoDeleteForThem(false);
                   setShowDeleteDialog(true);
                   setShowHeaderMenu(false);
@@ -3145,6 +3655,7 @@ export default function ChatThreadScreen() {
 
           {displayMessages.map((rawM, mi) => {
             if (rawM._type === 'separator') return <DaySeparator key={rawM.id} date={rawM.date} />;
+            if (rawM._type === 'call') return <CallRow key={rawM.id} call={rawM} meUid={auth.currentUser?.uid} onCallBack={startCall} />;
             // System messages ("X added Y", "X renamed the group") render as
             // centered pills, not bubbles.
             if (rawM.type === 'system') {
@@ -3181,7 +3692,10 @@ export default function ChatThreadScreen() {
             const showSender = isGroup && !isMe;
             const senderProfile = showSender ? memberProfiles[m.senderId] : null;
             const importedOnly = !!m.imported && !m.senderId; // no Vergr account mapped
-            const noBubble = m.type === 'sticker' || m.type === 'videonote' || isEmojiOnly(m);
+            // `wallet` (a coin transfer) and `location` (a map card) are their
+            // own self-styled cards, not chat bubbles, so they opt out of the
+            // default bubble background.
+            const noBubble = m.type === 'sticker' || m.type === 'videonote' || m.type === 'wallet' || m.type === 'location' || isEmojiOnly(m);
             // MEDIA IS THE BUBBLE. A photo, a clip, a locked item or a session
             // card fills its container edge to edge, so the bubble's border and
             // tinted background only ever appear as a rim tracing the media —
@@ -3234,8 +3748,12 @@ export default function ChatThreadScreen() {
                 {showSender && (
                   <div className="w-7 mr-1.5 shrink-0 self-end pb-0.5">
                     {runEnd && (
-                      <button onClick={(e) => { e.stopPropagation(); if (!importedOnly) navigate(`/user/${m.senderId}`); }} aria-label="View profile">
-                        <UserAvatar src={senderProfile?.avatar || chatInfo?.metadata?.[m.senderId]?.avatar || m.imported?.avatar} size={26} />
+                      <button onClick={(e) => { e.stopPropagation(); if (!importedOnly && !isSupportAgent(m.senderId)) navigate(`/user/${m.senderId}`); }} aria-label="View profile">
+                        {/* A masked agent shows the channel's avatar, and tapping
+                            it must not open the agent's personal profile. */}
+                        <UserAvatar src={isSupportAgent(m.senderId)
+                          ? (chatInfo?.groupAvatar || null)
+                          : (senderProfile?.avatar || chatInfo?.metadata?.[m.senderId]?.avatar || m.imported?.avatar)} size={26} />
                       </button>
                     )}
                   </div>
@@ -3244,7 +3762,7 @@ export default function ChatThreadScreen() {
                   {showSender && runStart && (
                     <span className="px-1 pb-0.5 flex items-center gap-1.5 max-w-full">
                       <button
-                        onClick={(e) => { e.stopPropagation(); if (!importedOnly) navigate(`/user/${m.senderId}`); }}
+                        onClick={(e) => { e.stopPropagation(); if (!importedOnly && !isSupportAgent(m.senderId)) navigate(`/user/${m.senderId}`); }}
                         className="text-[11px] font-bold truncate text-left"
                         style={{ color: senderColor(m.senderId || m.imported?.name || '') }}>
                         {importedOnly ? m.imported.name : senderNameOf(m.senderId)}
@@ -3275,7 +3793,7 @@ export default function ChatThreadScreen() {
 
                     <div data-msg-bubble className={`${noBubble ? '' : `rounded-2xl overflow-hidden break-words ${isMe ? `text-white ${runEnd ? 'rounded-br-none' : ''}` : `bg-surface-2 text-white ${bareMedia ? '' : 'border border-white/[0.06]'} ${runEnd ? 'rounded-bl-none' : ''}`}`} transition-opacity ${isOptimistic ? 'opacity-60' : ''} ${isFailed ? 'opacity-40 ring-1 ring-red-500/50' : ''} ${m._status === 'queued' ? 'opacity-70 ring-1 ring-yellow-500/40' : ''}`}
                       {...(autoTranslate && !isMe && m.type === 'text' && m.text ? { 'data-translate-id': m.id, 'data-translate-text': m.text } : {})}
-                      style={noBubble ? undefined : isMe ? { background: 'linear-gradient(160deg, #9D4EFF 0%, #6E1FD1 100%)', boxShadow: '0 1px 2px rgba(0,0,0,0.28)' } : { boxShadow: '0 1px 2px rgba(0,0,0,0.22)' }}>
+                      style={noBubble ? bubbleVarsOnly : isMe ? outBubbleStyle : inBubbleStyle}>
                       {renderMessageContent(m, isMe)}
                       {autoTranslate && !isMe && m.type === 'text' && m.text && translations[m.id] && translations[m.id] !== 'error' && (
                         translations[m.id] === 'pending'
@@ -3322,7 +3840,14 @@ export default function ChatThreadScreen() {
                       : (otherUser?.avatar)}
                     size={26} />
                 </div>
-                <TypingIndicator />
+                {/* `users` is what makes this render at all: without it the
+                    component's own empty-list guard returned null and this
+                    bubble never drew. `typist` is what makes it carry the other
+                    person's chosen style. */}
+                <TypingIndicator
+                  users={typingUsers.map(u => ({ uid: u.uid, name: senderNameOf(u.uid) }))}
+                  typist={profileOf(typingUsers[0]?.uid)}
+                />
               </div>
             </div>
           )}
@@ -3418,7 +3943,7 @@ export default function ChatThreadScreen() {
                 className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-surface-2 transition-colors">
                 <UserAvatar src={c.avatar} size={26} />
                 <span className="text-sm text-text-primary font-medium truncate">{c.name}</span>
-                <span className="text-[11px] text-text-muted truncate">@{c.username}</span>
+                <span className="text-[11px] text-text-muted truncate"><UserName user={c} masked handle /></span>
               </button>
             ))}
           </div>
@@ -3783,7 +4308,7 @@ export default function ChatThreadScreen() {
                   onChange={(e) => setAlsoDeleteForThem(e.target.checked)}
                   className="h-4 w-4 accent-brand-ember" />
                 <span className="text-sm text-text-primary">
-                  Also delete for {otherUser?.displayName || otherUser?.username || chatInfo?.metadata?.[otherUserId]?.name || 'them'}
+                  Also delete for <UserName user={otherUser} masked fallback={chatInfo?.metadata?.[otherUserId]?.name || 'them'} />
                 </span>
               </label>
             )}
@@ -3952,6 +4477,11 @@ export default function ChatThreadScreen() {
         isOpen={showSendCoinsModal}
         onClose={() => setShowSendCoinsModal(false)}
         recipient={otherUser ? { id: otherUserId, ...otherUser } : null}
+        // Drop a record of the tip into the thread (WhatsApp/Telegram show a
+        // payment in-line), rendered by CoinCard. Amount + optional note ride
+        // `contentUrl` (relay-safe); `text` is only the inbox preview. Profile/
+        // stream tips pass no onSent, so this fires only for a DM tip.
+        onSent={(amt, note) => sendMsg({ type: 'wallet', text: `Sent ${amt.toLocaleString()} coins`, wallet: { amount: amt, note: note || '' }, contentUrl: coinContentUrl(amt, note) })}
       />
     </div>
   );

@@ -41,7 +41,7 @@ const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const { S3Client, GetObjectCommand } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 
-const { earnedCoinCredit } = require('./coinLedger');
+const { earnedCoinCredit, settleEarnedShare } = require('./coinLedger');
 
 const REGION = 'europe-west1';
 const db = getFirestore('vgrdb');
@@ -516,8 +516,8 @@ exports.purchaseAccess = functions.https.onCall(
         updatedAt: FieldValue.serverTimestamp(),
       });
 
-      // Convertible: this is creator earnings, same class as a tip, so it counts
-      // toward earnedBalance and pays the coin-to-gem commission on withdrawal.
+      // This is creator earnings, same class as a tip, so it counts toward
+      // earnedBalance and accrues revenue share in settleEarnedShare below.
       tx.set(sellerWalletRef, {
         ...earnedCoinCredit(sellerNet),
         totalEarned: FieldValue.increment(sellerNet),
@@ -558,6 +558,11 @@ exports.purchaseAccess = functions.https.onCall(
       tx.set(db.collection('transactions').doc(), {
         userId: sellerUid,
         type: 'content_unlock_sale',
+        // Coin-denominated GROSS. The creator's share of it accrues in
+        // settleEarnedShare below, which writes its own `earning: true` row.
+        // This row is the sale record, not the income record, so it must not
+        // be stamped as earnings or the two would double-count.
+        currency: 'coins',
         amount: sellerNet,
         resourceType,
         resourceId,
@@ -568,7 +573,9 @@ exports.purchaseAccess = functions.https.onCall(
       });
 
       tx.set(db.collection('notifications').doc(), {
-        userId: sellerUid,
+        // recipientId, NOT userId. The notifications drawer queries on
+        // recipientId, so this notification was written but never delivered.
+        recipientId: sellerUid,
         type: 'content_unlocked',
         title: 'Someone unlocked your content',
         body: `+${sellerNet} coins from ${fresh.title}`,
@@ -578,8 +585,22 @@ exports.purchaseAccess = functions.https.onCall(
         createdAt: FieldValue.serverTimestamp(),
       });
 
-      return { alreadyOwned: false, pricePaid: price, platformFee, sellerNet };
+      return { alreadyOwned: false, pricePaid: price, platformFee, sellerNet, sellerUid };
     });
+
+    // Accrue the seller's revenue share. Every other earning surface does this
+    // and locked content did not, so unlock revenue sat in the spendable coin
+    // pool forever: never accrued, never payable, and invisible on the Earnings
+    // screen. Post-commit and idempotent on the entitlement id, matching the
+    // pattern in memberships and eventTickets.
+    if (!result.alreadyOwned && result.sellerNet > 0) {
+      await settleEarnedShare(db, {
+        uid: result.sellerUid,
+        coins: result.sellerNet,
+        source: 'content_unlock',
+        sourceId: `unlock:${entitlementId(resourceType, resourceId, uid)}`,
+      });
+    }
 
     return { ok: true, ...result };
   },

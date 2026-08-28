@@ -11,6 +11,7 @@ import { useUI } from '../../context/UIContext';
 import { useLayout } from '../../context/LayoutContext';
 import useResponsive from '../../hooks/useResponsive';
 import { IS_NATIVE_BUILD } from '../../utils/platform';
+import UserName from '../../components/UserName';
 
 export default function CreateGroupChatScreen() {
   const { isDesktop } = useResponsive();
@@ -171,8 +172,8 @@ export default function CreateGroupChatScreen() {
                 <button key={f.uid} onClick={() => toggleSelection(f)} className="flex items-center gap-3 w-full py-3 px-3 rounded-xl hover:bg-surface-1 transition-colors">
                   <UserAvatar src={f.avatar} size={40} />
                   <div className="flex-1 text-left">
-                    <p className="text-text-primary font-bold text-sm">{f.displayName}</p>
-                    <p className="text-text-muted text-xs">@{f.username}</p>
+                    <p className="text-text-primary font-bold text-sm"><UserName user={f} masked /></p>
+                    <p className="text-text-muted text-xs"><UserName user={f} masked handle /></p>
                   </div>
                   <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all ${
                     isSelected ? 'bg-brand-violet border-brand-violet scale-110' : 'border-white/[0.06]'

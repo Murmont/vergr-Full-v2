@@ -275,7 +275,53 @@ exports.diditWebhook = onRequest(
       };
     }
 
-    await userRef.set({ kyc: result }, { merge: true });
+    // `kycLevel` is the NUMBER the rest of the platform gates on: creator
+    // eligibility (creatorProgram.js measureRequired), the payout blocking
+    // reason and the KYC payment caps (creatorPayouts.js) all read
+    // `users/{uid}.kycLevel`, and the wallet tier screen reads the wallet copy.
+    // Nothing wrote either field, so a creator could verify with Didit and stay
+    // at level 0 forever, which made the creator program impossible to enter
+    // and impossible to be paid from. Didit's flow is ID + selfie, which is
+    // exactly the level 1 definition; levels 2 and 3 add proof of address and
+    // source of funds and are set by an admin when those are collected, so this
+    // only ever RAISES to 1 and never lowers an already-higher level.
+    // `users/{uid}` is `allow read: if true` — world-readable, signed out
+    // included. So the KYC result is SPLIT (audit A30): only the status the
+    // rest of the app gates on stays on the public document, and the personal
+    // details go to the owner-only private subcollection.
+    //
+    // What was leaking: `age` and the government-ID `country` of every
+    // verified user, and `identityHash` — which the comment above describes
+    // exactly right as a "stable per-PERSON fingerprint", deliberately equal
+    // for two accounts verified by the same human. World-readable, that is an
+    // alt-account correlation oracle for anyone who wants one, and it would
+    // link a masked Vanguard moderator to their public account.
+    //
+    // `identityHash` and `age` have NO readers anywhere (identityHash's only
+    // consumer, gemTransfer.js, was deleted). `country` is read by the owner's
+    // own CreatorVerificationScreen, which now reads it from the private doc.
+    const PRIVATE_KYC_FIELDS = ['age', 'country', 'sessionId', 'identityHash'];
+    const publicKyc = {};
+    const privateKyc = {};
+    for (const [k, v] of Object.entries(result)) {
+      (PRIVATE_KYC_FIELDS.includes(k) ? privateKyc : publicKyc)[k] = v;
+    }
+
+    const patch = { kyc: publicKyc };
+    if (result.verified === true) {
+      const current = Number(userSnap.data()?.kycLevel || 0);
+      if (current < 1) {
+        patch.kycLevel = 1;
+        await db.collection('wallets').doc(vendorData).set({ kycLevel: 1 }, { merge: true });
+      }
+    }
+    // update(), NOT set({merge:true}). merge DEEP-merges nested maps, so an
+    // `age`/`country`/`identityHash` written by an earlier build would survive
+    // on the public doc forever. update() replaces the `kyc` map wholesale,
+    // which both writes the new status and migrates the leak away in one go.
+    // The doc is known to exist: the !userSnap.exists branch above returns.
+    await userRef.update(patch);
+    await userRef.collection('private').doc('kyc').set(privateKyc, { merge: true });
     console.log('[didit] processed', sessionId, '→', result.verified ? 'verified' : 'rejected', status);
     res.status(200).send('ok');
   },

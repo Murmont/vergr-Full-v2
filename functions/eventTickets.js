@@ -27,7 +27,7 @@ if (admin.apps.length === 0) admin.initializeApp();
 const db = getFirestore('vgrdb');
 
 const HttpsError = functions.https.HttpsError;
-const { settleEarnedToGems } = require('./coinLedger');
+const { settleEarnedShare, earnedCoinCredit } = require('./coinLedger');
 
 const REGION = 'europe-west1';
 
@@ -166,9 +166,11 @@ exports.purchaseEventTicket = functions.https.onCall(
       // Credit host net earnings.
       if (hostNet > 0) {
         tx.set(hostWalletRef, {
-          balance: FieldValue.increment(hostNet),
-          // convertible: ticket revenue (host net) (received value) — see coinLedger.js
-          earnedBalance: FieldValue.increment(hostNet),
+          // earnedCoinCredit supplies balance + earnedBalance +
+          // totalEarnedCoinsGross. That last field is the input to the revenue
+          // share ladder, and hand-rolling this write used to omit it, so
+          // ticket revenue never moved a host up a tier.
+          ...earnedCoinCredit(hostNet),
           totalEarned: FieldValue.increment(hostNet),
           totalReceived: FieldValue.increment(hostNet),
           updatedAt: FieldValue.serverTimestamp(),
@@ -231,7 +233,7 @@ exports.purchaseEventTicket = functions.https.onCall(
       // rate. Post-commit because the transaction writes the host wallet with
       // set/merge and never reads it, so there is no VP in scope to price with.
       if (r?.hostNet > 0 && r.hostUid) {
-        await settleEarnedToGems(db, {
+        await settleEarnedShare(db, {
           uid: r.hostUid, coins: r.hostNet,
           source: 'event_ticket', sourceId: `ticket:${r.ticketId}`,
         });
@@ -327,9 +329,11 @@ exports.purchaseSeasonPass = functions.https.onCall(
       });
       if (hostNet > 0) {
         tx.set(hostWalletRef, {
-          balance: FieldValue.increment(hostNet), totalEarned: FieldValue.increment(hostNet),
-          // convertible: ticket revenue (host net) (received value) — see coinLedger.js
-          earnedBalance: FieldValue.increment(hostNet), totalEarned: FieldValue.increment(hostNet),
+          // See the ticket-sale write above: earnedCoinCredit is what keeps
+          // totalEarnedCoinsGross correct. This object also used to declare
+          // totalEarned twice.
+          ...earnedCoinCredit(hostNet),
+          totalEarned: FieldValue.increment(hostNet),
           totalReceived: FieldValue.increment(hostNet), updatedAt: FieldValue.serverTimestamp(),
         }, { merge: true });
       }
@@ -359,7 +363,7 @@ exports.purchaseSeasonPass = functions.https.onCall(
     }).then(async (r) => {
       // Same rule as a single ticket: the host's share converts at receipt.
       if (r?.hostNet > 0 && r.hostUid) {
-        await settleEarnedToGems(db, {
+        await settleEarnedShare(db, {
           uid: r.hostUid, coins: r.hostNet,
           source: 'season_pass', sourceId: `pass:${r.passId}`,
         });

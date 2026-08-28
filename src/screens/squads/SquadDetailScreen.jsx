@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import BoostSheet from '../../components/boost/BoostSheet';
 import { useParams, useNavigate } from 'react-router-dom';
 import { doc, onSnapshot, collection, query, where, limit } from 'firebase/firestore';
 import { db } from '../../firebase/config';
@@ -13,13 +14,15 @@ import UserAvatar from '../../components/UserAvatar';
 import Icon from '../../components/Icon';
 import Modal from '../../components/Modal';
 import useResponsive from '../../hooks/useResponsive';
+import UserName from '../../components/UserName';
 
 export default function SquadDetailScreen() {
   const { squadId } = useParams();
   const { currentUser } = useAuth();
   const { showToast } = useUI();
   const navigate = useNavigate();
-  const { isMobile } = useResponsive();
+  const { isMobile } = useResponsive();  const [showBoost, setShowBoost] = useState(false);
+
 
   const [squad, setSquad] = useState(null);
   const [members, setMembers] = useState([]);
@@ -149,10 +152,22 @@ export default function SquadDetailScreen() {
 
   return (
     <div className="pb-24">
+      {/* Boosts work on ANY squad, yours or one you just want to help grow, so
+          this is not gated on membership. */}
+      {showBoost && (
+        <BoostSheet target="squad" targetId={squadId} targetLabel={squad.name}
+          onClose={() => setShowBoost(false)} />
+      )}
+
       {isMobile && <TopBar showBack title={squad.name} actions={
-        <button onClick={() => navigate(`/squads/${squadId}/settings`)} className="w-9 h-9 rounded-full bg-surface-2 flex items-center justify-center">
-          <Icon name="settings" size={18} />
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setShowBoost(true)} aria-label="Boost squad" className="w-9 h-9 rounded-full bg-brand-ember/15 text-brand-ember flex items-center justify-center">
+            <Icon name="rocket_launch" size={18} />
+          </button>
+          <button onClick={() => navigate(`/squads/${squadId}/settings`)} className="w-9 h-9 rounded-full bg-surface-2 flex items-center justify-center">
+            <Icon name="settings" size={18} />
+          </button>
+        </div>
       } />}
 
       {/* Banner area */}
@@ -364,8 +379,8 @@ export default function SquadDetailScreen() {
               <div key={leader.id} className="flex items-center gap-3 p-3 rounded-xl bg-surface-1 border border-white/[0.06]">
                 <UserAvatar src={leader.user?.avatar} size={36} />
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold truncate">{leader.user?.displayName || leader.user?.username}</p>
-                  <p className="text-xs text-text-muted">@{leader.user?.username}</p>
+                  <p className="text-sm font-semibold truncate"><UserName user={leader.user} masked /></p>
+                  <p className="text-xs text-text-muted"><UserName user={leader.user} masked handle /></p>
                 </div>
                 <div className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-brand-violet/10 border border-brand-violet/20">
                   <span className="text-xs">{SQUAD_ROLES[leader.role]?.icon}</span>

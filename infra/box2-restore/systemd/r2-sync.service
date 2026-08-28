@@ -1,0 +1,15 @@
+[Unit]
+Description=Push HLS segments to Cloudflare R2
+After=network.target nginx.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/r2-sync.sh
+Restart=always
+RestartSec=3
+User=root
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

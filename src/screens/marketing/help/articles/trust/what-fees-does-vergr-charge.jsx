@@ -21,7 +21,7 @@ export default {
       h2: "Your revenue share rate"
     },
     {
-      p: "Vergr keeps a share of what your content earns. It is based on your VP: 30% at the start, stepping down to a 15% floor at 100,000 VP. Earning VP is how you keep more."
+      p: "There is no fee on any surface. Not on tips, memberships, tickets, season passes or content unlocks: the full amount counts as revenue your content generated. Vergr is paid by keeping a share of that revenue, once, when you accrue it. You keep 50% at the start, rising to 80% as your lifetime earnings grow. It is set by lifetime earnings alone, never by your VP rank and never by your subscription plan."
     },
     {
       h2: "Plans"

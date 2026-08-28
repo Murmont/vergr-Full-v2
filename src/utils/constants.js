@@ -27,7 +27,7 @@ export const GAMING_PLATFORMS = [
 export const SQUAD_ROLES = {
   president: { label: 'President', desc: 'Makes final decisions. Can veto any representative choice.', icon: '👑', canDistribute: true, canVeto: true },
   vice_president: { label: 'Vice President', desc: 'Can start a vote for new president if inactive 4+ days.', icon: '⭐', canDistribute: false, canVeto: false },
-  treasury: { label: 'Treasury Secretary', desc: 'Manages squad wallet, coin distribution, and tournament entry fees.', icon: '💰', canDistribute: true, canVeto: false },
+  treasury: { label: 'Treasury Secretary', desc: 'Manages squad wallet, coin distribution, and event entry fees.', icon: '💰', canDistribute: true, canVeto: false },
   security: { label: 'Security / General', desc: 'Moderates squad chat. Can mute members and start kick votes.', icon: '🛡️', canDistribute: false, canVeto: false },
   member: { label: 'Member', desc: 'Standard squad member. Can vote, contribute coins, and participate.', icon: '⚔️', canDistribute: false, canVeto: false },
 };

@@ -26,6 +26,7 @@ import sendIcon from '../assets/stream/send.webp';
 import likeIcon from '../assets/stream/like.webp';
 import modBadgeIcon from '../assets/stream/mod-badge.webp';
 import cohostBg from '../assets/stream/cohost-bg.jpg';
+import UserName from '../components/UserName';
 
 // Reliable, CORS-enabled, autoplay-muted-friendly sample (cinematic CG). Swap
 // this one URL for a real gameplay clip and everything else stays the same.
@@ -172,7 +173,7 @@ function MobileViewer({ s }) {
           <UserAvatar src={s.host.avatar} size={38} />
           <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 0 }}>
-              <span style={{ fontSize: 15, fontWeight: 800, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.host.displayName}</span>
+              <span style={{ fontSize: 15, fontWeight: 800, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}><UserName user={s.host} masked /></span>
               <span style={{ flexShrink: 0, width: 15, height: 15, borderRadius: '50%', background: `linear-gradient(135deg,${C.purple},${C.purpleLight})`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="check" size={10} /></span>
             </div>
             <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.9)', whiteSpace: 'nowrap' }}>{compactNum(s.hearts)} Likes</span>
@@ -251,7 +252,7 @@ function DesktopViewer({ s }) {
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <div style={{ padding: 2, borderRadius: '50%', background: `linear-gradient(135deg,${C.purple},${C.purpleLight})` }}><UserAvatar src={s.host.avatar} size={48} /></div>
               <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}><span style={{ fontSize: 17, fontWeight: 800 }}>{s.host.displayName}</span><Icon name="verified" size={15} filled style={{ color: C.purpleLight }} /></div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}><span style={{ fontSize: 17, fontWeight: 800 }}><UserName user={s.host} masked /></span><Icon name="verified" size={15} filled style={{ color: C.purpleLight }} /></div>
                 <div style={{ fontSize: 12, color: T.dim }}>{compactNum(s.followers)} followers</div>
               </div>
             </div>

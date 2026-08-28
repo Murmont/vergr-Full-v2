@@ -23,9 +23,19 @@ const PRESETS = {
   // variants (48/96/192) are the follow-up; this is the single-size floor.
   avatar:    { maxW: 384,  maxH: 384,  quality: 0.82, square: true },
   post:      { maxW: 1600, maxH: 1600, quality: 0.82, square: false },
+  // Pro-only. 3840 is the 4K long edge, and quality is raised because the
+  // whole point of the tier is that a 4K photo survives the upload. The bytes
+  // are still bounded by the 5GB Pro cap in functions/r2.js SIZE_CAPS.
+  post4k:    { maxW: 3840, maxH: 3840, quality: 0.90, square: false },
   chat:      { maxW: 1280, maxH: 1280, quality: 0.80, square: false },
   background:{ maxW: 1920, maxH: 1920, quality: 0.82, square: false },
 };
+
+// Which image preset a plan gets for a feed post. Pro is the only tier whose
+// photos are not resized to 1600px; that is the "4K photos" line on the
+// pricing page, so this map is the thing that makes the claim true.
+// Mirrors maxPhotoPx in src/utils/tierSystem.js TIER_FEATURES.
+export const postPresetForTier = (tier) => (tier === 'pro' ? 'post4k' : 'post');
 
 const _loadImage = (file) => new Promise((resolve, reject) => {
   const img = new Image();

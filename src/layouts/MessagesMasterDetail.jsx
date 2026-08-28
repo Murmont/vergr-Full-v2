@@ -64,7 +64,13 @@ export default function MessagesMasterDetail() {
   const currentConvo = chatId ? (conversations || []).find(c => c.id === chatId) : null;
   // Show the members rail only for group chats. 1-to-1 DMs get nothing —
   // the right rail listed roles that don't apply to a 2-person chat.
-  const showMembersRail = !!(currentConvo && currentConvo.isGroup);
+  // Support tickets ARE group conversations (functions/supportChannel.js needs
+  // them readable by whichever agent picks the ticket up), so they inherited
+  // the whole group UI. The members rail exposed support STAFFING, with
+  // OWNER/ADMIN roles, to the person raising the ticket, and its Invite button
+  // let them add a stranger to their own private support conversation, who
+  // would then read the entire history. Audit A4.
+  const showMembersRail = !!(currentConvo && currentConvo.isGroup && currentConvo.supportThread !== true);
 
   // Contact-info side drawer (Telegram/WhatsApp style) for 1-to-1 DMs.
   // Open BY DEFAULT when a DM is selected; `?info=0` marks it closed. Switching

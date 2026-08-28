@@ -9,6 +9,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import UserAvatar from '../UserAvatar';
 import ReactionEmoji from '../ReactionEmoji';
 import Icon from '../Icon';
+import UserName from '../UserName';
 
 const normalizeUsers = (val) => {
   if (Array.isArray(val)) return val;
@@ -74,7 +75,7 @@ export default function ReactorsSheet({ reactions, activeEmoji, resolveUser, onC
                 <div key={`${uid}-${emoji}-${i}`} className="flex items-center gap-3 px-2 py-2 rounded-lg">
                   <UserAvatar src={u.avatar} size="sm" />
                   <span className="flex-1 min-w-0 text-sm text-white truncate">
-                    {u.displayName || u.username || 'User'}
+                    <UserName user={u} masked fallback={'User'} />
                   </span>
                   <ReactionEmoji emoji={emoji} size={18} />
                 </div>

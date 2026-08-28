@@ -10,10 +10,9 @@
 //
 // ## Why this is a reconciler and not an incremental counter
 //
-// The obvious design is to bump an aggregate every time gems move. It was
-// rejected. There are sixteen gem-mutation sites across ten modules
-// (coinLedger, economy, payram, nowpayments, vergrMeShop, gemBuyback,
-// withdrawals, adminEconomy, creatorPayouts, gemTransfer), and any new earning
+// The obvious design is to bump an aggregate every time the payable moves. It
+// was rejected. There are mutation sites across many modules (coinLedger,
+// vergrMeShop, adminEconomy, creatorPayouts and every earning surface), and any new earning
 // surface adds another. Miss one and the aggregate drifts silently.
 //
 // A drifting solvency number is worse than no solvency number, because it gets
@@ -22,8 +21,8 @@
 //
 // ## When to revisit
 //
-// This scans every wallet with a non-zero gem balance. That is cheap at current
-// scale and stays cheap for a long time, because most wallets hold zero gems
+// This scans every wallet with a non-zero payable. That is cheap at current
+// scale and stays cheap for a long time, because most wallets are owed nothing
 // and are filtered server-side. If the scan ever becomes expensive, the fix is
 // a sharded counter maintained by a wallets/{uid} onWrite trigger, with THIS
 // reconciler kept as the daily check against it. Do not replace the reconciler
@@ -50,28 +49,28 @@ const CIRCLE_HOT_WALLET_ID = defineSecret('CIRCLE_HOT_WALLET_ID');
  */
 const trimEnv = (n) => (process.env[n] || '').replace(/[\s\r\n]+$/g, '').trim();
 
-/** 1 gem = $0.01. Mirrors GEM_TO_MICRO_USD in creatorPayouts.js. */
-const GEM_TO_MICRO_USD = 10_000;
 
 const LEDGER_DOC = 'platform_ledger/totals';
 
 /**
- * Sum every gem currently accrued to a creator and not yet paid.
+ * Sum every dollar currently accrued to a creator and not yet paid.
  *
  * This is the exact liability. Paged rather than loaded at once so a large user
  * base cannot blow the function's memory, and ordered by document id so paging
  * is stable if a wallet is written mid-scan.
  */
 async function computeCreatorPayable() {
-  let payableGems = 0;
+  let payableMicroUsd = 0;
   let walletsWithBalance = 0;
   let scanned = 0;
   let cursor = null;
 
   for (;;) {
+    // `owedMicroUsd` replaced `gems` on 2026-08-16. The liability is now held
+    // directly in micro-USD, so there is no unit conversion in this sum.
     let q = db.collection('wallets')
-      .where('gems', '>', 0)
-      .orderBy('gems')
+      .where('owedMicroUsd', '>', 0)
+      .orderBy('owedMicroUsd')
       .orderBy('__name__')
       .limit(1000);
     if (cursor) q = q.startAfter(cursor);
@@ -80,8 +79,8 @@ async function computeCreatorPayable() {
     if (snap.empty) break;
 
     for (const doc of snap.docs) {
-      const gems = Math.floor(doc.data().gems || 0);
-      if (gems > 0) { payableGems += gems; walletsWithBalance++; }
+      const owed = Math.floor(doc.data().owedMicroUsd || 0);
+      if (owed > 0) { payableMicroUsd += owed; walletsWithBalance++; }
       scanned++;
     }
 
@@ -89,7 +88,7 @@ async function computeCreatorPayable() {
     cursor = snap.docs[snap.docs.length - 1];
   }
 
-  return { payableGems, payableMicroUsd: payableGems * GEM_TO_MICRO_USD, walletsWithBalance, scanned };
+  return { payableMicroUsd, walletsWithBalance, scanned };
 }
 
 /**
@@ -155,8 +154,29 @@ async function readFloat() {
       (b) => String(b?.token?.symbol || '').toUpperCase() === 'USDC',
     );
 
+    // AN EMPTY WALLET IS A KNOWN BALANCE OF ZERO, NOT AN UNREADABLE ONE.
+    //
+    // Circle omits token rows for balances of zero, so a wallet holding nothing
+    // comes back with an empty `tokenBalances` array. Treating that as "cannot
+    // determine float" raised a daily "Cannot verify solvency" alert on a
+    // platform that owes creators $0.00 and is therefore trivially solvent, and
+    // an alert that cries wolf every morning is one nobody reads by the time it
+    // matters.
+    //
+    // The distinction that IS worth keeping: a response with no `tokenBalances`
+    // field at all is a shape we did not expect, and guessing zero there could
+    // mask a real balance behind an API change. That stays unknown.
+    if (!Array.isArray(balances)) {
+      return { floatMicroUsd: null, known: false, sources: [], reason: 'unexpected_balance_shape' };
+    }
     if (!usdcRows.length) {
-      return { floatMicroUsd: null, known: false, sources: [], reason: 'no_usdc_balance_returned' };
+      return {
+        floatMicroUsd: 0,
+        known: true,
+        sources: [{ name: 'circle_omnibus', walletId, micro: 0 }],
+        reason: 'wallet_holds_no_usdc',
+        excludes: ['payram_in_transit', 'payout_partner_balance'],
+      };
     }
 
     let total = 0;
@@ -198,7 +218,6 @@ async function reconcile() {
 
   const dayKey = new Date().toISOString().slice(0, 10);
   const payload = {
-    creatorPayableGems: payable.payableGems,
     creatorPayableMicroUsd: payable.payableMicroUsd,
     walletsWithBalance: payable.walletsWithBalance,
     floatMicroUsd: float.floatMicroUsd,
@@ -241,8 +260,21 @@ async function raiseAlert(status, payload) {
   });
   if (!created) return;
 
+  // The copy has to name the ACTUAL cause. It used to hardcode "no float reader
+  // is configured" for every unknown status, which was simply false in the case
+  // that fired daily: the reader was configured and working, the wallet was
+  // empty. An alert that misstates its own cause sends you looking in the wrong
+  // place, which is worse than one that says nothing.
+  const WHY = {
+    circle_not_configured: 'the Circle API keys are not set',
+    circle_call_failed: 'the Circle balance call failed',
+    unparseable_amount: 'Circle returned a balance we could not read',
+    unexpected_balance_shape: 'Circle returned an unexpected response shape',
+  };
+  const why = WHY[payload.floatReason] || `float is unreadable (${payload.floatReason || 'no reason recorded'})`;
+
   const body = status === 'unknown'
-    ? 'Cannot verify solvency: no float reader is configured, so we cannot confirm we hold what we owe creators.'
+    ? `Cannot confirm we hold what we owe creators: ${why}. Currently owed $${((payload.creatorPayableMicroUsd || 0) / 1e6).toFixed(2)}.`
     : `Creator liabilities exceed held float by $${((payload.shortfallMicroUsd || 0) / 1e6).toFixed(2)}.`;
 
   const admins = await db.collection('users').where('role', '==', 'admin').limit(20).get();
@@ -284,4 +316,4 @@ exports.getSolvencyLedger = functions.https.onCall(
   },
 );
 
-exports._internal = { computeCreatorPayable, readFloat, reconcile, usdcStringToMicro, GEM_TO_MICRO_USD, LEDGER_DOC };
+exports._internal = { computeCreatorPayable, readFloat, reconcile, usdcStringToMicro, LEDGER_DOC };

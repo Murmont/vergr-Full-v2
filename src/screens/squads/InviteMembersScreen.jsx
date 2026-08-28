@@ -10,6 +10,7 @@ import {
 import SquadShell from '../../components/squad/SquadShell';
 import SquadInfoRail from '../../components/squad/SquadInfoRail';
 import { avatarClass, initials, nameOf } from '../../components/squad/squadHelpers';
+import UserName from '../../components/UserName';
 
 export default function InviteMembersScreen() {
   const { squadId } = useParams();
@@ -124,8 +125,8 @@ export default function InviteMembersScreen() {
                       {u.avatar ? <img src={u.avatar} alt="" /> : initials(nameOf(u))}
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontFamily: 'Syne', fontWeight: 700, color: '#fff', fontSize: 13 }}>{u.displayName || u.username || 'Player'}</div>
-                      <div style={{ fontFamily: 'DM Mono', fontSize: 10, color: 'var(--t3)' }}>@{u.username || uid.slice(0, 6)}</div>
+                      <div style={{ fontFamily: 'Syne', fontWeight: 700, color: '#fff', fontSize: 13 }}><UserName user={u} masked fallback={'Player'} /></div>
+                      <div style={{ fontFamily: 'DM Mono', fontSize: 10, color: 'var(--t3)' }}><UserName user={u} masked handle fallback={uid.slice(0, 6)} /></div>
                     </div>
                     {isMember ? (
                       <span style={{ fontFamily: 'DM Mono', fontSize: 10, color: 'var(--violet-light)', textTransform: 'uppercase', letterSpacing: '.08em' }}>Member</span>

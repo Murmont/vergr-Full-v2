@@ -5,7 +5,8 @@
 //   - 4.5s per beat (was 7.6s). Total ~36s (was 60s).
 //   - 400ms crossfade between beats. Real /brand/logo.png in Beat 1.
 //   - Beat 3 rebuilt as CSS Grid so labels can't stack on top of each other.
-//   - Beat 4 uses the real gem PNG (/brand/gems.webp) via GemGlyph primitive.
+//   - Beat 4 uses the real coin art via the CoinGlyph primitive. It used to show
+//     a gem and say "only gems cash out"; the gem unit was removed 2026-08-16.
 //   - Beat 7 claims rewritten — no false EMI / quarterly-audit claims.
 //   - Respects prefers-reduced-motion.
 //
@@ -13,7 +14,7 @@
 
 import { useEffect, useMemo, useRef, useState, memo } from 'react';
 import Icon from '../Icon';
-import { CoinGlyph, GemGlyph, WALLET_TOKENS } from './primitives';
+import { CoinGlyph, WALLET_TOKENS } from './primitives';
 
 const TOTAL_BEATS = 5;
 const BEAT_DURATION_MS = 4500;
@@ -191,15 +192,15 @@ const Beat2 = memo(function Beat2() {
             n.style.opacity = p > 0.42 ? 1 : 0;
             n.style.transform = p > 0.7 ? 'translateX(20px)' : 'translateX(0)';
           }}>
-            <div style={{ display: 'inline-block', filter: 'drop-shadow(0 0 60px rgba(61,127,255,0.5))' }}>
-              <GemGlyph size={160} />
+            <div style={{ display: 'inline-block', filter: 'drop-shadow(0 0 60px rgba(240,165,0,0.45))' }}>
+              <CoinGlyph size={160} />
             </div>
-            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 38, marginTop: 24, color: WALLET_TOKENS.gemBlue, fontWeight: 700 }}>Gems</div>
+            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 38, marginTop: 24, color: '#F0A500', fontWeight: 700 }}>Coins</div>
             <div style={{ fontSize: 17, marginTop: 8, maxWidth: 280, margin: '8px auto 0', color: WALLET_TOKENS.textSecondary, lineHeight: 1.5 }}>
-              You earn these. Only gems cash out.
+              Buy them here, spend them anywhere on Vergr.
             </div>
             <div style={{ fontFamily: FONT_MONO, fontSize: 13, marginTop: 16, color: WALLET_TOKENS.textMuted, letterSpacing: '0.06em' }}>
-              CONVERSION · WITHDRAWALS · PRIZES
+              TIPS · UNLOCKS · MEMBERSHIPS
             </div>
           </Animated>
         </div>
@@ -344,8 +345,8 @@ const Beat4 = memo(function Beat4() {
         position: 'absolute', left: '50%', top: '36%', transform: 'translate(-50%, -50%)',
         opacity: 0, transition: 'opacity 0.5s ease',
       }} apply={(p, n) => { n.style.opacity = p > 0.05 ? 1 : 0; }}>
-        <div style={{ filter: 'drop-shadow(0 0 50px rgba(61,127,255,0.55))' }}>
-          <GemGlyph size={120} />
+        <div style={{ filter: 'drop-shadow(0 0 50px rgba(240,165,0,0.5))' }}>
+          <CoinGlyph size={120} />
         </div>
       </Animated>
 

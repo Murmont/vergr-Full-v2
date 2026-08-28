@@ -3,6 +3,7 @@
 // ≥50% visible for ≥1000ms, and 'dwell' when it leaves with total visible time.
 // Deduplicated per session via a WeakSet keyed on the DOM node.
 import { useEffect, useRef } from 'react';
+import { recordPostView } from '../utils/postViews';
 import { trackEvent } from '../utils/trackEvent';
 
 export function useImpressionTracker(ref, post, opts = {}) {
@@ -21,6 +22,17 @@ export function useImpressionTracker(ref, post, opts = {}) {
             setTimeout(() => {
               if (timers.current.enteredAt && !timers.current.viewed) {
                 timers.current.viewed = true;
+                // ⚠ REUSES THIS OBSERVER rather than adding a second one. The
+                // dwell rule (>=50% visible for 1s) is already exactly what a
+                // view count needs, and two IntersectionObservers on the same
+                // card would be duplicated work that could drift apart.
+                //
+                // ⚠ Deliberately OUTSIDE the consent gate that stops trackEvent:
+                // this increments an aggregate counter on the POST and records
+                // nothing about the viewer, so it is not behavioural tracking.
+                // The counter goes to the Realtime Database, which is not billed
+                // per operation — see functions/postViews.js.
+                recordPostView(post.id);
                 trackEvent('view', {
                   postId: post.id,
                   authorId: post.authorId || post.userId,

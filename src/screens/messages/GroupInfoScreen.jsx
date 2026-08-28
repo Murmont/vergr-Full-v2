@@ -31,6 +31,7 @@ import { uploadToR2 } from '../../utils/r2Storage';
 import UserAvatar from '../../components/UserAvatar';
 import TopBar from '../../components/TopBar';
 import Icon from '../../components/Icon';
+import UserName from '../../components/UserName';
 
 export default function GroupInfoScreen() {
   const { chatId } = useParams();
@@ -52,10 +53,18 @@ export default function GroupInfoScreen() {
   useEffect(() => {
     if (!chatId) return;
     const unsub = onSnapshot(doc(db, 'conversations', chatId), (snap) => {
-      if (snap.exists()) setChatInfo({ id: snap.id, ...snap.data() });
+      if (!snap.exists()) return;
+      const data = { id: snap.id, ...snap.data() };
+      // A support ticket is a group conversation under the hood, so this
+      // screen would happily render support staffing with OWNER/ADMIN roles,
+      // plus Invite Members and rename, to the person who raised the ticket
+      // (audit A4). The header no longer links here, but the route is still
+      // typeable, so the guard belongs on the screen, not only the entry point.
+      if (data.supportThread === true) { navigate(`/messages/${chatId}`, { replace: true }); return; }
+      setChatInfo(data);
     });
     return () => unsub();
-  }, [chatId]);
+  }, [chatId, navigate]);
 
   const participants = chatInfo?.participants || [];
   const participantsKey = participants.join(',');
@@ -245,7 +254,7 @@ export default function GroupInfoScreen() {
         {/* Header: icon + name */}
         <div className="flex flex-col items-center pt-8 pb-6 px-4">
           <div className="relative mb-4">
-            <UserAvatar src={chatInfo.groupIcon} size={88} isGroup />
+            <UserAvatar src={chatInfo.groupIcon || chatInfo.groupAvatar} size={88} isGroup />
             {isAdmin && (
               <label className="absolute -bottom-1 -right-1 w-8 h-8 rounded-full bg-brand-violet text-white flex items-center justify-center cursor-pointer shadow-lg">
                 <Icon name={uploadingIcon ? 'hourglass_top' : 'photo_camera'} size={16} />
@@ -612,8 +621,8 @@ export function AddMembersSheet({ existing, onAdd, onClose }) {
             <div key={u.uid} className="flex items-center gap-3 px-4 py-3 hover:bg-surface-2/50">
               <UserAvatar src={u.avatar} size={38} />
               <div className="flex-1 min-w-0">
-                <p className="text-sm text-text-primary font-medium truncate">{u.displayName || u.username}</p>
-                {u.username && <p className="text-[11px] text-text-muted truncate">@{u.username}</p>}
+                <p className="text-sm text-text-primary font-medium truncate"><UserName user={u} masked /></p>
+                {u.username && <p className="text-[11px] text-text-muted truncate"><UserName user={u} masked handle /></p>}
               </div>
               <button
                 disabled={busy === u.uid}

@@ -41,7 +41,6 @@ export default function SeriesScoreboard({
 
   // Bo1: don't render — TournamentMatchScreen's existing "I won / They won"
   // CTAs already handle single-game matches via reportMatchResultSecure.
-  if (seriesFormat === 'bo1') return null;
 
   const reportGame = async (winnerUid) => {
     if (busy) return;
@@ -76,6 +75,10 @@ export default function SeriesScoreboard({
     }
     return out;
   }, [games, gameReportState, maxGames, match.player1, match.player2]);
+
+  // ⚠ Below every hook. seriesFormat is read off the live match doc, so a bo1
+  // match restamped to bo3 would change the hook count mid-life and throw #310.
+  if (seriesFormat === 'bo1') return null;
 
   return (
     <div style={{

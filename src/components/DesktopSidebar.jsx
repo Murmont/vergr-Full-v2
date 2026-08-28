@@ -11,6 +11,7 @@ import { VPIcon } from './CoinIcon';
 import { CoinBalancePill } from './wallet/CoinQuickBuy';
 import { getVPLevel, getVPProgress, getNextVPLevel } from '../utils/vpSystem';
 import { resolveNavForPath, findActiveItem, MAIN_NAV } from '../config/navConfig';
+import UserName from './UserName';
 
 // Deterministic-ish gradient per squad id so each squad keeps the same
 // chip color across renders even though we don't store a color on the doc.
@@ -39,7 +40,6 @@ const BADGE_COLORS = {
   green:  { bg: 'bg-success-green', text: 'text-black' }, // missed calls
   amber:  { bg: 'bg-brand-gold',    text: 'text-black' }, // message requests
 };
-const BADGE_ORDER = ['red', 'purple', 'green', 'amber'];
 
 // Numbered pill (expanded rail / flyout rows).
 function CountPill({ n, color }) {
@@ -50,12 +50,6 @@ function CountPill({ n, color }) {
       {n > 99 ? '99+' : n}
     </span>
   );
-}
-
-// Bare colored dot (collapsed rail — no room for numbers).
-function Dot({ color }) {
-  const c = BADGE_COLORS[color] || BADGE_COLORS.red;
-  return <span className={`w-2 h-2 rounded-full ring-2 ring-[#0F0F1A] ${c.bg}`} />;
 }
 
 // Contextual left-rail. Main nav uses standalone items + flyout categories;
@@ -69,18 +63,25 @@ export default function DesktopSidebar() {
   const sbVpProgress = getVPProgress(sbVp);
   const sbVpNext = getNextVPLevel(sbVp);
   const { unreadChatCount, unreadNotifCount, requestCount, squadUnreadCount, missedCallCount } = useNotifications();
-  // Color-coded unread for the "Community" nav entry (founder): DMs+groups red,
-  // squad chat+notifications purple, missed calls green, message requests amber.
-  const communityCounts = {
-    red: unreadChatCount || 0,
-    purple: (unreadNotifCount || 0) + (squadUnreadCount || 0),
-    green: missedCallCount || 0,
-    amber: requestCount || 0,
-  };
+  // ONE total on the Community entry, broken down per destination in the
+  // flyout. It used to render up to four colour-coded numbers side by side,
+  // which the founder rejected: nothing on screen says what a colour means, so
+  // a user sees "16 5" and has no way to learn where to go to clear it.
+  //
+  // ⚠ The purple number ALSO included unreadNotifCount, which is the
+  // notification BELL. Nothing inside Community opens the bell drawer, so that
+  // portion of the badge was permanently unclearable from this menu — the
+  // actual cause of "I don't know what the 16 is". Notifications are counted on
+  // the bell and nowhere else now.
+  const communityTotal =
+    (unreadChatCount || 0)
+    + (squadUnreadCount || 0)
+    + (missedCallCount || 0)
+    + (requestCount || 0);
   // Per-item badge for the Community flyout (each sub-item's own count).
   const flyoutBadge = (path) => {
-    if (path === '/messages') return communityCounts.red ? { n: communityCounts.red, color: 'red' } : null;
-    if (path === '/calls' || path === '/messages/hub/calls') return communityCounts.green ? { n: communityCounts.green, color: 'green' } : null;
+    if (path === '/messages') return unreadChatCount ? { n: unreadChatCount, color: 'red' } : null;
+    if (path === '/calls' || path === '/messages/hub/calls') return missedCallCount ? { n: missedCallCount, color: 'green' } : null;
     if (path === '/squads' || path === '/messages/hub/squads') return squadUnreadCount ? { n: squadUnreadCount, color: 'purple' } : null;
     return null;
   };
@@ -223,9 +224,9 @@ export default function DesktopSidebar() {
     // Pick an icon per category header
     const catIcons = { Community: 'groups', Compete: 'emoji_events', You: 'person' };
     const catIcon = catIcons[group.header] || 'more_horiz';
-    // Community carries the color-coded unread cluster.
+    // Community carries ONE total; the flyout breaks it down per destination.
     const isCommunity = group.header === 'Community';
-    const activeColors = isCommunity ? BADGE_ORDER.filter(k => communityCounts[k] > 0) : [];
+    const groupTotal = isCommunity ? communityTotal : 0;
     return (
       <button
         onMouseEnter={(e) => openFlyout(group, e)}
@@ -246,10 +247,10 @@ export default function DesktopSidebar() {
         )}
         <div className="relative shrink-0">
           <Icon name={catIcon} size={20} />
-          {/* Collapsed rail: colored dots stacked on the icon corner. */}
-          {collapsed && activeColors.length > 0 && (
-            <span className="absolute -top-1.5 -right-1.5 flex gap-0.5">
-              {activeColors.slice(0, 3).map(k => <Dot key={k} color={k} />)}
+          {/* Collapsed rail: the same single number, on the icon corner. */}
+          {collapsed && groupTotal > 0 && (
+            <span className="absolute -top-1.5 -right-1.5">
+              <CountPill n={groupTotal} color="red" />
             </span>
           )}
         </div>
@@ -258,10 +259,10 @@ export default function DesktopSidebar() {
             <span className={`text-[13px] tracking-tight flex-1 text-left ${catActive ? 'font-bold' : 'font-medium'}`}>
               {group.header}
             </span>
-            {/* Expanded rail: numbered color-coded pills. */}
-            {activeColors.length > 0 && (
-              <span className="flex items-center gap-1 mr-0.5">
-                {activeColors.map(k => <CountPill key={k} n={communityCounts[k]} color={k} />)}
+            {/* Expanded rail: one total. Per-destination counts are in the flyout. */}
+            {groupTotal > 0 && (
+              <span className="flex items-center mr-0.5">
+                <CountPill n={groupTotal} color="red" />
               </span>
             )}
             <Icon name="chevron_right" size={14} className="text-text-muted/60" />
@@ -443,7 +444,7 @@ export default function DesktopSidebar() {
                 <UserAvatar src={profile?.avatar || profile?.photoURL} size={30} isVerified={profile?.isVerified} />
                 <div className="flex-1 min-w-0">
                   <p className="text-[12px] font-extrabold text-text-primary truncate leading-tight">
-                    {profile?.displayName || profile?.username || 'Gamer'}
+                    <UserName user={profile} masked fallback={'Gamer'} />
                   </p>
                   <p className="text-[9.5px] text-brand-violet font-dmmono font-bold">{sbVpLevel?.name || 'Rookie'}</p>
                 </div>

@@ -20,6 +20,7 @@ import { searchUsers } from '../../firebase/firestore';
 import { motion, AnimatePresence } from 'framer-motion';
 import UserAvatar from '../UserAvatar';
 import Icon from '../Icon';
+import UserName from '../UserName';
 
 const C = {
   bg: '#0a0a14',
@@ -215,8 +216,8 @@ export default function CoHostInviteModal({ streamId, coHostUids = [], onClose, 
                       }}>
                         <UserAvatar src={u.avatar} size="sm" />
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 13, fontWeight: 700 }}>{u.displayName || u.username}</div>
-                          <div style={{ fontSize: 11, color: C.textDim }}>@{u.username}</div>
+                          <div style={{ fontSize: 13, fontWeight: 700 }}><UserName user={u} masked /></div>
+                          <div style={{ fontSize: 11, color: C.textDim }}><UserName user={u} masked handle /></div>
                         </div>
                         <span style={{
                           fontSize: 11, fontWeight: 700,
@@ -262,7 +263,7 @@ function PersonRow({ uid, status, busy, onAction, actionLabel }) {
     }}>
       <UserAvatar src={user?.avatar} size="sm" />
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 13, fontWeight: 700 }}>{user?.displayName || user?.username || uid.slice(0, 6)}</div>
+        <div style={{ fontSize: 13, fontWeight: 700 }}><UserName user={user} masked fallback={uid.slice(0, 6)} /></div>
         <div style={{ fontSize: 11, color: dotColor }}>● {status === 'joined' ? 'Joined' : 'Pending'}</div>
       </div>
       <button onClick={onAction} disabled={busy} style={{

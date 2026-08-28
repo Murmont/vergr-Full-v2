@@ -6,6 +6,7 @@ import Icon from '../../../components/Icon';
 import BadgeGem from '../../../components/membership/BadgeGem';
 import { getMyMemberships, cancelMembershipSub } from '../../../firebase/firestore';
 import { useUI } from '../../../context/UIContext';
+import UserName from '../../../components/UserName';
 
 export default function NativeMyMembershipsScreen() {
   const navigate = useNavigate();
@@ -55,7 +56,7 @@ export default function NativeMyMembershipsScreen() {
                   </button>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5">
-                      <span className="font-semibold text-white truncate">{s.creator?.displayName || 'Creator'}</span>
+                      <span className="font-semibold text-white truncate"><UserName user={s.creator} masked fallback={'Creator'} /></span>
                       {s.creator?.isVerified && <Icon name="verified" filled size={15} style={{ color: '#B44FFF' }} />}
                     </div>
                     <div className="flex items-center gap-2 mt-0.5">

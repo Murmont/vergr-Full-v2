@@ -10,6 +10,7 @@ import { compressVideo, SHORTS_LIMITS, getMediaDimensions } from '../../utils/me
 import { resolveTier } from '../../utils/tierSystem';
 import UserAvatar from '../../components/UserAvatar';
 import Icon from '../../components/Icon';
+import UserName from '../../components/UserName';
 
 export default function CreateShortScreen() {
   const [content, setContent] = useState('');
@@ -154,7 +155,7 @@ export default function CreateShortScreen() {
           <div className="flex gap-3">
             <UserAvatar src={profile?.avatar} size={40} />
             <div className="flex-1">
-              <p className="text-brand-violet-light text-xs font-dmmono mb-1">@{profile?.username || 'you'}</p>
+              <p className="text-brand-violet-light text-xs font-dmmono mb-1"><UserName user={profile} masked handle fallback={'you'} /></p>
               <textarea
                 value={content}
                 onChange={e => setContent(e.target.value)}

@@ -18,14 +18,19 @@ const tabs = [
 // apps drop the tab bar on a post detail anyway). Back button in its TopBar.
 const HIDE_ON_PATHS = ['/broadcast', '/watch', '/stream/', '/shorts', '/call/', '/go-live', '/creator', '/post/'];
 
-// Color-coded unread (mirrors DesktopSidebar's Community badges): DMs+groups
-// red pill with a count; squad/calls/requests are stacked dots so the user can
-// tell the categories apart at a glance without four numbers fighting for room.
-const DOT_COLORS = {
-  purple: 'bg-brand-violet',  // squad chat activity
-  green:  'bg-success-green', // missed calls
-  amber:  'bg-brand-gold',    // message requests
-};
+// ONE number on the tab, the way every major messaging app does it.
+//
+// This used to be a red count for DMs plus up to three coloured dots for squad
+// activity, missed calls and message requests. Founder rejected it, and he was
+// right: a bare dot tells a user something is unread but not what or where, and
+// nothing on the tab says which colour means what, so there is no way to work
+// out how to clear it. A count is self-explanatory and matches the platform
+// convention. The per-destination breakdown still exists one level down, in
+// the Community submenu, where each row can say which number is its own.
+//
+// Deliberately does NOT include the notification-bell count: those are cleared
+// from the bell drawer, which is not inside this tab, so counting them here
+// would produce a badge with nothing behind it to open.
 
 export default function BottomNav() {
   const navigate = useNavigate();
@@ -49,7 +54,9 @@ export default function BottomNav() {
       <div className="flex items-center justify-around h-14 px-2">
         {tabs.map((tab) => {
           const active = isActive(tab.path);
-          const badge = tab.icon === 'chat_bubble' ? unreadChatCount : 0;
+          const badge = tab.icon === 'chat_bubble'
+            ? unreadChatCount + squadUnreadCount + missedCallCount + requestCount
+            : 0;
           return (
             <button
               key={tab.path}
@@ -70,13 +77,6 @@ export default function BottomNav() {
                 {badge > 0 && (
                   <span className="absolute -top-1.5 -right-2.5 min-w-[16px] h-4 bg-brand-ember rounded-full flex items-center justify-center text-[9px] font-black text-white px-1">
                     {badge > 99 ? '99+' : badge}
-                  </span>
-                )}
-                {tab.icon === 'chat_bubble' && (squadUnreadCount > 0 || missedCallCount > 0 || requestCount > 0) && (
-                  <span className="absolute -bottom-1 -right-2.5 flex items-center gap-[3px]">
-                    {squadUnreadCount > 0 && <span className={`w-1.5 h-1.5 rounded-full ${DOT_COLORS.purple}`} />}
-                    {missedCallCount > 0 && <span className={`w-1.5 h-1.5 rounded-full ${DOT_COLORS.green}`} />}
-                    {requestCount > 0 && <span className={`w-1.5 h-1.5 rounded-full ${DOT_COLORS.amber}`} />}
                   </span>
                 )}
               </div>

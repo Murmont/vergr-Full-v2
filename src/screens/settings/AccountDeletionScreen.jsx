@@ -1,6 +1,8 @@
-// Redesigned Account Deletion page — warning banner, 30-day timeline,
-// what-gets-deleted list, password confirmation. Uses Firebase Auth deleteUser
-// (Cloud Function onUserDeleted handles Firestore cleanup).
+// Account Deletion page — warning banner, timeline, what-gets-deleted list,
+// password confirmation. Uses Firebase Auth deleteUser, which is IMMEDIATE and
+// IRREVERSIBLE (Cloud Function onUserDeleted then handles Firestore cleanup).
+// The header used to say "30-day timeline"; there has never been one. See the
+// note above `timeline` before changing any copy on this screen.
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useUI } from '../../context/UIContext';
@@ -65,15 +67,28 @@ export default function AccountDeletionScreen() {
     }
   };
 
+  // This screen used to describe a 30-day grace period with a "cancel by
+  // logging back in" escape hatch. NONE OF THAT EXISTS. `handleDelete` below
+  // calls Firebase deleteUser() directly, which destroys the auth account
+  // synchronously, and the onUserDeleted trigger (functions/index.js) then
+  // immediately nulls the username, email, avatar and bio on the user doc.
+  // There is no scheduled deletion, no grace window and no way to sign back in
+  // to cancel, because the account you would sign in with is already gone.
+  //
+  // Telling someone they have 30 days to change their mind, when the action is
+  // instant and irreversible, is the worst possible thing to be wrong about on
+  // this particular screen. Corrected 2026-08-19 (audit A7) on founder
+  // instruction: match the copy to the code. If a real grace period is built
+  // later, this copy comes back with it, not before.
   const timeline = [
-    { icon: 'event', step: 'Today', desc: 'You started account deletion', active: true },
-    { icon: 'schedule', step: 'In 30 days', desc: 'Your account and data will be permanently deleted', active: true },
-    { icon: 'close', step: 'After 30 days', desc: 'Your username can be claimed by others', active: false },
+    { icon: 'event', step: 'Now', desc: 'You confirm, and deletion runs straight away', active: true },
+    { icon: 'delete_forever', step: 'Immediately', desc: 'Your account is closed and your profile is wiped', active: true },
+    { icon: 'block', step: 'Permanent', desc: 'This cannot be undone, and your username is released', active: true },
   ];
 
   const willDelete = [
     { icon: 'person', title: 'Your profile and account', desc: 'Your username, email, profile info, and settings' },
-    { icon: 'emoji_events', title: 'Your activity and progress', desc: 'Match history, tournament entries, squad activity, and stats' },
+    { icon: 'emoji_events', title: 'Your activity and progress', desc: 'Your posts, clips, squad activity, VP and stats' },
     { icon: 'account_balance_wallet', title: 'Your wallet and rewards', desc: 'VERGR points, balances, rewards, and payout history' },
     { icon: 'description', title: 'Your content and data', desc: 'Uploaded content, messages, and any other data' },
     { icon: 'link', title: 'Connected accounts', desc: 'All linked third-party accounts will be disconnected' },
@@ -110,7 +125,7 @@ export default function AccountDeletionScreen() {
           {/* Timeline */}
           <Card>
             <div style={{ fontSize: 15, fontWeight: 700, color: C.text, marginBottom: 16 }}>
-              We'll delete your account in 30 days
+              This happens immediately, and cannot be undone
             </div>
             <div style={{
               display: 'flex', alignItems: 'flex-start', justifyContent: 'space-around',
@@ -138,13 +153,13 @@ export default function AccountDeletionScreen() {
                 </div>
               ))}
             </div>
-            <InfoBar text="During this 30-day period, you can cancel the deletion process by logging back in to your account." />
+            <InfoBar text="There is no grace period and no way to cancel once you confirm. If you only want a break, sign out instead, and your account will be waiting for you." />
           </Card>
 
           {/* What gets deleted */}
           <Card>
             <div style={{ fontSize: 15, fontWeight: 700, color: C.text, marginBottom: 4 }}>What will be deleted</div>
-            <div style={{ fontSize: 12, color: C.textVeryDim, marginBottom: 14 }}>After 30 days, the following will be permanently deleted:</div>
+            <div style={{ fontSize: 12, color: C.textVeryDim, marginBottom: 14 }}>The following is permanently deleted as soon as you confirm:</div>
             {willDelete.map(item => (
               <div key={item.title} style={{
                 display: 'flex', alignItems: 'flex-start', gap: 10,

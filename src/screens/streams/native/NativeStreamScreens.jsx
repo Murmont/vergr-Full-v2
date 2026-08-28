@@ -26,6 +26,7 @@ import { useUI } from '../../../context/UIContext';
 import { searchUsers } from '../../../firebase/firestore';
 import UserAvatar from '../../../components/UserAvatar';
 import Icon from '../../../components/Icon';
+import UserName from '../../../components/UserName';
 
 const C = {
   bg: '#0a0a14',
@@ -227,8 +228,8 @@ export function NativeCoStreamingScreen() {
                       }}>
                         <UserAvatar src={u.avatar} size="sm" />
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 14, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.displayName || u.username}</div>
-                          <div style={{ fontSize: 12, color: C.textDim }}>@{u.username}</div>
+                          <div style={{ fontSize: 14, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}><UserName user={u} masked /></div>
+                          <div style={{ fontSize: 12, color: C.textDim }}><UserName user={u} masked handle /></div>
                         </div>
                         <span style={{ fontSize: 12, fontWeight: 800, color: alreadyCoHost ? C.green : alreadyInvited ? C.amber : C.purpleLight }}>
                           {alreadyCoHost ? 'Joined' : alreadyInvited ? 'Pending' : 'Invite'}
@@ -273,7 +274,7 @@ function PersonRow({ uid, statusText, statusColor, actionLabel, actionColor, onA
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', borderRadius: 12, background: C.cardSoft, border: `1px solid ${C.border}` }}>
       <UserAvatar src={user?.avatar} size="sm" />
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 14, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user?.displayName || user?.username || uid.slice(0, 6)}</div>
+        <div style={{ fontSize: 14, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}><UserName user={user} masked fallback={uid.slice(0, 6)} /></div>
         <div style={{ fontSize: 12, color: statusColor }}>● {statusText}</div>
       </div>
       <button onClick={onAction} disabled={busy} style={{

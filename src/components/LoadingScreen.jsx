@@ -5,7 +5,7 @@ import './LoadingScreen.css';
 const COPY = [
   'respawning your feed',
   're-racking the lobby',
-  'counting your gems',
+  'counting your coins',
   'defragging your DMs',
   'tuning the squad frequency',
   'restocking the trophy case',
@@ -17,8 +17,8 @@ const COPY = [
 ];
 
 const TIPS = [
-  { label: 'TIP', body: 'Tier S clips earn more gems when posted within 30 minutes.' },
-  { label: 'DID YOU KNOW', body: 'Rank up to drop your platform fee as low as 5%.' },
+  { label: 'TIP', body: 'Posting, streaming and gifting all earn VP toward your next rank.' },
+  { label: 'DID YOU KNOW', body: 'Creators keep 50% to 80% of what they earn, rising as you earn.' },
   { label: 'NEW', body: 'Sell tickets to your own live events, straight from a chat.' },
   { label: 'PRO TIP', body: 'Pin your vergr.me link in chat to convert viewers into followers.' },
   { label: 'REMINDER', body: 'Squad voice rooms stay private — no transcripts, ever.' },

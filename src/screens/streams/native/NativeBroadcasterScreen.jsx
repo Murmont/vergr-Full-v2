@@ -29,7 +29,7 @@ import { useActiveStreamPoll, StreamPollCard, CreateStreamPollModal } from '../.
 import useStreamClipBuffer from '../../../hooks/useStreamClipBuffer';
 import { uploadToR2 } from '../../../utils/r2Storage';
 import { renderShareCard } from '../../../utils/shareCard';
-import { createPost, getStreamIngest } from '../../../firebase/firestore';
+import { createPost, getStreamIngest, markStatusPosted } from '../../../firebase/firestore';
 import StreamShareSheet from '../../../components/streams/StreamShareSheet';
 import { motion, AnimatePresence } from 'framer-motion';
 import { spring } from '../../../components/primitives/springs';
@@ -57,7 +57,8 @@ export default function NativeBroadcasterScreen() {
 
   const rawJoinEvents = useStreamJoinEvents(streamId);
   const joinEvents = useMemo(() => rawJoinEvents.map((e) => ({
-    id: e.id, kind: e.kind, tier: e.tier, user: { uid: e.uid, displayName: e.displayName, avatar: e.avatar },
+    id: e.id, kind: e.kind, tier: e.tier, level: e.level, rankId: e.rankId,
+    user: { uid: e.uid, displayName: e.displayName, avatar: e.avatar },
   })), [rawJoinEvents]);
 
   const videoRef = useRef(null);
@@ -438,7 +439,7 @@ export default function NativeBroadcasterScreen() {
           <div style={{ height: '28vh', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
             <ChatPanel
               streamId={streamDoc.id} layout="overlay" hostUid={streamDoc.hostUid}
-              slowModeSec={streamDoc.slowModeSec || 0} followersOnly={!!streamDoc.followersOnly}
+              slowModeSec={streamDoc.slowModeSec || 0} followersOnly={!!streamDoc.followersOnly} ttsEnabled={!!streamDoc.ttsEnabled}
               pinnedMessage={streamDoc.pinnedMessage || null}
               composerExtras={composerExtras}
             />
@@ -629,7 +630,7 @@ function StreamSummary({ stats, onClose }) {
       });
       if (!blob) throw new Error('Could not render card');
       const { url } = await uploadToR2(new File([blob], 'vergr-stream.png', { type: 'image/png' }), 'post');
-      await addDoc(collection(db, 'statuses'), {
+      const ref = await addDoc(collection(db, 'statuses'), {
         authorId: currentUser.uid,
         text: null, bgColor: null,
         mediaUrl: url, mediaType: 'image',
@@ -638,6 +639,9 @@ function StreamSummary({ stats, onClose }) {
         createdAt: serverTimestamp(),
         expiresAt: Timestamp.fromDate(new Date(Date.now() + 24 * 60 * 60 * 1000)),
       });
+      // Same denormalisation as the Status composer, so the avatar ring knows
+      // about a status posted from the broadcaster without a query.
+      await markStatusPosted(currentUser.uid, ref.id, Date.now() + 24 * 60 * 60 * 1000);
       showToast?.('Posted to your Status', 'success');
     } catch (e) {
       showToast?.(e?.message || 'Could not post to Status', 'error');

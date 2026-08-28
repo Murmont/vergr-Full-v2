@@ -71,11 +71,11 @@ export default function SquadOverviewScreen() {
           <div className="ttl">Overview</div>
           <div className="sub">The squad hub — recent activity, pinned announcement, upcoming events</div>
         </div>
-        <div className="actions">
-          <button className="btn primary" onClick={() => navigate(`/squads/${squadId}/chat`)}>
-            <span className="material-symbols-outlined">chat</span>Open Chat
-          </button>
-        </div>
+        {/* The page-header "Open Chat" button was REMOVED. It was the third
+            copy of the same call to action on one screen (hero + quick-action
+            tile being the other two), and on mobile it was an oversized pill
+            crowding the title. The hero button is the primary; the tile is the
+            in-list entry. One CTA, one place. */}
       </header>
 
       <div className="scroll content">
@@ -100,15 +100,27 @@ export default function SquadOverviewScreen() {
                     {squad?.verified && <span className="material-symbols-outlined verified-tick">verified</span>}
                   </div>
                   <div className="hero-tags">
-                    <span>{squad?.game || 'Gaming'}</span><span className="pip" />
-                    <span style={{ color: squad?.isPublic === false ? 'var(--violet-light)' : 'var(--cyan)' }}>
+                    {/* "Other" is the unset value of the game picker. Printing
+                        it tells the reader nothing and costs a line of the
+                        metadata row on mobile, so it is dropped rather than
+                        shown. Same for a blank game. */}
+                    {squad?.game && squad.game !== 'Other' && (
+                      <><span>{squad.game}</span><span className="pip" /></>
+                    )}
+                    {/* Public was var(--cyan). Cyan is off-brand (see the brand
+                        note in CLAUDE.md); violet/pink/gold only. */}
+                    <span style={{ color: squad?.isPublic === false ? 'var(--violet-light)' : 'var(--pink)' }}>
                       {squad?.isPublic === false ? 'Private' : 'Public'}
                     </span><span className="pip" />
-                    <span>{memberCount} members</span>
+                    <span>{memberCount} {memberCount === 1 ? 'member' : 'members'}</span>
                     {myMeta && myRole && (
+                      /* Was "You're the {label}", which renders as the
+                         ungrammatical "You're the Member" for the plain member
+                         role. A pill is already self-evidently about you, so it
+                         just states the role. */
                       <span className={`role-pill ${myMeta.pill} role`}>
                         {myMeta.icon && <span className="material-symbols-outlined">{myMeta.icon}</span>}
-                        You're the {myMeta.label}
+                        {myMeta.label}
                       </span>
                     )}
                   </div>
@@ -127,7 +139,14 @@ export default function SquadOverviewScreen() {
                 <div className="hero-stats">
                   <div className="hero-level"><span className="pill">LEVEL {level}</span></div>
                   <div className="hero-xp">
-                    <div className="row"><span>{compact(xp)} XP</span><span style={{ color: 'var(--violet-light)' }}>{xpPct}%</span><span>{compact(xpNext)} XP</span></div>
+                    {/* Was className="row", but the stylesheet only ever
+                        defined `.hero-xp .hrow` — so this row has never picked
+                        up its DM Mono / 10px / space-between styling and has
+                        always rendered as unaligned default text. The middle
+                        percentage is dropped: the bar underneath already says
+                        it, and on a 375px screen three numbers in this row is
+                        one too many. */}
+                    <div className="hrow"><span>{compact(xp)} XP</span><span>{compact(xpNext)} XP</span></div>
                     <div className="bar"><div style={{ width: `${xpPct}%` }} /></div>
                   </div>
                 </div>
@@ -146,7 +165,7 @@ export default function SquadOverviewScreen() {
               </button>
               <button className="qa events" onClick={() => navigate(`/squads/${squadId}/events`)}>
                 <div className="ic"><span className="material-symbols-outlined">event</span></div>
-                <div><div className="t">Events</div><div className="s">Scrims & tournaments</div></div>
+                <div><div className="t">Events</div><div className="s">Scrims & events</div></div>
               </button>
               <button className="qa lb" onClick={() => navigate(`/squads/${squadId}/leaderboard`)}>
                 <div className="ic"><span className="material-symbols-outlined">leaderboard</span></div>

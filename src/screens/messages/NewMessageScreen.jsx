@@ -24,6 +24,7 @@ import useResponsive from '../../hooks/useResponsive';
 import { IS_NATIVE_BUILD } from '../../utils/platform';
 import { contactsSupported, pickContacts } from '../../utils/nativeContacts';
 import PermissionDisclosure, { DISCLOSURES } from '../../components/permissions/PermissionDisclosure';
+import UserName from '../../components/UserName';
 
 const matchContactHashes = httpsCallable(functions, 'matchContactHashes');
 
@@ -463,9 +464,9 @@ export default function NewMessageScreen() {
                   <UserAvatar src={u.avatar} size={44} tier={tier} />
                   <div className="flex-1 text-left min-w-0">
                     <p className={`font-bold text-sm truncate ${tier.holographic ? 'text-brand-violet-light' : 'text-white'}`}>
-                      {u.displayName || u.username}
+                      <UserName user={u} masked />
                     </p>
-                    <p className="text-text-muted text-xs font-dmmono truncate">@{u.username}</p>
+                    <p className="text-text-muted text-xs font-dmmono truncate"><UserName user={u} masked handle /></p>
                   </div>
                   <Icon
                     name="chevron_right"

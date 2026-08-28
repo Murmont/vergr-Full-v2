@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import AppRouter from './router/AppRouter';
 import DesktopUpdateGate from './components/DesktopUpdateGate';
+import ErrorBoundary from './components/ErrorBoundary';
 import { runMobileOtaUpdate } from './utils/otaUpdate';
 import { installClientTelemetry } from './utils/clientTelemetry';
 import { isTauri } from './utils/platform';
@@ -97,7 +98,14 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         Later, or required) shown before the app renders. Pure pass-through in
         the browser / PWA / native Android. */}
     <DesktopUpdateGate>
-      <AppRouter />
+      {/* Last line of defence (audit A50). React unmounts the entire tree on an
+          uncaught render error, so before this a single leaf component could
+          blank the whole app to a black page. Route-level boundaries in
+          AppRouter catch most things first and keep the nav alive; this one
+          catches whatever gets past them. */}
+      <ErrorBoundary label="root">
+        <AppRouter />
+      </ErrorBoundary>
     </DesktopUpdateGate>
   </React.StrictMode>
 );

@@ -18,9 +18,18 @@ import {
   trackEmailTap,
   trackTipTap,
 } from '../utils/vergrMeTracking';
+import UserName from '../components/UserName';
 
-export default function VergrMePage() {
-  const { username } = useParams();
+/**
+ * @param {object} props
+ * @param {string} [props.usernameOverride] Set when this page is being served
+ *   on a Pro member's own custom domain, where there is no :username in the
+ *   path to read — the host itself identifies the owner. Resolved in
+ *   AppRouter's RootRoute via the vergrme_domains lookup.
+ */
+export default function VergrMePage({ usernameOverride }) {
+  const params = useParams();
+  const username = usernameOverride || params.username;
   const [data, setData] = useState(null);
   const [uid, setUid] = useState(null);
   const [avatarUrl, setAvatarUrl] = useState(null);
@@ -170,10 +179,9 @@ export default function VergrMePage() {
           trackBlockClick(uid, block.id);
           deepLink(`vergr://stream/${block.streamId || uid}`, block.webUrl || `https://vergr.app/@${data.username}`);
           break;
-        case 'vergr_tournament':
-          trackBlockClick(uid, block.id);
-          deepLink(`vergr://tournament/${block.tournamentId}`, `https://vergr.app/tournaments/${block.tournamentId}`);
-          break;
+        // vergr_tournament removed 2026-08-19. It pointed at vergr://tournament
+        // and /tournaments/:id, both dead routes. Unreachable now anyway, since
+        // VergrMeView renders the block as null.
         case 'vergr_event':
           trackBlockClick(uid, block.id);
           window.open(`https://vergr.app/e/${block.eventId}`, '_blank', 'noopener');

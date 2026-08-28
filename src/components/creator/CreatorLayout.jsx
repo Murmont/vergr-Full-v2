@@ -14,6 +14,7 @@ import CoinDisplay from '../CoinDisplay';
 import PlanLock from './PlanLock';
 import useTier from '../../hooks/useTier';
 import CreateComposer from '../composer/CreateComposer';
+import UserName from '../UserName';
 
 // `lock` = minimum tier needed. undefined = free.
 const NAV = [
@@ -41,10 +42,37 @@ export default function CreatorLayout({ children, page = 'home', title, subtitle
   const navigate = useNavigate();
   const location = useLocation();
   const { currentUser } = useAuth();
-  const { profile, wallet } = useUser();
+  const { profile, wallet, loading } = useUser();
   // A non-creator opening Creator Studio gets the explainer, not an empty
   // dashboard. Anyone can use Vergr; only a creator can monetize.
-  const [gateOpen, setGateOpen] = useState((profile?.creator?.status || 'none') === 'none');
+  //
+  // This was `useState((profile?.creator?.status || 'none') === 'none')`, which
+  // had two separate bugs (audit A26):
+  //
+  //  1. CreatorLayout wraps EVERY Studio screen, so each navigation remounts it
+  //     and the useState initialiser runs again. `setGateOpen(false)` only
+  //     lived for that mount, so the modal came back on Earnings, Content,
+  //     Analytics, Quests… eleven screens, eleven dismissals. Now the dismissal
+  //     is remembered in sessionStorage.
+  //  2. The initialiser read `profile`, which is ASYNC, and useState evaluates
+  //     it exactly once. On any render before the profile arrived,
+  //     `(undefined || 'none') === 'none'` was true, the modal opened, and it
+  //     STAYED open when the real profile landed — so a genuine creator who
+  //     hard-reloaded a Studio page was told to become a creator. Derived
+  //     state plus the `loading` flag fixes that: nothing is decided until the
+  //     profile is actually known.
+  //
+  // sessionStorage, not localStorage, is deliberate: the explainer should come
+  // back on a future visit, just not on every click of this one.
+  const [gateDismissed, setGateDismissed] = useState(() => {
+    try { return sessionStorage.getItem('vergr_creator_gate_dismissed') === '1'; } catch { return false; }
+  });
+  const isCreator = (profile?.creator?.status || 'none') !== 'none';
+  const gateOpen = !loading && !!profile && !isCreator && !gateDismissed;
+  const closeGate = () => {
+    setGateDismissed(true);
+    try { sessionStorage.setItem('vergr_creator_gate_dismissed', '1'); } catch { /* private mode */ }
+  };
   const { isDesktop } = useResponsive();
   const { tier } = useTier();
 
@@ -91,7 +119,7 @@ export default function CreatorLayout({ children, page = 'home', title, subtitle
     const sidebarWidth = collapsed ? 72 : 260;
     return (
       <div className="min-h-screen bg-gradient-to-br from-[#07080c] via-[#0a0d14] to-[#07080c] text-text-primary">
-      <BecomeCreatorModal open={gateOpen} onClose={() => setGateOpen(false)} />
+      <BecomeCreatorModal open={gateOpen} onClose={closeGate} />
         {/* ── Sidebar ── */}
         <aside
           style={{ width: sidebarWidth }}
@@ -158,8 +186,8 @@ export default function CreatorLayout({ children, page = 'home', title, subtitle
                 className="w-full flex items-center gap-2.5 px-2 py-2 rounded-xl hover:bg-white/[0.03] transition-colors">
                 <UserAvatar src={profile.avatar} size={32} />
                 <div className="flex-1 min-w-0 text-left">
-                  <div className="text-xs font-bold text-text-primary truncate">{profile.displayName || profile.username}</div>
-                  <div className="text-[10px] text-text-muted truncate">@{profile.username}</div>
+                  <div className="text-xs font-bold text-text-primary truncate"><UserName user={profile} masked /></div>
+                  <div className="text-[10px] text-text-muted truncate"><UserName user={profile} masked handle /></div>
                 </div>
                 <Icon name="open_in_new" size={12} className="text-text-muted" />
               </button>

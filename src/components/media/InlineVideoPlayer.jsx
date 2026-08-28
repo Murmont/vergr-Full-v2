@@ -11,9 +11,10 @@
 // driven entirely through the JS media API (play/pause/currentTime/muted).
 //
 // Use this anywhere we'd otherwise render `<video ... controls />`.
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Icon from '../Icon';
 import { pickVideoUrl, primeAdaptiveConfig } from '../../utils/adaptiveVideo';
+import Ambilight from '../effects/visual/Ambilight';
 
 const fmtClock = (s) => {
   s = Number(s);
@@ -33,6 +34,14 @@ const parseUrlDur = (src) => {
 
 export default function InlineVideoPlayer({
   src,
+  // Ambient light thrown from the video into the page behind it.
+  //
+  // OFF by default, deliberately: a feed of twenty cards each throwing light
+  // would be noise, and only the caller knows whether its surface has room for
+  // the glow to land on. Turn it on where the video is the subject — the
+  // lightbox, a profile clip, the live viewer — not in a dense list.
+  ambilight = false,
+  ambilightSpread = 90,
   poster,
   className = '',
   style,
@@ -60,6 +69,52 @@ export default function InlineVideoPlayer({
   const [heartKey, setHeartKey] = useState(0); // double-tap heart pop (feed only)
   const tapRef = useRef({ timer: null, last: 0 });
   const seekingRef = useRef(false);
+
+  // THE line that was missing. `<video src={resolvedSrc}>` below referenced an
+  // identifier that existed nowhere in this file, so mounting the element threw
+  // `ReferenceError: resolvedSrc is not defined` — and with no error boundary
+  // (A50) that unmounted the ENTIRE React tree to a blank page. Reported as
+  // "when I click to enlarge the screen goes blank"; the same crash was reachable
+  // from all 12 components that render this player, so video playback was broken
+  // app-wide (audit A41 #1).
+  //
+  // `pickVideoUrl` is what it was always meant to be: already imported at the
+  // top of this file, never called. It is defensive by design — no renditions,
+  // a fast connection, or any surprise at all returns `src` unchanged, which is
+  // exactly the documented "behaves EXACTLY as it always has" contract on the
+  // `renditions` prop above.
+  const resolvedSrc = pickVideoUrl(src, renditions);
+
+  // HLS sources (.m3u8) need hls.js everywhere except Safari, which demuxes
+  // them natively. This player is reached with an HLS url by past-broadcast
+  // replays: a Pro replay IS the broadcast's own manifest and segments on R2
+  // (see functions/vodArchive.js), not a remuxed mp4, so without this branch
+  // "Watch replay" would show a black frame in Chrome, Edge, Firefox, the
+  // desktop WebView2 shell and the Android WebView.
+  //
+  // hls.js is imported lazily so the ~150KB parser is not pulled into the
+  // bundle for the twelve callsites that only ever play a plain mp4 or webm.
+  const isHls = /\.m3u8(\?|#|$)/i.test(resolvedSrc || '');
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v || !isHls || !resolvedSrc) return undefined;
+    // Safari/iOS: native. Assigning src directly is both simpler and better
+    // (hardware decode, AirPlay), so do not attach hls.js over the top of it.
+    if (v.canPlayType('application/vnd.apple.mpegurl')) {
+      v.src = resolvedSrc;
+      return undefined;
+    }
+    let hls;
+    let cancelled = false;
+    import('hls.js').then(({ default: Hls }) => {
+      if (cancelled || !videoRef.current) return;
+      if (!Hls.isSupported()) { videoRef.current.src = resolvedSrc; return; }
+      hls = new Hls({ enableWorker: true });
+      hls.loadSource(resolvedSrc);
+      hls.attachMedia(videoRef.current);
+    }).catch(() => { if (!cancelled && videoRef.current) videoRef.current.src = resolvedSrc; });
+    return () => { cancelled = true; if (hls) hls.destroy(); };
+  }, [resolvedSrc, isHls]);
 
   const togglePlay = (e) => {
     e?.stopPropagation();
@@ -118,15 +173,25 @@ export default function InlineVideoPlayer({
     } catch {/* ignore */}
   };
 
-  return (
+  // The player's own box is `overflow-hidden` — it has to be, to clip the video
+  // to its rounded corners — so light drawn inside it is cut off at exactly the
+  // edges it needs to cross. With ambilight on, the player is wrapped in an
+  // UNCLIPPED outer box that owns the glow, and this clipped box becomes its
+  // child. `className`/`style` move to the wrapper so the caller's sizing still
+  // applies to the outermost element, as it did before.
+  const inner = (
     <div
       ref={containerRef}
-      className={`relative w-full ${maxHeightClass} bg-black ${rounded ? 'rounded-sm' : ''} overflow-hidden ${className}`}
-      style={{ aspectRatio: ar, ...style }}
+      className={`relative w-full ${maxHeightClass} bg-black ${rounded ? 'rounded-sm' : ''} overflow-hidden ${ambilight ? '' : className}`}
+      style={ambilight ? { aspectRatio: ar } : { aspectRatio: ar, ...style }}
     >
+      {/* src is left off for HLS: the effect above attaches it, via hls.js on
+          MSE browsers or a direct assignment on Safari. Setting it here as
+          well would make the browser fetch the manifest as a plain media file
+          and fight hls.js for the element. */}
       <video
         ref={videoRef}
-        src={resolvedSrc}
+        src={isHls ? undefined : resolvedSrc}
         poster={poster}
         playsInline
         preload="metadata"
@@ -200,6 +265,32 @@ export default function InlineVideoPlayer({
           <Icon name="fullscreen" size={18} />
         </button>
       </div>
+    </div>
+  );
+
+  if (!ambilight) return inner;
+  // The wrapper is PADDED by the spread, and the glow fills the padded box, so
+  // the light occupies space the layout already reserved and cannot reach a
+  // neighbour (00-RULES R1).
+  //
+  // ⚠ This path is for a video that is the SUBJECT of its screen — the
+  // lightbox, a dedicated clip page. In a FEED, do not use it: the card owns
+  // one glow behind all of its content (see PostCard), because a per-player
+  // padded box inside a card fights the card's own layout and the feather has
+  // nowhere to fall off to. That combination is what produced the darkened
+  // border around feed videos.
+  //
+  // `isolation: isolate` makes this a stacking context so the z-index:-1 glow
+  // paints above the wrapper's background and below the video. Without it the
+  // glow escapes to an ancestor context and is covered by the first opaque
+  // background above it (R6).
+  return (
+    <div
+      className={`relative ${className}`}
+      style={{ isolation: 'isolate', padding: ambilightSpread, ...style }}
+    >
+      <Ambilight videoRef={videoRef} enabled spread={ambilightSpread} intensity={0.6} />
+      {inner}
     </div>
   );
 }

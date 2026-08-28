@@ -76,7 +76,7 @@ export default function NativeSquadEventsScreen() {
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '60px 24px', gap: 14, color: 'var(--t3)', textAlign: 'center', background: 'rgba(255,255,255,.02)', border: '1px dashed rgba(255,255,255,.08)', borderRadius: 18 }}>
               <span className="material-symbols-outlined" style={{ fontSize: 56, opacity: .45 }}>event</span>
               <div style={{ fontFamily: 'Syne', fontWeight: 700, fontSize: 18, color: 'var(--t1)' }}>No events scheduled</div>
-              <div style={{ fontSize: 13 }}>Plan your next scrim, tournament, or squad night. Members can RSVP.</div>
+              <div style={{ fontSize: 13 }}>Plan your next scrim, event, or squad night. Members can RSVP.</div>
               {canManage && <button className="btn primary" onClick={() => setShowNew(true)}><span className="material-symbols-outlined">add</span> Schedule First Event</button>}
             </div>
           ) : (

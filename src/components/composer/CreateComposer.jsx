@@ -21,6 +21,7 @@ import RichTextArea from './RichTextArea';
 import { stripPostFormatting } from '../PostRichText';
 import '../../styles/composer.css';
 import { resolveTier } from '../../utils/tierSystem';
+import UserName from '../UserName';
 
 // A real mention only ever comes from this list — followed accounts who
 // haven't restricted "who can tag me" below Everyone/Friends&Followers. This
@@ -263,7 +264,7 @@ const ComposerCard = ({ compact, richRef, onChangeText, activeChip, onChip, foll
           ) : mentionResults.map((u, i) => (
             <button key={u.id} type="button" className={`mention-row ${i === mentionActive ? 'active' : ''}`} onClick={() => pickMention(u)}>
               <UserAvatar src={u.avatar} size={26} />
-              <span><span className="mn">{u.displayName || u.username}</span><span className="mh">@{u.username}</span></span>
+              <span><span className="mn"><UserName user={u} masked /></span><span className="mh"><UserName user={u} masked handle /></span></span>
             </button>
           ))}
         </div>
@@ -306,13 +307,16 @@ const ComposerCard = ({ compact, richRef, onChangeText, activeChip, onChip, foll
 };
 
 /* ---------- live poll preview ---------- */
-const PollPreview = ({ name, avatar, question, options }) => {
+// `user` is the composing profile: a preview should show your own name exactly
+// as it will appear on the posted card, cosmetics included. `name` stays as the
+// plain-text fallback.
+const PollPreview = ({ name, avatar, question, options, user }) => {
   const total = options.reduce((s, o) => s + (o.pct || 0), 0) || 100;
   return (
     <div className="feed-post">
       <div className="feed-post-head">
         <UserAvatar src={avatar} size={32} />
-        <div><div className="nm">{name}</div></div>
+        <div><div className="nm"><UserName user={user} masked fallback={name} /></div></div>
         <span className="ts">just now</span>
         <span className="more"><CIcon name="more" size={16} /></span>
       </div>
@@ -405,7 +409,7 @@ const Heatmap = ({ grid }) => (
 );
 
 /* ---------- schedule view ---------- */
-const ScheduleView = ({ name, avatar, onBack, onConfirm, isPoll, pollState, audience, schedOpts, setSchedOpts }) => {
+const ScheduleView = ({ name, avatar, user, onBack, onConfirm, isPoll, pollState, audience, schedOpts, setSchedOpts }) => {
   const base = new Date(Date.now() + 60 * 60 * 1000);
   const [selected, setSelected] = useState({ year: base.getFullYear(), month: base.getMonth(), date: base.getDate() });
   const [hour, setHour] = useState(((base.getHours() % 12) || 12));
@@ -534,7 +538,7 @@ const ScheduleView = ({ name, avatar, onBack, onConfirm, isPoll, pollState, audi
             <div className="preview-feed">
               <div className="feed-post-head">
                 <UserAvatar src={avatar} size={36} />
-                <div><div className="nm" style={{ fontSize: 14 }}>{name}</div>{isPoll && <span className="badge-poll" style={{ marginTop: 4 }}><CIcon name="poll" size={11} /> POLL</span>}</div>
+                <div><div className="nm" style={{ fontSize: 14 }}><UserName user={user} masked fallback={name} /></div>{isPoll && <span className="badge-poll" style={{ marginTop: 4 }}><CIcon name="poll" size={11} /> POLL</span>}</div>
                 <span className="more"><CIcon name="more" size={16} /></span>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, color: 'var(--text-3)', fontSize: 11 }}>
@@ -572,6 +576,27 @@ export default function CreateComposer({ onClose, originRect, editingPost = null
   const fileRef = useRef(null);
   const videoRef = useRef(null);
   const richRef = useRef(null);
+
+  // Live height of the absolutely-positioned toolbar, used as the scroll
+  // container's bottom padding so nothing can ever sit underneath it (audit A9).
+  // It is observed rather than measured once because the toolbar WRAPS: its
+  // height changes with the window width and with which pills are showing.
+  // A CALLBACK ref, not useRef + useEffect: the toolbar mounts conditionally
+  // (the schedule view replaces it), and an effect without a dependency array
+  // would tear down and rebuild the observer on every keystroke in the
+  // composer. This attaches exactly once, when the element appears.
+  const [toolbarH, setToolbarH] = useState(140);
+  const toolbarRO = useRef(null);
+  const toolbarRef = useCallback((el) => {
+    if (toolbarRO.current) { toolbarRO.current.disconnect(); toolbarRO.current = null; }
+    if (!el) return;
+    const measure = () => setToolbarH(Math.ceil(el.getBoundingClientRect().height) + 16);
+    measure();
+    if (typeof ResizeObserver !== 'undefined') {
+      toolbarRO.current = new ResizeObserver(measure);
+      toolbarRO.current.observe(el);
+    }
+  }, []);
 
   const [open, setOpen] = useState(true);
   const [dragIndex, setDragIndex] = useState(null);
@@ -1108,7 +1133,7 @@ export default function CreateComposer({ onClose, originRect, editingPost = null
       <div className="compose-id">
         <UserAvatar src={avatar} size={56} isVerified={profile?.isVerified} />
         <div>
-          <div className="name">{name}</div>
+          <div className="name"><UserName user={profile} masked fallback={name} /></div>
           <div className="meta">
             <span className="badge badge-violet">◆ VERGR Member</span>
             <span className="lvl">LVL {profile?.vpLevel || 1} <span className="gem" /></span>
@@ -1206,7 +1231,7 @@ export default function CreateComposer({ onClose, originRect, editingPost = null
 
               {view === 'schedule' ? (
                 <ScheduleView
-                  name={name} avatar={avatar} isPoll={returnView === 'poll'}
+                  name={name} user={profile} avatar={avatar} isPoll={returnView === 'poll'}
                   pollState={{ question: pollQ, options: pollOpts, text }}
                   audience={audience} schedOpts={schedOpts} setSchedOpts={setSchedOpts}
                   onBack={() => setView(returnView)}
@@ -1215,7 +1240,17 @@ export default function CreateComposer({ onClose, originRect, editingPost = null
               ) : (
                 <>
                   {header}
-                  <div className="modal-body scroll">
+                  {/* paddingBottom is MEASURED from the toolbar, not the fixed
+                      140px in composer.css. The toolbar is position:absolute
+                      bottom:0 with flex-wrap:wrap, so on a narrow window it
+                      wraps to two rows and grows past 140px — at which point it
+                      paints over the content beneath it. Clicking Poll put the
+                      Poll Question input and the Quick templates under the
+                      toolbar, with placeholder text showing through, and the
+                      field you have to fill in first was the obscured one
+                      (audit A9). Measuring covers every mode and every width,
+                      which a bigger magic number would not. */}
+                  <div className="modal-body scroll" style={{ paddingBottom: toolbarH }}>
                     {composeTop}
 
                     {isPoll ? (
@@ -1291,7 +1326,7 @@ export default function CreateComposer({ onClose, originRect, editingPost = null
                         </div>
                         <div className="preview-panel">
                           <div className="ph"><h3>Preview</h3><p>See how your poll will look in the feed</p></div>
-                          <div className="mock-desktop"><PollPreview name={name} avatar={avatar} question={pollQ} options={previewOpts} /></div>
+                          <div className="mock-desktop"><PollPreview name={name} user={profile} avatar={avatar} question={pollQ} options={previewOpts} /></div>
                         </div>
                       </div>
                     ) : (
@@ -1421,7 +1456,7 @@ export default function CreateComposer({ onClose, originRect, editingPost = null
                   </div>
 
                   {/* toolbar */}
-                  <div className="toolbar">
+                  <div className="toolbar" ref={toolbarRef}>
                     {activeTool && <div className="tool-popover-backdrop" onClick={() => setActiveTool(null)} />}
                     <div className="tool-icons">
                       {TOOLS.map(t => {
@@ -1478,7 +1513,7 @@ export default function CreateComposer({ onClose, originRect, editingPost = null
                             {tagResults.map(u => (
                               <button key={u.id} className="tp-user" onClick={() => { richRef.current?.insertMentionAtCursor({ uid: u.id, username: u.username }); setTagQuery(''); setActiveTool(null); }}>
                                 <UserAvatar src={u.avatar} size={26} />
-                                <span><span className="tp-name">{u.displayName || u.username}</span><span className="tp-handle">@{u.username}</span></span>
+                                <span><span className="tp-name"><UserName user={u} masked /></span><span className="tp-handle"><UserName user={u} masked handle /></span></span>
                               </button>
                             ))}
                             {tagQuery.trim() && tagResults.length === 0 && <div className="tp-empty">No taggable followed accounts match "{tagQuery.trim()}"</div>}

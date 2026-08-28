@@ -50,10 +50,80 @@ const BLOCKED_EXACT = [
 ];
 const normHandle = (s) => String(s || '').toLowerCase().replace(/[\s_\-.]+/g, '');
 
+// ── Lookalike defence ────────────────────────────────────────────────
+// A plain substring test only catches the exact spelling, so v3rgr, verqr,
+// ver9r, vrgr and veregr all sailed through, and those are the handles an
+// impersonator would actually pick. Two passes:
+//
+//   1. FOLD confusables to a base letter (digits, symbols, and the glyphs that
+//      read the same at avatar-row size) and test for the brand again.
+//   2. EDIT DISTANCE against the brand over short windows, so one added,
+//      dropped, swapped or substituted character is still caught.
+//
+// This deliberately over-blocks. Someone losing "verge" has twenty characters
+// of alternatives; the brand has one spelling worth protecting.
+const CONFUSABLE = {
+  0: 'o', 1: 'i', 2: 'z', 3: 'e', 4: 'a', 5: 's', 6: 'g',
+  7: 't', 8: 'b', 9: 'g', '@': 'a', $: 's', '!': 'i', '|': 'i',
+  '+': 't', '(': 'c', q: 'g', j: 'i', y: 'i', z: 's', k: 'c',
+};
+
+/** Lowercase, drop separators, fold confusables, collapse runs (verrgr -> vergr). */
+function foldConfusables(s) {
+  const base = String(s || '').toLowerCase().replace(/[^a-z0-9@$!|+(]/g, '');
+  let out = '';
+  for (const ch of base) out += (CONFUSABLE[ch] || ch);
+  return out.replace(/(.)\1+/g, '$1');
+}
+
+/** Damerau-Levenshtein, capped: bails out as soon as it cannot beat `max`. */
+function editDistance(a, b, max) {
+  if (Math.abs(a.length - b.length) > max) return max + 1;
+  const prev2 = [];
+  const prev = [];
+  const cur = [];
+  for (let j = 0; j <= b.length; j++) prev[j] = j;
+  for (let i = 1; i <= a.length; i++) {
+    cur[0] = i;
+    let best = cur[0];
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      cur[j] = Math.min(cur[j - 1] + 1, prev[j] + 1, prev[j - 1] + cost);
+      // A transposition (rg -> gr) is one mistake, not two.
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) {
+        cur[j] = Math.min(cur[j], prev2[j - 2] + 1);
+      }
+      if (cur[j] < best) best = cur[j];
+    }
+    if (best > max) return max + 1;
+    for (let j = 0; j <= b.length; j++) { prev2[j] = prev[j]; prev[j] = cur[j]; }
+  }
+  return prev[b.length];
+}
+
+/** True when `handle` reads as `target` to a human: same once folded, or one edit away. */
+function looksLike(handle, target) {
+  const f = foldConfusables(handle);
+  const t = foldConfusables(target);
+  if (!f || !t) return false;
+  if (f.includes(t)) return true;
+  // Slide a window so an impersonation buried in a longer handle is caught
+  // (xv3rgrx). Windows are sized around the target so an unrelated long handle
+  // cannot accumulate a match by chance.
+  for (let len = Math.max(3, t.length - 1); len <= t.length + 1; len++) {
+    for (let i = 0; i + len <= f.length; i++) {
+      if (editDistance(f.slice(i, i + len), t, 1) <= 1) return true;
+    }
+  }
+  return false;
+}
+
 function isDisallowedUsername(username) {
   const n = normHandle(username);
   if (!n) return true;
-  if (RESERVED_SUBSTRINGS.some((r) => n.includes(r))) return true;
+  // Brand + founder identity: not claimable, and neither is anything that reads
+  // as it. Founder ruling 2026-08-17, "anything close to it".
+  if (RESERVED_SUBSTRINGS.some((r) => n.includes(r) || looksLike(username, r))) return true;
   if (RESERVED.has(n)) return true;
   if (BLOCKED_SUBSTRINGS.some((w) => n.includes(w))) return true;
   return BLOCKED_EXACT.includes(n);
@@ -95,6 +165,34 @@ async function deleteMappingIfOwned(lower, uid) {
   const snap = await ref.get();
   if (snap.exists && snap.data().uid === uid) await ref.delete();
 }
+
+exports.isDisallowedUsername = isDisallowedUsername;
+exports.normHandle = normHandle;
+
+/**
+ * Obscenity check ONLY, with the brand reservations deliberately left out.
+ *
+ * `isDisallowedUsername` blocks anything containing "vergr" because its job is
+ * to stop a USER passing themselves off as Vergr. An official channel IS Vergr,
+ * so applying that rule to channels is backwards: it blocks @vergroffers,
+ * @vergrsupport and @vergr, which are exactly the handles these channels should
+ * have. Same for RESERVED ("official", "support", "admin").
+ *
+ * What still applies to a channel is the profanity and slur list, because an
+ * official channel with an obscene handle is wrong no matter who owns it.
+ *
+ * Uniqueness is NOT policy and is checked separately: a channel still cannot
+ * take a handle a real user already holds, or one another channel is using.
+ */
+function isObsceneHandle(handle) {
+  const n = normHandle(handle);
+  if (!n) return true;
+  if (BLOCKED_SUBSTRINGS.some((w) => n.includes(w))) return true;
+  return BLOCKED_EXACT.includes(n);
+}
+exports.isObsceneHandle = isObsceneHandle;
+exports.looksLike = looksLike;
+exports.foldConfusables = foldConfusables;
 
 // Keep usernameLower + usernames/{lower} in sync with users/{uid}.username.
 // Loop-safe: the only self-write is setting usernameLower, and it is guarded so

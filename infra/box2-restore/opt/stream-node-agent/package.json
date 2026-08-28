@@ -1,0 +1,10 @@
+{
+  "name": "vergr-stream-node-agent",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "agent.js",
+  "dependencies": {
+    "firebase-admin": "^12.7.0"
+  }
+}

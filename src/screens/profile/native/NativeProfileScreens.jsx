@@ -13,6 +13,13 @@
 // normal top-3.5 with NO extra safe-area padding.
 
 import { useState, useEffect, useMemo } from 'react';
+import BoostSheet from '../../../components/boost/BoostSheet';
+import { themeTokens, fieldStyle, headerLightStyle } from '../../../utils/profileThemes';
+import { accentFor } from '../../../utils/rankUnlocks';
+import { Ambilight, ProfileAudio, useEffectEnabled } from '../../../components/effects';
+import { avatarRing, RING } from '../../../utils/avatarRing';
+import { isGroupSeen } from '../../../utils/statusSeen';
+import '../../../styles/surface.css';
 import { useNavigate, useParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useAuth } from '../../../context/AuthContext';
@@ -33,10 +40,12 @@ import useOnlineStatus from '../../../hooks/useOnlineStatus';
 import { applyVanguardMask, rankMeta } from '../../../utils/vanguard';
 import { trackEvent } from '../../../utils/trackEvent';
 import BadgesShowcase from '../../../components/BadgesShowcase';
+import MilestoneCase from '../../../components/profile/MilestoneCase';
 import MembershipBlock from '../../../components/membership/MembershipBlock';
 import UserAvatar from '../../../components/UserAvatar';
 import MyQrModal from '../../../components/messages/MyQrModal';
 import CachedImg from '../../../components/CachedImg';
+import ProfileBanner from '../../../components/profile/ProfileBanner';
 import Icon from '../../../components/Icon';
 import PostCard from '../../../components/PostCard';
 import ProfileCompletionCard from '../../../components/profile/ProfileCompletionCard';
@@ -48,6 +57,8 @@ import StreamScheduleCard from '../../../components/profile/StreamScheduleCard';
 import ReportSheet from '../../../components/ReportSheet';
 import useHeaderCollapse from '../../../hooks/useHeaderCollapse';
 import { bannerGradient, MiniDockHeader } from '../../../components/profile/profilePolish';
+import UserName from '../../../components/UserName';
+import RankBadge from '../../../components/RankBadge';
 
 const OWN_TABS = ['Posts', 'Media', 'Clips', 'Likes', 'Bookmarks'];
 // Likes are private (IG model): own profile only, never on someone else's.
@@ -76,18 +87,25 @@ function socialIcon(platform) {
                 tiktok: 'music_note', discord: 'chat', twitch: 'live_tv', website: 'language' };
   return map[(platform || '').toLowerCase()] || 'link';
 }
-function Banner({ children, banner, uid, parallaxRef }) {
+// `themeId` is the equipped profile theme. It was missing here entirely, so the
+// native banner drew a hardcoded purple regardless of what the user equipped:
+// the same defect the web screen had, in a second component.
+function Banner({ children, banner, uid, parallaxRef, themeId = 'default' }) {
+  const themed = themeId !== 'default';
   return (
-    <div className="relative h-[176px] overflow-hidden">
+    <div className="relative h-[176px] overflow-hidden"
+         style={themed ? headerLightStyle(themeId) : undefined}>
       {/* Inner wrapper carries the scroll parallax so overlaid buttons never
-          move/blur with the art (B8.1). Bannerless = per-uid gradient (B8.4). */}
+          move/blur with the art (B8.1). Bannerless = per-uid gradient (B8.4),
+          unless a theme is equipped, in which case the theme IS the surface and
+          the fallback must not paint over it. */}
       <div ref={parallaxRef} className="absolute inset-0 will-change-transform">
-        <div className="absolute inset-0" style={{ background: banner
+        <div className="absolute inset-0" style={{ background: themed ? 'transparent' : (banner
           ? 'linear-gradient(135deg,#0d0820 0%,#1a0a3a 30%,#2d0a5a 60%,#1a0a30 100%)'
-          : bannerGradient(uid) }}>
-          <div className="absolute inset-0" style={{ background: 'radial-gradient(ellipse at 70% 50%,rgba(123,31,255,0.25) 0%,transparent 65%), radial-gradient(ellipse at 90% 30%,rgba(61,127,255,0.15) 0%,transparent 50%)' }} />
+          : bannerGradient(uid)) }}>
+          <div className="absolute inset-0" style={{ background: themed ? 'none' : 'radial-gradient(ellipse at 70% 50%,rgba(123,31,255,0.25) 0%,transparent 65%), radial-gradient(ellipse at 90% 30%,rgba(61,127,255,0.15) 0%,transparent 50%)' }} />
         </div>
-        {banner && <CachedImg src={banner} permanent alt="" className="absolute inset-0 w-full h-full object-cover" />}
+        {banner && <ProfileBanner src={banner} className="absolute inset-0 w-full h-full object-cover" />}
       </div>
       {children}
     </div>
@@ -116,17 +134,17 @@ function VPCard({ vp, vpLevel, vpProgress, vpNext, vpToNext, onClick }) {
       className="w-full mt-3 flex items-center gap-3 p-3.5 rounded-2xl text-left active:brightness-110"
       style={{ background: 'rgba(123,31,255,0.08)', border: '1px solid rgba(180,79,255,0.20)' }}>
       <div className="flex-1 min-w-0">
-        <p className="text-[9px] font-bold tracking-widest uppercase" style={{ color: '#B44FFF' }}>Vergr Points</p>
+        <p className="text-[9px] font-bold tracking-widest uppercase" style={{ color: 'var(--vg-accent)' }}>Vergr Points</p>
         <p className="text-[19px] font-black text-text-primary leading-none mt-0.5">
-          {vp.toLocaleString()} <span className="text-[13px]" style={{ color: '#B44FFF' }}>VP</span>
+          {vp.toLocaleString()} <span className="text-[13px]" style={{ color: 'var(--vg-accent)' }}>VP</span>
         </p>
         <div className="h-[3px] rounded mt-1.5" style={{ background: 'rgba(255,255,255,0.08)' }}>
-          <div className="h-full rounded" style={{ width: `${Math.min(100, (vpProgress || 0))}%`, background: 'linear-gradient(90deg,#7B1FFF,#B44FFF)' }} />
+          <div className="h-full rounded" style={{ width: `${Math.min(100, (vpProgress || 0))}%`, background: 'linear-gradient(90deg,var(--vg-accent-dark),var(--vg-accent))' }} />
         </div>
         <p className="text-[10px] text-text-muted mt-1">{vpNext ? `${vpToNext.toLocaleString()} VP to Lvl ${vpNext.level}` : 'Max level reached'}</p>
       </div>
       <div className="flex items-center gap-3 shrink-0">
-        <VPIcon size={36} className="drop-shadow-[0_0_12px_rgba(180,79,255,0.5)]" />
+        <VPIcon size={36} className="drop-shadow-[0_0_12px_var(--vg-accent-dim)]" />
         <div className="flex flex-col items-end gap-1">
           <BadgesShowcase level={vpLevel?.level || 1} size={32} />
           <p className="text-[9px] text-text-muted leading-none">{vpLevel?.name || 'Rookie'}</p>
@@ -141,7 +159,7 @@ function Tabs({ tabs, active, onSelect }) {
       {tabs.map(t => (
         <button key={t} onClick={() => onSelect(t)}
           className="shrink-0 px-4 py-3 text-[13px] font-semibold transition-colors"
-          style={active === t ? { color: '#fff', borderBottom: '2px solid #B44FFF' } : { color: '#6B7280', borderBottom: '2px solid transparent' }}>
+          style={active === t ? { color: '#fff', borderBottom: '2px solid var(--vg-accent)' } : { color: '#6B7280', borderBottom: '2px solid transparent' }}>
           {t}
         </button>
       ))}
@@ -180,6 +198,12 @@ export function NativeProfileScreen() {
   const { showToast } = useUI();
   const navigate = useNavigate();
 
+  // Same tokens as the web profile. The native screen is a separate component,
+  // which is exactly why the collection work did not reach it on its own.
+  const themeId   = profile?.cosmetics?.theme || 'default';
+  const accentHex = accentFor(profile);
+  const tokens    = themeTokens(themeId, accentHex);
+
   const [activeTab, setActiveTab] = useState('Posts');
   const [posts, setPosts] = useState([]);
   const [loadingPosts, setLoadingPosts] = useState(false);
@@ -188,6 +212,7 @@ export function NativeProfileScreen() {
   const [followerCount, setFollowerCount] = useState(0);
   const [followingCount, setFollowingCount] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [showBoost, setShowBoost] = useState(false);
   const [showQr, setShowQr] = useState(false);
   const { bannerRef, docked } = useHeaderCollapse({ dockAt: 150 });
 
@@ -235,9 +260,10 @@ export function NativeProfileScreen() {
   };
 
   return (
-    <div className="pb-10 overflow-x-hidden" style={{ background: '#0B0B14' }}>
-      <MiniDockHeader show={docked} avatar={profile?.avatar} name={displayName} />
-      <Banner banner={profile?.banner} uid={currentUser?.uid} parallaxRef={bannerRef}>
+    <div className="pb-10 overflow-x-hidden vg-profile"
+         style={{ ...tokens, ...fieldStyle() }}>
+      <MiniDockHeader show={docked} avatar={profile?.avatar} name={displayName} user={profile} />
+      <Banner banner={profile?.banner} uid={currentUser?.uid} parallaxRef={bannerRef} themeId={themeId}>
         <span className="absolute right-5 bottom-4 font-syne font-black tracking-widest uppercase select-none pointer-events-none leading-none" style={{ fontSize: 56, color: 'rgba(255,255,255,0.05)' }}>
           {(profile?.username || 'VERGR').toUpperCase()}
         </span>
@@ -255,6 +281,7 @@ export function NativeProfileScreen() {
                 onClick={(e) => e.stopPropagation()}>
                 <MenuItem icon="edit" label="Edit Profile" onClick={() => { setMenuOpen(false); navigate('/edit-profile'); }} />
                 <MenuItem icon="qr_code_2" label="My QR code" onClick={() => { setMenuOpen(false); setShowQr(true); }} />
+                <MenuItem icon="rocket_launch" label="Boost my profile" onClick={() => { setMenuOpen(false); setShowBoost(true); }} />
                 <MenuItem icon="link" label="Vergr.me" onClick={() => { setMenuOpen(false); navigate('/vergrme/edit'); }} />
                 <div className="h-px my-1" style={{ background: '#1E1E2E' }} />
                 <MenuItem icon="account_balance_wallet" label="Wallet" onClick={() => { setMenuOpen(false); navigate('/wallet'); }} />
@@ -279,7 +306,7 @@ export function NativeProfileScreen() {
       <div className="px-5 relative z-10">
         <div className="flex items-end gap-4 -mt-11 mb-3">
           <div className="w-[88px] h-[88px] rounded-full flex items-center justify-center font-syne font-black text-[30px] relative shrink-0"
-            style={{ background: 'linear-gradient(135deg,#7b1fff,#3b82f6)', border: '3px solid #B44FFF', boxShadow: '0 0 0 3px #0B0B14, 0 0 20px rgba(180,79,255,0.5)' }}>
+            style={{ background: 'linear-gradient(135deg,#7b1fff,#3b82f6)', border: '3px solid var(--vg-seam)', boxShadow: '0 0 0 3px #0B0B14, 0 0 20px var(--vg-accent-dim)' }}>
             <div className="w-full h-full rounded-full overflow-hidden flex items-center justify-center">
               {profile?.avatar ? <CachedImg src={profile.avatar} permanent alt={displayName} className="w-full h-full object-cover" /> : initial}
             </div>
@@ -289,10 +316,11 @@ export function NativeProfileScreen() {
           </div>
           <div className="flex-1 pb-1 min-w-0">
             <div className="flex items-center gap-2 mb-0.5 flex-wrap">
-              <span className="text-[22px] font-extrabold text-text-primary truncate">{displayName}</span>
+              <span className="text-[22px] font-extrabold text-text-primary truncate"><UserName user={profile} masked context="profile" fallback={displayName} /></span>
+              <RankBadge level={profile?.vpLevel} role={profile?.role} isSelf size={17} style={{ verticalAlign: '-3px' }} />
               <NameAudioButton url={profile?.nameAudioUrl} />
-              {profile?.verified && <div className="w-5 h-5 rounded-full flex items-center justify-center shrink-0" style={{ background: '#7B1FFF' }}><Icon name="check" size={11} className="text-white" /></div>}
-              <span className="px-2 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase shrink-0" style={{ background: 'rgba(123,31,255,0.20)', color: '#B44FFF', border: '1px solid rgba(180,79,255,0.30)' }}>{vpLevel?.name || 'Rookie'}</span>
+              {profile?.verified && <div className="w-5 h-5 rounded-full flex items-center justify-center shrink-0" style={{ background: 'var(--vg-accent)' }}><Icon name="check" size={11} className="text-white" /></div>}
+              <span className="px-2 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase shrink-0" style={{ background: 'var(--vg-accent-chip)', color: 'var(--vg-accent)', border: '1px solid rgba(180,79,255,0.30)' }}>{vpLevel?.name || 'Rookie'}</span>
             </div>
             {handle && <div className="text-[12px] text-text-muted mb-1.5">{handle}</div>}
           </div>
@@ -321,6 +349,7 @@ export function NativeProfileScreen() {
           pays the founder-approved profile-completion VP). */}
       <div className="px-5 pt-4">
         <ProfileCompletionCard />
+        <MilestoneCase user={profile} wallet={wallet} />
       </div>
 
       <Tabs tabs={OWN_TABS} active={activeTab} onSelect={setActiveTab} />
@@ -333,6 +362,10 @@ export function NativeProfileScreen() {
         )}
       </div>
       <MyQrModal open={showQr} onClose={() => setShowQr(false)} />
+      {showBoost && (
+        <BoostSheet target="user" targetId={currentUser?.uid} targetLabel="your profile"
+          onClose={() => setShowBoost(false)} />
+      )}
     </div>
   );
 }
@@ -348,6 +381,21 @@ export function NativePublicProfileScreen() {
   const navigate = useNavigate();
 
   const [user, setUser] = useState(null);
+  // ⚠ ABOVE the `if (loading) return <ProfileSkeleton/>` below. useEffectEnabled
+  // calls useMemo, so a conditional call changes the hook count between renders
+  // and React throws #310 — which is exactly what happened on the web screen.
+  // The OWNER's profile decides, so this reads the VIEWED user.
+  const orbitUnlocked = useEffectEnabled('orbit', user);
+  const ambilightOn = useEffectEnabled('ambilight', user);
+  // Effect 09, same rule: above the early return, and it reads the VIEWED
+  // user's unlock because the loop belongs to the profile's owner.
+  const ambianceOn = useEffectEnabled('ambiance', user);
+  // ⚠ The accent belongs to the PROFILE OWNER, not the viewer. This screen was
+  // reading `accentHex` from NativeProfileScreen, a sibling function, so the
+  // profile-audio block threw "accentHex is not defined" for every visitor and
+  // would have shown the VIEWER's colour even if it had resolved. accentFor() is
+  // the one accent resolver (CLAUDE.md); do not hand-roll PROFILE_ACCENTS.find.
+  const accentHex = accentFor(user);
   const { isOnline: userOnline } = useOnlineStatus(user?.id);
   const [userVP, setUserVP] = useState(0);
   const [posts, setPosts] = useState([]);
@@ -358,6 +406,7 @@ export function NativePublicProfileScreen() {
   const [followerCount, setFollowerCount] = useState(0);
   const [followingCount, setFollowingCount] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [showBoost, setShowBoost] = useState(false);
   const [targetFollowsMe, setTargetFollowsMe] = useState(false);
 
   useEffect(() => {
@@ -433,6 +482,16 @@ export function NativePublicProfileScreen() {
   };
 
   const masked = user ? applyVanguardMask(user, viewer) : null;
+  // ONE ring: LIVE > STATUS > ORBIT. Status costs nothing — `statusUntil` and
+  // `statusLastId` ride the user doc (markStatusPosted) and isGroupSeen is
+  // localStorage. See src/utils/avatarRing.js.
+  const ring = avatarRing({
+    live: !!(user?.id && isUserLive?.(user.id)),
+    unseenStatus: !!(user?.statusUntil > Date.now()
+      && !isGroupSeen(currentUser?.uid, user.id, user.statusLastId)),
+    orbit: orbitUnlocked,
+    masked: !!masked?.isVanguardPersona,
+  });
   const { bannerRef, docked } = useHeaderCollapse({ dockAt: 150 });
   const [showReport, setShowReport] = useState(false);
 
@@ -497,8 +556,22 @@ export function NativePublicProfileScreen() {
     : '';
 
   return (
-    <div className="pb-10 overflow-x-hidden" style={{ background: '#0B0B14' }}>
-      <MiniDockHeader show={docked} avatar={masked.avatar} name={displayName} onBack={() => navigate(-1)} />
+    // ⚠ THE ROOT CONTRACT, same as the web screens: the accent tokens AND
+    // `vg-profile`. The tokens are what every `var(--vg-accent…)` below reads,
+    // and `.vg-profile`'s `position: relative` is Ambilight's containing block —
+    // without it the glow escapes across the app shell.
+    <div className="pb-10 overflow-x-hidden relative vg-profile"
+         style={{ ...themeTokens(user?.cosmetics?.theme || 'default', accentHex),
+                  background: '#0B0B14' }}>
+      <MiniDockHeader show={docked} avatar={masked.avatar} name={displayName} user={masked} onBack={() => navigate(-1)} />
+      {/* Ambilight OUTSIDE the banner: the banner is overflow-hidden for the
+          parallax, so light drawn inside is clipped at the edge it must cross.
+          The native banner is 176px, not 220px, so the box is 340px. */}
+      {ambilightOn && !masked.isVanguardPersona && user.banner && (
+        <div className="absolute inset-x-0 top-0 h-[340px] pointer-events-none" style={{ zIndex: -1 }}>
+          <Ambilight src={user.banner} enabled spread={150} intensity={0.72} feather="#000000" />
+        </div>
+      )}
       <Banner banner={!masked.isVanguardPersona ? user.banner : null} uid={user.id} parallaxRef={bannerRef}>
         <button onClick={() => navigate(-1)} className="absolute left-3.5 w-[34px] h-[34px] flex items-center justify-center rounded-lg text-white active:scale-95"
           style={{ top: 'calc(env(safe-area-inset-top, 0px) + 14px)', background: 'rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.15)', backdropFilter: 'blur(8px)' }}>
@@ -513,6 +586,7 @@ export function NativePublicProfileScreen() {
                 style={{ background: '#14141F', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 8px 32px rgba(0,0,0,0.5)' }}
                 onClick={(e) => e.stopPropagation()}>
                 <MenuItem icon="content_copy" label="Copy link" onClick={() => { setMenuOpen(false); handleShare(); }} />
+                <MenuItem icon="rocket_launch" label="Boost profile" onClick={() => { setMenuOpen(false); setShowBoost(true); }} />
                 {!isMe && currentUser && <MenuItem icon="flag" label="Report" onClick={() => { setMenuOpen(false); setShowReport(true); }} />}
               </div>
             )}
@@ -523,8 +597,19 @@ export function NativePublicProfileScreen() {
       {/* HEADER — relative z-10 so username/rank paint ABOVE the banner. */}
       <div className="px-5 relative z-10">
         <div className="flex items-end gap-4 -mt-11 mb-3">
-          <div className="w-[88px] h-[88px] rounded-full flex items-center justify-center font-syne font-black text-[30px] relative shrink-0"
-            style={{ background: 'linear-gradient(135deg,#7b1fff,#3b82f6)', border: `3px solid ${vpLevel?.ringColor || '#B44FFF'}`, boxShadow: `0 0 0 3px #0B0B14, 0 0 20px ${(vpLevel?.ringColor || '#B44FFF')}55` }}>
+          {/* ⚠ ONE RING, same rule as the web public profile — see
+              src/utils/avatarRing.js. The rank-colour border is REMOVED: it
+              covered the accent orbit and contradicted the locked rule that
+              rank never touches the avatar ring. */}
+          <div className={`${ring === RING.ORBIT ? 'vg-orbit ' : ''}w-[88px] h-[88px] rounded-full flex items-center justify-center font-syne font-black text-[30px] relative shrink-0`}
+            style={{
+              background: 'linear-gradient(135deg,#7b1fff,#3b82f6)',
+              ...(ring === RING.LIVE
+                ? { boxShadow: '0 0 0 3px #0B0B14, 0 0 0 6px #F04060, 0 0 22px #F0406088' }
+                : ring === RING.STATUS
+                  ? { boxShadow: '0 0 0 3px #0B0B14, 0 0 0 6px #B44FFF, 0 0 18px #B44FFF66' }
+                  : { boxShadow: '0 0 0 3px #0B0B14' }),
+            }}>
             <div className="w-full h-full rounded-full overflow-hidden flex items-center justify-center">
               {masked.avatar ? <CachedImg src={masked.avatar} permanent alt={displayName} className="w-full h-full object-cover" /> : initial}
             </div>
@@ -541,15 +626,16 @@ export function NativePublicProfileScreen() {
           </div>
           <div className="flex-1 pb-1 min-w-0">
             <div className="flex items-center gap-2 mb-1 flex-wrap min-w-0">
-              <span className="text-[22px] font-extrabold text-text-primary truncate">{displayName}</span>
+              <span className="text-[22px] font-extrabold text-text-primary truncate"><UserName user={masked} masked context="profile" fallback={displayName} /></span>
+              <RankBadge level={masked?.vpLevel} role={masked?.role} size={17} style={{ verticalAlign: '-3px' }} />
               {!masked.isVanguardPersona && <NameAudioButton url={user.nameAudioUrl} />}
-              {user.isVerified && <div className="w-5 h-5 rounded-full flex items-center justify-center shrink-0" style={{ background: '#7B1FFF' }}><Icon name="check" size={11} className="text-white" /></div>}
-              {!isBot && <span className="px-2 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase shrink-0" style={{ background: 'rgba(123,31,255,0.20)', color: '#B44FFF', border: '1px solid rgba(180,79,255,0.30)' }}>{vpLevel?.name || 'Rookie'}</span>}
+              {user.isVerified && <div className="w-5 h-5 rounded-full flex items-center justify-center shrink-0" style={{ background: 'var(--vg-accent)' }}><Icon name="check" size={11} className="text-white" /></div>}
+              {!isBot && <span className="px-2 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase shrink-0" style={{ background: 'var(--vg-accent-chip)', color: 'var(--vg-accent)', border: '1px solid rgba(180,79,255,0.30)' }}>{vpLevel?.name || 'Rookie'}</span>}
             </div>
             {!isMe && (
               <div className="flex items-center gap-2 mb-2 flex-wrap">
                 <motion.button onClick={handleFollowToggle} disabled={toggling} whileTap={{ scale: 0.92 }} className="px-5 py-2 rounded-full font-bold text-[13px] shrink-0"
-                  style={following ? { background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.10)', color: '#a0a0c0' } : { background: '#B44FFF', color: '#fff', boxShadow: '0 0 18px rgba(180,79,255,0.45)' }}>
+                  style={following ? { background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.10)', color: '#a0a0c0' } : { background: 'var(--vg-accent)', color: '#fff', boxShadow: '0 0 18px var(--vg-accent-dim)' }}>
                   {following ? 'Following' : 'Follow'}
                 </motion.button>
                 {!isBot && (
@@ -560,7 +646,7 @@ export function NativePublicProfileScreen() {
                 )}
               </div>
             )}
-            {isMe && <button onClick={() => navigate('/edit-profile')} className="px-4 py-2 rounded-lg font-bold text-[12px] mb-2" style={{ background: 'rgba(180,79,255,0.15)', color: '#B44FFF', border: '1px solid rgba(180,79,255,0.40)' }}>Edit Profile</button>}
+            {isMe && <button onClick={() => navigate('/edit-profile')} className="px-4 py-2 rounded-lg font-bold text-[12px] mb-2" style={{ background: 'var(--vg-accent-chip)', color: 'var(--vg-accent)', border: '1px solid rgba(180,79,255,0.40)' }}>Edit Profile</button>}
             <div className="flex items-center gap-2 mb-1.5">
               <div className="text-[12px] text-text-muted">{handle}</div>
               {vanguardRank && <VanguardBadge rank={vanguardRank} size={16} title={`${rankMeta(vanguardRank).label} — Vergr Vanguard`} />}
@@ -606,12 +692,20 @@ export function NativePublicProfileScreen() {
               <StreamScheduleCard schedule={user.streamSchedule} />
             </div>
           )}
+          {/* ⚠ MILESTONES ARE NOT ON A PUBLIC PROFILE (founder, 2026-08-24).
+              PublicProfileScreen.jsx:781 records the reason: the badge ART is
+              rejected, and the public profile is the face strangers judge the
+              product by. NATIVE PUBLIC WAS STILL RENDERING IT — so the APK was
+              showing visitors the exact artwork the web deliberately hides.
+              Removed 2026-08-26 so the two agree. The owner's own native
+              profile keeps it (see NativeProfileScreen), same as the web.
+              Re-add BOTH together once the art is redesigned and approved. */}
           <Tabs tabs={PUBLIC_TABS} active={activeTab} onSelect={setActiveTab} />
           <div className="pt-1">
             {activeTab === 'Posts' && pinnedPosts.length > 0 && (
               <div className="px-4 pt-2">
                 <p className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-text-secondary mb-2">
-                  <Icon name="push_pin" size={13} style={{ color: '#B44FFF' }} /> Pinned
+                  <Icon name="push_pin" size={13} style={{ color: 'var(--vg-accent)' }} /> Pinned
                 </p>
               </div>
             )}
@@ -624,6 +718,26 @@ export function NativePublicProfileScreen() {
           </div>
         </>
       )}
+      {/* Effect 09 — see the matching block in PublicProfileScreen. Mounted on
+          BOTH public profiles deliberately: doing it on one is the mistake that
+          left the avatar orbit visible to nobody but its owner (CLAUDE.md). */}
+      {!isMe && !masked?.isVanguardPersona && (
+        <div className="fixed bottom-28 right-4 z-30 flex justify-end pointer-events-none"><div className="pointer-events-auto">
+          <ProfileAudio
+            track={user.cosmetics?.profileAudio}
+            enabled={ambianceOn}
+            accent={accentHex || 'var(--brand-violet,#7B1FFF)'}
+            onReport={currentUser ? () => setShowReport(true) : undefined}
+          />
+          </div>
+        </div>
+      )}
+
+      {showBoost && (
+        <BoostSheet target="user" targetId={user?.id} targetLabel={`@${user?.username || 'this profile'}`}
+          onClose={() => setShowBoost(false)} />
+      )}
+
       <ReportSheet open={showReport} title="Report User" onClose={() => setShowReport(false)}
         onSubmit={(reason) => {
           setShowReport(false);

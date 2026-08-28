@@ -12,6 +12,11 @@ import { getPayoutAccount, enrollForPayouts, getMyPayoutStatements } from '../..
 import CreatorLayout from '../../components/creator/CreatorLayout';
 import { Card, SectionHeader } from '../../components/creator/Widgets';
 import Icon from '../../components/Icon';
+// A payout statement names the paying entity, so it reads from the one source
+// of truth. No extra bundle weight: AppRouter already pulls legalContent into
+// the main chunk via TosVersionGate.
+import { OPERATOR } from '../marketing/legal/legalContent';
+import UserName from '../../components/UserName';
 
 const NUM = 'font-dmmono font-bold tabular-nums';
 const usd = (micro) => `$${((Number(micro) || 0) / 1e6).toLocaleString(undefined, {
@@ -245,7 +250,7 @@ export function PayoutStatementScreen() {
             <div className="flex items-start justify-between gap-4 flex-wrap border-b border-white/10 pb-4">
               <div>
                 <div className="font-syne font-bold text-lg text-text-primary">VERGR</div>
-                <div className="text-xs text-text-muted">Murmont LLC</div>
+                <div className="text-xs text-text-muted">{OPERATOR.legalName}</div>
               </div>
               <div className="text-right">
                 <div className="text-xs text-text-muted uppercase tracking-wide font-bold">Statement</div>
@@ -260,7 +265,7 @@ export function PayoutStatementScreen() {
             <div className="grid grid-cols-2 gap-4 py-4 border-b border-white/10 text-sm">
               <div>
                 <div className="text-xs text-text-muted uppercase tracking-wide font-bold">Paid to</div>
-                <div className="text-text-primary mt-1">{profile?.displayName || profile?.username || '—'}</div>
+                <div className="text-text-primary mt-1"><UserName user={profile} masked fallback={'—'} /></div>
               </div>
               <div>
                 <div className="text-xs text-text-muted uppercase tracking-wide font-bold">Status</div>

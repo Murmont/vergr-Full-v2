@@ -13,6 +13,7 @@ import useResponsive from '../../hooks/useResponsive';
 import TopBar from '../../components/TopBar';
 import UserAvatar from '../../components/UserAvatar';
 import Icon from '../../components/Icon';
+import UserName from '../../components/UserName';
 
 export default function FriendsScreen() {
   const { isDesktop } = useResponsive();
@@ -117,10 +118,10 @@ export default function FriendsScreen() {
                   <UserAvatar src={u.avatar || u.photoURL} size={40} isVerified={u.isVerified} isLive={isUserLive(u.id)} />
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-semibold text-text-primary truncate">
-                      {u.displayName || u.username || 'Unknown'}
+                      <UserName user={u} masked fallback={'Unknown'} />
                     </div>
                     {u.username && (
-                      <div className="text-[11px] font-dmmono text-text-muted truncate">@{u.username}</div>
+                      <div className="text-[11px] font-dmmono text-text-muted truncate"><UserName user={u} masked handle /></div>
                     )}
                   </div>
                 </button>

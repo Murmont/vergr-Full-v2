@@ -531,3 +531,25 @@ export const SectionLabel = ({ children }) => (
     color: WALLET_TOKENS.textMuted, fontWeight: 600, marginBottom: 10,
   }}>{children}</div>
 );
+
+/**
+ * The unit suffix for a ledger row.
+ *
+ * Every wallet surface used to write `currency === 'usd' ? '' : 'c'`, which
+ * treats ANY non-USD row as coins. The VP rows are the ones that broke: a
+ * daily-login award is written server-side as `currency: 'vp'` with the
+ * description "5-day login streak: +50 VP", and the amount beside it rendered
+ * "+50 c". The row told you it gave you VP and then told you it gave you coins,
+ * on a screen whose entire job is telling you what you have.
+ *
+ * Anything unrecognised returns an empty suffix rather than guessing. A bare
+ * number is honest; the wrong unit is not.
+ */
+export const txUnit = (currency) => {
+  switch (String(currency || 'coins').toLowerCase()) {
+    case 'coins': return 'c';
+    case 'vp':    return 'VP';
+    case 'usd':   return '';
+    default:      return '';
+  }
+};

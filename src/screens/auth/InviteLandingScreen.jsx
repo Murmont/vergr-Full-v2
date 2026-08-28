@@ -102,7 +102,9 @@ export default function InviteLandingScreen() {
           )}
         </h1>
         <p className="text-text-secondary text-[14px] leading-relaxed mb-5 max-w-xs">
-          The home for competitive gamers: tournaments, live streaming, squads, and rewards.
+          {/* Tournaments removed 2026-08-19: retired, unrouted, and llms.txt says
+              publicly that Vergr runs no prize competitions. */}
+          The home for gamers and creators: live streaming, squads, clips, and a revenue share.
         </p>
 
         {/* Reward chip — honest: both sides earn VP after setup. */}

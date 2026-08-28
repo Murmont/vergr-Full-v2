@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import { useAuth } from './AuthContext';
 import { subscribeToUser, subscribeToWallet, updateUser as updateUserDoc, getConversations } from '../firebase/firestore';
+import { installResyncTriggers } from '../firebase/resync';
 import { initLocalCurrency, subscribeCurrency } from '../utils/currency';
 import { warmMedia } from '../utils/deviceMediaCache';
 import { peekSelfProfile, saveSelfProfile, clearSelfProfile } from '../utils/selfProfileCache';
@@ -10,7 +11,7 @@ import { purgeClearedHistoryOnce } from '../utils/chatOps';
 import { restorePurchases, restoreSubscriptions } from '../utils/nativeBilling';
 
 const UserContext = createContext(null);
-const DEFAULT_WALLET = { balance: 0, gems: 0, vp: 0, totalEarned: 0, totalSpent: 0, totalGemsEarned: 0, totalReceived: 0, totalTipped: 0, tier: 'free', dailyStreak: 0 };
+const DEFAULT_WALLET = { balance: 0, vp: 0, totalEarned: 0, totalSpent: 0, totalReceived: 0, totalTipped: 0, owedMicroUsd: 0, totalOwedMicroUsd: 0, totalPaidMicroUsd: 0, tier: 'free', dailyStreak: 0 };
 
 export function UserProvider({ children }) {
   const { currentUser, loading: authLoading } = useAuth();
@@ -180,7 +181,17 @@ export function UserProvider({ children }) {
   const { isAnonymous } = useAuth();
   const isGuest = isAnonymous || profile?.isGuest === true;
 
-  const value = { profile, wallet, loading, updateProfile, isGuest, fxVersion };
+  // A cache-only wallet is a balance we cannot vouch for. Exposed so the money
+  // surfaces can say so instead of presenting a stale number as fact, and so
+  // the resync watcher has something to react to.
+  const walletUnverified = wallet?._fromCache === true;
+
+  // Mounted once for the whole app. Cycles the Firestore connection when the
+  // app regains focus while a listener is stuck on cache, which recovers every
+  // listener at once because the stall is at the transport, not the query.
+  useEffect(() => installResyncTriggers(), []);
+
+  const value = { profile, wallet, loading, updateProfile, isGuest, fxVersion, walletUnverified };
   return <UserContext.Provider value={value}>{children}</UserContext.Provider>;
 }
 

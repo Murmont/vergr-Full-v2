@@ -235,7 +235,7 @@ document and a legal record of a supplier payment. Formal, printable, plain.
 ```
 ─────────────────────────────────────────────
   VERGR                        STATEMENT
-  Murmont LLC                  1 August 2026
+  Vergr LLC                    1 August 2026
 ─────────────────────────────────────────────
   PAID TO      Jordan Smith          ← legal name, not @handle
                jordan@example.com

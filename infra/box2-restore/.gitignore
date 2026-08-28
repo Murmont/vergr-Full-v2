@@ -1,0 +1,10 @@
+# SECRETS — never commit these. RESTORE.md documents where each one comes from.
+#
+# The real files exist locally in this folder on the machine that took the
+# backup. If you are restoring from a fresh clone they will NOT be here, and
+# RESTORE.md § "Secrets" tells you how to re-obtain every one of them.
+etc/vergr-sfu/firebase-admin.json
+etc/vergr-rtmp-auth/firebase-admin.json
+etc/vergr-vod-archive.env
+etc/vergr-node/agent.env
+etc/rclone/rclone.conf

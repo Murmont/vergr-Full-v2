@@ -1,7 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { collection, query, orderBy, limit, getDocs } from 'firebase/firestore';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { db } from '../../firebase/config';
+import { getUser } from '../../firebase/firestore';
+import { getVPLevel } from '../../utils/vpSystem';
 import { useAuth } from '../../context/AuthContext';
 import TopBar from '../../components/TopBar';
 import { ListSkeleton } from '../../components/skeletons/GlassSkeletons';
@@ -10,14 +13,36 @@ import Icon from '../../components/Icon';
 import RightSidebarPanel from '../../components/RightSidebarPanel';
 import useResponsive from '../../hooks/useResponsive';
 import { useLayout } from '../../context/LayoutContext';
+import UserName from '../../components/UserName';
+import RankBadge from '../../components/RankBadge';
 
+// Five of the seven categories here could NEVER show anything (audit A20): they
+// ordered `users` by a field nothing writes to a user doc, and Firestore omits
+// documents that lack the ordered field, so the query came back empty every
+// time. Top VP is the default tab, so an empty board was what every user saw.
+//
+//   vp, vpLevel  → fixed. VP really lives on `wallets`, which is owner-only, so
+//                  a server callable reads it (see getVpLeaderboard). Level is
+//                  derived from VP with the existing getVPLevel helper, and is
+//                  monotonic in VP, so ONE query serves both tabs.
+//   streamHours  → REMOVED. Nothing in the codebase has ever recorded stream
+//                  hours. Tracking them is a feature, not a leaderboard fix.
+//   totalXP      → REMOVED. Seeded to 0 at onboarding and never incremented.
+//   totalEarned  → REMOVED. It exists on `wallets`, so it COULD be surfaced the
+//                  same way vp is — but publishing a per-creator ranking of
+//                  earnings is a product and privacy decision (it reveals what
+//                  Vergr owes each creator), not a bug fix. Left out rather
+//                  than decided unilaterally.
+//
+// `source: 'vp'` reads the callable; everything else keeps the users query.
 const CATEGORIES = [
-  { key: 'vp', label: 'Top VP', field: 'vp', icon: 'star', suffix: 'VP' },
-  { key: 'vpLevel', label: 'Highest Level', field: 'vpLevel', icon: 'trending_up', suffix: 'LVL' },
-  { key: 'streamers', label: 'Top Streamers', field: 'streamHours', icon: 'live_tv', suffix: 'hrs' },
+  { key: 'vp', label: 'Top VP', source: 'vp', icon: 'star', suffix: 'VP' },
+  { key: 'vpLevel', label: 'Highest Level', source: 'vp', icon: 'trending_up', suffix: 'LVL', asLevel: true },
+  // Ranked on lifetime GROSS coins earned, read server-side from `wallets`
+  // (owner-only, so the client cannot query it). Shown in coins, which is the
+  // unit the platform earns in.
+  { key: 'earnings', label: 'Top Earners', source: 'earners', icon: 'paid', suffix: 'c' },
   { key: 'followers', label: 'Most Followed', field: 'followerCount', icon: 'group' },
-  { key: 'earnings', label: 'Top Earners', field: 'totalEarned', icon: 'paid' },
-  { key: 'xp', label: 'Top XP', field: 'totalXP', icon: 'military_tech' },
   { key: 'posts', label: 'Top Posters', field: 'postCount', icon: 'edit_note' },
 ];
 
@@ -44,16 +69,35 @@ export default function LeaderboardScreen() {
     const load = async () => {
       setLoading(true);
       try {
-        // Nested field paths work with Firestore orderBy when passed as a
-        // dotted string. Filter zero-value rows client-side since orderBy
-        // can't combine with a !=0 inequality on the same field cheaply.
-        const q = query(collection(db, 'users'), orderBy(category.field, 'desc'), limit(50));
-        const snap = await getDocs(q);
-        const getVal = (u, path) => path.split('.').reduce((o, k) => (o == null ? null : o[k]), u);
-        const users = snap.docs
-          .map((d, i) => ({ id: d.id, rank: i + 1, ...d.data(), isYou: d.id === currentUser?.uid }))
-          .filter(u => (getVal(u, category.field) || 0) > 0);
-        setEntries(users);
+        if (category.source === 'vp' || category.source === 'earners') {
+          // Both figures live on `wallets`, which is owner-only, so the server
+          // reads them and returns uid + the one ranking number. Profiles are
+          // resolved here into the same shape the users query produces, so
+          // everything downstream is unchanged.
+          const fn = category.source === 'vp' ? 'getVpLeaderboard' : 'getEarnersLeaderboard';
+          const res = await httpsCallable(getFunctions(undefined, 'europe-west1'), fn)({});
+          const rows = res?.data?.rows || [];
+          const profiles = await Promise.all(rows.map((r) => getUser(r.uid).catch(() => null)));
+          setEntries(rows.map((r, i) => ({
+            ...(profiles[i] || {}),
+            id: r.uid,
+            rank: i + 1,
+            vp: r.vp,
+            earned: r.earned,
+            isYou: r.uid === currentUser?.uid,
+          })));
+        } else {
+          // Nested field paths work with Firestore orderBy when passed as a
+          // dotted string. Filter zero-value rows client-side since orderBy
+          // can't combine with a !=0 inequality on the same field cheaply.
+          const q = query(collection(db, 'users'), orderBy(category.field, 'desc'), limit(50));
+          const snap = await getDocs(q);
+          const getVal = (u, path) => path.split('.').reduce((o, k) => (o == null ? null : o[k]), u);
+          const users = snap.docs
+            .map((d, i) => ({ id: d.id, rank: i + 1, ...d.data(), isYou: d.id === currentUser?.uid }))
+            .filter(u => (getVal(u, category.field) || 0) > 0);
+          setEntries(users);
+        }
       } catch (err) {
         console.error('Leaderboard error:', err);
         setEntries([]);
@@ -63,9 +107,16 @@ export default function LeaderboardScreen() {
     load();
   }, [category, currentUser]);
 
-  const valOf = (u) => (category.field
-    ? category.field.split('.').reduce((o, k) => (o == null ? null : o[k]), u)
-    : 0);
+  const valOf = (u) => {
+    // Highest Level shows the LEVEL derived from the same VP figure. Level is
+    // monotonic in VP, so the ordering is identical and one query serves both.
+    if (category.asLevel) return getVPLevel(u?.vp || 0)?.level || 1;
+    if (category.source === 'vp') return u?.vp || 0;
+    if (category.source === 'earners') return u?.earned || 0;
+    return category.field
+      ? category.field.split('.').reduce((o, k) => (o == null ? null : o[k]), u)
+      : 0;
+  };
 
   const top3 = entries.slice(0, 3);
   const rest = entries.slice(3);
@@ -128,7 +179,8 @@ export default function LeaderboardScreen() {
                         </div>
                       </div>
                       <p className={`font-bold truncate max-w-[80px] ${isFirst ? 'text-sm' : 'text-xs'} ${user.isYou ? 'text-brand-violet-light' : 'text-text-primary'}`}>
-                        {user.displayName || user.username}
+                        <UserName user={user} masked />
+                        <RankBadge level={user?.vpLevel} role={user?.role} size={11} style={{ verticalAlign: '-2px' }} />
                       </p>
                       <p className="text-text-muted text-[10px] font-dmmono">{formatVal(valOf(user))}</p>
                     </button>
@@ -147,8 +199,9 @@ export default function LeaderboardScreen() {
                   <span className="w-8 text-center text-text-muted text-xs font-dmmono font-bold">{user.rank}</span>
                   <UserAvatar src={user.avatar} size={36} />
                   <div className="flex-1 text-left min-w-0">
-                    <p className={`text-sm font-semibold truncate ${user.isYou ? 'text-brand-violet-light' : 'text-text-primary'}`}>{user.displayName || user.username}</p>
-                    <p className="text-text-muted text-xs font-dmmono">@{user.username}</p>
+                    <p className={`text-sm font-semibold truncate ${user.isYou ? 'text-brand-violet-light' : 'text-text-primary'}`}><UserName user={user} masked /></p>
+                    <RankBadge level={user?.vpLevel} role={user?.role} size={12} style={{ verticalAlign: '-2px' }} />
+                    <p className="text-text-muted text-xs font-dmmono"><UserName user={user} masked handle /></p>
                   </div>
                   <span className="text-sm font-dmmono font-bold text-brand-gold">
                     {formatVal(valOf(user))}

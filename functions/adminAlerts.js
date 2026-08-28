@@ -25,11 +25,47 @@ const REGION = 'europe-west1';
 // Actions where alerting is wasteful spam (high-frequency, low risk).
 // Failed TOTP verify is alerted IF the count crosses a threshold — handled
 // by a separate cron, not the per-row trigger.
+// WHAT THIS ALERT IS FOR, and why the list below matters.
+//
+// The point of a per-action alert is ONE question: "did I do that?" On a
+// single-admin platform the actor and the recipient are the same person, so the
+// alert is only ever useful for an action they did NOT perform, which means a
+// compromised account. That is worth interrupting someone for.
+//
+// It follows that routine work must not fire it. Creating a channel or deleting
+// a guest account is ordinary content management done dozens at a time, and
+// alerting on each one floods the drawer and buries the one notification that
+// would have mattered. An alert stream nobody reads is not a security control.
+//
+// So this list is the boundary: everything here is routine, everything absent
+// is something you would want to be told about if it were not you. When adding
+// an admin action, ask which side it falls on rather than defaulting to noise.
 const SUPPRESS_PER_ROW_ALERT = new Set([
   'totp_verify_failed',
   'totp_enroll',         // user themselves did this; their UI confirms
   'totp_disable',        // same
+
+  // Routine content management. Reversible, low blast radius, done in batches.
+  'channel_create',
+  'channel_update',
+  'channel_member_add',
+  'channel_member_remove',
+  'admin_delete_guest',  // guests are anonymous sessions, deleted many at a time
+  'campaign_schedule',
+  'whats_new_edit',
+  'email_template_save',
+  'promo_update',
+  'support_claim',
+  'support_release',
+  'support_close',
+  'support_reopen',
 ]);
+
+// Deliberately NOT suppressed, and each for a reason: anything that moves money
+// (`grant_*`, `promo_create`, `promo_activate`, payout runs), anything that
+// reaches every user (`campaign_send`, `sendAnnouncement`), anything that
+// changes who holds power (`vanguard_rank`, admin access), and anything that
+// takes something away from a user (`ban`, `permaban`, `channel_delete`).
 
 // Human-readable copy for the alert. Keep punchy — push notifications
 // truncate at ~100 chars on most devices.

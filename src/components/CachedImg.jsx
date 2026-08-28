@@ -1,3 +1,4 @@
+import { forwardRef } from 'react';
 import { useCachedImage, reportImageError } from '../utils/deviceMediaCache';
 
 /**
@@ -10,7 +11,9 @@ import { useCachedImage, reportImageError } from '../utils/deviceMediaCache';
  * Only cdn.vergr.app / Firebase Storage / googleusercontent images are cached;
  * anything else (giphy, data URIs, blobs) passes straight through untouched.
  */
-export default function CachedImg({ src, policyGated, permanent, onError, ...rest }) {
+// forwardRef so callers can reach the real <img>. Ambilight samples the banner
+// element directly, and without a ref there is no way to hand it the node.
+const CachedImg = forwardRef(function CachedImg({ src, policyGated, permanent, onError, ...rest }, ref) {
   // policyGated = chat message media → honours the Storage "auto-download media"
   // setting. permanent = banners/backgrounds, which live in storage Android will
   // not reclaim. Omit both for ordinary content images.
@@ -30,5 +33,7 @@ export default function CachedImg({ src, policyGated, permanent, onError, ...res
 
   // While a fallback lookup is pending `cached` can be '' — omit the src
   // attribute entirely (undefined) so no broken-image icon flashes.
-  return <img src={cached || undefined} onError={handleError} {...rest} />;
-}
+  return <img ref={ref} src={cached || undefined} onError={handleError} {...rest} />;
+});
+
+export default CachedImg;

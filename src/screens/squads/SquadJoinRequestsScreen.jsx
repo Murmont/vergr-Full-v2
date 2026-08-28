@@ -7,6 +7,7 @@ import { getSquad, getSquadMembers, getSquadMember, getSquadJoinRequests, handle
 import SquadShell from '../../components/squad/SquadShell';
 import SquadInfoRail from '../../components/squad/SquadInfoRail';
 import { avatarClass, initials } from '../../components/squad/squadHelpers';
+import UserName from '../../components/UserName';
 
 export default function SquadJoinRequestsScreen() {
   const { squadId } = useParams();
@@ -87,7 +88,7 @@ export default function SquadJoinRequestsScreen() {
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontFamily: 'Syne', fontWeight: 700, color: '#fff', fontSize: 14 }}>
-                      {r.user?.displayName || r.user?.username || 'Player'}
+                      <UserName user={r.user} masked fallback={'Player'} />
                     </div>
                     {r.message && (
                       <div style={{ marginTop: 4, fontSize: 12, color: 'var(--t2)', lineHeight: 1.5 }}>“{r.message}”</div>

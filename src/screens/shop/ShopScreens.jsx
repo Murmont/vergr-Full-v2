@@ -15,6 +15,7 @@ import {
   getVergrMeCustomers, getMyShopIntegration, connectShopIntegration,
   syncShopInventory, disconnectShopIntegration,
 } from '../../utils/vergrMeShop';
+import UserName from '../../components/UserName';
 
 const useUid = () => useAuth().currentUser?.uid;
 
@@ -269,7 +270,7 @@ export function ShopCustomersScreen() {
               <div key={c.buyerUid} className="flex items-center gap-3 px-4 py-3 border-b border-white/5 last:border-b-0">
                 <UserAvatar user={p || { id: c.buyerUid }} size={40} />
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm font-semibold truncate">{p?.displayName || p?.username || 'Customer'}</div>
+                  <div className="text-sm font-semibold truncate"><UserName user={p} masked fallback={'Customer'} /></div>
                   <div className="text-[11px] text-text-muted truncate">
                     <span className="font-dmmono font-bold tabular-nums text-brand-gold">{fmt(c.totalCoins)}c</span> spent · {c.count} order{c.count === 1 ? '' : 's'}
                     {c.lastMs ? ` · last ${fmtDate(c.lastMs)}` : ''}

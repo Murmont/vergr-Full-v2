@@ -5,11 +5,17 @@
 // no desktop max-w column or !isMobile branches. Routed IS_NATIVE_BUILD only.
 
 import { useState, useEffect } from 'react';
+import { getBoostedUsers } from '../../../firebase/firestore';
+import { mergeBoostedFirst } from '../../../utils/promoBoost';
+import { boostSlotsFor } from '../../../utils/boostDelivery';
 import { isDiscoverableStream, streamPremium } from '../../../utils/streamVisibility';
 import StreamStateBadge from '../../../components/streams/StreamStateBadge';
 import { useNavigate } from 'react-router-dom';
 import { collection, query, where, orderBy, limit, getDocs, doc, getDoc } from 'firebase/firestore';
-import { db } from '../../../firebase/config';
+import { rankStreams } from '../../../utils/streamBoost';
+import { inferStreamTopics } from '../../../utils/feedRank';
+import { getTopicWeights } from '../../../utils/feedPrefs';
+import { db, auth } from '../../../firebase/config';
 import { getSquads, searchUsers, followUser, unfollowUser } from '../../../firebase/firestore';
 import { hiddenFromDiscovery } from '../../../utils/privacy';
 import { TOURNAMENT_GAMES } from '../../../utils/tournamentGames';
@@ -87,9 +93,23 @@ export default function NativeExploreScreen() {
     let cancelled = false;
     (async () => {
       try {
-        const snap = await getDocs(query(collection(db, 'streams'), where('status', '==', 'live'), orderBy('viewerCount', 'desc'), limit(24)));
+        // Mirrors ExploreScreen: the top-24-by-viewers query alone can never
+        // surface a boosted stream with a small audience, which is the entire
+        // thing a boost is bought for. Second small query, merged and re-ranked.
+        const [snap, boostSnap] = await Promise.all([
+          getDocs(query(collection(db, 'streams'), where('status', '==', 'live'), orderBy('viewerCount', 'desc'), limit(24))),
+          getDocs(query(collection(db, 'streams'), where('boostExpiresAt', '>', Date.now()), limit(12))).catch(() => ({ docs: [] })),
+        ]);
         if (cancelled) return;
-        setRealStreams(snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter(isDiscoverableStream).map((s) => {
+        const merged = new Map();
+        for (const d of [...snap.docs, ...boostSnap.docs]) {
+          const data = { id: d.id, ...d.data() };
+          if (data.status === 'live') merged.set(d.id, data);
+        }
+        const ranked = rankStreams([...merged.values()], {
+          topicAffinity: getTopicWeights(), topicsOf: inferStreamTopics,
+        });
+        setRealStreams(ranked.filter(isDiscoverableStream).map((s) => {
           const d = { id: s.id };
           return {
             id: d.id, hostUid: s.hostUid || null, title: s.title || 'Live Stream',
@@ -118,15 +138,32 @@ export default function NativeExploreScreen() {
         // people ranked first, bots last (not excluded).
         const snap = await getDocs(query(collection(db, 'users'), limit(300)));
         if (cancelled) return;
+        const meUid = auth.currentUser?.uid;
         const rows = snap.docs.map((d) => ({ uid: d.id, ...d.data() }))
-          .filter((u) => u.username && u.isGuest !== true && !/^guest_/i.test(u.username)
+          // Don't recommend the viewer to themselves (audit A10). No activity
+          // threshold is added: A39 records the founder rule that zero-follower
+          // real accounts belong here.
+          .filter((u) => u.uid !== meUid
+            && u.username && u.isGuest !== true && !/^guest_/i.test(u.username)
             && u.hideFromEnumeration !== true && !hiddenFromDiscovery(u, 'suggested'))
           .sort((a, b) => {
             const ab = isBotAccount(a) ? 1 : 0, bb = isBotAccount(b) ? 1 : 0;
             if (ab !== bb) return ab - bb;
             return (b.followerCount || 0) - (a.followerCount || 0);
           });
-        setRealCreators(rows.slice(0, 40).map((u) => ({
+        // ⚠ Same shared query as web Explore. A boost the user paid for must
+        // appear on BOTH, or the native app silently ignores the purchase.
+        let boostedRows = [];
+        try {
+          const boosted = await getBoostedUsers({ viewerUid: meUid, want: boostSlotsFor(8) });
+          boostedRows = boosted.map((u) => ({ ...u, uid: u.id }));
+        } catch { /* a boost must never empty Explore */ }
+        const merged = mergeBoostedFirst(
+          boostedRows.map((u) => ({ ...u, id: u.uid })),
+          rows.map((u) => ({ ...u, id: u.uid })),
+          40,
+        );
+        setRealCreators(merged.map((u) => ({
           uid: u.uid, name: u.username || u.displayName || 'Player', avatar: u.avatar || u.photoURL || null,
           followers: compactNum(u.followerCount || 0), verified: !!u.isVerified, live: liveHostSet.has(u.uid),
           country: u.country || null,

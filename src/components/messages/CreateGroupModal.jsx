@@ -11,6 +11,7 @@ import Icon from '../Icon';
 import UserAvatar from '../UserAvatar';
 import { useUI } from '../../context/UIContext';
 import CloneDiscordModal from './CloneDiscordModal';
+import UserName from '../UserName';
 
 export default function CreateGroupModal({ onClose }) {
   const navigate = useNavigate();
@@ -151,8 +152,8 @@ export default function CreateGroupModal({ onClose }) {
                   <button key={f.uid} onClick={() => toggle(f)} className="flex items-center gap-3 w-full py-2.5 px-3 rounded-xl hover:bg-surface-2 transition-colors">
                     <UserAvatar src={f.avatar} size={40} />
                     <div className="flex-1 text-left min-w-0">
-                      <p className="text-text-primary font-bold text-sm truncate">{f.displayName}</p>
-                      <p className="text-text-muted text-xs truncate">@{f.username}</p>
+                      <p className="text-text-primary font-bold text-sm truncate"><UserName user={f} masked /></p>
+                      <p className="text-text-muted text-xs truncate"><UserName user={f} masked handle /></p>
                     </div>
                     <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all ${
                       isSelected ? 'bg-brand-violet border-brand-violet scale-110' : 'border-white/[0.1]'

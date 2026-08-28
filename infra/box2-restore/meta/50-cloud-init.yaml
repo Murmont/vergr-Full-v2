@@ -1,0 +1,23 @@
+network:
+  version: 2
+  ethernets:
+    enp7s0:
+      match:
+        macaddress: "86:00:00:54:3e:eb"
+      dhcp4: true
+      set-name: "enp7s0"
+    eth0:
+      match:
+        macaddress: "92:00:08:1c:f0:48"
+      addresses:
+      - "2a01:4f8:1c19:c87b::1/64"
+      nameservers:
+        addresses:
+        - 2a01:4ff:ff00::add:2
+        - 2a01:4ff:ff00::add:1
+      dhcp4: true
+      set-name: "eth0"
+      routes:
+      - on-link: true
+        to: "default"
+        via: "fe80::1"

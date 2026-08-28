@@ -8,9 +8,14 @@ import { isDiscoverableStream, streamPremium } from '../../utils/streamVisibilit
 import StreamStateBadge from '../../components/streams/StreamStateBadge';
 import { useNavigate } from 'react-router-dom';
 import { collection, query, where, orderBy, limit, getDocs, doc, getDoc } from 'firebase/firestore';
+import { rankStreams, boostRemainingMs } from '../../utils/streamBoost';
+import { inferStreamTopics } from '../../utils/feedRank';
+import { getTopicWeights } from '../../utils/feedPrefs';
 import { CardGridSkeleton } from '../../components/skeletons/GlassSkeletons';
-import { db } from '../../firebase/config';
-import { getSquads, searchUsers, followUser, unfollowUser } from '../../firebase/firestore';
+import { db, auth } from '../../firebase/config';
+import { getSquads, searchUsers, followUser, unfollowUser, getBoostedUsers } from '../../firebase/firestore';
+import { mergeBoostedFirst } from '../../utils/promoBoost';
+import { boostSlotsFor } from '../../utils/boostDelivery';
 import { hiddenFromDiscovery } from '../../utils/privacy';
 import { compactNum } from '../../components/creator/charts';
 import { timeAgo } from '../../utils/helpers';
@@ -43,6 +48,7 @@ const TOP_GAME_LIST = TOURNAMENT_GAMES.slice(0, 12).map((g) => ({ id: g.id, name
 // Build-time constant — dead-code-eliminated on web.
 const gx = (cls) => (IS_NATIVE_BUILD ? cls.replace(/\b(sm|md|lg|xl):grid-cols-\S+/g, '').replace(/\s+/g, ' ').trim() : cls);
 import UserAvatar from '../../components/UserAvatar';
+import UserName from '../../components/UserName';
 
 const MAIN_TABS = ['All', 'Creators', 'Squads', 'Streams', 'Clips', 'News'];
 
@@ -139,15 +145,42 @@ export default function ExploreScreen() {
     let cancelled = false;
     (async () => {
       try {
-        const q = query(
-          collection(db, 'streams'),
-          where('status', '==', 'live'),
-          orderBy('viewerCount', 'desc'),
-          limit(24),
-        );
-        const snap = await getDocs(q);
+        // ⚠ TWO QUERIES, AND THE SECOND ONE IS THE WHOLE POINT OF A BOOST.
+        //
+        // The viewerCount query alone can only ever re-order the top 24 streams
+        // by audience — so a boosted stream with three viewers is invisible no
+        // matter what was paid for it, which is precisely why the old boost
+        // bought nothing. The second query fetches currently-boosted streams
+        // regardless of audience, and the two are merged and re-ranked below.
+        //
+        // Cost: one extra small query per Explore load. `boostExpiresAt` is a
+        // single-field inequality, so it needs no composite index.
+        const [snap, boostSnap] = await Promise.all([
+          getDocs(query(
+            collection(db, 'streams'),
+            where('status', '==', 'live'),
+            orderBy('viewerCount', 'desc'),
+            limit(24),
+          )),
+          getDocs(query(
+            collection(db, 'streams'),
+            where('boostExpiresAt', '>', Date.now()),
+            limit(12),
+          )).catch(() => ({ docs: [] })),
+        ]);
         if (cancelled) return;
-        setRealStreams(snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter(isDiscoverableStream).map((s) => {
+        const merged = new Map();
+        for (const d of [...snap.docs, ...boostSnap.docs]) {
+          const data = { id: d.id, ...d.data() };
+          // The boost query cannot also filter on status without an index, so
+          // an ended-but-still-boosted stream is dropped here instead.
+          if (data.status === 'live') merged.set(d.id, data);
+        }
+        const ranked = rankStreams([...merged.values()], {
+          topicAffinity: getTopicWeights(),
+          topicsOf: inferStreamTopics,
+        });
+        setRealStreams(ranked.filter(isDiscoverableStream).map((s) => {
           const d = { id: s.id };
           return {
             id: d.id,
@@ -157,6 +190,9 @@ export default function ExploreScreen() {
             game: s.game || 'Live',
             viewers: (s.viewerCount || 0).toLocaleString(),
             boosted: !!s.boosted,
+            // Founder asked for TikTok's visible timer: a boost people cannot
+            // see ending is indistinguishable from a permanent badge.
+            boostMs: boostRemainingMs(s),
             source: s.source || null,
             // A Premium Live is discoverable on purpose, so the card has to say
             // it costs something. Without this it looks exactly like a free
@@ -194,8 +230,15 @@ export default function ExploreScreen() {
         // No onboarding / post-count / admin gate (those wrongly hid real
         // accounts like @Verion isOnboarded:false and @Friz1k3). `hideFromEnumeration`
         // is the explicit opt-out flag; hiddenFromDiscovery reads the privacy toggle.
+        const meUid = auth.currentUser?.uid;
         const rows = snap.docs.map((d) => ({ uid: d.id, ...d.data() }))
-          .filter((u) => u.username
+          // Recommending you to yourself (audit A10). Everything else in this
+          // filter is the founder's 2026-06-29 rule and stays exactly as it is:
+          // NO follower, post-count or onboarding threshold. A39 is explicit
+          // that zero-follower real people appearing here is correct, so the
+          // activity gate A10 proposes is deliberately NOT added.
+          .filter((u) => u.uid !== meUid
+            && u.username
             && u.isGuest !== true
             && !/^guest_/i.test(u.username)
             && u.hideFromEnumeration !== true
@@ -208,7 +251,24 @@ export default function ExploreScreen() {
             if (ab !== bb) return ab - bb;
             return (b.followerCount || 0) - (a.followerCount || 0);
           });
-        setRealCreators(rows.slice(0, 40).map((u) => ({
+        // ⚠ Paid boosts go FIRST, and this surface is why the whole delivery
+        // plan exists: it was the one the founder opened when a boosted profile
+        // failed to appear. `rows` is ordered by follower count, which can never
+        // surface someone who just paid to be seen.
+        let boostedRows = [];
+        try {
+          const boosted = await getBoostedUsers({
+            viewerUid: meUid, want: boostSlotsFor(8),
+          });
+          boostedRows = boosted.map((u) => ({ ...u, uid: u.id }));
+        } catch { /* a boost must never empty Explore */ }
+
+        const merged = mergeBoostedFirst(
+          boostedRows.map((u) => ({ ...u, id: u.uid })),
+          rows.map((u) => ({ ...u, id: u.uid })),
+          40,
+        );
+        setRealCreators(merged.map((u) => ({
           uid: u.uid,
           name: u.username || u.displayName || 'Player',
           avatar: u.avatar || u.photoURL || null,
@@ -1142,7 +1202,7 @@ function ClipsTab({ navigate, search }) {
 
             {/* Title + handle bottom-left */}
             <div className="absolute left-2.5 right-12 bottom-2.5">
-              {author.username && <p className="text-[11px] font-bold text-white/90 mb-0.5 truncate">@{author.username}</p>}
+              {author.username && <p className="text-[11px] font-bold text-white/90 mb-0.5 truncate"><UserName user={author} masked handle /></p>}
               <p className="text-[12px] font-semibold text-white line-clamp-2 leading-snug drop-shadow">{c.text || 'Untitled clip'}</p>
             </div>
           </div>

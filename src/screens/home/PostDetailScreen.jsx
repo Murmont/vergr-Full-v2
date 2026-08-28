@@ -5,7 +5,7 @@ import { useUser } from '../../context/UserContext';
 import { applyVanguardMask } from '../../utils/vanguard';
 import VanguardBadge from '../../components/VanguardBadge';
 import { FeedSkeleton } from '../../components/skeletons/GlassSkeletons';
-import { getUser, getComments, addComment as addCommentToFirestore, getPostByIdOrSlug, toggleCommentLike, getLikedCommentIds, reportComment } from '../../firebase/firestore';
+import { getUser, getComments, addComment as addCommentToFirestore, getPostByIdOrSlug, toggleCommentLike, getLikedCommentIds, reportComment, COMMENT_BLOCKED } from '../../firebase/firestore';
 import ReportSheet from '../../components/ReportSheet';
 import { useUI } from '../../context/UIContext';
 import { captureInterest } from '../../utils/feedRank';
@@ -22,6 +22,8 @@ import EmojiPicker from '../../components/EmojiPicker';
 import VergrAd from '../../components/VergrAd';
 import { ADS_CONFIG } from '../../config/ads';
 import { timeAgo } from '../../utils/helpers';
+import UserName from '../../components/UserName';
+import RankBadge from '../../components/RankBadge';
 
 export default function PostDetailScreen() {
   const { postId } = useParams();
@@ -120,6 +122,11 @@ export default function PostDetailScreen() {
       setShowEmoji(false);
       if (!parentId) setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 200);
     } catch (err) {
+      // A comment refused by the owner's privacy setting has to SAY so. This
+      // used to console.error and leave the user staring at their own text
+      // wondering whether it sent (audit A18).
+      if (err?.code === COMMENT_BLOCKED) showToast(err.message, 'info');
+      else showToast('Could not post your comment. Please try again.', 'error');
       console.error('Failed to add comment:', err);
     }
     setPosting(false);
@@ -215,7 +222,8 @@ export default function PostDetailScreen() {
         </button>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-0.5">
-            <span className="font-semibold text-sm">{author?.displayName || author?.username || 'User'}</span>
+            <span className="font-semibold text-sm"><UserName user={author} masked fallback={'User'} /></span>
+            <RankBadge level={author?.vpLevel} role={author?.role} size={13} style={{ verticalAlign: '-2px' }} />
             {!isMasked && realAuthor?.isVerified && (
               <span className="w-3.5 h-3.5 rounded-full bg-brand-violet flex items-center justify-center">
                 <Icon name="check" size={9} className="text-bg-dark" />

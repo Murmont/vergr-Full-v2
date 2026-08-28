@@ -103,7 +103,7 @@ export default function VanguardInvitationScreen() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, fontSize: 13.5, lineHeight: 1.6, color: C.textDim }}>
             <div>• You are <strong style={{ color: '#fff' }}>anonymous to other users</strong>. They see you as "@{meta.usernameTag}" with your rank badge. Other Vanguard members + the founder see your real identity.</div>
             <div>• <strong style={{ color: '#fff' }}>This email is now your Vanguard account.</strong> If you want to participate as a regular user (tournaments, posts, etc.) you need a separate account with a different email.</div>
-            <div>• <strong style={{ color: C.gold }}>Coin → Gem conversion is FREE</strong> for you (normal users pay 5–30% commission).</div>
+            <div>• <strong style={{ color: C.gold }}>You keep 100% of your creator revenue share</strong> while your Vanguard status is active (everyone else keeps 50% to 80%).</div>
             <div>• <strong style={{ color: C.gold }}>The Vanguard squad treasury</strong> receives the 5% mod fee from every tournament Vanguard moderates. Monthly auto-distribution to active members, weighted by rank × actions taken.</div>
             <div>• Every confirmed moderation action grants VP — rings, badges and standing across the platform.</div>
             <div>• <strong style={{ color: '#fff' }}>Unlimited invites.</strong> Normal users have a per-week cap; you don't. More users = more tournament fees = more for Vanguard.</div>

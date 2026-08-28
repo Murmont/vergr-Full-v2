@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useUser } from '../../context/UserContext';
-import { getUserPosts, getTransactions, getFollowers } from '../../firebase/firestore';
+import { getUserPosts, getTransactions, getFollowers, getAudienceActivity } from '../../firebase/firestore';
+import useTier from '../../hooks/useTier';
+import PlanLock from '../../components/creator/PlanLock';
 import CreatorLayout from '../../components/creator/CreatorLayout';
 import CoinDisplay from '../../components/CoinDisplay';
 import { AnalyticsSkeleton } from '../../components/creator/StudioSkeletons';
@@ -46,6 +48,16 @@ export default function MonthlyAnalyticsScreen({ embedded = false }) {
   const [stats, setStats] = useState(null);
   const [topPosts, setTopPosts] = useState([]);
   const [loading, setLoading] = useState(true);
+  // Advanced analytics (Pro). Three things Lite does not get, all built from
+  // data that already exists rather than invented metrics:
+  //   1. a full year of history instead of 90 days
+  //   2. when your FOLLOWERS are online, which is a different question from
+  //      when your own posts happened to do well
+  //   3. every post in the period in one sortable table, not just a top five
+  const { isPro } = useTier();
+  const [audience, setAudience] = useState(null);
+  const [allPosts, setAllPosts] = useState([]);
+  const [sortKey, setSortKey] = useState('views');
 
   const { currentUser } = useAuth();
   const { profile, wallet } = useUser();
@@ -61,7 +73,10 @@ export default function MonthlyAnalyticsScreen({ embedded = false }) {
           getFollowers(currentUser.uid, 100),
         ]);
 
-        const periodMs = period === '7d' ? 7 * 86400000 : period === '30d' ? 30 * 86400000 : 90 * 86400000;
+        const periodMs = period === '7d' ? 7 * 86400000
+          : period === '30d' ? 30 * 86400000
+            : period === '365d' ? 365 * 86400000
+              : 90 * 86400000;
         const cutoff = Date.now() - periodMs;
 
         // Filter to period
@@ -129,11 +144,36 @@ export default function MonthlyAnalyticsScreen({ embedded = false }) {
         setTopPosts(
           [...periodPosts].sort((a, b) => (b.likeCount || 0) - (a.likeCount || 0)).slice(0, 5)
         );
+
+        // Pro table source. Kept separate from topPosts so the Lite view is
+        // byte-for-byte what it always was.
+        setAllPosts(periodPosts.map((p) => {
+          const v = p.viewCount || 0, li = p.likeCount || 0, c = p.commentCount || 0;
+          return {
+            id: p.id,
+            content: p.content || p.title || '(no caption)',
+            type: p.type || 'text',
+            at: p.createdAt?.toDate ? p.createdAt.toDate().getTime() : 0,
+            views: v, likes: li, comments: c,
+            // Rate, not raw count, so a post with 12 likes on 40 views is not
+            // buried under one with 30 likes on 9,000.
+            rate: v > 0 ? ((li + c) / v) * 100 : 0,
+          };
+        }));
       } catch (err) { console.error(err); }
       setLoading(false);
     };
     load();
   }, [currentUser, period]);
+
+  // Follower online-times. Separate effect because it does not depend on the
+  // period and getAudienceActivity reads up to 120 follower docs — it caches
+  // for 10 minutes internally, but there is no reason to re-run it every time
+  // someone flips between 7d and 30d.
+  useEffect(() => {
+    if (!currentUser || !isPro) return;
+    getAudienceActivity(currentUser.uid).then(setAudience).catch(() => setAudience(null));
+  }, [currentUser, isPro]);
 
   const formatNum = (n) => {
     if (!n) return '0';
@@ -144,13 +184,15 @@ export default function MonthlyAnalyticsScreen({ embedded = false }) {
   const shell = (
     <>
       {/* Period selector */}
-      <div className="flex gap-2 mb-4">
-        {['7d', '30d', '90d'].map(p => (
+      <div className="flex gap-2 mb-4 flex-wrap">
+        {/* A full year of history is the Pro window. Lite tops out at 90 days,
+            so the button is only offered to Pro rather than shown and refused. */}
+        {['7d', '30d', '90d', ...(isPro ? ['365d'] : [])].map(p => (
           <button key={p} onClick={() => setPeriod(p)}
             className={`px-4 py-2 rounded-full text-xs font-semibold transition-all ${
               period === p ? 'bg-brand-violet text-white' : 'bg-surface-2 text-text-muted'
             }`}>
-            {p === '7d' ? 'Last 7 days' : p === '30d' ? 'Last 30 days' : 'Last 90 days'}
+            {p === '7d' ? 'Last 7 days' : p === '30d' ? 'Last 30 days' : p === '90d' ? 'Last 90 days' : 'Last 12 months'}
           </button>
         ))}
       </div>
@@ -266,6 +308,114 @@ export default function MonthlyAnalyticsScreen({ embedded = false }) {
                   </div>
                 ))}
               </div>
+              </Section>
+            </>
+          )}
+
+          {/* ── Advanced analytics (Pro) ────────────────────────────────────
+              Everything above is Lite. These two answer questions Lite cannot:
+              WHEN your audience is around (as opposed to when you happened to
+              post), and how every single post did rather than the top five. */}
+          <div className="mt-6 mb-3 flex items-center gap-2">
+            <h2 className="font-syne font-bold text-sm text-text-primary">Advanced</h2>
+            {!isPro && (
+              <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-brand-gold-light/15 text-brand-gold-light font-semibold">PRO</span>
+            )}
+          </div>
+
+          {!isPro ? (
+            <PlanLock
+              required="pro"
+              title="Advanced analytics"
+              description="See when your followers are actually online, get a full year of history instead of 90 days, and break down every post you made rather than just the top five."
+            >
+              <Section title="When your followers are online" sub="Their activity, not your posting times">
+                <ActivityHeatmap values={Array.from({ length: 5 }, () => new Array(7).fill(0.35))} />
+              </Section>
+            </PlanLock>
+          ) : (
+            <>
+              <Section
+                title="When your followers are online"
+                sub="Their activity, not your posting times. The heatmap above shows when YOU posted; this shows when they are there to see it."
+              >
+                {!audience ? (
+                  <p className="text-xs text-text-muted py-8 text-center">Reading your followers…</p>
+                ) : !audience.enough ? (
+                  // Honest empty state. getAudienceActivity samples followers'
+                  // lastSeen, so a small or inactive following genuinely cannot
+                  // support this chart and a made-up grid would be worse.
+                  <p className="text-xs text-text-muted py-8 text-center">
+                    Not enough follower activity yet to read a pattern. This fills in as your following grows.
+                  </p>
+                ) : (
+                  <>
+                    <ActivityHeatmap values={audience.grid} />
+                    <p className="text-[10px] text-text-muted mt-3">
+                      Sampled from {audience.sampleSize} active follower{audience.sampleSize === 1 ? '' : 's'}.
+                    </p>
+                    {(audience.best || []).length > 0 && (
+                      <div className="mt-3">
+                        <p className="text-[11px] text-text-muted font-semibold uppercase tracking-wider mb-2">Best times to post next</p>
+                        <div className="flex flex-wrap gap-2">
+                          {audience.best.map((b) => (
+                            <span key={`${b.label}-${b.hour}`}
+                              className="px-3 py-1.5 rounded-full text-[11px] font-semibold bg-brand-violet/10 text-brand-violet-light border border-brand-violet/25">
+                              {b.label} · {String(b.hour).padStart(2, '0')}:00
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </Section>
+
+              <Section title="Every post in this period" sub={`${allPosts.length} post${allPosts.length === 1 ? '' : 's'}. Tap a column to sort.`}>
+                {allPosts.length === 0 ? (
+                  <p className="text-xs text-text-muted py-8 text-center">No posts in this period.</p>
+                ) : (
+                  // Wide content scrolls inside its own container so the page
+                  // body never scrolls sideways on a phone.
+                  <div className="overflow-x-auto -mx-1 px-1">
+                    <table className="w-full min-w-[520px] text-left">
+                      <thead>
+                        <tr className="text-[10px] uppercase tracking-wider text-text-muted">
+                          <th className="pb-2 font-semibold">Post</th>
+                          {[
+                            ['views', 'Views'],
+                            ['likes', 'Likes'],
+                            ['comments', 'Comments'],
+                            ['rate', 'Eng. rate'],
+                          ].map(([key, label]) => (
+                            <th key={key} className="pb-2 pl-3 font-semibold text-right whitespace-nowrap">
+                              <button onClick={() => setSortKey(key)}
+                                className={`uppercase tracking-wider ${sortKey === key ? 'text-brand-violet-light' : 'hover:text-text-secondary'}`}>
+                                {label}{sortKey === key ? ' ↓' : ''}
+                              </button>
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {[...allPosts].sort((a, b) => (b[sortKey] || 0) - (a[sortKey] || 0)).map((p) => (
+                          <tr key={p.id} className="border-t border-white/[0.04]">
+                            <td className="py-2.5 pr-3 max-w-[240px]">
+                              <p className="text-[13px] truncate">{p.content}</p>
+                              <p className="text-[10px] text-text-muted capitalize">
+                                {p.type}{p.at ? ` · ${new Date(p.at).toLocaleDateString()}` : ''}
+                              </p>
+                            </td>
+                            <td className="py-2.5 pl-3 text-right font-dmmono text-[12px] tabular-nums">{formatNum(p.views)}</td>
+                            <td className="py-2.5 pl-3 text-right font-dmmono text-[12px] tabular-nums">{formatNum(p.likes)}</td>
+                            <td className="py-2.5 pl-3 text-right font-dmmono text-[12px] tabular-nums">{formatNum(p.comments)}</td>
+                            <td className="py-2.5 pl-3 text-right font-dmmono text-[12px] tabular-nums text-brand-violet-light">{p.rate.toFixed(1)}%</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </Section>
             </>
           )}

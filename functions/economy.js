@@ -1,11 +1,10 @@
 // Server-side economy guards.
 //
-// Phase 3 — convertCoinsToGems callable: moves the coin→gem conversion off
-// the client. Atomic gem credit + platform-commission ledger entry + rate
-// limiting + idempotency.
+// Rate-limit + daily-cap helpers shared by tipping and payouts so a single user
+// cannot drain the system through volume.
 //
-// Phase 4 — rate-limit + daily-cap helpers shared by tipping, conversion,
-// and payouts so a single user can't drain the system through volume.
+// This file used to own convertCoinsToGems as well. That went with the gem unit
+// on 2026-08-16; see the note further down.
 
 const functions = require('firebase-functions/v2');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
@@ -65,7 +64,7 @@ const requireAuth = (req) => {
 // implicitly because each window has its own doc — older docs go cold.
 //
 // Caller passes a transaction `tx` (so the counter increment is atomic
-// with the gem/coin update); we read first, then increment in a write.
+// with the balance update); we read first, then increment in a write.
 async function checkRateLimit(tx, uid, action, { perHour, perDay, sumField, sumLimit, sumValue }) {
   const now = new Date();
   const hourKey = now.toISOString().slice(0, 13).replace(/[-T:]/g, '');
@@ -104,137 +103,17 @@ async function checkRateLimit(tx, uid, action, { perHour, perDay, sumField, sumL
   }, { merge: true });
 }
 
-// ════════════════════════════════════════════════════════════════════
-// 1. convertCoinsToGems — server-side conversion callable
-// ════════════════════════════════════════════════════════════════════
-// Input:  { amount: number (coins), idempotencyKey?: string }
-// Output: { gemsCredited, platformCut, commission, newCoinBalance, newGemBalance }
-
-exports.convertCoinsToGems = functions.https.onCall(
-  { region: REGION, cors: true },
-  async (request) => {
-    const uid = requireAuth(request);
-    const amount = Math.floor(Number(request.data?.amount) || 0);
-    const idempotencyKey = String(request.data?.idempotencyKey || '').slice(0, 64);
-    if (amount <= 0) {
-      throw new functions.https.HttpsError('invalid-argument', 'Amount must be positive');
-    }
-    if (amount > 100_000) {
-      throw new functions.https.HttpsError('invalid-argument', 'Max 100,000 coins per conversion');
-    }
-
-    return db.runTransaction(async (tx) => {
-      // Idempotency guard
-      if (idempotencyKey) {
-        const idRef = db.collection('idempotency').doc(`convert_${uid}_${idempotencyKey}`);
-        const idSnap = await tx.get(idRef);
-        if (idSnap.exists) {
-          return idSnap.data().result;
-        }
-      }
-
-      // Rate limits
-      await checkRateLimit(tx, uid, 'convert', {
-        perHour: LIMITS.CONVERT_PER_HOUR,
-        perDay:  LIMITS.CONVERT_PER_DAY,
-        sumField: 'coinsConverted',
-        sumLimit: LIMITS.CONVERT_DAILY_COINS,
-        sumValue: amount,
-      });
-
-      // Wallet read + balance check
-      const walletRef = db.collection('wallets').doc(uid);
-      const walletSnap = await tx.get(walletRef);
-      if (!walletSnap.exists) {
-        throw new functions.https.HttpsError('failed-precondition', 'Wallet not found');
-      }
-      const w = walletSnap.data();
-      if ((w.balance || 0) < amount) {
-        throw new functions.https.HttpsError('failed-precondition', 'Insufficient coin balance');
-      }
-
-      // Only RECEIVED value converts to gems. Coins the user bought are
-      // spendable in-app but never convertible, because converting them and
-      // withdrawing would turn Play Billing into a cash-out rail. See
-      // coinLedger.js for the full reasoning — this check is the enforcement
-      // point for the whole split, so it must stay server-side.
-      const convertible = convertibleCoins(w);
-      if (convertible < amount) {
-        throw new functions.https.HttpsError(
-          'failed-precondition',
-          `Only coins you have earned can be converted to gems. You can convert ${convertible} right now. Coins you purchased can be spent anywhere in VERGR, but not cashed out.`
-        );
-      }
-
-      // Vanguard perk: active Vanguard members convert coins → gems at 0%
-      // commission. Read inside the transaction so a rank flip mid-write
-      // is still consistent. Suspended/retired Vanguard fall back to tier
-      // commission like any other user.
-      const userSnap = await tx.get(db.collection('users').doc(uid));
-      const userData = userSnap.exists ? userSnap.data() : {};
-      const vanguardActive = userData.vanguard?.rank
-        && userData.vanguard?.status !== 'suspended'
-        && userData.vanguard?.status !== 'retired';
-      // Revenue share is keyed to LIFETIME GROSS EARNED, not VP (2026-08-14).
-      // The coins being converted were counted into totalEarnedCoinsGross when
-      // they were earned, so this reads the creator's true tier.
-      const share = vanguardActive ? 1 : shareForEarnings(w.totalEarnedCoinsGross || 0);
-      const commission = 1 - share;
-      const gemsCredited = Math.floor(amount * share);
-      const platformCut  = amount - gemsCredited;
-      const newCoinBalance = (w.balance || 0) - amount;
-      const newGemBalance  = (w.gems || 0) + gemsCredited;
-
-      tx.update(walletRef, {
-        balance: FieldValue.increment(-amount),
-        // Converting consumes the earned pool as well, or the same earned
-        // coins could be converted repeatedly as new purchases topped the
-        // balance back up.
-        earnedBalance: FieldValue.increment(-amount),
-        gems: FieldValue.increment(gemsCredited),
-        totalGemsEarned: FieldValue.increment(gemsCredited),
-        updatedAt: FieldValue.serverTimestamp(),
-      });
-
-      // Two ledger entries: debit coin side + credit gem side
-      tx.set(db.collection('transactions').doc(), {
-        userId: uid, type: 'coin_to_gem_conversion',
-        amount: -amount, currency: 'coins',
-        description: `Converted ${amount} coins → ${gemsCredited} gems (${Math.round((1 - commission) * 100)}% rate)`,
-        meta: { coinsSpent: amount, gemsCredited, commission, platformCut },
-        createdAt: FieldValue.serverTimestamp(),
-      });
-      tx.set(db.collection('transactions').doc(), {
-        userId: uid, type: 'coin_to_gem_conversion',
-        amount: gemsCredited, currency: 'gems',
-        description: `Received ${gemsCredited} gems from conversion`,
-        createdAt: FieldValue.serverTimestamp(),
-      });
-
-      // Platform-side commission ledger (admin-only readable)
-      tx.set(db.collection('platform_commissions').doc(), {
-        type: 'conversion_commission',
-        userId: uid,
-        coinsSpent: amount,
-        gemsCredited,
-        commission,
-        platformCut,
-        createdAt: FieldValue.serverTimestamp(),
-      });
-
-      const result = { gemsCredited, platformCut, commission, newCoinBalance, newGemBalance };
-
-      // Persist idempotency result for 24h (retention via scheduled cleanup)
-      if (idempotencyKey) {
-        tx.set(db.collection('idempotency').doc(`convert_${uid}_${idempotencyKey}`), {
-          result, createdAt: FieldValue.serverTimestamp(),
-        });
-      }
-
-      return result;
-    });
-  }
-);
+// convertCoinsToGems REMOVED 2026-08-16, along with the gem unit.
+//
+// It was a USER-INVOKED conversion of earned coins into a second currency the
+// user then held. docs/REVENUE_SHARE_PLAN.md is explicit that conversion is
+// "automatic accrual at the moment revenue is earned", not an action someone
+// takes, and a balance a customer converts and calls on is the deposit shape
+// the whole revenue-share model exists to avoid.
+//
+// Revenue share now accrues in micro-USD at the moment value is received, in
+// coinLedger.js (earnedShareCredit / settleEarnedShare). Nothing replaces this
+// callable, because nothing should.
 
 // Exported for other modules (nowpayments.js will use these for rate limits
 // on payouts and the daily-cap on tips).

@@ -158,8 +158,15 @@ export default function PrivacySettingsScreen() {
             <Section>
               <SectionLabel>Content & Activity</SectionLabel>
               <RowToggle label="Show online status" desc="Let others see when you're online." k="onlineStatus" icon="circle"/>
-              <RowToggle label="Show activity feed" desc="Allow others to see your recent activity in the feed." k="activityFeed" icon="bar_chart"/>
-              <RowToggle label="Allow friend requests" desc="Let others send you friend requests." k="friendReq" icon="group_add"/>
+              {/* "Show activity feed" and "Allow friend requests" removed
+                  2026-08-19 (audit A18). Both were wired to nothing, and there
+                  is nothing to wire them to: Vergr has no activity feed, and a
+                  grep for friendRequest/sendFriendRequest across src/ and
+                  functions/ returns ZERO — the friend-request feature was never
+                  built. A privacy switch that changes nothing is worse than an
+                  absent one: the user makes a decision, the UI confirms it
+                  saved, and the behaviour never changes. Restore them WITH the
+                  features, not before. */}
               {/* Not a RowToggle: this one is gated on age verification and is
                   mirrored to localStorage, so it cannot be bound to `vals`. */}
               {nsfwAvailable && (
@@ -194,7 +201,21 @@ export default function PrivacySettingsScreen() {
             <Section>
               <SectionLabel>Content Permissions</SectionLabel>
               <RowSelect label="Who can comment on my content" desc="Choose who can comment on your posts and clips." k="commentContent"/>
-              <RowToggle label="Allow downloads" desc="Allow others to download your content." k="allowDownloads" icon="download"/>
+              {/* "Allow downloads" removed 2026-08-19 (audit A18). It had zero
+                  callers, and it could not be enforced honestly:
+                  • the FEED, where "download my content" would mean something,
+                    has no download affordance at all;
+                  • the only save button lives in MediaLightbox, which is used
+                    for CHAT media, and the setting defaults to FALSE — so
+                    enforcing it as worded would have stopped people saving a
+                    photo someone sent them in a DM, which no messenger does;
+                  • lightbox items carry no owner uid, so per-owner enforcement
+                    would mean plumbing sender identity through four call sites
+                    to enable a control that mostly does harm.
+                  The real protection in this area was paid content: unlocked
+                  purchases render through the same lightbox and were one tap
+                  from the camera roll. LockedMedia now passes allowSave={false}
+                  instead. */}
             </Section>
 
             <Section>

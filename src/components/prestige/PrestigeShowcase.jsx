@@ -18,6 +18,9 @@ import { RANK_VIEWS, getRankView, TOTAL_BADGES, EARN_ITEMS } from './prestigeDat
 import ProgressRing from './ProgressRing';
 import RankCrest from './RankCrest';
 import RankJourneyTrack from './RankJourneyTrack';
+import UnlockLadder from './UnlockLadder';
+import CosmeticEquip from './CosmeticEquip';
+import BonusShop from './BonusShop';
 
 const fade = {
   hidden: { opacity: 0, y: 16 },
@@ -39,12 +42,14 @@ const TABS = [
   { id: 'what', label: 'What is VP?' },
   { id: 'journey', label: 'Your journey' },
   { id: 'unlock', label: 'What you unlock' },
+  { id: 'bonuses', label: 'VP bonuses' },
+  { id: 'appearance', label: 'Appearance' },
   { id: 'badges', label: 'Your badges' },
   { id: 'earn', label: 'How to earn' },
   { id: 'prestige', label: 'Prestige' },
 ];
 
-export default function PrestigeShowcase({ totalVP = 0, plan = 'free', prestige = 0, navigate }) {
+export default function PrestigeShowcase({ totalVP = 0, plan = 'free', prestige = 0, boostTokens = 0, navigate }) {
   const current = getVPLevel(totalVP);
   const next = getNextVPLevel(totalVP);
   const progress = getVPProgress(totalVP);
@@ -65,8 +70,6 @@ export default function PrestigeShowcase({ totalVP = 0, plan = 'free', prestige 
     setTimeout(() => perkRefs.current[id]?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 60);
   };
   useEffect(() => { setSelectedId(rankView.id); }, [rankView.id]);
-
-  const fmtPct = (n) => `${Math.round(n * 100)}%`;
 
   return (
     <div className="relative">
@@ -120,7 +123,7 @@ export default function PrestigeShowcase({ totalVP = 0, plan = 'free', prestige 
 
           <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
             <span className="px-3 py-1 rounded-full text-xs font-semibold" style={{ background: `${accent}22`, color: accent }}>
-              {fmtPct(current.commission)} commission
+              {earnedCount}/{TOTAL_BADGES} badges
             </span>
             {mult > 1 && (
               <span className="px-3 py-1 rounded-full text-xs font-semibold bg-brand-violet/20 text-brand-violet-light flex items-center gap-1">
@@ -153,12 +156,12 @@ export default function PrestigeShowcase({ totalVP = 0, plan = 'free', prestige 
 
       {/* ── WHAT IS VP ── */}
       {tab === 'what' && (
-      <Section title="What is VP?" sub="Vergr Points are your reputation. One of three currencies, earned by being active." i={1}>
+      <Section title="What is VP?" sub="Vergr Points are your reputation on Vergr, earned by being active." i={1}>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           {[
             { icon: 'trending_up', title: 'Earned by playing', text: 'Posting, winning matches, streaming, quests and daily logins all award VP.' },
             { icon: 'military_tech', title: 'Drives your rank', text: 'VP unlocks 100 levels across 11 ranks, each with its own badge to collect.' },
-            { icon: 'savings', title: 'Unlocks real perks', text: 'Higher ranks cut your platform commission, so you keep more gems on every coin converted.' },
+            { icon: 'workspace_premium', title: 'Ranks and badges', text: 'Higher ranks unlock rarer badges and animated crests that show your standing across Vergr.' },
           ].map((c) => (
             <div key={c.title} className="p-4 rounded-2xl bg-surface-1 border border-white/[0.06]">
               <div className="w-9 h-9 rounded-xl flex items-center justify-center mb-2" style={{ background: `${accent}1F`, color: accent }}>
@@ -184,7 +187,17 @@ export default function PrestigeShowcase({ totalVP = 0, plan = 'free', prestige 
 
       {/* ── PER-RANK PERKS ── */}
       {tab === 'unlock' && (
-      <Section title="What you unlock" sub="Every rank lowers your commission and adds perks. Locked badges are silhouettes." i={3}>
+      <Section title="What you unlock" sub="Something at every level, from L1 to L100. Nothing here is a placeholder: every row is a reward the app actually grants." i={3}>
+        <UnlockLadder level={current.level} boostTokens={boostTokens} />
+      </Section>
+      )}
+
+      {/* ── PER-RANK CRESTS. The ladder above is the REWARD view; this is the
+          COLLECTION view. Kept separate on purpose: the founder flagged that
+          the page treated "badge" and "crest" as two different things. They are
+          one thing, the rank mark, and this section is where you look at it. ── */}
+      {tab === 'unlock' && (
+      <Section title="Crests by rank" sub="Your crest changes when your rank band changes. It shows in live chat and on your stream entrance, nowhere else." i={4}>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {RANK_VIEWS.map((r) => {
             const reached = current.level >= r.min;
@@ -217,13 +230,31 @@ export default function PrestigeShowcase({ totalVP = 0, plan = 'free', prestige 
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-1.5 mt-3">
-                  <Perk icon="percent" text={`${fmtPct(r.commissionStart)}${r.commissionStart !== r.commissionEnd ? ` → ${fmtPct(r.commissionEnd)}` : ''} commission`} />
                   <Perk icon="workspace_premium" text={`${r.badges.length} badge${r.badges.length > 1 ? 's' : ''}`} />
+                  <Perk icon={r.animated ? 'auto_awesome' : 'shield'} text={r.animated ? 'Animated crest' : 'Collectible crest'} />
                 </div>
               </div>
             );
           })}
         </div>
+      </Section>
+      )}
+
+      {/* ── EQUIP ── The rewards are worthless if you cannot turn them on, and
+          burying them in the settings tree is the same as not shipping them. ── */}
+      {tab === 'bonuses' && (
+        <Section
+          title="VP bonuses"
+          sub="Timed multipliers on everything you earn. Fourteen levels hand you one free; the rest are bought with coins."
+          i={4}
+        >
+          <BonusShop />
+        </Section>
+      )}
+
+      {tab === 'appearance' && (
+      <Section title="Appearance" sub="Everything your level has unlocked, ready to equip. Locked swatches show the level they need." i={3}>
+        <CosmeticEquip level={current.level} />
       </Section>
       )}
 
@@ -283,6 +314,12 @@ export default function PrestigeShowcase({ totalVP = 0, plan = 'free', prestige 
       {/* ── PRESTIGE ── */}
       {tab === 'prestige' && (
       <Section title="Prestige" sub={`Optional endgame after Level 100. Reset your displayed level for a permanent badge. Up to ${PRESTIGE_MAX} times.`} i={6}>
+        {/* The coin figures that used to sit on each tile are GONE (audit A112).
+            PRESTIGE_REWARDS advertises 500 to 5,000 coins, and there is no
+            server implementation of prestige at all: nothing lets anyone
+            prestige and nothing grants those coins. Showing a reward nobody can
+            obtain is the same defect as the dead commission ladder. The badges
+            are real art, so the tiles stay; the payout claim does not. */}
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
           {PRESTIGE_REWARDS.map((p) => {
             const unlocked = prestige >= p.prestige;
@@ -291,7 +328,7 @@ export default function PrestigeShowcase({ totalVP = 0, plan = 'free', prestige 
                    style={{ borderColor: unlocked ? '#F5C84266' : 'rgba(255,255,255,0.06)' }}>
                 <p className="text-xl leading-none" style={{ color: unlocked ? '#F5C842' : '#ffffff33' }}>{p.badge}</p>
                 <p className={`text-[11px] font-semibold mt-1.5 ${unlocked ? 'text-white' : 'text-text-muted'}`}>{p.title}</p>
-                <p className="text-[10px] text-text-muted font-dmmono mt-0.5">+{compactNum(p.coinReward)}c</p>
+                <p className="text-[10px] text-text-muted font-dmmono mt-0.5">P{p.prestige}</p>
               </div>
             );
           })}

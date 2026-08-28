@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Icon from '../../components/Icon';
 import { useLayout } from '../../context/LayoutContext';
+import { useUI } from '../../context/UIContext';
+import { openSupportPath } from '../../firebase/officialChannels';
 import useResponsive from '../../hooks/useResponsive';
 export default function HelpCenterScreen() {
   const { isDesktop } = useResponsive();
@@ -13,7 +15,22 @@ export default function HelpCenterScreen() {
     return () => { setRightPanel(null); setContentAlign('center'); };
   }, [setRightPanel, setContentAlign, isDesktop]);
   const navigate = useNavigate();
+  const { showToast } = useUI();
   const [expanded, setExpanded] = useState(null);
+  const [opening, setOpening] = useState(false);
+
+  // Same direct line to a human as Settings → Message support. Opens a private
+  // thread in the user's own messages; it never sends them out to a web page.
+  const contactSupport = async () => {
+    setOpening(true);
+    try {
+      navigate(await openSupportPath());
+    } catch {
+      showToast('Could not open support, please try again', 'error');
+      setOpening(false);
+    }
+  };
+
   const faqs = [
     {q:'What are coins and VP?',a:'Coins are bought with real money and spent on tips, memberships, paid streams, and boosts. Coins are spendable only inside VERGR: they are a licence to use features, with no cash value, and they cannot be withdrawn, converted or transferred. VP is earned through activity and unlocks levels, ranks and perks.'},
     {q:'How do creators get paid?',a:'Receive tips, sell memberships, or charge for access to a stream. Fans pay in coins, which is revenue VERGR earns, and VERGR owes you a share of it. Your share starts at 50% and rises to 80% as your lifetime earnings grow. VERGR pays automatically on a schedule once you reach $100. You never request a payout.'},
@@ -25,7 +42,7 @@ export default function HelpCenterScreen() {
     {q:'How does streaming work?',a:'VERGR doesn\'t host streams. Link your Twitch, YouTube, Kick, or other platform. When you go live, followers watch the embedded stream in the app.'},
     {q:'How do referrals work?',a:'Share your referral link from Earn → Refer Friends. When your friend creates an account, adds their phone number, and either joins a squad or subscribes to Lite/Pro, you both get rewarded — 5,000 VP for you and 3,000 VP for them.'},
     {q:'Can I make a living on VERGR?',a:'We make no income promise. Creator earnings come from tips, memberships, and paid streams, and depend entirely on your own audience and how often you stream. Many creators earn nothing.'},
-    {q:'What do Lite and Pro cost?',a:'Lite is $4.99/mo — no ads, 1GB uploads, 720p60 streaming from day one, 1.5× VP, scheduled posts, voice messages. Pro is $9.99/mo — 5GB uploads, 1080p60 with co-streaming, 2× VP, custom vergr.me domain, advanced analytics, and priority support. See Settings → Subscription for the full comparison.'},
+    {q:'What do Lite and Pro cost?',a:'Lite is $4.99/mo: no ads, 1GB uploads, 720p streaming from day one with a 4-hour daily allowance, 1.5× VP plus a monthly VP and coin bonus, scheduled posts and DMs, and creator analytics. Pro is $9.99/mo: 5GB uploads, 1080p streaming with no daily limit, 90-day replays of past broadcasts, 2× VP, and advanced analytics. See Settings → Subscription for the full comparison.'},
   ];
   return (
     <div className={isDesktop ? "min-h-screen flex flex-col" : "screen-container min-h-screen flex flex-col"}>
@@ -51,7 +68,14 @@ export default function HelpCenterScreen() {
             </button>
             {expanded===i&&<p className="text-text-secondary text-sm pb-4 leading-relaxed">{f.a}</p>}
           </div>))}
-        <button className="w-full py-3 mt-6 bg-surface rounded-xl text-primary font-bold text-sm border border-surface-border">Contact Support</button>
+        <button onClick={contactSupport} disabled={opening}
+          className="w-full py-3.5 mt-6 rounded-xl bg-brand-violet text-white font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-60">
+          <Icon name="support_agent" size={18} />
+          {opening ? 'Opening…' : 'Message support'}
+        </button>
+        <p className="text-text-secondary text-xs text-center mt-2.5">
+          Opens a private chat with our team in your messages.
+        </p>
       </main>
     </div>);
 }

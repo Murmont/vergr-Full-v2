@@ -15,6 +15,7 @@ import { connectSFU } from '../../utils/sfuClient';
 import { useAuth } from '../../context/AuthContext';
 import { useUser } from '../../context/UserContext';
 import Icon from '../Icon';
+import UserName from '../UserName';
 
 // Inline palette (matches BroadcasterScreen).
 const C = {
@@ -259,7 +260,7 @@ function Tile({ tile, localVideoRef, fullscreen, showRemove, onRemove, style }) 
       <div style={{
         position: 'absolute', bottom: 10, left: 10, fontSize: 12, fontWeight: 700,
         color: '#fff', padding: '4px 8px', background: 'rgba(0,0,0,0.55)', borderRadius: 4,
-      }}>{tile.displayName}</div>
+      }}><UserName user={tile} masked /></div>
       {!tile.videoStream && !tile.isSelf && (
         <div style={{
           position: 'absolute', inset: 0,

@@ -89,7 +89,11 @@ export default function SignUpStep2() {
           // use is lawful in their jurisdiction. If a dispute ever
           // arises, this is the primary record.
           complianceConfirmedAt: complianceConfirmedAt || Date.now(),
-          kyc: { verified: false },
+          // `kyc` is NOT seeded here any more. It is server-only now (Didit's
+          // webhook is the only writer), because an owner-writable
+          // `kyc.verified` is a flag the user can set on themselves and
+          // assertKycVerified reads it. An absent `kyc` already means
+          // unverified everywhere it is checked, so nothing needs seeding.
         };
         if (referrerId && auth.currentUser && referrerId !== auth.currentUser.uid) {
           await updateDoc(doc(db, 'users', auth.currentUser.uid), {

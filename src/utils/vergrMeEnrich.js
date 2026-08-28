@@ -28,15 +28,8 @@ export async function enrichBlocks(uid, blocks) {
             }
             return { ...b, _title: 'My streams', _subtitle: 'Offline · view profile' };
           }
-          case 'vergr_tournament': {
-            if (!b.tournamentId) return b;
-            const s = await getDoc(doc(db, 'tournaments', b.tournamentId));
-            if (s.exists()) {
-              const d = s.data();
-              return { ...b, _title: d.name || 'Tournament', _subtitle: [d.game, d.status].filter(Boolean).join(' · ') };
-            }
-            return b;
-          }
+          // vergr_tournament retired: nothing to enrich, the block no longer
+          // renders. Saves a document read per surviving saved block too.
           case 'vergr_event': {
             if (!b.eventId) return b;
             const s = await getDoc(doc(db, 'tournaments', b.eventId));

@@ -12,12 +12,14 @@ import { useLayout } from '../../context/LayoutContext';
 import useResponsive from '../../hooks/useResponsive';
 import { IS_NATIVE_BUILD } from '../../utils/platform';
 import { uploadAvatar, uploadBanner } from '../../firebase/firestore';
+import { getVPLevel } from '../../utils/vpSystem';
 import { uploadToR2 } from '../../utils/r2Storage';
 import { SCHEDULE_DAYS, SCHEDULE_BLOCKS } from '../../components/profile/StreamScheduleCard';
 import TopBar from '../../components/TopBar';
 import Icon from '../../components/Icon';
 import CountrySelect from '../../components/CountrySelect';
 import { CONTENT_TOPICS } from '../../utils/constants';
+import UserName from '../../components/UserName';
 
 const TABS = [
   { id: 'profile-info',   label: 'Profile Info',   icon: 'person'         },
@@ -100,8 +102,23 @@ const POPULAR_GAMES = [
   'League of Legends', 'Dota 2', 'PUBG', 'Warzone',
 ];
 
+// Your OWN level comes from your own wallet, which is already loaded and is the
+// authoritative source. `profile.vpLevel` is a denormalised copy written by the
+// syncVpLevel trigger for OTHER people's docs (squad lists, browse), and it had
+// no writer at all until 2026-08-23, which is why every frame below was
+// permanently locked for everyone (audit A110).
+// ⚠ This MUST stay module-scope. ProfileImagesTab is a sibling function, not a
+// child, so a const declared inside EditProfileScreen is invisible to it: the
+// Profile Images tab threw "myVpLevel is not defined" on render, on web and on
+// native, until eslint no-undef was switched on (2026-08-27).
+const ownVpLevel = (wallet, profile) => Math.max(
+  getVPLevel(wallet?.vp || 0)?.level || 1,
+  Number(profile?.vpLevel) || 1,
+);
+
 export default function EditProfileScreen() {
-  const { profile, updateProfile } = useUser();
+  const { profile, wallet, updateProfile } = useUser();
+  const myVpLevel = ownVpLevel(wallet, profile);
   const { showToast } = useUI();
   const navigate = useNavigate();
   const { isMobile } = useResponsive();
@@ -174,7 +191,7 @@ export default function EditProfileScreen() {
     if (!uname) { showToast('Username is required.', 'error'); return; }
     if (uname.toLowerCase() !== String(profile?.username || '').toLowerCase()) {
       const { checkUsername } = await import('../../utils/usernameValidation');
-      const err = await checkUsername(uname);
+      const err = await checkUsername(uname, { isAdmin: profile?.role === 'admin' });
       if (err) { showToast(err, 'error'); return; }
     }
     // 18+ gate — if a DOB is provided it must be at least 18 years ago.
@@ -376,7 +393,8 @@ export function ProfileInfoTab({ form, setField }) {
 
 // 2. Profile Images ─────────────────────────────────────────────
 export function ProfileImagesTab({ profile, form, setField, showToast }) {
-  const { updateProfile } = useUser();
+  const { updateProfile, wallet } = useUser();
+  const myVpLevel = ownVpLevel(wallet, profile);
   const fileRef = useRef(null);
   const [uploading, setUploading] = useState(false);
 
@@ -443,11 +461,11 @@ export function ProfileImagesTab({ profile, form, setField, showToast }) {
 
       <FormSection
         title="Avatar Frame"
-        sub={`Frames are rank rewards — earn them by ranking up. You're currently Level ${profile?.vpLevel || 1}.`}
+        sub={`Frames are rank rewards, earned by ranking up. You're currently Level ${myVpLevel}.`}
       >
         <div className="grid grid-cols-5 gap-3">
           {FRAMES.map(f => {
-            const userLevel = profile?.vpLevel || 1;
+            const userLevel = myVpLevel;
             const locked = userLevel < f.requiredLevel;
             const selected = form.avatarFrame === f.id;
             return (

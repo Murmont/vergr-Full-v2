@@ -1,0 +1,15 @@
+[Unit]
+Description=VERGR stream node heartbeat agent
+After=network.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/vergr-node/agent.env
+WorkingDirectory=/opt/stream-node-agent
+ExecStart=/usr/bin/node /opt/stream-node-agent/agent.js
+Restart=always
+RestartSec=5
+MemoryMax=150M
+
+[Install]
+WantedBy=multi-user.target

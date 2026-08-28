@@ -24,7 +24,7 @@ export default {
       h2: "Lite and Pro: stream from day one"
     },
     {
-      p: "If you are on a paid plan, there is no follower requirement and no boost to worry about. You can go live the day you sign up, at higher quality, and Pro adds co-streaming so you can bring someone on screen with you. For a lot of people who are serious about streaming, this alone is the reason to upgrade."
+      p: "If you are on a paid plan, there is no follower requirement and no boost to worry about. You can go live the day you sign up, at higher quality, for four hours a day on Lite and with no daily limit on Pro. For a lot of people who are serious about streaming, this alone is the reason to upgrade."
     },
     {
       h2: "Squad streams skip the gate"

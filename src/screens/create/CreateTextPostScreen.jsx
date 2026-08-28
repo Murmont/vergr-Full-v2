@@ -8,6 +8,7 @@ import UserAvatar from '../../components/UserAvatar';
 import Icon from '../../components/Icon';
 import { useLayout } from '../../context/LayoutContext';
 import useResponsive from '../../hooks/useResponsive';
+import UserName from '../../components/UserName';
 
 const MAX_CHARS = 2000;
 
@@ -85,7 +86,7 @@ export default function CreateTextPostScreen() {
             <div className="w-0.5 mx-auto mt-2 flex-1 bg-gradient-to-b from-brand-violet/30 to-transparent min-h-[40px] rounded-full" />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-brand-violet-light text-xs font-dmmono mb-2">@{profile?.username || 'you'}</p>
+            <p className="text-brand-violet-light text-xs font-dmmono mb-2"><UserName user={profile} masked handle fallback={'you'} /></p>
             <textarea
               ref={textRef}
               value={content}

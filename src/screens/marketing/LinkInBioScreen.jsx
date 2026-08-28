@@ -19,9 +19,9 @@ const FAQS = [
   ['How do I get my link in bio page?',
     'Create a free Vergr account and your page exists instantly at vergr.app/u/yourusername. Open the editor, add your links and pick a design, changes autosave and go live when you hit Publish.'],
   ['What can I put on my page?',
-    'Over 18 block types: links, image galleries, video, music players (Spotify, Apple Music, SoundCloud), products, contact forms, email collection, tips, and live Vergr content like your stream, tournaments and squad.'],
+    'Over 18 block types: links, image galleries, video, music players (Spotify, Apple Music, SoundCloud), products, contact forms, email collection, tips, and live Vergr content like your stream, ticketed events and squad.'],
   ['How is Vergr.me different from Linktree?',
-    'Vergr.me is built into a gaming platform: your page can show your live stream, tournaments and community in real time, fans can tip or message you directly, and the generous free tier includes analytics and full design systems instead of a single button list.'],
+    'Vergr.me is built into a gaming platform: your page can show your live stream, ticketed events and community in real time, fans can tip or message you directly, and the generous free tier includes analytics and full design systems instead of a single button list.'],
   ['Can I collect emails or sell things?',
     'Yes, contact form and email pop-up blocks capture leads you can export to CSV, and support/product blocks link out to your storefronts. Tips arrive as VC Coins, and Vergr pays you a share of that revenue: 50% to start, up to 80%.'],
   ['Does it work on TikTok, Instagram and YouTube?',
@@ -53,7 +53,7 @@ export default function LinkInBioScreen() {
           <Tile icon="query_stats" accent={C.gold} title="Free analytics"
             body="Views, clicks and top blocks included free. Pro adds traffic sources, devices and engagement." />
           <Tile icon="stream" accent={C.ember} title="Live content blocks"
-            body="Show your live stream, next tournament or squad on your page, updating in real time. Nobody else has this." />
+            body="Show your live stream, next ticketed event or squad on your page, updating in real time. Nobody else has this." />
           <Tile icon="qr_code_2" accent={C.violet} title="QR codes + scheduling"
             body="Custom-color QR for print, scheduled links, passcode and age-gated links, whole-page forwarding." />
           <Tile icon="paid" accent={C.gold} title="Get paid on-page"

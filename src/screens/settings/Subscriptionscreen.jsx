@@ -11,7 +11,7 @@ import useResponsive from '../../hooks/useResponsive';
 import { TIERS, resolveTier } from '../../utils/tierSystem';
 import { IS_NATIVE_BUILD, IS_STORE_BUILD, IS_HUAWEI_BUILD } from '../../utils/platform';
 import { useAuth } from '../../context/AuthContext';
-import { isPlayBillingSupported, buySubscription } from '../../utils/nativeBilling';
+import { isPlayBillingSupported, buySubscription, fetchPlaySubPrices, playSubIdFor } from '../../utils/nativeBilling';
 import { useBuyCheckout } from '../wallet/v2/buyCheckout';
 import LocalPrice from '../../components/LocalPrice';
 import { C, PageShell } from './_settingsUI';
@@ -232,7 +232,7 @@ function ChangePlanModal({ currentId, onClose }) {
   // on IS_NATIVE_BUILD, so the Tauri DESKTOP app got a webview popup that
   // renders blank — i.e. you could not pay for a subscription from it.
   const { currentUser } = useAuth();
-  const { checkout, startCheckout } = useBuyCheckout(showToast, {
+  const { checkout, startCheckout, cancelCheckout } = useBuyCheckout(showToast, {
     onSettled: () => {
       showToast('Subscription activated!', 'success');
       onClose();
@@ -244,6 +244,29 @@ function ChangePlanModal({ currentId, onClose }) {
   // inside the app, so it MUST go through Play Billing. PayRam card checkout
   // stays the path on web, desktop and sideload.
   const usePlaySubs = IS_STORE_BUILD && !IS_HUAWEI_BUILD && isPlayBillingSupported();
+
+  // Play's OWN localized price strings, keyed by product id.
+  //
+  // ⚠ The Play price is NOT the web price. docs/play/play-prices-by-market.csv
+  // sets it per market, grossed up for local VAT and Google's service fee so
+  // the net matches the web sale (see storePricing.playSubPriceFor). US Lite is
+  // $5.99 on Play against $4.99 on the web.
+  //
+  // So rendering TIERS[t].price on a store build shows a number Google will not
+  // charge, which is both a lie to the buyer and a Play policy problem at
+  // review. fetchPlaySubPrices() has existed since the bridge was written and
+  // was never called; this is that wiring. Falls back to the web price if the
+  // bridge is slow or the product is missing, because a price is better than a
+  // blank, and only the Play path can ever use these strings anyway.
+  const [playPrices, setPlayPrices] = useState({});
+  useEffect(() => {
+    if (!usePlaySubs) return;
+    let cancelled = false;
+    fetchPlaySubPrices(['lite', 'pro'])
+      .then((map) => { if (!cancelled) setPlayPrices(map || {}); })
+      .catch(() => { /* fall back to the web label */ });
+    return () => { cancelled = true; };
+  }, [usePlaySubs]);
 
   /**
    * CARD checkout for a subscription. This is the path the buyer picked.
@@ -345,11 +368,22 @@ function ChangePlanModal({ currentId, onClose }) {
                     fontSize: 22, fontWeight: 800,
                     color: isCurrent ? C.purpleLight : C.text, marginTop: 4,
                   }}>
-                    {tier.price === 0 ? '€0' : <LocalPrice eur={tier.price} fallback={`€${tier.price}`} />}
+                    {tier.price === 0 ? '€0'
+                      : (usePlaySubs && playPrices[playSubIdFor(tier.id)]?.price)
+                        ? playPrices[playSubIdFor(tier.id)].price
+                        : <LocalPrice eur={tier.price} fallback={`€${tier.price}`} />}
                     <span style={{ fontSize: 13, fontWeight: 400, color: C.textDim }}>/month</span>
                   </div>
                   {tier.price > 0 && (
-                    <div style={{ fontSize: 10, color: C.textVeryDim, marginTop: 2 }}>exc. VAT/tax · billed in USD/USDT</div>
+                    <div style={{ fontSize: 10, color: C.textVeryDim, marginTop: 2 }}>
+                      {/* Play's string is already tax-inclusive in every market
+                          that charges VAT, and Google bills in local currency.
+                          Saying "exc. VAT, billed in USD" over it would be
+                          wrong on both counts. */}
+                      {usePlaySubs && playPrices[playSubIdFor(tier.id)]?.price
+                        ? 'incl. tax · billed by Google Play'
+                        : 'exc. VAT/tax · billed in USD/USDT'}
+                    </div>
                   )}
                   <div style={{ fontSize: 11, color: C.textVeryDim, marginTop: 4, marginBottom: 12 }}>{tier.tagline}</div>
                   <div style={{ flex: 1 }}>
@@ -442,7 +476,16 @@ function ChangePlanModal({ currentId, onClose }) {
             <div style={{ fontSize: 12, color: C.textVeryDim, marginBottom: 18, lineHeight: 1.5 }}>
               Finish paying in the checkout window. This page activates your plan automatically the moment payment confirms — keep it open.
             </div>
-            <button onClick={() => { stopPoll(); closePopup(); setCardWaiting(false); }} style={{
+            {/* Was `stopPoll(); closePopup(); setCardWaiting(false);` — three
+                identifiers that exist nowhere in this file, so Cancel on the
+                "Complete your payment" modal threw a ReferenceError and, with no
+                error boundary, blanked the app mid-checkout (audit A41 #3).
+                `useBuyCheckout` already returns `cancelCheckout`, which does
+                exactly those three things (stopPolling + closePopup +
+                setCheckout(null)); this screen simply never destructured it.
+                `cardWaiting` is derived from `checkout`, so a setter for it
+                could never have existed. */}
+            <button onClick={cancelCheckout} style={{
               width: '100%', padding: 11, borderRadius: 10, background: 'transparent',
               color: C.textDim, border: `1px solid ${C.borderHard}`, cursor: 'pointer', fontSize: 13,
             }}>Cancel</button>

@@ -307,21 +307,15 @@ export default function BlockForm({ block, patch }) {
     case 'vergr_stream':
       return <Hint>Automatically shows your stream when you're live (and your last stream otherwise). Nothing to configure.</Hint>;
 
-    case 'vergr_tournament':
-      return (
-        <>
-          <ChooseRow label="tournament" selectedName={block._title} selectedId={block.tournamentId} onOpen={() => setPicker('tournament')} onClear={() => patch({ tournamentId: '', _title: '' })} hint="Feature one of your tournaments." />
-          <VergrPicker open={picker === 'tournament'} title="Choose a tournament" emptyText="You haven't created any tournaments yet."
-            load={() => getUserTournaments(uid).then((l) => (l || []).map((t) => ({ id: t.id, name: t.name, sub: `${t.game || ''} · ${t.status || ''}`, image: t.bannerUrl, icon: 'emoji_events' })))}
-            onSelect={(t) => { patch({ tournamentId: t.id, _title: t.name }); setPicker(null); }} onClose={() => setPicker(null)} />
-        </>
-      );
+    // vergr_tournament's editor form is removed: tournaments are retired and the
+    // block has not been addable since it became _retired_ in BLOCK_REGISTRY.
+    // VergrMeView renders any surviving saved block as null.
 
     case 'vergr_event':
       return (
         <>
           <ChooseRow label="event" selectedName={block._title} selectedId={block.eventId} onOpen={() => setPicker('event')} onClear={() => patch({ eventId: '', _title: '' })} hint="Sell tickets to a ticketed event from your page." />
-          <VergrPicker open={picker === 'event'} title="Choose a ticketed event" emptyText="No open ticketed events. Create one from Tournaments."
+          <VergrPicker open={picker === 'event'} title="Choose a ticketed event" emptyText="No open ticketed events. Create one from Events."
             load={() => getUserTournaments(uid).then((l) => (l || []).filter((t) => t.fundingModel === 'ticketed' && ['open', 'active'].includes(t.status)).map((t) => ({ id: t.id, name: t.name, sub: `${t.ticket?.priceCoins ? `${t.ticket.priceCoins}c` : 'Free'} · ${t.ticket?.sold || 0}/${t.ticket?.capacity || 0}`, image: t.bannerUrl, icon: 'confirmation_number' })))}
             onSelect={(t) => { patch({ eventId: t.id, _title: t.name }); setPicker(null); }} onClose={() => setPicker(null)} />
         </>
@@ -474,7 +468,7 @@ export default function BlockForm({ block, patch }) {
 // their own styling, so they're intentionally absent.
 const DESIGNABLE = new Set([
   'link', 'product', 'digital_product', 'shop_catalog', 'tip', 'message', 'email', 'membership', 'faq', 'countdown', 'map',
-  'vergr_stream', 'vergr_tournament', 'vergr_event', 'vergr_squad', 'vergr_group',
+  'vergr_stream', 'vergr_event', 'vergr_squad', 'vergr_group',
 ]);
 
 // External shop importer (Shopify/WooCommerce): paste URL → server-side

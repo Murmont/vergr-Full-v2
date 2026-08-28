@@ -1,6 +1,6 @@
 // AdminUsersScreen — /admin/users
 //
-// Tabs: All / Active / New / Banned. KPI strip on top. Filter rail on right
+// Tabs: All / Active / New / Banned / Guests. KPI strip on top. Filter rail on right
 // (search + role + plan + status). Table with per-row action menu that opens
 // the user-detail drawer with every action (ban / unban / mute / role /
 // force-logout / password reset).
@@ -162,11 +162,16 @@ function StatStrip({ stats, loading }) {
       display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12,
       marginBottom: 16,
     }}>
-      <KpiCard icon="group"     color="#7c3aed" label="Total Users"  value={loading ? '—' : fmtNumber(stats?.total)} />
+      <KpiCard icon="group"     color="#7c3aed" label="Total Users"  value={loading ? '—' : fmtNumber(stats?.total)}
+        sub={loading ? null : 'excl. guests + bots'} />
       <KpiCard icon="circle"    color="#22c55e" label="Active (7d)"  value={loading ? '—' : fmtNumber(stats?.active)} />
       <KpiCard icon="person_add" color="#3b82f6" label="New (30d)"   value={loading ? '—' : fmtNumber(stats?.new)} />
       <KpiCard icon="block"     color="#f04060" label="Banned"       value={loading ? '—' : fmtNumber(stats?.banned)} />
       <KpiCard icon="workspace_premium" color="#f5c542" label="Pro Users" value={loading ? '—' : fmtNumber(stats?.pro)} />
+      {/* Guests are anonymous browsing sessions, not signups, so they are a
+          separate figure rather than part of Total. */}
+      <KpiCard icon="visibility" color="#9ca3af" label="Guest sessions" value={loading ? '—' : fmtNumber(stats?.guests)}
+        sub={loading ? null : 'not counted in total'} />
     </div>
   );
 }
@@ -179,7 +184,8 @@ function StatusPill({ user }) {
   const now = Date.now();
   let label, color;
   if (user.banned) { label = 'Banned'; color = '#f04060'; }
-  else if (user.lastActiveAt && (now - user.lastActiveAt) > 7 * 86_400_000) { label = 'Inactive'; color = '#f5c542'; }
+  else if (!user.lastActiveAt) { label = 'Never seen'; color = C.textMuted; }
+  else if ((now - user.lastActiveAt) > 7 * 86_400_000) { label = 'Inactive'; color = '#f5c542'; }
   else { label = 'Active'; color = '#22c55e'; }
   return (
     <span style={{
@@ -219,6 +225,18 @@ function UserRow({ user, onOpen }) {
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <span style={{ fontWeight: 600, color: C.text, fontSize: 13 }}>{user.displayName}</span>
               {user.verified && <Icon name="verified" size={13} style={{ color: C.accent }} />}
+              {user.isGuest && (
+                <span title="Anonymous browsing session, not a signup" style={{
+                  padding: '1px 6px', borderRadius: 4, background: 'rgba(156,163,175,0.18)',
+                  color: '#9ca3af', fontSize: 9, fontWeight: 800, letterSpacing: '0.06em',
+                }}>GUEST</span>
+              )}
+              {user.convertedFromGuest && !user.isGuest && (
+                <span title="Signed up from a guest session, same uid" style={{
+                  padding: '1px 6px', borderRadius: 4, background: 'rgba(34,197,94,0.18)',
+                  color: '#22c55e', fontSize: 9, fontWeight: 800, letterSpacing: '0.06em',
+                }}>EX-GUEST</span>
+              )}
             </div>
             {user.username && <div style={{ fontSize: 11, color: C.textDim }}>@{user.username}</div>}
           </div>
@@ -410,6 +428,27 @@ function UserDrawer({ uid, onClose, onChanged }) {
     onCancel: () => setPrompt(null),
   });
 
+  // Guests only. The server re-checks against the Firebase Auth record and
+  // refuses anything with a credential, so this button cannot be pointed at a
+  // real account even by mistake.
+  const doDeleteGuest = () => setPrompt({
+    title: 'Delete this guest session?',
+    message: 'Permanently deletes the anonymous Auth user and the Firestore doc, '
+      + 'including subcollections. There is nothing to recover afterwards. '
+      + 'Real accounts cannot be deleted here, only banned.',
+    danger: true,
+    onConfirm: async ({ reason }) => {
+      setPrompt(null);
+      try {
+        await guarded(() => call('adminDeleteGuestAccount', { targetUid: uid, reason }));
+        showToast('Guest session deleted', 'success');
+        onChanged?.();
+        onClose();
+      } catch {}
+    },
+    onCancel: () => setPrompt(null),
+  });
+
   const doPasswordReset = async () => {
     if (!window.confirm('Issue a password reset link?')) return;
     try {
@@ -468,7 +507,7 @@ function UserDrawer({ uid, onClose, onChanged }) {
               <StatBlock label="Following" value={fmtNumber(detail.following)} />
               <StatBlock label="Posts"     value={fmtNumber(detail.postsCount)} />
               <StatBlock label="Coins"     value={fmtNumber(detail.wallet?.balance)} />
-              <StatBlock label="Gems"      value={fmtNumber(detail.wallet?.gems)} />
+              <StatBlock label="Owed"      value={`$${(((detail.wallet?.owedMicroUsd) || 0) / 1e6).toFixed(2)}`} />
               <StatBlock label="VP"        value={fmtNumber(detail.wallet?.vp)} />
             </div>
 
@@ -476,6 +515,21 @@ function UserDrawer({ uid, onClose, onChanged }) {
               <div style={{ fontSize: 11, fontWeight: 700, color: C.textDim, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Account</div>
               <KeyVal label="Joined" value={fmtDate(detail.createdAt)} />
               <KeyVal label="Last active" value={fmtRelative(detail.lastActiveAt)} />
+              {/* Read off the Firebase Auth record, so this distinguishes an
+                  anonymous guest session from an abandoned real signup, the
+                  user doc alone cannot tell them apart. */}
+              <KeyVal
+                label="Sign-in"
+                value={
+                  !detail.authExists ? 'No auth record (orphan doc)'
+                    : detail.isAnonymousAuth ? 'Anonymous (guest session)'
+                    : (detail.signInProviders || []).join(', ') || 'password'
+                }
+              />
+              {detail.lastSignInAt && <KeyVal label="Last sign-in" value={fmtRelative(detail.lastSignInAt)} />}
+              {detail.usernameAutoAssigned && (
+                <KeyVal label="Handle" value="Auto-assigned (no display name at signup)" />
+              )}
               {detail.banned && (
                 <>
                   <KeyVal label="Banned" value={detail.permabanned ? 'Permanent' : `Until ${fmtDate(detail.banUntil)}`} />
@@ -506,7 +560,22 @@ function UserDrawer({ uid, onClose, onChanged }) {
                     : <ActionRow icon="volume_up" label="Unmute" onClick={doUnmute} />}
                   <ActionRow icon="logout" label="Force logout" danger onClick={doForceLogout} />
                   <ActionRow icon="key" label="Password reset" onClick={doPasswordReset} />
+                  {/* Only offered for an anonymous session or an orphan doc. A real
+                      account is never deletable from a moderation row: banning is
+                      the tool for those, and the server enforces the same rule. */}
+                  {(detail.isGuest || detail.isAnonymousAuth || detail.authExists === false) && !detail.convertedFromGuest && (
+                    <ActionRow icon="delete_forever" label="Delete guest account" danger onClick={doDeleteGuest} />
+                  )}
                 </div>
+                {(detail.isGuest || detail.isAnonymousAuth || detail.authExists === false) && !detail.convertedFromGuest && (
+                  <div style={{ fontSize: 11, color: C.textDim, marginTop: -8, marginBottom: 14, lineHeight: 1.5 }}>
+                    {detail.authExists === false
+                      ? 'Orphan doc: no Firebase Auth record exists for this uid.'
+                      : 'Anonymous browse session, no credential attached.'}
+                    {' '}Deleting removes the Auth user and the doc. Guests older than 7 days with no
+                    activity are already swept by the daily <code>purgeStaleGuests</code> job.
+                  </div>
+                )}
 
                 <SectionLabel>Role</SectionLabel>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
@@ -569,11 +638,15 @@ function SectionLabel({ children }) {
 // Main screen
 // ───────────────────────────────────────────────────────────
 
+// Guests get their own tab rather than sitting in All. A guest is an anonymous
+// Firebase auth session created by "browse without an account", so it is a
+// visitor, not a user, and it must not inflate any headline count.
 const TABS = [
   { id: 'all',    label: 'All Users' },
   { id: 'active', label: 'Active' },
   { id: 'new',    label: 'New' },
   { id: 'banned', label: 'Banned' },
+  { id: 'guests', label: 'Guests' },
 ];
 
 export default function AdminUsersScreen() {
@@ -583,18 +656,27 @@ export default function AdminUsersScreen() {
   const [role, setRole] = useState('');
   const [plan, setPlan] = useState('');
   const [rows, setRows] = useState([]);
-  const [cursor, setCursor] = useState(null);
   const [nextCursor, setNextCursor] = useState(null);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState(null);
   const [openUid, setOpenUid] = useState(null);
   const searchDebounceRef = useRef(null);
+  // Bumped on every filter change so a page that is already in flight cannot
+  // append its rows onto a list that has since been reset.
+  const reqIdRef = useRef(0);
 
   const loadStats = useCallback(async () => {
     try { setStats(await call('adminGetUserStats', {})); } catch {}
   }, []);
 
-  const loadPage = useCallback(async (reset = false) => {
+  // The cursor is an ARGUMENT, never state. It used to be state, and loadMore
+  // did setCursor(nextCursor) then immediately called loadPage(), which had
+  // already closed over the previous cursor value, because a setState is not
+  // applied synchronously. So every "Load more" re-fetched page one and appended
+  // the same 25 users again, and nextCursor never changed, so the button never
+  // went away. That is the "keeps showing the same users" bug.
+  const loadPage = useCallback(async (cursor = null) => {
+    const myReq = ++reqIdRef.current;
     setLoading(true);
     try {
       const r = await call('adminListUsers', {
@@ -602,38 +684,51 @@ export default function AdminUsersScreen() {
         search,
         role: role || null,
         plan: plan || null,
-        cursor: reset ? null : cursor,
+        cursor,
         pageSize: 25,
       });
-      setRows(prev => reset ? r.rows : [...prev, ...r.rows]);
-      setNextCursor(r.nextCursor);
+      if (reqIdRef.current !== myReq) return;   // superseded by a newer request
+      setRows(prev => {
+        if (!cursor) return r.rows;
+        // Belt and braces: de-dupe by uid so a repeated cursor can never
+        // duplicate a row on screen.
+        const seen = new Set(prev.map(u => u.uid));
+        return [...prev, ...r.rows.filter(u => !seen.has(u.uid))];
+      });
+      setNextCursor(r.nextCursor || null);
     } catch (err) {
-      showToast(err?.message || 'Failed to load users', 'error');
+      if (reqIdRef.current === myReq) showToast(err?.message || 'Failed to load users', 'error');
     }
-    setLoading(false);
-  }, [tab, search, role, plan, cursor, showToast]);
+    if (reqIdRef.current === myReq) setLoading(false);
+  }, [tab, search, role, plan, showToast]);
 
   useEffect(() => { loadStats(); }, [loadStats]);
 
   // Reset list whenever filters change.
   useEffect(() => {
-    setCursor(null);
     setRows([]);
+    setNextCursor(null);
     if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
-    searchDebounceRef.current = setTimeout(() => loadPage(true), 250);
+    searchDebounceRef.current = setTimeout(() => loadPage(null), 250);
     return () => { if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, search, role, plan]);
 
-  const loadMore = async () => {
-    if (!nextCursor) return;
-    setCursor(nextCursor);
-    await loadPage(false);
+  const loadMore = () => {
+    if (!nextCursor || loading) return;
+    loadPage(nextCursor);
   };
+
+  // The footer used to print stats.total on every tab, so the Banned tab said
+  // "3 loaded · 412 total". Each tab now reports its own denominator, and none
+  // at all when a filter is applied (there is no count for an ad-hoc filter).
+  const tabTotal = (role || plan || search.trim())
+    ? null
+    : ({ all: stats?.total, active: stats?.active, new: stats?.new, banned: stats?.banned, guests: stats?.guests }[tab] ?? null);
 
   const topBarRight = (
     <button
-      onClick={() => { loadStats(); loadPage(true); }}
+      onClick={() => { loadStats(); loadPage(null); }}
       style={{
         padding: '8px 14px', borderRadius: 8,
         background: 'transparent', border: `1px solid ${C.border}`,
@@ -675,6 +770,24 @@ export default function AdminUsersScreen() {
             ))}
           </div>
 
+          {tab === 'guests' && (
+            <div style={{
+              padding: 12, marginBottom: 12, borderRadius: 10,
+              background: 'rgba(156,163,175,0.10)', border: '1px solid rgba(156,163,175,0.25)',
+              fontSize: 12, color: C.textDim, lineHeight: 1.55,
+            }}>
+              Anonymous browsing sessions from &ldquo;continue without an account&rdquo;. They are
+              excluded from Total Users and from every other tab. Stale ones are deleted by the
+              daily <code>purgeStaleGuests</code> job. A guest that signs up keeps the same uid and
+              moves to All Users with an <strong>EX-GUEST</strong> badge.
+              <br />
+              Handles read <code>guest_&hellip;</code> when the guest seed wrote them, and
+              <code> player&hellip;</code> when the handle had to be auto-assigned later, because the
+              generator falls back to &ldquo;player&rdquo; + random when there is no display name or
+              email to build from. Open a row to see the sign-in method.
+            </div>
+          )}
+
           {/* Table */}
           <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: 'hidden' }}>
             <div style={{ overflowX: 'auto' }}>
@@ -698,7 +811,9 @@ export default function AdminUsersScreen() {
             </div>
             <div style={{ padding: 12, borderTop: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ fontSize: 11, color: C.textDim }}>
-                {loading ? 'Loading…' : `${rows.length} loaded${stats?.total ? ` · ${fmtNumber(stats.total)} total` : ''}`}
+                {loading
+                  ? 'Loading…'
+                  : `${rows.length} loaded${tabTotal != null ? ` of ${fmtNumber(tabTotal)}` : ''}${!nextCursor && rows.length ? ' · end of list' : ''}`}
               </div>
               {nextCursor && (
                 <button onClick={loadMore} disabled={loading} style={{
@@ -754,7 +869,7 @@ export default function AdminUsersScreen() {
         <UserDrawer
           uid={openUid}
           onClose={() => setOpenUid(null)}
-          onChanged={() => { loadStats(); loadPage(true); }}
+          onChanged={() => { loadStats(); loadPage(null); }}
         />
       )}
     </AdminShell>

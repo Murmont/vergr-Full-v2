@@ -12,6 +12,7 @@ import {
 import SquadShell from '../../components/squad/SquadShell';
 import SquadInfoRail from '../../components/squad/SquadInfoRail';
 import { roleKey, roleMeta, avatarClass, initials, nameOf } from '../../components/squad/squadHelpers';
+import UserName from '../../components/UserName';
 
 const tsMs = (t) => (t?.toDate ? t.toDate().getTime() : t?.seconds ? t.seconds * 1000 : t ? new Date(t).getTime() : 0);
 const when = (t) => {
@@ -129,7 +130,7 @@ export default function SquadAnnouncementsScreen() {
                   <div className={`av ${avatarClass(currentUser?.uid)}`}>
                     {initials(currentUser?.displayName || 'You')}
                   </div>
-                  <div className="name">Posting as {currentUser?.displayName || 'You'}</div>
+                  <div className="name">Posting as <UserName user={currentUser} masked fallback={'You'} /></div>
                   <div className="lbl">New announcement</div>
                 </div>
                 <input

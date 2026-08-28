@@ -3,11 +3,18 @@
 // Every section reads from Firestore. Empty sections render a short
 // "nothing here yet" message instead of dummy content.
 import { useEffect, useState } from 'react';
+import { useAuth } from '../../context/AuthContext';
 import { isDiscoverableStream, streamPremium } from '../../utils/streamVisibility';
 import CachedImg from '../CachedImg';
 import { useNavigate } from 'react-router-dom';
 import { collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
 import { db } from '../../firebase/config';
+import { mergeBoostedFirst } from '../../utils/promoBoost';
+import { boostSlotsFor } from '../../utils/boostDelivery';
+import { getBoostedUsers } from '../../firebase/firestore';
+import { rankStreams, hasFeedRail } from '../../utils/streamBoost';
+import { inferStreamTopics } from '../../utils/feedRank';
+import { getTopicWeights } from '../../utils/feedPrefs';
 import Icon from '../Icon';
 import UserAvatar from '../UserAvatar';
 
@@ -18,6 +25,8 @@ function compact(n) {
 }
 
 export default function HomeFeedRail() {
+  // Needed so a boosted profile is never suggested to itself.
+  const { currentUser } = useAuth();
   const navigate = useNavigate();
   const [liveStreams, setLiveStreams] = useState([]);
   const [hashtags, setHashtags] = useState([]);
@@ -32,14 +41,38 @@ export default function HomeFeedRail() {
     // Live streams currently airing.
     (async () => {
       try {
-        const q = query(
-          collection(db, 'streams'),
-          where('status', '==', 'live'),
-          orderBy('viewerCount', 'desc'),
-          limit(3),
-        );
-        const snap = await getDocs(q);
-        if (alive) setLiveStreams(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(isDiscoverableStream));
+        // ⚠ THIS RAIL IS WHAT MEGA BOOST BUYS. Three slots, previously handed
+        // to the three biggest audiences — so the top tier advertised "a slot in
+        // the live rail on the home feed" and could not deliver one. The second
+        // query fetches boosted streams regardless of viewer count; hasFeedRail
+        // decides which of them have actually paid for this surface.
+        const [snap, boostSnap] = await Promise.all([
+          getDocs(query(
+            collection(db, 'streams'),
+            where('status', '==', 'live'),
+            orderBy('viewerCount', 'desc'),
+            limit(3),
+          )),
+          getDocs(query(
+            collection(db, 'streams'),
+            where('boostExpiresAt', '>', Date.now()),
+            limit(8),
+          )).catch(() => ({ docs: [] })),
+        ]);
+        const seen = new Map();
+        for (const d of [...snap.docs, ...boostSnap.docs]) {
+          const data = { id: d.id, ...d.data() };
+          if (data.status === 'live') seen.set(d.id, data);
+        }
+        const all = [...seen.values()].filter(isDiscoverableStream);
+        // A mega-boosted stream takes a slot first; the rest of the rail is
+        // filled by the normal ranking, so the rail is never left short.
+        const railed = all.filter((s) => hasFeedRail(s));
+        const rest = rankStreams(all.filter((s) => !hasFeedRail(s)), {
+          topicAffinity: getTopicWeights(),
+          topicsOf: inferStreamTopics,
+        });
+        if (alive) setLiveStreams([...railed, ...rest].slice(0, 3));
       } catch (err) {
         console.warn('Live streams query failed (likely composite index missing)', err.message);
       } finally { mark('live'); }
@@ -58,16 +91,32 @@ export default function HomeFeedRail() {
     // Who to follow — verified creators sorted by follower count.
     (async () => {
       try {
+        // ⚠ ONE shared query for every suggestion surface (getBoostedUsers):
+        // fair bucket rotation, interest ranking, and the viewer excluded from
+        // their own suggestions. Never hand-roll a boost query here again —
+        // doing that is how four of six surfaces silently ignored a paid boost.
+        // boostSlotsFor(4) = 1: a rail that is mostly paid is not a recommendation.
+        let boostedUsers = [];
+        try {
+          boostedUsers = await getBoostedUsers({
+            viewerUid: currentUser?.uid, want: boostSlotsFor(4),
+          });
+        } catch { /* a boost must never empty the rail */ }
+
         const q = query(collection(db, 'users'), where('isVerified', '==', true), orderBy('followerCount', 'desc'), limit(4));
         const snap = await getDocs(q);
-        if (alive) setCreators(snap.docs.map(d => ({
+        // Boosted first, then verified-by-followers, deduped and capped at the
+        // 4 slots this rail has always shown.
+        const shaped = (d) => ({
           id: d.id,
-          name: d.data().displayName || d.data().username,
-          handle: '@' + (d.data().username || ''),
-          followers: d.data().followerCount || 0,
-          avatar: d.data().avatar,
-          verified: d.data().isVerified,
-        })));
+          name: d.displayName || d.username,
+          handle: '@' + (d.username || ''),
+          followers: d.followerCount || 0,
+          avatar: d.avatar,
+          verified: d.isVerified,
+        });
+        const organic = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        if (alive) setCreators(mergeBoostedFirst(boostedUsers, organic, 4).map(shaped));
       } catch {}
       finally { mark('creators'); }
     })();

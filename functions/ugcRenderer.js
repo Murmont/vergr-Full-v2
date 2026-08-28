@@ -40,21 +40,49 @@ const esc = (s) => String(s == null ? '' : s)
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
-// ── SPA shell cache (per warm instance, 10 min TTL) ───────────────────
-let shellCache = { html: null, at: 0 };
+// ── SPA shell cache (per warm instance) ───────────────────────────────
+//
+// ⚠ THIS WAS A 10 MINUTE TTL AND IT BROKE THE ENTIRE SEO SURFACE AFTER EVERY
+// DEPLOY. Measured 2026-08-24, right after a hosting deploy:
+//
+//   curl /            -> assets/index-hdGQ1uJH.js   (the new build)
+//   curl /u/Friz1k3   -> assets/index-Br4CLjlz.js   (the shell this cached)
+//
+// Vite content-hashes every chunk, so a deploy DELETES the old ones. A stale
+// shell therefore boots a bundle that no longer exists; the route chunk 404s,
+// the SPA rewrite answers that 404 with index.html (HTTP 200, text/html), the
+// dynamic import fails on the MIME type, and ErrorBoundary paints "Something
+// went wrong". So for ten minutes after every deploy, /u/**, /post/**,
+// /clip/** and /live/** — precisely the pages Googlebot crawls — were a crash
+// screen, and nothing anywhere reported it.
+//
+// The fix is a conditional GET, not a shorter guess. Hosting serves index.html
+// as no-cache WITH an ETag, so a revalidation that finds no change costs a 304
+// with no body. The 5s window is only a burst guard for a crawl spike; the
+// ETag, not the clock, is what keeps this correct.
+let shellCache = { html: null, at: 0, etag: null };
+const SHELL_BURST_MS = 5 * 1000;
 const MINIMAL_SHELL = '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8" />'
   + '<title>VERGR</title><meta name="description" content="" /></head>'
   + '<body><div id="root"></div></body></html>';
 
 async function getShell() {
   const now = Date.now();
-  if (shellCache.html && now - shellCache.at < 10 * 60 * 1000) return shellCache.html;
+  if (shellCache.html && now - shellCache.at < SHELL_BURST_MS) return shellCache.html;
   try {
-    const r = await fetch(`${SITE}/`, { headers: { 'User-Agent': 'vergr-ugc-renderer' } });
+    const headers = { 'User-Agent': 'vergr-ugc-renderer' };
+    if (shellCache.etag) headers['If-None-Match'] = shellCache.etag;
+    const r = await fetch(`${SITE}/`, { headers });
+    // 304: the deployed shell is byte-identical to the cached one. No body was
+    // sent, so keep what we have and restart the burst window.
+    if (r.status === 304 && shellCache.html) {
+      shellCache.at = now;
+      return shellCache.html;
+    }
     if (r.ok) {
       const html = await r.text();
       if (html.includes('<div id="root">')) {
-        shellCache = { html, at: now };
+        shellCache = { html, at: now, etag: r.headers.get('etag') || null };
         return html;
       }
     }
@@ -69,22 +97,32 @@ function applyHead(shell, { title, description, canonical, image, index, jsonld,
   let h = shell;
   const t = esc(title);
   const d = esc(description);
-  h = h.replace(/<title>[\s\S]*?<\/title>/, `<title>${t}</title>`);
-  h = h.replace(/(<meta name="description" content=")[\s\S]*?("\s*\/>)/, `$1${d}$2`);
-  h = h.replace(/(<meta property="og:title" content=")[\s\S]*?("\s*\/>)/, `$1${t}$2`);
-  h = h.replace(/(<meta property="og:description" content=")[\s\S]*?("\s*\/>)/, `$1${d}$2`);
-  h = h.replace(/(<meta property="og:url" content=")[\s\S]*?("\s*\/>)/, `$1${esc(canonical)}$2`);
-  h = h.replace(/(<meta property="og:image" content=")[\s\S]*?("\s*\/>)/, `$1${esc(image || FALLBACK_IMAGE)}$2`);
-  h = h.replace(/(<meta property="og:type" content=")[\s\S]*?("\s*\/>)/, `$1${esc(ogType || 'article')}$2`);
-  h = h.replace(/(<meta name="twitter:title" content=")[\s\S]*?("\s*\/>)/, `$1${t}$2`);
-  h = h.replace(/(<meta name="twitter:description" content=")[\s\S]*?("\s*\/>)/, `$1${d}$2`);
-  h = h.replace(/(<meta name="twitter:image" content=")[\s\S]*?("\s*\/>)/, `$1${esc(image || FALLBACK_IMAGE)}$2`);
+  // ⚠ FUNCTION replacements, never template literals. `String.replace` expands
+  // `$1`/`$2`/`$&`/`$'` inside a STRING replacement, and what goes in here is
+  // USER CONTENT: post titles and descriptions. A post mentioning a price like
+  // "$249.99" would have its `$2` expanded to capture group 2 (`" />`), closing
+  // the meta tag early and dumping the remainder as visible page text.
+  //
+  // That is not hypothetical: the identical code in scripts/prerenderHelp.mjs
+  // did exactly that to /platform/store and it was live for days. Because this
+  // copy renders user posts, every author who typed a dollar amount was
+  // corrupting their own SEO page.
+  h = h.replace(/<title>[\s\S]*?<\/title>/, () => `<title>${t}</title>`);
+  h = h.replace(/(<meta name="description" content=")[\s\S]*?("\s*\/>)/, (_m, a, b) => a + d + b);
+  h = h.replace(/(<meta property="og:title" content=")[\s\S]*?("\s*\/>)/, (_m, a, b) => a + t + b);
+  h = h.replace(/(<meta property="og:description" content=")[\s\S]*?("\s*\/>)/, (_m, a, b) => a + d + b);
+  h = h.replace(/(<meta property="og:url" content=")[\s\S]*?("\s*\/>)/, (_m, a, b) => a + esc(canonical) + b);
+  h = h.replace(/(<meta property="og:image" content=")[\s\S]*?("\s*\/>)/, (_m, a, b) => a + esc(image || FALLBACK_IMAGE) + b);
+  h = h.replace(/(<meta property="og:type" content=")[\s\S]*?("\s*\/>)/, (_m, a, b) => a + esc(ogType || 'article') + b);
+  h = h.replace(/(<meta name="twitter:title" content=")[\s\S]*?("\s*\/>)/, (_m, a, b) => a + t + b);
+  h = h.replace(/(<meta name="twitter:description" content=")[\s\S]*?("\s*\/>)/, (_m, a, b) => a + d + b);
+  h = h.replace(/(<meta name="twitter:image" content=")[\s\S]*?("\s*\/>)/, (_m, a, b) => a + esc(image || FALLBACK_IMAGE) + b);
   h = h.replace(/\s*<link rel="canonical"[^>]*\/>/g, '');
   h = h.replace(/\s*<meta name="robots"[^>]*\/>/g, '');
   const inject = `<link rel="canonical" href="${esc(canonical)}" />\n`
     + `<meta name="robots" content="${index ? 'index,follow' : 'noindex,follow'}" />\n`
     + (jsonld ? `<script type="application/ld+json">${JSON.stringify(jsonld)}</script>\n` : '');
-  h = h.replace('</head>', inject + '</head>');
+  h = h.replace('</head>', () => inject + '</head>');
   return h;
 }
 
@@ -102,12 +140,13 @@ function applyHead(shell, { title, description, canonical, image, index, jsonld,
 // Fails LOUD but degrades safely: a live renderer must not 500 over this, so
 // an absent marker logs and still appends the content rather than dropping it.
 const injectBody = (shell, bodyHtml) => {
+  // Function replacements again: bodyHtml is rendered user content.
   if (shell.includes('<div id="root">')) {
-    return shell.replace('<div id="root">', `<div id="root">${bodyHtml}`);
+    return shell.replace('<div id="root">', () => `<div id="root">${bodyHtml}`);
   }
   console.error('ugcRenderer: <div id="root"> not found in shell — appending body instead');
   return shell.includes('</body>')
-    ? shell.replace('</body>', `<div id="root">${bodyHtml}</div></body>`)
+    ? shell.replace('</body>', () => `<div id="root">${bodyHtml}</div></body>`)
     : shell + bodyHtml;
 };
 
@@ -146,7 +185,12 @@ function publicIdentity(u) {
   };
 }
 
-const SIGNUP_CTA = `<p><a href="/signup">Join VERGR free</a> to like, comment, follow, compete in tournaments, and earn from your gameplay. <a href="/platform/make-money-gaming">How players earn on VERGR</a> · <a href="/platform/legit">Is VERGR legit?</a></p>`;
+// ⚠ This string is SERVER-RENDERED into every UGC page, so it is what Googlebot
+// reads. It must never mention tournaments, prize pools, competitions or
+// wagering: those were retired 2026-08-09 and public/llms.txt says plainly that
+// Vergr runs none of them. A crawled page contradicting the compliance pages is
+// a real problem, not stale copy.
+const SIGNUP_CTA = `<p><a href="/signup">Join VERGR free</a> to like, comment, follow, go live, and earn from your gameplay. <a href="/platform/make-money-gaming">How players earn on VERGR</a> · <a href="/platform/legit">Is VERGR legit?</a></p>`;
 
 // ── Renderers per kind ────────────────────────────────────────────────
 async function renderPost(id, route) {

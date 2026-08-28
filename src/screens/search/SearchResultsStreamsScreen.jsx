@@ -5,6 +5,7 @@ import TopBar from '../../components/TopBar';
 import Icon from '../../components/Icon';
 import { useLayout } from '../../context/LayoutContext';
 import useResponsive from '../../hooks/useResponsive';
+import UserName from '../../components/UserName';
 
 export default function SearchResultsStreamsScreen() {
   const { isDesktop } = useResponsive();
@@ -42,7 +43,7 @@ export default function SearchResultsStreamsScreen() {
                 <div className="w-12 h-12 rounded-xl bg-surface-3 flex items-center justify-center text-xl">🎮</div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-bold truncate">{stream.title}</p>
-                  <p className="text-xs text-text-muted">{stream.streamer?.displayName || 'Streamer'} · {stream.game}</p>
+                  <p className="text-xs text-text-muted"><UserName user={stream.streamer} masked fallback={'Streamer'} /> · {stream.game}</p>
                 </div>
                 <div className="flex items-center gap-1 px-2 py-1 rounded-full bg-brand-ember/10">
                   <div className="w-1.5 h-1.5 rounded-full bg-brand-ember animate-pulse" />

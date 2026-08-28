@@ -8,8 +8,9 @@ import useResponsive from '../../hooks/useResponsive';
 import BadgeGem, { BADGE_GLYPHS, BADGE_COLORS } from '../../components/membership/BadgeGem';
 import VergrPicker from '../../components/vergrme/VergrPicker';
 import { getMembershipTiers, saveMembershipTiers, getMembershipStats, getFans, getOwnedGroupChats } from '../../firebase/firestore';
+import { COIN_PACKS } from '../../utils/vpSystem';
+import UserName from '../../components/UserName';
 
-const EUR_PER_COIN = 0.0099; // Starter purchase anchor (LOCKED) — for "≈ €" estimates only.
 const MAX_TIERS = 5;
 const SUGGESTED_PERKS = [
   'Subscriber badge in chat & profile', 'Exclusive posts & behind-the-scenes', 'Priority chat',
@@ -30,10 +31,18 @@ const DEFAULT_TIERS = [
   { id: mkId(), name: 'Legend', priceCoins: 1000, perks: ['Everything in VIP', 'Co-stream invites', 'Private Discord channel', 'Merch discounts'], badge: { color: '#F0A500', icon: 'workspace_premium' }, seatLimit: null, communities: [], published: false, popular: false, order: 2 },
 ];
 
+// Coins are natively USD (re-denominated 2026-08-11). This used a hardcoded
+// EUR_PER_COIN = 0.0099, which was the PRE-redenomination anchor, so a 100-coin
+// tier displayed "≈ €0.99" when it is worth about $1.27: wrong currency symbol
+// AND ~28% low (audit A28). The rate now comes from the Starter pack in
+// COIN_PACKS, the single source the checkout itself prices from, so the two
+// cannot drift apart again.
+const STARTER = COIN_PACKS[0];
+const USD_PER_COIN = STARTER ? STARTER.priceUSD / STARTER.coins : 0.0127;
 const fmtEur = (coins) => {
-  const eur = (coins || 0) * EUR_PER_COIN;
-  if (eur >= 100) return `€${Math.round(eur).toLocaleString()}`;
-  return `€${eur.toFixed(2)}`;
+  const usd = (coins || 0) * USD_PER_COIN;
+  if (usd >= 100) return `$${Math.round(usd).toLocaleString()}`;
+  return `$${usd.toFixed(2)}`;
 };
 const compact = (n) => (n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k` : `${n}`);
 
@@ -194,7 +203,7 @@ export default function MembershipTiersScreen({ embedded = false }) {
             {fans.map((f) => (
               <div key={f.id} className="flex items-center gap-3 px-4 py-3">
                 <div className="w-9 h-9 rounded-full bg-gradient-to-br from-brand-violet to-brand-pink shrink-0 overflow-hidden">{f.avatar && <img src={f.avatar} alt="" className="w-full h-full object-cover" />}</div>
-                <div className="flex-1 min-w-0"><div className="text-sm text-white font-semibold truncate">{f.displayName || f.username}</div><div className="text-xs text-text-muted">@{f.username}</div></div>
+                <div className="flex-1 min-w-0"><div className="text-sm text-white font-semibold truncate"><UserName user={f} masked /></div><div className="text-xs text-text-muted"><UserName user={f} masked handle /></div></div>
                 {f._fanTier && <span className="text-[11px] font-semibold px-2.5 py-1 rounded-md bg-brand-violet/15 text-brand-pink">{f._fanTier}</span>}
               </div>
             ))}

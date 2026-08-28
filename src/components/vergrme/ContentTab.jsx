@@ -114,7 +114,7 @@ const BLOCK_DESC = {
   divider: 'A line, dots or spacer',
   map: 'Show a location on a map',
   membership: 'Your paid membership tiers',
-  digital_product: 'Sell a product (digital or physical) — keep 92%, paid in gems',
+  digital_product: 'Sell a product (digital or physical), keep 92% of every sale',
   shop_catalog: 'Link out to your Shopify/Woo store (no coin checkout)',
   socials: 'Row of social icons',
   image: 'A single image, optionally linked',
@@ -198,7 +198,8 @@ function summary(b) {
     case 'email': return b.email || b.label;
     case 'message': return b.label;
     case 'tip': return b.label;
-    case 'vergr_tournament': return b.tournamentId ? 'Tournament' : '';
+    // vergr_tournament retired: no label, so a surviving saved block does not
+    // show the word in the editor list either.
     case 'vergr_event': return b.eventId ? 'Event' : '';
     case 'vergr_squad': return b.squadId ? 'Squad' : '';
     default: return '';

@@ -100,6 +100,12 @@ async function purgeGuest(uid) {
   await db.recursiveDelete(db.collection('users').doc(uid));
 }
 
+// Reused by the admin "Delete account" button (functions/adminUsers.js) so the
+// manual path and the daily job delete an account exactly the same way: Auth
+// user first, then a recursive doc delete. Two different delete routines for one
+// account type is how you end up with half-deleted accounts.
+exports._purgeGuest = purgeGuest;
+
 /**
  * Daily job. Scans guest accounts, deletes the ones older than RETAIN_DAYS
  * that never did anything and never supplied an email.

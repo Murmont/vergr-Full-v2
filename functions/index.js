@@ -75,16 +75,17 @@ exports.submitContactForm = marketingForms.submitContactForm;
 const dmNotify = require('./dmNotify');
 exports.notifyDmDelivery = dmNotify.notifyDmDelivery;
 
-// Economy — server-side coin→gem conversion + shared rate-limit helpers.
+// Economy, shared rate-limit helpers.
+//
+// REMOVED 2026-08-16, with the gem unit itself:
+//   convertCoinsToGems  a user-invoked conversion into a second currency.
+//                       Revenue share now accrues automatically at receipt, in
+//                       micro-USD, and is never something a user converts into.
+//   sendGems /          person-to-person transfer of cashable value. Locked
+//   quoteGemSend        decision 4, founder: "its a red flag."
+// Their callables are undeployed rather than left throwing: a deployed endpoint
+// that only errors is still an endpoint an auditor has to be told about.
 const economy = require('./economy');
-exports.convertCoinsToGems = economy.convertCoinsToGems;
-// Person-to-person gem transfer (the DM "Wallet"). Deliberately its own
-// callable rather than a branch inside sendTip — see functions/gemTransfer.js.
-// Both DISABLED 2026-08-14 (founder decision 4). Kept exported so callers get a
-// clear "no longer supported" message instead of an opaque missing-function
-// error; see functions/gemTransfer.js.
-exports.sendGems = require('./gemTransfer').sendGems;
-exports.quoteGemSend = require('./gemTransfer').quoteGemSend;
 
 // ── Creator payouts (revenue share) — docs/REVENUE_SHARE_PLAN.md ──
 // Scheduled supplier settlement. NOT yet the live payout path: it needs a
@@ -94,6 +95,20 @@ exports.quoteGemSend = require('./gemTransfer').quoteGemSend;
 exports.runCreatorPayouts = require('./creatorPayouts').runCreatorPayouts;
 
 // Creator Program: anyone can use Vergr, only a creator can monetize.
+// Wallet-moving actions ported off the client so `wallets.balance` and
+// `wallets.vp` could be locked in firestore.rules. See functions/walletActions.js.
+const walletActions = require('./walletActions');
+exports.awardActionVp = walletActions.awardActionVp;
+exports.recordAdWatch = walletActions.recordAdWatch;
+exports.contributeToSquad = walletActions.contributeToSquad;
+exports.purchaseBoost = walletActions.purchaseBoost;
+
+// Creator quests, server-authoritative claims. The old client-side claim both
+// trusted a client-supplied VP amount AND always failed on rules.
+const creatorQuests = require('./creatorQuests');
+exports.claimCreatorQuest = creatorQuests.claimCreatorQuest;
+exports.getCreatorQuests = creatorQuests.getCreatorQuests;
+
 const creatorProgram = require('./creatorProgram');
 exports.getCreatorEligibility = creatorProgram.getCreatorEligibility;
 exports.applyForCreator = creatorProgram.applyForCreator;
@@ -111,11 +126,10 @@ exports.adminSetPayoutAccountState = require('./creatorPayouts').adminSetPayoutA
 exports.reconcileSolvency = require('./solvencyLedger').reconcileSolvency;
 exports.getSolvencyLedger = require('./solvencyLedger').getSolvencyLedger;
 
-// Gems -> coins at a flat 1:1. The spend-side counterpart to converting out:
-// gems are withdrawal-only, so without this a creator who converted has no way
-// to spend what they earned in-app. Also the required other half of
-// auto-convert-at-receipt (see functions/coinLedger.js → earnedGemCredit).
-exports.buyCoinsWithGems = require('./gemBuyback').buyCoinsWithGems;
+// buyCoinsWithGems REMOVED 2026-08-16. It turned accrued revenue share back
+// into spending credit, which is precisely what made the payable look like a
+// balance the creator holds. A creator who wants to spend buys coins like
+// anyone else.
 
 // Stripe was the second card rail from 2026-08-11. Stripe closed the account,
 // so on 2026-08-13 the rail was removed outright rather than left dormant:
@@ -168,16 +182,79 @@ exports.adminUnmuteUser        = adminUsers.adminUnmuteUser;
 exports.adminSetUserRole       = adminUsers.adminSetUserRole;
 exports.adminForceLogoutUser   = adminUsers.adminForceLogoutUser;
 exports.adminSendPasswordReset = adminUsers.adminSendPasswordReset;
+// Manual guest cleanup, replacing a daily cron sweep that would have cost reads
+// forever to do a job the founder can do in one click when he sees one.
+exports.adminDeleteGuestAccount = adminUsers.adminDeleteGuestAccount;
+
+// Official announcement channels. Vergr's own accounts appear in the user's
+// message list as chats. ONE shared doc + ONE shared messages subcollection per
+// channel, so a send is two writes at any audience size, and push rides a
+// per-channel FCM topic so a mute is honoured at the transport layer.
+// See docs/ANNOUNCEMENTS_PLAN.md section 2.
+const officialChannels = require('./officialChannels');
+exports.adminUpsertChannel          = officialChannels.adminUpsertChannel;
+exports.adminListChannels           = officialChannels.adminListChannels;
+exports.adminSetChannelActive       = officialChannels.adminSetChannelActive;
+exports.adminAddChannelMembers      = officialChannels.adminAddChannelMembers;
+exports.adminRemoveChannelMember    = officialChannels.adminRemoveChannelMember;
+exports.adminListChannelMembers     = officialChannels.adminListChannelMembers;
+exports.resolveMyChannels           = officialChannels.resolveMyChannels;
+exports.adminSendChannelMessage     = officialChannels.adminSendChannelMessage;
+exports.adminListChannelMessages    = officialChannels.adminListChannelMessages;
+exports.adminDeleteChannelMessage   = officialChannels.adminDeleteChannelMessage;
+exports.setChannelPushSubscription  = officialChannels.setChannelPushSubscription;
+exports.onChannelMessageCreated     = officialChannels.onChannelMessageCreated;
+exports.adminEnsureCommunityRoom    = officialChannels.adminEnsureCommunityRoom;
+
+// Editable transactional email templates (D3). A bad edit can never break a
+// transactional email: rendering falls back to the shipped default in code.
+const emailTemplates = require('./emailTemplates');
+exports.adminListEmailTemplates     = emailTemplates.adminListEmailTemplates;
+exports.adminSaveEmailTemplate      = emailTemplates.adminSaveEmailTemplate;
+exports.adminResetEmailTemplate     = emailTemplates.adminResetEmailTemplate;
+exports.adminPreviewEmailTemplate   = emailTemplates.adminPreviewEmailTemplate;
+// Coin sale promos (D2). Changes the quantity delivered, never the price
+// charged, which is why it is safe next to a live payment rail.
+const coinPromos = require('./coinPromos');
+exports.adminUpsertCoinPromo        = coinPromos.adminUpsertCoinPromo;
+exports.adminListCoinPromos         = coinPromos.adminListCoinPromos;
+exports.adminSetCoinPromoActive     = coinPromos.adminSetCoinPromoActive;
+exports.getActiveCoinPromo          = coinPromos.getActiveCoinPromo;
+
+// Campaigns: one doc per announcement, every surface derived from it.
+// See functions/campaigns.js for why the callable never sends.
+const campaigns = require('./campaigns');
+exports.adminUpsertCampaign         = campaigns.adminUpsertCampaign;
+exports.adminListCampaigns          = campaigns.adminListCampaigns;
+exports.adminSendCampaign           = campaigns.adminSendCampaign;
+exports.adminRecallCampaign         = campaigns.adminRecallCampaign;
+exports.onCampaignSending           = campaigns.onCampaignSending;
+exports.recordCampaignEvent         = campaigns.recordCampaignEvent;
+exports.getWhatsNew                 = campaigns.getWhatsNew;
+exports.adminUpdateWhatsNew         = campaigns.adminUpdateWhatsNew;
+
+// Support channels: one two-way thread per user + the agent queue.
+// See functions/supportChannel.js for why a thread is a group conversation.
+const supportChannel = require('./supportChannel');
+exports.openSupportThread           = supportChannel.openSupportThread;
+exports.adminListSupportThreads     = supportChannel.adminListSupportThreads;
+exports.adminSetSupportThreadState  = supportChannel.adminSetSupportThreadState;
+exports.syncSupportAgents           = supportChannel.syncSupportAgents;
 
 // Admin → Economy screen. See functions/adminEconomy.js.
 const adminEconomy = require('./adminEconomy');
 exports.adminGetEconomyStats     = adminEconomy.adminGetEconomyStats;
+exports.adminGetNavBadges        = adminEconomy.adminGetNavBadges;
 exports.adminListTopWallets      = adminEconomy.adminListTopWallets;
 exports.adminListTransactions    = adminEconomy.adminListTransactions;
 exports.adminListPayoutRequests  = adminEconomy.adminListPayoutRequests;
+// The live outbound path: creator payout runs + per-creator statements.
+exports.adminGetPayoutOverview   = adminEconomy.adminGetPayoutOverview;
+exports.adminListPayoutStatements = adminEconomy.adminListPayoutStatements;
 exports.adminGrantCoins          = adminEconomy.adminGrantCoins;
 exports.adminGrantVp             = adminEconomy.adminGrantVp;
-exports.adminGrantGems           = adminEconomy.adminGrantGems;
+// Was adminGrantGems. Renamed with the unit; the old name is undeployed.
+exports.adminGrantOwed           = adminEconomy.adminGrantOwed;
 exports.adminDeductCoins         = adminEconomy.adminDeductCoins;
 exports.adminUpdatePayoutStatus  = adminEconomy.adminUpdatePayoutStatus;
 exports.adminGetEconomyConfig    = adminEconomy.adminGetEconomyConfig;
@@ -231,27 +308,9 @@ const dailyMetricsRollup = require('./dailyMetricsRollup');
 exports.adminGetDashboardCharts   = dailyMetricsRollup.adminGetDashboardCharts;
 exports.adminBackfillDailyMetrics = dailyMetricsRollup.adminBackfillDailyMetrics;
 
-// Admin → Tournaments screen. See functions/adminTournaments.js.
-const adminTournaments = require('./adminTournaments');
-exports.adminGetTournamentStats           = adminTournaments.adminGetTournamentStats;
-exports.adminListTournaments              = adminTournaments.adminListTournaments;
-exports.adminListDisputedMatches          = adminTournaments.adminListDisputedMatches;
-exports.adminListCancelledTournaments     = adminTournaments.adminListCancelledTournaments;
-exports.adminResolveTournamentDispute     = adminTournaments.adminResolveTournamentDispute;
-exports.adminCancelTournament             = adminTournaments.adminCancelTournament;
-exports.adminPurgeMatchEvidence           = adminTournaments.adminPurgeMatchEvidence;
-exports.adminListMatchesWithEvidence      = adminTournaments.adminListMatchesWithEvidence;
+// Admin → Tournaments screen REMOVED 2026-08-17 (founder). All 18 of its
+// callables are undeployed; functions/adminTournaments.js stays on disk unused.
 // Pass 2 — VGT / Announcements / Overrides / Settings / Logs.
-exports.adminCreateVgtTournament             = adminTournaments.adminCreateVgtTournament;
-exports.adminListVgtTournaments              = adminTournaments.adminListVgtTournaments;
-exports.adminSendTournamentAnnouncement      = adminTournaments.adminSendTournamentAnnouncement;
-exports.adminListTournamentAnnouncements     = adminTournaments.adminListTournamentAnnouncements;
-exports.adminAddParticipant                  = adminTournaments.adminAddParticipant;
-exports.adminRemoveParticipant               = adminTournaments.adminRemoveParticipant;
-exports.adminReseedBracket                   = adminTournaments.adminReseedBracket;
-exports.adminGetTournamentSettings           = adminTournaments.adminGetTournamentSettings;
-exports.adminSetTournamentSettings           = adminTournaments.adminSetTournamentSettings;
-exports.adminListTournamentLogs              = adminTournaments.adminListTournamentLogs;
 
 // Admin → Subscriptions screen. See functions/adminSubscriptions.js.
 const adminSubscriptions = require('./adminSubscriptions');
@@ -318,16 +377,17 @@ exports.removeWhitelistedAddress     = wallet.removeWhitelistedAddress;
 exports.getMyWalletSecurityStatus    = wallet.getMyWalletSecurityStatus;
 exports.adminMintWalletUnlockToken   = wallet.adminMintWalletUnlockToken;
 
-// Phase 4 — withdrawal pipeline. See functions/withdrawals.js for the state
-// machine + Circle Wallets API integration.
-const withdrawals = require('./withdrawals');
-exports.requestWithdrawal            = withdrawals.requestWithdrawal;
-exports.cancelWithdrawal             = withdrawals.cancelWithdrawal;
-exports.getMyWithdrawals             = withdrawals.getMyWithdrawals;
-exports.processReadyWithdrawals      = withdrawals.processReadyWithdrawals;
-exports.adminReleaseWithdrawalNow    = withdrawals.adminReleaseWithdrawalNow;
-exports.adminGetWithdrawalContext    = withdrawals.adminGetWithdrawalContext;
-exports.adminGetNavBadges            = withdrawals.adminGetNavBadges;
+// functions/withdrawals.js DELETED 2026-08-16 with the gem unit.
+//
+// It was the user-initiated withdrawal pipeline: a customer naming an amount
+// and a destination and pulling value out of a balance we held. That shape is
+// the money-transmission fact pattern the revenue-share model exists to avoid,
+// `requestWithdrawal` had already been disabled, and the whole module was
+// denominated in gems. The only outbound path is now creatorPayouts.js, which
+// pays suppliers on Vergr's schedule.
+//
+// `adminGetNavBadges` lived in that file for no reason other than history and
+// AdminShell calls it on load, so it moved to adminEconomy.js.
 
 // Circle Wallets — Phase 3 deposit detection. circleWalletsWebhook (HTTPS,
 // HMAC-verified) handles Circle Notifications; pollCircleDeposits (every 5min)
@@ -337,6 +397,10 @@ exports.adminGetNavBadges            = withdrawals.adminGetNavBadges;
 // unattributed_deposits/ for manual review).
 const circleWallets = require('./circleWallets');
 exports.circleWalletsWebhook = circleWallets.circleWalletsWebhook;
+
+// Map thumbnail proxy (Google Static Maps, dark-styled) — see functions/mapThumbnail.js.
+const mapThumbnail = require('./mapThumbnail');
+exports.mapThumb = mapThumbnail.mapThumb;
 exports.pollCircleDeposits   = circleWallets.pollCircleDeposits;
 
 // AdMob Rewarded watch-to-earn — server-side-verified coin crediting.
@@ -370,6 +434,19 @@ exports.vanguardPermaBanUser             = vanguard.vanguardPermaBanUser;
 exports.vanguardResolveQueueItem         = vanguard.vanguardResolveQueueItem;
 
 // Pay-per-minute stream quality boost (1 coin/min for 720p, 2 coin/min for 1080p).
+// ⚠ TWO DIFFERENT BOOSTS, DO NOT CONFUSE THEM. 'streamingBoost' is the
+// pay-per-minute VIDEO QUALITY boost (720p/1080p). 'streamBoost' is the
+// DISCOVERY boost that pushes a stream to more viewers.
+const streamBoost = require('./streamBoost');
+exports.purchaseVpBonus = require('./vpBonuses').purchaseVpBonus;
+// Boosts are TOKENS you own: buy adds to wallets/{uid}.boosts, apply spends one
+// onto any target. See functions/boosts.js.
+const boostPacks = require('./boosts');
+exports.purchaseBoostPack = boostPacks.purchaseBoostPack;
+exports.applyBoost = boostPacks.applyBoost;
+exports.recordBoostImpressions = boostPacks.recordBoostImpressions;
+exports.recordPostViews = require('./postViews').recordPostViews;
+exports.boostStream = streamBoost.boostStream;
 const streamingBoost = require('./streamingBoost');
 exports.requestStreamQualityBoost = streamingBoost.requestStreamQualityBoost;
 exports.cancelStreamQualityBoost  = streamingBoost.cancelStreamQualityBoost;
@@ -403,6 +480,7 @@ exports.unbanViewer           = streamChatMod.unbanViewer;
 exports.setStreamBannedWords  = streamChatMod.setStreamBannedWords;
 exports.setStreamSlowMode     = streamChatMod.setStreamSlowMode;
 exports.setStreamFollowersOnly = streamChatMod.setStreamFollowersOnly;
+exports.setStreamTts = streamChatMod.setStreamTts;   // effect 13, host-only
 exports.pinStreamMessage      = streamChatMod.pinStreamMessage;
 exports.setStreamModerator    = streamChatMod.setStreamModerator;
 
@@ -418,88 +496,44 @@ exports.backfillUsernameIndex = usernameIndex.backfillUsernameIndex;
 // deferred to its own task; NowPlayingCard.jsx is already in place and
 // data-agnostic.
 
-// Tournament participant Summons — 15/5/1 min push reminders + pre-flight
-// checklist + check-in callable + no-show detection.
-const tournamentSummons = require('./tournamentSummons');
-exports.getTournamentPreflight       = tournamentSummons.getTournamentPreflight;
-exports.tournamentParticipantCheckIn = tournamentSummons.tournamentParticipantCheckIn;
+// Tournament participant Summons, REMOVED 2026-08-17 with the tournament
+// backend (callables + the every-minute crons).
 // summonsParticipants — folded into cronMinute dispatcher (see EOF).
 // detectParticipantNoShows — folded into cron5Min dispatcher (see EOF).
 
-// Lobby-screenshot verification — Gemini Vision OCR cross-checks each
-// player's expected in-game handle appears in the opponent's lobby
-// screenshot. Anti-impersonation safeguard for non-Tier-A games.
-const lobbyVerification = require('./lobbyVerification');
-exports.submitLobbyScreenshot         = lobbyVerification.submitLobbyScreenshot;
+// Lobby-screenshot verification, REMOVED 2026-08-17 with the tournament backend.
 // detectLobbyVerificationTimeouts — folded into cron5Min dispatcher (see EOF).
 
-// Same-lobby verification — per-match unique lobbyCode displayed in-game,
-// confirmed by OCR / mod / self attestation.
-const autoResults = require('./autoResults');
-exports.processAutoResults = autoResults.processAutoResults;
+// Same-lobby verification, the player-facing half (self-attest, OCR receiver,
+// reschedule, dispute evidence, follow-match, thank-mod) was REMOVED 2026-08-17.
+// modVerifyMatchPlayer + vanguardHeartbeat are KEPT: /vanguard/wall and
+// /vanguard/moderation-room are still routed and call them.
 
 const matchVerification = require('./matchVerification');
-exports.getMatchVerification        = matchVerification.getMatchVerification;
-exports.selfAttestMatchVerification = matchVerification.selfAttestMatchVerification;
 exports.modVerifyMatchPlayer        = matchVerification.modVerifyMatchPlayer;
-exports.ocrVerifyMatchPlayer        = matchVerification.ocrVerifyMatchPlayer;
 exports.vanguardHeartbeat           = matchVerification.vanguardHeartbeat;
-exports.proposeMatchReschedule      = matchVerification.proposeMatchReschedule;
-exports.respondMatchReschedule      = matchVerification.respondMatchReschedule;
-exports.uploadDisputeEvidence       = matchVerification.uploadDisputeEvidence;
-exports.setMatchFollow              = matchVerification.setMatchFollow;
-exports.thankMatchMod               = matchVerification.thankMatchMod;
 
-// AC7 — cheat-signature staleness cadence (monthly health check + admin nudge).
+// AC7 cheat-signature staleness cron REMOVED 2026-08-17, it pushed admins at
+// /admin/cheat-signatures, which no longer exists.
 // cheatSignaturesHealthCron — folded into cronMonthly dispatcher (see EOF).
 
-// Trust / reputation / rivalry / sportsmanship / AI summarizer.
-const tournamentTrust = require('./tournamentTrust');
-exports.getTournamentTrust          = tournamentTrust.getTournamentTrust;
-exports.enrollOrCheckFingerprint    = tournamentTrust.enrollOrCheckFingerprint;
-exports.getRivalry                  = tournamentTrust.getRivalry;
-exports.aiSummarizeMatch            = tournamentTrust.aiSummarizeMatch;
-exports.routeSportsmanshipBonus     = tournamentTrust.routeSportsmanshipBonus;
-exports.recordRivalryOnMatchComplete = tournamentTrust.recordRivalryOnMatchComplete;
+// Trust / rivalry / sportsmanship / AI match summarizer, REMOVED 2026-08-17.
 
-// Tournament esports batch 2: voice DM, warmup, squad-funded, sponsor,
-// hype, tip-underdog, replay-on-demand.
-const tournamentExtras = require('./tournamentExtras');
-exports.tipUnderdog                 = tournamentExtras.tipUnderdog;
-exports.aggregateStreamHype         = tournamentExtras.aggregateStreamHype;
-exports.contributeToSquadTournament = tournamentExtras.contributeToSquadTournament;
-exports.attachTournamentSponsor     = tournamentExtras.attachTournamentSponsor;
-exports.sponsorTournamentFromTreasury = tournamentExtras.sponsorTournamentFromTreasury;
+// Tournament esports batch 2 (squad-funded pools, sponsors, tip-underdog,
+// replay-on-demand), REMOVED 2026-08-17.
 
-// GR5 — Brawl quickplay matchmaking (instant 1v1).
-const brawl = require('./brawl');
-exports.joinBrawlQueue  = brawl.joinBrawlQueue;
-exports.leaveBrawlQueue = brawl.leaveBrawlQueue;
+// GR5 Brawl quickplay, REMOVED 2026-08-17 (it synthesised a 2-player tournament).
 
-exports.openMatchSchedulingDm       = tournamentExtras.openMatchSchedulingDm;
-exports.requestReplayReview         = tournamentExtras.requestReplayReview;
 
-// Tournament discovery + VOD AI.
-const tournamentDiscovery = require('./tournamentDiscovery');
-exports.tournamentOfTheDayCron      = tournamentDiscovery.tournamentOfTheDayCron;
+// Tournament discovery + VOD AI, REMOVED 2026-08-17.
 // startingSoonPushCron — folded into cronMinute dispatcher (see EOF).
-exports.aiCheatFlagVod              = tournamentDiscovery.aiCheatFlagVod;
-exports.autoCutVodHighlights        = tournamentDiscovery.autoCutVodHighlights;
-exports.tournamentMatchFollowerPush = tournamentDiscovery.tournamentMatchFollowerPush;
 
-// Anti-cheat scan ingest + signature CRUD (desktop app posts here).
-const antiCheat = require('./antiCheat');
-exports.submitAntiCheatScan         = antiCheat.submitAntiCheatScan;
-exports.getMyLatestAntiCheatScan    = antiCheat.getMyLatestAntiCheatScan;
-exports.upsertCheatSignature        = antiCheat.upsertCheatSignature;
-exports.deleteCheatSignature        = antiCheat.deleteCheatSignature;
+// Anti-cheat scan ingest + signature CRUD, REMOVED 2026-08-17. It existed only
+// to police tournament matches.
 
-const seedCheatSignatures = require('./seedCheatSignatures');
-exports.adminSeedCheatSignatures    = seedCheatSignatures.adminSeedCheatSignatures;
 
 // VOD archive transcode pipeline (Hetzner ffmpeg job → R2 → match.archiveVodUrl).
 const vodArchive = require('./vodArchive');
-exports.dispatchTournamentVodArchive = vodArchive.dispatchTournamentVodArchive;
 exports.dispatchStreamVodArchive     = vodArchive.dispatchStreamVodArchive;
 exports.markVodArchived              = vodArchive.markVodArchived;
 
@@ -514,9 +548,7 @@ exports.requestStreamClip            = require('./streamClips').requestStreamCli
 // On-demand translation via self-hosted LibreTranslate (box 2).
 exports.translateContent             = require('./translate').translateContent;
 
-// Two-camera proof feed for high-stakes tournament matches.
-const tournamentProof = require('./tournamentProof');
-exports.appendProofChunk             = tournamentProof.appendProofChunk;
+// Two-camera proof feed for high-stakes tournament matches, REMOVED 2026-08-17.
 
 // Viewer-reactions-per-5s aggregator that drives HypeMeter on broadcaster HUD.
 const streamHype = require('./streamHype');
@@ -528,15 +560,13 @@ exports.recordStreamReaction         = streamHype.recordStreamReaction;
 const turnCredentials = require('./turnCredentials');
 exports.getTurnCredentials           = turnCredentials.getTurnCredentials;
 
-// 48h per-match timeout enforcer (Tournament System doc rule).
-const tournamentTimeouts = require('./tournamentTimeouts');
+// 48h per-match timeout enforcer, REMOVED 2026-08-17.
 // detectMatchTimeouts — folded into cron5Min dispatcher (see EOF).
 
-// Tournament AI moderation Phase 1 — OBS overlay signal capture + consensus.
-// Tesseract + Vision OCR signals come in Phase 1B (requires Hetzner ops).
+// Tournament AI moderation, the overlay ingest + config callables were REMOVED
+// 2026-08-17. analyzeTournamentMatch is KEPT: /vanguard/moderation-room is
+// still routed and calls it.
 const tournamentAi = require('./tournamentAi');
-exports.submitTournamentOverlay = tournamentAi.submitTournamentOverlay;
-exports.getOverlayConfig        = tournamentAi.getOverlayConfig;
 exports.analyzeTournamentMatch  = tournamentAi.analyzeTournamentMatch;
 
 // Content moderation Phase 2 — Gemini-powered chat + post + image + video.
@@ -551,8 +581,10 @@ exports.moderateNewPost     = contentAi.moderateNewPost;
 exports.enqueueVideoTranscode = require('./transcodeQueue').enqueueVideoTranscode;
 exports.rescanPost          = contentAi.rescanPost;
 
-// Vanguard tournament-assignment system (claim-based).
-// See src/utils/tournamentModeration.js for game durations + tier multipliers.
+// Vanguard tournament-assignment system (claim-based). KEPT on purpose:
+// /vanguard/schedule, /vanguard/wall and /vanguard/queue are all still routed
+// and call these. They will have nothing to operate on now that tournaments are
+// gone, retiring those Vanguard screens is a separate founder decision.
 const vanguardAssignments = require('./vanguardAssignments');
 exports.onTournamentCreated                  = vanguardAssignments.onTournamentCreated;
 exports.vanguardClaimTournament              = vanguardAssignments.vanguardClaimTournament;
@@ -583,6 +615,19 @@ exports.getLikelyTipperScore     = streaming.getLikelyTipperScore;
 exports.getLiveDiscoveryFeed     = streaming.getLiveDiscoveryFeed;
 exports.recordStreamTip          = streaming.recordStreamTip;
 exports.setLiveStreamingPaused   = streaming.setLiveStreamingPaused;
+
+// Entry announcements. The client sends only WHICH stream; follower state,
+// subscription tier and VP rank are resolved server-side, because the entrance
+// is keyed to rank and the old client-written join doc was fully spoofable.
+// See docs/ENTRY_ANNOUNCEMENTS_SPEC.md.
+const streamJoins = require('./streamJoins');
+exports.announceStreamJoin       = streamJoins.announceStreamJoin;
+
+// Keeps users/{uid}.vpLevel in step with wallets/{uid}.vp. Nothing wrote that
+// field before, which left avatar frames permanently locked for every user and
+// every "Lvl" list showing 1. See audit A110 + docs/GAMIFICATION_PLAN.md.
+const vpLevel = require('./vpLevel');
+exports.syncVpLevel              = vpLevel.syncVpLevel;
 
 // Twitch mirror (Twitch → Vergr): poll Twitch for linked users going live and
 // surface them as native Vergr streams (Twitch embed in our UI).
@@ -617,28 +662,9 @@ exports.subscribeWithCoins         = subs.subscribeWithCoins;
 exports.cancelSubscription         = subs.cancelSubscription;
 // renewExpiringSubscriptions — folded into cronDaily dispatcher (see EOF).
 
-// Tournaments — server-authoritative escrow + bracket advance + payouts.
-// These supersede the client-side helpers in src/firebase/firestore.js;
-// the frontend should migrate to call these instead of writing tournament
-// docs directly. See functions/tournaments.js for the full contract.
-const tournaments = require('./tournaments');
-exports.createTournamentSecure   = tournaments.createTournamentSecure;
-exports.joinTournamentSecure     = tournaments.joinTournamentSecure;
-exports.leaveTournamentSecure    = tournaments.leaveTournamentSecure;
-exports.startTournamentSecure    = tournaments.startTournamentSecure;
-exports.reportMatchResultSecure  = tournaments.reportMatchResultSecure;
-// Phase 1 — multi-game series (Bo3/Bo5) report path.
-const tournamentSeries = require('./tournamentSeries');
-exports.reportGameResultSecure   = tournamentSeries.reportGameResultSecure;
-exports.finalizeTournamentSecure = tournaments.finalizeTournamentSecure;
-exports.selectSquadChampionsSecure = tournaments.selectSquadChampionsSecure;
-exports.startSquadChampionVote     = tournaments.startSquadChampionVote;
-exports.castSquadChampionVote      = tournaments.castSquadChampionVote;
-exports.finalizeSquadChampionVote  = tournaments.finalizeSquadChampionVote;
-exports.resolveTournamentDispute = tournaments.resolveTournamentDispute;
-exports.applyToTournamentSecure       = tournaments.applyToTournamentSecure;
-exports.approveTournamentApplication  = tournaments.approveTournamentApplication;
-exports.declineTournamentApplication  = tournaments.declineTournamentApplication;
+// Tournaments, the server-authoritative escrow / bracket / payout callables
+// were REMOVED 2026-08-17 (founder). functions/tournaments.js and
+// functions/tournamentSeries.js stay on disk, unreferenced and undeployed.
 
 // Ticketed events — non-gambling funding model. Fans buy spectator tickets;
 // Ticketed events: fans buy a ticket to attend. No competitors, no prize purse.
@@ -728,6 +754,15 @@ exports.getVergrMeProductDownloadUrl = vergrMeShop.getVergrMeProductDownloadUrl;
 exports.cancelVergrMeOrder           = vergrMeShop.cancelVergrMeOrder;
 exports.fetchShopCatalog             = vergrMeShop.fetchShopCatalog;
 
+// Custom domains for vergr.me pages: REMOVED 2026-08-20 (founder decision).
+// functions/vergrMeDomains.js stays on disk but is deliberately NOT required
+// here and its three callables are undeployed. Cloudflare for SaaS custom
+// hostnames are the only way to serve them, and this account has no quota
+// (API errors 1456 + 1404); the sole route to it is Enterprise. Re-exporting
+// this without first proving a POST to /zones/{id}/custom_hostnames succeeds
+// would put the "not switched on yet" panel back in front of Pro members for
+// a feature that cannot be switched on.
+
 // Vergr Shop — external store integrations (Shopify / WooCommerce). Seller
 // connects with an API token; we import products as native coin-buyable items
 // and keep inventory in sync. See functions/shopSync.js. The daily reconcile
@@ -760,8 +795,6 @@ const gsi = require('./gsi');
 exports.linkSteamAccount   = gsi.linkSteamAccount;
 exports.unlinkSteamAccount = gsi.unlinkSteamAccount;
 exports.getSteamGsiConfig  = gsi.getSteamGsiConfig;
-exports.cs2GsiHook         = gsi.cs2GsiHook;
-exports.dota2GsiHook       = gsi.dota2GsiHook;
 
 // Tier B wrappers — community/unofficial integrations behind a health
 // monitor that alerts admins when one breaks. See functions/wrappers/.
@@ -769,11 +802,9 @@ const wrapperMonitor = require('./wrapperMonitor');
 exports.wrapperHealthCheck       = wrapperMonitor.wrapperHealthCheck;
 exports.runWrapperHealthCheckNow = wrapperMonitor.runWrapperHealthCheckNow;
 
-// Per-match wrapper polling — snapshots stats at match creation and polls
-// for deltas to auto-detect winners. See functions/matchPoller.js.
-const matchPoller = require('./matchPoller');
-exports.onMatchCreated            = matchPoller.onMatchCreated;
-exports.pollActiveWrapperMatches  = matchPoller.pollActiveWrapperMatches;
+// Per-match wrapper polling REMOVED 2026-08-17, it existed to auto-detect
+// tournament match winners. The wrapper HEALTH monitor above stays: it watches
+// the community APIs that Linked Accounts still depends on.
 
 // OAuth — generic OAuth2 flow for Twitch, YouTube, Discord, Battle.net, Epic.
 // Steam (OpenID 2.0) and Xbox (OpenXBL) have bespoke flows and are not
@@ -1022,10 +1053,73 @@ exports.rssProxy = functions.https.onRequest(async (req, res) => {
 // cannot read another user's VP directly. This callable reads the wallet
 // server-side and returns ONLY the VP integer — no financial data leaks.
 exports.getUserVP = functions.https.onCall(async (request) => {
+  // `wallets` is otherwise `allow read: if isOwner(userId)`, so this callable is
+  // a deliberate hole in that gate exposing one field. VP is already semi-public
+  // (levels and ranks show on profiles), but it had NO auth check at all, so any
+  // anonymous caller could read any uid's VP. Requiring a session is free.
+  if (!request.auth) throw new functions.https.HttpsError('unauthenticated', 'Sign in required.');
   const targetUid = request.data?.uid;
   if (!targetUid) throw new functions.https.HttpsError('invalid-argument', 'uid required');
   const snap = await db.collection('wallets').doc(targetUid).get();
   return { vp: snap.exists ? (snap.data().vp || 0) : 0 };
+});
+
+/**
+ * Top-VP leaderboard.
+ *
+ * ## Why this is a callable and not a client query
+ *
+ * The Leaderboard ordered `users` by `vp`, but NOTHING writes vp to a user doc:
+ * every writer targets `wallets/{uid}.vp`. Firestore omits documents missing the
+ * ordered field, so the board returned nothing, forever — and Top VP is the
+ * DEFAULT tab, so an empty board is what every user saw (audit A20).
+ *
+ * The obvious fix, denormalising vp onto `users`, means either mirroring at
+ * every VP writer (easy to miss one, and new ones will not know) or a trigger on
+ * every wallet write, which bills a function invocation on every tip, purchase
+ * and quest claim to keep a leaderboard fresh. Reading the real source instead
+ * costs ONE invocation per leaderboard view and cannot drift.
+ *
+ * A client cannot do this directly: `wallets` is owner-only, correctly, because
+ * it holds money. The Admin SDK bypasses that, and only `vp` is returned —
+ * never balance, never the payable.
+ */
+exports.getVpLeaderboard = functions.https.onCall(async (request) => {
+  if (!request.auth) throw new functions.https.HttpsError('unauthenticated', 'Sign in required.');
+  const snap = await db.collection('wallets').orderBy('vp', 'desc').limit(50).get();
+  return {
+    rows: snap.docs
+      .map((d) => ({ uid: d.id, vp: Number(d.data().vp || 0) }))
+      .filter((r) => r.vp > 0),
+  };
+});
+
+/**
+ * Top Earners leaderboard.
+ *
+ * Same shape and same reasoning as getVpLeaderboard: the figure lives on
+ * `wallets`, which is owner-only because it holds money, so a client cannot
+ * query it and the Admin SDK does it here instead. ONE invocation per view, no
+ * denormalisation to drift.
+ *
+ * Ranks by `totalEarnedCoinsGross` — LIFETIME GROSS COINS EARNED, the same
+ * aggregate the revenue-share ladder keys off. Deliberately not:
+ *   • `owedMicroUsd`, which is the outstanding payable, i.e. what Vergr owes
+ *     right now. That goes DOWN when someone is paid, so a leaderboard of it
+ *     would rank creators by how recently they had NOT been paid.
+ *   • `totalEarned`, which admin grants used to inflate before that was fixed.
+ *
+ * Only the ranking figure is returned. Never a balance, never the payable.
+ */
+exports.getEarnersLeaderboard = functions.https.onCall(async (request) => {
+  if (!request.auth) throw new functions.https.HttpsError('unauthenticated', 'Sign in required.');
+  const snap = await db.collection('wallets')
+    .orderBy('totalEarnedCoinsGross', 'desc').limit(50).get();
+  return {
+    rows: snap.docs
+      .map((d) => ({ uid: d.id, earned: Number(d.data().totalEarnedCoinsGross || 0) }))
+      .filter((r) => r.earned > 0),
+  };
 });
 
 exports.claimDailyReward = functions.https.onCall(async (request) => {
@@ -1054,12 +1148,17 @@ exports.claimDailyReward = functions.https.onCall(async (request) => {
     }
 
     let newStreak = 1;
+    // The uncapped record, kept separately from the 5-day reward loop.
+    const bestConsecutive = walletSnap.exists ? (walletSnap.data().bestConsecutiveDays || 0) : 0;
+    const distinctDays = walletSnap.exists ? (walletSnap.data().distinctDaysActive || 0) : 0;
+    let consecutiveDays = 1;
     if (lastCheckIn) {
       const lastDate = lastCheckIn.toDate ? lastCheckIn.toDate() : new Date(lastCheckIn);
       const yesterday = new Date(now);
       yesterday.setDate(yesterday.getDate() - 1);
       if (lastDate.toISOString().slice(0, 10) === yesterday.toISOString().slice(0, 10)) {
         newStreak = currentStreak + 1;
+        consecutiveDays = (walletSnap.exists ? (walletSnap.data().consecutiveDays || 0) : 0) + 1;
       }
     }
 
@@ -1078,17 +1177,41 @@ exports.claimDailyReward = functions.https.onCall(async (request) => {
       totalEarned: currentEarned,
       vp: (walletSnap.exists ? (walletSnap.data().vp || 0) : 0) + vpReward,
       totalSpent: walletSnap.exists ? (walletSnap.data().totalSpent || 0) : 0,
-      gems: walletSnap.exists ? (walletSnap.data().gems || 0) : 0,
-      totalGemsEarned: walletSnap.exists ? (walletSnap.data().totalGemsEarned || 0) : 0,
+      owedMicroUsd: walletSnap.exists ? (walletSnap.data().owedMicroUsd || 0) : 0,
+      totalOwedMicroUsd: walletSnap.exists ? (walletSnap.data().totalOwedMicroUsd || 0) : 0,
       totalReceived: walletSnap.exists ? (walletSnap.data().totalReceived || 0) : 0,
       totalTipped: walletSnap.exists ? (walletSnap.data().totalTipped || 0) : 0,
       tier: plan, // keep the denormalised wallet.tier in sync with the real plan
       lastDailyCheckIn: now,
       dailyStreak: streakToSave,
+      // ── Milestone counters ───────────────────────────────────────
+      // `dailyStreak` above is a REWARD LOOP: it caps at 5 and resets to 0 so
+      // the +50 bonus can recur. It is therefore useless as a record — a
+      // "longest streak" read from it can never exceed 5.
+      //
+      // `consecutiveDays` is the actual record: same yesterday/not-yesterday
+      // rule, never capped, never reset by the bonus. `bestConsecutiveDays`
+      // only ever rises. `distinctDaysActive` counts check-ins, so a user who
+      // shows up every Saturday still accrues toward a loyalty badge.
+      //
+      // All three ride THIS write, which already happens once per user per
+      // day, so they add no invocations and no reads.
+      consecutiveDays: consecutiveDays,
+      bestConsecutiveDays: Math.max(bestConsecutive, consecutiveDays),
+      distinctDaysActive: distinctDays + 1,
       updatedAt: now,
       ...(!walletSnap.exists ? { createdAt: now } : {}),
     };
-    tx.set(walletRef, walletData);
+    // ⚠ `{ merge: true }` IS LOAD-BEARING. This was a bare `tx.set`, which
+    // REPLACES the whole document, so every wallet field not enumerated in
+    // `walletData` above was destroyed on each daily check-in — including
+    // `boostTokens` (the rank reward, wiped the next time the user opened the
+    // app), `totalEarnedCoinsGross` (which drives the revenue-share ladder),
+    // `totalPaidMicroUsd`, `totalGrantedCoins` and the payout-account fields.
+    // The enumerated fields are read-then-written above precisely because the
+    // original author was working around the overwrite; that pattern only
+    // protects the fields somebody remembered to list.
+    tx.set(walletRef, walletData, { merge: true });
 
     const claimId = `${uid}_daily_login_${today}`;
     tx.set(db.collection('quest_claims').doc(claimId), {
@@ -1124,34 +1247,194 @@ exports.claimDailyReward = functions.https.onCall(async (request) => {
 // ──────────────────────────────────────────────────────────────
 // 4. QUEST REWARD CLAIM (callable)
 // ──────────────────────────────────────────────────────────────
+//
+// ## Why the registry below exists
+//
+// This callable used to take `reward` from the CLIENT and validate the quest
+// id against nothing. Only a handful of ids had inline `if` blocks; every
+// other id fell straight through to the payout at whatever amount was sent.
+// Three consequences, all live until 2026-08-19:
+//
+//   1. Seven shipped quests (daily_post, daily_like, daily_squad_msg,
+//      weekly_posts, weekly_follow, first_stream, add_phone) paid for work
+//      nobody had done. Pressing the button was the whole requirement.
+//   2. An INVENTED id was accepted. The claim doc is keyed by questId, so
+//      calling with 'x1', 'x2', 'x3'... had no limit at all: 5000 VP a time,
+//      doubled again by the Pro multiplier.
+//   3. `add_phone` double-paid. savePhoneNumber already awards its 1000 VP
+//      against the one-time claim `${uid}_add_phone`, but this function keyed
+//      it per-DAY, making it a fresh 1000 VP every day.
+//
+// Minted VP is not cosmetic. It drives Vanguard promotion eligibility (a
+// Recruit crossing a threshold is auto-flagged as a promotion candidate), the
+// enumeration filter, and every level, rank and badge.
+//
+// The shape is the one functions/creatorQuests.js already uses, whose header
+// says it best: the client sends only WHICH quest, never how much. Amounts
+// come from this table, and every id carries a verifier that has to agree the
+// thing was done. A quest that cannot be verified is not offered.
+//
+// Keep the ids in sync with QUEST_DEFS in src/screens/home/EarnCoinsScreen.jsx.
+// That client copy is DISPLAY ONLY.
+
+const startOfUtcDayMs = (now = Date.now()) => {
+  const d = new Date(now);
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+};
+const startOfUtcWeekMs = (now = Date.now()) => startOfUtcDayMs(now) - 6 * 86400000;
+
+/** How many posts `uid` authored since `sinceMs`, capped. */
+async function questPostCount(uid, sinceMs, cap = 20) {
+  const snap = await db.collection('posts')
+    .where('authorId', '==', uid)
+    .where('createdAt', '>=', new Date(sinceMs))
+    .limit(cap).get();
+  return snap.size;
+}
+
+// Profile-completion quests (founder-approved table 2026-07-09). These amounts
+// were already server-locked and individually verified; they move into the
+// registry so there is ONE table instead of two.
+const PROFILE_QUEST_REWARDS = {
+  profile_avatar: 500, profile_banner: 300, profile_bio: 200,
+  profile_interests: 200, first_follow_5: 300, profile_gaming_link: 500,
+};
+
+// `verify` must return true before any VP moves. `oneTime` keys the claim doc
+// without a date. `inlineVerify` means the check lives inside the transaction
+// below instead, because it needs to reserve a cap or emit a per-field message.
+const QUEST_REGISTRY = {
+  // ── Daily ──────────────────────────────────────────────────────────
+  daily_post: {
+    vp: 15,
+    verify: async (uid) => (await questPostCount(uid, startOfUtcDayMs(), 1)) >= 1,
+    unmet: 'Create a post today to claim this.',
+  },
+  daily_like: {
+    vp: 5,
+    // Like docs are posts/{postId}/likes/{uid}, carrying userId + createdAt.
+    verify: async (uid) => {
+      const snap = await db.collectionGroup('likes')
+        .where('userId', '==', uid)
+        .where('createdAt', '>=', new Date(startOfUtcDayMs()))
+        .limit(5).get();
+      return snap.size >= 5;
+    },
+    unmet: 'Like 5 posts today to claim this.',
+  },
+  daily_squad_msg: {
+    vp: 10,
+    // Squad messages are squads/{squadId}/chat/{id}, with authorId + createdAt.
+    verify: async (uid) => {
+      const snap = await db.collectionGroup('chat')
+        .where('authorId', '==', uid)
+        .where('createdAt', '>=', new Date(startOfUtcDayMs()))
+        .limit(1).get();
+      return !snap.empty;
+    },
+    unmet: 'Send a message in any squad today to claim this.',
+  },
+
+  // ── Weekly ─────────────────────────────────────────────────────────
+  weekly_posts: {
+    vp: 50,
+    verify: async (uid) => (await questPostCount(uid, startOfUtcWeekMs(), 3)) >= 3,
+    unmet: 'Create 3 posts this week to claim this.',
+  },
+  weekly_follow: {
+    vp: 50,
+    verify: async (uid) => {
+      const snap = await db.collection('follows')
+        .where('followerId', '==', uid)
+        .where('createdAt', '>=', new Date(startOfUtcWeekMs()))
+        .limit(10).get();
+      return snap.size >= 10;
+    },
+    unmet: 'Follow 10 new people this week to claim this.',
+  },
+
+  // ── One-time ───────────────────────────────────────────────────────
+  first_stream: {
+    vp: 100, oneTime: true,
+    verify: async (uid) => {
+      const snap = await db.collection('streams').where('hostUid', '==', uid).limit(1).get();
+      return !snap.empty;
+    },
+    unmet: 'Go live once to claim this.',
+  },
+  add_phone: {
+    vp: 1000, oneTime: true,
+    // savePhoneNumber pays this on the first save and writes the SAME one-time
+    // claim doc (`${uid}_add_phone`), so this path normally returns
+    // 'already-exists'. `oneTime` is what makes that true: keyed per-day, as it
+    // was, the same 1000 VP could be re-claimed every day.
+    verify: async (uid) => {
+      const snap = await db.collection('users').doc(uid).get();
+      return !!(snap.exists && snap.data().phoneHash);
+    },
+    unmet: 'Add and verify a phone number first.',
+  },
+
+  first_event: {
+    vp: 100, oneTime: true,
+    // Ticketed events are stored in `tournaments` (the ticketed pivot reused
+    // that collection) and the host is `adminId` — confirmed against
+    // eventTickets.js, which pays the host share to `t.adminId`. One-time, so
+    // no date bound: "your first ticketed event".
+    //
+    // This id is offered by the NATIVE /earn screen only and the audit's list
+    // of seven unverified quests missed it, so it was an eighth pay-for-nothing
+    // button. Found by cross-checking QUEST_DEFS against this registry.
+    verify: async (uid) => {
+      const snap = await db.collection('tournaments').where('adminId', '==', uid).limit(1).get();
+      return !snap.empty;
+    },
+    unmet: 'Host a ticketed event to claim this.',
+  },
+
+  // ── Verified inline, inside the transaction ────────────────────────
+  creator_content:  { vp: 100,  oneTime: true, inlineVerify: true },
+  first_squad:      { vp: 50,   oneTime: true, inlineVerify: true },
+  // Tournaments are retired and unrouted, so no client offers this any more.
+  // Kept with its verifier rather than deleted, per the no-deletion rule.
+  first_tournament: { vp: 50,   oneTime: true, inlineVerify: true },
+  refer_friend:     { vp: 5000, inlineVerify: true },
+
+  // ── Profile completion (verified inline, per-field messages) ───────
+  ...Object.fromEntries(Object.entries(PROFILE_QUEST_REWARDS)
+    .map(([id, vp]) => [id, { vp, oneTime: true, inlineVerify: true }])),
+};
+
 exports.claimQuestReward = functions.https.onCall(async (request) => {
   const uid = request.auth?.uid;
   if (!uid) throw new functions.https.HttpsError('unauthenticated', 'Must be logged in');
 
   const { questId, title } = request.data || {};
-  let reward = request.data?.reward;
-  if (!questId || typeof reward !== 'number') throw new functions.https.HttpsError('invalid-argument', 'questId and reward required');
-  // Reward cap bumped from 500 → 5000 to accommodate the new referral payouts.
-  // The server overrides the value for gated quests (refer_friend, etc.) so
-  // the client can't inflate the number by sending a bigger reward claim.
-  if (reward <= 0 || reward > 5000) {
-    throw new functions.https.HttpsError('invalid-argument', 'Invalid reward amount');
-  }
+  if (!questId) throw new functions.https.HttpsError('invalid-argument', 'questId required');
 
   if (questId === 'daily_login') {
     throw new functions.https.HttpsError('invalid-argument', 'Use the daily login banner');
   }
 
-  // Profile-completion quests (founder-approved table 2026-07-09): amounts
-  // are SERVER-LOCKED here (client-sent reward ignored) and each one verifies
-  // the data actually exists before paying — see the validation block below.
-  const PROFILE_QUEST_REWARDS = {
-    profile_avatar: 500, profile_banner: 300, profile_bio: 200,
-    profile_interests: 200, first_follow_5: 300, profile_gaming_link: 500,
-  };
+  const quest = QUEST_REGISTRY[questId];
+  // The single line that closes the invented-id mint.
+  if (!quest) throw new functions.https.HttpsError('invalid-argument', 'Unknown quest.');
+
+  // The amount comes from the table, never from the caller. `request.data.reward`
+  // is now ignored entirely: the old `reward > 5000` check was not a control,
+  // it was a ceiling on the theft.
+  let reward = quest.vp;
+
+  // Registry-verified quests are checked here, before anything is written. The
+  // `inlineVerify` ones are checked inside the transaction below instead, where
+  // they can reserve caps (refer_friend) and give per-field messages (profile).
+  if (!quest.inlineVerify) {
+    const done = await quest.verify(uid);
+    if (!done) throw new functions.https.HttpsError('failed-precondition', quest.unmet);
+  }
 
   const today = new Date().toISOString().split('T')[0];
-  const isOneTime = ['first_squad', 'first_tournament', 'creator_content', ...Object.keys(PROFILE_QUEST_REWARDS)].includes(questId);
+  const isOneTime = quest.oneTime === true;
   // `refer_friend` is special: one claim *per friend*, not one per referrer.
   // We key on both uids so the same referrer can claim multiple invites.
   const claimId = questId === 'refer_friend'
@@ -1366,7 +1649,10 @@ exports.claimQuestReward = functions.https.onCall(async (request) => {
       }
     }
 
-    return { reward, questId, friendReward: questId === 'refer_friend' ? 3000 : 0 };
+    // Return what was ACTUALLY paid, not the base, so the client can show a
+    // truthful toast instead of echoing its own hardcoded number. refer_friend
+    // is never multiplied, so its 5000 is unchanged for the referral screens.
+    return { reward: payoutVp, baseReward: reward, questId, friendReward: questId === 'refer_friend' ? 3000 : 0 };
   });
 });
 
@@ -1420,25 +1706,51 @@ exports.savePhoneNumber = functions.https.onCall(async (request) => {
     const claimSnap = await tx.get(claimRef);
     const alreadyClaimed = claimSnap.exists;
 
-    tx.update(userRef, { phone: normalized, phoneHash, updatedAt: new Date() });
+    // The RAW number goes to the owner-only private subcollection, never to
+    // `users/{uid}`, which is `allow read: if true` — world-readable, signed
+    // out included. It used to be written here as `phone`, so every user's
+    // real phone number was public, and `phoneVisibility` ('public' /
+    // 'contacts' / 'selected' / 'hidden', enforced in matchContactHashes
+    // below) was cosmetic: setting it to 'hidden' hid you from contact
+    // matching while your number stayed one getDoc away. Nothing ever read
+    // `users.phone` — not one call site in src/ or functions/ — so it was
+    // write-only PII. `phoneHash` STAYS on the user doc: matchContactHashes
+    // needs `where('phoneHash','in',...)` and a collection query cannot reach
+    // into a subcollection.
+    tx.set(db.collection('users').doc(uid).collection('private').doc('contact'),
+      { phone: normalized, updatedAt: new Date() }, { merge: true });
+    tx.update(userRef, {
+      phoneHash,
+      phone: admin.firestore.FieldValue.delete(), // migrate anyone already exposed
+      updatedAt: new Date(),
+    });
 
-    // One-time VP grant — only on the first ever save. Later edits won't
+    // One-time grant — only on the first ever save. Later edits won't
     // re-award, but they do update the hash so contact matching keeps working.
     if (!alreadyClaimed) {
       const walletSnap = await tx.get(walletRef);
-      const bal = walletSnap.exists ? (walletSnap.data().balance || 0) : 0;
-      const earned = walletSnap.exists ? (walletSnap.data().totalEarned || 0) : 0;
+      // VP, NOT coins. This credited `balance` (and `totalEarned`), which are
+      // real spendable coins at ~$0.0127 each, so adding a phone number minted
+      // about $12.70 of value and inflated a lifetime earnings aggregate.
+      // Everything around it always said VP: the constant's own comment, the
+      // notification ("+1000 VP earned!", type 'vp') and the quest registry.
+      // claimQuestReward had the identical bug and its fix carries the same
+      // note: "Earlier versions credited `balance` instead of `vp`."
+      const vp = walletSnap.exists ? (walletSnap.data().vp || 0) : 0;
       if (walletSnap.exists) {
-        tx.update(walletRef, { balance: bal + PHONE_ADD_REWARD, totalEarned: earned + PHONE_ADD_REWARD, updatedAt: new Date() });
+        tx.update(walletRef, { vp: vp + PHONE_ADD_REWARD, updatedAt: new Date() });
       } else {
         tx.set(walletRef, {
-          balance: PHONE_ADD_REWARD, totalEarned: PHONE_ADD_REWARD, totalSpent: 0, totalReceived: 0, totalTipped: 0,
+          balance: 0, vp: PHONE_ADD_REWARD, totalEarned: 0, totalSpent: 0, totalReceived: 0, totalTipped: 0,
           tier: 'free', dailyStreak: 0, lastDailyCheckIn: null, createdAt: new Date(), updatedAt: new Date(),
         });
       }
-      tx.set(claimRef, { userId: uid, questId: 'add_phone', amount: PHONE_ADD_REWARD, claimedAt: new Date() });
+      tx.set(claimRef, { userId: uid, questId: 'add_phone', amount: PHONE_ADD_REWARD, currency: 'vp', claimedAt: new Date() });
+      // `currency: 'vp'` matters: without it the wallet's txUnit() cannot tell
+      // what the row is and renders the amount with no unit (and, before the
+      // A1 fix, rendered it as coins).
       tx.set(db.collection('transactions').doc(), {
-        userId: uid, type: 'quest_reward', amount: PHONE_ADD_REWARD,
+        userId: uid, type: 'quest_reward', amount: PHONE_ADD_REWARD, currency: 'vp',
         description: 'Added phone number', createdAt: new Date(),
       });
       tx.set(db.collection('notifications').doc(), {
@@ -1839,6 +2151,17 @@ async function sendPushToAll(userIds, title, body, data = {}) {
 // type here to make it push.
 // ──────────────────────────────────────────────────────────────
 const PUSHABLE_NOTIFICATION_TYPES = new Set([
+  // Getting paid is the single most push-worthy event for a creator, and it was
+  // missing: this whole set was tournament-only (a retired feature), so a tip
+  // wrote an in-drawer notification that never pushed. `sendTip` does no inline
+  // push either, so before this a creator got no push when tipped. Added
+  // 2026-08-22 during the messages audit. (If tips should NOT push, remove this
+  // one line.)
+  'tip',
+  // Reaching a new level is the payoff of the whole VP ladder. Written by the
+  // syncVpLevel trigger, which only fires when the level band actually changes,
+  // so this cannot spam: at most 99 of these in an account's lifetime.
+  'vp_level_up',
   'tournament_starting_soon',
   'tournament_won',
   'tournament_cancelled',
@@ -2522,7 +2845,11 @@ exports.onUserCreated = functionsV1.region('europe-west1').auth.user().onCreate(
     totalSpent: 0,
     totalTipped: 0,
     totalReceived: 0,
-    totalGemsEarned: 0,
+    // Revenue share owed to this user, in micro-USD. Seeded so the Earnings
+    // screen and the payout engine never read undefined.
+    owedMicroUsd: 0,
+    totalOwedMicroUsd: 0,
+    totalPaidMicroUsd: 0,
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   });
@@ -2596,6 +2923,15 @@ exports.onStreamWentLive = functions.firestore
     const streamId = event.params.streamId;
     const becameLive = before.status !== 'live' && after.status === 'live';
     if (!becameLive) return;
+    // Engagement VP for going live (capped per UTC day). Awarded before the
+    // notification early-returns below so a friends-only or 0-follower stream
+    // still earns it. `becameLive` guards against re-award on later updates.
+    if (after.hostUid) {
+      try {
+        const { creditEngagementVp } = require('./engagementVp');
+        await creditEngagementVp(db, after.hostUid, 'go_live');
+      } catch (e) { console.error('go_live VP failed', streamId, e?.message || e); }
+    }
     if (after.wentLiveNotified === true) return;
     if (after.notifyFollowers === false) return;
     // Only public / followers-audience streams ping followers (not friends-only).
@@ -2739,6 +3075,15 @@ exports.onNewComment = functions.firestore
 
       await db.collection('posts').doc(postId).update({ commentCount: admin.firestore.FieldValue.increment(1) });
 
+      // Engagement VP: the POST AUTHOR earns for receiving a comment (never for
+      // commenting on their own post). Capped per UTC day inside the helper.
+      if (authorId && authorId !== comment.authorId) {
+        try {
+          const { creditEngagementVp } = require('./engagementVp');
+          await creditEngagementVp(db, authorId, 'get_comment');
+        } catch (e) { console.error('get_comment VP failed', postId, e?.message || e); }
+      }
+
       const commenter = await db.collection('users').doc(comment.authorId).get();
       const commenterName = commenter.exists ? (commenter.data().displayName || 'Someone') : 'Someone';
       const preview = (comment.content || '').substring(0, 100);
@@ -2781,6 +3126,36 @@ exports.onNewComment = functions.firestore
 
       await sendPushToUser(authorId, 'New comment', `${commenterName}: ${preview}`, { type: 'comment', postId });
     } catch (err) { console.error('onNewComment error:', err); }
+  });
+
+// Engagement VP for creating a post. Posts are written client-side, so the VP
+// (advertised on /prestige "How to earn") has to be granted from a trigger. The
+// per-UTC-day cap in creditEngagementVp stops this being a spam faucet. Bots and
+// drafts/scheduled posts are excluded (a scheduled post that is created now and
+// published later by the cron deliberately does not earn create_post VP).
+exports.onPostCreatedAwardVp = functions.firestore
+  .onDocumentCreated({ document: 'posts/{postId}', database: 'vgrdb' }, async (event) => {
+    const post = event.data?.data();
+    if (!post) return;
+    if (post.status && post.status !== 'published') return;
+    const authorId = post.authorId;
+    if (!authorId) return;
+    if (String(post.authorAccountType || '').includes('bot')) return;
+    try {
+      const { creditEngagementVp } = require('./engagementVp');
+      await creditEngagementVp(db, authorId, 'create_post');
+    } catch (e) { console.error('create_post VP failed', event.params.postId, e?.message || e); }
+
+    // Milestone counter for the "Clipped" badge. Rides THIS trigger, which
+    // already fires on every post create, so it adds no invocation — only one
+    // conditional write on the small fraction of posts that are clips.
+    // `postCount` already covers posts, so only the clip case needs a field.
+    if (post.type === 'clip') {
+      try {
+        await db.collection('users').doc(authorId)
+          .set({ clipCount: admin.firestore.FieldValue.increment(1) }, { merge: true });
+      } catch (e) { console.error('clipCount failed', event.params.postId, e?.message || e); }
+    }
   });
 
 const MESSAGE_TYPE_LABELS = {
@@ -3112,64 +3487,9 @@ exports.deleteMessage = functions.https.onCall({ secrets: HUAWEI_PUSH_SECRETS },
   return { ok: true };
 });
 
-// Tournament stats aggregator. When a tournament's payout completes, bump
-// the cumulative `tournamentStats` on every participant's user doc:
-//   - tournamentStats.played    += 1   (everyone who took part)
-//   - tournamentStats.won       += 1   (the 1st-place finisher)
-//   - tournamentStats.earnedCoins += prize  (each placed winner's payout)
-// The "active" count shown in the UI is computed live client-side (it
-// changes as tournaments open/close), so we deliberately don't store it.
-exports.aggregateTournamentStats = functions.firestore
-  .onDocumentUpdated({ document: 'tournaments/{tournamentId}', database: 'vgrdb' }, async (event) => {
-    const before = event.data?.before?.data();
-    const after = event.data?.after?.data();
-    if (!before || !after) return;
-    // Only act on the transition into a paid-out state.
-    if (before.payoutStatus === 'paid' || after.payoutStatus !== 'paid') return;
-
-    const participants = after.participants || [];
-    if (participants.length === 0) return;
-
-    // Map place → uid from the placements field written by advanceBracket.
-    const placements = after.placements || {};
-    const winnerId = placements.first || after.winnerId || null;
-    // Per-uid prize from the payout breakdown, if present.
-    const prizeByUid = {};
-    const breakdown = after.payoutBreakdown;
-    if (breakdown?.payouts) {
-      const placeMap = {
-        1: placements.first || null,
-        2: placements.second || null,
-        3: Array.isArray(placements.third) ? placements.third[0] : (placements.third || null),
-        4: Array.isArray(placements.third) ? (placements.third[1] || null) : null,
-      };
-      for (const p of breakdown.payouts) {
-        const uid = placeMap[p.place];
-        if (uid && p.player > 0) prizeByUid[uid] = (prizeByUid[uid] || 0) + p.player;
-      }
-    }
-
-    const batch = db.batch();
-    for (const uid of participants) {
-      const ref = db.collection('users').doc(uid);
-      const update = {
-        'tournamentStats.played': admin.firestore.FieldValue.increment(1),
-      };
-      if (uid === winnerId) {
-        update['tournamentStats.won'] = admin.firestore.FieldValue.increment(1);
-      }
-      if (prizeByUid[uid]) {
-        update['tournamentStats.earnedCoins'] = admin.firestore.FieldValue.increment(prizeByUid[uid]);
-      }
-      batch.set(ref, {}, { merge: true }); // ensure doc exists
-      batch.update(ref, update);
-    }
-    try {
-      await batch.commit();
-    } catch (err) {
-      console.warn('aggregateTournamentStats commit failed', event.params.tournamentId, err.message);
-    }
-  });
+// aggregateTournamentStats (tournaments/{id} onUpdate) removed 2026-08-17 with
+// the rest of the tournament backend. It only ever wrote users.tournamentStats,
+// which nothing reads now.
 
 // Recount conversation.unreadCount whenever a message is deleted (regardless
 // of which path deleted it — the callable, a direct deleteDoc fallback, or
@@ -3413,6 +3733,15 @@ exports.sendTip = functions.https.onCall(async (request) => {
   if (uid === recipientId) throw new functions.https.HttpsError('invalid-argument', 'Cannot tip yourself');
   if (amount > 50000) throw new functions.https.HttpsError('invalid-argument', 'Maximum tip is 50,000 coins');
 
+  // Admin kill switch. `tipsPaused` is a toggle on /admin/config AND
+  // /admin/economy that, until 2026-08-19, was read by nothing: an operator
+  // could flip "Pause Tipping" and tips kept flowing. Same class of problem as
+  // payoutsPaused in creatorPayouts.js — a control that is trusted and inert.
+  const tipCfgSnap = await db.collection('app_config').doc('general').get();
+  if (tipCfgSnap.exists && tipCfgSnap.data()?.tipsPaused === true) {
+    throw new functions.https.HttpsError('failed-precondition', 'Tipping is temporarily paused. Try again shortly.');
+  }
+
   const senderPlan = await getUserPlan(uid);
 
   return db.runTransaction(async (tx) => {
@@ -3452,8 +3781,8 @@ exports.sendTip = functions.https.onCall(async (request) => {
     // advertised "flat 10% fee" really took 24-37%. Both deductions are now
     // replaced by the single revenue-share ladder: the whole tip is gross
     // revenue, and the creator accrues their tier's share of it.
-    const { earnedGemCredit, isVanguardExempt } = require('./coinLedger');
-    const tipCredit = earnedGemCredit(
+    const { earnedShareCredit, isVanguardExempt, microUsdToStr, COIN_MICRO_USD } = require('./coinLedger');
+    const tipCredit = earnedShareCredit(
       amount,
       recipientWallet.data().totalEarnedCoinsGross || 0,
       {
@@ -3466,23 +3795,25 @@ exports.sendTip = functions.https.onCall(async (request) => {
     // keeps its name so existing ledger rows, admin reports and the daily
     // rollup in dailyMetricsRollup.js keep their shape.
     const recipientAmount = amount;
-    const platformFee = amount - tipCredit.gems;
+    // Vergr's share of the gross, in micro-USD. `platformFee` keeps its name so
+    // admin reports and dailyMetricsRollup.js keep their shape, but it is now a
+    // money figure rather than a coin count.
+    const platformFee = (amount * COIN_MICRO_USD) - tipCredit.owedMicroUsd;
     tx.update(recipientWalletRef, {
       ...tipCredit.fields,
       totalEarned: admin.firestore.FieldValue.increment(recipientAmount),
       totalReceived: admin.firestore.FieldValue.increment(recipientAmount),
-      totalGemsEarned: admin.firestore.FieldValue.increment(tipCredit.gems),
     });
 
     const tipRef = db.collection('tips').doc();
     tx.set(tipRef, { senderId: uid, recipientId, amount, recipientAmount, platformFee, vpEarned, message: message || null, postId: postId || null, streamId: streamId || null, createdAt: admin.firestore.FieldValue.serverTimestamp() });
     tx.set(db.collection('transactions').doc(), { userId: uid, type: 'tip_sent', amount: -amount, balance: senderBalance - amount, recipientId, tipId: tipRef.id, vpEarned, description: `Tipped ${amount} coins${vpEarned > 0 ? ` (+${vpEarned} VP)` : ''}`, createdAt: admin.firestore.FieldValue.serverTimestamp() });
     // The ledger row records BOTH sides: the gross coins the tip was worth and
-    // the gems actually credited after commission. Recording only one leaves no
-    // way to answer "why did I get this number", which is the question every
-    // support ticket about earnings is.
-    tx.set(db.collection('transactions').doc(), { userId: recipientId, type: 'tip_received', currency: 'gems', amount: tipCredit.gems, senderId: uid, tipId: tipRef.id, meta: { grossCoins: recipientAmount, share: tipCredit.share, commission: tipCredit.commission, tipAmount: amount, platformFee }, description: `Earned ${tipCredit.gems} gems — your ${Math.round(tipCredit.share * 100)}% share of a ${amount} coin tip`, createdAt: admin.firestore.FieldValue.serverTimestamp() });
-    tx.set(db.collection('notifications').doc(), { recipientId, type: 'tip', title: 'You received a tip!', body: `Someone tipped you ${amount} coins — you earned ${tipCredit.gems} gems${message ? ': "' + message + '"' : ''}`, senderId: uid, read: false, data: { tipId: tipRef.id, amount: recipientAmount, gems: tipCredit.gems }, createdAt: admin.firestore.FieldValue.serverTimestamp() });
+    // the share actually accrued. Recording only one leaves no way to answer
+    // "why did I get this number", which is the question every support ticket
+    // about earnings is.
+    tx.set(db.collection('transactions').doc(), { userId: recipientId, type: 'tip_received', earning: true, currency: 'usd', amountMicroUsd: tipCredit.owedMicroUsd, amount: tipCredit.owedMicroUsd, senderId: uid, tipId: tipRef.id, meta: { grossCoins: recipientAmount, share: tipCredit.share, tipAmount: amount, platformFee }, description: `Earned ${microUsdToStr(tipCredit.owedMicroUsd)}, your ${Math.round(tipCredit.share * 100)}% share of a ${amount} coin tip`, createdAt: admin.firestore.FieldValue.serverTimestamp() });
+    tx.set(db.collection('notifications').doc(), { recipientId, type: 'tip', title: 'You received a tip!', body: `Someone tipped you ${amount} coins, you earned ${microUsdToStr(tipCredit.owedMicroUsd)}${message ? ': "' + message + '"' : ''}`, senderId: uid, read: false, data: { tipId: tipRef.id, amount: recipientAmount, owedMicroUsd: tipCredit.owedMicroUsd }, createdAt: admin.firestore.FieldValue.serverTimestamp() });
 
     // Top-gifters leaderboard: accumulate this sender's running coin total for
     // the stream they're watching (server-written so the board can't be faked).
@@ -4690,6 +5021,9 @@ exports.cronEvery6h = functions.scheduler.onSchedule(
     ['cleanupExpiredStories', _cleanupExpiredStories],
     ['cleanupExpiredStatuses', _cleanupExpiredStatuses],
     ['writePresenceSnapshot', adminStats.writePresenceSnapshot],
+    // Rolls the RTDB view counters into posts.viewCount. Firestore writes
+    // scale with ACTIVE POSTS x 4/day, never with how many times they were seen.
+    ['aggregatePostViews', require('./postViews')._internal.aggregatePostViews],
   ]),
 );
 
@@ -4700,7 +5034,6 @@ exports.cronMonthly = functions.scheduler.onSchedule(
     ['payMonthlyPlanBonus', _payMonthlyPlanBonus],
     ['monthlySquadElections', _monthlySquadElections],
     ['distributeVanguardTreasury', vanguard.distributeVanguardTreasury],
-    ['cheatSignaturesHealthCron', require('./cheatSignaturesRefresh').cheatSignaturesHealthCron],
   ]),
 );
 
@@ -4712,12 +5045,6 @@ exports.cronMonthly = functions.scheduler.onSchedule(
 exports.cronMinute = functions.scheduler.onSchedule(
   { schedule: 'every 1 minutes', timeZone: 'UTC', region: 'europe-west1', timeoutSeconds: 540 },
   async () => _runJobs('cronMinute', [
-    ['summonsParticipants', tournamentSummons.summonsParticipants],
-    ['autoStartTournaments', tournamentSummons.autoStartTournaments],
-    ['autoConfirmMatchResults', tournamentTimeouts.autoConfirmMatchResults],
-    ['startingSoonPushCron', tournamentDiscovery.startingSoonPushCron],
-    ['autoSuggestMatchWinners', tournamentMatchClaims.autoSuggestMatchWinners],
-    ['detectTournamentStreamDrops', tournamentMatchClaims.detectTournamentStreamDrops],
     ['chargeStreamBoosts', streamingBoost.chargeStreamBoosts],
     ['reapStaleStreams', streaming.reapStaleStreams],
   ]),
@@ -4731,12 +5058,13 @@ exports.cronMinute = functions.scheduler.onSchedule(
 exports.cron5Min = functions.scheduler.onSchedule(
   { schedule: 'every 5 minutes', timeZone: 'UTC', region: 'europe-west1', timeoutSeconds: 300 },
   async () => _runJobs('cron5Min', [
-    ['detectParticipantNoShows', tournamentSummons.detectParticipantNoShows],
     ['detectTournamentNoShows', vanguardAssignments.detectTournamentNoShows],
-    ['detectLobbyVerificationTimeouts', lobbyVerification.detectLobbyVerificationTimeouts],
-    ['detectMatchTimeouts', tournamentTimeouts.detectMatchTimeouts],
     ['publishScheduledPosts', scheduledPosts.publishScheduledPosts],
     ['notifyScheduledStreams', _notifyScheduledStreams],
+    // Self-gates to a single indexed query returning nothing when no campaign
+    // is scheduled, so it is folded in here rather than earning its own
+    // Cloud Scheduler job (a new schedule is a recurring bill).
+    ['releaseScheduledCampaigns', campaigns.releaseScheduledCampaigns],
   ]),
 );
 

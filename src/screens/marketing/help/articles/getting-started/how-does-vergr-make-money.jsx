@@ -17,7 +17,7 @@ export default {
     {
       list: [
         "Tips: the whole tip is revenue VERGR earns, and the creator is paid 50% to 80% of it by lifetime earnings. The rate is the same on every plan.",
-        "Revenue share: Vergr keeps 30% of what your content earns at the start, stepping down to a 15% floor at 100,000 VP. Earning VP is how you keep more.",
+        "Revenue share: creators keep 50% of what their content earns at the start, rising to 80% as their lifetime earnings grow. Vergr keeps the remainder. This is the only way Vergr takes anything, and VP rank does not affect it.",
         "Paid streams and memberships: the same revenue share, which funds moderation, delivery, and the infrastructure that runs them. The majority goes to the creator.",
         "Plans: optional Lite ($4.99/mo) and Pro ($9.99/mo) subscriptions for extra features."
       ]

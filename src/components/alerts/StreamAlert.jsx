@@ -20,7 +20,7 @@ export default function StreamAlert({ type = 'follow', username = 'GhostSniper',
           <p className={`text-xs font-semibold ${c.color}`}>{c.text}</p>
           {message && <p className="text-white/60 text-xs mt-1 italic">"{message}"</p>}
         </div>
-        {onClose && <button onClick={onClose} className="text-text-secondary"><Icon name="x" size={16} /></button>}
+        {onClose && <button onClick={onClose} className="text-text-secondary"><Icon name="close" size={16} /></button>}
       </div>
     </div>
   );

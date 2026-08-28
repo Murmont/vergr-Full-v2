@@ -99,6 +99,27 @@ export default function EmbedVideoPlayer({ videoId, videoUrl, platform, thumbnai
   const embedSrc = buildEmbedSrc(parsed, true);
 
   return (
+    // ── AMBILIGHT ON AN EMBED: THE HONEST LIMIT ──────────────────────
+    //
+    // The player below is a CROSS-ORIGIN IFRAME. Its pixels are unreachable —
+    // canvas cannot sample it, and no flag, proxy or permission changes that.
+    // It is a browser security boundary, not a shortcut being taken here.
+    //
+    // What IS reachable is the poster frame, which this component already
+    // resolves (`img.youtube.com/vi/<id>/hqdefault.jpg`). So an embed gets a
+    // STATIC ambilight from the video's own poster: the right colours, not
+    // updating with playback. For a trailer, whose palette barely moves, the
+    // difference is close to invisible; for a video that changes scene
+    // dramatically it will lag. That is the ceiling for embedded content.
+    //
+    // Our OWN videos (InlineVideoPlayer) sample live, because we own the pixels.
+    //
+    // ⚠ THIS COMPONENT DOES NOT DRAW THE GLOW. It only publishes the poster URL
+    // upward via `onPoster`, and `PostCard` draws ONE glow behind the whole
+    // card. A previous version wrapped the player in its own padded box; inside
+    // a card that box fought the card's layout, and its feather (66px inward)
+    // was larger than its padding (44px), which painted a dark ring around the
+    // video — the "darkened border". See docs/effects/02-ambilight.md §5.
     <div
       ref={containerRef}
       className="mt-3 rounded-2xl overflow-hidden border border-white/[0.06] relative aspect-video bg-black"

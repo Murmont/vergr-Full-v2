@@ -21,12 +21,21 @@ import {
 import BackgroundPreviewModal from '../../components/BackgroundPreviewModal';
 import usePresenceMap from '../../hooks/usePresenceMap';
 import { peekChatUser } from '../../utils/chatIdentity';
+import { useUser } from '../../context/UserContext';
+import { ChatGradient } from '../../components/effects';
+import {
+  CHAT_THEMES, CHAT_THEME_LEVEL, canUseChatThemes, chatThemeColors, chatPatternUrl,
+  CHAT_MOTIONS, chatMotionFor,
+  chatThemeById, chatThemeCustomColors,
+} from '../../utils/chatThemes';
+import ColorField from '../../components/prestige/ColorField';
 
 export default function ChatSettingsScreen() {
   const { chatId } = useParams();
   const navigate = useNavigate();
   const { setRightPanel, setContentAlign } = useLayout();
   const { isMobile, isDesktop } = useResponsive();
+  const { profile } = useUser();
   const [chat, setChat] = useState(null);
   const [showBgPicker, setShowBgPicker] = useState(false);
   const [selectedBg, setSelectedBg] = useState('bg_1');
@@ -80,6 +89,63 @@ export default function ChatSettingsScreen() {
     try {
       await updateDoc(doc(db, 'conversations', chatId), { ttlSeconds: seconds });
     } catch (err) { console.error('Failed to set auto-delete:', err); }
+  };
+
+  // ⚠ `chatThemeBy` is written alongside the id and is load-bearing: the theme
+  // renders only while THAT person still qualifies (level or Pro), checked at
+  // read time. Without it there would be no way to tell whose unlock applies.
+  const applyTheme = async (themeId) => {
+    try {
+      await updateDoc(doc(db, 'conversations', chatId), {
+        chatTheme: themeId,
+        chatThemeBy: themeId ? auth.currentUser?.uid : null,
+        // Switching preset drops any custom colours: they were chosen against
+        // the old palette and would usually clash with the new pattern.
+        chatThemeColors: null,
+      });
+      setDraft(null);
+      setEditing(-1);
+    } catch (err) { console.error('Failed to set chat theme:', err); }
+  };
+
+  // ⚠ MOTION IS A SEPARATE CHOICE FROM THE THEME, deliberately. The founder's
+  // objection was that every theme animated identically ("they all still move
+  // in a circular motion"), so the fix cannot be a per-theme preset the user
+  // has no say over. Switching preset does NOT reset it: it is a preference
+  // about movement, not about colour.
+  const applyMotion = async (motionId) => {
+    try {
+      await updateDoc(doc(db, 'conversations', chatId), { chatThemeMotion: motionId });
+    } catch (err) { console.error('Failed to set chat motion:', err); }
+  };
+
+  // The four colours currently in force, and whether they are the user's own.
+  const activeTheme = chatThemeById(chat?.chatTheme);
+  const custom = chatThemeCustomColors(chat);
+  const themeColors = {
+    custom: !!custom,
+    list: custom || chatThemeColors(activeTheme, false) || [],
+  };
+  // ⚠ STATE, NOT A REF. The draft has to drive the live preview, so it must
+  // trigger a render; a ref would update silently and the preview would sit
+  // frozen while you dragged. The WRITE is still deferred to Done, so dragging
+  // costs zero Firestore writes.
+  const [draft, setDraft] = useState(null);
+  const [editing, setEditing] = useState(-1);
+  const shownColors = draft || themeColors.list;
+  const setDraftColor = (i, v) => {
+    const next = [...(draft || themeColors.list)];
+    next[i] = v;
+    setDraft(next);
+  };
+  const applyThemeColors = async (colors) => {
+    setDraft(null);
+    try {
+      await updateDoc(doc(db, 'conversations', chatId), {
+        chatThemeColors: colors && colors.length ? colors : null,
+        chatThemeBy: auth.currentUser?.uid,
+      });
+    } catch (err) { console.error('Failed to set theme colours:', err); }
   };
 
   const applyBackground = async (bgId) => {
@@ -176,7 +242,7 @@ export default function ChatSettingsScreen() {
         <div className="text-center mb-8">
           <div className="w-24 h-24 rounded-3xl bg-surface-3 mx-auto flex items-center justify-center text-4xl mb-4 overflow-hidden border-2 border-white/[0.06]">
             {chat.isGroup ? (
-              chat.groupIcon ? <img src={chat.groupIcon} alt="" className="w-full h-full object-cover" /> : <span>👥</span>
+              (chat.groupIcon || chat.groupAvatar) ? <img src={chat.groupIcon || chat.groupAvatar} alt="" className="w-full h-full object-cover" /> : <span>👥</span>
             ) : (
               <UserAvatar src={otherUser?.avatar} size={96} />
             )}
@@ -262,6 +328,186 @@ export default function ChatSettingsScreen() {
         </div>
 
         {/* ═══════ Chat Background Section ═══════ */}
+        {/* ── Chat themes (effect 12) ────────────────────────────────
+            ⚠ ADDED BESIDE the wallpapers, never instead of them. The 7
+            wallpapers and custom upload are a shipped feature and stay
+            (founder, 2026-08-25). Picking a theme suppresses the wallpaper
+            while it is on; clearing the theme brings it straight back. */}
+        <div className="mb-6">
+          <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest px-1 mb-3">Chat Theme</p>
+          {canUseChatThemes(profile) ? (
+            <div className="grid grid-cols-3 gap-2">
+              {[null, ...CHAT_THEMES].map((t) => {
+                const on = (chat?.chatTheme || null) === (t?.id || null);
+                const cols = t ? chatThemeColors(t, false) : null;
+                return (
+                  <button
+                    key={t?.id || 'none'}
+                    type="button"
+                    onClick={() => applyTheme(t?.id || null)}
+                    className="rounded-xl overflow-hidden text-left transition-transform active:scale-[0.97]"
+                    style={{ outline: on ? '2px solid var(--brand-violet,#7B1FFF)' : 'none', outlineOffset: 2 }}
+                  >
+                    <div className="h-16 relative" style={{ background: '#000' }}>
+                      {t && (
+                        <ChatGradient
+                          colors={cols}
+                          patternUrl={chatPatternUrl(t)}
+                          sendCount={0}
+                          tileSize={150}
+                        />
+                      )}
+                      {!t && (
+                        <div className="absolute inset-0 grid place-items-center text-text-muted">
+                          <Icon name="block" size={18} />
+                        </div>
+                      )}
+                    </div>
+                    <div className="px-2 py-1.5 bg-surface-2/60">
+                      <span className="text-[11px] font-bold text-text-primary">{t?.name || 'None'}</span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 px-1 py-3 text-text-muted">
+              <Icon name="lock" size={14} />
+              <span className="text-[12px]">
+                Chat themes unlock at level {CHAT_THEME_LEVEL}, or with Pro.
+              </span>
+            </div>
+          )}
+
+          {/* ── MOVEMENT ────────────────────────────────────────────
+              Five structurally DIFFERENT models, not five tunings of one.
+              See the header in ChatGradient.jsx for why that distinction is
+              the whole point. Each chip previews itself LIVE and with no
+              pattern mask, because the only thing separating these is how
+              they move and a static swatch would say nothing at all. */}
+          {canUseChatThemes(profile) && chat?.chatTheme && (
+            <div className="mt-4">
+              <p className="text-[11px] text-text-secondary mb-2 px-1">Movement</p>
+              <div className="grid grid-cols-5 gap-2">
+                {CHAT_MOTIONS.map((mo) => {
+                  const on = chatMotionFor(chat) === mo.id;
+                  return (
+                    <button
+                      key={mo.id}
+                      type="button"
+                      onClick={() => applyMotion(mo.id)}
+                      title={mo.blurb}
+                      className="rounded-xl overflow-hidden text-left transition-transform active:scale-[0.97]"
+                      style={{ outline: on ? '2px solid var(--brand-violet,#7B1FFF)' : 'none', outlineOffset: 2 }}
+                    >
+                      <div className="h-12 relative" style={{ background: '#000', isolation: 'isolate' }}>
+                        <ChatGradient
+                          colors={themeColors.list}
+                          patternUrl={null}
+                          motion={mo.id}
+                          sendCount={0}
+                          intensity={100}
+                        />
+                      </div>
+                      <div className="px-1 pt-1 pb-0.5">
+                        <span className="text-[10px] font-bold text-text-secondary">{mo.name}</span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* ── YOUR OWN COLOURS ────────────────────────────────────
+              The preset picks the icons; the colours are yours. Four swatches,
+              each opening the same picker (with the screen eyedropper) that the
+              name gradient uses, so there is one colour-picking UI in the app
+              rather than two. */}
+          {canUseChatThemes(profile) && chat?.chatTheme && (
+            <div className="mt-4">
+              <div className="flex items-center justify-between mb-2 px-1">
+                <span className="text-[11px] text-text-secondary">
+                  Colours {themeColors.custom ? '(yours)' : '(preset)'}
+                </span>
+                {themeColors.custom && (
+                  <button
+                    type="button"
+                    onClick={() => { setDraft(null); setEditing(-1); applyThemeColors(null); }}
+                    className="text-[11px] font-bold text-brand-violet-light"
+                  >
+                    Reset
+                  </button>
+                )}
+              </div>
+
+              {/* ⚠ A LIVE PREVIEW, not four blind swatches. The first version put
+                  the shared accent picker here, whose swatch draws a rainbow
+                  disc over the colour so that "any colour" reads as an
+                  affordance. With four of them in a row you could not see your
+                  own colours at all, and nothing showed what the blend would
+                  look like. This is the real gradient with the real pattern,
+                  repainting as you drag. */}
+              <div
+                className="relative w-full h-28 rounded-2xl overflow-hidden mb-3"
+                style={{ isolation: 'isolate', background: '#000' }}
+              >
+                <ChatGradient
+                  colors={shownColors}
+                  patternUrl={chatPatternUrl(activeTheme)}
+                  sendCount={0}
+                  tileSize={300}
+                />
+                <div className="absolute left-3 top-3 px-3 py-1.5 rounded-2xl rounded-bl-sm bg-surface-2/90">
+                  <span className="text-[11px] text-white/70">Hey, nice game!</span>
+                </div>
+                <div
+                  className="absolute right-3 bottom-3 px-3 py-1.5 rounded-2xl rounded-br-sm"
+                  style={{ background: `linear-gradient(160deg, ${shownColors[3] || shownColors[0]}, ${shownColors[2] || shownColors[1]})` }}
+                >
+                  <span className="text-[11px] text-white">GG, run it back</span>
+                </div>
+              </div>
+
+              <div className="flex gap-2">
+                {shownColors.map((c, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => setEditing(editing === i ? -1 : i)}
+                    className="flex-1 h-11 rounded-xl transition-transform active:scale-95"
+                    style={{
+                      background: c,
+                      boxShadow: editing === i
+                        ? '0 0 0 2px #fff'
+                        : 'inset 0 0 0 1px rgba(255,255,255,0.18)',
+                    }}
+                    title={c}
+                  />
+                ))}
+              </div>
+
+              {editing >= 0 && (
+                <div className="mt-3 p-3 rounded-2xl bg-surface-1">
+                  <ColorField
+                    value={shownColors[editing]}
+                    onChange={(v) => setDraftColor(editing, v)}
+                    height={150}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => { setEditing(-1); applyThemeColors(draft); }}
+                    className="mt-3 w-full py-2 rounded-xl text-xs font-bold text-white"
+                    style={{ background: 'var(--brand-violet,#7B1FFF)' }}
+                  >
+                    Done
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
         <div className="mb-6">
           <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest px-1 mb-3">Chat Background</p>
 

@@ -1,7 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../../firebase/config';
+import { getOneTimeQuestClaims } from '../../firebase/firestore';
 import { useUser } from '../../context/UserContext';
 import { useUI } from '../../context/UIContext';
 import Icon from '../Icon';
@@ -11,6 +12,13 @@ import Icon from '../Icon';
 // claimQuestReward) and gives every existing empty account a reason to stop
 // being empty. Claim state is remembered locally after a successful (or
 // already-claimed) response so we never burn reads polling quest_claims.
+
+// The six one-time profile quests, matching PROFILE_QUEST_REWARDS in
+// functions/index.js. Their claim docs are `${uid}_${id}` with no date.
+const PROFILE_QUEST_IDS = [
+  'profile_avatar', 'profile_banner', 'profile_bio',
+  'profile_interests', 'first_follow_5', 'profile_gaming_link',
+];
 
 const CLAIMS_KEY = 'vergr_profile_claims_v1';
 const readClaims = () => { try { return JSON.parse(localStorage.getItem(CLAIMS_KEY)) || {}; } catch { return {}; } };
@@ -23,6 +31,24 @@ export default function ProfileCompletionCard() {
   const [claims, setClaims] = useState(readClaims);
   const [busy, setBusy] = useState(null);
   const [dismissed, setDismissed] = useState(() => { try { return sessionStorage.getItem('vergr_pcc_hide') === '1'; } catch { return false; } });
+
+  // Claim state comes from the SERVER. localStorage stays only as a first-paint
+  // cache so the card does not flash; `quest_claims` is the truth. Without this
+  // the card asked a user to claim VP they were granted months ago, on any new
+  // device or after clearing site data (audit A11).
+  useEffect(() => {
+    const uid = profile?.uid || profile?.id;
+    if (!uid) return undefined;
+    let alive = true;
+    getOneTimeQuestClaims(uid, PROFILE_QUEST_IDS)
+      .then((claimed) => {
+        if (!alive || !claimed.length) return;
+        claimed.forEach(markClaim);
+        setClaims(readClaims());
+      })
+      .catch(() => { /* offline: the localStorage cache still applies */ });
+    return () => { alive = false; };
+  }, [profile?.uid, profile?.id]);
 
   const items = useMemo(() => {
     if (!profile) return [];
@@ -39,8 +65,15 @@ export default function ProfileCompletionCard() {
   const remaining = items.filter((i) => !i.done || !claims[i.id]);
   if (!profile || dismissed || remaining.length === 0) return null;
 
-  const doneCount = items.length - remaining.length;
-  const pct = Math.round((doneCount / items.length) * 100);
+  // THE RING MEASURES COMPLETENESS, not "buttons pressed in this browser".
+  // It used to derive from `remaining`, which folds in the claim state, so a
+  // profile with a picture and a banner both ticked showed 0% — the ticks come
+  // from `i.done` (real profile data) while the ring came from localStorage
+  // (empty on a new device). The heading says "Complete your profile", so it
+  // follows `i.done`. Unclaimed VP is already communicated by the Claim buttons
+  // and the "VP left" line (audit A11).
+  const completed = items.filter((i) => i.done).length;
+  const pct = Math.round((completed / items.length) * 100);
 
   const claim = async (item) => {
     if (busy) return;
@@ -51,7 +84,12 @@ export default function ProfileCompletionCard() {
       showToast(`+${item.vp} VP — ${item.label}`, 'success');
     } catch (e) {
       const code = String(e?.code || '');
-      if (code.includes('already-exists')) { markClaim(item.id); setClaims(readClaims()); }
+      // Do not swallow this. The row silently vanished and a user who had just
+      // pressed a button offering 500 VP was told nothing at all (audit A11).
+      if (code.includes('already-exists')) {
+        markClaim(item.id); setClaims(readClaims());
+        showToast(`Already added to your VP — ${item.label}`, 'info');
+      }
       else showToast(e?.message || 'Could not claim yet', 'error');
     }
     setBusy(null);

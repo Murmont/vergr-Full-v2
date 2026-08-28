@@ -15,7 +15,7 @@ export default {
       h2: "How the money actually works"
     },
     {
-      p: "You earn by getting tipped and selling access to your content, and Vergr pays you a share of that revenue on a schedule. There is no stage where your money disappears into a system you cannot get it out of. The only requirements are the normal ones for any platform that pays real money: you have to be 18+, identity-verified, and over the 1,000-Gem minimum."
+      p: "You earn by getting tipped and selling access to your content, and Vergr pays you a share of that revenue on a schedule. There is no stage where your money disappears into a system you cannot get it out of. The only requirements are the normal ones for any platform that pays real money: you have to be 18+, identity-verified, and have met the $100 payout minimum."
     },
     {
       h2: "How VERGR protects you"

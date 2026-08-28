@@ -200,10 +200,27 @@ export function usdcToEur(usdc) {
 export function convertFromUsd(usd) {
   if (usd == null || isNaN(usd)) return null;
   if (!_currency || !_rates) return null;
+  // No conversion applies when the viewer is ALREADY on the charged currency.
+  // Without this the maths is `(usd / usdRate) * usdRate`, i.e. the same number
+  // back, so a US buyer saw "$0.99" and directly beneath it "≈ $0.99 · charged
+  // in USD" — the same figure twice, which reads as a rendering fault
+  // (audit A3). Returning null is what the contract above already promises:
+  // "or null when no conversion applies".
+  if (_currency === 'USD') return null;
   const usdRate = _rates.USD;
   const target = _rates[_currency];
   if (!usdRate || !target) return null;
   return { currency: _currency, amount: (Number(usd) / usdRate) * target };
+}
+
+/**
+ * Is there a local estimate worth showing beside a USD price?
+ *
+ * Call sites render "≈ <local> · charged in USD" as one unit, so they need to
+ * suppress the WHOLE line (separator included) rather than just the number.
+ */
+export function hasLocalEstimate(usd) {
+  return convertFromUsd(usd) != null;
 }
 
 /** "≈ £7.85" for a USD amount, or null when no conversion applies. */

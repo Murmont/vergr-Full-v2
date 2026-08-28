@@ -1,4 +1,7 @@
 import { useState, useEffect } from 'react';
+import { getBoostedUsers } from '../firebase/firestore';
+import { mergeBoostedFirst } from '../utils/promoBoost';
+import { boostSlotsFor } from '../utils/boostDelivery';
 import { useNavigate } from 'react-router-dom';
 import { collection, query, limit, where, getDocs, getDoc, doc } from 'firebase/firestore';
 import { db } from '../firebase/config';
@@ -6,12 +9,14 @@ import { useAuth } from '../context/AuthContext';
 import { followUser, unfollowUser, isFollowing as checkFollowing } from '../firebase/firestore';
 import Icon from './Icon';
 import UserAvatar from './UserAvatar';
+import UserName from './UserName';
 
 // Module-level caches so we don't re-fetch on every sidebar mount.
 // Trending hashtags only update once an hour (Cloud Function), and verified
 // users almost never change — both are perfect candidates for in-memory + LS cache.
 const TRENDING_LS_KEY = 'vergr_trending_tags_v1';
 const SUGGESTED_LS_KEY = 'vergr_suggested_users_v1';
+// ⚠ Only the ORGANIC list is cached. See the boosted-slot fetch below.
 const TRENDING_TTL_MS = 60 * 60 * 1000; // 1 hour
 const SUGGESTED_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
 
@@ -51,6 +56,27 @@ export default function RightSidebarPanel() {
         _writeCache(TRENDING_LS_KEY, tags);
       }).catch(() => {});
     }
+
+    // ⚠ THE BOOSTED SLOT MUST BYPASS THE SIX-HOUR CACHE. A boost bought now
+    // would otherwise not appear here for up to six hours on a returning
+    // device — 12% of a 48-hour purchase silently undelivered, and the whole
+    // of a 15-minute one. So the boosted slot is fetched EVERY mount and
+    // merged over whatever the cache holds; only the organic list is cached.
+    (async () => {
+      try {
+        const boosted = await getBoostedUsers({
+          viewerUid: currentUser?.uid, want: boostSlotsFor(5),
+        });
+        if (cancelled || !boosted.length) return;
+        setSuggestedUsers((prev) => mergeBoostedFirst(
+          boosted.map((u) => ({
+            id: u.id, displayName: u.displayName, username: u.username,
+            avatar: u.avatar, isVerified: u.isVerified, boostExpiresAt: u.boostExpiresAt,
+          })),
+          prev, 5,
+        ));
+      } catch { /* never empty the panel over a boost */ }
+    })();
 
     // Suggested users (verified) — one-shot, cached for 6 hours
     if (!_readCache(SUGGESTED_LS_KEY, SUGGESTED_TTL_MS)) {
@@ -144,8 +170,8 @@ export default function RightSidebarPanel() {
                   >
                     <UserAvatar src={user.avatar} size={36} isVerified={user.isVerified} />
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-bold text-text-primary truncate">{user.displayName}</p>
-                      <p className="text-xs text-text-muted font-dmmono truncate">@{user.username}</p>
+                      <p className="text-sm font-bold text-text-primary truncate"><UserName user={user} masked /></p>
+                      <p className="text-xs text-text-muted font-dmmono truncate"><UserName user={user} masked handle /></p>
                     </div>
                   </button>
                   <button

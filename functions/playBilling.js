@@ -23,6 +23,7 @@ const functions = require('firebase-functions/v2');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const { GoogleAuth } = require('google-auth-library');
 const { creditReferralPurchaseBonus } = require('./referralRevenue');
+const coinPromos = require('./coinPromos');
 
 const db = getFirestore('vgrdb');
 const REGION = 'europe-west1';
@@ -38,15 +39,19 @@ const PACKAGE_NAME = 'com.vergr.desktop';
 // Keys are the in-app product ids created in Play Console. The client builds
 // them with playProductIdFor() as `coins_<packId>`.
 // ─────────────────────────────────────────────────────────────────────
+// `priceUSD` is what Play charges, and it is here ONLY so a promo's
+// `minSpendUSD` can be evaluated on this rail too. It is not used to charge
+// anything: Play owns the price. Kept on the product rather than in a parallel
+// map, because a second map is exactly how these constants drift apart.
 const PLAY_PRODUCTS = {
-  coins_starter:   { coins: 85,     vpBonus: 0 },
-  coins_gamer:     { coins: 425,    vpBonus: 0 },
-  coins_pro:       { coins: 1000,   vpBonus: 0 },
-  coins_elite:     { coins: 2100,   vpBonus: 0 },
-  coins_legend:    { coins: 4250,   vpBonus: 0 },
-  coins_champion:  { coins: 8500,   vpBonus: 0 },
-  coins_titan:     { coins: 12500,  vpBonus: 1500 },
-  coins_ascendant: { coins: 21000,  vpBonus: 3000 },
+  coins_starter:   { coins: 85,     vpBonus: 0,    priceUSD: 0.99 },
+  coins_gamer:     { coins: 425,    vpBonus: 0,    priceUSD: 4.99 },
+  coins_pro:       { coins: 1000,   vpBonus: 0,    priceUSD: 9.99 },
+  coins_elite:     { coins: 2100,   vpBonus: 0,    priceUSD: 19.99 },
+  coins_legend:    { coins: 4250,   vpBonus: 0,    priceUSD: 49.99 },
+  coins_champion:  { coins: 8500,   vpBonus: 0,    priceUSD: 99.99 },
+  coins_titan:     { coins: 12500,  vpBonus: 1500, priceUSD: 149.99 },
+  coins_ascendant: { coins: 21000,  vpBonus: 3000, priceUSD: 249.99 },
 };
 
 // ─────────────────────────────────────────────────────────────────────
@@ -161,7 +166,34 @@ exports.redeemPlayPurchase = functions.https.onCall(
       throw new HttpsError('permission-denied', 'This purchase belongs to another account.');
     }
 
-    const { coins, vpBonus } = product;
+    // COIN SALE PROMO. Same resolver the web rail uses, deliberately: two pack
+    // maps with different coin counts already exist because Play takes 30%, and
+    // a promo applied to one and not the other would silently work on web only.
+    //
+    // Claimed BEFORE the credit transaction and keyed on the purchase token, so
+    // a restore sweep replaying the same token cannot issue the bonus twice. The
+    // price Google charged is untouched: only the quantity delivered moves.
+    let coins = product.coins;
+    let vpBonus = product.vpBonus;
+    let promo = null;
+    try {
+      const granted = await coinPromos.applyPromo({
+        packId: productId,
+        coins,
+        priceUSD: product.priceUSD || 0,
+        uid,
+        orderId: purchaseToken,
+      });
+      if (granted.promoId) {
+        coins += granted.bonusCoins;
+        vpBonus += granted.bonusVp;
+        promo = granted;
+      }
+    } catch (e) {
+      // Never fail a purchase Google has already taken money for.
+      console.warn('playBilling: promo skipped', e?.message || e);
+    }
+
     const walletRef = db.collection('wallets').doc(uid);
 
     await db.runTransaction(async (t) => {
@@ -175,6 +207,9 @@ exports.redeemPlayPurchase = functions.https.onCall(
         productId,
         coins,
         vpBonus,
+        promoId: promo?.promoId || null,
+        promoBonusCoins: promo?.bonusCoins || 0,
+        promoBonusVp: promo?.bonusVp || 0,
         orderId: orderId || purchase.orderId || null,
         purchaseTimeMillis: purchase.purchaseTimeMillis || null,
         creditedAt: FieldValue.serverTimestamp(),
@@ -199,6 +234,8 @@ exports.redeemPlayPurchase = functions.https.onCall(
         vpBonus: vpBonus || 0,
         description: `Coin pack: ${productId} (Google Play)`,
         gateway: 'google_play',
+        promoId: promo?.promoId || null,
+        promoBonusCoins: promo?.bonusCoins || 0,
         playOrderId: orderId || purchase.orderId || null,
         createdAt: FieldValue.serverTimestamp(),
       });

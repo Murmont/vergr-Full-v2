@@ -59,22 +59,36 @@ const esc = (s) => String(s == null ? '' : s)
 const escAttr = (s) => esc(s).replace(/"/g, '&quot;');
 
 // ── Head rewrite: override the shell's title/description/OG/canonical ──
+// ⚠ EVERY replacement here MUST be a FUNCTION, never a template literal.
+//
+// `String.replace` expands `$` sequences in a STRING replacement: `$1`/`$2` are
+// capture groups, `$&` is the whole match, `$'` is everything after it. The text
+// being inserted is page copy, and page copy contains prices.
+//
+// This shipped broken and was live for days. The coins-page description reads
+// "...from $0.99 to $249.99. Pay with card or cryptocurrency." The `$2` inside
+// `$249.99` was expanded to capture group 2, which is `" />`, so the meta tag
+// closed early and `49.99. Pay with card or cryptocurrency." />` rendered as
+// visible text at the top of the page — three times, once per description tag.
+//
+// A replacer FUNCTION does no `$` expansion on its return value, so the copy is
+// inserted verbatim no matter what characters it contains.
 function applyHead(html, { title, description, canonical, jsonld }) {
   let h = html;
-  h = h.replace(/<title>[\s\S]*?<\/title>/, `<title>${esc(title)}</title>`);
-  h = h.replace(/(<meta name="description" content=")[\s\S]*?("\s*\/>)/, `$1${escAttr(description)}$2`);
-  h = h.replace(/(<meta property="og:title" content=")[\s\S]*?("\s*\/>)/, `$1${escAttr(title)}$2`);
-  h = h.replace(/(<meta property="og:description" content=")[\s\S]*?("\s*\/>)/, `$1${escAttr(description)}$2`);
-  h = h.replace(/(<meta property="og:url" content=")[\s\S]*?("\s*\/>)/, `$1${escAttr(canonical)}$2`);
-  h = h.replace(/(<meta name="twitter:title" content=")[\s\S]*?("\s*\/>)/, `$1${escAttr(title)}$2`);
-  h = h.replace(/(<meta name="twitter:description" content=")[\s\S]*?("\s*\/>)/, `$1${escAttr(description)}$2`);
+  h = h.replace(/<title>[\s\S]*?<\/title>/, () => `<title>${esc(title)}</title>`);
+  h = h.replace(/(<meta name="description" content=")[\s\S]*?("\s*\/>)/, (_m, a, b) => a + escAttr(description) + b);
+  h = h.replace(/(<meta property="og:title" content=")[\s\S]*?("\s*\/>)/, (_m, a, b) => a + escAttr(title) + b);
+  h = h.replace(/(<meta property="og:description" content=")[\s\S]*?("\s*\/>)/, (_m, a, b) => a + escAttr(description) + b);
+  h = h.replace(/(<meta property="og:url" content=")[\s\S]*?("\s*\/>)/, (_m, a, b) => a + escAttr(canonical) + b);
+  h = h.replace(/(<meta name="twitter:title" content=")[\s\S]*?("\s*\/>)/, (_m, a, b) => a + escAttr(title) + b);
+  h = h.replace(/(<meta name="twitter:description" content=")[\s\S]*?("\s*\/>)/, (_m, a, b) => a + escAttr(description) + b);
   // Strip the shell's default canonical/robots so we don't emit duplicates.
   h = h.replace(/\s*<link rel="canonical"[^>]*\/>/g, '');
   h = h.replace(/\s*<meta name="robots"[^>]*\/>/g, '');
   const inject = `<link rel="canonical" href="${escAttr(canonical)}" />\n`
     + `<meta name="robots" content="index,follow" />\n`
     + `<script type="application/ld+json">${JSON.stringify(jsonld)}</script>\n`;
-  h = h.replace('</head>', inject + '</head>');
+  h = h.replace('</head>', () => inject + '</head>');
   return h;
 }
 
@@ -86,7 +100,8 @@ function injectBody(html, bodyHtml) {
   if (!html.includes('<div id="root">')) {
     throw new Error('prerenderHelp: <div id="root"> not found in shell — body injection would be dropped');
   }
-  return html.replace('<div id="root">', `<div id="root">${bodyHtml}`);
+  // Function replacement: bodyHtml is page copy and can contain `$&` / `$'`.
+  return html.replace('<div id="root">', () => `<div id="root">${bodyHtml}`);
 }
 
 function write(relUrl, html) {
@@ -252,6 +267,11 @@ async function main() {
     { path: '/platform/contact', h1: 'Contact VERGR',
       title: 'Contact — Get in Touch with VERGR',
       description: 'Send the VERGR team a message about support, privacy, legal, abuse, copyright, press, or partnerships. We reply within two business days.' },
+    // Attribution required by CC BY 3.0 for the chat-theme icons. It is a
+    // licence obligation, so it must resolve even if the SPA bundle fails.
+    { path: '/platform/credits', h1: 'Credits and Attribution',
+      title: 'Credits and Attribution — VERGR',
+      description: 'The third-party artwork and software used in VERGR, and the licences each is used under.' },
     // Google Play links its Data safety form at this URL and checks that it
     // loads. It MUST stay in this list, and it must stay prerendered so it
     // resolves even if the SPA bundle fails.
@@ -305,6 +325,12 @@ async function main() {
     { path: '/platform/download/mobile', h1: 'Get the mobile app',
       title: 'Download the VERGR Android App | VERGR',
       description: 'Get the native VERGR app for Android as a direct download, with published version, size and SHA-256 checksum. iPhone users can install VERGR from Safari in two taps.' },
+    // The LIST page only. Individual entries are created from the admin and
+    // change without a deploy, so prerendering them from a build script would
+    // guarantee a stale copy; the list is the stable, crawlable entry point.
+    { path: '/whats-new', h1: "What's new",
+      title: "What's New | VERGR",
+      description: 'Everything new on VERGR: features, changes and notices, newest first.' },
     { path: '/platform/content-moderation', h1: "Content Moderation Policy",
       title: "Content Moderation Policy | VERGR",
       description: "How VERGR moderates content: what is prohibited, automated scanning, human review, enforcement and appeals." },

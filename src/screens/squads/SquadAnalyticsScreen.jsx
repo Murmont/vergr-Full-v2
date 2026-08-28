@@ -9,6 +9,7 @@ import { compact } from '../../components/squad/squadHelpers';
 import { IS_NATIVE_BUILD } from '../../utils/platform';
 import usePresenceMap from '../../hooks/usePresenceMap';
 import { presenceVisible } from '../../utils/presence';
+import UserName from '../../components/UserName';
 
 function Kpi({ label, value, accent }) {
   return (
@@ -66,7 +67,7 @@ export default function SquadAnalyticsScreen() {
                 {leaderboard.map((m, i) => (
                   <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 8, background: 'rgba(255,255,255,.02)', borderRadius: 10 }}>
                     <span style={{ width: 22, textAlign: 'center', fontFamily: 'DM Mono', fontWeight: 800, color: i === 0 ? 'var(--gold-light)' : 'var(--t2)' }}>#{i + 1}</span>
-                    <span style={{ flex: 1, fontSize: 13, color: '#fff' }}>{m.user?.displayName || m.user?.username || 'Player'}</span>
+                    <span style={{ flex: 1, fontSize: 13, color: '#fff' }}><UserName user={m.user} masked fallback={'Player'} /></span>
                     <span style={{ fontFamily: 'DM Mono', fontSize: 12, color: 'var(--gold-light)' }}>{compact(m.totalContributed || 0)} VC</span>
                   </div>
                 ))}

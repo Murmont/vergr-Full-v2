@@ -1,11 +1,13 @@
 // src/screens/settings/SettingsScreen.jsx
 // Redesigned settings hub. Card grid + danger row. Wallet & Payouts is a
 // link-only entry to /wallet — its UI is intentionally untouched.
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useUser } from '../../context/UserContext';
 import { useLayout } from '../../context/LayoutContext';
+import { useUI } from '../../context/UIContext';
+import { openSupportPath } from '../../firebase/officialChannels';
 import TopBar from '../../components/TopBar';
 import useResponsive from '../../hooks/useResponsive';
 import { C, PageShell } from './_settingsUI';
@@ -21,7 +23,13 @@ const Chevron = () => (
 // Shared settings-card definitions so the web hub and the native hub list the
 // exact same entries (no drift). Sub-components below are function declarations,
 // so they hoist and are usable from here.
-export function getSettingsCards({ navigate, profile, wallet }) {
+export function getSettingsCards({ navigate, profile, wallet, onContactSupport, openingSupport }) {
+  // Defined here rather than in the web component so the NATIVE settings hub
+  // gets a working support entry too. A fix that only lands on web is not a fix
+  // (see feedback-no-web-only-fixes). The caller may pass its own handler to get
+  // a busy label; without one, this still opens the thread.
+  const contactSupport = onContactSupport
+    || (() => openSupportPath().then(navigate).catch(() => {}));
   const displayName = profile?.username || profile?.displayName || 'You';
   const handle = profile?.username ? `@${profile.username}` : '';
   const email = profile?.email || '';
@@ -75,7 +83,13 @@ export function getSettingsCards({ navigate, profile, wallet }) {
     },
     {
       id: 'security', icon: 'shield', color: C.purple, title: 'Security',
-      desc: 'Password, 2FA, active sessions, and trusted devices.',
+      // Named four things; only two existed. /settings/security has exactly
+      // four rows: Change Password, Two-Factor Authentication, Wallet Security,
+      // Sign Out All Devices. There is no session list and no trusted-device
+      // list anywhere in the codebase, so two of the nouns sent the user
+      // looking for something that is not there — on the security screen, which
+      // is the worst place to overstate what you offer (audit A17).
+      desc: 'Password, 2FA, wallet PIN, and signing out everywhere.',
       onClick: () => navigate('/settings/security'),
       right: (
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: C.green, fontSize: 13, fontWeight: 600 }}>
@@ -112,10 +126,10 @@ export function getSettingsCards({ navigate, profile, wallet }) {
           </div>
           <div style={{ display: 'flex', gap: 12, marginBottom: 10, flexWrap: 'wrap' }}>
             {(subTier === 'pro'
-              ? ['Pro badge', '2× VP multiplier', 'Co-streaming', 'Priority support']
+              ? ['Pro badge', '2× VP multiplier', '1080p streaming', '5GB uploads']
               : subTier === 'lite'
               ? ['Lite badge', '1.5× VP multiplier', 'No ads', '720p streaming']
-              : ['Free tier', 'Core + tournaments', '480p streaming', 'Community support']
+              : ['Free tier', 'Core features', '480p streaming', 'Community support']
             ).map(b => (
               <div key={b} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: C.textMuted }}>
                 <CheckCircle/>{b}
@@ -147,15 +161,15 @@ export function getSettingsCards({ navigate, profile, wallet }) {
       ),
     },
     {
-      id: 'wallet', icon: 'account_balance_wallet', color: C.green, title: 'Wallet & Payouts',
-      desc: 'Manage your balances, payout method, and view payout history.',
+      id: 'wallet', icon: 'account_balance_wallet', color: C.green, title: 'Wallet',
+      desc: 'Buy coins, and see what you have spent them on.',
       onClick: () => navigate('/wallet'),
       right: (
         <div style={{ textAlign: 'right' }}>
           <div style={{ fontSize: 10, color: C.textVeryDim, marginBottom: 4 }}>Balance</div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: C.text, fontSize: 13, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
             <span style={{ color: C.amber }}>◆</span>
-            {(wallet?.gems ?? 0).toLocaleString()} gems
+            {(wallet?.balance ?? 0).toLocaleString()} coins
           </div>
         </div>
       ),
@@ -202,10 +216,16 @@ export function getSettingsCards({ navigate, profile, wallet }) {
       ),
     },
     {
-      id: 'help', icon: 'help', color: '#3b82f6', title: 'Help & Support',
-      desc: 'Browse FAQs or contact our support team.',
+      id: 'contact', icon: 'support_agent', color: '#3D7FFF', title: 'Message support',
+      desc: 'Chat to a real person. Opens in your messages.',
+      onClick: contactSupport,
+      right: <LinkBtn>{openingSupport ? 'Opening…' : 'Start a chat'}</LinkBtn>,
+    },
+    {
+      id: 'help', icon: 'help', color: '#3b82f6', title: 'Help centre',
+      desc: 'Answers to the questions people ask most.',
       onClick: () => navigate('/settings/help'),
-      right: <LinkBtn>Visit Help Center</LinkBtn>,
+      right: <LinkBtn>Browse FAQs</LinkBtn>,
     },
     {
       id: 'legal', icon: 'description', color: C.textDim, title: 'Legal',
@@ -293,6 +313,21 @@ export default function SettingsScreen() {
   const navigate = useNavigate();
   const { isMobile } = useResponsive();
   const { setRightPanel, setContentAlign } = useLayout();
+  const { showToast } = useUI();
+  const [openingSupport, setOpeningSupport] = useState(false);
+
+  // Settings is where people go looking for help, so the direct line to a human
+  // lives here rather than two taps deeper behind an FAQ list. Opens a private
+  // thread in their own messages; it never sends them out to a web page.
+  const contactSupport = async () => {
+    setOpeningSupport(true);
+    try {
+      navigate(await openSupportPath());
+    } catch {
+      showToast('Could not open support, please try again', 'error');
+      setOpeningSupport(false);
+    }
+  };
 
   useEffect(() => {
     setRightPanel(null);
@@ -305,7 +340,7 @@ export default function SettingsScreen() {
     navigate('/login', { replace: true });
   };
 
-  const cards = getSettingsCards({ navigate, profile, wallet });
+  const cards = getSettingsCards({ navigate, profile, wallet, onContactSupport: contactSupport, openingSupport });
   const heroCard = cards.find(c => c.id === 'subscription');
   const gridCards = cards.filter(c => c.id !== 'subscription');
 

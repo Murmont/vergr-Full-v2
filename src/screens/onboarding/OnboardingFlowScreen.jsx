@@ -1,4 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
+import { getBoostedUsers } from '../../firebase/firestore';
+import { mergeBoostedFirst } from '../../utils/promoBoost';
+import { boostSlotsFor } from '../../utils/boostDelivery';
 import { useNavigate } from 'react-router-dom';
 import { collection, doc, getDocs, limit, query, updateDoc } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
@@ -167,7 +170,13 @@ export default function OnboardingFlowScreen() {
         const vergr = humans.find((u) => (u.username || '').toLowerCase() === 'vergr');
         const rest = humans.filter((u) => u !== vergr)
           .sort((a, b) => (b.followerCount || 0) - (a.followerCount || 0));
-        setSuggestions([...(vergr ? [vergr] : []), ...rest, ...bots].slice(0, 12));
+        // ⚠ A brand-new user IS looking for people to follow, so this is the
+        // highest-intent slot in the whole product. One boosted profile leads.
+        let boosted = [];
+        try { boosted = await getBoostedUsers({ viewerUid: me, want: boostSlotsFor(12) }); }
+        catch { /* never block onboarding on a boost */ }
+        const organic = [...(vergr ? [vergr] : []), ...rest, ...bots];
+        setSuggestions(mergeBoostedFirst(boosted, organic, 12));
       } catch { setSuggestions([]); }
       setSugLoading(false);
     })();
@@ -377,7 +386,7 @@ export default function OnboardingFlowScreen() {
           <div className="flex-1">
             <div className="rounded-2xl border border-white/[0.08] bg-surface-1 p-5 mb-4 text-center">
               <div className="text-4xl font-syne font-extrabold tabular-nums" style={{ color: '#B44FFF' }}>+{earnedVp.toLocaleString()} VP</div>
-              <p className="text-text-muted text-xs mt-1">VP raises your rank and cuts your cash-out commission.</p>
+              <p className="text-text-muted text-xs mt-1">VP raises your rank and unlocks badges across 100 levels.</p>
             </div>
             <p className="text-text-secondary text-sm font-semibold mb-2.5">Boosters (more VP, optional)</p>
             <div className="space-y-2.5">

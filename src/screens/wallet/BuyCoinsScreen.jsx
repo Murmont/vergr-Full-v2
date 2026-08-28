@@ -231,7 +231,10 @@ export default function BuyCoinsScreen() {
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-text-primary font-extrabold text-[14px]">Invite friends, earn up to {REFERRAL_VP_REFERRER.toLocaleString()} VP</p>
-            <p className="text-text-muted text-[12px] mt-0.5">Higher VP = lower commission when you convert coins → gems. They get 3,000 VP too.</p>
+            {/* Was "Higher VP = lower commission when you convert coins → gems",
+                which described two things that no longer exist: gems, and a
+                VP-keyed commission. Nothing charges a commission anywhere. */}
+            <p className="text-text-muted text-[12px] mt-0.5">VP drives your rank, badges and prestige. They get 3,000 VP too.</p>
           </div>
           <Icon name="arrow_forward" size={18} className="text-text-muted shrink-0" />
         </button>

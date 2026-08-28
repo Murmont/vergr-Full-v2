@@ -88,7 +88,14 @@ const SITE_MAP = {
     items: [
       ['Become a Streamer', '/streamer'],
       ['For Creators',      '/creators'],
-      ['Free Link in Bio',  '/linkinbio'],
+      // `raw: true` — every other footer target is relative to /platform and
+      // gets the prefix from mkPath, but the Link in Bio page is routed at the
+      // TOP level as /linkinbio (it is the canonical URL and what the sitemap
+      // carries). Without this it became /platform/linkinbio, which has no
+      // route, so it fell through CatchAllRoute and silently bounced the
+      // visitor back where they started (audit A42). Checked all 17 footer
+      // targets: this was the only broken one.
+      ['Free Link in Bio',  '/linkinbio', true],
       ['Monetization',      '/monetization'],
       ['Studio Tools',      '/studio-tools'],
       ['Partner Program',   '/partners'],
@@ -623,8 +630,8 @@ function Footer() {
               textTransform: 'uppercase', color: C.violet, marginBottom: 16,
             }}>{col.label}</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {col.items.map(([label, to]) => (
-                <Link key={label} to={mkPath(to)} className="vg-link"
+              {col.items.map(([label, to, raw]) => (
+                <Link key={label} to={raw ? to : mkPath(to)} className="vg-link"
                   style={{ fontSize: 13, textDecoration: 'none' }}>
                   {label}
                 </Link>
@@ -644,7 +651,7 @@ function Footer() {
         <div style={{ maxWidth: 560 }}>
           © {new Date().getFullYear()} {OPERATOR.legalName}. All rights reserved.
           <div style={{ marginTop: 4, color: C.text3 }}>
-            VERGR is operated by {OPERATOR.legalName}, a {OPERATOR.formationState.replace('State of ', '').replace(', United States of America', '')} limited
+            VERGR is operated by {OPERATOR.legalName}, a {OPERATOR.formationStateShort} limited
             liability company, registration number {OPERATOR.registrationNumber}. Registered address:{' '}
             {OPERATOR.registeredAddress}. Contact: {OPERATOR.supportEmail}.
           </div>
@@ -664,6 +671,7 @@ function Footer() {
           <Link to="/platform/law-enforcement" className="vg-link" style={{ textDecoration: 'none' }}>Law Enforcement</Link>
           <Link to="/platform/aml-policy" className="vg-link" style={{ textDecoration: 'none' }}>Anti-Money Laundering</Link>
           <Link to="/platform/anti-fraud" className="vg-link" style={{ textDecoration: 'none' }}>Anti-Fraud</Link>
+          <Link to="/platform/credits" className="vg-link" style={{ textDecoration: 'none' }}>Credits</Link>
         </div>
       </div>
     </footer>
@@ -3660,6 +3668,92 @@ function ContactForm() {
   );
 }
 
+// ── CREDITS ──────────────────────────────────────────────────────────
+// ⚠ THIS PAGE IS A LICENCE OBLIGATION, NOT A COURTESY. The chat-theme patterns
+// use 54 icons from game-icons.net under CC BY 3.0, which REQUIRES the authors
+// be credited publicly. Removing a name here without also removing that
+// artist's icons from scripts/chat-pattern-icons/ is a licence breach.
+//
+// scripts/chat-contrast-check.mjs reads the icon manifest, collects every
+// artist whose work actually ships, and FAILS THE BUILD if this page does not
+// name them. So the credit cannot drift out of date when the icon set changes.
+//
+// MIT sets (Phosphor) need no public credit, their licence text travelling in
+// the source is enough. They are listed anyway: a credits page naming only the
+// licences that force it reads as grudging.
+const CREDIT_SECTIONS = [
+  {
+    title: 'Phosphor Icons',
+    licence: 'MIT',
+    href: 'https://phosphoricons.com',
+    body: 'Interface and pattern icons throughout the app, used at the fill weight. Copyright (c) 2023 Phosphor Icons.',
+    people: null,
+  },
+  {
+    title: 'game-icons.net',
+    licence: 'CC BY 3.0',
+    href: 'https://game-icons.net',
+    body: 'Illustrated icons in the chat-theme background patterns, used in silhouette and composited into a repeating tile.',
+    // ⚠ Keep in step with scripts/chat-pattern-icons/manifest.json.
+    people: ['Lorc', 'Delapouite', 'Skoll', 'Caro Asercion', 'Darkzaitzev'],
+  },
+  {
+    title: 'Material Symbols',
+    licence: 'Apache 2.0',
+    href: 'https://fonts.google.com/icons',
+    body: 'The interface icon font. Copyright (c) Google LLC.',
+    people: null,
+  },
+];
+
+export function CreditsScreen() {
+  useSeo({
+    title: 'Credits and Attribution — VERGR',
+    description: 'The third-party artwork and software used in VERGR, and the licences each is used under.',
+    canonical: 'https://vergr.app/platform/credits',
+  });
+  return (
+    <MarketingShell>
+      <PageHero
+        title="Credits"
+        subtitle="Vergr uses artwork and software made by other people. This page names them and the licence each is used under, as those licences require."
+        accent="violet"
+      />
+      <section className="vg-section" style={{ padding: '0 32px 72px' }}>
+        <div style={{ maxWidth: 760, margin: '0 auto' }}>
+          {CREDIT_SECTIONS.map((sec) => (
+            <div key={sec.title} style={{ marginBottom: 30 }}>
+              <h2 style={{ fontFamily: 'Syne, sans-serif', fontSize: 19, margin: '0 0 6px' }}>
+                {sec.title}
+                <span style={{
+                  marginLeft: 10, fontSize: 11, fontFamily: 'DM Mono, monospace',
+                  padding: '2px 8px', borderRadius: 6, verticalAlign: 'middle',
+                  background: 'rgba(255,255,255,0.07)', color: C.text2,
+                }}
+                >
+                  {sec.licence}
+                </span>
+              </h2>
+              <p style={{ margin: '6px 0', lineHeight: 1.65, color: C.text2 }}>{sec.body}</p>
+              {sec.people && (
+                <p style={{ margin: '6px 0', lineHeight: 1.65, color: C.text2 }}>
+                  Icons by <strong style={{ color: '#fff' }}>{sec.people.join(', ')}</strong>.
+                </p>
+              )}
+              <a href={sec.href} target="_blank" rel="noopener noreferrer" className="vg-link" style={{ fontSize: 13 }}>
+                {sec.href.replace('https://', '')}
+              </a>
+            </div>
+          ))}
+          <p style={{ marginTop: 34, fontSize: 13, color: C.text3 }}>
+            Something missing or wrongly credited? <Link to="/platform/contact" className="vg-link">Tell us</Link> and we will fix it.
+          </p>
+        </div>
+      </section>
+    </MarketingShell>
+  );
+}
+
 export function ContactScreen() {
   useSeo({
     title: 'Contact — Get in Touch with VERGR',
@@ -3792,7 +3886,12 @@ export function DeleteAccountScreen() {
           <Step n={1} title="Open Settings">In the VERGR app or on vergr.app, go to your profile menu and choose Settings.</Step>
           <Step n={2} title="Choose Delete Account">Open Account, then Delete Account. You can also go straight to{' '}
             <Link to="/settings/delete-account" className="vg-link">vergr.app/settings/delete-account</Link>.</Step>
-          <Step n={3} title="Confirm">Re-enter your password (and your second factor, if enabled) to confirm. Deletion begins immediately.</Step>
+          {/* "Immediately" is accurate and must stay accurate: the in-app confirm
+              calls Firebase deleteUser() synchronously and the onUserDeleted
+              trigger wipes the profile straight after. There is no grace period
+              and no cancellation. The in-app screen wrongly promised 30 days
+              until 2026-08-19; if that ever changes, BOTH surfaces move together. */}
+          <Step n={3} title="Confirm">Re-enter your password (and your second factor, if enabled) to confirm. Deletion begins immediately and cannot be cancelled or undone.</Step>
         </div>
       </Section>
 
@@ -3803,6 +3902,8 @@ export function DeleteAccountScreen() {
           <a href="mailto:support@vergr.app?subject=Account%20deletion%20request" className="vg-link" style={{ fontWeight: 700 }}>support@vergr.app</a>{' '}
           with the subject <strong style={{ color: C.text }}>Account deletion request</strong>, from the email address on the account.
           We verify ownership before deleting anything, and we action verified requests within 30 days.
+          That 30 days is how long we may take to process an emailed request, not a grace period: once we
+          action it, deletion is immediate and cannot be undone, exactly as it is in the app.
         </p>
       </Section>
 
@@ -4107,7 +4208,7 @@ export function BecomeStreamerScreen() {
             body="Push from OBS to VERGR's RTMP ingest. 720p at 60fps, 4.5 Mbps. Custom scenes, multi-source layouts, professional tooling." />
           <Tile icon="hd" accent={C.gold}
             title="OBS Pro (Pro)"
-            body="Same RTMP path, higher quality ceiling — 1080p at 60fps, 6.5 Mbps. Plus IP-masked privacy via Cloudflare TURN, and clip lengths up to 90 seconds." />
+            body="Same RTMP path, higher quality ceiling: 1080p at 60fps, 6.5 Mbps, with no daily streaming limit and 90-day replays of every broadcast." />
         </Grid>
       </Section>
       <Section bordered>
@@ -4165,9 +4266,9 @@ export function MonetizationScreen() {
     description: 'Five ways to earn on VERGR: tips, creator memberships, paid stream access, Stream Boost amplification, and squad treasury shares. You keep 50% to 80% of the revenue you generate, rising as you earn, with no other fees.',
     canonical: 'https://vergr.app/platform/monetization',
   });
-  // Real commission per rank — derived from commissionForVP() in src/utils/vpSystem.js
-  // (the same threshold table the server enforces). It steps down with lifetime VP
-  // and hits its 15% floor around 100,000 VP, so every rank from Elite up sits at 15%.
+  // Rank rings by level. Column 3 is the RING NAME shown on the avatar, NOT a fee:
+  // rank is status only and never changes a creator's revenue share (see the header
+  // copy below and REVENUE_SHARE_PLAN.md). The VP-keyed commission model is dead.
   const ranks = [
     ['Rookie',     'Lvl 1–10',  'No ring',   C.text2,  '/badges/rookie1-3.webp'],
     ['Contender',  'Lvl 11–20', 'Bronze',    '#CD7F32', '/badges/contender11-13.webp'],
@@ -4264,7 +4365,7 @@ export function MonetizationScreen() {
             <div>Levels</div>
             <div>Ring</div>
           </div>
-          {ranks.map(([rank, lvl, comm, color, badge], i) => (
+          {ranks.map(([rank, lvl, ring, color, badge], i) => (
             <div key={rank} style={{
               display: 'grid', gridTemplateColumns: '60px 1fr 1fr auto',
               padding: '12px 18px', alignItems: 'center', gap: 14,
@@ -4279,7 +4380,7 @@ export function MonetizationScreen() {
               }} onError={(e) => { e.currentTarget.style.display = 'none'; }} />
               <div className="vg-syne" style={{ fontWeight: 700, color }}>{rank}</div>
               <div className="vg-mono" style={{ fontSize: 12, color: C.text3 }}>{lvl}</div>
-              <div className="vg-mono" style={{ fontWeight: 800, color, fontSize: 14 }}>{comm}</div>
+              <div className="vg-mono" style={{ fontWeight: 800, color, fontSize: 14 }}>{ring}</div>
             </div>
           ))}
         </div>
@@ -4295,10 +4396,9 @@ export function MonetizationScreen() {
             Quests give VP, never coins
           </div>
           <div style={{ fontSize: 14, color: C.text2, lineHeight: 1.7 }}>
-            Creator quests reward you with VP toward your next rank — that's how you climb the conversion table
-            and keep more of what you earn. Coins, on the other hand, only come from real users paying you (tips,
-            memberships, paid stream access, boosted-stream rewards). That's what keeps the economy honest and
-            your earnings credible.
+            Creator quests reward you with VP toward your next rank, which is status and badges, not money. Coins,
+            on the other hand, only come from real users paying you (tips, memberships, paid stream access,
+            boosted-stream rewards). That's what keeps the economy honest and your earnings credible.
           </div>
         </div>
       </Section>
@@ -4409,10 +4509,10 @@ export function LearnLiveScreen() {
             body="3 Mbps source bitrate. Stream from your browser, share screen + webcam, watch your audience build. Upgrade to Lite for 720p60 once you outgrow it." />
           <Tile icon="hd" accent={C.violet}
             title="Lite ($4.99/mo) — 720p · 60 fps"
-            body="4.5 Mbps. 60 fps makes fast-action games look smooth. OBS supported, scheduled streams, ad-free, custom banner. The proper streamer tier." />
+            body="4.5 Mbps. 60 fps makes fast-action games look smooth. OBS supported, four hours a day, scheduled posts, ad-free. The proper streamer tier." />
           <Tile icon="4k" accent={C.gold}
             title="Pro ($9.99/mo) — 1080p · 60 fps"
-            body="6.5 Mbps. Highest quality on the platform, plus IP-masked private streaming via Cloudflare TURN if you don't want your origin exposed." />
+            body="6.5 Mbps. Highest quality on the platform, no daily limit, and every broadcast saved as a 90-day replay." />
         </Grid>
       </Section>
 
@@ -4476,130 +4576,15 @@ export function LearnLiveScreen() {
   );
 }
 
-export function LearnTournamentsScreen() {
-  useSeo({
-    title: 'Online Gaming Tournaments — Cash Prizes for Skill | VERGR',
-    description: 'Compete in CS2, Apex Legends, Overwatch 2, Dota 2 and 60+ supported games. Real brackets, verified results, instant prize payouts. Auto-detected wins via Steam GSI + game APIs. Solo or squad.',
-    canonical: 'https://vergr.app/platform/learn/tournaments',
-  });
-  return (
-    <MarketingShell>
-      <PageHero
-        title="Tournaments Where Your Skill Pays the Bills"
-        subtitle="Real brackets. Real prizes. Verified results. Compete in CS2, Apex, Overwatch 2, Dota 2, and 60+ supported games — solo, with your squad, or host your own event and take a cut."
-        accent="violet"
-        centered
-      />
-
-      <Section>
-        <H2>Four steps from entry to payout</H2>
-        <Grid cols={4} min={220}>
-          <Tile icon="add_circle"     accent={C.cyan}   title="1. Join or host"
-            body="Browse open tournaments and join in one tap, or create your own with custom rules and prize structure." />
-          <Tile icon="lock"           accent={C.violet} title="2. Server escrow"
-            body="Your entry fee is held in server-side escrow the moment you join — refundable while the tournament is still open, locked once it starts." />
-          <Tile icon="emoji_events"   accent={C.gold}   title="3. Play your matches"
-            body="Bracket generates automatically. Where game APIs support it, results are detected automatically — no screenshot wars." />
-          <Tile icon="payments"       accent={C.ember}  title="4. Prize lands in seconds"
-            body="Winner coins hit the wallet within seconds of finalisation. 5% mod cut, the rest goes to placing players per the posted formula." />
-        </Grid>
-      </Section>
-
-      <Section bordered>
-        <H2>Six bracket formats — pick the right one for your event</H2>
-        <Grid cols={3} min={220}>
-          <Tile icon="account_tree"     accent={C.cyan}   title="Single elimination"
-            body="Lose once, you're out. Fastest format — perfect for short evening ladders and weekly cups." />
-          <Tile icon="account_tree"     accent={C.violet} title="Double elimination"
-            body="Lose twice, you're out. Winners + losers brackets ensure the true champion crowns themselves." />
-          <Tile icon="grid_on"          accent={C.gold}   title="Swiss"
-            body="Configurable rounds, players paired by record. Great for 16+ entrants without committing to a full single-elim." />
-          <Tile icon="public"           accent={C.ember}  title="Battle Royale"
-            body="Multi-game format with point accumulation per placement. Built for Apex, Warzone, Fortnite, PUBG." />
-          <Tile icon="loop"             accent={C.pink}   title="Round-robin"
-            body="Everyone plays everyone. Ideal for small groups (≤8) where every match matters." />
-          <Tile icon="psychology"       accent={C.cyan}   title="Custom"
-            body="Host non-standard formats with manual bracket entry. Admin override on results when you need it." />
-        </Grid>
-      </Section>
-
-      <Section bordered>
-        <H2>Auto-detected results — no more "I won, no I won"</H2>
-        <P max={720}>
-          Result reporting is one of the biggest headaches in community tournaments. VERGR auto-detects winners
-          wherever the game lets us, falling back to a two-player-agree flow when it doesn't.
-        </P>
-        <Grid cols={3} min={240}>
-          <Tile icon="memory" accent={C.cyan}
-            title="Steam GSI — CS2 & Dota 2"
-            body="Install the auto-generated config file once. The game itself reports your match outcome to VERGR the moment the post-game screen loads. Zero screenshots needed." />
-          <Tile icon="api" accent={C.violet}
-            title="Game wrappers — Apex & OW2"
-            body="Link your EA/Origin or Battle.net account. We poll the game's stats API and detect the win on the next refresh. Live for Apex Legends and Overwatch 2 today." />
-          <Tile icon="how_to_reg" accent={C.gold}
-            title="Two-player-agree fallback"
-            body="No integration for your game? Both players report the result through the in-app reporter. If you agree, the match advances. If you don't, a Vanguard mod reviews evidence." />
-        </Grid>
-      </Section>
-
-      <Section bordered>
-        <H2>Host your own — keep most of the entry fees flowing back to your community</H2>
-        <Grid cols={3} min={240}>
-          <Tile icon="vertical_align_top" accent={C.cyan}   title="Up to 10,000 coins per entry"
-            body="Cap is locked at 10,000 coins per player. We disclosed this to Riot Games when applying for their tournament API — moving the cap would mean re-notifying them." />
-          <Tile icon="bar_chart"          accent={C.violet} title="Up to 500,000 coins in prizes"
-            body="Per-tournament prizes top out at 500,000 coins. Plenty of room to run a serious event while keeping things responsible." />
-          <Tile icon="shield_person"      accent={C.gold}   title="Fixed 5% platform fee"
-            body="VERGR takes 5% of the total prize to fund moderation, escrow, dispute resolution, and the infrastructure. The remaining 95% goes to placing players, never higher." />
-        </Grid>
-      </Section>
-
-      <Section bordered>
-        <H2>Squad tournaments — enter as a team, win as a team</H2>
-        <P max={720}>
-          Tournaments aren't just solo. Enter as a 5-stack in CS2, a 6-stack in Overwatch 2, or a full squad in any
-          team-based title. The bracket runs squad-vs-squad, results count toward the squad leaderboard, and prizes
-          drop directly into the squad treasury split however your squad has agreed (equal, contribution-based, or
-          leader-defined).
-        </P>
-      </Section>
-
-      <Section bordered>
-        <H2>Disputes — never your word against theirs</H2>
-        <P max={720}>
-          When players disagree on a result, the match flips to <span className="vg-mono" style={{ color: C.ember }}>disputed</span> and
-          a Vanguard moderator reviews it using screenshots, replay data, GSI logs, or wrapper API records — whichever
-          is available. Admins have the final word on edge cases. Every action is audit-logged so the same dispute
-          never re-litigates.
-        </P>
-      </Section>
-
-      <Section bordered>
-        <div style={{ padding: 20, borderRadius: 12, background: `${C.ember}11`, border: `1px solid ${C.ember}55` }}>
-          <div className="vg-syne" style={{ fontSize: 16, fontWeight: 800, color: C.ember, marginBottom: 8 }}>
-            Skill-based competitions, not a casino
-          </div>
-          <div style={{ fontSize: 14, color: C.text2, lineHeight: 1.7 }}>
-            VERGR tournaments are competitions of skill with posted rules, verified results, and transparent prize
-            distribution. There is no random-chance betting, no slot mechanics, no wagering against the house, no
-            loot-box mechanics on prizes. Outcomes are determined by player skill — execution, decision-making,
-            strategy. Eligibility to participate depends on age (18+) and jurisdiction. Full rules at{' '}
-            <Link to="/platform/learn/tournament-rules" style={{ color: C.cyan }}>/learn/tournament-rules</Link>.
-          </div>
-        </div>
-      </Section>
-
-      <Section bordered>
-        <div style={{ textAlign: 'center', padding: '24px 0' }}>
-          <H2>Find a tournament. Win some coins.</H2>
-          <Link to="/signup" className="vg-btn-primary" style={{ textDecoration: 'none' }}>
-            Create my account →
-          </Link>
-        </div>
-      </Section>
-    </MarketingShell>
-  );
-}
+// LearnTournamentsScreen REMOVED 2026-08-19 (founder instruction: tournaments,
+// and anything indicating them, come out). It was a full marketing page titled
+// "Online Gaming Tournaments - Cash Prizes for Skill", selling entry fees,
+// server-side escrow and prize structures. It had no Route, was absent from
+// sitemap.xml and the prerender list, and /platform/learn/tournaments already
+// redirected to the marketing home, so nothing user-facing changes. It is gone
+// rather than left as dead code because llms.txt states publicly that Vergr
+// runs no prize competitions, and a file selling cash prizes is the single
+// worst thing for a processor or store reviewer to find in this repo.
 
 export function LearnSquadsScreen() {
   useSeo({

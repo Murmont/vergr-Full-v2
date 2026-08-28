@@ -18,12 +18,14 @@ import { useWalletUnlock } from '../../../context/WalletUnlockContext';
 import {
   WalletCard, WalletButton, SectionLabel, Pill, Callout,
   CoinGlyph, VPGlyph, AnimatedNumber, StatusPill,
-  WALLET_TOKENS, fmtNum, fmtEUR, fmtUsd,
+  WALLET_TOKENS, fmtNum, fmtEUR, fmtUsd, txUnit,
 } from '../../../components/wallet/primitives';
 import Icon from '../../../components/Icon';
+import MyBoosts from '../../../components/wallet/MyBoosts';
 import { getTransactions } from '../../../firebase/firestore';
 import { getVPLevel, getNextVPLevel, COIN_VALUE_USD } from '../../../utils/vpSystem';
 import { getMyWalletSecurityStatus } from '../../../firebase/walletCallables';
+import { resyncNow } from '../../../firebase/resync';
 
 const useGreeting = () => {
   const h = new Date().getHours();
@@ -48,6 +50,14 @@ export default function HomeScreen() {
   }, [profile?.uid]);
 
   const coins = wallet?.balance || 0;
+
+  // A balance served from the on-device cache is not a balance we can vouch
+  // for. With persistentLocalCache on, a stalled connection does not error, it
+  // just keeps handing back the last document it saw, so a wrong number looks
+  // exactly like a right one. Saying so is the difference between a delay and
+  // a lie. `_fromCache` is true on a normal cold start too, for the moment
+  // before the server answers, so the notice is deliberately quiet.
+  const unverified = wallet?._fromCache === true;
 
   const vp    = wallet?.vp      || 0;
   const vpInfo = getVPLevel(vp);
@@ -120,6 +130,19 @@ export default function HomeScreen() {
                 <WalletButton size="sm" variant="secondary" onClick={() => navigate('/wallet/history')}>History</WalletButton>
               </>
             }
+            note={unverified ? (
+              <button
+                onClick={() => resyncNow()}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 8,
+                  background: 'transparent', border: 0, padding: 0, cursor: 'pointer',
+                  fontSize: 11.5, color: WALLET_TOKENS.textMuted,
+                }}
+              >
+                <Icon name="cloud_off" size={13} />
+                Showing your last known balance. Tap to refresh.
+              </button>
+            ) : null}
           />
 
           {/* VP */}
@@ -172,6 +195,19 @@ export default function HomeScreen() {
             title="Buy coins" sub="Card or bank" onClick={() => navigate('/wallet/buy')} />
           <QuickAction icon="workspace_premium" color={WALLET_TOKENS.success}
             title="Subscriptions" sub="Creators you support" onClick={() => navigate('/memberships')} />
+          {/* /boost was ROUTED and linked from nowhere (audit A31): a whole
+              revenue category sat behind a URL nobody could reach, and every
+              purchase on it failed anyway. Purchases work now, so it gets an
+              entry point. The wallet is the right home — it is where you spend
+              coins. */}
+          <QuickAction icon="rocket_launch" color={WALLET_TOKENS.violet}
+            title="Boosts" sub="Get seen by more people" onClick={() => navigate('/wallet/buy')} />
+        </div>
+
+        {/* What you own. Boosts are inventory now, and inventory you cannot see
+            is indistinguishable from inventory you do not have. */}
+        <div style={{ marginTop: 24 }}>
+          <MyBoosts />
         </div>
 
         {/* Recent activity */}
@@ -228,7 +264,7 @@ function Chip({ ok, label }) {
   );
 }
 
-function BalCard({ tint, glyph, label, labelColor, value, valueColor, fiat, below, actions, lockOverlay }) {
+function BalCard({ tint, glyph, label, labelColor, value, valueColor, fiat, below, actions, lockOverlay, note }) {
   const gradMap = {
     coin: 'rgba(240,165,0,0.08)',
     vp:   'rgba(123,31,255,0.08)',
@@ -259,6 +295,7 @@ function BalCard({ tint, glyph, label, labelColor, value, valueColor, fiat, belo
           ≈ {fiat}
         </div>
       )}
+      {note}
       {below}
       {actions && (
         <div style={{ display: 'flex', gap: 8, marginTop: 'auto', paddingTop: 16, flexWrap: 'wrap' }}>
@@ -388,7 +425,7 @@ function TxRow({ tx }) {
         fontWeight: 600, fontSize: 14, textAlign: 'right',
         color: credit ? '#86EFAC' : WALLET_TOKENS.text,
       }}>
-        {credit ? '+' : ''}{fmtNum(amount)} {currency === 'gems' ? '' : 'c'}
+        {credit ? '+' : ''}{fmtNum(amount)} {txUnit(currency)}
       </div>
       {tx.status && tx.status !== 'settled' && tx.status !== 'completed'
         ? <StatusPill status={tx.status} />

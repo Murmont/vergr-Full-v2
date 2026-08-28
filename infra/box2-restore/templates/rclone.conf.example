@@ -1,0 +1,9 @@
+[r2]
+type = s3
+provider = Cloudflare
+access_key_id = <SET ME — see RESTORE.md>
+secret_access_key = <SET ME — see RESTORE.md>
+endpoint = https://332dda2f48c3ddcd0a36fbd934136db6.r2.cloudflarestorage.com
+region = auto
+acl = private
+no_check_bucket = true

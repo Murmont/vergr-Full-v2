@@ -39,7 +39,7 @@ export default function IntegrationsPanel({ blocks, setBlocks }) {
           <span className="text-sm flex items-center gap-2"><Icon name="link" size={18} className="text-brand-violet-light" /> Steam, Twitch, YouTube, Discord…</span>
           <Icon name="chevron_right" size={18} className="text-text-muted" />
         </button>
-        <p className="text-[11px] text-text-muted mt-2">Add a <b>My live stream</b>, <b>tournament</b>, <b>event</b> or <b>squad</b> block from the Links tab to feature your Vergr activity.</p>
+        <p className="text-[11px] text-text-muted mt-2">Add a <b>My live stream</b>, <b>event</b> or <b>squad</b> block from the Links tab to feature your Vergr activity.</p>
       </Card>
     </div>
   );

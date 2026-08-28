@@ -118,7 +118,7 @@ export default function NativeChatSettingsScreen() {
         <div className="text-center mb-8">
           <div className="w-24 h-24 rounded-3xl bg-surface-3 mx-auto flex items-center justify-center text-4xl mb-4 overflow-hidden border-2 border-white/[0.06]">
             {chat.isGroup ? (
-              chat.groupIcon ? <img src={chat.groupIcon} alt="" className="w-full h-full object-cover" /> : <span>👥</span>
+              (chat.groupIcon || chat.groupAvatar) ? <img src={chat.groupIcon || chat.groupAvatar} alt="" className="w-full h-full object-cover" /> : <span>👥</span>
             ) : (
               <UserAvatar src={otherUser?.avatar} size={96} />
             )}

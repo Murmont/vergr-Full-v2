@@ -507,7 +507,6 @@ function HandbookTab() {
           <li>Recruits earn 0× (no share until promoted to Vanguard).</li>
           <li>Vanguard 1×, Senior 1.25×, Commander 1.5×, Overseer 2×.</li>
           <li>You also earn <strong style={{ color: C.success }}>per-action VP</strong> at your rank's rate (Vanguard +50, Senior +100, Commander +200, Overseer +500). While your Vanguard status is active you keep 100% of your creator revenue share.</li>
-          <li><strong style={{ color: C.success }}>Coin → Gem conversion is 0% commission</strong> for you. Normal users pay 5–30%.</li>
         </ul>
       </Section>
 
@@ -524,11 +523,18 @@ function HandbookTab() {
       <Section title="Platform rules you should know (FAQ for users)">
         <ul style={{ paddingLeft: 20, fontSize: 13, lineHeight: 1.7, color: C.textDim }}>
           <li><strong style={{ color: C.text }}>Tips:</strong> nothing is taken at send time. Vergr pays the creator a share of the revenue, 50% to 80% by lifetime earnings, and active Vanguard keep 100%.</li>
-          <li><strong style={{ color: C.text }}>Coin → Gem conversion:</strong> tier-based commission (Rookie 30% → Diamond 5%). You're 0%.</li>
-          <li><strong style={{ color: C.text }}>Tournaments:</strong> 5% mod cut. Max entry fee 10,000 coins. Max prize pool 500,000 coins (Riot caps).</li>
-          <li><strong style={{ color: C.text }}>Payouts:</strong> 7-day hold, 2% spread, crypto-only at launch, min 1,000 gems.</li>
+          {/* Gems, coin→gem conversion, user-initiated withdrawals and
+              tournaments were all removed from the product. The lines that
+              described them (a 5–30% conversion commission, a 2% payout spread,
+              a 1,000-gem minimum, a 5% tournament mod cut) were still being
+              read out to moderators as current policy, which is how a stale
+              number gets repeated to a user as fact. Replaced with what the
+              code does now. See CLAUDE.md "GEMS ARE DELETED". */}
+          <li><strong style={{ color: C.text }}>Revenue share:</strong> the only earning model. There is no fee, commission or spread on any surface. Creators keep 50% to 80%, set by lifetime earnings alone, never by plan or VP rank.</li>
+          <li><strong style={{ color: C.text }}>Coins:</strong> a licence to use Vergr features. They have no cash value, cannot be transferred, and cannot be withdrawn or converted by anyone.</li>
+          <li><strong style={{ color: C.text }}>Payouts:</strong> Vergr pays creators their accrued share on Vergr's own schedule. There is no user-initiated withdrawal.</li>
           <li><strong style={{ color: C.text }}>Squads:</strong> 100-member cap (Vanguard is unlimited). /vote in chat triggers role elections.</li>
-          <li><strong style={{ color: C.text }}>KYC:</strong> required for tournament entry + payouts. Not required for tipping / buying coins.</li>
+          <li><strong style={{ color: C.text }}>KYC:</strong> required before Vergr can pay a creator their share. Not required for tipping, buying coins or anything else.</li>
           <li><strong style={{ color: C.text }}>Free streaming:</strong> requires 100 followers + 50-coin Stream Boost (refunded by first 50 in tips).</li>
         </ul>
       </Section>

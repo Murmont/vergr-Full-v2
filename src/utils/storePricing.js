@@ -79,10 +79,18 @@ export const PLAY_SERVICE_FEE = 0.15;
  * NOW USD (2026-08-11), because the catalogue is natively USD. The number is the
  * ladder's floor rate: Ascendant, $249.99 / 21,500 coins = $0.011628.
  *
- * Why the floor is where it is: an earned coin costs us EUR 0.0075 (~$0.0081) to
- * pay out at the worst rank (Immortal 15% commission, then the 2% withdrawal
- * spread), and the payout does NOT move when the sale price does. Selling below
- * this loses money the moment the holder converts to gems.
+ * Why the floor is where it is: an earned coin can cost us up to $0.008 to pay
+ * out, because a creator at the top of the ladder keeps 80% of the $0.01 that
+ * coin represents. That cost does NOT move when the sale price does, so selling
+ * below this floor loses money on every coin a creator earns.
+ *
+ * ⚠ The previous version of this note derived the same floor from "Immortal 15%
+ * commission, then the 2% withdrawal spread", and from coins converting to gems.
+ * None of that exists: gems, conversion, withdrawals and the VP commission
+ * ladder are all gone, and revenue share is the only model. The FLOOR IS
+ * UNCHANGED and is not being adjusted here — only the reasoning behind it, so
+ * nobody re-derives a price from a dead model. Any change to the number itself
+ * is a founder decision.
  */
 export const TARGET_NET_USD_PER_COIN = 0.011628;
 

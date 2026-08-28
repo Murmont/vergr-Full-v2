@@ -38,11 +38,19 @@ const INVITE_TTL_MS = 14 * 24 * 60 * 60 * 1000; // 14 days
 const ADMIN_SCREENS = [
   'dashboard',
   'announcements',
+  // Granted on its own so someone can answer support tickets and reach nothing
+  // else in the admin. Support agents are ordinary accounts, not admins.
+  'support',
   'users',
+  // 'creators' was in the sidebar (ADMIN_NAV) but never in this list, and
+  // normalizeScreens() silently drops anything not listed here, so a sub-admin
+  // could never be granted the Creators screen no matter what was ticked.
+  'creators',
   'moderation',
   'economy',
   'subscriptions',
-  'tournaments',
+  // 'tournaments' removed 2026-08-17 with the admin Tournaments screen. Any
+  // sub-admin still carrying the old grant has it dropped by normalizeScreens().
   'config',
   'stream-preview',
   'stats',

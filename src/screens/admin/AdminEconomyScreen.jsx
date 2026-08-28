@@ -1,15 +1,22 @@
 // AdminEconomyScreen — /admin/economy
 //
-// Tabs: Overview / Grant / Withdrawals / Transactions / Settings
+// Tabs: Overview / Grant / Payouts / Transactions / Settings
 //
-// Note: refunds do not exist on VERGR. The Withdrawals tab can Approve a
-// queued request, Mark it Processing, Mark it Sent, or Cancel it (which
-// returns the held gems to the user wallet). Once a withdrawal is Sent it
-// is final — there is no reversal action.
+// The Withdrawals tab was replaced by Payouts on 2026-08-17. Users cannot
+// withdraw and never could since 2026-08-16: the whole user-initiated flow was
+// deleted and its callables undeployed. Money leaves Vergr in exactly ONE way -
+// runCreatorPayouts computes what Vergr owes its creators as suppliers and pays
+// them on Vergr's schedule, so that is what this screen shows. The legacy
+// withdrawal rows are still reachable, collapsed, read-mostly, because a handful
+// of pre-deletion test rows exist and a blank screen is worse than a labelled one.
+//
+// Refunds do not exist. Cancelling a legacy row returns the held amount to the
+// wallet; a row already marked Sent can never be reversed.
 //
 // All write actions go through guarded callables (audit + TOTP step-up + rate limit).
 
 import { useState, useEffect, useCallback } from 'react';
+import AdminPromosTab from './AdminPromosTab';
 import { useUI } from '../../context/UIContext';
 import Icon from '../../components/Icon';
 import UserAvatar from '../../components/UserAvatar';
@@ -22,10 +29,13 @@ import {
 const TABS = [
   { id: 'overview',     label: 'Overview' },
   { id: 'grant',        label: 'Grant' },
-  { id: 'payouts',      label: 'Withdrawals' },
+  { id: 'payouts',      label: 'Creator payouts' },
+  { id: 'promos',       label: 'Coin sales' },
   { id: 'transactions', label: 'Transactions' },
   { id: 'settings',     label: 'Settings' },
 ];
+
+const usd = (micro) => `$${((Number(micro) || 0) / 1e6).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 export default function AdminEconomyScreen() {
   const [tab, setTab] = useState('overview');
@@ -35,12 +45,13 @@ export default function AdminEconomyScreen() {
     <AdminShell
       screen="economy"
       title="Economy"
-      subtitle="Monitor and move the virtual economy."
+      subtitle="Coins in, revenue share out. No user-initiated withdrawal exists."
     >
       <Tabs tabs={TABS} active={tab} onChange={setTab} />
       {tab === 'overview'     && <OverviewTab />}
       {tab === 'grant'        && <GrantTab guarded={guarded} />}
       {tab === 'payouts'      && <PayoutsTab guarded={guarded} />}
+      {tab === 'promos'       && <AdminPromosTab />}
       {tab === 'transactions' && <TransactionsTab />}
       {tab === 'settings'     && <SettingsTab guarded={guarded} />}
       {overlay}
@@ -56,18 +67,21 @@ function OverviewTab() {
   const { showToast } = useUI();
   const [stats, setStats] = useState(null);
   const [topCoins, setTopCoins] = useState([]);
-  const [topGems, setTopGems] = useState([]);
+  const [topOwed, setTopOwed] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  const [payout, setPayout] = useState(null);
 
   const reload = useCallback(async () => {
     setLoading(true);
     try {
-      const [s, c, g] = await Promise.all([
+      const [s, c, g, po] = await Promise.all([
         call('adminGetEconomyStats'),
         call('adminListTopWallets', { sortBy: 'balance', limit: 5 }),
-        call('adminListTopWallets', { sortBy: 'gems',    limit: 5 }),
+        call('adminListTopWallets', { sortBy: 'owedMicroUsd', limit: 5 }),
+        call('adminGetPayoutOverview').catch(() => null),
       ]);
-      setStats(s); setTopCoins(c.rows || []); setTopGems(g.rows || []);
+      setStats(s); setTopCoins(c.rows || []); setTopOwed(g.rows || []); setPayout(po);
     } catch (err) {
       showToast(err?.message || 'Failed to load economy', 'error');
     }
@@ -78,23 +92,56 @@ function OverviewTab() {
 
   return (
     <>
+      {payout && !payout.partnerConfigured && (
+        <div style={{
+          padding: 14, marginBottom: 16, borderRadius: 12,
+          background: 'rgba(240,64,96,0.10)', border: '1px solid rgba(240,64,96,0.35)',
+          fontSize: 12.5, color: '#f8a5b4', lineHeight: 1.55,
+        }}>
+          <strong style={{ color: '#f04060' }}>No payout partner is wired.</strong> Nobody can be paid.
+          A run that cannot disburse marks itself <code>blocked</code> and moves nothing, deliberately -
+          the alternative is debiting the payable and failing to send it. {usd(payout.liability?.owedMicroUsd)}
+          {' '}is owed to {fmtNumber(payout.liability?.creditorCount)} creator(s) and will keep accruing
+          until <code>disbursePayout()</code> is implemented and{' '}
+          <code>PAYOUT_PARTNER_CONFIGURED</code> is flipped in the same commit.
+        </div>
+      )}
+
+      {payout?.legacyOpenWithdrawals > 0 && (
+        <div style={{
+          padding: 12, marginBottom: 16, borderRadius: 12,
+          background: 'rgba(245,197,66,0.10)', border: '1px solid rgba(245,197,66,0.30)',
+          fontSize: 12, color: '#f5c542',
+        }}>
+          {fmtNumber(payout.legacyOpenWithdrawals)} legacy withdrawal row(s) are still in a non-terminal
+          state. Nothing processes them any more, cancel them on the Creator payouts tab to return the
+          held amount to the wallet.
+        </div>
+      )}
+
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12, marginBottom: 16 }}>
         <KpiCard icon="paid"        color="#f5c542" label="Coins in circulation" value={loading ? '—' : fmtNumber(stats?.coinsInCirculation)} sub={stats ? `${fmtNumber(stats.walletCount)} wallets` : null} />
-        <KpiCard icon="diamond"     color="#7c3aed" label="Gems in circulation"  value={loading ? '—' : fmtNumber(stats?.gemsInCirculation)} />
-        <KpiCard icon="schedule"    color="#3b82f6" label="Gems pending payout"  value={loading ? '—' : fmtNumber(stats?.gemsPendingPayout)} sub={stats ? `${fmtNumber(stats.pendingPayoutCount)} requests` : null} />
-        <KpiCard icon="payments"    color="#22c55e" label="Total paid (all time)" value={loading ? '—' : fmtMoney(stats?.totalPaidEUR)} sub={stats ? `${fmtNumber(stats.totalPayoutsCount)} withdrawals` : null} />
+        {/* This is a LIABILITY, not a balance the creator can call on. */}
+        <KpiCard icon="request_quote" color="#7c3aed" label="Revenue share owed" value={loading ? '—' : usd(stats?.owedMicroUsd)}
+          sub={payout ? `${fmtNumber(payout.liability?.creditorCount)} creditor(s)` : null} />
+        <KpiCard icon="payments"    color="#22c55e" label="Paid to creators"     value={loading ? '—' : usd(payout?.statements?.paidMicroUsd ?? stats?.paidMicroUsd)}
+          sub={payout ? `${fmtNumber(payout.statements?.paidCount)} statement(s)` : null} />
+        <KpiCard icon="how_to_reg"  color="#3b82f6" label="Enrolled for payout"  value={loading ? '—' : fmtNumber(payout?.accounts?.enrolled ?? stats?.enrolledForPayout)}
+          sub={payout ? `min ${usd(payout.minPayoutMicroUsd)} · ${payout.minAccountAgeDays}d account age` : null} />
         <KpiCard icon="local_activity" color="#b44fff" label="VP in circulation"  value={loading ? '—' : fmtNumber(stats?.vpInCirculation)} />
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16 }}>
         <TopList title="Top coin holders" rows={topCoins} field="balance" suffix="coins" />
-        <TopList title="Top gem holders"  rows={topGems}  field="gems"    suffix="gems" />
+        {/* micro-USD is an internal unit and must never be printed at a user, or
+            at a founder reading a liability figure off a dashboard. */}
+        <TopList title="Most owed"        rows={topOwed}  field="owedMicroUsd" money />
       </div>
     </>
   );
 }
 
-function TopList({ title, rows, field, suffix }) {
+function TopList({ title, rows, field, suffix, money = false }) {
   return (
     <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16 }}>
       <h3 style={{ margin: 0, fontSize: 13, fontWeight: 700, color: C.text, marginBottom: 12 }}>{title}</h3>
@@ -113,7 +160,7 @@ function TopList({ title, rows, field, suffix }) {
                 {r.username && <div style={{ fontSize: 10, color: C.textDim }}>@{r.username}</div>}
               </div>
               <div className="font-dmmono tabular-nums" style={{ fontSize: 12, fontWeight: 700, color: C.text }}>
-                {fmtNumber(r[field])} {suffix}
+                {money ? usd(r[field]) : `${fmtNumber(r[field])} ${suffix}`}
               </div>
             </div>
           ))}
@@ -166,12 +213,16 @@ function GrantTab({ guarded }) {
     const amt = Number(amount);
     if (!picked) return showToast('Pick a user first', 'error');
     if (!Number.isFinite(amt) || amt === 0) return showToast('Amount must be a non-zero number', 'error');
+    if (currency === 'owed' && Math.abs(amt) > 1000) return showToast('Max $1,000 per adjustment', 'error');
     if (!reason.trim()) return showToast('Reason required', 'error');
-    const callable = currency === 'coins' ? 'adminGrantCoins' : currency === 'vp' ? 'adminGrantVp' : 'adminGrantGems';
+    const callable = currency === 'coins' ? 'adminGrantCoins' : currency === 'vp' ? 'adminGrantVp' : 'adminGrantOwed';
+    // The payable is stored in micro-USD. Nobody is going to type 25000000 to
+    // mean $25, so the field takes DOLLARS and the conversion happens here.
+    const wire = currency === 'owed' ? Math.round(amt * 1e6) : amt;
     setBusy(true);
     try {
-      await guarded(() => call(callable, { targetUid: picked.uid, amount: amt, reason: reason.trim() }));
-      showToast(`Granted ${amt} ${currency} to ${picked.displayName}`, 'success');
+      await guarded(() => call(callable, { targetUid: picked.uid, amount: wire, reason: reason.trim() }));
+      showToast(`Adjusted ${currency === 'owed' ? usd(wire) : `${amt} ${currency}`} for ${picked.displayName}`, 'success');
       setAmount(''); setReason('');
       loadRecent();
     } catch {}
@@ -183,7 +234,12 @@ function GrantTab({ guarded }) {
       <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 18 }}>
         <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: C.text }}>Grant currency</h3>
         <p style={{ margin: '6px 0 14px', fontSize: 12, color: C.textDim }}>
-          Credit (or deduct using a negative amount) coins / gems / VP for a user. Every grant logs to <code>admin_actions/</code> and writes a transaction entry.
+          Credit (or deduct with a negative amount) coins, VP, or the revenue share Vergr owes.
+          Every adjustment logs to <code>admin_actions/</code> and writes a transaction entry.
+          <br />
+          A grant is a comp, a support credit or test data. It is <strong>never</strong> revenue, so it
+          lands in <code>totalGranted*</code> and is deliberately kept out of the creator's earnings
+          totals.
         </p>
 
         <Label>Target user</Label>
@@ -232,9 +288,13 @@ function GrantTab({ guarded }) {
           </>
         )}
 
-        <Label>Currency</Label>
+        <Label>What to adjust</Label>
         <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
-          {['coins', 'gems', 'vp'].map(c => (
+          {[
+            { id: 'coins', label: 'Coins' },
+            { id: 'owed',  label: 'Revenue share (USD)' },
+            { id: 'vp',    label: 'VP' },
+          ].map(({ id: c, label: cLabel }) => (
             <button
               key={c}
               onClick={() => setCurrency(c)}
@@ -243,20 +303,26 @@ function GrantTab({ guarded }) {
                 background: currency === c ? C.accent : 'transparent',
                 border: `1px solid ${currency === c ? C.accent : C.border}`,
                 color: currency === c ? '#fff' : C.text,
-                fontSize: 12, fontWeight: 700, cursor: 'pointer', textTransform: 'uppercase',
+                fontSize: 12, fontWeight: 700, cursor: 'pointer',
               }}
-            >{c}</button>
+            >{cLabel}</button>
           ))}
         </div>
 
-        <Label>Amount (negative deducts)</Label>
+        <Label>{currency === 'owed' ? 'Amount in USD (negative deducts)' : 'Amount (negative deducts)'}</Label>
         <input
           type="number"
+          step={currency === 'owed' ? '0.01' : '1'}
           value={amount}
           onChange={e => setAmount(e.target.value)}
-          placeholder="e.g. 1000 or -500"
+          placeholder={currency === 'owed' ? 'e.g. 25.50 or -10' : 'e.g. 1000 or -500'}
           style={inputStyle}
         />
+        {currency === 'owed' && (
+          <div style={{ fontSize: 11, color: C.textDim, marginTop: -6, marginBottom: 12 }}>
+            Stored as {usd(Math.round((Number(amount) || 0) * 1e6))} in micro-USD on the wallet payable. Max $1,000.
+          </div>
+        )}
 
         <Label>Reason (logged to audit, shown to user)</Label>
         <textarea
@@ -279,7 +345,9 @@ function GrantTab({ guarded }) {
           }}
         >
           <Icon name={busy ? 'hourglass_top' : 'send'} size={16} />
-          {busy ? 'Granting…' : `Grant ${amount || 0} ${currency}`}
+          {busy ? 'Applying…' : currency === 'owed'
+            ? `Adjust by ${usd(Math.round((Number(amount) || 0) * 1e6))}`
+            : `Grant ${amount || 0} ${currency}`}
         </button>
       </div>
 
@@ -306,24 +374,303 @@ function GrantTab({ guarded }) {
 }
 
 // ───────────────────────────────────────────────────────────
-// PAYOUTS
+// CREATOR PAYOUTS
 // ───────────────────────────────────────────────────────────
+//
+// This is the only way money leaves Vergr. `runCreatorPayouts` (daily 06:00 UTC)
+// works out what Vergr owes each enrolled creator as a supplier and pays it on
+// Vergr's schedule. There is no user-initiated withdrawal and there has not been
+// one since 2026-08-16.
+//
+// The legacy withdrawal queue lives at the bottom, collapsed, because a few
+// pre-deletion test rows exist and nothing processes them any more.
 
 const PAYOUT_STATUS_COLORS = {
-  pending:            '#3b82f6',   // Phase 4 default state
-  requested:          '#3b82f6',   // legacy
-  on_hold:            '#f5c542',   // legacy
-  ready:              '#7c3aed',
-  processing:         '#b44fff',
-  sent:               '#22c55e',
-  failed:             '#f04060',   // Phase 4 — Circle reject / on-chain fail
-  cancelled:          '#9ca3af',   // Phase 4 — user or admin cancelled
-  rejected:           '#f04060',   // legacy
-  queued_placeholder: '#f5c542',
+  // Statement + run statuses (live pipeline)
+  paid:                '#22c55e',
+  pending:             '#3b82f6',
+  complete:            '#22c55e',
+  complete_with_errors:'#f5c542',
+  blocked:             '#f04060',
+  running:             '#b44fff',
+  // Legacy withdrawal-row statuses
+  requested:           '#3b82f6',
+  on_hold:             '#f5c542',
+  ready:               '#7c3aed',
+  processing:          '#b44fff',
+  sent:                '#22c55e',
+  failed:              '#f04060',
+  cancelled:           '#9ca3af',
+  rejected:            '#f04060',
+  queued_placeholder:  '#f5c542',
 };
 
-// Phase 4 status names: `pending` (was: requested + on_hold). Keep legacy
-// `requested`/`on_hold`/`ready` so older test rows show up under those pills.
+function StatusChip({ status }) {
+  const color = PAYOUT_STATUS_COLORS[status] || C.textDim;
+  return (
+    <span style={{
+      padding: '3px 8px', borderRadius: 6, background: `${color}25`, color,
+      fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em',
+      whiteSpace: 'nowrap',
+    }}>{String(status || '—').replace(/_/g, ' ')}</span>
+  );
+}
+
+function PayoutsTab({ guarded }) {
+  const { showToast } = useUI();
+  const [ov, setOv] = useState(null);
+  const [statements, setStatements] = useState([]);
+  const [users, setUsers] = useState({});
+  const [runFilter, setRunFilter] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [preview, setPreview] = useState(null);
+  const [previewing, setPreviewing] = useState(false);
+  const [showLegacy, setShowLegacy] = useState(false);
+
+  const reload = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [o, s] = await Promise.all([
+        call('adminGetPayoutOverview'),
+        call('adminListPayoutStatements', { runId: runFilter, pageSize: 50 }),
+      ]);
+      setOv(o);
+      setStatements(s.rows || []);
+      setUsers(s.users || {});
+    } catch (err) {
+      showToast(err?.message || 'Failed to load payouts', 'error');
+    }
+    setLoading(false);
+  }, [runFilter, showToast]);
+
+  useEffect(() => { reload(); }, [reload]);
+
+  // Dry run. Shows exactly who WOULD be paid and who is skipped, with reasons,
+  // and moves nothing. This is the thing to read before the first real run.
+  const runPreview = async () => {
+    setPreviewing(true);
+    try {
+      setPreview(await call('previewCreatorPayoutRun', {}));
+    } catch (err) {
+      showToast(err?.message || 'Preview failed', 'error');
+    }
+    setPreviewing(false);
+  };
+
+  return (
+    <>
+      {ov && !ov.partnerConfigured && (
+        <div style={{
+          padding: 14, marginBottom: 14, borderRadius: 12,
+          background: 'rgba(240,64,96,0.10)', border: '1px solid rgba(240,64,96,0.35)',
+          fontSize: 12.5, color: '#f8a5b4', lineHeight: 1.55,
+        }}>
+          <strong style={{ color: '#f04060' }}>Payout partner not wired, nobody can be paid.</strong>
+          {' '}<code>disbursePayout()</code> throws, so every run marks itself <code>blocked</code> and
+          moves nothing rather than debiting a payable it cannot send. Flip{' '}
+          <code>PAYOUT_PARTNER_CONFIGURED</code> in the same commit that implements the partner.
+        </div>
+      )}
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, marginBottom: 16 }}>
+        <KpiCard icon="request_quote" color="#7c3aed" label="Owed to creators"
+          value={loading ? '—' : usd(ov?.liability?.owedMicroUsd)}
+          sub={ov ? `${fmtNumber(ov.liability?.creditorCount)} creditor(s)` : null} />
+        <KpiCard icon="payments" color="#22c55e" label="Paid to date"
+          value={loading ? '—' : usd(ov?.statements?.paidMicroUsd)}
+          sub={ov ? `${fmtNumber(ov.statements?.paidCount)} statement(s)` : null} />
+        <KpiCard icon="how_to_reg" color="#3b82f6" label="Enrolled"
+          value={loading ? '—' : fmtNumber(ov?.accounts?.enrolled)}
+          sub={ov ? `${fmtNumber(ov.accounts?.frozen)} frozen` : null} />
+        <KpiCard icon="error" color="#f04060" label="Failed statements"
+          value={loading ? '—' : fmtNumber(ov?.statements?.failedCount)} />
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+        <button onClick={runPreview} disabled={previewing} style={{
+          padding: '8px 14px', borderRadius: 8, border: 0,
+          background: previewing ? '#555' : C.accent, color: '#fff',
+          fontSize: 12, fontWeight: 700, cursor: previewing ? 'wait' : 'pointer',
+          display: 'inline-flex', alignItems: 'center', gap: 6,
+        }}>
+          <Icon name={previewing ? 'hourglass_top' : 'science'} size={14} />
+          {previewing ? 'Running…' : 'Dry-run today’s payout'}
+        </button>
+        <button onClick={reload} style={iconBtn}><Icon name="refresh" size={14} /></button>
+        {ov && (
+          <span style={{ fontSize: 11, color: C.textDim }}>
+            Minimum {usd(ov.minPayoutMicroUsd)} · account must be {ov.minAccountAgeDays}+ days old ·
+            balances below the minimum roll over, never expire
+          </span>
+        )}
+      </div>
+
+      {preview && (
+        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16, marginBottom: 16 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
+            <h3 style={{ margin: 0, fontSize: 13, fontWeight: 700, color: C.text }}>
+              Dry run for {preview.date}, nothing was moved
+            </h3>
+            <button onClick={() => setPreview(null)} style={iconBtn}><Icon name="close" size={13} /></button>
+          </div>
+          <div style={{ fontSize: 12, color: C.text, marginBottom: 10 }}>
+            Would pay <strong>{fmtNumber(preview.wouldPay)}</strong> creator(s),{' '}
+            <strong>{usd(preview.wouldPayMicroUsd)}</strong> total.
+          </div>
+          {(preview.plan || []).length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 10 }}>
+              {preview.plan.map(pl => (
+                <div key={pl.uid} style={{ display: 'flex', gap: 10, fontSize: 11, color: C.textDim }}>
+                  <span style={{ fontFamily: 'monospace' }}>{pl.uid.slice(0, 10)}</span>
+                  <span className="font-dmmono tabular-nums" style={{ color: C.text, fontWeight: 700 }}>{usd(pl.amountMicroUsd)}</span>
+                  <span>{pl.cadence}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {(preview.skipped || []).length > 0 && (
+            <>
+              <div style={{ fontSize: 11, fontWeight: 700, color: C.textDim, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>
+                Skipped ({preview.skipped.length}), with the reason the run gave
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 3, maxHeight: 240, overflowY: 'auto' }}>
+                {preview.skipped.map((s, i) => (
+                  <div key={i} style={{ display: 'flex', gap: 10, fontSize: 11 }}>
+                    <span style={{ fontFamily: 'monospace', color: C.textDim }}>{String(s.uid || '').slice(0, 10)}</span>
+                    <span style={{ color: '#f5c542' }}>{s.reason || s.blockingReason || 'unknown'}</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Run history */}
+      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16, marginBottom: 16 }}>
+        <h3 style={{ margin: 0, fontSize: 13, fontWeight: 700, color: C.text, marginBottom: 10 }}>Payout runs</h3>
+        {(ov?.runs || []).length === 0 ? (
+          <div style={{ fontSize: 12, color: C.textDim }}>
+            No run has ever executed. The cron fires daily at 06:00 UTC and self-gates: a creator is only
+            included on a day their cadence is due.
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {ov.runs.map(r => (
+              <button
+                key={r.id}
+                onClick={() => setRunFilter(runFilter === r.id ? null : r.id)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 10, width: '100%',
+                  padding: '9px 10px', borderRadius: 8, textAlign: 'left', cursor: 'pointer',
+                  background: runFilter === r.id ? C.card2 : 'transparent',
+                  border: `1px solid ${runFilter === r.id ? C.accent : C.border}`,
+                  color: C.text,
+                }}
+              >
+                <StatusChip status={r.status} />
+                <span style={{ fontSize: 11, color: C.textDim, minWidth: 92 }}>{fmtRelative(r.startedAt)}</span>
+                <span className="font-dmmono tabular-nums" style={{ fontSize: 12, fontWeight: 700 }}>
+                  {usd(r.paidMicroUsd)}
+                </span>
+                <span style={{ fontSize: 11, color: C.textDim, flex: 1 }}>
+                  {r.status === 'blocked'
+                    ? `${fmtNumber(r.wouldPay)} would have been paid, ${r.blockedReason || 'no payout partner'}`
+                    : `${fmtNumber(r.paidCount)} paid${r.failedCount ? `, ${fmtNumber(r.failedCount)} failed` : ''}`}
+                </span>
+                <span style={{ fontSize: 10, color: C.textMuted, fontFamily: 'monospace' }}>{r.id}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Statements, the remittance advice per creator per run */}
+      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: 'hidden', marginBottom: 16 }}>
+        <div style={{ padding: '12px 14px', borderBottom: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h3 style={{ margin: 0, fontSize: 13, fontWeight: 700, color: C.text }}>
+            Statements{runFilter ? ', filtered to one run' : ''}
+          </h3>
+          {runFilter && (
+            <button onClick={() => setRunFilter(null)} style={miniBtn(C.accent)}>Clear filter</button>
+          )}
+        </div>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 680 }}>
+            <thead>
+              <tr style={{ background: C.card2 }}>
+                {['Creator', 'Amount', 'Status', 'Cadence', 'Created', 'Reference'].map(h => <th key={h} style={th}>{h}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {statements.map(s => {
+                const u = users[s.uid] || {};
+                return (
+                  <tr key={s.id} style={{ borderTop: `1px solid ${C.border}` }}>
+                    <td style={td}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <UserAvatar src={u.avatar} size={26} />
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: 12, fontWeight: 600 }}>{u.displayName || (s.uid || '').slice(0, 8)}</div>
+                          {u.username && <div style={{ fontSize: 10, color: C.textDim }}>@{u.username}</div>}
+                        </div>
+                      </div>
+                    </td>
+                    <td style={td}>
+                      <span className="font-dmmono tabular-nums" style={{ fontSize: 12, fontWeight: 700 }}>{usd(s.amountMicroUsd)}</span>
+                    </td>
+                    <td style={td}><StatusChip status={s.status} /></td>
+                    <td style={{ ...td, fontSize: 11, color: C.textDim }}>{s.cadence || '—'}</td>
+                    <td style={{ ...td, fontSize: 11, color: C.textDim }}>{fmtRelative(s.createdAt)}</td>
+                    <td style={{ ...td, fontSize: 10, color: C.textDim, fontFamily: 'monospace', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {s.reference || s.failureReason || '—'}
+                    </td>
+                  </tr>
+                );
+              })}
+              {!loading && statements.length === 0 && (
+                <tr><td colSpan={6} style={{ padding: 32, textAlign: 'center', color: C.textDim, fontSize: 13 }}>
+                  No statements yet. One is written per creator per run, and doubles as their tax record.
+                </td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Legacy withdrawal rows, collapsed, deliberately unglamorous */}
+      <button
+        onClick={() => setShowLegacy(v => !v)}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+          padding: '11px 14px', borderRadius: 10, cursor: 'pointer', textAlign: 'left',
+          background: C.card, border: `1px solid ${C.border}`, color: C.textDim, fontSize: 12,
+        }}
+      >
+        <Icon name={showLegacy ? 'expand_less' : 'expand_more'} size={16} />
+        <span style={{ flex: 1 }}>
+          Legacy withdrawal requests (deleted flow, history only)
+          {ov?.legacyOpenWithdrawals > 0 && (
+            <strong style={{ color: '#f5c542' }}>, {fmtNumber(ov.legacyOpenWithdrawals)} still open</strong>
+          )}
+        </span>
+      </button>
+      {showLegacy && <LegacyWithdrawals guarded={guarded} />}
+    </>
+  );
+}
+
+// ───────────────────────────────────────────────────────────
+// LEGACY WITHDRAWAL QUEUE (read-mostly)
+// ───────────────────────────────────────────────────────────
+//
+// The user-initiated withdrawal flow was DELETED on 2026-08-16, source gone,
+// callables undeployed. Nothing writes `payout_requests` any more and nothing
+// processes it. This stays reachable for two reasons: pre-deletion test rows
+// exist, and a row stuck in a non-terminal state is holding a balance that must
+// be returnable to the wallet. Cancel is therefore the only action that still
+// matters here.
+
 const PAYOUT_FILTERS = [
   { id: 'all',        label: 'All' },
   { id: 'pending',    label: 'Pending' },
@@ -334,14 +681,14 @@ const PAYOUT_FILTERS = [
   { id: 'cancelled',  label: 'Cancelled' },
 ];
 
-function PayoutsTab({ guarded }) {
+function LegacyWithdrawals({ guarded }) {
   const { showToast } = useUI();
   const [filter, setFilter] = useState('pending');
   const [rows, setRows] = useState([]);
   const [users, setUsers] = useState({});
   const [loading, setLoading] = useState(true);
   const [prompt, setPrompt] = useState(null);
-  const [reviewing, setReviewing] = useState(null); // { payoutId } | null
+
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -361,7 +708,7 @@ function PayoutsTab({ guarded }) {
       approve: { title: 'Approve withdrawal', msg: 'Moves to "ready" — eligible for processing.', danger: false },
       mark_processing: { title: 'Mark processing', msg: 'Indicates the withdrawal is in flight to the user.', danger: false },
       mark_paid: { title: 'Mark sent', msg: 'Funds have been sent. Optionally attach a transaction hash. This is final — sent withdrawals cannot be reversed.', danger: false, extraField: { label: 'Tx hash (optional)', placeholder: '0x…' } },
-      reject:   { title: 'Cancel withdrawal', msg: 'Returns held gems to the user wallet and marks the request rejected. Use this when you cannot fulfil the withdrawal (bad address, KYC issue, suspected abuse). Audit logged.', danger: true },
+      reject:   { title: 'Cancel withdrawal', msg: 'Returns the held amount to the user and marks the request rejected. Legacy rows only: user-initiated withdrawal was removed 2026-08-16. Audit logged.', danger: true },
     };
     const cfg = labels[action];
     setPrompt({
@@ -428,7 +775,8 @@ function PayoutsTab({ guarded }) {
                     <td style={td}><span style={{ fontSize: 11, color: C.textDim }}>{p.destinationType || p.gateway || '—'}</span></td>
                     <td style={td}>
                       <div style={{ fontSize: 12, fontWeight: 600 }} className="font-dmmono tabular-nums">
-                        {p.gemsRequested ? `${fmtNumber(p.gemsRequested)} gems` : '—'}
+                        {/* Legacy rows stored gems, and 1 gem was 1 cent, so /100 really is dollars here. */}
+                        {p.gemsRequested ? `$${(p.gemsRequested / 100).toFixed(2)}` : '—'}
                       </div>
                       {(p.netUSDC || p.amountEUR) && <div style={{ fontSize: 10, color: C.textDim }}>{p.netUSDC ? `${p.netUSDC} USDC` : fmtMoney(p.amountEUR)}</div>}
                     </td>
@@ -443,9 +791,11 @@ function PayoutsTab({ guarded }) {
                     <td style={{ ...td, fontSize: 11, color: C.textDim }}>{fmtRelative(p.createdAt)}</td>
                     <td style={td}>
                       <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                        {['pending'].includes(p.status) && (
-                          <button onClick={() => setReviewing({ payoutId: p.id })} style={miniBtn('#22c55e')}>Review &amp; release</button>
-                        )}
+                        {/* "Review & release" pushed a user-initiated withdrawal
+                            out through Circle. That pipeline was deleted on
+                            2026-08-16 with the gem unit, so the control and its
+                            two callables are gone. Cancel/reject below still
+                            works for any legacy row. */}
                         {['pending', 'requested', 'on_hold', 'queued_placeholder'].includes(p.status) && (
                           <button onClick={() => act(p, 'approve')} style={miniBtn(C.accent)}>Mark ready</button>
                         )}
@@ -473,14 +823,6 @@ function PayoutsTab({ guarded }) {
         </div>
       </div>
       {prompt && <ReasonPrompt {...prompt} />}
-      {reviewing && (
-        <ReviewReleaseModal
-          payoutId={reviewing.payoutId}
-          onClose={() => setReviewing(null)}
-          onReleased={() => { setReviewing(null); reload(); }}
-          guarded={guarded}
-        />
-      )}
     </>
   );
 }
@@ -492,158 +834,7 @@ function PayoutsTab({ guarded }) {
 // recent transactions, ban status) and lets admin approve a pending payout
 // to be sent to Circle immediately — bypassing the 3-day hold.
 
-function ReviewReleaseModal({ payoutId, onClose, onReleased, guarded }) {
-  const { showToast } = useUI();
-  const [ctx, setCtx] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [reason, setReason] = useState('');
-  const [releasing, setReleasing] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await call('adminGetWithdrawalContext', { payoutId });
-        if (!cancelled) setCtx(res);
-      } catch (err) {
-        if (!cancelled) showToast(err?.message || 'Could not load context', 'error');
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [payoutId, showToast]);
-
-  const release = async () => {
-    if (reason.trim().length < 4) {
-      showToast('Reason must be at least 4 characters', 'error');
-      return;
-    }
-    setReleasing(true);
-    try {
-      await guarded(() => call('adminReleaseWithdrawalNow', { payoutId, reason: reason.trim() }));
-      showToast('Withdrawal submitted to Circle ✓', 'success');
-      onReleased?.();
-    } catch (err) {
-      showToast(err?.message || 'Release failed', 'error');
-    }
-    setReleasing(false);
-  };
-
-  return (
-    <div style={{
-      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)',
-      display: 'grid', placeItems: 'center', zIndex: 100, padding: 16,
-    }} onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} style={{
-        background: C.bg, border: `1px solid ${C.border}`, borderRadius: 12,
-        width: 640, maxWidth: '100%', maxHeight: '90vh', overflowY: 'auto',
-        padding: 24,
-      }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
-          <div>
-            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>Review &amp; release withdrawal</h3>
-            <p style={{ margin: '4px 0 0', fontSize: 12, color: C.textDim }}>
-              Bypasses the 3-day hold. Submits directly to Circle. Audited.
-            </p>
-          </div>
-          <button onClick={onClose} style={iconBtn}><Icon name="close" size={16} /></button>
-        </div>
-
-        {loading && <div style={{ padding: 20, textAlign: 'center', color: C.textDim }}>Loading…</div>}
-
-        {ctx && (
-          <>
-            {/* Payout summary */}
-            <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: 14, marginBottom: 12 }}>
-              <div style={{ fontSize: 11, color: C.textDim, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Payout</div>
-              <Row k="Gems" v={`${fmtNumber(ctx.payout.gemsRequested)} gems`} />
-              <Row k="Net USDC" v={`${ctx.payout.netUSDC} USDC`} />
-              <Row k="Destination" v={<span style={{ fontFamily: 'monospace', fontSize: 11 }}>{ctx.payout.destinationAddress}</span>} />
-              <Row k="Requested" v={fmtRelative(ctx.payout.requestedAt)} />
-              <Row k="Originally releases" v={fmtRelative(ctx.payout.releasesAt)} />
-            </div>
-
-            {/* User dossier */}
-            <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: 14, marginBottom: 12 }}>
-              <div style={{ fontSize: 11, color: C.textDim, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>User</div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-                <UserAvatar src={ctx.user.avatar} size={36} />
-                <div>
-                  <div style={{ fontSize: 13, fontWeight: 600 }}>
-                    {ctx.user.displayName}
-                    {ctx.user.role === 'admin' && <span style={{ marginLeft: 6, fontSize: 10, color: '#f5c542', fontWeight: 700 }}>ADMIN</span>}
-                    {ctx.user.banned && <span style={{ marginLeft: 6, fontSize: 10, color: '#f04060', fontWeight: 700 }}>BANNED</span>}
-                  </div>
-                  {ctx.user.username && <div style={{ fontSize: 11, color: C.textDim }}>@{ctx.user.username}</div>}
-                </div>
-              </div>
-              <Row k="Account age" v={ctx.user.accountAgeDays != null ? `${ctx.user.accountAgeDays} days` : 'unknown'} />
-              <Row k="KYC level" v={`L${ctx.user.kycLevel}`} tone={ctx.user.kycLevel >= 1 ? 'ok' : 'warn'} />
-              <Row k="Email" v={ctx.user.email || '—'} />
-              <Row k="Followers" v={fmtNumber(ctx.user.followerCount)} />
-              <Row k="VP" v={fmtNumber(ctx.user.vp)} />
-            </div>
-
-            {/* Wallet + history */}
-            <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: 14, marginBottom: 12 }}>
-              <div style={{ fontSize: 11, color: C.textDim, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Wallet &amp; history</div>
-              <Row k="Gems balance" v={fmtNumber(ctx.wallet.gems)} />
-              <Row k="Gems in escrow" v={fmtNumber(ctx.wallet.gemsInEscrow)} />
-              <Row k="Coins balance" v={fmtNumber(ctx.wallet.balance)} />
-              <Row k="Lifetime gems earned" v={fmtNumber(ctx.wallet.totalGemsEarned)} />
-              <Row k="Prior successful payouts" v={`${ctx.history.lifetimePayouts} (€${ctx.history.lifetimePaidUSDC} total)`} />
-            </div>
-
-            {/* Risk-flag heuristics */}
-            {(ctx.user.banned || ctx.user.kycLevel === 0 || ctx.user.accountAgeDays < 7 || ctx.history.lifetimePayouts === 0) && (
-              <div style={{
-                background: '#3d1a1a', border: '1px solid #5d2a2a', borderRadius: 8,
-                padding: 10, marginBottom: 12, fontSize: 12, color: '#fca5a5',
-              }}>
-                <strong>⚠️ Heuristic flags:</strong>{' '}
-                {[
-                  ctx.user.banned && 'banned account',
-                  ctx.user.kycLevel === 0 && 'no KYC',
-                  ctx.user.accountAgeDays != null && ctx.user.accountAgeDays < 7 && `account is only ${ctx.user.accountAgeDays} days old`,
-                  ctx.history.lifetimePayouts === 0 && 'first-ever payout',
-                ].filter(Boolean).join(', ')}
-              </div>
-            )}
-
-            <div style={{ marginBottom: 14 }}>
-              <div style={{ fontSize: 11, color: C.textDim, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>
-                Reason (required, logged to audit)
-              </div>
-              <input value={reason}
-                     onChange={e => setReason(e.target.value)}
-                     placeholder="e.g. Manually reviewed, KYC verified, low risk"
-                     style={{
-                       width: '100%', padding: '10px 12px', fontSize: 13,
-                       background: C.card, border: `1px solid ${C.border}`, borderRadius: 8,
-                       color: C.text, outline: 'none',
-                     }} />
-            </div>
-
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button onClick={onClose} disabled={releasing} style={{
-                padding: '10px 16px', borderRadius: 8, background: 'transparent',
-                border: `1px solid ${C.border}`, color: C.textDim, fontSize: 12, fontWeight: 600,
-                cursor: 'pointer',
-              }}>Cancel</button>
-              <button onClick={release} disabled={releasing || reason.trim().length < 4} style={{
-                padding: '10px 16px', borderRadius: 8, background: '#22c55e',
-                border: '1px solid #22c55e', color: '#fff', fontSize: 12, fontWeight: 700,
-                cursor: releasing || reason.trim().length < 4 ? 'not-allowed' : 'pointer',
-                opacity: releasing || reason.trim().length < 4 ? 0.5 : 1,
-              }}>{releasing ? 'Submitting…' : 'Release now'}</button>
-            </div>
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
+// ReviewReleaseModal REMOVED 2026-08-16 with the withdrawal pipeline.
 
 function Row({ k, v, tone }) {
   const color = tone === 'ok' ? '#86efac' : tone === 'warn' ? '#fcd34d' : C.text;
@@ -665,31 +856,37 @@ function TransactionsTab() {
   const [users, setUsers] = useState({});
   const [type, setType] = useState('');
   const [currency, setCurrency] = useState('');
-  const [cursor, setCursor] = useState(null);
   const [nextCursor, setNextCursor] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  const load = useCallback(async (reset = false) => {
+  // Cursor is an argument, not state, same bug the Users list had: a setCursor
+  // followed by an immediate load() ran against the PREVIOUS cursor, because
+  // setState is not synchronous, so Load more re-fetched page one.
+  const load = useCallback(async (cursor = null) => {
     setLoading(true);
     try {
       const r = await call('adminListTransactions', {
         type: type || null,
         currency: currency || null,
-        cursor: reset ? null : cursor,
+        cursor,
         pageSize: 50,
       });
-      setRows(prev => reset ? r.rows : [...prev, ...r.rows]);
+      setRows(prev => {
+        if (!cursor) return r.rows;
+        const seen = new Set(prev.map(x => x.id));
+        return [...prev, ...r.rows.filter(x => !seen.has(x.id))];
+      });
       setUsers(prev => ({ ...prev, ...r.users }));
-      setNextCursor(r.nextCursor);
+      setNextCursor(r.nextCursor || null);
     } catch (err) {
       showToast(err?.message || 'Failed to load transactions', 'error');
     }
     setLoading(false);
-  }, [type, currency, cursor, showToast]);
+  }, [type, currency, showToast]);
 
   useEffect(() => {
-    setCursor(null); setRows([]);
-    load(true);
+    setRows([]); setNextCursor(null);
+    load(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [type, currency]);
 
@@ -701,17 +898,22 @@ function TransactionsTab() {
           <option value="admin_grant">Admin grant</option>
           <option value="admin_deduction">Admin deduction</option>
           <option value="coin_purchase">Coin purchase (deposit)</option>
-          <option value="coin_to_gem_conversion">Conversion</option>
-          <option value="tip">Tip</option>
-          <option value="withdrawal_requested">Withdrawal requested</option>
-          <option value="withdrawal_cancelled">Withdrawal cancelled</option>
-          <option value="withdrawal_failed">Withdrawal failed</option>
+          <option value="tip_received">Tip received</option>
+          <option value="tip_sent">Tip sent</option>
+          {/* The accrual row. Written by coinLedger settleEarnedShare, this is
+              how the revenue share Vergr owes actually comes into being. */}
+          <option value="revenue_share_accrued">Revenue share accrued</option>
+          <option value="content_unlock_sale">Content unlock</option>
+          <option value="event_ticket_sale">Event ticket</option>
+          <option value="season_pass_sale">Season pass</option>
+          <option value="vergrme_sale">Vergr.me sale</option>
           <option value="membership">Membership</option>
+          <option value="creator_payout">Creator payout</option>
         </select>
         <select value={currency} onChange={e => setCurrency(e.target.value)} style={smallSelect}>
           <option value="">All currencies</option>
           <option value="coins">Coins</option>
-          <option value="gems">Gems</option>
+          <option value="owed">Revenue share owed</option>
           <option value="vp">VP</option>
         </select>
       </div>
@@ -740,7 +942,9 @@ function TransactionsTab() {
                     <td style={{ ...td, fontSize: 11, color: C.textDim }}>{r.type}</td>
                     <td style={td}>
                       <span className="font-dmmono tabular-nums" style={{ fontSize: 12, fontWeight: 700, color: positive ? '#22c55e' : '#f04060' }}>
-                        {positive ? '+' : ''}{fmtNumber(r.amount)} {r.currency}
+                        {r.currency === 'owed'
+                          ? `${positive ? '+' : ''}${usd(r.amountMicroUsd ?? r.amount)}`
+                          : `${positive ? '+' : ''}${fmtNumber(r.amount)} ${r.currency || 'coins'}`}
                       </span>
                     </td>
                     <td style={{ ...td, fontSize: 11, color: C.textDim, maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -760,7 +964,7 @@ function TransactionsTab() {
         <div style={{ padding: 12, borderTop: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ fontSize: 11, color: C.textDim }}>{loading ? 'Loading…' : `${rows.length} loaded`}</div>
           {nextCursor && (
-            <button onClick={() => { setCursor(nextCursor); load(false); }} style={miniBtn(C.accent)}>Load more</button>
+            <button onClick={() => load(nextCursor)} disabled={loading} style={miniBtn(C.accent)}>Load more</button>
           )}
         </div>
       </div>
@@ -776,8 +980,8 @@ const TOGGLE_LABELS = {
   liveStreamingPaused: { label: 'Pause all live streaming', desc: 'Halts new stream sessions platform-wide. Existing streams continue until they end.' },
   freeUploadsPaused:   { label: 'Pause free-tier uploads', desc: 'Free users see an error trying to upload until reactivated. Paid users unaffected.' },
   botsPaused:          { label: 'Pause news bots',          desc: 'Stops scheduled bot posts. Use during a content moderation review.' },
-  conversionsPaused:   { label: 'Pause coin → gem conversions', desc: 'Users can\'t convert coins to gems. Useful during economy investigation.' },
-  payoutsPaused:       { label: 'Pause payouts',            desc: 'New payout requests are blocked. In-flight payouts continue.' },
+  conversionsPaused:   { label: 'Pause revenue-share accrual', desc: 'Stops earned coins accruing a creator share. Useful during an economy investigation.' },
+  payoutsPaused:       { label: 'Pause creator payouts',    desc: 'The scheduled payout run skips everyone. Accrual continues, so nothing is lost, creators are paid on the next run after this is resumed.' },
   tipsPaused:          { label: 'Pause tipping',            desc: 'Users can\'t send tips. Use only during a real incident.' },
 };
 

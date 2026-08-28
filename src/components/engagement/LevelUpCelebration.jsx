@@ -1,6 +1,14 @@
+import { unlocksForLevel, nextUnlock, UNLOCK_SURFACE } from '../../utils/rankUnlocks';
 import { motion, AnimatePresence } from 'framer-motion';
+import Icon from '../Icon';
 
 export default function LevelUpCelebration({ show = false, level = 1, tierName = 'Silver', onClose }) {
+  // What this level ACTUALLY gave you. The modal used to say "keep going to
+  // unlock new perks, badges and ring colours", which named nothing, promised
+  // things that no longer exist (rank does not colour your avatar ring), and
+  // was the same sentence at level 3 and level 90. RANK_UNLOCKS is the truth.
+  const gained = unlocksForLevel(level);
+  const upNext = nextUnlock(level);
   const tierColors = {
     Bronze: '#CD7F32',
     Silver: '#C0C0C0',
@@ -43,9 +51,30 @@ export default function LevelUpCelebration({ show = false, level = 1, tierName =
               {tierName} Tier
             </p>
 
-            <p className="text-text-muted text-xs mb-6">
-              Keep going to unlock new perks and lower commissions.
-            </p>
+            {gained.length > 0 ? (
+              <div className="w-full space-y-1.5 mb-5">
+                {gained.map((u) => (
+                  <div key={u.id} className="flex items-start gap-2 text-left px-3 py-2 rounded-xl"
+                       style={{ background: color + '10', border: `1px solid ${color}22` }}>
+                    <Icon name={UNLOCK_SURFACE[u.surface]?.icon || 'star'} size={14}
+                          className="mt-0.5 shrink-0" style={{ color }} />
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-text-primary">{u.name}</p>
+                      <p className="text-[11px] text-text-muted leading-snug">{u.desc}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-text-muted text-xs mb-6">Your rank is climbing. Keep going.</p>
+            )}
+
+            {upNext && (
+              <p className="text-text-muted text-[11px] mb-5">
+                Next: <span className="font-bold text-text-secondary">{upNext.name}</span>
+                {' '}at level <span className="font-dmmono font-bold">{upNext.level}</span>
+              </p>
+            )}
 
             <button
               onClick={onClose}

@@ -29,6 +29,7 @@ import UserAvatar from '../../../components/UserAvatar';
 import VanguardBadge from '../../../components/VanguardBadge';
 import Icon from '../../../components/Icon';
 import PrestigeShowcase from '../../../components/prestige/PrestigeShowcase';
+import UserName from '../../../components/UserName';
 
 function UserRow({ user, viewer, isUserLive, navigate, follow, onToggle, showTier }) {
   const masked = applyVanguardMask(user, viewer);
@@ -41,11 +42,11 @@ function UserRow({ user, viewer, isUserLive, navigate, follow, onToggle, showTie
       </button>
       <button onClick={() => navigate(`/user/${user.id}`)} className="flex-1 min-w-0 text-left">
         <div className="flex items-center gap-1">
-          <p className="text-sm font-semibold truncate">{masked.displayName || masked.username}</p>
+          <p className="text-sm font-semibold truncate"><UserName user={masked} masked /></p>
           {!isMasked && user.isVerified && <Icon name="verified" filled size={14} className="text-brand-violet-light shrink-0" />}
           {vRank && <VanguardBadge rank={vRank} size={13} />}
         </div>
-        <p className="text-xs text-text-muted">@{masked.username}</p>
+        <p className="text-xs text-text-muted"><UserName user={masked} masked handle /></p>
         {showTier && user._fanTier && (
           <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full text-[10px] font-bold"
             style={{ background: 'rgba(240,165,0,0.12)', color: '#F5C842' }}>
@@ -230,8 +231,8 @@ export function NativeSearchResultsAllScreen() {
                 <button key={user.id} onClick={() => navigate(`/user/${user.id}`)} className="flex items-center gap-3 w-full p-3 rounded-2xl bg-surface-1 border border-white/[0.06] text-left active:border-white/[0.12]">
                   <UserAvatar src={masked.avatar} size="md" isLive={!isMasked && isUserLive(user.id)} />
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1"><p className="text-sm font-semibold truncate">{masked.displayName || masked.username}</p>{!isMasked && user.isVerified && <Icon name="verified" filled size={14} className="text-brand-violet-light" />}{vRank && <VanguardBadge rank={vRank} size={13} />}</div>
-                    <p className="text-xs text-text-muted">@{masked.username}</p>
+                    <div className="flex items-center gap-1"><p className="text-sm font-semibold truncate"><UserName user={masked} masked /></p>{!isMasked && user.isVerified && <Icon name="verified" filled size={14} className="text-brand-violet-light" />}{vRank && <VanguardBadge rank={vRank} size={13} />}</div>
+                    <p className="text-xs text-text-muted"><UserName user={masked} masked handle /></p>
                   </div>
                   <Icon name="chevron_right" size={18} className="text-text-muted" />
                 </button>
@@ -254,7 +255,7 @@ export function NativeSearchResultsAllScreen() {
               const a = applyVanguardMask(post.author, viewer);
               return (
                 <button key={post.id} onClick={() => navigate(`/post/${post.id}`)} className="w-full p-3 rounded-2xl bg-surface-1 border border-white/[0.06] text-left active:border-white/[0.12]">
-                  <div className="flex items-center gap-2 mb-1"><UserAvatar src={a?.avatar} size="sm" /><span className="text-xs font-semibold">{a?.displayName || a?.username}</span>{post.author?.vanguard?.rank && <VanguardBadge rank={post.author.vanguard.rank} size={11} />}</div>
+                  <div className="flex items-center gap-2 mb-1"><UserAvatar src={a?.avatar} size="sm" /><span className="text-xs font-semibold"><UserName user={a} masked /></span>{post.author?.vanguard?.rank && <VanguardBadge rank={post.author.vanguard.rank} size={11} />}</div>
                   <p className="text-sm text-text-primary line-clamp-2">{post.content}</p>
                   <div className="flex gap-3 mt-2"><span className="text-[10px] text-text-muted flex items-center gap-1"><Icon name="favorite" size={10} /> {post.likeCount || 0}</span><span className="text-[10px] text-text-muted flex items-center gap-1"><Icon name="chat_bubble" size={10} /> {post.commentCount || 0}</span></div>
                 </button>
@@ -296,7 +297,7 @@ export function NativeSearchResultsStreamsScreen() {
                 <div className="w-12 h-12 rounded-xl bg-surface-3 flex items-center justify-center text-xl">🎮</div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-bold truncate">{stream.title}</p>
-                  <p className="text-xs text-text-muted">{stream.streamer?.displayName || 'Streamer'} · {stream.game}</p>
+                  <p className="text-xs text-text-muted"><UserName user={stream.streamer} masked fallback={'Streamer'} /> · {stream.game}</p>
                 </div>
                 <div className="flex items-center gap-1 px-2 py-1 rounded-full bg-brand-ember/10">
                   <div className="w-1.5 h-1.5 rounded-full bg-brand-ember animate-pulse" />
@@ -349,8 +350,8 @@ export function NativeBrowseCreatorsScreen() {
               <button key={c.id} onClick={() => navigate(`/user/${c.id}`)} className="w-full flex items-center gap-3 p-4 rounded-2xl bg-surface-1 border border-white/[0.06] text-left active:border-white/[0.12]">
                 <UserAvatar src={c.avatar} size="lg" />
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1.5"><p className="font-bold text-sm truncate">{c.displayName || c.username}</p>{c.isVerified && <Icon name="verified" filled size={14} className="text-brand-violet-light" />}</div>
-                  <p className="text-xs text-text-muted">@{c.username}</p>
+                  <div className="flex items-center gap-1.5"><p className="font-bold text-sm truncate"><UserName user={c} masked /></p>{c.isVerified && <Icon name="verified" filled size={14} className="text-brand-violet-light" />}</div>
+                  <p className="text-xs text-text-muted"><UserName user={c} masked handle /></p>
                   <p className="text-xs text-brand-gold font-dmmono mt-1">{fmt(c.followerCount)} fans</p>
                 </div>
                 <Icon name="chevron_right" size={18} className="text-text-muted" />
@@ -431,7 +432,7 @@ export function NativeEsportsTeamScreen() {
           {roster.map(player => (
             <button key={player.id} onClick={() => navigate(`/user/${player.id}`)} className="flex items-center gap-3 w-full p-3 rounded-2xl bg-surface-1 border border-white/[0.06] text-left">
               <UserAvatar src={player.avatar} size="md" />
-              <div className="flex-1 min-w-0"><p className="text-sm font-semibold truncate">{player.displayName || player.username}</p><p className="text-xs text-text-muted">@{player.username}</p></div>
+              <div className="flex-1 min-w-0"><p className="text-sm font-semibold truncate"><UserName user={player} masked /></p><p className="text-xs text-text-muted"><UserName user={player} masked handle /></p></div>
             </button>
           ))}
         </div>

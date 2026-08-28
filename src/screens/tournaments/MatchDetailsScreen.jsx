@@ -57,7 +57,9 @@ export async function highStakesCaptureSupported() {
 export default function MatchDetailsScreen() {
   const { matchId } = useParams();
   const { currentUser } = useAuth();
-  const { wallet } = useUser();
+  // `profile` is the VIEWER, handed to applyVanguardMask below. It was read
+  // without being destructured, so the participants tab threw.
+  const { wallet, profile } = useUser();
   const { showToast } = useUI();
   const navigate = useNavigate();
   // Open any bracket node → the live match screen (spectator: follow / Champion

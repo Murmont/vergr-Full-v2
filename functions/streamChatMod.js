@@ -173,6 +173,28 @@ exports.setStreamFollowersOnly = functions.https.onCall({ region: REGION }, asyn
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// setStreamTts — effect 13. When true, viewers who have earned the unlock (or
+// hold Pro) may send a message that EVERY VIEWER'S CLIENT SPEAKS ALOUD.
+//
+// ⚠ OFF BY DEFAULT AND HOST-ONLY, deliberately. This hands a stranger a
+// loudspeaker into the audience's ears, so it is the broadcaster's call and
+// nobody else's. `loadStream` already restricts to the host — do NOT relax this
+// to loadStreamForMod: a chat moderator pinning a message is not the same
+// authority as opening the room's audio to viewers.
+//
+// The relay reads `streams/{id}.ttsEnabled` on its periodic mod refresh
+// (StreamMod.TtsEnabled), so this takes effect without a relay restart.
+// Doc: docs/effects/13-tts-on-stream.md
+// ─────────────────────────────────────────────────────────────────────────────
+exports.setStreamTts = functions.https.onCall({ region: REGION }, async (req) => {
+  if (!req.auth) throw new functions.https.HttpsError('unauthenticated', 'Sign in required.');
+  const { streamId, enabled = false } = req.data || {};
+  const { ref } = await loadStream(streamId, req.auth.uid);
+  await ref.update({ ttsEnabled: !!enabled });
+  return { ok: true, enabled: !!enabled };
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // pinStreamMessage — pin/unpin a chat message. Stored on
 // streams/{id}.pinnedMessage = { id, text, name, at } (or null to unpin).
 // ChatPanel reads it from the stream doc and renders a banner; no relay change.

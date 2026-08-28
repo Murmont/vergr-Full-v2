@@ -5,6 +5,7 @@ import { db } from '../firebase/config';
 import { useAuth } from '../context/AuthContext';
 import { followUser, unfollowUser, isFollowing as checkFollowing } from '../firebase/firestore';
 import UserAvatar from './UserAvatar';
+import UserName from './UserName';
 
 export default function SuggestionsCarousel() {
   const navigate = useNavigate();
@@ -150,7 +151,7 @@ export default function SuggestionsCarousel() {
               <button onClick={() => navigate(`/user/${user.id}`)}>
                 <UserAvatar src={user.avatar} size={56} isVerified={user.isVerified} />
               </button>
-              <p className="text-text-primary text-xs font-semibold truncate w-16 text-center">{user.displayName}</p>
+              <p className="text-text-primary text-xs font-semibold truncate w-16 text-center"><UserName user={user} masked /></p>
               <button
                 onClick={(e) => handleToggleFollow(e, user.id)}
                 disabled={toggling[user.id]}

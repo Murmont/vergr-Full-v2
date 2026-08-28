@@ -1,0 +1,15 @@
+{
+  "name": "vergr-rules-tests",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Security-rules tests. Self-contained on purpose: its own package.json and its own firebase-tools, so it can never affect the app build or the deploy CLI.",
+  "scripts": {
+    "test": "firebase emulators:exec --only firestore --project vergr-rules-test \"node run.mjs\""
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.1",
+    "firebase": "^12.17.1",
+    "firebase-tools": "^13.35.1"
+  }
+}

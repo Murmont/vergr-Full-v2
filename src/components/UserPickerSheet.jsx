@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { searchUsers } from '../firebase/firestore';
 import UserAvatar from './UserAvatar';
 import Icon from './Icon';
+import UserName from './UserName';
 
 export default function UserPickerSheet({ title = 'Select user', onSelect, onClose }) {
   const [term, setTerm] = useState('');
@@ -53,8 +54,8 @@ export default function UserPickerSheet({ title = 'Select user', onSelect, onClo
               className="w-full flex items-center gap-3 px-4 py-3 hover:bg-surface-2/50 text-left transition-colors">
               <UserAvatar src={u.avatar} size={38} />
               <div className="flex-1 min-w-0">
-                <span className="block text-sm text-text-primary font-medium truncate">{u.displayName || u.username || 'User'}</span>
-                {u.username && <span className="block text-[11px] text-text-muted truncate">@{u.username}</span>}
+                <span className="block text-sm text-text-primary font-medium truncate"><UserName user={u} masked fallback={'User'} /></span>
+                {u.username && <span className="block text-[11px] text-text-muted truncate"><UserName user={u} masked handle /></span>}
               </div>
               <Icon name="chevron_right" size={16} className="text-text-muted" />
             </button>

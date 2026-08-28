@@ -14,6 +14,8 @@ import VanguardBadge from '../../components/VanguardBadge';
 import Icon from '../../components/Icon';
 import { useLayout } from '../../context/LayoutContext';
 import useResponsive from '../../hooks/useResponsive';
+import UserName from '../../components/UserName';
+import RankBadge from '../../components/RankBadge';
 
 export default function FollowListScreen() {
   const { isDesktop } = useResponsive();
@@ -162,11 +164,12 @@ export default function FollowListScreen() {
                 </button>
                 <button onClick={() => navigate(`/user/${user.id}`)} className="flex-1 min-w-0 text-left">
                   <div className="flex items-center gap-1">
-                    <p className="text-sm font-semibold truncate">{masked.displayName || masked.username}</p>
+                    <p className="text-sm font-semibold truncate"><UserName user={masked} masked /></p>
+                    <RankBadge level={masked?.vpLevel} role={masked?.role} size={12} style={{ verticalAlign: '-2px' }} />
                     {!isMasked && user.isVerified && <Icon name="verified" filled size={14} className="text-brand-violet-light shrink-0" />}
                     {vRank && <VanguardBadge rank={vRank} size={13} />}
                   </div>
-                  <p className="text-xs text-text-muted">@{masked.username}</p>
+                  <p className="text-xs text-text-muted"><UserName user={masked} masked handle /></p>
                   {safeTab === 'fans' && user._fanTier && (
                     <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full text-[10px] font-bold"
                       style={{ background: 'rgba(240,165,0,0.12)', color: '#F5C842' }}>

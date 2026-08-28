@@ -7,6 +7,7 @@ import { createPeerConnection, createOffer, answerCall, endCallCleanup, getMedia
 import Icon from '../../components/Icon';
 import { IS_NATIVE_BUILD, safeReload } from '../../utils/platform';
 import UserAvatar from '../../components/UserAvatar';
+import UserName from '../../components/UserName';
 
 export default function CallScreen() {
   const { chatId, callType } = useParams();
@@ -27,6 +28,12 @@ export default function CallScreen() {
   const remoteStreamRef = useRef(null);
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
+  // Second element carrying the SAME remote stream, drawn blurred behind the
+  // real one so the letterbox is filled instead of showing black bars. The
+  // rule is never crop the picture: `object-cover` was throwing away 16.6% of
+  // the remote frame (measured on a live call, 640x360 source in a 1523x714
+  // box) and ~61% of the self-view's width (audit A47).
+  const remoteBgRef = useRef(null);
   const timerRef = useRef(null);
   const cleanupRef = useRef(null);
   // Call-history bookkeeping: call doc meta, whether it ever connected,
@@ -73,6 +80,11 @@ export default function CallScreen() {
           });
           if (remoteVideoRef.current) {
             remoteVideoRef.current.srcObject = remoteStream;
+          }
+          // Same MediaStream on the blurred backdrop. One stream, two sinks:
+          // no extra bandwidth, no second decode of anything new.
+          if (remoteBgRef.current) {
+            remoteBgRef.current.srcObject = remoteStream;
           }
           if (mounted) setStatus('active');
         };
@@ -191,13 +203,17 @@ export default function CallScreen() {
         <>
           {/* Remote video — full screen */}
           <div className="absolute inset-0 bg-black">
+            {/* Blurred fill: same stream, cover + scale so no edge shows. */}
+            <video ref={remoteBgRef} autoPlay playsInline muted aria-hidden="true"
+              className="absolute inset-0 w-full h-full object-cover scale-110 blur-2xl opacity-50 pointer-events-none" />
+            {/* The real picture, never cropped. */}
             <video ref={remoteVideoRef} autoPlay playsInline
-              className="w-full h-full object-cover" />
+              className="relative w-full h-full object-contain" />
             {status !== 'active' && (
               <div className="absolute inset-0 bg-bg-dark flex items-center justify-center">
                 <div className="text-center">
                   <UserAvatar src={otherUser?.avatar} size={96} />
-                  <p className="text-white font-syne text-xl font-bold mt-4">{otherUser?.displayName || 'Connecting...'}</p>
+                  <p className="text-white font-syne text-xl font-bold mt-4"><UserName user={otherUser} masked fallback={'Connecting...'} /></p>
                   <p className="text-brand-violet-light text-sm mt-2 animate-pulse">
                     {status === 'ringing' ? 'Ringing...' : status === 'failed' ? 'Connection failed' : 'Connecting...'}
                   </p>
@@ -207,9 +223,14 @@ export default function CallScreen() {
           </div>
 
           {/* Local video — picture in picture */}
-          <div className="absolute top-16 right-4 w-28 h-40 rounded-2xl overflow-hidden border-2 border-white/20 shadow-2xl z-30 bg-surface-2">
+          {/* Self-view. The box used to be PORTRAIT (w-28 h-40) with
+              `object-cover`, so a landscape webcam (1280x720 measured live)
+              lost about 61% of its width. Now a 16:9 box with `object-contain`,
+              so a landscape camera fills it and a portrait phone camera
+              letterboxes rather than being sliced down the middle. */}
+          <div className="absolute top-16 right-4 w-40 aspect-video rounded-2xl overflow-hidden border-2 border-white/20 shadow-2xl z-30 bg-black">
             <video ref={localVideoRef} autoPlay playsInline muted
-              className={`w-full h-full object-cover ${videoOff ? 'hidden' : ''}`} />
+              className={`w-full h-full object-contain ${videoOff ? 'hidden' : ''}`} />
             {videoOff && (
               <div className="w-full h-full flex items-center justify-center">
                 <Icon name="videocam_off" size={24} className="text-text-muted" />
@@ -221,14 +242,21 @@ export default function CallScreen() {
           <div className={`absolute top-0 left-0 right-0 px-5 pt-5 pb-12 bg-gradient-to-b from-black/70 to-transparent z-20 transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
                style={IS_NATIVE_BUILD ? { paddingTop: 'calc(env(safe-area-inset-top, 0px) + 20px)' } : undefined}>
             <div className="flex items-center gap-3">
-              <div className="w-2 h-2 rounded-full bg-green-500 " />
-              <div className="flex-1">
-                <p className="text-white text-sm font-bold">{otherUser?.displayName || 'Unknown'}</p>
-                <p className="text-white/60 text-xs font-dmmono">
+              <div className="w-2.5 h-2.5 rounded-full bg-green-500 shrink-0" />
+              <div className="flex-1 min-w-0">
+                {/* The person you are talking to is the most important thing on
+                    this screen. It was 12px — smaller than a sidebar nav label. */}
+                <p className="text-white font-syne text-lg md:text-xl font-bold truncate"><UserName user={otherUser} masked fallback={'Unknown'} /></p>
+                <p className="text-white/70 text-sm font-dmmono tabular-nums">
                   {status === 'active' ? formatTime(elapsed) : status === 'ringing' ? 'Ringing...' : 'Connecting...'}
                 </p>
               </div>
-              <span className="text-white/30 text-[8px] font-dmmono uppercase tracking-widest">P2P Encrypted</span>
+              {/* Was 8px at 30% opacity — the one trust signal on the screen and
+                  it was effectively unreadable. */}
+              <span className="flex items-center gap-1.5 text-white/70 text-[11px] font-dmmono uppercase tracking-widest shrink-0">
+                <Icon name="lock" size={13} className="text-green-400" />
+                P2P Encrypted
+              </span>
             </div>
           </div>
         </>
@@ -262,8 +290,8 @@ export default function CallScreen() {
           </div>
 
           {/* Name + status */}
-          <h2 className="font-syne text-2xl font-bold text-text-primary mb-1 z-10">{otherUser?.displayName || 'Unknown'}</h2>
-          <p className="text-text-muted text-sm font-dmmono mb-1 z-10">@{otherUser?.username || 'user'}</p>
+          <h2 className="font-syne text-2xl font-bold text-text-primary mb-1 z-10"><UserName user={otherUser} masked fallback={'Unknown'} /></h2>
+          <p className="text-text-muted text-sm font-dmmono mb-1 z-10"><UserName user={otherUser} masked handle fallback={'user'} /></p>
 
           {status === 'active' ? (
             <div className="flex items-center gap-2 z-10">

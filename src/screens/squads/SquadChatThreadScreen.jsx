@@ -27,6 +27,9 @@ import { getSquadMembers, getUserTournaments } from '../../firebase/firestore';
 import useResponsive from '../../hooks/useResponsive';
 import useTier from '../../hooks/useTier';
 import useTyping from '../../hooks/useTyping';
+import TypingIndicator from '../../components/TypingIndicator';
+import SquadEnvironment from '../../components/effects/visual/SquadEnvironment';
+import { environmentById, environmentBackdrop } from '../../utils/squadEnvironments';
 import { useUser } from '../../context/UserContext';
 import { applyVanguardMask } from '../../utils/vanguard';
 import VanguardBadge from '../../components/VanguardBadge';
@@ -57,6 +60,8 @@ import { dissolveElement, preloadThanosDissolve } from '../../utils/thanosDissol
 import { MessageContextMenu, ReactionBubbles } from '../../components/MessageContextMenu';
 import ReactorsSheet from '../../components/messages/ReactorsSheet';
 import MediaLightbox from '../../components/MediaLightbox';
+import UserName from '../../components/UserName';
+import RankBadge from '../../components/RankBadge';
 
 const formatTime = (date) => {
   if (!date) return '';
@@ -143,6 +148,14 @@ const MarkdownComponents = {
 // Renders a rich tournament card inside chat (banner / title / format pill /
 // dates / prize pool / View button). The message stores the snapshot under
 // `m.tournament` so we don't refetch on every render.
+// Renders the `tournament` message type. That wire name is kept ONLY because
+// squad chat history is permanent and old messages already carry it, so the
+// renderer has to stay or those messages blank out. Everything a user actually
+// sees is now event wording: tournaments are retired, the prize-pool line is
+// gone (there are no prizes), and the link points at the real event route.
+// It used to link to `/match/:id`, which was removed with the tournament
+// backend on 2026-08-17, so every historical share silently dumped the user on
+// the home feed via CatchAllRoute.
 function TournamentEmbed({ data }) {
   if (!data) return null;
   const banner = data.bannerUrl;
@@ -154,7 +167,7 @@ function TournamentEmbed({ data }) {
     : start ? fmtDate(start) : '';
   return (
     <a
-      href={`/match/${data.tournamentId}`}
+      href={`/e/${data.tournamentId}`}
       style={{
         marginTop: 6, display: 'block', borderRadius: 14, overflow: 'hidden',
         border: '1px solid rgba(180,79,255,.22)',
@@ -171,7 +184,7 @@ function TournamentEmbed({ data }) {
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
             <span className="material-symbols-outlined" style={{ fontSize: 16, color: 'var(--violet-light)' }}>emoji_events</span>
             <span style={{ fontFamily: 'DM Mono', fontSize: 10, textTransform: 'uppercase', letterSpacing: '.12em', color: 'var(--violet-light)' }}>
-              {data.game || 'Tournament'}
+              {data.game || 'Event'}
             </span>
             {data.type && (
               <span style={{ fontFamily: 'DM Mono', fontSize: 9.5, textTransform: 'uppercase', letterSpacing: '.08em', padding: '2px 6px', borderRadius: 4, background: 'rgba(255,255,255,.06)', color: 'var(--t2)' }}>
@@ -180,27 +193,23 @@ function TournamentEmbed({ data }) {
             )}
           </div>
           <div style={{ fontFamily: 'Syne', fontWeight: 800, fontSize: 16, color: '#fff', lineHeight: 1.2 }}>
-            {data.name || 'Tournament'}
+            {data.name || 'Event'}
           </div>
           {dateLine && (
             <div style={{ marginTop: 4, fontFamily: 'DM Mono', fontSize: 11, color: 'var(--t2)' }}>
               {dateLine}
             </div>
           )}
-          {(data.entryFee != null || data.prizePool != null) && (
+          {/* The prize-pool line is deliberately gone. Vergr runs no prize
+              competitions (public/llms.txt says so), so a historical message
+              carrying a `prizePool` must not still advertise one. Entry cost
+              stays: a ticketed event legitimately has one. */}
+          {data.entryFee != null && (
             <div style={{ marginTop: 8, display: 'flex', gap: 12, fontFamily: 'DM Mono', fontSize: 11, color: 'var(--t2)' }}>
-              {data.prizePool != null && (
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                  <span className="coin" />
-                  <strong style={{ color: 'var(--gold-light)' }}>{data.prizePool.toLocaleString()}</strong> pool
-                </span>
-              )}
-              {data.entryFee != null && (
-                <span>
-                  <span className="coin" />
-                  <strong style={{ color: '#fff' }}>{data.entryFee.toLocaleString()}</strong> entry
-                </span>
-              )}
+              <span>
+                <span className="coin" />
+                <strong style={{ color: '#fff' }}>{data.entryFee.toLocaleString()}</strong> entry
+              </span>
             </div>
           )}
         </div>
@@ -344,6 +353,10 @@ export default function SquadChatThreadScreen() {
   // the only route from here to a moderator.
   const [reportTarget, setReportTarget] = useState(null);
   const [showEmoji, setShowEmoji] = useState(false);
+  // Composer chrome: the attach sheet and the formatting bar are both closed at
+  // rest so the composer is a text field, not a control panel.
+  const [attachOpen, setAttachOpen] = useState(false);
+  const [formatBarOpen, setFormatBarOpen] = useState(false);
   const [reactToMsgId, setReactToMsgId] = useState(null);
   const [contextMenu, setContextMenu] = useState(null);   // { msgId, x, y }
   const [reactorsView, setReactorsView] = useState(null); // { reactions, emoji }
@@ -729,17 +742,20 @@ export default function SquadChatThreadScreen() {
       return;
     }
     const tsToMs = (v) => v?.toDate ? v.toDate().getTime() : (v?.seconds ? v.seconds * 1000 : (typeof v === 'number' ? v : null));
+    // The wire type stays `tournament` so historical messages keep rendering
+    // (see the note on TournamentEmbed). `prizePool` is deliberately NOT sent:
+    // there are no prize competitions, so a newly shared event must never
+    // carry one even if a legacy doc still has the field.
     sendMsg({
       type: 'tournament',
       tournament: {
         tournamentId: t.id,
-        name: t.name || 'Tournament',
+        name: t.name || 'Event',
         game: t.game || null,
         type: t.type || null,
         bannerUrl: t.bannerUrl || null,
         startDate: tsToMs(t.startDate),
         endDate: tsToMs(t.endDate),
-        prizePool: typeof t.prizePool === 'number' ? t.prizePool : null,
         entryFee: typeof t.entryFee === 'number' ? t.entryFee : null,
       },
     });
@@ -777,11 +793,27 @@ export default function SquadChatThreadScreen() {
     : [];
   const onlineCount = members.filter((m) => presenceVisible(m.user) && memberPresence[m.id]).length;
 
-  const bgStyle = squadInfo?.chatBackground === 'color'
-    ? { backgroundColor: squadInfo.chatBackgroundValue }
-    : squadInfo?.chatBackground === 'image'
-      ? { backgroundImage: `url(${squadInfo.chatBackgroundValue})`, backgroundSize: 'cover', backgroundPosition: 'center' }
-      : undefined;
+  // ⚠ ONE FIELD DECIDES THE BACKGROUND, and 'environment' is a THIRD KIND on it
+  // rather than a parallel `squads/{id}.environment`. Two fields painting one
+  // surface is the bug that killed rankCollections.js and that was found live on
+  // PublicProfileScreen.jsx (two accent resolvers, each painting half the page).
+  // With one field, precedence is settled by construction.
+  //
+  // ⚠ THE ENVIRONMENT BELONGS TO THE SQUAD, NOT THE VIEWER. It is read straight
+  // off the squad doc and never gated on the reader's own level, or two members
+  // of one squad would see two different rooms and it would stop being a room.
+  // The unlock is checked where it is SET, not here.
+  const squadEnv = squadInfo?.chatBackground === 'environment'
+    ? environmentById(squadInfo.chatBackgroundValue)
+    : null;
+
+  const bgStyle = squadEnv
+    ? environmentBackdrop(squadEnv)
+    : squadInfo?.chatBackground === 'color'
+      ? { backgroundColor: squadInfo.chatBackgroundValue }
+      : squadInfo?.chatBackground === 'image'
+        ? { backgroundImage: `url(${squadInfo.chatBackgroundValue})`, backgroundSize: 'cover', backgroundPosition: 'center' }
+        : undefined;
 
   const jumpTo = (msgId) => {
     const el = document.getElementById(`msg-${msgId}`);
@@ -1071,6 +1103,10 @@ export default function SquadChatThreadScreen() {
 
       {/* Messages */}
       <section className="messages" ref={containerRef} style={bgStyle}>
+        {/* First child, so the sticky anchor pins at the top of the visible box.
+            Weather is a SEPARATE unlock (L73) from the room itself (L52), and it
+            is stored on the squad by whoever set it. */}
+        <SquadEnvironment env={squadEnv} weather={squadInfo?.chatBackgroundWeather === true} />
         {msgError && (
           <div className="day-divider" style={{ marginTop: 24 }}>
             <div className="line" />
@@ -1174,7 +1210,8 @@ export default function SquadChatThreadScreen() {
                       return (
                         <>
                           <span className={`msg-name ${meta.name}`}>
-                            {masked?.displayName || masked?.username || m.senderName || 'User'}
+                            <UserName user={masked} masked fallback={m.senderName || 'User'} />
+                            <RankBadge level={masked?.vpLevel} role={masked?.role} size={12} style={{ verticalAlign: '-2px' }} />
                           </span>
                           {vanguardRank && <VanguardBadge rank={vanguardRank} size={14} />}
                           <span className={`role-pill ${meta.pill}`}>
@@ -1273,12 +1310,24 @@ export default function SquadChatThreadScreen() {
       {/* Typing line */}
       {typingUsers.length > 0 && (
         <div className="typing-line">
-          <span className="typing-dots"><span /><span /><span /></span>
-          <span>
-            <strong style={{ color: 'var(--t2)', fontWeight: 600 }}>
-              {typingUsers[0]?.displayName || typingUsers[0]?.username || 'Someone'}
-            </strong> is typing…
-          </span>
+          {/* This drew its own `.typing-dots` (squad.css:452), so the squad
+              chat was the one place a member's unlocked typing style could
+              never appear. It goes through the shared component now — the
+              `label` keeps the bold name this surface already had. A JSX label
+              is safe because it renders as a CHILD; the trap in docs/effects/01
+              §3.3 is JSX landing in an ATTRIBUTE that must be a string. */}
+          <TypingIndicator
+            variant="inline"
+            users={typingUsers}
+            typist={userByUid[typingUsers[0]?.uid] || null}
+            label={(
+              <>
+                <strong style={{ color: 'var(--t2)', fontWeight: 600 }}>
+                  {typingUsers[0]?.displayName || typingUsers[0]?.username || 'Someone'}
+                </strong> is typing…
+              </>
+            )}
+          />
         </div>
       )}
 
@@ -1294,32 +1343,86 @@ export default function SquadChatThreadScreen() {
             </button>
           </div>
         )}
+        {/* ── COMPOSER ──────────────────────────────────────────────────
+            This was 14 controls plus a hint label, all visible at rest: a
+            5-button formatting bar, three attach buttons, six tool buttons and
+            send. Two of them ("Share an event" and "Share event") did nearly
+            the same thing under nearly the same label.
+
+            Now it rests at FOUR: attach, input, emoji, and send-or-record.
+            Nothing was removed. Everything else moved into the "+" sheet, which
+            is where a phone user looks for attachments anyway, and the format
+            bar is behind an "Aa" toggle the way every modern chat does it.
+            Send/mic swap on whether there is text (WhatsApp behaviour) so the
+            primary action is never ambiguous. */}
         <div className="compose-wrap">
-          <div className="format-bar">
-            <button className="fmt-btn" title="Bold" onClick={() => applyFormat('bold')}><span className="material-symbols-outlined">format_bold</span></button>
-            <button className="fmt-btn" title="Italic" onClick={() => applyFormat('italic')}><span className="material-symbols-outlined">format_italic</span></button>
-            <button className="fmt-btn" title="Strike" onClick={() => applyFormat('strike')}><span className="material-symbols-outlined">format_strikethrough</span></button>
-            <div className="fmt-sep" />
-            <button className="fmt-btn" title="Code" onClick={() => applyFormat('code')}><span className="material-symbols-outlined">code</span></button>
-            <button className="fmt-btn" title="Spoiler" onClick={() => applyFormat('spoiler')}><span className="material-symbols-outlined">visibility_off</span></button>
-            <span className="fmt-hint"><kbd>Markdown</kbd> · <kbd>||spoiler||</kbd></span>
-          </div>
+          {formatBarOpen && (
+            <div className="format-bar">
+              <button className="fmt-btn" title="Bold" onClick={() => applyFormat('bold')}><span className="material-symbols-outlined">format_bold</span></button>
+              <button className="fmt-btn" title="Italic" onClick={() => applyFormat('italic')}><span className="material-symbols-outlined">format_italic</span></button>
+              <button className="fmt-btn" title="Strike" onClick={() => applyFormat('strike')}><span className="material-symbols-outlined">format_strikethrough</span></button>
+              <div className="fmt-sep" />
+              <button className="fmt-btn" title="Code" onClick={() => applyFormat('code')}><span className="material-symbols-outlined">code</span></button>
+              <button className="fmt-btn" title="Spoiler" onClick={() => applyFormat('spoiler')}><span className="material-symbols-outlined">visibility_off</span></button>
+              <span className="fmt-hint"><kbd>Markdown</kbd> · <kbd>||spoiler||</kbd></span>
+            </div>
+          )}
+
+          {attachOpen && (
+            <>
+              <div className="attach-scrim" onClick={() => setAttachOpen(false)} />
+              <div className="attach-menu" role="menu">
+                <label className="attach-item" role="menuitem">
+                  <span className="ai-ic" style={{ background: 'rgba(77,163,255,.14)', color: '#4DA3FF' }}><span className="material-symbols-outlined">image</span></span>
+                  <span className="ai-tx"><b>Photo</b><i>Send an image to the squad</i></span>
+                  <input
+                    type="file" accept="image/*" hidden
+                    onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; setAttachOpen(false); if (f) uploadAndSend(f, 'squad_images', 'image'); }}
+                  />
+                </label>
+                <button className="attach-item" role="menuitem" onClick={() => { setAttachOpen(false); setShowMedia(showMedia ? null : 'gifs'); }}>
+                  <span className="ai-ic" style={{ background: 'rgba(240,165,0,.14)', color: '#F5C842' }}><span className="material-symbols-outlined">gif_box</span></span>
+                  <span className="ai-tx"><b>GIF</b><i>Search and send a GIF</i></span>
+                </button>
+                <button className="attach-item" role="menuitem" onClick={() => { setAttachOpen(false); setShowPollModal(true); }}>
+                  <span className="ai-ic" style={{ background: 'rgba(180,79,255,.14)', color: '#B44FFF' }}><span className="material-symbols-outlined">how_to_vote</span></span>
+                  <span className="ai-tx"><b>Poll</b><i>Ask the squad a question</i></span>
+                </button>
+                {/* Opens SAVED PACKS first. A creator with packs nearly always
+                    wants one of them, and the sheet's empty state is how anyone
+                    discovers the feature exists; "New pack" opens the picker. */}
+                <button className="attach-item" role="menuitem" onClick={() => { setAttachOpen(false); setPacksSheet(true); }}>
+                  <span className="ai-ic" style={{ background: 'rgba(240,64,96,.14)', color: '#F04060' }}><span className="material-symbols-outlined">lock</span></span>
+                  <span className="ai-tx"><b>Locked media</b><i>Paid photos or video</i></span>
+                </button>
+                <button className="attach-item" role="menuitem" onClick={() => { setAttachOpen(false); setSessionSheet(true); }}>
+                  <span className="ai-ic" style={{ background: 'rgba(77,255,212,.12)', color: '#4DFFD4' }}><span className="material-symbols-outlined">videocam</span></span>
+                  <span className="ai-tx"><b>1:1 session</b><i>Offer a private session</i></span>
+                </button>
+                <div className="attach-sep" />
+                {/* These two were separate top-level buttons with nearly
+                    identical titles. Kept as distinct actions, but now labelled
+                    so the difference is legible. */}
+                <button className="attach-item" role="menuitem" onClick={() => { setAttachOpen(false); setShowEventPicker(true); }}>
+                  <span className="ai-ic" style={{ background: 'rgba(123,31,255,.16)', color: '#B44FFF' }}><span className="material-symbols-outlined">confirmation_number</span></span>
+                  <span className="ai-tx"><b>Ticketed event</b><i>Share an event with tickets</i></span>
+                </button>
+                <button className="attach-item" role="menuitem" onClick={() => { setAttachOpen(false); openTournamentShare(); }}>
+                  <span className="ai-ic" style={{ background: 'rgba(240,165,0,.14)', color: '#F0A500' }}><span className="material-symbols-outlined">emoji_events</span></span>
+                  <span className="ai-tx"><b>My events</b><i>One you host or joined</i></span>
+                </button>
+              </div>
+            </>
+          )}
+
           <div className="compose-row">
-            <label className="compose-attach" title="Attach image">
+            <button
+              className={`compose-attach${attachOpen ? ' open' : ''}`}
+              title="Attach"
+              aria-expanded={attachOpen}
+              onClick={() => setAttachOpen((v) => !v)}
+            >
               <span className="material-symbols-outlined">add</span>
-              <input
-                type="file" accept="image/*" hidden
-                onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) uploadAndSend(f, 'squad_images', 'image'); }}
-              />
-            </label>
-            {/* Opens SAVED PACKS first. A creator with packs nearly always wants
-                one of them, and the sheet's empty state is how anyone discovers
-                the feature exists; "New pack" from there opens this picker. */}
-            <button className="compose-attach" title="Send locked media" onClick={() => setPacksSheet(true)}>
-              <span className="material-symbols-outlined">lock</span>
-            </button>
-            <button className="compose-attach" title="Share an event" onClick={() => setShowEventPicker(true)}>
-              <span className="material-symbols-outlined">confirmation_number</span>
             </button>
             <label className="hidden">
               {/* Multi-select: one locked send can be a set, bought once. Files
@@ -1345,33 +1448,33 @@ export default function SquadChatThreadScreen() {
               placeholder={editingMsg ? 'Edit message…' : `Message #${squadInfo?.name || 'squad'}`}
             />
             <div className="compose-tools">
-              <button className="tool-btn" title="GIF" onClick={() => setShowMedia(showMedia ? null : 'gifs')}>
-                <span className="material-symbols-outlined">gif_box</span>
+              <button
+                className={`tool-btn${formatBarOpen ? ' on' : ''}`}
+                title="Formatting"
+                aria-pressed={formatBarOpen}
+                onClick={() => setFormatBarOpen((v) => !v)}
+              >
+                <span className="material-symbols-outlined">text_format</span>
               </button>
               <button className="tool-btn" title="Emoji" onClick={() => setShowEmoji((v) => !v)}>
                 <span className="material-symbols-outlined">sentiment_satisfied</span>
               </button>
-              <button className="tool-btn" title="Poll" onClick={() => setShowPollModal(true)}>
-                <span className="material-symbols-outlined">how_to_vote</span>
+            </div>
+            {/* Send when there is something to send, hold-to-record when there
+                is not. One primary action, never two competing ones. */}
+            {input.trim() || editingMsg ? (
+              <button className="send-btn" title="Send" onClick={submitText}>
+                <span className="material-symbols-outlined">send</span>
               </button>
-              <button className="tool-btn" title="Start a 1:1 session" onClick={() => setSessionSheet(true)}>
-                <span className="material-symbols-outlined">videocam</span>
-              </button>
-              <button className="tool-btn" title="Share tournament" onClick={openTournamentShare}>
-                <span className="material-symbols-outlined">emoji_events</span>
-              </button>
+            ) : (
               <button
-                className="tool-btn" title="Voice message"
+                className={`send-btn mic${isRecording ? ' rec' : ''}`} title="Hold to record a voice message"
                 onMouseDown={startVoice} onMouseUp={endVoice} onMouseLeave={() => isRecording && endVoice()}
                 onTouchStart={startVoice} onTouchEnd={endVoice}
-                style={isRecording ? { color: 'var(--ember)' } : undefined}
               >
                 <span className="material-symbols-outlined">{isRecording ? 'fiber_manual_record' : 'mic'}</span>
               </button>
-            </div>
-            <button className="send-btn" title="Send" onClick={submitText}>
-              <span className="material-symbols-outlined">send</span>
-            </button>
+            )}
           </div>
         </div>
       </div>
@@ -1493,6 +1596,7 @@ export default function SquadChatThreadScreen() {
         squadId={squadId}
         currentBackground={squadInfo?.chatBackground}
         currentValue={squadInfo?.chatBackgroundValue}
+        currentWeather={squadInfo?.chatBackgroundWeather}
       />
 
       {/* Share an EVENT. Same picker as DMs, groups and go-live, so a squad
@@ -1518,14 +1622,14 @@ export default function SquadChatThreadScreen() {
       />
 
       {/* Share Tournament picker */}
-      <Modal isOpen={showTournamentModal} onClose={() => setShowTournamentModal(false)} title="Share a Tournament">
+      <Modal isOpen={showTournamentModal} onClose={() => setShowTournamentModal(false)} title="Share an Event">
         {tournamentsLoading ? (
           <div style={{ textAlign: 'center', padding: 40, color: 'var(--t3)' }}>Loading…</div>
         ) : myTournaments.length === 0 ? (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, padding: '32px 24px', color: 'var(--t3)', textAlign: 'center' }}>
             <span className="material-symbols-outlined" style={{ fontSize: 44, opacity: .45 }}>emoji_events</span>
-            <div style={{ fontFamily: 'Syne', fontWeight: 700, fontSize: 15, color: 'var(--t1)' }}>You aren't in any tournaments</div>
-            <div style={{ fontSize: 12.5, maxWidth: 320 }}>Host a tournament or join one — then come back to share it with your squad.</div>
+            <div style={{ fontFamily: 'Syne', fontWeight: 700, fontSize: 15, color: 'var(--t1)' }}>You aren't in any events</div>
+            <div style={{ fontSize: 12.5, maxWidth: 320 }}>Host an event or get a ticket to one — then come back to share it with your squad.</div>
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 420, overflowY: 'auto' }}>
@@ -1546,7 +1650,7 @@ export default function SquadChatThreadScreen() {
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontFamily: 'Syne', fontWeight: 700, color: '#fff', fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {t.name || 'Tournament'}
+                    {t.name || 'Event'}
                   </div>
                   <div style={{ fontFamily: 'DM Mono', fontSize: 10.5, color: 'var(--t3)', textTransform: 'uppercase', letterSpacing: '.08em', marginTop: 2 }}>
                     {t.game || 'Multi-game'}

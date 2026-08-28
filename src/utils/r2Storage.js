@@ -89,7 +89,7 @@ async function nativePut(url, file, contentType, cacheControl, onProgress) {
 /**
  * Upload a file to R2 via presigned URL.
  * @param {File|Blob} file
- * @param {'avatar'|'banner'|'post'|'short'|'clip'|'article'|'squad'|'tournament'|'tournament-proof'} kind
+ * @param {'avatar'|'banner'|'post'|'short'|'clip'|'article'|'squad'|'tournament'|'tournament-proof'|'ambiance'} kind
  * @param {(pct:number)=>void} [onProgress] - upload progress 0-100; when given we
  *        PUT via XMLHttpRequest so the caller can render a real percentage.
  * @returns {Promise<{ url: string, key: string }>}

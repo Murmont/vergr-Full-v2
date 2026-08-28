@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   resolveAppearance,
   resolveBackground,
@@ -17,6 +17,7 @@ import {
 import { getBlocks } from '../hooks/useVergrMe';
 import InlineVideoPlayer from './media/InlineVideoPlayer';
 import SocialGlyph from './vergrme/SocialIcons';
+import UserName from './UserName';
 
 /**
  * Shared WYSIWYG renderer for a vergr.me page (v2, block-based).
@@ -39,6 +40,21 @@ export default function VergrMeView({
     loadVergrMeFont(data.font);
     getBlocks(data).forEach((b) => b.font && loadVergrMeFont(b.font));
   }, [data]);
+
+  // Has the header (and its Share/Follow pair) scrolled out of view? Declared
+  // ABOVE the `if (!data)` early return — hooks cannot sit after a conditional
+  // return. Callback ref so it attaches when the sentinel mounts.
+  const [headerOut, setHeaderOut] = useState(false);
+  const headerIO = useRef(null);
+  const headerSentinelRef = useCallback((el) => {
+    if (headerIO.current) { headerIO.current.disconnect(); headerIO.current = null; }
+    if (!el || typeof IntersectionObserver === 'undefined') { setHeaderOut(false); return; }
+    headerIO.current = new IntersectionObserver(
+      ([entry]) => setHeaderOut(!entry.isIntersecting),
+      { threshold: 0 },
+    );
+    headerIO.current.observe(el);
+  }, []);
 
   if (!data) return null;
 
@@ -133,6 +149,13 @@ export default function VergrMeView({
           handlers={handlers}
           spec={spec}
         />
+        {/* Sentinel for the floating action cluster. ActionRow (in the header)
+            and FloatingActions (pinned bottom-right) render the SAME Share and
+            Follow buttons off the same two flags, so with defaults every
+            visitor saw both at once — on the page a creator hands to an
+            audience who have never used Vergr (audit A13). The floating pair
+            now appears only once the header pair has scrolled out of view. */}
+        <div ref={headerSentinelRef} style={{ height: 1 }} aria-hidden />
 
         <div
           className="flex flex-col pb-12"
@@ -184,7 +207,7 @@ export default function VergrMeView({
         </div>
       </div>
 
-      {interactive && data.floatingActions !== false && (
+      {interactive && data.floatingActions !== false && headerOut && (
         <FloatingActions data={data} accent={accent} atc={atc} handlers={handlers} />
       )}
     </div>
@@ -486,12 +509,12 @@ function ProfileText({ data, t, font, titleColor, bioColor, spec, center }) {
   return (
     <div className="flex flex-col gap-1" style={{ alignItems: center ? 'center' : 'flex-start', textAlign: center ? 'center' : 'left', width: center ? '100%' : 'auto' }}>
       <h1 style={{ fontSize: 22, fontWeight: 700, color: titleColor || t.text, letterSpacing: '-0.02em', fontFamily: font.heading, display: 'inline-flex', alignItems: 'center', gap: 6, justifyContent: center ? 'center' : 'flex-start', ...p.title }}>
-        {p.prefix}{data.displayName || ' '}
+        {p.prefix}<UserName user={data} masked fallback={' '} />
         {data.verified && (
           <span title="Verified" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 18, height: 18, borderRadius: '50%', background: '#3D7FFF', color: '#fff', fontSize: 11, fontWeight: 900, flexShrink: 0 }}>✓</span>
         )}
       </h1>
-      <p style={{ fontSize: 13, color: t.textSub, ...p.username }}>@{data.username}</p>
+      <p style={{ fontSize: 13, color: t.textSub, ...p.username }}><UserName user={data} masked handle /></p>
       {data.bio && (
         <p style={{ fontSize: 13, color: bioColor || t.textSub, lineHeight: 1.6, maxWidth: 320, marginTop: 4, whiteSpace: 'pre-line', ...p.bio }}>{data.bio}</p>
       )}
@@ -757,8 +780,14 @@ function Block({ block, t, accent, atc, linkSty, font, dl = 'minimal', spec, int
     case 'collection':
       return <CollectionBlock block={block} t={t} accent={accent} linkSty={linkSty} d={d} interactive={interactive} fire={fire} />;
 
-    case 'vergr_stream':
+    // Tournaments are retired. A page saved before that may still carry this
+    // block, so render NOTHING rather than (a) advertising "My tournament 🏆"
+    // on a public creator page or (b) falling through to the default LinkBlock,
+    // which would draw a dead link to a route that no longer exists.
     case 'vergr_tournament':
+      return null;
+
+    case 'vergr_stream':
     case 'vergr_event':
     case 'vergr_squad':
     case 'vergr_group':
@@ -1082,8 +1111,8 @@ function Placeholder({ t, label, radius }) {
   );
 }
 
-const VERGR_EMOJI = { vergr_stream: '🔴', vergr_tournament: '🏆', vergr_event: '🎟️', vergr_squad: '🛡️', vergr_group: '💬' };
-const VERGR_LABEL = { vergr_stream: 'My live stream', vergr_tournament: 'My tournament', vergr_event: 'Ticketed event', vergr_squad: 'My squad', vergr_group: 'Join my group' };
+const VERGR_EMOJI = { vergr_stream: '🔴', vergr_event: '🎟️', vergr_squad: '🛡️', vergr_group: '💬' };
+const VERGR_LABEL = { vergr_stream: 'My live stream', vergr_event: 'Ticketed event', vergr_squad: 'My squad', vergr_group: 'Join my group' };
 
 // Small dashed note used for editor-only states (a block that renders nothing on
 // the live page still needs to be visible + explained while editing).

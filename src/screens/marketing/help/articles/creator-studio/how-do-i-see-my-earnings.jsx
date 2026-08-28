@@ -29,7 +29,7 @@ export default {
       h2: "From earnings to your pocket"
     },
     {
-      p: "Vergr keeps a share of what your content earns (30% at the start, falling to 15% as your VP rank climbs) and pays you the rest on a schedule, once you are identity-verified."
+      p: "You keep a share of what your content earns, starting at 50% and rising to 80% as your lifetime earnings grow. Vergr pays you the rest on a schedule, once you are identity-verified. Your VP rank has no effect on this number."
     },
     {
       cta: [

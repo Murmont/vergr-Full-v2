@@ -124,9 +124,10 @@ async function distributeMonth(db, monthKey) {
     recipients[c.uid] = { coins: c.floored, rank: c.rank, actions: c.actions, weight: c.weight };
     // Credit the recipient's wallet.
     batch.set(db.collection('wallets').doc(c.uid), {
-      balance: FieldValue.increment(c.floored),
-      // convertible: vanguard treasury distribution (received value) — see coinLedger.js
-      earnedBalance: FieldValue.increment(c.floored),
+      // earnedCoinCredit supplies balance + earnedBalance +
+      // totalEarnedCoinsGross, the last of which drives the revenue share
+      // ladder and was missing from this hand-rolled write.
+      ...require('./coinLedger').earnedCoinCredit(c.floored),
       updatedAt: FieldValue.serverTimestamp(),
     }, { merge: true });
     // Ledger entry.
@@ -167,7 +168,7 @@ async function distributeMonth(db, monthKey) {
   // AUTO-CONVERT AT RECEIPT for every recipient's share.
   //
   // Active Vanguard convert at 0% commission, so in practice this moves the full
-  // amount coin-for-gem. That exemption is NOT assumed here: `settleEarnedToGems`
+  // amount coin-for-gem. That exemption is NOT assumed here: `settleEarnedShare`
   // re-reads each user doc and applies `isVanguardExempt`, so a suspended or
   // retired member correctly pays tier commission like anyone else, and a member
   // whose status changed between distribution and settlement is priced on what
@@ -176,9 +177,9 @@ async function distributeMonth(db, monthKey) {
   // Sequential rather than parallel: this is a monthly cron over a small set,
   // and a burst of transactions against the same collection buys nothing.
   // Idempotent per (month, uid), so a re-run cannot convert a share twice.
-  const { settleEarnedToGems } = require('./coinLedger');
+  const { settleEarnedShare } = require('./coinLedger');
   for (const [uid, r] of Object.entries(recipients)) {
-    await settleEarnedToGems(db, {
+    await settleEarnedShare(db, {
       uid, coins: r.coins,
       source: 'vanguard_treasury', sourceId: `vanguard:${monthKey}:${uid}`,
     });

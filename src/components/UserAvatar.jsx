@@ -36,7 +36,7 @@ function ringForVpLevel(level) {
 }
 
 export default function UserAvatar({
-  src,
+  src: srcProp,
   size = 40,
   // `vpLevel` is the new way to drive the ring. If absent we fall back to
   // the legacy `tier` prop (coinsSpent number OR tier-name string).
@@ -114,6 +114,12 @@ export default function UserAvatar({
   // caching is unavailable (no regression).
   // `permanent` — an avatar is ~20KB and its absence is the most visible thing
   // in the app, so it goes in storage Android will not reclaim.
+  // A caller that forgets to destructure uploadToR2's { url, key } hands us an
+  // OBJECT here, which React stringifies to src="[object Object]": a broken
+  // image plus a pointless request to a garbage path. Anything that is not a
+  // non-empty string is treated as no avatar, so it renders the placeholder.
+  const src = typeof srcProp === 'string' && srcProp ? srcProp : null;
+
   const displaySrc = useCachedImage(src, { permanent: true });
 
   // Fade the real image in over the dark placeholder disc so a slow avatar
@@ -141,7 +147,9 @@ export default function UserAvatar({
       className={`relative inline-flex shrink-0 ${className}`}
       style={{ width: px, height: px }}
     >
-      {/* GR4 champion: gold animated ring + crown badge */}
+      {/* Featured creator: gold animated ring + crown badge. This started life
+          as a tournament-champion frame; tournaments are retired and the flag
+          is now a featured-creator marker, matching PublicProfileScreen. */}
       {championActive && !showLiveRing && (
         <div
           className="absolute -inset-[3px] rounded-full animate-spin-slow bg-gradient-to-tr from-[#F0A500] via-[#F5C842] to-[#F0A500] opacity-90 blur-[1px]"
@@ -201,7 +209,7 @@ export default function UserAvatar({
         <div
           className="absolute -top-1.5 left-1/2 -translate-x-1/2 z-20"
           style={{ fontSize: Math.max(10, px * 0.3), lineHeight: 1 }}
-          title="Recent tournament champion"
+          title="Featured creator"
         >
           <Icon name="workspace_premium" size={Math.max(12, px * 0.32)} className="text-brand-gold-light" />
         </div>

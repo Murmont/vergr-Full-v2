@@ -14,13 +14,13 @@ import PinUnlockModal from '../components/wallet/PinUnlockModal';
 import WalletOnboarding from '../components/wallet/WalletOnboarding';
 import WalletWalkthrough from '../components/wallet/WalletWalkthrough';
 import { getMyWalletSecurityStatus } from '../firebase/walletCallables';
-import { COIN_VALUE_USD, GEM_VALUE_USD } from '../utils/vpSystem';
+import { COIN_VALUE_USD } from '../utils/vpSystem';
 
 // LocalStorage flag — walkthrough plays once per browser, even if the user
 // later cancels onboarding. They can replay manually from Settings.
 const WALKTHROUGH_FLAG = 'vergr.wallet.walkthroughSeen.v1';
 import {
-  CoinGlyph, GemGlyph, VPGlyph, WALLET_TOKENS, fmtNum, fmtEUR, fmtUsd,
+  CoinGlyph, VPGlyph, WALLET_TOKENS, fmtNum, fmtEUR, fmtUsd,
 } from '../components/wallet/primitives';
 
 const NAV_MONEY = [
@@ -424,15 +424,12 @@ function NavItem({ icon, label, active, onClick, collapsed }) {
 function Topbar({ meta, wallet, navigate, onMobileNav, isDesktop }) {
   const [balOpen, setBalOpen] = useState(false);
   const coins = wallet?.balance || 0;
-  const gems = wallet?.gems || 0;
-  // Coins and gems are NOT the same value and must not be summed at one rate.
-  // The accrual unit is worth $0.01 flat, because that is what it pays out at
-  // (functions/withdrawals.js GEM_TO_MICRO_USDC). A coin is valued at what it
+  // The wallet is the BUYER surface: coins held, coins bought, coins spent.
+  // Accrued revenue share is not a wallet balance and is never shown here; it
+  // lives in Creator Studio, expressed in dollars. A coin is valued at what it
   // COSTS to buy, which is the number that makes sense when you are about to
-  // spend some. A coin's redemption value is much lower, since converting runs
-  // through the 15-30% rank commission, so this figure must never be presented
-  // as what the wallet would pay out.
-  const totalUSD = (coins * COIN_VALUE_USD) + (gems * GEM_VALUE_USD);
+  // spend some.
+  const totalUSD = coins * COIN_VALUE_USD;
   return (
     <header style={{
       position: 'sticky', top: 0, zIndex: 50,
@@ -486,7 +483,7 @@ function Topbar({ meta, wallet, navigate, onMobileNav, isDesktop }) {
         </div>
       </div>
 
-      {/* Balance chip (coin + gem only — VP is a rank-progress number, not a wallet balance) */}
+      {/* Balance chip (coins only — VP is a rank-progress number, not a balance) */}
       <div style={{ position: 'relative' }}>
         <button onClick={() => setBalOpen(v => !v)} style={{
           display: 'flex', alignItems: 'center', gap: 10,
@@ -498,8 +495,6 @@ function Topbar({ meta, wallet, navigate, onMobileNav, isDesktop }) {
         }}>
           <CoinGlyph size={18} />
           <span className="font-dmmono tabular-nums" style={{ fontSize: 13, fontWeight: 600 }}>{fmtNum(coins)}</span>
-          <GemGlyph size={16} />
-          <span className="font-dmmono tabular-nums" style={{ fontSize: 13, fontWeight: 600 }}>{fmtNum(gems)}</span>
           <Icon name="expand_more" size={14} />
         </button>
         {balOpen && (
@@ -512,7 +507,6 @@ function Topbar({ meta, wallet, navigate, onMobileNav, isDesktop }) {
             boxShadow: '0 24px 64px rgba(0,0,0,0.6)',
           }}>
             <BalRow icon={<CoinGlyph size={20} />} label="Coins" value={coins} />
-            <BalRow icon={<GemGlyph size={20} />} label="Gems"  value={gems} />
             <BalRow icon={<VPGlyph size={20} />} label="VP"    value={wallet?.vp || 0} muted />
             <div style={{ height: 1, background: WALLET_TOKENS.hairline, margin: '10px 0' }} />
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>

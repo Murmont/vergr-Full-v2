@@ -87,40 +87,29 @@ export default function CreatorCommunityScreen() {
   const nextMilestone = [100, 500, 1_000, 5_000, 10_000, 50_000, 100_000].find(m => fc < m);
   if (nextMilestone) milestones.push({ icon: 'flag', label: `${compactNum(nextMilestone - fc)} followers to ${compactNum(nextMilestone)}`, date: 'upcoming', done: false });
 
-  // Activity stream — mix of contributions, follows (mock), mentions (mock)
-  const activity = useMemo(() => {
-    const items = [];
-    last30.slice(0, 8).forEach(t => items.push({
-      id: `tx-${t.id}`,
-      kind: 'tip',
-      who: t.fromUsername || 'fan',
-      avatar: t.fromAvatar,
-      detail: `tipped ${compactNum(t.amount)} coins`,
-      when: tsMs(t.createdAt),
-    }));
-    // Mock engagement items so the stream never looks empty in design
-    const mocks = [
-      { id: 'm1', kind: 'follow',  who: 'nova_rae',     detail: 'started following',                when: Date.now() - 2 * 60_000 },
-      { id: 'm2', kind: 'comment', who: 'apex_hunter',  detail: 'commented on your Clip — "insane movement"', when: Date.now() - 9 * 60_000 },
-      { id: 'm3', kind: 'mention', who: 'squadgoals',   detail: 'mentioned you in an LFG post',     when: Date.now() - 45 * 60_000 },
-      { id: 'm4', kind: 'share',   who: 'kenji_vpx',    detail: 'shared your Article to 3 servers', when: Date.now() - 3 * 3_600_000 },
-    ];
-    return [...items, ...mocks].sort((a, b) => b.when - a.when);
-  }, [last30]);
+  // Activity stream. REAL rows only.
+  //
+  // This used to concatenate four invented fans (nova_rae, apex_hunter, ...)
+  // "so the stream never looks empty in design", alongside three invented
+  // pending comments and a hardcoded 74/21/5 sentiment split. A creator cannot
+  // tell fabricated engagement from real engagement, which makes every number
+  // on the screen untrustworthy and, for a quiet account, actively misleading.
+  // An honest empty state is worth more than a populated fake one.
+  const activity = useMemo(() => last30.slice(0, 8).map(t => ({
+    id: `tx-${t.id}`,
+    kind: 'tip',
+    who: t.fromUsername || 'fan',
+    avatar: t.fromAvatar,
+    detail: `tipped ${compactNum(t.amount)} coins`,
+    when: tsMs(t.createdAt),
+  })).sort((a, b) => b.when - a.when), [last30]);
 
-  // Replies needed — mock pending comments
-  const repliesNeeded = [
-    { id: 'r1', who: 'aurora_rift', avatar: null, text: 'Any chance you could post the full build loadout?', post: 'Ranked recap montage', when: Date.now() - 25 * 60_000 },
-    { id: 'r2', who: 'cosmo.byte',  avatar: null, text: 'GG on the clutch last stream 🔥 when\'s the next one?', post: 'Live · Apex tourney', when: Date.now() - 2 * 3_600_000 },
-    { id: 'r3', who: 'nyx_theorist', avatar: null, text: 'What sens do you play on?', post: 'Highlight clip', when: Date.now() - 4 * 3_600_000 },
-  ];
+  // Pending replies need a comments query scoped to this creator's posts, which
+  // does not exist yet. Empty until it does, rather than filled with examples.
+  const repliesNeeded = [];
 
-  // Sentiment — positive / neutral only (toxicity is moderator territory)
-  const sentiment = [
-    { name: 'Positive', value: 74, color: PALETTE.emerald },
-    { name: 'Neutral',  value: 21, color: PALETTE.blue },
-    { name: 'Curious',  value: 5,  color: PALETTE.violet },
-  ];
+  // Sentiment needs a classifier over real comment text. Not built, so not shown.
+  const sentiment = [];
 
   const iconForKind = (k) => ({
     tip:     { name: 'paid',           color: 'text-amber-400',  bg: 'bg-amber-500/10' },

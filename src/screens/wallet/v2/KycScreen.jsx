@@ -15,15 +15,26 @@ const KYC_TIERS = [
   { level: 0, name: 'Unverified', dailyEUR: 0,    monthlyEUR: 0,
     requires: ['Email confirmed'],
     unlocks:  ['Buy coins', 'Tip creators', 'Unlock paid content', 'Cannot be paid a revenue share'] },
+  // Figures verified against KYC_MONTHLY_CAP_MICRO_USD in
+  // functions/creatorPayouts.js, which is what the payout engine actually
+  // enforces: 50_000_000 / 2_500_000_000 / 15_000_000_000 MICRO-USD, i.e.
+  // $50 / $2,500 / $15,000 a month. The numbers were right; the CURRENCY was
+  // not (audit A28). These are a published AML control that appears in the AML
+  // policy and the ToS, and a compliance figure quoted in the wrong currency is
+  // the one a regulator holds you to, so the symbol matters here more than
+  // anywhere else in the app.
+  //
+  // ⚠ The `dailyEUR`/`monthlyEUR` field names are kept because
+  // LimitProgressBar's `money` mode reads them; the VALUES are USD.
   { level: 1, name: 'Basic',      dailyEUR: 0,    monthlyEUR: 50,
     requires: ['Government ID', 'Selfie liveness'],
-    unlocks:  ['VERGR can pay your creator revenue share', 'Paid up to €50 per month'] },
+    unlocks:  ['VERGR can pay your creator revenue share', 'Paid up to $50 per month'] },
   { level: 2, name: 'Standard',   dailyEUR: 0,    monthlyEUR: 2500,
     requires: ['L1 + proof of address (utility bill / bank statement)'],
-    unlocks:  ['Paid up to €2,500 per month', 'Faster payout schedules unlock'] },
+    unlocks:  ['Paid up to $2,500 per month', 'Faster payout schedules unlock'] },
   { level: 3, name: 'Premium',    dailyEUR: 0,    monthlyEUR: 15000,
-    requires: ['L2 + source-of-funds declaration on first €1,000+ deposit'],
-    unlocks:  ['Paid up to €15,000 per month', 'Priority support'] },
+    requires: ['L2 + source-of-funds declaration'],
+    unlocks:  ['Paid up to $15,000 per month', 'Priority support'] },
 ];
 
 export default function KycScreen() {

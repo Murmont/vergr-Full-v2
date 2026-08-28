@@ -6,7 +6,7 @@
 
 export default {
   summary: "A Stream Boost is a one-time 50-coin spend that unlocks public streaming on the free plan and pushes your stream harder in discovery so more people find you. It is not money you lose: it refunds itself out of the first 50 coins of tips you earn while it is active. Lite and Pro do not need it at all.",
-  updated: "2026-06-18",
+  updated: "2026-08-27",
   body: [
     {
       p: "A Stream Boost is the small spark that gets a free-plan stream off the ground. On the free plan, your first public broadcast needs 100 followers and one 50-coin Stream Boost. The boost does two things at once: it opens the gate to public streaming, and while it runs it amplifies your stream in discovery so the right viewers actually see you go live."
@@ -20,7 +20,9 @@ export default {
     {
       list: [
         "Unlocks public streaming on the free plan (alongside the 100-follower requirement).",
-        "Pushes your stream higher in discovery so more viewers find it while you are live.",
+        "Pushes your stream to more viewers while you are live, and matches it to people who watch this kind of stream rather than simply showing it to more people at random.",
+        "Runs for a set time with a visible countdown, so you can see exactly how long you have left.",
+        "Stacks: other people can boost you too, up to a ceiling, and each boost extends how long you stay boosted.",
         "Makes you eligible to be surfaced to viewers who are most likely to tip and support.",
         "Refunds itself from the first 50 coins of tips you earn during that stream."
       ]
@@ -52,9 +54,36 @@ export default {
         ],
         [
           "Can I boost on Lite or Pro for extra reach?",
-          "Paid plans already stream from day one without a boost. The boost is the free-plan unlock, not a paid-plan add-on."
+          "Yes. Paid plans stream from day one without needing a boost to unlock public streaming, but anyone on any plan can boost a live stream for extra reach. That is a separate thing from the free-plan unlock."
+        ],
+        [
+          "Can I boost someone else's stream?",
+          "Yes, and you do not have to be a streamer at all. Open the gift menu on any live stream and switch to Boost. If you have earned a Boost token from your rank, you can spend that instead of coins, on anyone's stream."
+        ],
+        [
+          "What happens if several people boost the same stream?",
+          "The boosts add up to a ceiling, and each one extends how long the stream stays boosted. Past the ceiling, extra boosts keep the stream boosted for longer but do not push it any further."
         ]
       ]
+    },
+    {
+      h2: "Boost tiers"
+    },
+    {
+      p: "Boost is bought from the gift menu on a live stream, next to tipping. There are three tiers, and each runs for a set time with a countdown you can see."
+    },
+    {
+      list: [
+        "Boost, 50 coins: 1.5x reach for 15 minutes.",
+        "Super Boost, 150 coins: 2.5x reach for 30 minutes, matched to people who watch this kind of stream.",
+        "Mega Boost, 500 coins: 4x reach for an hour, plus a slot in the live rail on the home feed."
+      ]
+    },
+    {
+      h2: "Boost tokens from your rank"
+    },
+    {
+      p: "Every rank band grants a Boost token as you level up. A token spends exactly like the 50-coin Boost and costs you nothing, and it works on any public live stream, not just your own. If you level up but do not stream yourself, you can hand your boost to a creator you want more people to see."
     },
     {
       cta: [

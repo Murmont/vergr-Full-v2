@@ -7,6 +7,7 @@ import { useUser } from '../context/UserContext';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
 import { getVPLevel } from '../utils/vpSystem';
+import UserName from './UserName';
 
 // Routes that render their own full-bleed immersive UI — no drawer/swipe there.
 const DRAWER_HIDE_PREFIXES = ['/broadcast', '/watch', '/call', '/go-live', '/admin', '/login', '/signup', '/onboarding'];
@@ -151,9 +152,9 @@ export default function MobileNavDrawer({ open, onClose }) {
             >
               <UserAvatar src={profile?.avatar || profile?.photoURL} size={48} />
               <div className="min-w-0 flex-1">
-                <p className="truncate font-syne text-[15px] font-bold text-white">{displayName}</p>
+                <p className="truncate font-syne text-[15px] font-bold text-white"><UserName user={profile} masked fallback={displayName} /></p>
                 <p className="truncate text-[12px] text-text-muted">
-                  @{profile?.username || 'player'} · {vpLevel?.name || 'Rookie'}
+                  <UserName user={profile} masked handle fallback={'player'} /> · {vpLevel?.name || 'Rookie'}
                 </p>
               </div>
               <Icon name="chevron_right" size={18} className="text-text-muted" />

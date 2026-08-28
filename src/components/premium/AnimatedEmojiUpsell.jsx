@@ -143,7 +143,7 @@ export default function AnimatedEmojiUpsell({ emoji = '❤️', variant = 'emoji
               boxShadow: '0 6px 24px rgba(123,31,255,0.45), inset 0 1px 0 rgba(255,255,255,0.25)',
             }}
           >
-            Upgrade from €4.99/mo
+            Upgrade from $4.99/mo
           </motion.button>
           <button onClick={onClose} className="w-full py-2 text-[13px] font-medium text-text-muted hover:text-text-secondary transition-colors">
             Maybe later

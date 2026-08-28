@@ -593,7 +593,7 @@ difference.
 ### 12.5 Below the Pay button — required for underwriting
 1. Trust badges: Visa · Mastercard · Amex · Discover · G Pay · SSL · PCI.
 2. `By clicking Pay you agree to our Terms and Privacy Policy.`
-3. `Murmont LLC, trading as VERGR, 1309 Coffeen Ave, Ste 1200, Sheridan, WY 82801, United States.`
+3. `Vergr LLC, 212 N. 2nd St, Ste 100, Richmond, KY 40475, United States.` (NOT "trading as": there is no registered trade name. Render from OPERATOR in legalContent.js, never hardcode.)
 4. `Questions: support@vergr.app`
 5. Digital-goods + refund line, linking `/platform/refunds`.
 
@@ -686,7 +686,7 @@ off a real screen or answered by the founder.
 - Service fee 10% on the first $1M/yr, with a **4% reduction** on transactions
   paid through the alternative system.
 - **In the US the alternative-billing fees are currently switched off** — Google
-  is not assessing them and not requiring transaction reporting. Murmont LLC is
+  is not assessing them and not requiring transaction reporting. Vergr LLC is
   a US entity, so this is the regime that applies to us today.
 - The binding UX rule: the user must be able to compare the two options fairly,
   **with no thumb on the scale** toward the developer's billing system. Buttons

@@ -112,11 +112,13 @@ async function creditReferralPurchaseBonus({ buyerUid, coins, sourceId }) {
       const m = await tx.get(markerRef);
       if (m.exists) return;
 
+      const { earnedCoinCredit } = require('./coinLedger');
       const walletRef = db.collection('wallets').doc(referrerUid);
       tx.set(walletRef, {
-        balance: FieldValue.increment(bonus),
-        // convertible: referral revenue share (received value) — see coinLedger.js
-        earnedBalance: FieldValue.increment(bonus),
+        // earnedCoinCredit supplies balance + earnedBalance +
+        // totalEarnedCoinsGross, the last of which drives the revenue share
+        // ladder and was missing from this hand-rolled write.
+        ...earnedCoinCredit(bonus),
         referralRevenueCoins: FieldValue.increment(bonus), // lifetime rollup for the UI
         updatedAt: FieldValue.serverTimestamp(),
       }, { merge: true });
@@ -162,8 +164,8 @@ async function creditReferralPurchaseBonus({ buyerUid, coins, sourceId }) {
     // so it converts at the referrer's rate now rather than whenever they next
     // choose to cash out. Keyed off the purchase's sourceId, so the settlement
     // is idempotent across both payment rails exactly as the bonus itself is.
-    const { settleEarnedToGems } = require('./coinLedger');
-    await settleEarnedToGems(db, {
+    const { settleEarnedShare } = require('./coinLedger');
+    await settleEarnedShare(db, {
       uid: referrerUid, coins: bonus,
       source: 'referral_revenue', sourceId: `referral:${sourceId}`,
     });

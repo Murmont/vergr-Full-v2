@@ -8,6 +8,7 @@ import {
   WALLET_TOKENS,
 } from '../../../components/wallet/primitives';
 import Icon from '../../../components/Icon';
+import UserName from '../../../components/UserName';
 
 export default function SettingsScreen() {
   const navigate = useNavigate();
@@ -27,7 +28,7 @@ export default function SettingsScreen() {
         {/* Column 1: Account */}
         <Column title="Account">
           <Card title="Account info">
-            <Row label="Username">@{profile?.username || '—'}</Row>
+            <Row label="Username"><UserName user={profile} masked handle fallback={'—'} /></Row>
             <Row label="Email">{profile?.email ? maskEmail(profile.email) : '—'}</Row>
             <Row label="Member since">{profile?.createdAt
               ? new Date(profile.createdAt.seconds ? profile.createdAt.seconds * 1000 : profile.createdAt).toLocaleDateString()

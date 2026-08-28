@@ -294,7 +294,13 @@
 .sqd .pinned-bar .pin-label{font-family:'DM Mono';font-size:10px;text-transform:uppercase;letter-spacing:.14em;color:var(--violet-light);font-weight:700}
 .sqd .pinned-bar .pin-text{color:var(--t2);font-size:12px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sqd .pinned-bar .pin-jump{font-family:'DM Mono';font-size:10px;color:var(--cyan);text-transform:uppercase;letter-spacing:.12em}
-.sqd .messages{flex:1;overflow-y:auto;padding:14px 22px 4px;min-height:0}
+/* ⚠ isolation:isolate IS LOAD-BEARING FOR SQUAD ENVIRONMENTS (effect 11).
+   The environment canvas is a z-index:-1 sticky child. position/overflow alone
+   do NOT create a stacking context, so without this the canvas escapes to the
+   nearest one (the root) and paints BEHIND this element's own background: the
+   weather renders correctly and is completely invisible. Cost me two rebuilds.
+   Removing this silently disables every squad environment. */
+.sqd .messages{flex:1;overflow-y:auto;padding:14px 22px 4px;min-height:0;isolation:isolate}
 .sqd .day-divider{display:flex;align-items:center;gap:14px;margin:18px 0 8px}
 .sqd .day-divider .line{flex:1;height:1px;background:rgba(255,255,255,.05)}
 .sqd .day-divider .label{font-family:'DM Mono';font-size:10px;text-transform:uppercase;letter-spacing:.18em;color:var(--t3);font-weight:700;padding:2px 10px;border:1px solid rgba(255,255,255,.06);border-radius:20px}
@@ -412,6 +418,42 @@
 .sqd .send-btn:hover{filter:brightness(1.1)}
 .sqd .send-btn:disabled{opacity:.4;filter:none}
 .sqd .send-btn .material-symbols-outlined{font-size:18px;font-variation-settings:'FILL' 1}
+
+/* ── Composer: attach sheet + collapsed formatting ────────────────────
+   The composer used to show 14 controls at rest. These styles support the
+   collapsed version: one "+" that opens a labelled menu, and an "Aa" toggle
+   for the formatting bar. Every action that used to be a bare icon now has a
+   NAME, which is the actual fix — six unlabelled glyphs in a row is not
+   something anyone can read. */
+.sqd .compose-attach.open{background:linear-gradient(135deg,var(--violet),var(--pink));color:#fff}
+.sqd .compose-attach.open .material-symbols-outlined{transform:rotate(45deg)}
+.sqd .compose-attach .material-symbols-outlined{transition:transform .18s ease}
+.sqd .tool-btn.on{background:rgba(180,79,255,.16);color:var(--violet-light)}
+
+.sqd .attach-scrim{position:fixed;inset:0;z-index:40}
+.sqd .attach-menu{
+  position:absolute;bottom:calc(100% + 10px);left:0;z-index:50;
+  width:min(320px,calc(100vw - 32px));
+  background:var(--s2);border:1px solid rgba(255,255,255,.07);border-radius:16px;
+  padding:6px;box-shadow:0 18px 44px rgba(0,0,0,.55);
+  max-height:min(60dvh,420px);overflow-y:auto;
+}
+.sqd .attach-item{
+  width:100%;display:flex;align-items:center;gap:12px;
+  padding:9px 10px;border-radius:11px;text-align:left;cursor:pointer;
+  background:transparent;border:0;color:inherit;
+}
+.sqd .attach-item:hover{background:rgba(255,255,255,.05)}
+.sqd .attach-item .ai-ic{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;flex-shrink:0}
+.sqd .attach-item .ai-ic .material-symbols-outlined{font-size:19px}
+.sqd .attach-item .ai-tx{display:flex;flex-direction:column;min-width:0;gap:1px}
+.sqd .attach-item .ai-tx b{font-family:'Syne';font-weight:700;font-size:13.5px;color:#fff;line-height:1.2}
+.sqd .attach-item .ai-tx i{font-style:normal;font-size:11.5px;color:var(--t3);line-height:1.25}
+.sqd .attach-sep{height:1px;background:rgba(255,255,255,.06);margin:5px 8px}
+
+.sqd .send-btn.mic{background:rgba(255,255,255,.06);box-shadow:none;color:var(--t2)}
+.sqd .send-btn.mic:hover{background:rgba(255,255,255,.1);color:#fff}
+.sqd .send-btn.mic.rec{background:linear-gradient(135deg,var(--ember),#ff6b8a);color:#fff;box-shadow:0 4px 14px rgba(240,64,96,.45)}
 .sqd .typing-line{height:18px;padding:0 28px 2px;font-size:11px;color:var(--t3);display:flex;align-items:center;gap:6px}
 .sqd .typing-dots{display:inline-flex;gap:2px}
 .sqd .typing-dots span{width:4px;height:4px;border-radius:50%;background:var(--t3);animation:sqd-bounce 1.2s infinite ease-in-out}
@@ -469,10 +511,28 @@
 .sqd .hero-xp .bar{height:6px;border-radius:3px;background:rgba(255,255,255,.08);overflow:hidden}
 .sqd .hero-xp .bar>div{height:100%;background:linear-gradient(90deg,var(--violet),var(--pink));box-shadow:0 0 8px rgba(180,79,255,.4)}
 .sqd .qa-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
-.sqd .qa{display:flex;align-items:center;gap:12px;padding:14px;border-radius:14px;background:rgba(255,255,255,.025);border:1px solid rgba(255,255,255,.05);cursor:pointer;transition:border-color .15s,background .15s;text-align:left}
-.sqd .qa:hover{border-color:rgba(180,79,255,.3);background:rgba(180,79,255,.04)}
+/* Quick-action tiles.
+   Was a 1px hairline box each, which stacked into four identical outlined
+   rectangles on mobile — the "cheap AI design" look ruled out in CLAUDE.md
+   ("hairline outlines on every box read as cheap. Vergr is a social app, not a
+   fintech dashboard"). Separated by VALUE and LIGHT instead of a stroke: a
+   raised surface with a lit top edge and a shadow beneath, matching the
+   .vg-tile idea in styles/surface.css. */
+.sqd .qa{
+  display:flex;align-items:center;gap:12px;padding:14px;border-radius:14px;
+  background:linear-gradient(180deg,rgba(255,255,255,.055),rgba(255,255,255,.018));
+  border:none;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.09), 0 1px 2px rgba(0,0,0,.45), 0 6px 16px rgba(0,0,0,.28);
+  cursor:pointer;transition:transform .12s ease, box-shadow .15s, background .15s;text-align:left;
+}
+.sqd .qa:hover{
+  background:linear-gradient(180deg,rgba(180,79,255,.10),rgba(255,255,255,.02));
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.13), 0 2px 4px rgba(0,0,0,.45), 0 10px 24px rgba(123,31,255,.18);
+}
+.sqd .qa:active{transform:scale(.985)}
 .sqd .qa .ic{width:42px;height:42px;border-radius:12px;display:grid;place-items:center;flex-shrink:0}
-.sqd .qa.chat .ic{background:rgba(180,79,255,.12);color:var(--cyan)}
+/* Was var(--cyan) — off-brand (violet/pink/gold only). */
+.sqd .qa.chat .ic{background:rgba(180,79,255,.12);color:var(--violet-light)}
 .sqd .qa.voice .ic{background:rgba(180,79,255,.12);color:var(--violet-light)}
 .sqd .qa.events .ic{background:rgba(240,165,0,.12);color:var(--gold-light)}
 .sqd .qa.lb .ic{background:rgba(240,64,96,.12);color:var(--ember)}
@@ -765,6 +825,41 @@
   .sqd .content,.sqd .page-header{padding-left:16px;padding-right:16px}
   .sqd .m-row{grid-template-columns:48px 1fr auto}
   .sqd .m-row .m-cell{display:none}
+
+  /* ── OVERVIEW HERO ──────────────────────────────────────────────
+     None of the hero was ever given a mobile treatment, so a phone got the
+     desktop rule set: a 30px Syne wordmark that overflows its box, a 96px
+     avatar and a 200px-wide XP block competing for 375px of width, and white
+     text sitting directly on a full-bleed illustration. */
+
+  /* Stack instead of squeezing three flex children onto one line. */
+  .sqd .hero{padding:18px}
+  .sqd .hero-row{flex-direction:column;align-items:flex-start;gap:14px}
+  .sqd .hero-av{width:64px;height:64px;border-radius:18px;font-size:26px}
+  .sqd .hero-meta{min-width:0;width:100%}
+
+  /* The wordmark ran past the right edge and into the banner artwork. Smaller,
+     allowed to wrap, and never wider than its container. */
+  .sqd .hero-name{font-size:22px;line-height:1.15;overflow-wrap:anywhere;max-width:100%}
+
+  /* Metadata + role pill collided; let them wrap as a proper row. */
+  .sqd .hero-tags{gap:8px;row-gap:6px}
+
+  /* Full-width, left-aligned, equal-height actions instead of three ghost
+     buttons sized by their label text. */
+  .sqd .hero-actions{width:100%;gap:8px}
+  .sqd .hero-actions .btn{flex:1 1 0;min-width:0;justify-content:center}
+
+  /* XP block was a fixed 200px right-aligned column; on a phone it belongs
+     under the content, full width, reading left to right like everything else. */
+  .sqd .hero-stats{width:100%;text-align:left;flex-direction:row;align-items:center;gap:12px}
+  .sqd .hero-xp{width:auto;flex:1;min-width:0}
+
+  /* A scrim. The banner is a high-detail illustration and the hero text sits
+     straight on top of it, so legibility depended on whichever part of the
+     picture happened to be behind a given word. */
+  .sqd .hero::before{content:'';position:absolute;inset:0;background:linear-gradient(180deg,rgba(11,11,20,.35) 0%,rgba(11,11,20,.72) 60%,rgba(11,11,20,.9) 100%);pointer-events:none}
+  .sqd .hero-row{z-index:1}
   .sqd .tbl-h,.sqd .tbl-r{grid-template-columns:48px 1.4fr 80px}
   .sqd .tbl-h>*:nth-child(n+4),.sqd .tbl-r>*:nth-child(n+4){display:none}
 }
@@ -776,10 +871,80 @@
 .vergr-native .sqd .page-header{padding-top:calc(env(safe-area-inset-top,0px) + 18px)}
 .vergr-native .sqd .channel-header{padding-top:calc(env(safe-area-inset-top,0px) + 14px)}
 
+/* …and the same at the BOTTOM. The phone's gesture bar / nav bar also overlays
+   the WebView, so the composer's send button and its whole tool row sat
+   underneath it and could not be tapped. */
+.vergr-native .sqd .composer{padding-bottom:calc(env(safe-area-inset-bottom,0px) + 18px)}
+
+/* The native build is ALWAYS phone-shaped, whatever width the WebView claims
+   (it has been observed reporting ~980px). The mobile rules below are keyed on
+   a 1100px media query, and NativeSquadScaffold renders no desktop rail at all,
+   so on a WebView wider than that the squad screens would lose their only
+   navigation. Pin the mobile shell behaviour to the native build directly
+   rather than trusting a reported width. */
+.vergr-native .sqd{display:flex;flex-direction:column;height:100dvh;overflow:hidden}
+.vergr-native .sqd .app,.vergr-native .sqd .app.no-rail{height:auto;flex:1 1 auto;min-height:0}
+.vergr-native .sqd-mtop{
+  display:flex;align-items:center;gap:8px;flex:0 0 auto;
+  position:sticky;top:0;z-index:60;
+  padding:8px 10px;
+  padding-top:calc(env(safe-area-inset-top,0px) + 8px);
+  background:rgba(11,11,20,.82);backdrop-filter:blur(14px);
+  border-bottom:1px solid rgba(255,255,255,.05);
+}
+/* The channel header sits BELOW that bar in the native shell, so it must not
+   also add a status-bar inset or the two stack and waste a third of the screen. */
+.vergr-native .sqd .channel-header{padding-top:14px}
+
 /* Native squad nav — the desktop .rail-l is display:none on the phone, so
    squad screens have no navigation. A floating menu button opens a bottom-sheet
    drawer with the same nav items. Only rendered on the native build. */
-.sqd-native-fab{position:fixed;right:16px;bottom:calc(env(safe-area-inset-bottom,0px) + 84px);z-index:60;width:52px;height:52px;border-radius:16px;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#7B1FFF,#B44FFF);color:#fff;box-shadow:0 8px 24px rgba(123,31,255,.45);border:none}
+/* Mobile top bar. Replaces the floating hamburger FAB: navigation belongs at
+   the top of the screen, not hovering over the content it obscures. Shown ONLY
+   where the left rail is hidden, using the same 1100px breakpoint as the
+   .rail-l rule so the two are exact complements and one is always present. */
+.sqd-mtop{display:none}
+@media (max-width:1100px){
+  /* ── THE SHELL MUST BE EXACTLY ONE VIEWPORT TALL ──────────────────
+     `.sqd-mtop` (~56px) is a SIBLING that sits ABOVE `.app`, and `.app` was
+     `height:100vh`. So on a phone the page was always mtop-taller than the
+     screen: measured 786px of document in a 730px viewport. The consequence is
+     not cosmetic — the DOCUMENT became the scroller, so the chat's own
+     `.messages` list (which is a correct `flex:1;overflow-y:auto`) never got a
+     bounded parent. The channel header scrolled away, and the composer scrolled
+     with it, which is not a functional chat.
+
+     Making `.sqd` a fixed-height flex column bounds `.app` without hardcoding
+     the top bar's height, so it stays correct as the safe-area inset changes.
+     `dvh` not `vh`: on mobile browsers `100vh` is the LARGEST viewport (URL bar
+     hidden), which would reintroduce the same overflow whenever it is showing. */
+  .sqd{display:flex;flex-direction:column;height:100dvh;overflow:hidden}
+  .sqd .app,.sqd .app.no-rail{height:auto;flex:1 1 auto;min-height:0}
+
+  .sqd-mtop{
+    display:flex;align-items:center;gap:8px;flex:0 0 auto;
+    position:sticky;top:0;z-index:60;
+    padding:8px 10px;
+    padding-top:calc(env(safe-area-inset-top,0px) + 8px);
+    background:rgba(11,11,20,.82);backdrop-filter:blur(14px);
+    border-bottom:1px solid rgba(255,255,255,.05);
+  }
+  .sqd-mtop-btn{
+    width:38px;height:38px;flex:0 0 38px;border:none;border-radius:12px;
+    display:flex;align-items:center;justify-content:center;
+    background:rgba(255,255,255,.05);color:#fff;
+  }
+  .sqd-mtop-btn:active{background:rgba(255,255,255,.1)}
+  .sqd-mtop-btn .material-symbols-outlined{font-size:21px}
+  .sqd-mtop-ttl{
+    flex:1;min-width:0;text-align:center;
+    font-family:'Syne',sans-serif;font-weight:800;font-size:16px;color:#fff;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+  /* The shell header already carries the squad name and a back control, so the
+     per-screen page-header's own top padding just pushes content down. */
+  .vergr-native .sqd .page-header{padding-top:14px}
+}
 .sqd-native-fab .material-symbols-outlined{font-size:26px}
 .sqd-native-sheet-backdrop{position:fixed;inset:0;z-index:70;background:rgba(0,0,0,.55);backdrop-filter:blur(2px);display:flex;align-items:flex-end}
 .sqd-native-sheet{width:100%;max-height:78vh;background:#14141F;border-top-left-radius:20px;border-top-right-radius:20px;border:1px solid #2A2A3E;border-bottom:none;display:flex;flex-direction:column;padding-bottom:calc(env(safe-area-inset-bottom,0px) + 12px);animation:sqdSheetUp .22s ease}

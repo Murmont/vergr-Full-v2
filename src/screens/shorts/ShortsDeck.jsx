@@ -33,6 +33,7 @@ import { timeAgo } from '../../utils/helpers';
 import { trackEvent } from '../../utils/trackEvent';
 import { captureInterest } from '../../utils/feedRank';
 import { toggleLike, incrementShareCount } from '../../firebase/firestore';
+import UserName from '../../components/UserName';
 
 const SPRING = 'transform 0.26s cubic-bezier(0.2, 0.8, 0.2, 1)';
 
@@ -465,8 +466,8 @@ export default function ShortsDeck({ feed, index, setIndex, isDesktop, onRefresh
         <div className="absolute bottom-0 left-0 right-16 z-10 px-4 pb-8 bg-gradient-to-t from-black/80 via-black/40 to-transparent safe-bottom">
           <button onClick={() => navigate(`/user/${current.authorId}`)} className="flex items-center gap-2.5 mb-2">
             <div className="text-left">
-              <p className="text-white font-bold text-sm">{current.author?.displayName || 'User'}</p>
-              <p className="text-white/50 text-[11px] font-dmmono">@{current.author?.username}
+              <p className="text-white font-bold text-sm"><UserName user={current.author} masked fallback={'User'} /></p>
+              <p className="text-white/50 text-[11px] font-dmmono"><UserName user={current.author} masked handle />
                 {current.createdAt && <span className="ml-2 text-white/30">· {timeAgo(current.createdAt?.toDate ? current.createdAt.toDate() : current.createdAt)}</span>}
               </p>
             </div>

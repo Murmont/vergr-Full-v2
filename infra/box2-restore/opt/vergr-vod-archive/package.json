@@ -1,0 +1,11 @@
+{
+  "name": "vergr-vod-archive",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "launcher.js",
+  "scripts": { "start": "node launcher.js" },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.654.0",
+    "node-fetch": "^3.3.2"
+  }
+}

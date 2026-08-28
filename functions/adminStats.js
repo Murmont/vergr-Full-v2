@@ -110,8 +110,13 @@ exports.adminGetLiveStatsOverview = functions.https.onCall(
 
 // ════════════════════════════════════════════════════════════════════
 // EVENT LOAD — committed concurrent-viewer load from ticketed events.
+//
+// The `tournaments` COLLECTION is where ticketed events live: events are not
+// tournaments (no competitors, no prize purse) but they reused the collection.
+// So this query is live and must not be swept up with the tournament removal.
+//
 // Sum of ticket capacity (committed) + sold across open/active ticketed
-// tournaments, so the founder can see how much concurrent stream load is
+// events, so the founder can see how much concurrent stream load is
 // promised and when to add a box. `streamServerCapacity` (app_config) sets
 // the headroom baseline; absent = headroom unknown.
 // ════════════════════════════════════════════════════════════════════
@@ -366,7 +371,10 @@ exports.adminGetUsersLive = functions.https.onCall(
       users.orderBy('createdAt', 'desc').limit(15).get().catch(() => ({ docs: [] })),
       safeCount(users.where('subscription', '==', 'lite')),
       safeCount(users.where('subscription', '==', 'pro')),
-      safeCount(users.where('accountType', '==', 'guest')),
+      // Guests are flagged `isGuest: true` by signInAsGuest. Nothing has ever
+      // written `accountType: 'guest'`, so this tile read 0 no matter how many
+      // guest sessions existed.
+      safeCount(users.where('isGuest', '==', true)),
     ]);
     return {
       active: activeSnap.docs.map(slimStatsUser),

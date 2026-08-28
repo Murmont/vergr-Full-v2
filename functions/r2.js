@@ -20,7 +20,30 @@ const ALLOWED_TYPES = [
   'audio/mpeg', 'audio/ogg', 'audio/wav', 'audio/webm',
 ];
 
-const ALLOWED_KINDS = ['avatar', 'banner', 'post', 'short', 'clip', 'article', 'squad', 'tournament', 'tournament-proof'];
+// 'announcement' covers channel-message media and channel avatars. Admin-only in
+// practice (the callables that reference it are admin-guarded), but the kind is
+// listed here because getR2UploadUrl validates against this list.
+const ALLOWED_KINDS = ['avatar', 'banner', 'post', 'short', 'clip', 'article', 'squad', 'announcement', 'tournament', 'tournament-proof', 'ambiance'];
+
+// ⚠ 'ambiance' (profile ambiance audio, docs/effects/09) has its OWN cap, not
+// the plan cap (free 200MB / lite 1GB / pro 5GB, sized for gaming VODs).
+//
+// ⚠ THE REASON IS NOT VERGR'S BANDWIDTH BILL, and an earlier version of this
+// comment said it was. R2 serves cdn.vergr.app at $0 EGRESS, so however many
+// visitors fetch this file, Vergr pays nothing to send it. The real reasons:
+//
+//   1. It AUTOPLAYS. A 5GB clip is only fetched when a viewer presses play; this
+//      starts on its own the moment someone opens the profile. The cost lands on
+//      the VISITOR's mobile data and battery, and they never chose to spend it.
+//   2. Time to first sound. A loop that has to buffer is not ambiance.
+//   3. R2 STORAGE, not egress, is the metered resource (10GB free tier).
+//
+// 2MB is generous for a 30s loop: 30s of 128kbps MP3 is roughly 480KB.
+const AMBIANCE_MAX_BYTES = 2 * 1024 * 1024;
+// An animated banner renders in a ~1049x220 strip. 6MB is generous for the 8s,
+// 480px-short-side, ~1.2Mbps clip the client produces, and still small enough
+// that a profile visit does not cost a video-sized download.
+const BANNER_VIDEO_MAX_BYTES = 6 * 1024 * 1024;
 
 // Trim every secret value — they were stored with trailing newlines (likely
 // set via `echo "x" | firebase functions:secrets:set` which appends \n).
@@ -82,16 +105,38 @@ exports.getR2UploadUrl = functions.https.onCall({
   const _ud = userDoc.exists ? userDoc.data() : {};
   const isAdmin = _ud.role === 'admin' || (_ud.email || '').toLowerCase() === 'vergenerd@gmail.com';
   const plan = isAdmin ? 'pro' : (userDoc.exists ? (userDoc.data().subscription || 'free') : 'free');
-  const cap = SIZE_CAPS[plan] || SIZE_CAPS.free;
+  // ⚠ AN ANIMATED BANNER IS NOT A GAMING VOD, and must not inherit the plan cap.
+  // `banner` fell under SIZE_CAPS, so a free user could have pushed a 200MB file
+  // that then loads on EVERY visit to their profile. Founder, 2026-08-27:
+  // "videos need to be compressed or it will slow the page down and probably
+  // cost me money in the form of storage."
+  //
+  // The client compresses to far below this (8s, 480px short side, ~1.2Mbps,
+  // see uploadBanner). This is the BACKSTOP for anything that bypasses it.
+  const isBannerVideo = kind === 'banner' && String(contentType || '').startsWith('video/');
+  const cap = kind === 'ambiance' ? AMBIANCE_MAX_BYTES
+    : isBannerVideo ? BANNER_VIDEO_MAX_BYTES
+    : (SIZE_CAPS[plan] || SIZE_CAPS.free);
 
   // Kill switch enforcement (free tier only — paid users always pass).
   if (plan === 'free' && cfg.freeUploadsPaused === true) {
     throw new functions.https.HttpsError('failed-precondition', 'Free uploads are temporarily paused. Please try again later.');
   }
 
+  // Audio only, for an audio-only kind. Without this an image could be stored
+  // under a key the public profile later hands to an <audio> element.
+  if (kind === 'ambiance' && !contentType.startsWith('audio/')) {
+    throw new functions.https.HttpsError('invalid-argument', 'Profile ambiance must be an audio file.');
+  }
   if (sizeBytes > cap) {
     const capMB = Math.round(cap / 1024 / 1024);
-    throw new functions.https.HttpsError('resource-exhausted', `File exceeds your ${plan} plan limit of ${capMB}MB.`);
+    // ⚠ Say WHICH limit. The ambiance and banner-video caps are per-KIND, not
+    // per plan, so "your free plan limit" would send someone to the upgrade page
+    // to fix something upgrading cannot fix.
+    const why = kind === 'ambiance' ? `Profile music is limited to ${capMB}MB.`
+      : isBannerVideo ? `An animated banner is limited to ${capMB}MB.`
+      : `File exceeds your ${plan} plan limit of ${capMB}MB.`;
+    throw new functions.https.HttpsError('resource-exhausted', why);
   }
 
   const ext = contentType.split('/')[1].replace('quicktime', 'mov').replace('mpeg', 'mp3');

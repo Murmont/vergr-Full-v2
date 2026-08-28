@@ -76,8 +76,11 @@ export default function AdminDashboardScreen() {
           value={loading ? '—' : fmtNumber(data?.liveStreams)} />
         <KpiCard icon="paid" color="#f0a500" label="MRR"
           value={loading ? '—' : fmtMoney(data?.mrrEUR)} />
-        <KpiCard icon="emoji_events" color="#22c55e" label="Tournaments (30d)"
-          value={loading ? '—' : fmtNumber(data?.tournamentsThisMonth)} />
+        {/* Was "Tournaments (30d)". Tournaments are retired, so this now shows the
+            figure the dashboard was missing: what Vergr owes its creators. */}
+        <KpiCard icon="request_quote" color="#22c55e" label="Revenue share owed"
+          value={loading ? '—' : `$${(((data?.owedMicroUsd) || 0) / 1e6).toFixed(2)}`}
+          sub={data ? `${fmtNumber(data.creatorsOwed)} creator(s)` : null} />
       </div>
 
       {/* Revenue + User Growth charts */}

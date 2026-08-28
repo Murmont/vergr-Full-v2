@@ -8,7 +8,7 @@ import NativeSquadScaffold from './NativeSquadScaffold';
 const ROLES = [
   { id: 'president',      blurb: 'Sets squad direction, accepts members, manages treasury. One per squad.' },
   { id: 'vice_president', blurb: 'Assists the President. Can approve join requests and post announcements.' },
-  { id: 'treasury',       blurb: 'Manages squad coin pool — tournament entries, member rewards, payouts.' },
+  { id: 'treasury',       blurb: 'Manages squad coin pool: event entries, member rewards, payouts.' },
   { id: 'security',       blurb: 'Mod tools: mute, kick votes, and conflict resolution.' },
   { id: 'member',         blurb: 'Standard squad member.' },
 ];

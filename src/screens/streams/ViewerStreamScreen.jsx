@@ -35,7 +35,7 @@ import { getContentAccess } from '../../firebase/firestore';
 import StreamPaywall from '../../components/monetization/StreamPaywall';
 import { captureStreamInterest } from '../../utils/feedRank';
 import { getFunctions, httpsCallable } from 'firebase/functions';
-import { followUser, unfollowUser, isFollowing, sendCoins, getEventTicketStatus, getMembershipTiers, reportStream } from '../../firebase/firestore';
+import { followUser, unfollowUser, isFollowing, sendCoins, getEventTicketStatus, getMembershipTiers, reportStream, announceStreamJoin } from '../../firebase/firestore';
 import SubscribeSheet from '../../components/membership/SubscribeSheet';
 import ReportSheet from '../../components/ReportSheet';
 import ReportPrivate from '../../components/safety/ReportPrivate';
@@ -44,13 +44,14 @@ import useLiveClip from '../../hooks/useLiveClip';
 import JoinAnnouncer from '../../components/streams/JoinAnnouncer';
 import UserQuickSheet from '../../components/streams/UserQuickSheet';
 import ChatPanel from '../../components/streams/ChatPanel';
+import { BoostTimer } from '../../components/streams/BoostStreamSheet';
+import BoostSheet from '../../components/boost/BoostSheet';
 import MobileLiveViewer, { ReconnectingOverlay, StreamLoadingCover } from '../../components/streams/MobileLiveViewer';
 import TwitchMirrorPlayer from '../../components/streams/TwitchMirrorPlayer';
 import InStreamTicketWidget from '../../components/streams/InStreamTicketWidget';
 import EventTicketCard from '../../components/tournament/EventTicketCard';
 import { StreamGoalBar, TipAlertOverlay, SubAlertOverlay } from '../../components/streams/StreamGoalAndAlerts';
 import InlineVideoPlayer from '../../components/media/InlineVideoPlayer';
-import TournamentOverlay from '../../components/streams/TournamentOverlay';
 import ReactionsFloor from '../../components/streams/ReactionsFloor';
 import NowPlayingCard from '../../components/streams/NowPlayingCard';
 import HeartBurst from '../../components/primitives/HeartBurst';
@@ -58,6 +59,7 @@ import RollingNumber from '../../components/primitives/RollingNumber';
 import { useStreamJoinEvents } from '../../hooks/useStreamJoinEvents';
 import { haptic } from '../../utils/haptics';
 import { resolveTier } from '../../utils/tierSystem';
+import UserName from '../../components/UserName';
 
 const C = {
   bg: '#0a0a14',
@@ -194,7 +196,15 @@ function DesktopViewerStreamScreen() {
 
   // ── Subscribe to stream doc ────────────────────────────────
   useEffect(() => {
-    if (!streamId) return;
+    // `loading` starts true and is cleared ONLY inside the snapshot callback,
+    // so bailing out here left it true forever: /watch (no :streamId — both
+    // that and /watch/:streamId route to this component) sat on "Loading
+    // stream…" indefinitely, with no timeout, no error and no way out. The
+    // guard meant to protect the missing-id case was what caused the hang
+    // (audit A15). Treat a missing id as a terminal state and fall through to
+    // the not-found branch below, which is already rendered when streamDoc is
+    // null.
+    if (!streamId) { setLoading(false); return; }
     const unsub = onSnapshot(doc(db, 'streams', streamId), (snap) => {
       setLoading(false);
       setStreamDoc(snap.exists() ? { id: snap.id, ...snap.data() } : null);
@@ -299,9 +309,13 @@ function DesktopViewerStreamScreen() {
     };
   }, [streamDoc?.id, currentUser?.uid, streamDoc?.hostUid]);
 
-  // ── Follow state + write join event if follower/subscriber ─
-  // Plain (non-follower) joins do NOT write — they appear as system "joined"
-  // lines in chat (Phase 7 WS relay emits them). Keeps Firestore writes low.
+  // ── Follow state + announce the join ─
+  // The join doc is written SERVER-SIDE by `announceStreamJoin`. It used to be
+  // written here by the joining client, which meant any account could forge
+  // `tier:'pro'` for the gold entrance in anyone's room, and could spam join docs
+  // into a stream it did not own. The callable resolves follower state, tier and
+  // VP rank itself and owns the dedupe, the rate limit and block suppression, so
+  // the client now sends only WHICH stream. See docs/ENTRY_ANNOUNCEMENTS_SPEC.md.
   const joinAnnouncedRef = useRef(false);
   useEffect(() => {
     if (!currentUser?.uid || !streamDoc?.hostUid || !streamDoc?.id) return;
@@ -309,31 +323,11 @@ function DesktopViewerStreamScreen() {
     isFollowing(currentUser.uid, streamDoc.hostUid).then(async (isFollower) => {
       setFollowed(isFollower);
       setFollowChecked(true);
-      if (!isFollower || joinAnnouncedRef.current) return;
+      if (joinAnnouncedRef.current) return;
       joinAnnouncedRef.current = true;
-      // Detect a paying subscriber tier from the viewer's own profile.
-      // resolveTier handles every legacy document shape; reading `subscription`
-      // directly here used to miss the `profile.tier` shape entirely.
-      let kind = 'follower';
-      let tier = null;
-      const subTier = resolveTier(profile);
-      if (subTier && subTier !== 'free') {
-        // Note: this is the viewer's own subscription, not a per-creator membership.
-        // Per-creator memberships will be wired when fanship.js ships.
-        kind = 'subscriber';
-        tier = subTier;
-      }
       try {
-        await addDoc(collection(db, 'streams', streamDoc.id, 'joins'), {
-          uid: currentUser.uid,
-          displayName: profile?.displayName || profile?.username || null,
-          avatar: profile?.avatar || null,
-          kind, tier,
-          ts: serverTimestamp(),
-          // Client-side ts fallback for fast local read (server stamp arrives ~50ms later).
-          clientTs: Date.now(),
-        });
-      } catch (err) { /* non-fatal */ }
+        await announceStreamJoin(streamDoc.id);
+      } catch (err) { /* non-fatal: an entrance must never break playback */ }
     }).catch(() => {});
   }, [currentUser?.uid, streamDoc?.hostUid, streamDoc?.id, profile?.subscription]);
 
@@ -343,6 +337,8 @@ function DesktopViewerStreamScreen() {
     id: e.id,
     kind: e.kind,
     tier: e.tier,
+    level: e.level,
+    rankId: e.rankId,
     user: { uid: e.uid, displayName: e.displayName, avatar: e.avatar },
   })), [rawJoinEvents]);
 
@@ -628,7 +624,9 @@ function DesktopViewerStreamScreen() {
   // Guard rails.
   // ─────────────────────────────────────────────────────────────
   if (loading) return <Centered label="Loading stream…" />;
-  if (!streamDoc) return <Centered label="Stream not found." action={{ label: 'Browse live', onClick: () => navigate('/') }}/>;
+  // "Browse live" went to the home FEED, which is not the live list. /streams
+  // is, and it has a real empty state plus a working Go Live CTA.
+  if (!streamDoc) return <Centered label="Stream not found." action={{ label: 'Browse live', onClick: () => navigate('/streams') }}/>;
   const isHost = !!currentUser?.uid && streamDoc.hostUid === currentUser.uid;
   const isAdmin = profile?.role === 'admin' || currentUser?.email === 'vergenerd@gmail.com';
 
@@ -662,7 +660,7 @@ function DesktopViewerStreamScreen() {
       <div style={{ minHeight: '100vh', background: `radial-gradient(circle at 50% 0%, #1a1030 0%, ${C.bg} 60%)`, color: C.text, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, fontFamily: '"Inter", system-ui, sans-serif' }}>
         <div style={{ width: 'min(420px, 100%)', background: C.card, border: `1px solid ${C.border}`, borderRadius: 18, padding: 24, textAlign: 'center' }}>
           <UserAvatar src={hostInfo?.avatar} size="lg" />
-          <div style={{ fontSize: 17, fontWeight: 800, marginTop: 12 }}>{hostInfo?.displayName || hostInfo?.username || 'The stream'} has ended</div>
+          <div style={{ fontSize: 17, fontWeight: 800, marginTop: 12 }}><UserName user={hostInfo} masked fallback={'The stream'} /> has ended</div>
           <div style={{ fontSize: 12, color: C.textDim, marginTop: 4, marginBottom: 18 }}>
             {replayUrl ? 'Catch the replay or follow for the next one.'
               : streamDoc.vodPending ? 'The replay is still processing — check back in a few minutes.'
@@ -701,7 +699,7 @@ function DesktopViewerStreamScreen() {
           <UserAvatar src={hostInfo?.avatar} size="lg" />
           <div style={{ fontSize: 17, fontWeight: 800, marginTop: 12 }}>This stream is for followers</div>
           <div style={{ fontSize: 12, color: C.textDim, marginTop: 4, marginBottom: 18 }}>
-            {hostInfo?.displayName || hostInfo?.username || 'The host'} made this stream {streamDoc.audience === 'friends' ? 'friends-only' : 'followers-only'}. Follow to watch.
+            <UserName user={hostInfo} masked fallback={'The host'} /> made this stream {streamDoc.audience === 'friends' ? 'friends-only' : 'followers-only'}. Follow to watch.
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {currentUser ? (
@@ -895,9 +893,13 @@ function DesktopViewerStreamScreen() {
                 onInspect={(partner) => setQuickSheet({ uid: partner.hostUid, streamId: partner.id })}
               />
             )}
-            {streamDoc?.hostUid && (
-              <TournamentOverlay hostUid={streamDoc.hostUid} offset={{ top: 52, right: 12 }} />
-            )}
+            {/* TournamentOverlay removed 2026-08-19. It floated a bracket /
+                "Round N vs opponent" card over the stream and linked to a
+                tournament route. Tournaments are retired, and because it
+                queried the `tournaments` collection (which is where ticketed
+                EVENTS live) an event doc could have made tournament UI appear
+                over a live stream. Also drops two Firestore listeners per
+                viewer. */}
             {streamDoc.goal?.active && (
               <div style={{ position: 'absolute', left: 12, right: 12, bottom: 56 }}>
                 <StreamGoalBar goal={streamDoc.goal} compact />
@@ -958,7 +960,7 @@ function DesktopViewerStreamScreen() {
                       color: C.text, cursor: 'pointer', fontSize: 12,
                     }}>
                     <UserAvatar src={u.avatar} size="xs"/>
-                    {u.displayName || u.username}
+                    <UserName user={u} masked />
                     {u.switchToStreamId && (
                       <span style={{
                         fontSize: 9, fontWeight: 800, color: C.green,
@@ -982,7 +984,7 @@ function DesktopViewerStreamScreen() {
                 </div>
                 <div style={{ minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                    <span style={{ fontSize: 17, fontWeight: 800 }}>{hostInfo?.displayName || hostInfo?.username || 'Host'}</span>
+                    <span style={{ fontSize: 17, fontWeight: 800 }}><UserName user={hostInfo} masked fallback={'Host'} /></span>
                     {hostInfo?.isVerified && <Icon name="verified" size={15} filled style={{ color: C.purpleLight }} className=""/>}
                   </div>
                   <div style={{ fontSize: 12, color: C.textDim }}>Open profile</div>
@@ -1004,6 +1006,12 @@ function DesktopViewerStreamScreen() {
                   style={pillAction('transparent', C.amber, C.amber)}>
                   <Icon name="paid" size={15} className=""/> Tip
                 </button>
+                {/* ⚠ THERE IS DELIBERATELY NO BOOST PILL HERE. A first pass put
+                    one beside Tip / Clip / Share; founder, 2026-08-27: boost
+                    belongs in the GIFT MENU, the way TikTok does it. It now
+                    lives as a tab inside the Tip modal. Do not re-add it to this
+                    row — it splits the two spend actions apart when they are the
+                    same gesture. */}
                 <button onClick={handleClip} disabled={clipping} style={pillAction('transparent', C.text, C.border, clipping)}>
                   <Icon name="content_cut" size={15} className=""/> {clipping ? 'Saving…' : 'Clip'}
                 </button>
@@ -1036,7 +1044,7 @@ function DesktopViewerStreamScreen() {
           {(hostInfo?.bio || hostInfo?.followerCount != null) && (
             <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 10 }}>
-                <span style={{ fontSize: 15, fontWeight: 800 }}>About {hostInfo?.displayName || hostInfo?.username || 'the host'}</span>
+                <span style={{ fontSize: 15, fontWeight: 800 }}>About <UserName user={hostInfo} masked fallback={'the host'} /></span>
                 {hostInfo?.isVerified && <Icon name="verified" size={14} filled style={{ color: C.purpleLight }} className=""/>}
               </div>
               <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 4 }}>{compactNum(hostInfo?.followerCount || 0)} followers</div>
@@ -1053,7 +1061,7 @@ function DesktopViewerStreamScreen() {
               {topGifters.slice(0, 3).map((g, i) => (
                 <span key={g.uid} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 8px', borderRadius: 999, background: C.card, fontSize: 11.5, fontWeight: 700, whiteSpace: 'nowrap' }}>
                   <Icon name={i === 0 ? 'emoji_events' : 'paid'} size={13} filled={i === 0} style={{ color: C.amber }} className=""/>
-                  <span style={{ maxWidth: 72, overflow: 'hidden', textOverflow: 'ellipsis' }}>{g.displayName}</span>
+                  <span style={{ maxWidth: 72, overflow: 'hidden', textOverflow: 'ellipsis' }}><UserName user={g} masked /></span>
                   <span style={{ color: C.amber }}>{compactNum(g.coins)}</span>
                 </span>
               ))}
@@ -1081,6 +1089,8 @@ function DesktopViewerStreamScreen() {
 
       {showTip && (
         <TipModal
+          streamId={streamDoc?.id}
+          stream={streamDoc}
           amount={tipAmount}
           setAmount={setTipAmount}
           message={tipMessage}
@@ -1267,7 +1277,7 @@ function SlotTapZone({ isSelf, rect, partner, onTap, onLongPress }) {
           pointerEvents: 'none',
         }}>
           <UserAvatar src={host.avatar} size="xs"/>
-          {host.displayName || host.username}
+          <UserName user={host} masked />
         </div>
       )}
     </div>
@@ -1446,7 +1456,11 @@ function VideoControlBar({ videoElRef, visible, muted, setMuted, onFullscreen, t
 }
 const ctrlBtn = { background: 'transparent', border: 'none', color: '#fff', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' };
 
-function TipModal({ amount, setAmount, message, setMessage, onClose, onSend, sending, host, tipCatalog }) {
+function TipModal({ amount, setAmount, message, setMessage, onClose, onSend, sending, host, tipCatalog, streamId, stream }) {
+  // ⚠ TIP AND BOOST ARE THE SAME GESTURE — giving something to the person
+  // streaming — so they share one surface. Founder, 2026-08-27: boost sits
+  // in the gift menu like TikTok's, not as its own pill on the stream.
+  const [giftTab, setGiftTab] = useState('tip');
   const PRESETS = [10, 50, 100, 500, 1000];
   // Auto-suggested caption: highest catalog tier the user's current amount meets.
   // Shown as placeholder so the viewer knows what'll appear in chat if they don't type their own.
@@ -1466,10 +1480,31 @@ function TipModal({ amount, setAmount, message, setMessage, onClose, onSend, sen
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
           <UserAvatar src={host?.avatar} size="md"/>
           <div>
-            <div style={{ fontSize: 12, color: C.textDim }}>Tip</div>
-            <div style={{ fontSize: 14, fontWeight: 800 }}>{host?.displayName || 'host'}</div>
+            <div style={{ fontSize: 12, color: C.textDim }}>{giftTab === 'boost' ? 'Boost' : 'Tip'}</div>
+            <div style={{ fontSize: 14, fontWeight: 800 }}><UserName user={host} masked fallback={'host'} /></div>
           </div>
+        </div>        <div style={{ display: 'flex', gap: 6, marginBottom: 14 }}>
+          {[['tip', 'Tip'], ['boost', 'Boost']].map(([id, label]) => (
+            <button key={id} type="button" onClick={() => setGiftTab(id)}
+              style={{
+                flex: 1, padding: '8px 10px', borderRadius: 9, cursor: 'pointer',
+                border: 'none', fontSize: 13, fontWeight: 800,
+                background: giftTab === id ? C.purpleSoft : 'rgba(255,255,255,0.04)',
+                color: giftTab === id ? C.purpleLight : C.textDim,
+                boxShadow: giftTab === id ? 'inset 0 0 0 1px ' + C.purple : 'none',
+              }}>{label}</button>
+          ))}
         </div>
+
+        {giftTab === 'boost' ? (
+          <BoostSheet
+                      target="stream"
+                      targetId={streamId}
+                      embedded
+                      onClose={onClose}
+                    />
+        ) : (<>
+
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
           {PRESETS.map((p) => (
             <button key={p} onClick={() => setAmount(p)} style={{
@@ -1508,19 +1543,21 @@ function TipModal({ amount, setAmount, message, setMessage, onClose, onSend, sen
           Every message is moderated before broadcast. {' '}
           Vergr pays the host their revenue share of this tip.
         </div>
+
         <div style={{ display: 'flex', gap: 10 }}>
           <button onClick={onClose} disabled={sending} style={{
             flex: 1, padding: 10, borderRadius: 8, border: `1px solid ${C.border}`,
             background: 'transparent', color: C.textDim, fontSize: 12, fontWeight: 700,
             cursor: 'pointer',
           }}>Cancel</button>
-          <button onClick={onSend} disabled={sending} style={{
+          {giftTab === 'tip' && (<button onClick={onSend} disabled={sending} style={{
             flex: 2, padding: 10, borderRadius: 8, border: 'none',
             background: `linear-gradient(135deg, ${C.purple}, ${C.purpleLight})`,
             color: '#fff', fontSize: 12, fontWeight: 800, cursor: 'pointer',
             opacity: sending ? 0.6 : 1,
-          }}>{sending ? 'Sending…' : `Send ${amount}c`}</button>
+          }}>{sending ? 'Sending…' : `Send ${amount}c`}</button>)}
         </div>
+      </>)}
       </div>
     </div>
   );

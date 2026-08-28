@@ -19,6 +19,11 @@ export default function StreamShareSheet({ streamId, streamTitle, hostName, live
   const { currentUser } = useAuth();
   const navigate = useNavigate();
   const [posting, setPosting] = useState(false);
+  // ⚠ MUST stay above the `if (!streamId) return null` below. This lived down
+  // beside shareImage(), so a render with no streamId called one fewer hook than
+  // the previous render and React throws #310 the moment the id arrives. Same
+  // defect that took the profile screen to ErrorBoundary (CLAUDE.md).
+  const [imgBusy, setImgBusy] = useState(false);
 
   if (!streamId) return null;
   // Ride the referral loop: a shared stream link credits the sharer.
@@ -63,7 +68,6 @@ export default function StreamShareSheet({ streamId, streamTitle, hostName, live
 
   // Branded image share: render a VERGR-framed card client-side and share it as
   // a file (with the ref link in the caption). Falls back to a plain link share.
-  const [imgBusy, setImgBusy] = useState(false);
   const shareImage = async () => {
     if (imgBusy) return;
     setImgBusy(true);

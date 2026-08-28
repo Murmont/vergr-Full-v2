@@ -17,12 +17,118 @@ const functions = require('firebase-functions/v2');
 const { onDocumentWritten } = require('firebase-functions/v2/firestore');
 const { defineSecret } = require('firebase-functions/params');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
+const { S3Client, ListObjectsV2Command, PutObjectCommand } = require('@aws-sdk/client-s3');
 
 const REGION = 'europe-west1';
 const db = getFirestore('vgrdb');
 
 const HOST_OPS_TOKEN = defineSecret('HOST_OPS_TOKEN');
+const R2_ACCESS_KEY_ID     = defineSecret('R2_ACCESS_KEY_ID');
+const R2_SECRET_ACCESS_KEY = defineSecret('R2_SECRET_ACCESS_KEY');
+const R2_ACCOUNT_ID        = defineSecret('R2_ACCOUNT_ID');
 const VOD_LAUNCHER_BASE = process.env.VOD_LAUNCHER_BASE || 'https://archive.vergr.app';
+const R2_BUCKET = 'vergr-media';
+const CDN_BASE = 'https://cdn.vergr.app';
+
+// Trim trailing whitespace from R2 secrets — a past R2 outage root-caused to a
+// trailing \n on every one of them. See CLAUDE.md "If R2 uploads fail".
+function env(secret) {
+  const v = secret?.value?.() ?? secret;
+  return typeof v === 'string' ? v.trim() : v;
+}
+
+function r2Client() {
+  return new S3Client({
+    region: 'auto',
+    endpoint: `https://${env(R2_ACCOUNT_ID)}.r2.cloudflarestorage.com`,
+    credentials: {
+      accessKeyId: env(R2_ACCESS_KEY_ID),
+      secretAccessKey: env(R2_SECRET_ACCESS_KEY),
+    },
+    requestChecksumCalculation: 'WHEN_REQUIRED',
+  });
+}
+
+/**
+ * Build a VOD playlist for an RTMP (OBS) broadcast from the segments on R2.
+ *
+ * Why this exists: nginx-rtmp serves a SLIDING window (hls_playlist_length 18s
+ * on the live box), and it rewrites index.m3u8 in place, so when the broadcast
+ * ends the manifest describes the last ~18 seconds and nothing else. The
+ * SEGMENTS are all still there, because r2-sync only ever copies. So the audio
+ * and video of the whole broadcast survives and only the index is missing.
+ * Browser ingest does not need this: vergr-ingest writes a complete manifest
+ * with #EXT-X-ENDLIST when it finalizes.
+ *
+ * On durations: nginx cuts fragments at keyframes, so `hls_fragment 1s` is a
+ * floor and the real length is the encoder's GOP (2s for stock OBS). We cannot
+ * recover each segment's true EXTINF after the fact without probing every file,
+ * so we divide the broadcast's wall-clock length by the segment count. The
+ * fragments are uniform by construction, which makes that average accurate to
+ * well under a second, and HLS players treat EXTINF as advisory for seeking
+ * anyway. The alternative, hardcoding hls_fragment, would report half the true
+ * duration on a default OBS profile.
+ *
+ * Returns the public manifest URL, or null if there is nothing to build from.
+ */
+async function buildRtmpVodManifest(streamKey, durationSec) {
+  const s3 = r2Client();
+  const prefix = `streams/${streamKey}/`;
+  const segments = [];
+  let initSegment = null;
+  let token;
+
+  do {
+    const out = await s3.send(new ListObjectsV2Command({
+      Bucket: R2_BUCKET, Prefix: prefix, ContinuationToken: token,
+    }));
+    for (const obj of out.Contents || []) {
+      const name = obj.Key.slice(prefix.length);
+      if (name.includes('/')) continue;             // nested, not ours
+      if (name === 'init.mp4') { initSegment = name; continue; }
+      if (name.endsWith('.ts') || name.endsWith('.m4s')) segments.push(name);
+    }
+    token = out.IsTruncated ? out.NextContinuationToken : null;
+  } while (token);
+
+  if (segments.length === 0) return null;
+
+  // Sort by the sequence number in the filename, NOT lexically: nginx writes
+  // 2.ts, 10.ts, 100.ts, and a string sort puts 10 before 2.
+  const seq = (n) => {
+    const m = n.match(/(\d+)/);
+    return m ? parseInt(m[1], 10) : 0;
+  };
+  segments.sort((a, b) => seq(a) - seq(b));
+
+  const per = durationSec > 0 ? durationSec / segments.length : 2;
+  const lines = [
+    '#EXTM3U',
+    '#EXT-X-VERSION:3',
+    '#EXT-X-PLAYLIST-TYPE:VOD',
+    `#EXT-X-TARGETDURATION:${Math.max(1, Math.ceil(per))}`,
+    '#EXT-X-MEDIA-SEQUENCE:0',
+  ];
+  if (initSegment) lines.push(`#EXT-X-MAP:URI="${initSegment}"`);
+  for (const name of segments) {
+    lines.push(`#EXTINF:${per.toFixed(3)},`);
+    lines.push(name);
+  }
+  lines.push('#EXT-X-ENDLIST');
+
+  const key = `${prefix}index-vod.m3u8`;
+  await s3.send(new PutObjectCommand({
+    Bucket: R2_BUCKET,
+    Key: key,
+    Body: lines.join('\n'),
+    ContentType: 'application/vnd.apple.mpegurl',
+    // Immutable: a VOD playlist never changes once written, unlike the live
+    // index.m3u8 that r2-sync serves at max-age=1.
+    CacheControl: 'public, max-age=31536000, immutable',
+  }));
+
+  return `${CDN_BASE}/${key}`;
+}
 
 // Fires when a stream's status transitions to 'ended' AND it's a tournament
 // stream. Idempotent: skips if archiveDispatchedAt already set.
@@ -91,13 +197,17 @@ exports.dispatchTournamentVodArchive = onDocumentWritten(
 // Retention is overridable at runtime via app_config/general.streamVodRetentionDays
 // so storage can be dialled back without a redeploy.
 //
-// Scope limit (deliberate): only browser/fMP4 ingest is archived. OBS/RTMP goes
-// through nginx-rtmp, whose playlist is a sliding ~18s window even after the
-// stream ends, so archiving it would yield an 18-second "replay". Reconstructing
-// a full playlist from the R2 object listing is a separate build.
+// Both ingest types are archived, by different routes:
+//   browser / fMP4 — vergr-ingest already wrote a complete manifest with
+//     #EXT-X-ENDLIST when it finalized, so the replay is that file, as is.
+//   rtmp (OBS)     — nginx-rtmp's playlist is a sliding ~18s window, so the
+//     index is useless after the fact even though every segment survives on
+//     R2. buildRtmpVodManifest() rebuilds a VOD playlist from the object
+//     listing. OBS is what serious streamers use, so leaving it out would have
+//     meant the tier's own audience got no replays.
 const VOD_MIN_SECONDS = 120;              // don't archive a 30-second false start
 const DEFAULT_RETENTION_DAYS = { free: 0, lite: 0, pro: 90 };  // 0 = never archived
-const ARCHIVABLE_INGEST = new Set(['browser', 'fmp4']);
+const ARCHIVABLE_INGEST = new Set(['browser', 'fmp4', 'rtmp']);
 
 function retentionDaysFor(plan, cfg) {
   const override = cfg?.streamVodRetentionDays || {};
@@ -105,8 +215,32 @@ function retentionDaysFor(plan, cfg) {
   return Math.max(0, Number(days) || 0);
 }
 
+/**
+ * Does this stream's replay have to sit behind a gate?
+ *
+ * A restricted stream's URL goes in `gatedVodUrl`, NEVER `archiveVodUrl`.
+ * Reason: the viewers are shared code that reaches phones only via an APK, so
+ * older native installs still run an ended screen that renders `archiveVodUrl`
+ * with no follow/ticket check. Publishing a restricted replay there hands it to
+ * anyone with the link, and we cannot force every device to update. Old clients
+ * find no field and show no replay. Fail closed, not open.
+ *
+ * `access.mode === 'paid'` is included deliberately: it was missing from the
+ * inline copy this replaces, which meant someone could pay to watch a stream
+ * live and then find the replay published for free. One helper, both callers,
+ * so the two cannot drift again.
+ */
+function isRestricted(s = {}) {
+  return !!s.unlisted
+    || s.audience === 'ticketed'
+    || s.access?.mode === 'paid';
+}
+
 exports.dispatchStreamVodArchive = onDocumentWritten(
-  { region: REGION, document: 'streams/{streamId}', database: 'vgrdb', secrets: [HOST_OPS_TOKEN] },
+  {
+    region: REGION, document: 'streams/{streamId}', database: 'vgrdb',
+    secrets: [HOST_OPS_TOKEN, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_ACCOUNT_ID],
+  },
   async (event) => {
     const before = event.data?.before?.data();
     const after = event.data?.after?.data();
@@ -134,13 +268,70 @@ exports.dispatchStreamVodArchive = onDocumentWritten(
     const days = retentionDaysFor(plan, cfg);
     if (days <= 0) return;
 
+    const expiresAt = new Date(endedMs + days * 24 * 60 * 60 * 1000);
+
+    // ── Default path: no transcode at all ────────────────────────────────
+    //
+    // The finished broadcast is ALREADY a complete, playable VOD: vergr-ingest
+    // rewrites index.m3u8 with every segment plus #EXT-X-ENDLIST when the
+    // session ends, and r2-sync only ever copies, so the whole thing is sitting
+    // on R2 behind the same CDN the live stream used. The only reason replays
+    // never existed is that streamingCleanup deleted those objects at 24h.
+    //
+    // So the replay is a RETENTION decision, not a rendering job. Stamping the
+    // manifest here and holding the segments in streamingCleanup (see the
+    // replayHeldKeys map there) gives Pro a real 90-day replay for the price of
+    // the storage, with no ffmpeg, no callback and no box to keep alive.
+    //
+    // The ffmpeg remux below is strictly an OPTIMISATION for later: one mp4 is
+    // cheaper to store and simpler to serve than thousands of segments. It
+    // needs a host running vergr-vod-archive, which does not exist right now
+    // (box 2 was deleted 2026-08-17 and archive.vergr.app answers 503), so it
+    // is opt-in via app_config/general.streamVodRemux rather than the default.
+    // Do NOT flip that flag back on without checking the box actually answers.
+    if (cfg.streamVodRemux !== true) {
+      let replayUrl = after.hlsUrl;
+
+      // OBS: the live index is a sliding window, so rebuild a real VOD
+      // playlist from the segments. Browser ingest already finalized its own.
+      if (after.ingestType === 'rtmp') {
+        try {
+          replayUrl = await buildRtmpVodManifest(after.streamKey, durationSec);
+        } catch (err) {
+          console.error('rtmp vod manifest failed', event.params.streamId, err);
+          replayUrl = null;
+        }
+        if (!replayUrl) {
+          // No manifest means no replay. Stamp the failure rather than
+          // pointing the player at an 18-second sliding window and calling
+          // that a 90-day replay.
+          await event.data.after.ref.update({
+            vodError: 'could not rebuild playlist from segments',
+            archiveDispatchedAt: FieldValue.serverTimestamp(),
+          });
+          return;
+        }
+      }
+
+      const restricted = isRestricted(after);
+      await event.data.after.ref.update({
+        [restricted ? 'gatedVodUrl' : 'archiveVodUrl']: replayUrl,
+        vodKind: 'hls',            // streamingCleanup holds segments on this
+        vodDurationSec: durationSec,
+        vodPending: false,
+        vodExpiresAt: expiresAt,
+        archiveDispatchedAt: FieldValue.serverTimestamp(),
+      });
+      return;
+    }
+
     // Mark dispatched first → a retry can't double-launch ffmpeg.
     await event.data.after.ref.update({
       archiveDispatchedAt: FieldValue.serverTimestamp(),
       vodPending: true,
       // Expiry runs from stream end, not from when the transcode happens, so a
       // slow archive can't quietly extend the retention window.
-      vodExpiresAt: new Date(endedMs + days * 24 * 60 * 60 * 1000),
+      vodExpiresAt: expiresAt,
     });
 
     try {
@@ -209,19 +400,14 @@ exports.markVodArchived = functions.https.onRequest(
       }
       // Stamp stream doc. This is what makes "Watch replay" appear.
       //
-      // A restricted stream's URL goes in `gatedVodUrl`, NOT `archiveVodUrl`.
-      // Reason: the viewers are shared code that reaches phones only via an APK,
-      // so older native installs still run an ended screen that renders
-      // `archiveVodUrl` with no follow/ticket check. Publishing a ticketed
-      // event's replay there would hand it out for free to anyone with the link,
-      // and we cannot force every device to update. Old clients simply find no
-      // field and show no replay; clients that know the gate read `gatedVodUrl`
-      // only after checking it. Fail closed, not open.
+      // Gate decided by isRestricted() at the top of this file — see the
+      // reasoning there for why a restricted replay must never land in
+      // `archiveVodUrl`.
       if (streamId) {
         const sRef = db.collection('streams').doc(streamId);
         const sSnap = await sRef.get();
         const s = sSnap.exists ? sSnap.data() : {};
-        const restricted = !!s.unlisted || s.audience === 'ticketed';
+        const restricted = isRestricted(s);
         await sRef.update({
           [restricted ? 'gatedVodUrl' : 'archiveVodUrl']: archiveVodUrl,
           vodDurationSec: durationSec || null,

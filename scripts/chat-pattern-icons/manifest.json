@@ -1,0 +1,1038 @@
+{
+ "arcade": {
+  "name": "Arcade",
+  "blurb": "Retro gaming",
+  "palette": [
+   "#7B1FFF",
+   "#B44FFF",
+   "#2A0B4D",
+   "#C87FFF"
+  ],
+  "want": [
+   "game-controller",
+   "joystick",
+   "dice-five",
+   "puzzle-piece",
+   "keyboard",
+   "headphones",
+   "rocket",
+   "lightning",
+   "trophy",
+   "medal",
+   "crown",
+   "sword",
+   "shield",
+   "skull",
+   "heart",
+   "star",
+   "coin",
+   "flag-checkered",
+   "slot-machine",
+   "pinball-flipper",
+   "token",
+   "gamepad-cross",
+   "retro-controller",
+   "game-console",
+   "mushroom"
+  ],
+  "icons": [
+   {
+    "n": "game-controller",
+    "src": "phosphor"
+   },
+   {
+    "n": "joystick",
+    "src": "phosphor"
+   },
+   {
+    "n": "dice-five",
+    "src": "phosphor"
+   },
+   {
+    "n": "puzzle-piece",
+    "src": "phosphor"
+   },
+   {
+    "n": "keyboard",
+    "src": "phosphor"
+   },
+   {
+    "n": "headphones",
+    "src": "phosphor"
+   },
+   {
+    "n": "rocket",
+    "src": "phosphor"
+   },
+   {
+    "n": "lightning",
+    "src": "phosphor"
+   },
+   {
+    "n": "trophy",
+    "src": "phosphor"
+   },
+   {
+    "n": "medal",
+    "src": "phosphor"
+   },
+   {
+    "n": "crown",
+    "src": "phosphor"
+   },
+   {
+    "n": "sword",
+    "src": "phosphor"
+   },
+   {
+    "n": "shield",
+    "src": "phosphor"
+   },
+   {
+    "n": "skull",
+    "src": "phosphor"
+   },
+   {
+    "n": "heart",
+    "src": "phosphor"
+   },
+   {
+    "n": "star",
+    "src": "phosphor"
+   },
+   {
+    "n": "coin",
+    "src": "phosphor"
+   },
+   {
+    "n": "flag-checkered",
+    "src": "phosphor"
+   },
+   {
+    "n": "slot-machine",
+    "src": "gameicons",
+    "author": "caro-asercion"
+   },
+   {
+    "n": "pinball-flipper",
+    "src": "gameicons",
+    "author": "delapouite"
+   },
+   {
+    "n": "token",
+    "src": "gameicons",
+    "author": "delapouite"
+   },
+   {
+    "n": "gamepad-cross",
+    "src": "gameicons",
+    "author": "lorc"
+   },
+   {
+    "n": "retro-controller",
+    "src": "gameicons",
+    "author": "skoll"
+   },
+   {
+    "n": "game-console",
+    "src": "gameicons",
+    "author": "delapouite"
+   },
+   {
+    "n": "mushroom",
+    "src": "gameicons",
+    "author": "lorc"
+   }
+  ]
+ },
+ "dracula": {
+  "name": "Dracula",
+  "blurb": "Gothic, red and black",
+  "palette": [
+   "#150207",
+   "#4A0812",
+   "#8C1226",
+   "#C2213A"
+  ],
+  "want": [
+   "skull",
+   "ghost",
+   "bone",
+   "moon-stars",
+   "wine",
+   "knife",
+   "eye",
+   "scroll",
+   "cross",
+   "pentagram",
+   "flame",
+   "book",
+   "bat",
+   "coffin",
+   "fangs",
+   "cobweb",
+   "tombstone",
+   "raven",
+   "candle-flame",
+   "chalice-drops",
+   "rose",
+   "cauldron",
+   "castle",
+   "graveyard",
+   "garlic"
+  ],
+  "icons": [
+   {
+    "n": "skull",
+    "src": "phosphor"
+   },
+   {
+    "n": "ghost",
+    "src": "phosphor"
+   },
+   {
+    "n": "bone",
+    "src": "phosphor"
+   },
+   {
+    "n": "moon-stars",
+    "src": "phosphor"
+   },
+   {
+    "n": "wine",
+    "src": "phosphor"
+   },
+   {
+    "n": "knife",
+    "src": "phosphor"
+   },
+   {
+    "n": "eye",
+    "src": "phosphor"
+   },
+   {
+    "n": "scroll",
+    "src": "phosphor"
+   },
+   {
+    "n": "cross",
+    "src": "phosphor"
+   },
+   {
+    "n": "pentagram",
+    "src": "phosphor"
+   },
+   {
+    "n": "flame",
+    "src": "phosphor"
+   },
+   {
+    "n": "book",
+    "src": "phosphor"
+   },
+   {
+    "n": "bat",
+    "src": "gameicons",
+    "author": "delapouite"
+   },
+   {
+    "n": "coffin",
+    "src": "gameicons",
+    "author": "lorc"
+   },
+   {
+    "n": "fangs",
+    "src": "gameicons",
+    "author": "skoll"
+   },
+   {
+    "n": "cobweb",
+    "src": "gameicons",
+    "author": "lorc"
+   },
+   {
+    "n": "tombstone",
+    "src": "gameicons",
+    "author": "lorc"
+   },
+   {
+    "n": "raven",
+    "src": "gameicons",
+    "author": "lorc"
+   },
+   {
+    "n": "candle-flame",
+    "src": "gameicons",
+    "author": "lorc"
+   },
+   {
+    "n": "chalice-drops",
+    "src": "gameicons",
+    "author": "lorc"
+   },
+   {
+    "n": "rose",
+    "src": "gameicons",
+    "author": "lorc"
+   },
+   {
+    "n": "cauldron",
+    "src": "gameicons",
+    "author": "darkzaitzev"
+   },
+   {
+    "n": "castle",
+    "src": "gameicons",
+    "author": "delapouite"
+   },
+   {
+    "n": "graveyard",
+    "src": "gameicons",
+    "author": "delapouite"
+   },
+   {
+    "n": "garlic",
+    "src": "gameicons",
+    "author": "delapouite"
+   }
+  ]
+ },
+ "gaia": {
+  "name": "Gaia",
+  "blurb": "Nature",
+  "palette": [
+   "#0E1A0F",
+   "#24421F",
+   "#5E8C3A",
+   "#C9A227"
+  ],
+  "want": [
+   "leaf",
+   "tree",
+   "mountains",
+   "flower",
+   "feather",
+   "butterfly",
+   "acorn",
+   "cactus",
+   "plant",
+   "sun",
+   "waves",
+   "drop",
+   "bird",
+   "fish",
+   "paw-print",
+   "mushroom",
+   "fern",
+   "oak-leaf",
+   "deer-head",
+   "honeycomb",
+   "clover",
+   "seedling",
+   "pine-tree",
+   "beehive",
+   "ginkgo-leaf"
+  ],
+  "icons": [
+   {
+    "n": "leaf",
+    "src": "phosphor"
+   },
+   {
+    "n": "tree",
+    "src": "phosphor"
+   },
+   {
+    "n": "mountains",
+    "src": "phosphor"
+   },
+   {
+    "n": "flower",
+    "src": "phosphor"
+   },
+   {
+    "n": "feather",
+    "src": "phosphor"
+   },
+   {
+    "n": "butterfly",
+    "src": "phosphor"
+   },
+   {
+    "n": "acorn",
+    "src": "phosphor"
+   },
+   {
+    "n": "cactus",
+    "src": "phosphor"
+   },
+   {
+    "n": "plant",
+    "src": "phosphor"
+   },
+   {
+    "n": "sun",
+    "src": "phosphor"
+   },
+   {
+    "n": "waves",
+    "src": "phosphor"
+   },
+   {
+    "n": "drop",
+    "src": "phosphor"
+   },
+   {
+    "n": "bird",
+    "src": "phosphor"
+   },
+   {
+    "n": "fish",
+    "src": "phosphor"
+   },
+   {
+    "n": "paw-print",
+    "src": "phosphor"
+   },
+   {
+    "n": "mushroom",
+    "src": "gameicons",
+    "author": "lorc"
+   },
+   {
+    "n": "fern",
+    "src": "gameicons",
+    "author": "delapouite"
+   },
+   {
+    "n": "oak-leaf",
+    "src": "gameicons",
+    "author": "delapouite"
+   },
+   {
+    "n": "deer-head",
+    "src": "gameicons",
+    "author": "caro-asercion"
+   },
+   {
+    "n": "honeycomb",
+    "src": "gameicons",
+    "author": "lorc"
+   },
+   {
+    "n": "clover",
+    "src": "phosphor"
+   },
+   {
+    "n": "seedling",
+    "src": "gameicons",
+    "author": "delapouite"
+   },
+   {
+    "n": "pine-tree",
+    "src": "gameicons",
+    "author": "lorc"
+   },
+   {
+    "n": "beehive",
+    "src": "gameicons",
+    "author": "delapouite"
+   },
+   {
+    "n": "ginkgo-leaf",
+    "src": "gameicons",
+    "author": "delapouite"
+   }
+  ]
+ },
+ "chatter": {
+  "name": "Chatter",
+  "blurb": "Everyday",
+  "palette": [
+   "#2E0A16",
+   "#8C1436",
+   "#E03A5F",
+   "#F07A3C"
+  ],
+  "want": [
+   "chat-circle",
+   "chat-teardrop",
+   "chats",
+   "chats-teardrop",
+   "heart",
+   "envelope",
+   "thumbs-up",
+   "smiley",
+   "gift",
+   "balloon",
+   "bell",
+   "camera",
+   "microphone",
+   "hand-waving",
+   "paperclip",
+   "star",
+   "check-fat",
+   "coffee",
+   "music-note",
+   "phone",
+   "confetti",
+   "sticker"
+  ],
+  "icons": [
+   {
+    "n": "chat-circle",
+    "src": "phosphor"
+   },
+   {
+    "n": "chat-teardrop",
+    "src": "phosphor"
+   },
+   {
+    "n": "chats",
+    "src": "phosphor"
+   },
+   {
+    "n": "chats-teardrop",
+    "src": "phosphor"
+   },
+   {
+    "n": "heart",
+    "src": "phosphor"
+   },
+   {
+    "n": "envelope",
+    "src": "phosphor"
+   },
+   {
+    "n": "thumbs-up",
+    "src": "phosphor"
+   },
+   {
+    "n": "smiley",
+    "src": "phosphor"
+   },
+   {
+    "n": "gift",
+    "src": "phosphor"
+   },
+   {
+    "n": "balloon",
+    "src": "phosphor"
+   },
+   {
+    "n": "bell",
+    "src": "phosphor"
+   },
+   {
+    "n": "camera",
+    "src": "phosphor"
+   },
+   {
+    "n": "microphone",
+    "src": "phosphor"
+   },
+   {
+    "n": "hand-waving",
+    "src": "phosphor"
+   },
+   {
+    "n": "paperclip",
+    "src": "phosphor"
+   },
+   {
+    "n": "star",
+    "src": "phosphor"
+   },
+   {
+    "n": "check-fat",
+    "src": "phosphor"
+   },
+   {
+    "n": "coffee",
+    "src": "phosphor"
+   },
+   {
+    "n": "music-note",
+    "src": "phosphor"
+   },
+   {
+    "n": "phone",
+    "src": "phosphor"
+   },
+   {
+    "n": "confetti",
+    "src": "phosphor"
+   },
+   {
+    "n": "sticker",
+    "src": "phosphor"
+   }
+  ]
+ },
+ "cosmos": {
+  "name": "Cosmos",
+  "blurb": "Space",
+  "palette": [
+   "#0B0B14",
+   "#241B5C",
+   "#5B3FD6",
+   "#9E7BFF"
+  ],
+  "want": [
+   "rocket",
+   "planet",
+   "moon-stars",
+   "shooting-star",
+   "star",
+   "alien",
+   "sun",
+   "sparkle",
+   "ringed-planet",
+   "galaxy",
+   "ufo",
+   "astronaut-helmet",
+   "telescope",
+   "comet-spark",
+   "moon-orbit",
+   "orbital",
+   "meteor-impact",
+   "vortex",
+   "eclipse",
+   "satellite"
+  ],
+  "icons": [
+   {
+    "n": "rocket",
+    "src": "phosphor"
+   },
+   {
+    "n": "planet",
+    "src": "phosphor"
+   },
+   {
+    "n": "moon-stars",
+    "src": "phosphor"
+   },
+   {
+    "n": "shooting-star",
+    "src": "phosphor"
+   },
+   {
+    "n": "star",
+    "src": "phosphor"
+   },
+   {
+    "n": "alien",
+    "src": "phosphor"
+   },
+   {
+    "n": "sun",
+    "src": "phosphor"
+   },
+   {
+    "n": "sparkle",
+    "src": "phosphor"
+   },
+   {
+    "n": "ringed-planet",
+    "src": "gameicons",
+    "author": "lorc"
+   },
+   {
+    "n": "galaxy",
+    "src": "gameicons",
+    "author": "delapouite"
+   },
+   {
+    "n": "ufo",
+    "src": "gameicons",
+    "author": "delapouite"
+   },
+   {
+    "n": "astronaut-helmet",
+    "src": "gameicons",
+    "author": "delapouite"
+   },
+   {
+    "n": "telescope",
+    "src": "gameicons",
+    "author": "delapouite"
+   },
+   {
+    "n": "comet-spark",
+    "src": "gameicons",
+    "author": "lorc"
+   },
+   {
+    "n": "moon-orbit",
+    "src": "gameicons",
+    "author": "delapouite"
+   },
+   {
+    "n": "orbital",
+    "src": "gameicons",
+    "author": "lorc"
+   },
+   {
+    "n": "meteor-impact",
+    "src": "gameicons",
+    "author": "lorc"
+   },
+   {
+    "n": "vortex",
+    "src": "gameicons",
+    "author": "lorc"
+   },
+   {
+    "n": "eclipse",
+    "src": "gameicons",
+    "author": "lorc"
+   },
+   {
+    "n": "satellite",
+    "src": "gameicons",
+    "author": "lorc"
+   }
+  ]
+ },
+ "neon": {
+  "name": "Neon",
+  "blurb": "Synthwave",
+  "palette": [
+   "#12021F",
+   "#3D0B57",
+   "#A11A8C",
+   "#F0479B"
+  ],
+  "want": [
+   "cassette-tape",
+   "sunglasses",
+   "lightning",
+   "triangle",
+   "disc",
+   "vinyl-record",
+   "circuitry",
+   "tree-palm",
+   "cpu",
+   "waveform",
+   "equalizer",
+   "radio",
+   "play-circle",
+   "prism",
+   "modern-city",
+   "vhs",
+   "boombox",
+   "audio-cassette"
+  ],
+  "icons": [
+   {
+    "n": "cassette-tape",
+    "src": "phosphor"
+   },
+   {
+    "n": "sunglasses",
+    "src": "phosphor"
+   },
+   {
+    "n": "lightning",
+    "src": "phosphor"
+   },
+   {
+    "n": "triangle",
+    "src": "phosphor"
+   },
+   {
+    "n": "disc",
+    "src": "phosphor"
+   },
+   {
+    "n": "vinyl-record",
+    "src": "phosphor"
+   },
+   {
+    "n": "circuitry",
+    "src": "phosphor"
+   },
+   {
+    "n": "tree-palm",
+    "src": "phosphor"
+   },
+   {
+    "n": "cpu",
+    "src": "phosphor"
+   },
+   {
+    "n": "waveform",
+    "src": "phosphor"
+   },
+   {
+    "n": "equalizer",
+    "src": "phosphor"
+   },
+   {
+    "n": "radio",
+    "src": "phosphor"
+   },
+   {
+    "n": "play-circle",
+    "src": "phosphor"
+   },
+   {
+    "n": "prism",
+    "src": "gameicons",
+    "author": "delapouite"
+   },
+   {
+    "n": "modern-city",
+    "src": "gameicons",
+    "author": "delapouite"
+   },
+   {
+    "n": "vhs",
+    "src": "gameicons",
+    "author": "caro-asercion"
+   },
+   {
+    "n": "boombox",
+    "src": "gameicons",
+    "author": "delapouite"
+   },
+   {
+    "n": "audio-cassette",
+    "src": "gameicons",
+    "author": "delapouite"
+   }
+  ]
+ },
+ "vault": {
+  "name": "Vault",
+  "blurb": "Prestige, gold",
+  "palette": [
+   "#140D02",
+   "#3D2708",
+   "#8A5A12",
+   "#E3B23C"
+  ],
+  "want": [
+   "coin",
+   "crown",
+   "diamond",
+   "key",
+   "treasure-chest",
+   "trophy",
+   "medal",
+   "coins",
+   "vault",
+   "hand-coins",
+   "coins-pile",
+   "laurels",
+   "jewel-crown",
+   "gems",
+   "wax-seal",
+   "diamond-ring",
+   "open-treasure-chest",
+   "scales",
+   "crown-coin"
+  ],
+  "icons": [
+   {
+    "n": "coin",
+    "src": "phosphor"
+   },
+   {
+    "n": "crown",
+    "src": "phosphor"
+   },
+   {
+    "n": "diamond",
+    "src": "phosphor"
+   },
+   {
+    "n": "key",
+    "src": "phosphor"
+   },
+   {
+    "n": "treasure-chest",
+    "src": "phosphor"
+   },
+   {
+    "n": "trophy",
+    "src": "phosphor"
+   },
+   {
+    "n": "medal",
+    "src": "phosphor"
+   },
+   {
+    "n": "coins",
+    "src": "phosphor"
+   },
+   {
+    "n": "vault",
+    "src": "phosphor"
+   },
+   {
+    "n": "hand-coins",
+    "src": "phosphor"
+   },
+   {
+    "n": "coins-pile",
+    "src": "gameicons",
+    "author": "delapouite"
+   },
+   {
+    "n": "laurels",
+    "src": "gameicons",
+    "author": "lorc"
+   },
+   {
+    "n": "jewel-crown",
+    "src": "gameicons",
+    "author": "delapouite"
+   },
+   {
+    "n": "gems",
+    "src": "gameicons",
+    "author": "lorc"
+   },
+   {
+    "n": "wax-seal",
+    "src": "gameicons",
+    "author": "lorc"
+   },
+   {
+    "n": "diamond-ring",
+    "src": "gameicons",
+    "author": "delapouite"
+   },
+   {
+    "n": "open-treasure-chest",
+    "src": "gameicons",
+    "author": "skoll"
+   },
+   {
+    "n": "scales",
+    "src": "phosphor"
+   },
+   {
+    "n": "crown-coin",
+    "src": "gameicons",
+    "author": "lorc"
+   }
+  ]
+ },
+ "studio": {
+  "name": "Studio",
+  "blurb": "Creator",
+  "palette": [
+   "#050B1F",
+   "#0B1436",
+   "#3D7FFF",
+   "#B44FFF"
+  ],
+  "want": [
+   "microphone",
+   "camera",
+   "video-camera",
+   "headphones",
+   "film-reel",
+   "film-slate",
+   "palette",
+   "paint-brush",
+   "music-note",
+   "waveform",
+   "equalizer",
+   "speaker-high",
+   "sliders",
+   "lightbulb",
+   "monitor-play",
+   "broadcast",
+   "record",
+   "play-circle",
+   "vinyl-record",
+   "music-notes"
+  ],
+  "icons": [
+   {
+    "n": "microphone",
+    "src": "phosphor"
+   },
+   {
+    "n": "camera",
+    "src": "phosphor"
+   },
+   {
+    "n": "video-camera",
+    "src": "phosphor"
+   },
+   {
+    "n": "headphones",
+    "src": "phosphor"
+   },
+   {
+    "n": "film-reel",
+    "src": "phosphor"
+   },
+   {
+    "n": "film-slate",
+    "src": "phosphor"
+   },
+   {
+    "n": "palette",
+    "src": "phosphor"
+   },
+   {
+    "n": "paint-brush",
+    "src": "phosphor"
+   },
+   {
+    "n": "music-note",
+    "src": "phosphor"
+   },
+   {
+    "n": "waveform",
+    "src": "phosphor"
+   },
+   {
+    "n": "equalizer",
+    "src": "phosphor"
+   },
+   {
+    "n": "speaker-high",
+    "src": "phosphor"
+   },
+   {
+    "n": "sliders",
+    "src": "phosphor"
+   },
+   {
+    "n": "lightbulb",
+    "src": "phosphor"
+   },
+   {
+    "n": "monitor-play",
+    "src": "phosphor"
+   },
+   {
+    "n": "broadcast",
+    "src": "phosphor"
+   },
+   {
+    "n": "record",
+    "src": "phosphor"
+   },
+   {
+    "n": "play-circle",
+    "src": "phosphor"
+   },
+   {
+    "n": "vinyl-record",
+    "src": "phosphor"
+   },
+   {
+    "n": "music-notes",
+    "src": "phosphor"
+   }
+  ]
+ }
+}

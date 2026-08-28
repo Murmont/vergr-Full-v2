@@ -10,7 +10,7 @@ export default function FollowerAlert({ username = 'GhostSniper', tier = 'Gold',
           <p className="text-white text-sm font-semibold">@{username}</p>
           <p className="text-text-secondary text-xs">started following you</p>
         </div>
-        <button onClick={onClose} className="text-text-secondary"><Icon name="x" size={16} /></button>
+        <button onClick={onClose} className="text-text-secondary"><Icon name="close" size={16} /></button>
       </div>
     </div>
   );

@@ -424,14 +424,16 @@ const DEFAULT_PLAN_SEEDS = {
     id: 'lite', name: 'lite', displayName: 'VERGR Lite',
     priceEUR: 4.99, priceCoins: 500, periodDays: 30,
     billingCycle: 'monthly', color: '#7B6FFF', tagline: 'Level up faster',
-    features: ['No ads', 'Stream publicly (720p)', '1.5× VP', '1GB uploads'],
+    features: ['No ads', 'Stream publicly (720p)', '1.5× VP', '1GB uploads', 'Scheduled posts'],
     active: true, scheduledPrice: null,
   },
   pro: {
     id: 'pro', name: 'pro', displayName: 'VERGR Pro',
     priceEUR: 9.99, priceCoins: 1000, periodDays: 30,
     billingCycle: 'monthly', color: '#F5C542', tagline: 'Go all-in',
-    features: ['1080p + co-streaming', '2× VP', 'Tournaments to 256 players', '5GB uploads'],
+    // Keep in sync with TIERS.pro.features in src/utils/tierSystem.js. No
+    // tournaments (retired) and no co-streaming (open to every plan).
+    features: ['1080p, no daily limit', '2× VP', '90-day replays', '5GB uploads', 'Custom vergr.me domain'],
     active: true, scheduledPrice: null,
   },
 };

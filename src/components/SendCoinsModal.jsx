@@ -2,15 +2,11 @@
 //
 // Tip someone COINS from a conversation.
 //
-// This replaced SendGemsModal on the DM wallet button. Gems are the
-// withdrawable unit and sending them peer-to-peer is a money transfer with a
-// different meaning, a different minimum and a different set of store problems.
-// A tip inside a chat is the same gesture as a tip on a post or in a stream, so
-// it uses the same unit and the same revenue-share model, and what a user sees
-// here match the ones they see everywhere else.
-//
-// SendGemsModal still exists and is still correct where an actual gem transfer
-// is intended. Do not point the chat wallet button back at it.
+// This replaced SendGemsModal on the DM wallet button, and that modal has since
+// been deleted along with the gem unit and person-to-person transfer. A tip
+// inside a chat is the same gesture as a tip on a post or in a stream, so it
+// uses the same unit and the same revenue-share model, and the figures a user
+// sees here match the ones they see everywhere else.
 import { useState, useEffect } from 'react';
 import Modal from './Modal';
 import { CoinIcon } from './CoinIcon';
@@ -19,6 +15,7 @@ import { useAuth } from '../context/AuthContext';
 import { useUser } from '../context/UserContext';
 import { useUI } from '../context/UIContext';
 import UserAvatar from './UserAvatar';
+import UserName from './UserName';
 
 const QUICK_AMOUNTS = [50, 100, 500, 1000, 5000, 10000];
 
@@ -26,12 +23,13 @@ const QUICK_AMOUNTS = [50, 100, 500, 1000, 5000, 10000];
  *  `sendCoins` in firestore.js — the server is authoritative, this is display. */
 const FEE_PCT = 0; // no send-time fee: the revenue share is taken once, later
 
-export default function SendCoinsModal({ isOpen, onClose, recipient }) {
+export default function SendCoinsModal({ isOpen, onClose, recipient, onSent }) {
   const { currentUser } = useAuth();
   const { wallet, refreshWallet } = useUser();
   const { showToast } = useUI();
   const [amount, setAmount] = useState(500);
   const [custom, setCustom] = useState('');
+  const [note, setNote] = useState('');
   const [sending, setSending] = useState(false);
 
   // Reset between opens: a leftover custom amount from the last person you
@@ -40,6 +38,7 @@ export default function SendCoinsModal({ isOpen, onClose, recipient }) {
     if (!isOpen) return;
     setAmount(500);
     setCustom('');
+    setNote('');
     setSending(false);
   }, [isOpen]);
 
@@ -57,9 +56,14 @@ export default function SendCoinsModal({ isOpen, onClose, recipient }) {
     if (!valid || sending) return;
     setSending(true);
     try {
-      await sendCoins(currentUser.uid, toId, finalAmount, `Tipped ${finalAmount} coins`);
+      const trimmedNote = note.trim().slice(0, 120);
+      await sendCoins(currentUser.uid, toId, finalAmount, trimmedNote || `Tipped ${finalAmount} coins`);
       showToast(`Tipped ${finalAmount.toLocaleString()} coins to ${name}`, 'coins');
       await refreshWallet?.();
+      // Let a DM caller drop a record of the tip into the conversation, the way
+      // WhatsApp/Telegram show a payment in-thread. Callers WITHOUT a thread
+      // context (profile, stream) simply don't pass onSent, so nothing posts.
+      try { onSent?.(finalAmount, trimmedNote); } catch { /* a bubble failure must not eat the successful tip */ }
       onClose();
     } catch (err) {
       showToast(err?.message || 'Failed to send tip', 'error');
@@ -72,7 +76,7 @@ export default function SendCoinsModal({ isOpen, onClose, recipient }) {
       <div className="flex items-center gap-3 p-3 rounded-xl bg-surface-2 border border-white/[0.06] mb-4">
         <UserAvatar src={recipient?.avatar} size={40} />
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-bold text-text-primary truncate">{name}</p>
+          <p className="text-sm font-bold text-text-primary truncate"><UserName user={recipient} masked fallback={name} /></p>
           <p className="text-xs text-text-muted truncate">
             {handle ? `@${handle} · goes straight to them` : 'Goes straight to them'}
           </p>
@@ -111,6 +115,16 @@ export default function SendCoinsModal({ isOpen, onClose, recipient }) {
           className="w-full bg-surface-2 border border-white/[0.06] rounded-xl py-3 pl-10 pr-4 text-lg font-dmmono tabular-nums text-text-primary placeholder:text-text-muted focus:border-brand-violet focus:outline-none"
         />
       </div>
+
+      <p className="text-text-secondary text-[11px] font-dmmono uppercase tracking-wider font-bold mb-2">Add a message <span className="text-text-muted normal-case tracking-normal">(optional)</span></p>
+      <input
+        type="text"
+        value={note}
+        maxLength={120}
+        onChange={(e) => setNote(e.target.value)}
+        placeholder="Enjoy! Good luck out there!"
+        className="w-full bg-surface-2 border border-white/[0.06] rounded-xl py-3 px-4 text-sm text-text-primary placeholder:text-text-muted focus:border-brand-violet focus:outline-none mb-4"
+      />
 
       <div className="flex items-center justify-between text-xs text-text-muted mb-1">
         <span className="font-dmmono">Your balance</span>

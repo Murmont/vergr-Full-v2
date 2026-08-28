@@ -11,6 +11,7 @@ import { compressForTier, formatMB } from '../../utils/videoCompress';
 import UserAvatar from '../../components/UserAvatar';
 import Icon from '../../components/Icon';
 import EmbedVideoPlayer, { parseVideoUrl, getThumbnailUrl } from '../../components/EmbedVideoPlayer';
+import UserName from '../../components/UserName';
 
 
 export default function CreateClipPostScreen() {
@@ -132,7 +133,7 @@ export default function CreateClipPostScreen() {
             <div>
               <h1 className="font-syne font-bold text-base text-white">Video Clip</h1>
               <p className="text-text-muted text-[10px] font-dmmono">
-                {mode === 'embed' ? 'Paste a video URL' : `Any length · ${tierConfig.videoMaxHeight === Infinity ? '4K' : `${tierConfig.videoMaxHeight}p`}`}
+                {mode === 'embed' ? 'Paste a video URL' : `Any length · up to ${tierConfig.maxFileUploadMB}MB`}
               </p>
             </div>
           </div>
@@ -163,7 +164,7 @@ export default function CreateClipPostScreen() {
           <div className="flex gap-3">
             <UserAvatar src={profile?.avatar} size={40} />
             <div className="flex-1">
-              <p className="text-brand-violet-light text-xs font-dmmono mb-1">@{profile?.username || 'you'}</p>
+              <p className="text-brand-violet-light text-xs font-dmmono mb-1"><UserName user={profile} masked handle fallback={'you'} /></p>
               <textarea
                 value={content}
                 onChange={e => setContent(e.target.value)}
@@ -204,7 +205,10 @@ export default function CreateClipPostScreen() {
                 </div>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2"><Icon name="hd" size={14} className="text-text-muted" /><span className="text-text-secondary text-xs">Quality</span></div>
-                  <span className="text-brand-violet-light text-xs font-dmmono font-bold">{tierConfig.videoMaxHeight === Infinity ? '4K' : `${tierConfig.videoMaxHeight}p`}</span>
+                  {/* Video is uploaded untouched (mediaCompression.compressMedia
+                      passes non-images straight through), so the only real
+                      limit is the byte cap below. Do not print a resolution. */}
+                  <span className="text-brand-violet-light text-xs font-dmmono font-bold">Source</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2"><Icon name="cloud_upload" size={14} className="text-text-muted" /><span className="text-text-secondary text-xs">Max size</span></div>
@@ -259,7 +263,7 @@ export default function CreateClipPostScreen() {
                 </div>
                 <div className="text-center">
                   <p className="text-text-primary font-syne font-bold">Upload a Clip</p>
-                  <p className="text-text-muted text-xs mt-1">Any length · {tierConfig.videoMaxHeight === Infinity ? '4K' : `${tierConfig.videoMaxHeight}p`} · {tierConfig.maxFileUploadMB}MB max</p>
+                  <p className="text-text-muted text-xs mt-1">Any length · source quality · {tierConfig.maxFileUploadMB}MB max</p>
                 </div>
               </button>
             )

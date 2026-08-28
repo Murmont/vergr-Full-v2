@@ -13,6 +13,8 @@ import UserAvatar from '../../components/UserAvatar';
 import VanguardBadge from '../../components/VanguardBadge';
 import Icon from '../../components/Icon';
 import BottomNav from '../../components/BottomNav';
+import UserName from '../../components/UserName';
+import RankBadge from '../../components/RankBadge';
 
 export default function SearchResultsAllScreen() {
   const { profile: viewer } = useUser();
@@ -104,11 +106,12 @@ export default function SearchResultsAllScreen() {
                 <UserAvatar src={masked.avatar} size="md" isLive={!isMasked && isUserLive(user.id)} />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1">
-                    <p className="text-sm font-semibold truncate">{masked.displayName || masked.username}</p>
+                    <p className="text-sm font-semibold truncate"><UserName user={masked} masked /></p>
+                    <RankBadge level={masked?.vpLevel} role={masked?.role} size={12} style={{ verticalAlign: '-2px' }} />
                     {!isMasked && user.isVerified && <Icon name="verified" filled size={14} className="text-brand-violet-light" />}
                     {vRank && <VanguardBadge rank={vRank} size={13} />}
                   </div>
-                  <p className="text-xs text-text-muted">@{masked.username}</p>
+                  <p className="text-xs text-text-muted"><UserName user={masked} masked handle /></p>
                 </div>
                 <Icon name="chevron_right" size={18} className="text-text-muted" />
               </button>
@@ -136,7 +139,8 @@ export default function SearchResultsAllScreen() {
                   return (
                     <div className="flex items-center gap-2 mb-1">
                       <UserAvatar src={a?.avatar} size="sm" />
-                      <span className="text-xs font-semibold">{a?.displayName || a?.username}</span>
+                      <span className="text-xs font-semibold"><UserName user={a} masked /></span>
+                      <RankBadge level={a?.vpLevel} role={a?.role} size={12} style={{ verticalAlign: '-2px' }} />
                       {post.author?.vanguard?.rank && <VanguardBadge rank={post.author.vanguard.rank} size={11} />}
                     </div>
                   );

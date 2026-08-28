@@ -86,7 +86,7 @@ export default function ConsentSheet() {
           />
           <ConsentToggle
             title="Personalized experience & promotions"
-            body="We log which posts, creators, games and tags you engage with, and use that to rank your feed and tailor in-app promos (tournaments, creators, events). No third-party ad networks. Raw logs auto-delete after 90 days."
+            body="We log which posts, creators, games and tags you engage with, and use that to rank your feed and tailor in-app promos (creators, events). No third-party ad networks. Raw logs auto-delete after 90 days."
             value={personalizedAds}
             onChange={setPersonalizedAds}
           />

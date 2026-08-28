@@ -9,6 +9,8 @@ import { updateUserSettings } from '../../firebase/firestore';
 import TopBar from '../../components/TopBar';
 import useResponsive from '../../hooks/useResponsive';
 import { C, Toggle, PageShell } from './_settingsUI';
+import { subscribeOfficialChannels, subscribeChannelState, setChannelMuted, syncChannelPushSubscriptions } from '../../firebase/officialChannels';
+import { getPushToken } from '../../utils/pushNotifications';
 
 const SECTIONS = [
   { title: 'ENGAGEMENT', desc: 'Interactions with your content and followers.', icon: 'favorite', color: '#ec4899', items: [
@@ -63,6 +65,14 @@ export default function NotificationSettingsScreen() {
   const { isMobile } = useResponsive();
   const { setRightPanel, setContentAlign } = useLayout();
   const [settings, setSettings] = useState(DEFAULTS);
+  // Vergr channels get their own section because they are NOT driven by a
+  // *_push key. A channel push is an FCM TOPIC send, which cannot be filtered
+  // per recipient, so the only honest way to turn one off is to unsubscribe
+  // the device from the topic. That is exactly what mute does, so this toggle
+  // writes the same mute state the thread does rather than adding a second
+  // switch that would silently do nothing.
+  const [channels, setChannels] = useState([]);
+  const [channelState, setChannelState] = useState({});
   const saveTimer = useRef(null);
 
   useEffect(() => {
@@ -77,6 +87,32 @@ export default function NotificationSettingsScreen() {
     }
   }, [profile]);
 
+  useEffect(() => {
+    const uid = currentUser?.uid;
+    if (!uid) return undefined;
+    const a = subscribeOfficialChannels(uid, setChannels);
+    const b = subscribeChannelState(uid, setChannelState);
+    return () => { a(); b(); };
+  }, [currentUser?.uid]);
+
+  const channelMuted = (id) => {
+    const st = channelState[id] || {};
+    return st.mutedUntil === true || (typeof st.mutedUntil === 'number' && st.mutedUntil > Date.now());
+  };
+
+  const toggleChannel = async (id) => {
+    const uid = currentUser?.uid;
+    if (!uid) return;
+    try {
+      // Muting unsubscribes this device from the topic, so the push genuinely
+      // stops rather than arriving and being hidden.
+      await setChannelMuted(uid, id, channelMuted(id) ? null : true);
+      const token = getPushToken();
+      if (token) syncChannelPushSubscriptions(channels, { ...channelState, [id]: { ...(channelState[id] || {}), mutedUntil: channelMuted(id) ? null : true } }, token).catch(() => {});
+    } catch {
+      showToast('Could not save that', 'error');
+    }
+  };
   const toggle = (key) => {
     setSettings(prev => {
       const updated = { ...prev, [key]: !prev[key] };
@@ -135,6 +171,39 @@ export default function NotificationSettingsScreen() {
           ))}
         </div>
 
+        {channels.length > 0 && (
+          <div style={{
+            background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16, marginBottom: 12,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+              <div style={{
+                width: 32, height: 32, borderRadius: 8,
+                background: '#7B1FFF18', border: '1px solid #7B1FFF30',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+              }}>
+                <span className="material-symbols-outlined" style={{ fontSize: 16, color: '#B44FFF' }}>campaign</span>
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', color: C.purple, textTransform: 'uppercase' }}>
+                  VERGR CHANNELS
+                </div>
+                <div style={{ fontSize: 11, color: C.textVeryDim, marginTop: 2 }}>
+                  Turn off notifications from a channel. The messages still arrive in your inbox.
+                </div>
+              </div>
+              <ColHead label="Push" icon="phone_iphone" />
+            </div>
+            <div style={{ height: 1, background: C.border, marginBottom: 8 }}/>
+            {channels.map((ch) => (
+              <div key={ch.channelId} style={{ display: 'flex', alignItems: 'center', padding: '6px 0' }}>
+                <span style={{ flex: 1, fontSize: 13, color: C.textSoft }}>{ch.name}</span>
+                <div style={{ width: 60, display: 'flex', justifyContent: 'center' }}>
+                  <Toggle small checked={!channelMuted(ch.channelId)} onChange={() => toggleChannel(ch.channelId)} />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
         <div style={{
           display: 'flex', alignItems: 'center', gap: 8,
           background: C.card, border: `1px solid ${C.border}`, borderRadius: 10,

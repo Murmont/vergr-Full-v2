@@ -2,8 +2,8 @@
 // Block model: { p } | { h2 } | { list:[] } | { steps:[] } | { faq:[[q,a]] } | { note } | { cta:[{to,label}] }
 
 export default {
-  summary: "The 50-coin Stream Boost refunds itself out of the first 50 coins of tips you earn during the boosted stream. So as long as your stream pulls in at least 50 coins of tips, the boost costs you nothing. On top of that it pushes your stream in discovery, which is exactly how you reach those tips in the first place.",
-  updated: "2026-06-18",
+  summary: "The 50-coin Stream Boost refunds itself out of the first 50 coins of tips you earn during the boosted stream. So as long as your stream pulls in at least 50 coins of tips, the boost costs you nothing. On top of that it pushes your stream to viewers who watch this kind of thing, which is exactly how you reach those tips in the first place.",
+  updated: "2026-08-27",
   body: [
     {
       p: "The Stream Boost is designed to give your money back. When you spend 50 coins to go live publicly on the free plan, those coins are credited back to you from the first 50 coins of tips you earn during that stream. Earn 50 coins or more in tips and you are square: the boost was free."

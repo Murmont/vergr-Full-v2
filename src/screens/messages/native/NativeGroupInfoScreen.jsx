@@ -17,6 +17,7 @@ import UserAvatar from '../../../components/UserAvatar';
 import TopBar from '../../../components/TopBar';
 import Icon from '../../../components/Icon';
 import { AddMembersSheet } from '../GroupInfoScreen';
+import UserName from '../../../components/UserName';
 
 export default function NativeGroupInfoScreen() {
   const { chatId } = useParams();
@@ -35,9 +36,15 @@ export default function NativeGroupInfoScreen() {
   useEffect(() => {
     if (!chatId) return;
     return onSnapshot(doc(db, 'conversations', chatId), (snap) => {
-      if (snap.exists()) setChatInfo({ id: snap.id, ...snap.data() });
+      if (!snap.exists()) return;
+      const data = { id: snap.id, ...snap.data() };
+      // Support tickets are group conversations; this screen must not expose
+      // support staffing, Invite Members or rename to the ticket raiser.
+      // Same guard as the web GroupInfoScreen (audit A4).
+      if (data.supportThread === true) { navigate(`/messages/${chatId}`, { replace: true }); return; }
+      setChatInfo(data);
     });
-  }, [chatId]);
+  }, [chatId, navigate]);
 
   const participants = chatInfo?.participants || [];
   const participantsKey = participants.join(',');
@@ -172,7 +179,7 @@ export default function NativeGroupInfoScreen() {
       <div className="pb-6">
         <div className="flex flex-col items-center pt-8 pb-6 px-4">
           <div className="relative mb-4">
-            <UserAvatar src={chatInfo.groupIcon} size={88} isGroup />
+            <UserAvatar src={chatInfo.groupIcon || chatInfo.groupAvatar} size={88} isGroup />
             {isAdmin && (
               <label className="absolute -bottom-1 -right-1 w-9 h-9 rounded-full bg-brand-violet text-white flex items-center justify-center cursor-pointer shadow-lg active:scale-95 transition-transform">
                 <Icon name={uploadingIcon ? 'hourglass_top' : 'photo_camera'} size={16} />

@@ -167,7 +167,29 @@ exports.notifyDmDelivery = functions.https.onRequest(
     }
     if (!recipients.length) { res.status(200).send('no-recipients'); return; }
 
-    const sender = await getSenderProfile(senderUid);
+    let sender = await getSenderProfile(senderUid);
+
+    // SUPPORT MASK, at write time, for the same reason the Vanguard mask above
+    // exists: the push must never carry the name or face of the member of staff
+    // who answered. A user asking for help should get "Vergr Support", not a
+    // notification that looks like a stranger messaging them out of nowhere.
+    //
+    // Applied here rather than only in the thread UI because a push is the one
+    // surface the app does not render, so masking in the client alone would
+    // leak the agent's identity on the lock screen.
+    if (isGroup) {
+      try {
+        const cs = await db.collection('conversations').doc(convoId).get();
+        const c = cs.exists ? cs.data() : null;
+        if (c?.supportThread === true && senderUid !== c.supportUserId) {
+          sender = {
+            ...sender,
+            displayName: c.groupName || 'Support',
+            avatar: c.groupAvatar || '',
+          };
+        }
+      } catch { /* unreadable convo: fall through unmasked rather than not push */ }
+    }
 
     // Plaintext preview (v1: no encryption — DMs and groups both ship the
     // text in cleartext through the relay; SW renders it directly).

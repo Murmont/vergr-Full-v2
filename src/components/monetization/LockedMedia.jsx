@@ -279,6 +279,12 @@ export default function LockedMedia({
             items={lightbox.items}
             startIndex={lightbox.startIndex}
             onClose={() => setLightbox(null)}
+            /* Paid content. The buyer purchased ACCESS to view it, not a copy
+               to keep, and a save button here put unlocked media one tap into
+               the camera roll. Not a hard DRM claim (a screenshot always
+               exists) but the obvious redistribution path should not ship as a
+               convenience button on the creator's paid work. */
+            allowSave={false}
           />
         )}
       </>

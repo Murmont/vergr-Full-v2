@@ -7,6 +7,7 @@ import UserAvatar from '../../components/UserAvatar';
 import Icon from '../../components/Icon';
 import { useLayout } from '../../context/LayoutContext';
 import useResponsive from '../../hooks/useResponsive';
+import UserName from '../../components/UserName';
 
 export default function BrowseCreatorsScreen() {
   const { isDesktop } = useResponsive();
@@ -51,10 +52,10 @@ export default function BrowseCreatorsScreen() {
             <UserAvatar src={c.avatar} size="lg" />
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-1.5">
-                <p className="font-bold text-sm truncate">{c.displayName || c.username}</p>
+                <p className="font-bold text-sm truncate"><UserName user={c} masked /></p>
                 {c.isVerified && <Icon name="verified" filled size={14} className="text-brand-violet-light" />}
               </div>
-              <p className="text-xs text-text-muted">@{c.username}</p>
+              <p className="text-xs text-text-muted"><UserName user={c} masked handle /></p>
               <p className="text-xs text-brand-gold font-dmmono mt-1">{formatCount(c.followerCount)} fans</p>
             </div>
             <Icon name="chevron_right" size={18} className="text-text-muted" />

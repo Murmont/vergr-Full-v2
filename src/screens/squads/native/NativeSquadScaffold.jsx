@@ -1,15 +1,14 @@
 // NativeSquadScaffold — lean phone-first chrome shared by every native squad
 // screen in the APK. Unlike SquadShell (which renders the full desktop rail DOM
 // and only hides it with CSS on the phone), this renders NO desktop rails at
-// all: just a safe-area TopBar, a single-column scroll area with bottom-nav
-// clearance, and a floating menu button that opens the squad/global nav as a
-// bottom sheet. It keeps the `.sqd` design-system tokens/classes (so the card
-// markup lifted from the web screens styles identically) but skips the heavy
-// grid layout for faster mount on the native WebView.
+// all: just the same safe-area top bar the web shell uses, a single-column
+// scroll area, and the squad nav opened as a bottom sheet from the top bar.
+// It keeps the `.sqd` design-system tokens/classes (so card markup lifted
+// from the web screens styles identically) but skips the heavy grid layout
+// for a faster mount on the native WebView.
 
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import TopBar from '../../../components/TopBar';
 import '../../../styles/squad.css';
 
 const GLOBAL_NAV = [
@@ -64,20 +63,47 @@ export default function NativeSquadScaffold({
 
   return (
     <div className="sqd">
-      <div style={{ minHeight: '100vh', background: 'var(--bg)', display: 'flex', flexDirection: 'column' }}>
-        <TopBar title={title} showBack actions={actions} />
+      {/* ───── TOP BAR ─────────────────────────────────────────────────
+          Uses the SAME `.sqd-mtop` markup and styles as the web SquadShell, so
+          the APK and the browser render an identical squad header instead of
+          two different chromes (the APK used the generic <TopBar/>, which is
+          why they did not match).
+
+          The nav button lives HERE, at the top right, not in a floating FAB at
+          the bottom of the page. SquadShell's own comment already made this
+          call for the web: "a floating hamburger is a phone antipattern, it
+          covered whatever was underneath it, and it put the primary navigation
+          somewhere no one looks for it." The native scaffold never got that
+          change. Same sheet, same nav, reachable where people look for it. */}
+      <div className="sqd-mtop">
+        <button className="sqd-mtop-btn" onClick={() => navigate(-1)} aria-label="Back">
+          <span className="material-symbols-outlined">arrow_back</span>
+        </button>
+        <div className="sqd-mtop-ttl">{mode === 'squad' ? (squadName || title || 'Squad') : (title || 'Squads')}</div>
+        {actions}
+        <button className="sqd-mtop-btn" onClick={() => setNavOpen(true)} aria-label="Squad menu">
+          <span className="material-symbols-outlined">menu</span>
+        </button>
+      </div>
+
+      {/* Bounded so ONLY `.content` scrolls. This was `minHeight:100vh`, which
+          does not bound a flex column at all: the child's `flex:1` had nothing
+          to divide against, so the DOCUMENT scrolled and the header went with
+          it.
+
+          `flex:1` and NOT another `100dvh`: `.sqd` is itself the 100dvh flex
+          column (squad.css, max-width:1100px), and `.sqd-mtop` is a SIBLING of
+          this element. Giving this one a full viewport height would make the
+          page mtop-taller than the screen, which is the precise bug being
+          fixed here. */}
+      <div style={{ flex: '1 1 auto', minHeight: 0, background: 'var(--bg)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <div
           className="content"
-          style={{ flex: 1, overflowY: 'auto', paddingBottom: 'calc(96px + env(safe-area-inset-bottom, 0px))' }}
+          style={{ flex: 1, minHeight: 0, overflowY: 'auto', paddingBottom: 'calc(20px + env(safe-area-inset-bottom, 0px))' }}
         >
           {children}
         </div>
       </div>
-
-      {/* Floating nav button → bottom sheet (reuses .sqd-native-* CSS in squad.css) */}
-      <button className="sqd-native-fab" onClick={() => setNavOpen(true)} aria-label="Squad menu">
-        <span className="material-symbols-outlined">menu</span>
-      </button>
       {navOpen && (
         <div className="sqd-native-sheet-backdrop" onClick={() => setNavOpen(false)}>
           <div className="sqd-native-sheet" onClick={(e) => e.stopPropagation()}>

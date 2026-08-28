@@ -55,7 +55,7 @@ export default function NativeEditProfileScreen() {
     if (!uname) { showToast('Username is required.', 'error'); return; }
     if (uname.toLowerCase() !== String(profile?.username || '').toLowerCase()) {
       const { checkUsername } = await import('../../../utils/usernameValidation');
-      const err = await checkUsername(uname);
+      const err = await checkUsername(uname, { isAdmin: profile?.role === 'admin' });
       if (err) { showToast(err, 'error'); return; }
     }
     if (form.dob) {

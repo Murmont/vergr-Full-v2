@@ -5,7 +5,7 @@
  * remote version.json on launch and, if a newer APK exists, prompts a one-tap
  * download. Bump BOTH this and tauri.conf.json on every APK release.
  */
-export const APP_VERSION = '1.0.197';
+export const APP_VERSION = '1.0.205';
 
 /** Numeric build code — must increase every release (compared for "is newer"). */
-export const APP_VERSION_CODE = 197;
+export const APP_VERSION_CODE = 205;

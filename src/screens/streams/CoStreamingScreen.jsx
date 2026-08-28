@@ -24,6 +24,7 @@ import { searchUsers } from '../../firebase/firestore';
 import TopBar from '../../components/TopBar';
 import UserAvatar from '../../components/UserAvatar';
 import Icon from '../../components/Icon';
+import UserName from '../../components/UserName';
 
 const C = {
   bg: '#0a0a14',
@@ -320,8 +321,8 @@ export default function CoStreamingScreen() {
                           }}>
                           <UserAvatar src={u.avatar} size="sm" />
                           <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontSize: 13, fontWeight: 700 }}>{u.displayName || u.username}</div>
-                            <div style={{ fontSize: 11, color: C.textDim }}>@{u.username}</div>
+                            <div style={{ fontSize: 13, fontWeight: 700 }}><UserName user={u} masked /></div>
+                            <div style={{ fontSize: 11, color: C.textDim }}><UserName user={u} masked handle /></div>
                           </div>
                           <span style={{ fontSize: 11, color: alreadyCoHost ? C.green : alreadyInvited ? C.amber : C.purpleLight, fontWeight: 700 }}>
                             {alreadyCoHost ? 'Joined' : alreadyInvited ? 'Pending' : 'Invite'}
@@ -383,7 +384,7 @@ function CoHostRow({ uid, onRemove, busy }) {
     }}>
       <UserAvatar src={user?.avatar} size="sm" />
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 13, fontWeight: 700 }}>{user?.displayName || user?.username || uid.slice(0, 6)}</div>
+        <div style={{ fontSize: 13, fontWeight: 700 }}><UserName user={user} masked fallback={uid.slice(0, 6)} /></div>
         <div style={{ fontSize: 11, color: C.green }}>● Joined</div>
       </div>
       <button onClick={onRemove} disabled={busy}
@@ -413,7 +414,7 @@ function InviteRow({ invite, onCancel, busy }) {
       <UserAvatar src={user?.avatar} size="sm" />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 13, fontWeight: 700 }}>
-          {user?.displayName || user?.username || invite.inviteeUid.slice(0, 6)}
+          <UserName user={user} masked fallback={invite.inviteeUid.slice(0, 6)} />
         </div>
         <div style={{ fontSize: 11, color: C.amber }}>● Pending</div>
       </div>

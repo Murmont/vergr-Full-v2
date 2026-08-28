@@ -20,7 +20,7 @@
 // Tauri updater's byte-progress events, not simulated.
 
 import { useState, useEffect, useRef } from 'react';
-import { isDesktopApp } from '../utils/platform';
+import { isDesktopApp, isTauri } from '../utils/platform';
 import { checkDesktopUpdate, applyDesktopUpdate, isUpdateRequired } from '../utils/tauriUpdater';
 import { APP_VERSION } from '../utils/appVersion';
 
@@ -44,6 +44,16 @@ const APP_MIN_H = 640;
 // wrong-sized window flash, and the updater appears as its own compact frame
 // "before" the app (the app tree isn't mounted until phase === 'ready').
 async function withWindow(fn, label) {
+  // A plain browser has no Tauri window to shape or reveal. Without this guard
+  // the dynamic import below still resolves, then getCurrentWindow() throws
+  // "Cannot read properties of undefined (reading 'metadata')" — which is the
+  // "[updater] reveal skipped" warning logged on every single web page load.
+  // The mobile-shell caller below is commented "browser: no-op"; this is what
+  // actually makes that true.
+  //
+  // isTauri(), not isDesktopApp(): the Android shell is also a Tauri window and
+  // does still want show() + setFocus().
+  if (!isTauri()) return;
   try {
     const { getCurrentWindow, LogicalSize } = await import('@tauri-apps/api/window');
     await fn(getCurrentWindow(), LogicalSize);

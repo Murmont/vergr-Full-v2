@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { collection, query, where, orderBy, limit, getDocs, setDoc, doc, serverTimestamp } from 'firebase/firestore';
+import { collection, query, limit, getDocs, setDoc, doc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../firebase/config';
 import { useAuth } from '../../context/AuthContext';
 import { useUser } from '../../context/UserContext';
-import { getUser, searchUsers } from '../../firebase/firestore';
+import { getUser, searchUsers, getCallHistory } from '../../firebase/firestore';
 import Icon from '../../components/Icon';
 import UserAvatar from '../../components/UserAvatar';
 import TopBar from '../../components/TopBar';
@@ -13,6 +13,7 @@ import { useUI } from '../../context/UIContext';
 import useResponsive from '../../hooks/useResponsive';
 import { timeAgo } from '../../utils/helpers';
 import { markCallsSeen } from '../../utils/navBadges';
+import UserName from '../../components/UserName';
 
 export default function CallsScreen() {
   const [search, setSearch] = useState('');
@@ -53,31 +54,54 @@ export default function CallsScreen() {
     const load = async () => {
       setLoading(true);
       try {
-        // Load recent calls
-        const callsQ = query(
-          collection(db, 'calls'),
-          where('participants', 'array-contains', currentUser.uid),
-          orderBy('createdAt', 'desc'),
-          limit(20)
-        );
-        const callsSnap = await getDocs(callsQ);
-        const calls = [];
-        for (const d of callsSnap.docs) {
-          const call = { id: d.id, ...d.data() };
-          const otherId = call.participants?.find(p => p !== currentUser.uid);
-          if (otherId) call.otherUser = await getUser(otherId).catch(() => null);
-          calls.push(call);
-        }
-        setRecentCalls(calls);
+        // Call LOG comes from `calls_history`, not `calls`.
+        //
+        // `calls` is the live WebRTC signalling doc and its id is the CHAT id
+        // (`doc(db,'calls', chatId)` in ChatThreadScreen/CallsScreen/webrtc.js),
+        // so it is overwritten on every new call and holds at most one row per
+        // conversation, whatever it was last doing. Reading it here made the
+        // call log show a handful of rows and disagree with the missed-call
+        // badge, which correctly counts `calls_history`.
+        //
+        // `calls_history` is the real log: one doc per call, id
+        // `${chatId}_${startedAtMs}`, written on hang-up by logCallEnd().
+        // getCallHistory() already sorts newest-first and caps the list.
+        const history = await getCallHistory(currentUser.uid, 20);
 
-        // Load favourites
+        // Resolve the other party ONCE per distinct uid, in parallel. This was
+        // an `await getUser()` inside a for-loop: 20 sequential round trips, and
+        // because a 1:1 call log repeats the same person it fetched the SAME
+        // document up to 20 times in a row. Measured cold load was 13.3s.
+        const otherIds = [...new Set(
+          history.map(r => r.participants?.find(p => p !== currentUser.uid)).filter(Boolean)
+        )];
+        const userEntries = await Promise.all(
+          otherIds.map(async id => [id, await getUser(id).catch(() => null)])
+        );
+        const userById = new Map(userEntries);
+
+        const calls = history.map(row => {
+          const otherId = row.participants?.find(p => p !== currentUser.uid);
+          return {
+            ...row,
+            // Map the history shape onto what this screen renders.
+            status: row.answered ? 'completed' : (row.callerId === currentUser.uid ? 'no_answer' : 'missed'),
+            createdAt: row.startedAtMs || null,
+            duration: row.durationSec || 0,
+            otherUser: otherId ? userById.get(otherId) || null : null,
+          };
+        });
+        setRecentCalls(calls);
+        // The list is ready — do not make it wait on the favourites rail below,
+        // which renders in its own section and is gated on its own state.
+        setLoading(false);
+
+        // Load favourites (also parallel, was sequential)
         const favQ = query(collection(db, 'users', currentUser.uid, 'call_favourites'), limit(10));
         const favSnap = await getDocs(favQ);
-        const favs = [];
-        for (const d of favSnap.docs) {
-          const user = await getUser(d.id).catch(() => null);
-          if (user) favs.push(user);
-        }
+        const favs = (await Promise.all(
+          favSnap.docs.map(d => getUser(d.id).catch(() => null))
+        )).filter(Boolean);
         setFavourites(favs);
       } catch (err) { console.error(err); }
       setLoading(false);
@@ -132,13 +156,18 @@ export default function CallsScreen() {
   // Left panel content
   const leftPanel = (
     <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="px-4 pt-4 pb-2 flex items-center justify-between">
-        <h2 className="font-syne text-xl font-bold">Calls</h2>
-        <button onClick={startNewCall} className="w-9 h-9 rounded-full bg-brand-violet/10 flex items-center justify-center hover:bg-brand-violet/20 transition-colors" title="New call">
-          <Icon name="add_call" size={20} className="text-brand-violet" />
-        </button>
-      </div>
+      {/* Header — desktop only. On mobile this panel sits under a TopBar that
+          already renders the "Calls" title AND a new-call action, so rendering
+          it here too gave two identical titles and two identical buttons
+          stacked on top of each other. */}
+      {isDesktop && (
+        <div className="px-4 pt-4 pb-2 flex items-center justify-between">
+          <h2 className="font-syne text-xl font-bold">Calls</h2>
+          <button onClick={startNewCall} className="w-9 h-9 rounded-full bg-brand-violet/10 flex items-center justify-center hover:bg-brand-violet/20 transition-colors" title="New call">
+            <Icon name="add_call" size={20} className="text-brand-violet" />
+          </button>
+        </div>
+      )}
 
       {/* Search */}
       <div className="px-4 mt-1">
@@ -156,8 +185,8 @@ export default function CallsScreen() {
             <div key={user.id} className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-surface-2/50 transition-colors">
               <UserAvatar src={user.avatar} size={36} />
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-text-primary truncate">{user.displayName}</p>
-                <p className="text-[10px] text-text-muted font-dmmono">@{user.username}</p>
+                <p className="text-sm font-semibold text-text-primary truncate"><UserName user={user} masked /></p>
+                <p className="text-[10px] text-text-muted font-dmmono"><UserName user={user} masked handle /></p>
               </div>
               <button onClick={() => startCall(user.id, 'audio')} className="p-2 rounded-full hover:bg-gem-blue/10" title="Audio call">
                 <Icon name="call" size={18} className="text-gem-blue" />
@@ -192,7 +221,7 @@ export default function CallsScreen() {
       )}
 
       {/* Recent calls */}
-      <div className="flex-1 px-4 mt-4 overflow-y-auto">
+      <div className="flex-1 min-h-0 px-4 mt-4 overflow-y-auto">
         <p className="text-[10px] text-text-muted uppercase font-bold tracking-wider mb-2">Recent</p>
         {loading ? (
           <div className="flex justify-center py-8"><div className="w-6 h-6 border-2 border-surface-3 border-t-brand-violet rounded-full animate-spin" /></div>
@@ -215,7 +244,7 @@ export default function CallsScreen() {
                   <UserAvatar src={call.otherUser?.avatar} size={40} />
                   <div className="flex-1 min-w-0">
                     <p className={`text-sm font-semibold truncate ${isMissed ? 'text-brand-ember' : 'text-text-primary'}`}>
-                      {call.otherUser?.displayName || 'Unknown'}
+                      <UserName user={call.otherUser} masked fallback={'Unknown'} />
                     </p>
                     <div className="flex items-center gap-1.5">
                       <Icon name={CALL_TYPE_ICONS[displayType]} size={12} className={CALL_TYPE_COLORS[displayType]} />
@@ -224,7 +253,7 @@ export default function CallsScreen() {
                   </div>
                   <div className="text-right shrink-0">
                     <p className="text-text-muted text-[10px]">{call.createdAt ? timeAgo(call.createdAt) : ''}</p>
-                    {call.duration && <p className="text-text-muted text-[9px] font-dmmono">{Math.floor(call.duration / 60)}:{String(call.duration % 60).padStart(2, '0')}</p>}
+                    {call.duration > 0 && !isMissed && <p className="text-text-muted text-[9px] font-dmmono">{Math.floor(call.duration / 60)}:{String(call.duration % 60).padStart(2, '0')}</p>}
                   </div>
                 </button>
               );
@@ -237,7 +266,7 @@ export default function CallsScreen() {
 
   // Right panel content (desktop only)
   const rightContent = (
-    <div className="flex flex-col items-center justify-center h-full px-8 text-center">
+    <div className="flex flex-col items-center justify-center min-h-full px-8 py-10 text-center">
       <div className="w-20 h-20 rounded-3xl bg-brand-violet/10 flex items-center justify-center mb-6">
         <Icon name="call" size={40} className="text-brand-violet" />
       </div>
@@ -289,13 +318,13 @@ export default function CallsScreen() {
   }
 
   return (
-    <div className="min-h-screen flex">
+    <div className="h-screen flex overflow-hidden">
       {/* Left: call list */}
-      <div className="w-[380px] border-r border-white/[0.04] bg-bg-dark flex flex-col">
+      <div className="w-[380px] border-r border-white/[0.04] bg-bg-dark flex flex-col overflow-hidden">
         {leftPanel}
       </div>
       {/* Right: actions */}
-      <div className="flex-1 bg-bg-dark">
+      <div className="flex-1 bg-bg-dark overflow-y-auto">
         {rightContent}
       </div>
     </div>

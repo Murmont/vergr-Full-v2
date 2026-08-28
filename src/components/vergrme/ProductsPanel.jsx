@@ -28,6 +28,16 @@ const EMPTY = { name: '', desc: '', priceCoins: '', coverUrl: '', published: tru
 // Colours + glyphs come from STORE_BRANDS so the provider's real logo shows
 // here, in Vergr Shop and in the vergr.me editor from one definition.
 
+// Order docs record the seller's cut in micro-USD under `owedToSeller` since
+// 2026-08-16; older rows used integer cents under `gemsToSeller`.
+//
+// MODULE scope on purpose. It used to live inside ProductsPanel, so the order
+// row's cancel-confirm dialog — a different component — threw
+// `ReferenceError: microOf is not defined` and the confirm never opened, making
+// an order impossible to cancel (audit A41 #4). It is a pure function of its
+// argument, so there is no reason for it to be in a component at all.
+const microOf = (r) => Number(r.owedToSeller ?? ((r.gemsToSeller || 0) * 10_000)) || 0;
+
 export default function ProductsPanel({ uid, showOrders = true }) {
   const { showToast } = useUI();
   const { tier } = useTier();
@@ -54,8 +64,8 @@ export default function ProductsPanel({ uid, showOrders = true }) {
   };
   useEffect(() => { if (uid) load(); }, [uid]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const gemsEarned = sales.reduce((s, r) => s + (r.gemsToSeller || 0), 0)
-    + orders.filter((o) => o.status !== 'cancelled').reduce((s, o) => s + (o.gemsToSeller || 0), 0);
+  const earnedMicroUsd = sales.reduce((s, r) => s + microOf(r), 0)
+    + orders.filter((o) => o.status !== 'cancelled').reduce((s, o) => s + microOf(o), 0);
   const saleCount = sales.length + orders.filter((o) => o.status !== 'cancelled').length;
   const openOrders = orders.filter((o) => o.status === 'placed');
 
@@ -92,9 +102,9 @@ export default function ProductsPanel({ uid, showOrders = true }) {
               instantly, with <span className="text-white font-semibold">nothing else deducted</span> on
               top. Linktree charges 12%, Beacons 9% — plus payout processing.
             </p>
-            {gemsEarned > 0 && (
+            {earnedMicroUsd > 0 && (
               <div className="mt-2 text-xs font-dmmono font-bold tabular-nums text-gem-blue">
-                {gemsEarned.toLocaleString()} gems earned · {saleCount} sale{saleCount === 1 ? '' : 's'}
+                ${(earnedMicroUsd / 1e6).toFixed(2)} earned · {saleCount} sale{saleCount === 1 ? '' : 's'}
               </div>
             )}
           </div>
@@ -228,7 +238,7 @@ export function OrderRow({ order: o, onChanged }) {
   };
 
   const cancel = async () => {
-    if (!window.confirm(`Cancel this order? The buyer is refunded ${(o.totalCoins || 0).toLocaleString()} coins in full and ${(o.gemsToSeller || 0).toLocaleString()} gems are taken back from your wallet.`)) return;
+    if (!window.confirm(`Cancel this order? The buyer is refunded ${(o.totalCoins || 0).toLocaleString()} coins in full and $${(microOf(o) / 1e6).toFixed(2)} is taken back off what you are owed.`)) return;
     setBusy(true);
     try { await cancelVergrMeOrder(o.id); showToast('Order cancelled — buyer refunded', 'success'); onChanged(); }
     catch (e) { showToast(e?.message || 'Cancel failed', 'error'); }
@@ -309,7 +319,6 @@ export function ProductEditor({ uid, tier, product, onClose, onSaved }) {
   const isPhysical = form.kind === 'physical';
   const shipCoins = Math.max(0, Math.floor(Number(form.shippingCoins) || 0));
   // 8% fee on the product price only; shipping passes through in full.
-  const youKeep = Math.floor(price * 0.92) + (isPhysical ? shipCoins : 0);
 
   const save = async () => {
     if (!form.name?.trim()) { showToast('Give your product a name', 'error'); return; }
@@ -407,7 +416,7 @@ export function ProductEditor({ uid, tier, product, onClose, onSaved }) {
           )}
           {price > 0 && (
             <div className="text-[11px] text-text-muted -mt-1">
-              You keep <span className="font-dmmono font-bold tabular-nums text-gem-blue">{youKeep.toLocaleString()} gems</span> per sale
+              You keep <span className="font-dmmono font-bold tabular-nums text-gem-blue">92%</span> of every sale
               {isPhysical && shipCoins > 0 ? ' (8% fee on the price, shipping passed through in full)' : ' (8% fee, nothing else deducted)'}.
             </div>
           )}

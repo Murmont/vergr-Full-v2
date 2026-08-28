@@ -64,7 +64,7 @@ export default function NativeSquadsMineScreen() {
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: 60, gap: 12, color: 'var(--t3)' }}>
             <span className="material-symbols-outlined" style={{ fontSize: 48, opacity: .45 }}>group_add</span>
             <div style={{ fontFamily: 'Syne', fontWeight: 700, fontSize: 16, color: 'var(--t2)' }}>You haven't joined a squad yet</div>
-            <div style={{ fontSize: 13, textAlign: 'center' }}>Browse open squads or create your own. Squads unlock voice chat, tournaments, shared earnings, and ranked leaderboards.</div>
+            <div style={{ fontSize: 13, textAlign: 'center' }}>Browse open squads or create your own. Squads unlock voice chat, shared earnings, and ranked leaderboards.</div>
             <div style={{ display: 'flex', gap: 8 }}>
               <button className="btn ghost" onClick={() => navigate('/squads')}>Find Squads</button>
               <button className="btn primary" onClick={() => navigate('/squads/create')}><span className="material-symbols-outlined">add_circle</span> Create</button>

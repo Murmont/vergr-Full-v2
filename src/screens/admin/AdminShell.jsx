@@ -40,7 +40,8 @@ export const ADMIN_NAV = [
   { id: 'moderation',    label: 'Moderation Queue',  path: '/admin/reports',      icon: 'flag' },
   { id: 'economy',       label: 'Economy',           path: '/admin/economy',      icon: 'paid' },
   { id: 'subscriptions', label: 'Subscriptions',     path: '/admin/subscriptions',icon: 'workspace_premium' },
-  { id: 'tournaments',   label: 'Tournaments',       path: '/admin/tournaments',  icon: 'emoji_events' },
+  // Tournaments removed 2026-08-17 (founder). The product retired tournaments in
+  // 2026-08; the admin screen was the last surface still asserting they exist.
   { id: 'config',        label: 'App Config',        path: '/admin/config',       icon: 'tune' },
   { id: 'stream-preview',label: 'Stream Preview',    path: '/admin/stream-preview', icon: 'cast' },
   { id: 'stats',         label: 'Live Stats',        path: '/admin/stats',        icon: 'monitoring' },
@@ -53,7 +54,8 @@ export const ADMIN_NAV_SECONDARY = [
   { id: 'access',        label: 'Admin Access',      path: '/admin/access',       icon: 'admin_panel_settings' },
   { id: 'bots',          label: 'News Bots',         path: '/admin/bots',         icon: 'smart_toy' },
   { id: 'vanguard',      label: 'Vanguard',          path: '/admin/vanguard',     icon: 'shield' },
-  { id: 'cheat-sigs',    label: 'Cheat Signatures',  path: '/admin/cheat-signatures', icon: 'gpp_bad' },
+  // Cheat Signatures removed 2026-08-17 (founder), it only ever fed tournament
+  // anti-cheat, and there are no tournaments.
 ];
 
 function Logo() {

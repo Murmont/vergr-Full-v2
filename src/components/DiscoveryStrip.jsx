@@ -1,13 +1,20 @@
 import { useState, useEffect } from 'react';
+import { useAuth } from '../context/AuthContext';
 import CachedImg from './CachedImg';
 import { useNavigate } from 'react-router-dom';
-import { collection, query, where, getDocs, limit } from 'firebase/firestore';
+import { collection, query, where, getDocs, limit, orderBy } from 'firebase/firestore';
 import { db } from '../firebase/config';
+import { mergeBoostedFirst } from '../utils/promoBoost';
+import { boostSlotsFor } from '../utils/boostDelivery';
+import { getBoostedUsers } from '../firebase/firestore';
 import Icon from './Icon';
 import { getTrendingClips } from '../utils/klipyApi';
 import { hiddenFromDiscovery } from '../utils/privacy';
+import UserName from './UserName';
 
 export default function DiscoveryStrip() {
+  // Needed so a boosted profile is never suggested to itself.
+  const { currentUser } = useAuth();
   const navigate = useNavigate();
   const [trendingClips, setTrendingClips] = useState([]);
   const [suggestedUsers, setSuggestedUsers] = useState([]);
@@ -25,8 +32,17 @@ export default function DiscoveryStrip() {
           q = query(collection(db, 'users'), limit(5));
           snap = await getDocs(q);
         }
+        // ⚠ The shared query — see getBoostedUsers. Fair rotation + interest
+        // ranking + self-exclusion, identical on every surface.
+        let boostedUsers = [];
+        try {
+          boostedUsers = await getBoostedUsers({
+            viewerUid: currentUser?.uid, want: boostSlotsFor(5),
+          });
+        } catch { /* never empty the strip over a boost */ }
+
         setSuggestedUsers(
-          snap.docs.map(d => ({ id: d.id, ...d.data() }))
+          mergeBoostedFirst(boostedUsers, snap.docs.map(d => ({ id: d.id, ...d.data() })), 5)
             // Privacy → "Appear in suggested users" opt-out.
             .filter(u => !hiddenFromDiscovery(u, 'suggested'))
         );
@@ -71,8 +87,8 @@ export default function DiscoveryStrip() {
               <button key={user.id} onClick={() => navigate(`/user/${user.id}`)} className="flex items-center gap-2 w-full p-2 rounded-xl hover:bg-surface-2 transition">
                 <CachedImg src={user.avatar} permanent className="w-8 h-8 rounded-full object-cover" />
                 <div className="flex-1 text-left">
-                  <p className="text-white text-xs font-semibold">{user.displayName}</p>
-                  <p className="text-text-muted text-[10px]">@{user.username}</p>
+                  <p className="text-white text-xs font-semibold"><UserName user={user} masked /></p>
+                  <p className="text-text-muted text-[10px]"><UserName user={user} masked handle /></p>
                 </div>
                 <button className="px-2 py-0.5 rounded-full bg-brand-violet/10 text-brand-violet-light text-[9px] font-bold">Follow</button>
               </button>

@@ -1,6 +1,6 @@
 // src/screens/settings/VPRanksScreen.jsx
 // Full 100-level VP ladder across 11 ranks. Shows user's current level,
-// progress to next, commission / discount per level, and prestige info.
+// progress to next, VP required per level, and prestige info.
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Icon from '../../components/Icon';
@@ -122,7 +122,6 @@ export default function VPRanksScreen() {
         <div className="space-y-2 mb-8 lg:grid lg:grid-cols-2 lg:gap-3 lg:space-y-0 lg:items-start">
           {groupedRanks.map((rank) => {
             const firstLvl = rank.levels[0];
-            const lastLvl = rank.levels[rank.levels.length - 1];
             const isUnlocked = currentLevel.level >= rank.min;
             const isActive = currentLevel.level >= rank.min && currentLevel.level <= rank.max;
             const isOpen = openRank === rank.name;
@@ -159,7 +158,7 @@ export default function VPRanksScreen() {
                   <div className="flex-1 min-w-0 text-left">
                     <p className="text-white font-bold text-sm">{rank.name}</p>
                     <p className="text-text-secondary text-[11px]">
-                      L{rank.min}–L{rank.max} · {Math.round(firstLvl.commission * 100)}% → {Math.round(lastLvl.commission * 100)}% commission
+                      L{rank.min}–L{rank.max} · unlocks at {fmt(firstLvl.vpRequired)} VP
                     </p>
                   </div>
                   {isActive && (
@@ -172,10 +171,9 @@ export default function VPRanksScreen() {
 
                 {isOpen && (
                   <div className="border-t border-white/[0.06]">
-                    <div className="grid grid-cols-[0.6fr_1fr_1fr] px-4 py-2 text-[10px] uppercase tracking-wider text-text-muted font-bold border-b border-white/[0.04]">
+                    <div className="grid grid-cols-[0.6fr_1fr] px-4 py-2 text-[10px] uppercase tracking-wider text-text-muted font-bold border-b border-white/[0.04]">
                       <span>Lvl</span>
                       <span className="text-right">VP to reach</span>
-                      <span className="text-right">Commission</span>
                     </div>
                     {rank.levels.map((lvl) => {
                       const isCurrent = lvl.level === currentLevel.level;
@@ -183,7 +181,7 @@ export default function VPRanksScreen() {
                       return (
                         <div
                           key={lvl.level}
-                          className={`grid grid-cols-[0.6fr_1fr_1fr] px-4 py-2 text-xs border-b border-white/[0.03] last:border-b-0 ${
+                          className={`grid grid-cols-[0.6fr_1fr] px-4 py-2 text-xs border-b border-white/[0.03] last:border-b-0 ${
                             isCurrent ? 'bg-white/[0.04]' : ''
                           }`}
                         >
@@ -193,7 +191,6 @@ export default function VPRanksScreen() {
                           <span className={`text-right font-dmmono ${isReached ? 'text-text-secondary' : 'text-text-muted'}`}>
                             {fmt(lvl.vpRequired)}
                           </span>
-                          <span className="text-right text-text-primary">{Math.round(lvl.commission * 100)}%</span>
                         </div>
                       );
                     })}
@@ -209,7 +206,7 @@ export default function VPRanksScreen() {
         <div className="mb-6 p-4 rounded-2xl border border-white/[0.06] bg-surface-1 text-xs text-text-secondary leading-relaxed">
           <p className="text-white font-semibold text-sm mb-1">After L100 — optional</p>
           <p className="mb-3">
-            Hit Immortal (L100) and you can Prestige. Your displayed level resets to 1 with a prestige badge, while your lifetime VP, commission, and perks stay intact. Never forced — purely for bragging rights. Up to {PRESTIGE_MAX} prestiges.
+            Hit Immortal (L100) and you can Prestige. Your displayed level resets to 1 with a prestige badge, while your lifetime VP and perks stay intact. Never forced, purely for bragging rights. Up to {PRESTIGE_MAX} prestiges.
           </p>
           <div className="space-y-1.5">
             {PRESTIGE_REWARDS.map((p) => {

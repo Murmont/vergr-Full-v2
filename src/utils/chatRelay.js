@@ -35,6 +35,10 @@ export async function connectChat({
   onReject = () => {},
   onHide   = () => {},
   onHeart  = () => {},
+  // ⚠ MUST default to a no-op like the rest. Two existing callers
+  // (ChatPanel, MobileLiveViewer) do not pass it, and an undefined callback
+  // would throw on the first spoken message rather than simply doing nothing.
+  onTts    = () => {},
   onState = () => {},
   baseUrl = DEFAULT_BASE,
 }) {
@@ -77,6 +81,10 @@ export async function connectChat({
         case 'reject': onReject(m); break;
         case 'hide':   onHide(m);   break;
         case 'heart':  onHeart(m);  break;
+        // Effect 13. A SEPARATE verb from 'msg' on purpose: the relay runs a
+        // full Gemini pass on these and only host+lexicon on chat, so they
+        // cannot share a path. Doc: docs/effects/13-tts-on-stream.md
+        case 'tts':    onTts(m);    break;
       }
     });
 
@@ -103,6 +111,9 @@ export async function connectChat({
       outbox.push(payload);
       return false;
     },
+    /** Ask the relay to speak this to the whole room. Gated server-side on
+     *  host opt-in AND (level 92 OR Pro); the client gate is only UX. */
+    speak(text) { return this.send({ type: 'tts', text }); },
     report({ id, uid, text }) {
       this.send({ type: 'report', id, uid, text });
     },

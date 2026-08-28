@@ -71,7 +71,14 @@ export default function AuthShell({ children }) {
             Where gamers<br />converge.
           </h2>
           <p className="text-text-secondary text-base mb-9 leading-relaxed">
-            Tournaments, live streams, squads and a real creator economy — one home for competitive play.
+            {/* Led with "Tournaments" until 2026-08-19. Tournaments are retired and
+                unrouted, and public/llms.txt states plainly that Vergr runs no prize
+                competitions, so the FIRST word an unauthenticated visitor read was
+                advertising something that does not exist. This is the sign-in page,
+                which is what a store or processor reviewer sees first. Positioning
+                is the canonical one from CLAUDE.md: a live streaming and social
+                platform for gamers and creators. */}
+            Live streams, squads, clips and a real creator economy. One home for gamers and creators.
           </p>
           <ul className="space-y-4">
             {FEATURES.map((f) => (

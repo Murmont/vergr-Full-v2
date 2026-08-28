@@ -15,7 +15,7 @@
 
 const functions = require('firebase-functions/v2');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
-const { settleEarnedToGems } = require('./coinLedger');
+const { settleEarnedShare, earnedCoinCredit } = require('./coinLedger');
 
 const REGION = 'europe-west1';
 const db = getFirestore('vgrdb');
@@ -102,9 +102,11 @@ exports.subscribeMembership = functions.https.onCall(
         updatedAt: FieldValue.serverTimestamp(),
       });
       tx.set(db.collection('wallets').doc(creatorId), {
-        balance: FieldValue.increment(creatorAmount),
-        // convertible: membership revenue (creator) (received value) — see coinLedger.js
-        earnedBalance: FieldValue.increment(creatorAmount),
+        // earnedCoinCredit supplies balance + earnedBalance +
+        // totalEarnedCoinsGross. That last field drives the revenue share
+        // ladder, and this write used to omit it, so a creator earning only
+        // through memberships stayed on the bottom rate forever.
+        ...earnedCoinCredit(creatorAmount),
         totalEarned: FieldValue.increment(creatorAmount),
         updatedAt: FieldValue.serverTimestamp(),
       }, { merge: true });
@@ -147,8 +149,8 @@ exports.subscribeMembership = functions.https.onCall(
       // their commission rate right now, rather than whatever rate they hold when
       // they later choose to cash out. Post-commit because this transaction never
       // reads the creator's wallet (it uses set/merge), so there is no VP here to
-      // price with. See coinLedger.js → settleEarnedToGems.
-      await settleEarnedToGems(db, {
+      // price with. See coinLedger.js → settleEarnedShare.
+      await settleEarnedShare(db, {
         uid: creatorId, coins: result.creatorAmount,
         source: 'membership', sourceId: `membership:${result.subscriptionId}`,
       });
@@ -303,9 +305,10 @@ exports.renewMemberSubscriptions = defer(
 
           tx.update(walletRef, { balance: FieldValue.increment(-price), totalSpent: FieldValue.increment(price) });
           tx.set(db.collection('wallets').doc(s.creatorId), {
-            balance: FieldValue.increment(creatorAmount), totalEarned: FieldValue.increment(creatorAmount),
-            // convertible: membership renewal (creator) (received value) — see coinLedger.js
-            earnedBalance: FieldValue.increment(creatorAmount), totalEarned: FieldValue.increment(creatorAmount),
+            // See the first-subscription write above. This object also used to
+            // declare totalEarned twice.
+            ...earnedCoinCredit(creatorAmount),
+            totalEarned: FieldValue.increment(creatorAmount),
           }, { merge: true });
           tx.update(docSnap.ref, { periodStart: s.periodEnd || now, periodEnd: newPeriodEnd, renewsAt: newPeriodEnd });
           tx.set(db.collection('transactions').doc(), {
@@ -324,7 +327,7 @@ exports.renewMemberSubscriptions = defer(
         // Auto-convert the creator's share at their CURRENT rate, post-commit.
         // Idempotent on the period end, so a cron retry over the same renewal
         // cannot convert twice.
-        await settleEarnedToGems(db, {
+        await settleEarnedShare(db, {
           uid: s.creatorId, coins: creatorAmount,
           source: 'membership_renewal',
           sourceId: `membership_renewal:${docSnap.id}:${newPeriodEnd}`,

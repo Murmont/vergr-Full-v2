@@ -1,0 +1,15 @@
+server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+    server_name _;
+    location = /health { return 200 "OK"; add_header Content-Type text/plain; }
+    location /streams/ {
+        alias /var/www/streams/;
+        types { application/vnd.apple.mpegurl m3u8; video/mp2t ts; }
+        add_header Cache-Control no-cache;
+        add_header Access-Control-Allow-Origin *;
+    }
+    location /rtmp-stat { rtmp_stat all; allow 127.0.0.1; deny all; }
+    location /rtmp-control { rtmp_control all; allow 127.0.0.1; deny all; }
+    location / { return 200 "vergr-stream-2\n"; add_header Content-Type text/plain; }
+}

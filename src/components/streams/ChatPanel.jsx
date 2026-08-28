@@ -9,15 +9,22 @@
 // styled by amount tier, fade-in entry, soft auto-scroll lock.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import UserName from '../UserName';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { useAuth } from '../../context/AuthContext';
 import { useUser } from '../../context/UserContext';
 import { useUI } from '../../context/UIContext';
 import { connectChat } from '../../utils/chatRelay';
+import { createTtsQueue, armStreamTts, canUseStreamTts, TTS_MAX_CHARS } from '../../utils/streamTts';
+import { UID_ATTR } from '../../utils/goldenThread';
+import { isUnlocked } from '../../utils/rankUnlocks';
 import UserAvatar from '../UserAvatar';
 import Icon from '../Icon';
 import BadgeGem from '../membership/BadgeGem';
+import RankBadge from '../RankBadge';
+import RankCrestPopover from '../RankCrestPopover';
+import { chatNameColor } from '../../utils/rankUnlocks';
 import TranslationSheet from '../TranslationSheet';
 import { isTauri } from '../../utils/platform';
 import { spring } from '../primitives/springs';
@@ -86,7 +93,7 @@ const EMOTES = [
 
 export default function ChatPanel({
   streamId, layout = 'side', hostUid = null,
-  slowModeSec = 0, followersOnly = false, pinnedMessage = null,
+  slowModeSec = 0, followersOnly = false, ttsEnabled = false, pinnedMessage = null,
   composerExtras = null,
 }) {
   // 'overlay' = TikTok-style transparent feed over the video: no header,
@@ -94,7 +101,9 @@ export default function ChatPanel({
   // mobile immersive viewer + native broadcaster.
   const overlay = layout === 'overlay';
   const { currentUser } = useAuth();
-  const { profile } = useUser();
+  // ⚠ `wallet` is here for ONE reason: the crest card's own progress bar.
+  // It is never used for another user — their VP is not readable.
+  const { profile, wallet } = useUser();
   const { showToast } = useUI();
   const [messages, _setMessages] = useState(() => chatHistoryCache.get(streamId) || []);
   const setMessages = (updater) => _setMessages((prev) => {
@@ -110,11 +119,19 @@ export default function ChatPanel({
   const [modTarget, setModTarget] = useState(null);
   const [translateText, setTranslateText] = useState(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // Effect 21. Which crest was tapped, and where it sits on screen. The card
+  // is a PORTAL, so it needs viewport coords rather than a DOM parent — the
+  // chat column is an overflow scroller and would clip it.
+  const [crestCard, setCrestCard] = useState(null);
   const [savingMod, setSavingMod] = useState(false);
   const [emojiOpen, setEmojiOpen] = useState(false);
   // Whether the current viewer can moderate (host or a host-designated chat
   // moderator). The relay reports it in the hello frame.
   const [iAmMod, setIAmMod] = useState(false);
+  // Effect 07. Which viewer the HOST is following. Ephemeral and host-side:
+  // it is a lens on the host's own screen, not shared state, so it needs no
+  // Firestore write and no relay message.
+  const [threadUid, setThreadUid] = useState(null);
   const isHost = currentUser?.uid === hostUid;
   const canModerate = isHost || iAmMod;
 
@@ -134,10 +151,19 @@ export default function ChatPanel({
   const mentionMatches = mentionQuery != null
     ? recentChatters.filter((n) => n.toLowerCase().includes(mentionQuery)).slice(0, 5)
     : [];
+
+
   const insertMention = (name) => {
     setDraft((d) => d.replace(/(^|\s)@(\w{0,20})$/, (full, pre) => `${pre}@${name} `));
   };
   const insertEmote = (em) => setDraft((d) => (d + em).slice(0, 240));
+  // Effect 13. The queue speaks ONE utterance at a time and drops the oldest
+  // under flood — speech runs in real time and an unbounded queue would fall
+  // minutes behind on a busy stream.
+  const ttsRef = useRef(null);
+  const [ttsMuted, setTtsMuted] = useState(false);
+  const [ttsSeen, setTtsSeen] = useState(false);
+  const [ttsNeedsGesture, setTtsNeedsGesture] = useState(false);
   const clientRef = useRef(null);
   const listRef = useRef(null);
   const autoScrollRef = useRef(true);
@@ -145,6 +171,17 @@ export default function ChatPanel({
   useEffect(() => {
     if (!streamId || !currentUser) return;
     let cancelled = false;
+    // ⚠ Created HERE, not at module scope: one queue per mounted stream, torn
+    // down with it. A shared queue would keep speaking after you left.
+    ttsRef.current = createTtsQueue({ onState: (st) => { setTtsMuted(st.muted); setTtsNeedsGesture(!!st.needsGesture); } });
+    ttsRef.current.init(navigator.language);
+    // ⚠ ARM ON THE FIRST GESTURE ANYWHERE, not just on sending a chat message.
+    // Most viewers never type. They do click — to unmute the player, to open
+    // a panel — and any one of those unlocks speech for the session. Passive
+    // + once, so it costs nothing and removes itself.
+    const arm = () => armStreamTts();
+    document.addEventListener('pointerdown', arm, { once: true, passive: true });
+    document.addEventListener('keydown', arm, { once: true });
     (async () => {
       const c = await connectChat({
         streamId,
@@ -170,6 +207,14 @@ export default function ChatPanel({
             `Message blocked: ${r}`;
           showToast(friendly, 'error');
         },
+        // Effect 13: every viewer speaks it locally. The relay already ran a
+        // full Gemini pass, so anything arriving here is cleared to be heard.
+        onTts:     (m) => {
+          if (cancelled || !m?.text) return;
+          setMessages((prev) => [...prev, { ...m, type: 'tts' }].slice(-MAX_VISIBLE));
+          setTtsSeen(true);
+          ttsRef.current?.push(m.text);
+        },
         onHide:    (m) => {
           // Retroactive hide after user-report + Gemini BLOCK verdict.
           if (cancelled) return;
@@ -186,6 +231,12 @@ export default function ChatPanel({
       cancelled = true;
       try { clientRef.current?.close(); } catch {}
       clientRef.current = null;
+      // ⚠ STOP THE SPEECH TOO. speechSynthesis is a GLOBAL queue: without
+      // this it keeps reading messages aloud after the viewer navigates away.
+      document.removeEventListener('pointerdown', arm);
+      document.removeEventListener('keydown', arm);
+      try { ttsRef.current?.stop(); } catch {}
+      ttsRef.current = null;
     };
   }, [streamId, currentUser, showToast]);
 
@@ -203,8 +254,28 @@ export default function ChatPanel({
     autoScrollRef.current = nearBottom;
   };
 
+  // Effect 13. BOTH must be true: the host opened the room to spoken messages,
+  // AND this viewer has earned it (L92) or holds Pro. The client gate is UX
+  // only — handleTts in the relay re-checks both and is the real boundary.
+  const canSpeak = ttsEnabled && canUseStreamTts(profile);
+  const onSpeak = () => {
+    const text = draft.trim();
+    if (!text || sending || !canSpeak) return;
+    const c = clientRef.current;
+    if (!c) { showToast('Chat not connected', 'error'); return; }
+    armStreamTts();
+    c.speak(text.slice(0, TTS_MAX_CHARS));
+    setDraft('');
+    haptic.light();
+  };
+
   const onSend = (e) => {
     e?.preventDefault?.();
+    // ⚠ ARM WEB SPEECH ON THIS GESTURE. Measured on the live site: speak()
+    // with no prior user gesture fires  and is SILENT,
+    // with nothing shown to the user. One gesture unlocks the whole session,
+    // and sending a chat message is the most reliable one a viewer makes.
+    armStreamTts();
     const text = draft.trim();
     if (!text || sending) return;
     const c = clientRef.current;
@@ -285,6 +356,19 @@ export default function ChatPanel({
       fontFamily: '"Inter", system-ui, sans-serif',
     }}>
       {translateText && <TranslationSheet text={translateText} kind="streamchat" refId={streamId} onClose={() => setTranslateText(null)} />}
+      {/* Effect 21. Tapping a rank crest opens the ladder card.
+          ⚠ `wallet` is passed ONLY so the card can draw YOUR OWN progress bar.
+          Another user's VP is unreadable (firestore.rules: wallets are
+          owner-read), so their card shows level + unlocks and no bar. */}
+      {crestCard && (
+        <RankCrestPopover
+          level={crestCard.level}
+          anchorRect={crestCard.rect}
+          isSelf={crestCard.isSelf}
+          wallet={wallet}
+          onClose={() => setCrestCard(null)}
+        />
+      )}
       {/* Header (hidden in overlay mode — the feed floats over the video) */}
       {!overlay && (
       <div style={{
@@ -315,9 +399,10 @@ export default function ChatPanel({
         </div>
         {isHost && settingsOpen && (
           <ChatSettingsPopover
-            slowModeSec={slowModeSec} followersOnly={followersOnly} saving={savingMod}
+            slowModeSec={slowModeSec} followersOnly={followersOnly} ttsEnabled={ttsEnabled} saving={savingMod}
             onSlowMode={(s) => applyMod('setStreamSlowMode', { seconds: s }, s ? `Slow mode: ${s}s` : 'Slow mode off')}
             onFollowersOnly={(en) => applyMod('setStreamFollowersOnly', { enabled: en }, en ? 'Followers-only on' : 'Followers-only off')}
+            onTtsEnabled={(en) => applyMod('setStreamTts', { enabled: en }, en ? 'Spoken messages on' : 'Spoken messages off')}
             onClose={() => setSettingsOpen(false)}
           />
         )}
@@ -350,6 +435,11 @@ export default function ChatPanel({
         ref={listRef}
         onScroll={onScroll}
         style={{
+          // ⚠ position+isolation are LOAD-BEARING for the Golden Thread: its svg
+          // is z-index:-1, and without a stacking context here it escapes to the
+          // nearest one and paints BEHIND this panel entirely. Squad environments
+          // cost two rebuilds to learn exactly this.
+          position: 'relative', isolation: 'isolate',
           flex: 1, minHeight: 0, overflowY: 'auto',
           padding: overlay ? '20px 0 4px' : '8px 10px',
           display: 'flex', flexDirection: 'column', gap: 4,
@@ -362,16 +452,25 @@ export default function ChatPanel({
       >
         {/* Bottom-anchor spacer: keeps a sparse feed hugging the composer
             (flex-end via margin so scrolling still works). */}
+        {/* ⚠ THE DRAWN PATH WAS REMOVED 2026-08-27. It rendered as a jagged
+            gold squiggle in a narrow gutter and read as a rendering artefact,
+            not a designed element. The highlight on the row below replaces it.
+            Full reasoning in docs/effects/07-golden-thread.md §11. */}
         {overlay && <div style={{ marginTop: 'auto' }} />}
         <AnimatePresence initial={false}>
           {messages.map((m) => (
             <ChatRow key={m.id || (m.ts + ':' + m.uid)} m={m}
               isSelf={m.uid === currentUser?.uid}
+              vpLevel={m.vpLevel}
+              isHost={isHost}
+              threaded={threadUid === m.uid}
+              onThread={() => setThreadUid((cur) => (cur === m.uid ? null : m.uid))}
               streamId={streamId}
               overlay={overlay}
               onTap={() => onMessageTap(m)}
               onReport={() => onReport(m)}
               onTranslate={(text) => setTranslateText(text)}
+              onCrest={setCrestCard}
             />
           ))}
         </AnimatePresence>
@@ -416,10 +515,42 @@ export default function ChatPanel({
               ))}
             </div>
           )}
+          {/* ⚠ MUTE IS MANDATORY, NOT POLISH. This is a stranger's words read
+              aloud in the viewer's ears; they must be able to stop it in one
+              tap. Only shown once something has actually been spoken, so it
+              does not clutter a stream with the feature switched off. */}
+          {(ttsSeen || ttsNeedsGesture) && (
+            <button type="button"
+              onClick={() => {
+                // ⚠ If speech was refused for want of a gesture, THIS tap is the
+                // gesture — arm and drain, do not toggle mute as well.
+                if (ttsNeedsGesture) { ttsRef.current?.armAndResume(); return; }
+                armStreamTts(); setTtsMuted(ttsRef.current?.setMuted(!ttsMuted));
+              }}
+              aria-pressed={ttsMuted}
+              title={ttsMuted ? "Spoken messages are muted" : "Mute spoken messages"}
+              style={{ display: "flex", alignItems: "center", gap: 6, margin: "0 10px 6px",
+                       padding: "5px 9px", borderRadius: 9, fontSize: 11, fontWeight: 700,
+                       background: ttsMuted ? "rgba(240,64,96,0.16)" : "rgba(255,255,255,0.06)",
+                       color: ttsMuted ? "var(--brand-ember,#F04060)" : "var(--text-secondary,#9CA3AF)" }}>
+              <Icon name={ttsNeedsGesture ? "touch_app" : (ttsMuted ? "volume_off" : "volume_up")} size={14} />
+              {ttsNeedsGesture ? "Tap to hear spoken messages" : (ttsMuted ? "Spoken messages muted" : "Mute spoken messages")}
+            </button>
+          )}
           <form onSubmit={onSend} style={{
             padding: overlay ? '6px 0 0' : '8px 8px calc(8px + env(safe-area-inset-bottom))',
             display: 'flex', gap: overlay ? 8 : 6, alignItems: 'center',
           }}>
+            {canSpeak && (
+              <button type="button" onClick={onSpeak} disabled={!draft.trim() || sending}
+                aria-label="Speak this message to the stream"
+                title="Everyone watching hears this read aloud"
+                style={{ background: 'transparent', border: 'none', padding: 0, flexShrink: 0,
+                         color: draft.trim() ? C.purpleLight : C.textDim,
+                         cursor: draft.trim() ? 'pointer' : 'default', display: 'flex' }}>
+                <Icon name="record_voice_over" size={20} className="" />
+              </button>
+            )}
             {!overlay && (
               <button type="button" onClick={() => setEmojiOpen((v) => !v)} aria-label="Emotes"
                 style={{ background: 'transparent', border: 'none', color: emojiOpen ? C.amber : C.textDim, cursor: 'pointer', padding: 0, display: 'flex', flexShrink: 0 }}>
@@ -540,7 +671,7 @@ function modChip(color) {
   };
 }
 
-function ChatSettingsPopover({ slowModeSec, followersOnly, saving, onSlowMode, onFollowersOnly, onClose }) {
+function ChatSettingsPopover({ slowModeSec, followersOnly, ttsEnabled, saving, onSlowMode, onFollowersOnly, onTtsEnabled, onClose }) {
   const SLOW = [0, 5, 15, 30, 60];
   return (
     <>
@@ -568,6 +699,28 @@ function ChatSettingsPopover({ slowModeSec, followersOnly, saving, onSlowMode, o
           >
             <span style={{
               position: 'absolute', top: 2, left: followersOnly ? 18 : 2,
+              width: 18, height: 18, borderRadius: '50%', background: '#fff', transition: 'left 0.15s',
+            }} />
+          </button>
+        </div>
+        {/* Effect 13. ⚠ OFF BY DEFAULT: this lets a viewer put words into the
+            ears of everyone watching, so it is the host's switch alone. */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+          <Icon name="record_voice_over" size={14} className="" />
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 12, color: C.text, fontWeight: 600 }}>Spoken messages</div>
+            <div style={{ fontSize: 10, color: C.textMuted }}>Viewers can have messages read aloud</div>
+          </div>
+          <button
+            onClick={() => onTtsEnabled(!ttsEnabled)} disabled={saving}
+            style={{
+              width: 38, height: 22, borderRadius: 11, border: 'none', position: 'relative',
+              background: ttsEnabled ? C.purpleLight : 'rgba(255,255,255,0.14)',
+              cursor: saving ? 'wait' : 'pointer', flexShrink: 0,
+            }}
+          >
+            <span style={{
+              position: 'absolute', top: 2, left: ttsEnabled ? 18 : 2,
               width: 18, height: 18, borderRadius: '50%', background: '#fff', transition: 'left 0.15s',
             }} />
           </button>
@@ -622,7 +775,11 @@ function ConnDot({ state }) {
   );
 }
 
-function ChatRow({ m, isSelf, onTap, onReport, streamId, onTranslate, overlay = false }) {
+function ChatRow({ m, isSelf, vpLevel, onTap, onReport, streamId, onTranslate, overlay = false, onCrest,
+  isHost = false, threaded = false, onThread }) {
+  // Both derived from a number that arrived WITH the message. No lookup.
+  const vpColor = chatNameColor(vpLevel);
+  // The sweep itself moved into <UserName>; only the flat colour is decided here.
   // System messages (joined / left / pinned / report-received). "joined" gets
   // the eye glyph + "started watching" treatment; the rest stay subtle.
   if (m.type === 'system') {
@@ -666,23 +823,63 @@ function ChatRow({ m, isSelf, onTap, onReport, streamId, onTranslate, overlay = 
   return (
     <motion.div
       layout
+      // ⚠ The engine finds a viewer's rows by THIS attribute. Removing it does
+      // not break the build, it just makes the thread silently find nothing.
+      {...{ [UID_ATTR]: m.uid || undefined }}
       initial={{ opacity: 0, y: 6, scale: 0.98 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: -4 }}
       transition={spring.gentle}
       onClick={onTap}
       style={{
+        position: 'relative',
         display: 'flex', gap: 8, padding: overlay ? '6px 10px' : '5px 8px',
         borderRadius: overlay ? 12 : 8, cursor: onTap && !isSelf ? 'pointer' : 'default',
         background: isTip
           ? (overlay ? 'rgba(120,80,0,0.55)' : 'rgba(240,165,0,0.10)')
           : (m.flagged
             ? (overlay ? 'rgba(120,30,30,0.55)' : 'rgba(239,68,68,0.08)')
-            : (overlay ? 'rgba(0,0,0,0.38)' : 'transparent')),
-        borderLeft: isTip ? `3px solid ${C.amber}` : (m.flagged ? `2px solid ${C.red}` : 'none'),
+            // Effect 07 — the followed viewer's messages. Built exactly like the
+            // tip highlight three lines up, because that is the pattern this file
+            // ALREADY uses and the one Twitch uses for a highlighted message: a
+            // tint plus an accent bar. NOT a drawn path. See §11 of the doc.
+            // ⚠ Ranked BELOW `flagged` on purpose: a moderation signal must never
+            // be hidden by a cosmetic one.
+            : threaded
+              ? (overlay ? 'rgba(120,95,0,0.50)' : 'rgba(245,200,66,0.10)')
+              : (overlay ? 'rgba(0,0,0,0.38)' : 'transparent')),
+        borderLeft: isTip ? `3px solid ${C.amber}`
+          : m.flagged ? `2px solid ${C.red}`
+          : threaded ? '3px solid #F5C842'
+          : 'none',
         ...(overlay ? { width: 'fit-content', maxWidth: '82%' } : {}),
       }}
     >
+      {/* Effect 07 — the holder's OWN confirmation, on their OWN screen only.
+          They can never see the thread itself (it renders in the host's chat),
+          so without this the unlock would be completely invisible to the person
+          who earned it — the avatar-orbit mistake. A gold stub in the same
+          gutter the thread uses, so it reads as "the thread starts with you". */}
+      {isSelf && isUnlocked('golden_thread', vpLevel) && <span className="vg-thread-own" />}
+
+      {/* The HOST's control. Only offered for people who actually hold the
+          unlock, so it never clutters a normal chat row. One at a time: picking
+          someone replaces whoever was threaded. */}
+      {isHost && !isSelf && isUnlocked('golden_thread', vpLevel) && (
+        <button type="button"
+          onClick={(e) => { e.stopPropagation(); onThread?.(); }}
+          aria-pressed={threaded}
+          title={threaded ? 'Stop following this thread' : 'Follow this thread'}
+          style={{ position: 'absolute', right: 4, top: 4, background: 'transparent',
+                   border: 'none', padding: 2, cursor: 'pointer', lineHeight: 0,
+                   color: threaded ? '#F5C842' : 'rgba(255,255,255,0.28)' }}>
+          {/* ⚠ `link` is used 23 times elsewhere, so it is PROVEN in the bundled
+              Material Symbols font. The first pass used `linked_services`, which
+              appears nowhere else — an unproven glyph renders as its literal
+              ligature TEXT, which is exactly the failure CLAUDE.md warns about. */}
+          <Icon name="link" size={13} className="" />
+        </button>
+      )}
       <UserAvatar src={m.avatar} size="xs" />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 11.5, lineHeight: 1.35 }}>
@@ -710,10 +907,47 @@ function ChatRow({ m, isSelf, onTap, onReport, streamId, onTranslate, overlay = 
               {fmtClock(m.ts)}
             </span>
           )}
+          {/* Name colour precedence, highest authority first:
+              1. Vanguard rank  — moderator identity, must never be overridden
+              2. VP rank colour — unlocked at L3, derived from the `vpLevel` the
+                 relay already stamps on the message, so it costs nothing
+              3. deterministic per-uid hash — the Twitch-style fallback
+              The L63 unlock swaps the flat colour for a slow gradient sweep. */}
+          {/* ⚠ The gradient sweep USED TO BE INLINE HERE. It now lives in
+              <UserName> (.vg-name-sweep in surface.css) so there is exactly one
+              implementation and every surface gets it, not just chat. Passing
+              vpLevel is what switches it on, and it costs nothing: the relay
+              already stamps the level on every message.
+
+              A Vanguard moderator's rankColor still wins here, on the wrapper,
+              because that is moderator IDENTITY and must never be overridden by
+              a cosmetic the user chose. */}
           <span style={{
-            fontWeight: 800, color: rankColor || (isSelf ? C.purpleLight : nameColor(m.uid || m.name)), marginRight: 6,
+            fontWeight: 800, marginRight: 6,
+            color: rankColor || vpColor || (isSelf ? C.purpleLight : nameColor(m.uid || m.name)),
           }}>
-            {m.name || 'guest'}
+            {/* ⚠ A Vanguard moderator gets NO level, so no tint and no sweep.
+                rankColor is moderator identity and must never be overridden by
+                a cosmetic; withholding the level is how that is enforced, since
+                <UserName> derives every cosmetic from it. */}
+            <UserName user={{ displayName: m.name, vpLevel: rankColor ? 0 : vpLevel }}
+                      masked context="chat" fallback="guest" />
+            {/* ⚠ VP rank crest, to the RIGHT of the name (founder, 2026-08-27).
+                It sat on the LEFT until then, which put a rank mark ahead of the
+                person's own identity and pushed every name in the room out of
+                alignment by a variable amount. Silent below L11 by design: if
+                every account carries one, it stops being a signal.
+                Tapping it opens the ladder card — the crest is the only place
+                most users ever see the level system. */}
+            <RankBadge
+              level={vpLevel}
+              uid={m.uid}
+              role={m.role}
+              size={13}
+              animated
+              style={{ marginLeft: 4, verticalAlign: '-2px' }}
+              onOpen={(rect) => onCrest?.({ level: vpLevel, rect, isSelf })}
+            />
             {rankColor && (
               <span style={{
                 marginLeft: 4, fontSize: 9, padding: '1px 5px', borderRadius: 99,

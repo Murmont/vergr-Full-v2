@@ -20,8 +20,22 @@ export const THEMES = {
     textMuted:   'rgba(255,255,255,0.22)',
     border:      'rgba(255,255,255,0.07)',
     iconBg:      'rgba(255,255,255,0.06)',
-    accent:      '#4DFFD4',
-    apply: { accentColor: '#4DFFD4', font: 'outfit', linkStyle: 'classic', colors: {},
+    // Brand violet, not the old cyan #4DFFD4 (audit A14). `dark` is the DEFAULT
+    // theme (defaultPage sets theme:'dark', and resolveAppearance falls back to
+    // 'dark'), so every brand-new vergr.me page rendered in a colour the brand
+    // rule excludes — cyan is aliased away in tailwind.config.js and the
+    // palette is violet / pink / gold.
+    //
+    // NOTE: A14 says to "change only the default selection to the violet theme
+    // (#7B1FFF)" and not to delete the cyan theme. There is no separate cyan
+    // theme to keep: #7B1FFF is the accent of the LIGHT theme, so switching the
+    // default that way would have made every new page light-mode, which is a
+    // far bigger change than the finding intends on a dark product. Cyan was
+    // one token on the default dark theme, and that token is what moved. Any
+    // creator who wants cyan can still set it as a custom colour, which
+    // overrides theme tokens.
+    accent:      '#7B1FFF',
+    apply: { accentColor: '#7B1FFF', font: 'outfit', linkStyle: 'classic', colors: {},
       blockStyle: { shape: 'rounded', shadowType: 'none', outline: false },
       background: { type: 'gradient', color1: '#16161c', color2: '#0b0b0d', direction: 'diagonal', overlayOpacity: 0 },
       headerStyle: { layout: 'centered', variant: 'portrait', avatarShape: 'circle' } },
@@ -739,8 +753,10 @@ export const BLOCK_REGISTRY = {
   tip:     { label: 'Tip jar',       icon: 'volunteer_activism',  tier: 'free', cat: 'commerce', make: () => ({ label: 'Buy me a coffee' }) },
   membership: { label: 'Membership', icon: 'workspace_premium',   tier: 'free', cat: 'commerce', make: () => ({ title: 'Membership' }) },
   vergr_stream:     { label: 'My live stream',  icon: 'sensors',             tier: 'free', cat: 'vergr', make: () => ({ auto: true }) },
-  // vergr_tournament retired: not offered in the picker. Renderer kept for existing pages.
-  _retired_vergr_tournament: { label: 'My tournament',   icon: 'emoji_events',        tier: 'free', cat: 'vergr', make: () => ({ tournamentId: '' }) },
+  // vergr_tournament fully removed 2026-08-19. It was already unaddable (parked
+  // under a _retired_ key so the picker skipped it); the entry itself is gone
+  // now, along with its editor form, its label and its renderer. A page saved
+  // with one renders nothing for that block. See VergrMeView.
   vergr_event:      { label: 'Ticketed event',  icon: 'confirmation_number', tier: 'free', cat: 'vergr', make: () => ({ eventId: '' }) },
   vergr_squad:      { label: 'My squad',        icon: 'groups',              tier: 'free', cat: 'vergr', make: () => ({ squadId: '' }) },
   vergr_group:      { label: 'Join my group',   icon: 'forum',               tier: 'free', cat: 'vergr', make: () => ({ groupId: '' }) },

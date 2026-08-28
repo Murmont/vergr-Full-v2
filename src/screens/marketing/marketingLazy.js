@@ -26,6 +26,7 @@ export const LegalScreen = pick('LegalScreen');
 export const AboutScreen = pick('AboutScreen');
 export const CareersScreen = pick('CareersScreen');
 export const ContactScreen = pick('ContactScreen');
+export const CreditsScreen = pick('CreditsScreen');
 export const DeleteAccountScreen = pick('DeleteAccountScreen');
 export const CodeOfConductScreen = pick('CodeOfConductScreen');
 export const ForumsScreen = pick('ForumsScreen');
@@ -35,7 +36,7 @@ export const CreatorsLandingScreen = pick('CreatorsLandingScreen');
 export const StudioToolsScreen = pick('StudioToolsScreen');
 export const PartnerProgramScreen = pick('PartnerProgramScreen');
 export const LearnLiveScreen = pick('LearnLiveScreen');
-export const LearnTournamentsScreen = pick('LearnTournamentsScreen');
+// LearnTournamentsScreen removed 2026-08-19 (tournaments retired).
 export const LearnSquadsScreen = pick('LearnSquadsScreen');
 export const LearnClipsScreen = pick('LearnClipsScreen');
 export const LearnCoinsScreen = pick('LearnCoinsScreen');
@@ -43,3 +44,7 @@ export const LearnCoinsScreen = pick('LearnCoinsScreen');
 // Vergr.me link-in-bio landing (own module, pulls the marketing shell chunk).
 export const LinkInBioScreen = lazy(() => import('./LinkInBioScreen'));
 
+
+// Public changelog. Its own module so the marketing shell chunk is not pulled
+// in for a page that does not use it.
+export const WhatsNewScreen = lazy(() => import('./WhatsNewScreen'));

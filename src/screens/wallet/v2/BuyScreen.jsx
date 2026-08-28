@@ -1,7 +1,7 @@
 // Buy coins (v2) — web + desktop + mobile-web presentation.
 // The native APK uses NativeBuyScreen (separate file). Both share ONE checkout
 // implementation via useBuyCheckout (money flow — never duplicated).
-//   • 8 fixed COIN_PACKS as the headline + a Custom amount tab (€10 floor)
+//   • 8 fixed COIN_PACKS as the headline + a Custom amount tab ($10 floor)
 //   • PayRam checkout opens in a popup window; we poll until settle, credit
 //     lands via the wallet snapshot. No redirect URL needed.
 
@@ -17,23 +17,34 @@ import { COIN_PACKS, packValueBonusPct, MIN_SHOWN_VALUE_BONUS_PCT } from '../../
 const ACTIVE_COIN_PACKS = COIN_PACKS;
 import {
   WalletCard, WalletButton, SectionLabel, FeeBreakdown,
-  CoinGlyph, WALLET_TOKENS, fmtNum, fmtEUR, fmtUsd, AnimatedNumber,
+  // fmtEUR is deliberately NOT imported. Coins are natively USD and fmtEUR is a
+  // EUR->local CONVERTER, so importing it here is how A27 happened. Use fmtUsd
+  // for charged amounts, and <LocalPrice usd=... /> for an estimate beside them.
+  CoinGlyph, WALLET_TOKENS, fmtNum, fmtUsd, AnimatedNumber,
 } from '../../../components/wallet/primitives';
 import { useUI } from '../../../context/UIContext';
 import { useBuyCheckout, MIN_CUSTOM_USD, COIN_PRICE_USD, checkoutCartViaPlay } from './buyCheckout';
 import { auth } from '../../../firebase/config';
 import Icon from '../../../components/Icon';
 import LocalPrice from '../../../components/LocalPrice';
+import { hasLocalEstimate } from '../../../utils/currency';
 import PriceQuote from '../../../components/wallet/PriceQuote';
 import CartDrawer from '../../../components/wallet/CartDrawer';
+import { BonusPacksTab, BoostsTab } from '../../../components/wallet/StoreTabs';
 import { useCart } from '../../../context/CartContext';
 import useResponsive from '../../../hooks/useResponsive';
 import { getCoinPriceQuote } from '../../../firebase/firestore';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 
 export default function BuyScreen() {
   const { showToast } = useUI();
   const [tab, setTab] = useState('packs');
-  const [customEUR, setCustomEUR] = useState(20);
+  // USD, not EUR. The ladder was re-denominated to native USD on 2026-08-11 and
+  // this state kept its old name, which is what caused the custom-amount panel
+  // to show four different prices for one purchase (audit A27): the name led
+  // the chips into fmtEUR, which CONVERTS EUR to local currency and so inflated
+  // every label by the live FX rate.
+  const [customUSD, setCustomUSD] = useState(20);
   const { checkout, startCheckout, cancelCheckout } = useBuyCheckout(showToast);
   const cart = useCart();
   const navigate = useNavigate();
@@ -95,7 +106,19 @@ export default function BuyScreen() {
     if (pack) startCheckout({ packSku: pack.id }, pack.name);
   }, []);
 
-  const customCoins = Math.floor((parseFloat(customEUR) || 0) / COIN_PRICE_USD);
+  const customCoins = Math.floor((parseFloat(customUSD) || 0) / COIN_PRICE_USD);
+
+  // The active coin sale, if any. Read from the server so the badge can never
+  // promise a bonus the server will not credit, and so a promo that has hit its
+  // cap stops advertising itself.
+  const [promo, setPromo] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    httpsCallable(getFunctions(undefined, 'europe-west1'), 'getActiveCoinPromo')({})
+      .then((r) => { if (alive) setPromo(r.data?.promo || null); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
 
   // The whole ladder priced in ONE server call: regional multiplier applied,
   // then converted to the USD figure that will actually be charged. The screen
@@ -152,6 +175,8 @@ export default function BuyScreen() {
       }}>
         <TabBtn active={tab === 'packs'}  onClick={() => setTab('packs')}>Coin packs</TabBtn>
         <TabBtn active={tab === 'custom'} onClick={() => setTab('custom')}>Custom amount</TabBtn>
+        <TabBtn active={tab === 'bonuses'} onClick={() => setTab('bonuses')}>VP bonuses</TabBtn>
+        <TabBtn active={tab === 'boosts'} onClick={() => setTab('boosts')}>Boosts</TabBtn>
       </div>
 
       {tab === 'packs' && (
@@ -160,7 +185,7 @@ export default function BuyScreen() {
           gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
         }}>
           {ACTIVE_COIN_PACKS.map(p => (
-            <PackCard key={p.id} pack={p}
+            <PackCard key={p.id} pack={p} promo={promo}
               quote={ladder?.packs?.[p.id]}
               busy={checkout?.status === 'waiting'}
               onAdd={() => addToCart(p)}
@@ -170,10 +195,15 @@ export default function BuyScreen() {
       )}
 
       {tab === 'custom' && (
-        <CustomTab eur={customEUR} setEur={setCustomEUR}
+        <CustomTab usd={customUSD} setUsd={setCustomUSD}
           busy={checkout?.status === 'waiting'}
           onContinue={() => startCheckout({ customCoins }, `${fmtNum(customCoins)} coins`)} />
       )}
+
+      {/* Same cards as the coin packs, different tone. StoreTabs is shared with
+          /prestige so the two surfaces cannot drift apart. */}
+      {tab === 'bonuses' && <BonusPacksTab />}
+      {tab === 'boosts' && <BoostsTab />}
 
       {checkout && (
         <CheckoutOverlay checkout={checkout} onCancel={cancelCheckout} />
@@ -228,14 +258,39 @@ function CheckoutOverlay({ checkout, onCancel }) {
   );
 }
 
-function CustomTab({ eur, setEur, onContinue, busy }) {
+// EVERY FIGURE ON THIS PANEL IS USD. It is the live checkout, so the rule is
+// the one stated on fmtUsd in primitives.jsx: never format a charged amount in
+// a currency it will not be charged in.
+//
+// Audit A27 — this panel showed FOUR different numbers for one purchase
+// ($23.06 chip / €20 input / $20.00 "You pay" / $19.99 CTA). Causes, all fixed
+// here, and worth knowing before touching it again:
+//
+//   1. The state was still called `eur` after the 2026-08-11 re-denomination to
+//      native USD, so the chips were passed to `fmtEUR`. Despite the name that
+//      is a CONVERTER, not a formatter: it reads its argument as EUR and
+//      returns local currency, inflating a USD 20 into "$23.06".
+//   2. The input carried a hardcoded `€` in front of a USD number.
+//   3. The processing-fee line ran through `fmtEUR` too (this one is not in the
+//      audit write-up, it was found while fixing the rest).
+//   4. "You pay" echoed the amount TYPED, but you are charged for whole coins,
+//      and `coins` is floored. $20 buys 1574 coins = $19.99. So the CTA's
+//      $19.99 was RIGHT and "You pay" was the wrong one — the opposite of what
+//      the audit assumed. "You pay" now reads from the server quote.
+function CustomTab({ usd, setUsd, onContinue, busy }) {
   // Re-quoted as the amount changes, debounced so dragging the slider does not
   // fire a call per pixel. The quote is the ONLY source of the charged figure.
   const [customQuote, setCustomQuote] = useState(null);
-  const eurNum = parseFloat(eur) || 0;
-  const coins = Math.floor(eurNum / COIN_PRICE_USD);
-  const valid = eurNum >= MIN_CUSTOM_USD;
-  const procFee = eurNum * 0.015; // illustrative card-processor fee (3rd party)
+  const usdNum = parseFloat(usd) || 0;
+  const coins = Math.floor(usdNum / COIN_PRICE_USD);
+  const valid = usdNum >= MIN_CUSTOM_USD;
+
+  // What the card is actually charged: the server's quote once it lands, and
+  // until then the floored catalogue value, which is what you are buying and
+  // already accounts for the rounding that made "You pay" wrong. Never the
+  // raw typed amount.
+  const chargedUsd = customQuote ? Number(customQuote.amountUSD) : coins * COIN_PRICE_USD;
+  const procFee = chargedUsd * 0.015; // illustrative card-processor fee (3rd party)
 
   useEffect(() => {
     if (!valid) { setCustomQuote(null); return undefined; }
@@ -255,13 +310,13 @@ function CustomTab({ eur, setEur, onContinue, busy }) {
       <SectionLabel>Amount</SectionLabel>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
         {[10, 20, 50, 100, 250].map(n => (
-          <button key={n} onClick={() => setEur(n)} style={{
+          <button key={n} onClick={() => setUsd(n)} style={{
             padding: '8px 14px', borderRadius: 10, fontSize: 13, fontWeight: 600,
-            background: eur === n ? WALLET_TOKENS.violet : WALLET_TOKENS.surface2,
-            color: eur === n ? '#fff' : WALLET_TOKENS.textSecondary,
-            border: `1px solid ${eur === n ? WALLET_TOKENS.violet : WALLET_TOKENS.hairlineStrong}`,
+            background: usd === n ? WALLET_TOKENS.violet : WALLET_TOKENS.surface2,
+            color: usd === n ? '#fff' : WALLET_TOKENS.textSecondary,
+            border: `1px solid ${usd === n ? WALLET_TOKENS.violet : WALLET_TOKENS.hairlineStrong}`,
             cursor: 'pointer',
-          }}>{fmtEUR(n)}</button>
+          }}>{fmtUsd(n)}</button>
         ))}
       </div>
       <div style={{ position: 'relative', marginBottom: 14 }}>
@@ -269,9 +324,9 @@ function CustomTab({ eur, setEur, onContinue, busy }) {
           position: 'absolute', left: 18, top: '50%', transform: 'translateY(-50%)',
           fontSize: 28, fontWeight: 700, color: WALLET_TOKENS.goldLight,
           fontFamily: 'DM Mono, monospace',
-        }}>€</span>
-        <input value={eur}
-          onChange={(e) => setEur(e.target.value.replace(/[^\d.]/g, ''))}
+        }}>$</span>
+        <input value={usd}
+          onChange={(e) => setUsd(e.target.value.replace(/[^\d.]/g, ''))}
           inputMode="decimal"
           style={{
             width: '100%', padding: '14px 14px 14px 42px',
@@ -300,32 +355,34 @@ function CustomTab({ eur, setEur, onContinue, busy }) {
 
       <FeeBreakdown
         items={[
-          { label: 'You pay',                  value: fmtUsd(eurNum) },
-          { label: 'Payment processing (~1.5%)', value: `-${fmtEUR(procFee)}`, tone: 'muted' },
+          { label: 'You pay',                  value: fmtUsd(chargedUsd) },
+          { label: 'Payment processing (~1.5%)', value: `-${fmtUsd(procFee)}`, tone: 'muted' },
           { label: 'VERGR fee',                value: fmtUsd(0), tone: 'muted' },
         ]}
         total={`${fmtNum(coins)} coins`}
         totalLabel="You receive"
       />
 
-      {/* The charged figure, quoted by the server with the regional multiplier
-          and the live FX rate already applied, so it matches the statement. The
-          EUR line above is the catalogue price the coins are counted from. */}
+      {/* The charged figure, quoted by the server with the live FX rate already
+          applied, so it matches the statement. This and the "You pay" row above
+          are now the SAME number by construction: both read `chargedUsd`, which
+          is this quote once it lands. They used to disagree by the rounding to
+          whole coins. */}
       {valid && (
         <div style={{ marginTop: 10 }}>
           <PriceQuote
             quote={customQuote}
             size="sm"
-            fallback={(
+            fallback={hasLocalEstimate(chargedUsd) ? (
               <div style={{ fontSize: 11, color: WALLET_TOKENS.textMuted }}>
-                <LocalPrice usd={eurNum} prefix="≈ " /> · charged in USD
+                <LocalPrice usd={chargedUsd} prefix="≈ " /> · charged in USD
               </div>
-            )}
+            ) : null}
           />
         </div>
       )}
 
-      {!valid && eur && (
+      {!valid && usd && (
         <div style={{ marginTop: 12, fontSize: 12, color: '#FCD34D' }}>
           Minimum is {fmtUsd(MIN_CUSTOM_USD)} (set by our card processor).
         </div>
@@ -378,7 +435,18 @@ const BADGE_TONES = {
  * - The whole card is the buy target. Two equal buttons made a shelf item look
  *   like a settings row; the basket moves to a quiet "+" in the corner.
  */
-function PackCard({ pack, onBuy, onAdd, busy, quote }) {
+function PackCard({ pack, onBuy, onAdd, busy, quote, promo }) {
+  // What THIS pack gets from the active sale. The server decides whether the
+  // pack qualifies; this only mirrors that decision for display.
+  const promoBonus = (() => {
+    if (!promo) return 0;
+    if (promo.packIds && !promo.packIds.includes(pack.id)) return 0;
+    if (promo.minSpendUSD && pack.priceUSD < promo.minSpendUSD) return 0;
+    if (promo.kind === 'coins_pct' || promo.kind === 'vp_pct') {
+      return Math.floor(pack.coins * promo.value / 100);
+    }
+    return Math.floor(promo.value);
+  })();
   const tone = BADGE_TONES[pack.badgeStyle] || BADGE_TONES.popular;
   const isVp = pack.badgeStyle === 'vp';
   const accent = isVp ? WALLET_TOKENS.violetLight : WALLET_TOKENS.gold;
@@ -465,6 +533,20 @@ function PackCard({ pack, onBuy, onAdd, busy, quote }) {
         {pack.vpBonus > 0 && (
           <div style={{ fontSize: 11.5, fontWeight: 700, color: WALLET_TOKENS.violetLight, marginBottom: 4 }}>
             +{fmtNum(pack.vpBonus)} VP
+          </div>
+        )}
+
+        {/* Sale bonus. The NUMBER comes from the server (getActiveCoinPromo),
+            never computed here, so what the card promises is by construction
+            what the server will credit. Per reference-client-side-price-constant
+            the client is told, it does not decide. */}
+        {promoBonus > 0 && (
+          <div style={{
+            display: 'inline-block', marginBottom: 5, padding: '2px 9px', borderRadius: 999,
+            fontSize: 11.5, fontWeight: 800,
+            background: 'rgba(34,197,94,0.14)', border: '1px solid rgba(34,197,94,0.4)', color: '#4ADE80',
+          }}>
+            +{fmtNum(promoBonus)} {promo.kind.startsWith('vp_') ? 'VP' : 'coins'} free
           </div>
         )}
 

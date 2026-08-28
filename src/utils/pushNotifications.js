@@ -46,7 +46,15 @@ function getNativeFcmToken(timeoutMs = 8000) {
   });
 }
 
+// This device's FCM token, kept in memory so anything that needs to subscribe
+// the device to a topic (official channels) does not have to re-run the whole
+// permission + getToken dance. Both the native and web paths funnel through
+// saveFcmToken, so this is the one place it has to be set.
+let currentPushToken = null;
+export const getPushToken = () => currentPushToken;
+
 async function saveFcmToken(userId, token) {
+  currentPushToken = token;
   await setDoc(doc(db, 'users', userId, 'private', 'fcm'), {
     tokens: arrayUnion(token),
     updatedAt: new Date(),
@@ -162,11 +170,9 @@ export const setupPushNotifications = async (userId) => {
 
     if (token) {
       // Save token to user's private FCM doc (same path the TypeScript functions read from)
-      await setDoc(doc(db, 'users', userId, 'private', 'fcm'), {
-        tokens: arrayUnion(token),
-        updatedAt: new Date(),
-      }, { merge: true });
-      subscribeAnnouncementsTopic(token);
+      // Same single point as the native path so getPushToken() is populated on
+      // web too. Hand-rolling the write here was how the two paths drifted.
+      await saveFcmToken(userId, token);
 
       console.log('Push notifications enabled');
       return token;

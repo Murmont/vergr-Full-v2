@@ -9,6 +9,7 @@ import Icon from '../../components/Icon';
 import { useLayout } from '../../context/LayoutContext';
 import useResponsive from '../../hooks/useResponsive';
 import { timeAgo } from '../../utils/helpers';
+import UserName from '../../components/UserName';
 
 const MAX_CHARS = 500;
 
@@ -94,7 +95,7 @@ export default function QuotePostScreen() {
             <UserAvatar src={profile?.avatar || profile?.photoURL} size={44} />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-brand-violet-light text-xs font-dmmono mb-2">@{profile?.username || 'you'}</p>
+            <p className="text-brand-violet-light text-xs font-dmmono mb-2"><UserName user={profile} masked handle fallback={'you'} /></p>
             <textarea
               autoFocus
               value={content}
@@ -115,8 +116,8 @@ export default function QuotePostScreen() {
           <div className="rounded-2xl border border-white/[0.06] bg-surface-1/30 p-4 ml-12">
             <div className="flex items-center gap-2 mb-2">
               <UserAvatar src={originalPost.author?.avatar} size={20} />
-              <span className="text-text-primary text-xs font-semibold">{originalPost.author?.displayName}</span>
-              <span className="text-text-muted text-xs">@{originalPost.author?.username}</span>
+              <span className="text-text-primary text-xs font-semibold"><UserName user={originalPost.author} masked /></span>
+              <span className="text-text-muted text-xs"><UserName user={originalPost.author} masked handle /></span>
               <span className="text-text-muted text-xs">· {timeAgo(originalPost.createdAt)}</span>
             </div>
             {originalPost.content && (

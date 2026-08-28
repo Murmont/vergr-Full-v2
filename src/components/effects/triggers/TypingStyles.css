@@ -1,0 +1,241 @@
+/* Typing indicator glyphs. Effect 06. Doc: docs/effects/06-typing-indicator.md
+ *
+ * Colocated with the component that owns it (the FirstBootIntro.css /
+ * GlassSkeletons.css convention), because README.md's first rule is that an
+ * effect owns its look end to end. Nothing outside TypingStyles.jsx may use
+ * these classes.
+ *
+ * TWO CUSTOM PROPERTIES DRIVE EVERYTHING:
+ *   --vg-typing-d    the base unit (dot diameter). Every other dimension is a
+ *                    multiple of it, so one number resizes a whole style.
+ *   --vg-typing-ink  the colour. The typist's accent when they have equipped a
+ *                    style, the muted grey otherwise.
+ *
+ * ⚠ ALL MOTION IS CSS. A typing indicator can sit on screen for minutes and a
+ * group chat can hold several at once, so a JS ticker per indicator is a real
+ * cost for something nobody is looking directly at.
+ *
+ * ⚠ EVERY STAGGER IS NEGATIVE. A positive delay means all three dots sit at
+ * their 0% pose on the first frame and the wave takes a full cycle to
+ * establish. Typing indicators mount and unmount constantly, so that first
+ * cycle is most of what anyone ever sees.
+ * Reference: https://www.designdrastic.com/snippet/typing-indicator-animation/
+ */
+
+.vg-typing {
+  --vg-typing-d: 6px;
+  --vg-typing-ink: var(--text-muted, #6B7280);
+  display: inline-flex;
+  align-items: center;
+  gap: calc(var(--vg-typing-d) * 0.5);
+  vertical-align: middle;
+  line-height: 0;
+  flex: none;
+}
+
+.vg-typing i {
+  display: block;
+  background: var(--vg-typing-ink);
+}
+
+/* ── dots — the reference, and the default for everybody ──────────────
+ * Scale AND opacity, 1.4s, negative stagger.
+ *
+ * ⚠ DELIBERATE DEVIATION FROM THE REFERENCE, and the only one: the source
+ * rests at `scale(0); opacity:.5`, so each dot is entirely ABSENT for 60% of
+ * the cycle. At 8px in a wide bubble that reads as a wave; at the 5-7px this
+ * app uses it reads as dots disappearing, and an inline indicator next to a
+ * sentence looked like a rendering fault. The floor is scale(.55)/opacity(.42),
+ * which keeps both channels doing the work while the shape never vanishes.
+ */
+.vg-typing--dots i {
+  width: var(--vg-typing-d);
+  height: var(--vg-typing-d);
+  border-radius: 50%;
+  animation: vg-typing-dots 1.4s infinite both cubic-bezier(0.45, 0, 0.55, 1);
+}
+.vg-typing--dots i:nth-child(1) { animation-delay: -0.32s; }
+.vg-typing--dots i:nth-child(2) { animation-delay: -0.16s; }
+@keyframes vg-typing-dots {
+  0%, 80%, 100% { transform: scale(0.55); opacity: 0.42; }
+  40%           { transform: scale(1);    opacity: 1; }
+}
+
+/* ── wave — the same three dots, travelling ─────────────────────────── */
+.vg-typing--wave i {
+  width: var(--vg-typing-d);
+  height: var(--vg-typing-d);
+  border-radius: 50%;
+  animation: vg-typing-wave 1.3s infinite both cubic-bezier(0.45, 0, 0.55, 1);
+}
+.vg-typing--wave i:nth-child(1) { animation-delay: -0.3s; }
+.vg-typing--wave i:nth-child(2) { animation-delay: -0.15s; }
+@keyframes vg-typing-wave {
+  0%, 70%, 100% { transform: translateY(0);                             opacity: 0.45; }
+  35%           { transform: translateY(calc(var(--vg-typing-d) * -1)); opacity: 1; }
+}
+
+/* ── bars — a voice waveform ─────────────────────────────────────────
+ * scaleY off a centred origin, so it grows in both directions like a level
+ * meter rather than sprouting from a baseline.
+ */
+.vg-typing--bars i {
+  width: calc(var(--vg-typing-d) * 0.58);
+  height: calc(var(--vg-typing-d) * 2);
+  border-radius: calc(var(--vg-typing-d) * 0.3);
+  transform-origin: 50% 50%;
+  animation: vg-typing-bars 1.05s infinite both cubic-bezier(0.4, 0, 0.6, 1);
+}
+.vg-typing--bars i:nth-child(1) { animation-delay: -0.24s; }
+.vg-typing--bars i:nth-child(2) { animation-delay: -0.12s; }
+@keyframes vg-typing-bars {
+  0%, 100% { transform: scaleY(0.3); opacity: 0.55; }
+  50%      { transform: scaleY(1);   opacity: 1; }
+}
+
+/* ── orbit — one light circling a track ──────────────────────────────
+ * Rhymes with the avatar orbit (docs/effects/15) on purpose: the same person's
+ * two cosmetics should look related. The travelling light is a ::after on a
+ * rotating wrapper, so ONE transform animates and the light itself never
+ * re-lays out.
+ */
+.vg-typing--orbit {
+  position: relative;
+  width: calc(var(--vg-typing-d) * 2.8);
+  height: calc(var(--vg-typing-d) * 2.8);
+  display: inline-block;
+}
+.vg-typing--orbit .vg-typing-track {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 1px solid var(--vg-typing-ink);
+  opacity: 0.26;
+  background: none;
+}
+.vg-typing--orbit .vg-typing-spin {
+  position: absolute;
+  inset: 0;
+  background: none;
+  animation: vg-typing-spin 1.5s linear infinite;
+}
+.vg-typing--orbit .vg-typing-spin::after {
+  content: '';
+  position: absolute;
+  top: calc(var(--vg-typing-d) * -0.3);
+  left: 50%;
+  width: calc(var(--vg-typing-d) * 0.78);
+  height: calc(var(--vg-typing-d) * 0.78);
+  margin-left: calc(var(--vg-typing-d) * -0.39);
+  border-radius: 50%;
+  background: var(--vg-typing-ink);
+  box-shadow: 0 0 calc(var(--vg-typing-d) * 1.1) var(--vg-typing-ink);
+}
+@keyframes vg-typing-spin { to { transform: rotate(360deg); } }
+
+/* ── pixel — hard blink, no interpolation ────────────────────────────
+ * `steps(1, end)` is the whole point: every other style eases, this one snaps.
+ * Three squares lit one at a time for exactly a third of the cycle.
+ */
+.vg-typing--pixel i {
+  width: var(--vg-typing-d);
+  height: var(--vg-typing-d);
+  border-radius: 1px;
+  animation: vg-typing-pixel 0.9s steps(1, end) infinite both;
+}
+.vg-typing--pixel i:nth-child(1) { animation-delay: -0.6s; }
+.vg-typing--pixel i:nth-child(2) { animation-delay: -0.3s; }
+@keyframes vg-typing-pixel {
+  0%, 33%   { opacity: 1; }
+  34%, 100% { opacity: 0.2; }
+}
+
+/* ── comet — a light sweeping a track ────────────────────────────────
+ * ⚠ SEAMLESS BY ARITHMETIC, exactly as docs/effects/03 §0.1 requires. The image
+ * is 200% wide and holds TWO IDENTICAL cycles (stops at 0/12/26/50 repeated at
+ * 50/62/76/100). Animating background-position across its full range moves the
+ * image by (200% - 100%) = one whole cycle, so frame 0 and frame 1 are the same
+ * pixels and there is no snap. 90deg, so there is no vertical component to
+ * misalign. Do not "improve" these numbers without reading that section.
+ */
+.vg-typing--comet {
+  position: relative;
+  width: calc(var(--vg-typing-d) * 5.4);
+  height: calc(var(--vg-typing-d) * 0.62);
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.1);
+  display: inline-block;
+}
+.vg-typing--comet i {
+  position: absolute;
+  inset: 0;
+  /* ⚠ REQUIRED, and its absence was invisible in every numeric measurement.
+     `.vg-typing i` sets `background: var(--vg-typing-ink)`, i.e. a solid
+     background-COLOUR. Setting only `background-image` below paints the
+     gradient ON TOP of that solid fill, so the track was a solid violet bar at
+     every phase and the light could never be seen. The timing, the travel and
+     even the seamless-loop assertion all passed while it looked like this,
+     because a solid bar loops perfectly. Only rendering it showed the truth. */
+  background-color: transparent;
+  /* ⚠ ASYMMETRIC ON PURPOSE, and this is the second version. The first put the
+     light in the middle of a symmetric ramp (transparent → ink → transparent
+     over 26% of the image). RENDERED at the real 38x4, that lit half the track
+     with a soft edge at both ends and read as a solid violet pill — not a light
+     travelling, just a filled bar. Measured, not guessed: the lit span was
+     ~19px of a 38px element.
+     A comet is a SHARP HEAD with a TAIL BEHIND IT. The light travels rightward
+     (the image slides right), so the long ramp is on the left and the cut is on
+     the right: transparent to 26%, fading up to full ink by 44%, then off in 1%.
+     Periodicity is preserved — every stop repeats exactly 50% later — which is
+     what keeps the loop seamless. */
+  background-image: linear-gradient(
+    90deg,
+    rgba(0, 0, 0, 0) 0%,  rgba(0, 0, 0, 0) 26%, var(--vg-typing-ink) 44%, rgba(0, 0, 0, 0) 45%, rgba(0, 0, 0, 0) 50%,
+    rgba(0, 0, 0, 0) 50%, rgba(0, 0, 0, 0) 76%, var(--vg-typing-ink) 94%, rgba(0, 0, 0, 0) 95%, rgba(0, 0, 0, 0) 100%
+  );
+  background-size: 200% 100%;
+  background-repeat: no-repeat;
+  animation: vg-typing-comet 1.5s linear infinite;
+}
+@keyframes vg-typing-comet {
+  from { background-position: 100% 50%; }
+  to   { background-position: 0% 50%; }
+}
+
+/* ── Reduced motion ──────────────────────────────────────────────────
+ * ⚠ `animation: none` ALONE IS A BUG HERE. Every style above rests at a dim or
+ * shrunk pose, so switching the animation off without also declaring a resting
+ * appearance leaves a near-invisible indicator, and the user is no longer told
+ * that somebody is typing. Each style therefore states its static form.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .vg-typing i,
+  .vg-typing .vg-typing-spin {
+    animation: none !important;
+  }
+  .vg-typing--dots i,
+  .vg-typing--wave i,
+  .vg-typing--pixel i { transform: none; opacity: 0.75; }
+  .vg-typing--bars i  { transform: scaleY(0.72); opacity: 0.75; }
+  .vg-typing--comet i { background-position: 68% 50%; opacity: 0.85; }
+}
+
+/* ⚠ THERE ARE TWO REDUCED-MOTION SWITCHES IN THIS APP AND THE MEDIA QUERY ONLY
+   CATCHES ONE. Settings → Appearance → Reduced Motion is Vergr's OWN control:
+   `DisplaySettingsApplier` sets `html[data-reduced-motion="true"]` and
+   `index.css` answers it with a blanket
+   `animation-duration: 0.001ms; animation-iteration-count: 1`.
+   That does not stop an animation, it FAST-FORWARDS it to its final keyframe
+   and (because these declare `both`) leaves it there. The final frames are the
+   RESTING poses: `pixel` ends at opacity .2 and `dots` at .42, so a user with
+   the app's own setting on got an all-but-invisible indicator and no idea
+   anybody was typing. Found by reading that rule, not by testing, because the
+   OS-level emulation in the harness never triggers it.
+   The same static poses are therefore declared for the attribute too. */
+html[data-reduced-motion="true"] .vg-typing--dots i,
+html[data-reduced-motion="true"] .vg-typing--wave i,
+html[data-reduced-motion="true"] .vg-typing--pixel i { transform: none !important; opacity: 0.75 !important; }
+html[data-reduced-motion="true"] .vg-typing--bars i  { transform: scaleY(0.72) !important; opacity: 0.75 !important; }
+html[data-reduced-motion="true"] .vg-typing--comet i { background-position: 68% 50% !important; opacity: 0.85 !important; }
+html[data-reduced-motion="true"] .vg-typing--orbit .vg-typing-track { opacity: 0.26 !important; }

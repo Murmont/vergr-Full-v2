@@ -18,6 +18,7 @@ import SquadInfoRail from '../../components/squad/SquadInfoRail';
 import { roleKey, roleMeta, avatarClass, initials, nameOf, compact } from '../../components/squad/squadHelpers';
 import usePresenceMap from '../../hooks/usePresenceMap';
 import { presenceVisible } from '../../utils/presence';
+import UserName from '../../components/UserName';
 
 const GROUPS = [
   { key: 'leader', label: 'Leader', color: 'var(--gold-light)' },
@@ -140,7 +141,7 @@ export default function SquadMembersScreen() {
             {isMe && <span style={{ fontSize: 9, color: 'var(--cyan)', fontWeight: 700 }}>(You)</span>}
             {m.user?.isVerified && <span className="material-symbols-outlined verified-tick">verified</span>}
           </div>
-          <div className="handle">@{m.user?.username || 'user'}</div>
+          <div className="handle"><UserName user={m.user} masked handle fallback={'user'} /></div>
         </div>
         <div className="m-cell">
           <div className="lbl">Role</div>

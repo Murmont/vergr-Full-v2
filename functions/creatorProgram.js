@@ -288,9 +288,12 @@ exports.adminDecideCreatorApplication = functions.https.onCall({ region: REGION 
   //
   // Atomic and idempotent: the pending pot is read and zeroed inside the same
   // transaction, so approving twice cannot double-credit.
+  // Required at function scope, not inside the approve branch: the approval
+  // notification below formats the amount and runs outside that branch.
+  const { shareForEarnings, COIN_MICRO_USD, microUsdToStr } = require('./coinLedger');
+
   let converted = null;
   if (decision === 'approve') {
-    const { shareForEarnings } = require('./coinLedger');
     converted = await db.runTransaction(async (tx) => {
       const wRef = db.collection('wallets').doc(targetUid);
       const uRef = db.collection('users').doc(targetUid);
@@ -301,12 +304,29 @@ exports.adminDecideCreatorApplication = functions.https.onCall({ region: REGION 
       if (pending <= 0) return null;
 
       const share = shareForEarnings(Number(w.totalEarnedCoinsGross || 0));
-      const gems = Math.floor(pending * share);
+
+      // The pending coins are STILL SITTING IN THE WALLET. settleEarnedShare's
+      // non-creator branch only records the amount on pendingCreatorCoins; it
+      // deliberately leaves the coins alone so a non-creator can still spend
+      // them. Accruing the share here without removing them paid this creator
+      // twice: once as spendable coins, once as revenue share owed. Clamp to
+      // what is actually there, exactly as settleEarnedShare does, because they
+      // may have spent some of it while waiting for approval.
+      const movable = Math.min(
+        pending,
+        Math.max(0, Math.floor(w.earnedBalance || 0)),
+        Math.max(0, Math.floor(w.balance || 0)),
+      );
+      const owedForMovable = Math.floor(movable * share * COIN_MICRO_USD);
 
       tx.set(wRef, {
-        gems: FieldValue.increment(gems),
-        totalEarnedCoinsGross: FieldValue.increment(pending),
-        totalGemsEarned: FieldValue.increment(gems),
+        balance: FieldValue.increment(-movable),
+        earnedBalance: FieldValue.increment(-movable),
+        owedMicroUsd: FieldValue.increment(owedForMovable),
+        totalOwedMicroUsd: FieldValue.increment(owedForMovable),
+        // NOT incremented: earnedCoinCredit already counted these coins into
+        // totalEarnedCoinsGross when they were received. Counting again here
+        // would double this creator's progress up the rate ladder.
         updatedAt: now,
       }, { merge: true });
       tx.set(uRef, { pendingCreatorCoins: 0 }, { merge: true });
@@ -315,14 +335,16 @@ exports.adminDecideCreatorApplication = functions.https.onCall({ region: REGION 
       tx.set(db.collection('transactions').doc(), {
         userId: targetUid,
         type: 'earned_auto_converted',
-        currency: 'gems',
-        amount: gems,
-        description: `Earned ${gems} gems — your ${Math.round(share * 100)}% share of ${pending} coins received before you became a creator`,
-        meta: { coins: pending, gems, share, source: 'creator_approval' },
+        earning: true,
+        currency: 'usd',
+        amountMicroUsd: owedForMovable,
+        amount: owedForMovable,
+        description: `Earned ${microUsdToStr(owedForMovable)} — your ${Math.round(share * 100)}% share of ${movable} coins received before you became a creator`,
+        meta: { coins: movable, owedMicroUsd: owedForMovable, share, source: 'creator_approval' },
         createdAt: now,
       });
 
-      return { coins: pending, gems, share };
+      return { coins: movable, owedMicroUsd: owedForMovable, share };
     });
   }
 
@@ -345,7 +367,7 @@ exports.adminDecideCreatorApplication = functions.https.onCall({ region: REGION 
     title: decision === 'approve' ? 'You are a Vergr creator' : 'Creator application update',
     body: decision === 'approve'
       ? (converted
-        ? `Approved. The ${converted.coins} coins you received before applying have been credited as ${converted.gems} gems.`
+        ? `Approved. The ${converted.coins} coins you received before applying now earn you ${microUsdToStr(converted.owedMicroUsd)}.`
         : 'Your application was approved. You can now earn a revenue share on Vergr.')
       : `Your application was not approved this time. You can apply again in ${REAPPLY_COOLDOWN_DAYS} days.`,
     read: false,

@@ -8,6 +8,7 @@
 import { useEffect, useRef, useState } from 'react';
 import CachedImg from '../CachedImg';
 import Icon from '../Icon';
+import UserName from '../UserName';
 
 // Deterministic per-uid banner gradient. Hues constrained to the brand family
 // (violet → blue → pink range, never cyan/green) so every fallback stays
@@ -48,7 +49,10 @@ export function CountUpNumber({ value = 0, format = (n) => n.toLocaleString(), c
 
 // Fixed mini-header shown once the big header scrolls away. transform/opacity
 // only; pointer-events disabled while hidden so it never blocks taps.
-export function MiniDockHeader({ show, avatar, name, onBack }) {
+// `user` carries the identity so the docked name gets the same cosmetics as the
+// big header. `name` stays a STRING and is still required: it seeds the initial
+// letter of the fallback avatar, which needs a character, not an element.
+export function MiniDockHeader({ show, avatar, name, user, onBack }) {
   return (
     <div
       className="fixed top-0 left-0 right-0 z-40 flex items-center gap-3 px-3 h-12 transition-all duration-200"
@@ -69,7 +73,9 @@ export function MiniDockHeader({ show, avatar, name, onBack }) {
       {avatar
         ? <CachedImg src={avatar} permanent alt="" className="w-7 h-7 rounded-full object-cover shrink-0" />
         : <span className="w-7 h-7 rounded-full shrink-0 flex items-center justify-center text-[12px] font-black text-white" style={{ background: 'linear-gradient(135deg,#7b1fff,#3b82f6)' }}>{(name?.[0] || 'V').toUpperCase()}</span>}
-      <span className="text-[14px] font-extrabold text-white truncate">{name}</span>
+      <span className="text-[14px] font-extrabold text-white truncate">
+        {user ? <UserName user={user} masked context="profile" fallback={name} /> : name}
+      </span>
     </div>
   );
 }

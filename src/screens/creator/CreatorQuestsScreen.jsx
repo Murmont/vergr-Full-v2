@@ -1,18 +1,14 @@
 // src/screens/creator/CreatorQuestsScreen.jsx
 // Creator quests — VP rewards only (never coins) to protect the coin economy.
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { IS_NATIVE_BUILD } from '../../utils/platform';
 import { useAuth } from '../../context/AuthContext';
 import { useUI } from '../../context/UIContext';
-import {
-  claimQuestReward, getQuestClaims,
-  claimMilestoneReward, getMilestoneClaims, getTournamentCoinsEarned,
-} from '../../firebase/firestore';
+import { claimCreatorQuest, getCreatorQuests } from '../../firebase/firestore';
 import TopBar from '../../components/TopBar';
 import Icon from '../../components/Icon';
 import { useLayout } from '../../context/LayoutContext';
 import useResponsive from '../../hooks/useResponsive';
-import { compactNum } from '../../components/creator/charts';
 
 // Confetti micro-burst on claim. Raw DOM + WAAPI so it survives re-renders;
 // skipped under prefers-reduced-motion.
@@ -55,112 +51,13 @@ const CREATOR_QUESTS = [
   { id: 'creator_host_event', title: 'Host an event', desc: 'Run a ticketed event for your community', vp: 150, icon: 'confirmation_number' },
 ];
 
-// Leveled tournament-earnings ladder. Tracks REAL coins won in tournaments
-// (summed from the ledger) and pays VP once per level, ever.
-const EARN_TIERS = [
-  { id: 'tourney_earn_5k',  coins: 5000,  vp: 200 },
-  { id: 'tourney_earn_10k', coins: 10000, vp: 400 },
-  { id: 'tourney_earn_25k', coins: 25000, vp: 800 },
-  { id: 'tourney_earn_50k', coins: 50000, vp: 1500 },
-];
-
-// ── Creator earnings tracker (hero) ─────────────────────────────────────
-function TournamentEarningTracker({ earned, claimed, claiming, onClaim }) {
-  const total = EARN_TIERS[EARN_TIERS.length - 1].coins;
-  // current level = highest tier whose threshold is reached
-  const reachedIdx = EARN_TIERS.reduce((acc, t, i) => (earned >= t.coins ? i : acc), -1);
-  const nextTier = EARN_TIERS[reachedIdx + 1] || null;
-  const prevCoins = reachedIdx >= 0 ? EARN_TIERS[reachedIdx].coins : 0;
-  const segLow = nextTier ? prevCoins : total;
-  const segHigh = nextTier ? nextTier.coins : total;
-  const segPct = nextTier
-    ? Math.min(100, Math.max(0, ((earned - segLow) / (segHigh - segLow)) * 100))
-    : 100;
-  const overallPct = Math.min(100, (earned / total) * 100);
-
-  return (
-    <div className="relative overflow-hidden rounded-3xl border border-amber-500/20 bg-gradient-to-br from-amber-500/[0.12] via-amber-500/[0.04] to-transparent p-5 md:p-6">
-      <div className="absolute -top-16 -right-16 w-48 h-48 rounded-full bg-amber-400/10 blur-3xl pointer-events-none" />
-      <div className="relative flex items-start justify-between gap-3 mb-4">
-        <div className="min-w-0">
-          <p className="text-[10px] uppercase tracking-[0.18em] text-amber-400 font-bold mb-1">Creator earnings</p>
-          <div className="flex items-end gap-2">
-            <span className="font-dmmono font-bold text-4xl md:text-5xl text-white tabular-nums leading-none">{compactNum(earned)}</span>
-            <Icon name="paid" filled size={22} className="text-amber-400 mb-1" />
-          </div>
-          <p className="text-xs text-text-muted mt-1.5">
-            {nextTier
-              ? <>Earn <span className="text-white font-semibold">{compactNum(segHigh - earned)}</span> more to hit the next reward.</>
-              : <>Top tier reached. You've earned every creator VP reward.</>}
-          </p>
-        </div>
-        <div className="shrink-0 text-right">
-          <p className="font-dmmono font-bold text-2xl text-amber-400 leading-none">L{reachedIdx + 1}</p>
-          <p className="text-[10px] uppercase tracking-widest text-text-muted mt-1">of {EARN_TIERS.length}</p>
-        </div>
-      </div>
-
-      {/* Segment progress to next tier */}
-      <div className="relative mb-5">
-        <div className="h-3 rounded-full bg-white/[0.06] overflow-hidden">
-          <div
-            className="h-full rounded-full bg-gradient-to-r from-amber-400 to-amber-300 transition-[width] duration-700 ease-out"
-            style={{ width: `${nextTier ? segPct : overallPct}%` }}
-          />
-        </div>
-        <div className="flex items-center justify-between mt-1.5 text-[11px] font-dmmono text-text-muted tabular-nums">
-          <span>{compactNum(nextTier ? segLow : 0)}</span>
-          <span className="text-amber-400 font-bold">{compactNum(earned)}</span>
-          <span>{compactNum(segHigh)}</span>
-        </div>
-      </div>
-
-      {/* Tier ladder */}
-      <div className={`grid gap-2.5 ${IS_NATIVE_BUILD ? 'grid-cols-2' : 'grid-cols-2 sm:grid-cols-4'}`}>
-        {EARN_TIERS.map((t, i) => {
-          const reached = earned >= t.coins;
-          const isClaimed = claimed.includes(t.id);
-          const canClaim = reached && !isClaimed;
-          return (
-            <div key={t.id} data-quest-card
-              className={`relative rounded-2xl border p-3 transition-colors ${
-                isClaimed ? 'border-emerald-500/30 bg-emerald-500/[0.06]'
-                : canClaim ? 'border-amber-400/40 bg-amber-400/[0.08]'
-                : reached ? 'border-white/10 bg-white/[0.03]'
-                : 'border-white/[0.06] bg-white/[0.015]'
-              }`}>
-              <div className="flex items-center justify-between mb-1.5">
-                <span className={`font-dmmono font-bold text-sm tabular-nums ${reached ? 'text-white' : 'text-text-muted'}`}>
-                  {compactNum(t.coins)}
-                </span>
-                <Icon
-                  name={isClaimed ? 'check_circle' : reached ? 'lock_open' : 'lock'}
-                  filled={isClaimed}
-                  size={15}
-                  className={isClaimed ? 'text-emerald-400' : reached ? 'text-amber-400' : 'text-text-muted'}
-                />
-              </div>
-              <p className="font-dmmono font-bold text-brand-violet text-xs mb-2">+{t.vp} VP</p>
-              {isClaimed ? (
-                <span className="block text-center text-emerald-400 text-[11px] font-bold py-1">Claimed</span>
-              ) : canClaim ? (
-                <button onClick={(e) => onClaim(t, e.currentTarget)} disabled={claiming === t.id}
-                  className="w-full py-1.5 rounded-lg bg-amber-400 text-bg-dark text-[11px] font-bold hover:brightness-110 transition disabled:opacity-60">
-                  {claiming === t.id ? '...' : 'Claim'}
-                </button>
-              ) : (
-                <span className="block text-center text-text-muted text-[11px] py-1">Locked</span>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
+// The tournament-earnings ladder that used to sit here was removed on
+// 2026-08-16. Tournaments are retired, so it read a ledger scan that could
+// only ever return zero, and it advertised prize competitions the public
+// compliance pages state Vergr does not run.
 
 // ── Daily quest row (monochrome) ────────────────────────────────────────
-function QuestRow({ quest, isClaimed, claiming, onClaim }) {
+function QuestRow({ quest, isClaimed, ready, hint, claiming, onClaim }) {
   return (
     <div data-quest-card className="flex items-center gap-3.5 p-4 rounded-2xl bg-white/[0.025] border border-white/[0.05] hover:border-white/[0.1] transition-colors">
       <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${isClaimed ? 'bg-emerald-500/10' : 'bg-white/[0.05]'}`}>
@@ -175,11 +72,15 @@ function QuestRow({ quest, isClaimed, claiming, onClaim }) {
         <p className="font-dmmono font-bold text-brand-violet tabular-nums text-sm">+{quest.vp} VP</p>
         {isClaimed ? (
           <span className="text-emerald-400 text-[11px] font-bold">Done</span>
-        ) : (
+        ) : ready ? (
           <button onClick={(e) => onClaim(quest, e.currentTarget)} disabled={claiming === quest.id}
             className="mt-1.5 px-3.5 py-1 rounded-full bg-brand-violet text-white text-[11px] font-bold hover:brightness-110 transition disabled:opacity-60">
             {claiming === quest.id ? '...' : 'Claim'}
           </button>
+        ) : (
+          // Not done yet. The server would refuse the claim, so the button is
+          // not offered: say what is still outstanding instead.
+          <span className="text-[10px] text-text-muted block max-w-[140px] mt-1 leading-snug">{hint || 'Not yet'}</span>
         )}
       </div>
     </div>
@@ -199,49 +100,51 @@ export default function CreatorQuestsScreen({ embedded = false }) {
 
   const { currentUser } = useAuth();
   const { showToast } = useUI();
-  const [claimed, setClaimed] = useState([]);
-  const [milestonesClaimed, setMilestonesClaimed] = useState([]);
-  const [tournamentCoins, setTournamentCoins] = useState(0);
+  // Server owns the quest list, the amounts, and whether each one is actually
+  // completed. The client copy of CREATOR_QUESTS supplies title/description/icon
+  // only, and is never trusted for a number.
+  const [server, setServer] = useState(null);
   const [claiming, setClaiming] = useState(null);
 
-  useEffect(() => {
-    if (!currentUser) return;
-    getQuestClaims(currentUser.uid).then(setClaimed).catch(console.error);
-    getMilestoneClaims(currentUser.uid).then(setMilestonesClaimed).catch(console.error);
-    getTournamentCoinsEarned(currentUser.uid).then(setTournamentCoins).catch(console.error);
-  }, [currentUser]);
+  const loadQuests = useCallback(async () => {
+    try { setServer(await getCreatorQuests()); }
+    catch (e) { console.error('getCreatorQuests', e); }
+  }, []);
 
+  useEffect(() => { if (currentUser) loadQuests(); }, [currentUser, loadQuests]);
+
+  const byId = useMemo(() => {
+    const m = {};
+    for (const q of server?.quests || []) m[q.id] = q;
+    return m;
+  }, [server]);
+
+  // Only quests the server actually offers are shown. A card for a quest the
+  // backend does not know about is a button that can only fail.
+  const visibleQuests = useMemo(
+    () => CREATOR_QUESTS.filter(q => byId[q.id]),
+    [byId]
+  );
   const totalVpToday = useMemo(
-    () => CREATOR_QUESTS.reduce((s, q) => s + q.vp, 0),
-    []
+    () => visibleQuests.reduce((s, q) => s + (byId[q.id]?.vp ?? q.vp), 0),
+    [visibleQuests, byId]
   );
   const claimedVpToday = useMemo(
-    () => CREATOR_QUESTS.filter(q => claimed.includes(q.id)).reduce((s, q) => s + q.vp, 0),
-    [claimed]
+    () => visibleQuests.filter(q => byId[q.id]?.claimed).reduce((s, q) => s + (byId[q.id]?.vp ?? q.vp), 0),
+    [visibleQuests, byId]
   );
 
   const handleClaim = async (quest, btnEl) => {
     setClaiming(quest.id);
     try {
-      await claimQuestReward(currentUser.uid, quest.id, quest.vp, quest.title);
-      setClaimed(prev => [...prev, quest.id]);
+      const res = await claimCreatorQuest({ questId: quest.id });
+      await loadQuests();
       burstConfetti(btnEl);
-      showToast(`+${quest.vp} VP`, 'success');
+      showToast(`+${res?.vp ?? quest.vp} VP`, 'success');
     } catch (err) {
-      showToast(err.message?.includes('already') ? 'Already claimed' : 'Failed', 'error');
-    }
-    setClaiming(null);
-  };
-
-  const handleClaimMilestone = async (tier, btnEl) => {
-    setClaiming(tier.id);
-    try {
-      await claimMilestoneReward(currentUser.uid, tier.id, tier.vp, `Creator earnings ${compactNum(tier.coins)}`);
-      setMilestonesClaimed(prev => [...prev, tier.id]);
-      burstConfetti(btnEl);
-      showToast(`+${tier.vp} VP`, 'success');
-    } catch (err) {
-      showToast(err.message?.includes('already') ? 'Already claimed' : 'Failed', 'error');
+      // The server explains WHY (not done yet / already claimed today), so show
+      // that rather than a generic failure.
+      showToast(err?.message || 'Could not claim', 'error');
     }
     setClaiming(null);
   };
@@ -265,14 +168,6 @@ export default function CreatorQuestsScreen({ embedded = false }) {
         </div>
       </div>
 
-      {/* Creator earnings hero */}
-      <TournamentEarningTracker
-        earned={tournamentCoins}
-        claimed={milestonesClaimed}
-        claiming={claiming}
-        onClaim={handleClaimMilestone}
-      />
-
       {/* Daily quests */}
       <div className="mt-6">
         <div className="flex items-end justify-between mb-3">
@@ -282,9 +177,11 @@ export default function CreatorQuestsScreen({ embedded = false }) {
           </div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {CREATOR_QUESTS.map(quest => (
-            <QuestRow key={quest.id} quest={quest}
-              isClaimed={claimed.includes(quest.id)}
+          {visibleQuests.map(quest => (
+            <QuestRow key={quest.id} quest={{ ...quest, vp: byId[quest.id]?.vp ?? quest.vp }}
+              isClaimed={!!byId[quest.id]?.claimed}
+              ready={!!byId[quest.id]?.met}
+              hint={byId[quest.id]?.unmet}
               claiming={claiming}
               onClaim={handleClaim} />
           ))}

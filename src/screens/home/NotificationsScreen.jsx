@@ -94,10 +94,22 @@ export default function NotificationsScreen() {
                   </div>
                 )}
                 <div className="flex-1 min-w-0">
+                  {/* `notif.title` was never read here, and the title is the
+                      part carrying the meaning: a quest claim writes
+                      title "+300 VP earned!" and body "Profile banner", so the
+                      page showed "Profile banner" with a coin icon and no
+                      amount (audit A38). NotificationsDrawer already resolves it
+                      the right way round; the two surfaces disagreed about the
+                      same notification, which is how this survived. */}
                   <p className={`text-sm leading-relaxed ${!notif.read ? 'text-text-primary font-medium' : 'text-text-secondary'}`}>
                     {notif.senderName && <span className="font-bold text-white">{notif.senderName} </span>}
-                    {notif.content || notif.body}
+                    {notif.title || notif.content || 'Notification'}
                   </p>
+                  {(notif.body || (notif.title && notif.content)) && (
+                    <p className="text-text-secondary text-xs mt-0.5 leading-snug">
+                      {notif.body || notif.content}
+                    </p>
+                  )}
                   <p className="text-text-muted text-xs mt-1 font-dmmono">
                     {timeAgo(notif._ms ? new Date(notif._ms) : (notif.createdAt?.toDate ? notif.createdAt.toDate() : notif.createdAt))}
                   </p>

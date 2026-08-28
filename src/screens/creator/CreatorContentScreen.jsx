@@ -164,10 +164,37 @@ export default function CreatorContentScreen() {
             </div>
 
             {filtered.length === 0 ? (
-              <div className="py-10 text-center">
-                <Icon name="photo_library" size={32} className="text-text-muted mb-2" />
-                <p className="text-text-muted text-sm">No posts match those filters.</p>
-              </div>
+              // "No posts match those filters" was shown even with NO filters
+              // set, so a creator with an empty library was sent hunting for
+              // something to clear (audit A34). Branch on whether a filter is
+              // actually applied, and when it is not, invite the first post.
+              // The `+ New post` button exists but sits in the toolbar above,
+              // not where the user is looking.
+              type === 'all' && !search ? (
+                <div className="py-10 text-center">
+                  <Icon name="photo_library" size={32} className="text-text-muted mb-2" />
+                  <p className="text-text-primary text-sm font-semibold">You have not posted yet</p>
+                  <p className="text-text-muted text-xs mt-1">Everything you publish shows up here.</p>
+                  <button
+                    onClick={() => navigate('/')}
+                    className="mt-4 px-4 py-2 rounded-lg text-xs font-bold text-white"
+                    style={{ background: 'linear-gradient(135deg, #7B1FFF, #B44FFF)' }}
+                  >
+                    Create your first post
+                  </button>
+                </div>
+              ) : (
+                <div className="py-10 text-center">
+                  <Icon name="photo_library" size={32} className="text-text-muted mb-2" />
+                  <p className="text-text-muted text-sm">No posts match those filters.</p>
+                  <button
+                    onClick={() => { setType('all'); setSearch(''); }}
+                    className="mt-3 px-4 py-2 rounded-lg text-xs font-semibold text-text-secondary border border-white/10"
+                  >
+                    Clear filters
+                  </button>
+                </div>
+              )
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
                 {filtered.map(p => {

@@ -12,6 +12,7 @@ import { useAuth } from '../context/AuthContext';
 import { resolveChatUsers, peekChatUser, chatDisplayName } from '../utils/chatIdentity';
 import { getSquadReadMap, getCallsSeenAt } from '../utils/navBadges';
 import { applyVanguardMask } from '../utils/vanguard';
+import { subscribeCampaigns } from '../firebase/campaigns';
 
 const toMs = (t) => {
   if (!t) return 0;
@@ -31,6 +32,13 @@ export function routeForNotification(item) {
   if (item._kind === 'squad_message') return `/squads/${item.squadId}/chat`;
   if (item._kind === 'request') return '/messages/requests';
   if (item._kind === 'missed_call') return '/calls';
+  // A campaign row goes where its button goes, or to the channel thread it was
+  // also posted to. Falls back to nothing rather than to a dead route.
+  if (item._kind === 'campaign') {
+    if (item.ctaUrl && item.ctaUrl.startsWith('/')) return item.ctaUrl;
+    if (item.threadChannelId) return `/messages/c/${item.threadChannelId}`;
+    return null;
+  }
 
   // Real notification docs — mirror the drawer's existing routing.
   const d = item;
@@ -78,6 +86,15 @@ export function useMergedNotifications() {
     return () => { alive = false; };
   }, [conversations, requests, missedCalls, me]);
 
+  // Broadcast announcements. These are SHARED campaign documents, not per-user
+  // notification writes, so the whole platform reads the same handful of docs
+  // and a send costs nothing here. Merged into the same time-sorted feed so an
+  // announcement is a peer of every other row rather than a quarantined banner.
+  const [campaigns, setCampaigns] = useState([]);
+  useEffect(() => {
+    if (!me) return undefined;
+    return subscribeCampaigns('drawer', profile, setCampaigns);
+  }, [me, profile]);
   const items = useMemo(() => {
     const out = [];
 
@@ -95,7 +112,9 @@ export function useMergedNotifications() {
       const live = !c.isGroup ? applyVanguardMask(userMap[otherId] || peekChatUser(otherId) || {}, profile) : null;
       const name = c.isGroup ? (c.groupName || 'Group')
         : (live?.isVanguardPersona ? live.displayName : chatDisplayName(otherId, live, profile, c.metadata?.[otherId]?.name));
-      const avatar = c.isGroup ? c.groupIcon
+      // groupIcon (user-set) OR groupAvatar (server-set on support threads and
+      // community rooms) — see the note in utils/chatIdentity.js chatPartner().
+      const avatar = c.isGroup ? (c.groupIcon || c.groupAvatar || null)
         : (live?.isVanguardPersona ? live.avatar : (live?.avatar || c.metadata?.[otherId]?.avatar || null));
       out.push({
         id: `msg_${c.id}`, _kind: 'message', type: 'message',
@@ -149,9 +168,21 @@ export function useMergedNotifications() {
       });
     }
 
+    for (const c of (campaigns || [])) {
+      out.push({
+        id: `camp_${c.campaignId}`, _kind: 'campaign', type: 'announcement',
+        campaignId: c.campaignId,
+        title: c.heading || 'Vergr', body: c.body || '',
+        senderName: 'Vergr', senderAvatar: null,
+        imageUrl: c.imageUrl || null,
+        ctaLabel: c.ctaLabel || null, ctaUrl: c.ctaUrl || null,
+        threadChannelId: c.threadChannelId || null,
+        read: false, createdAt: c.createdAtMs, _ms: c.createdAtMs || 0,
+      });
+    }
     out.sort((a, b) => (b._ms || 0) - (a._ms || 0));
     return out;
-  }, [notifications, conversations, squadActivity, requests, missedCalls, userMap, me, profile]);
+  }, [notifications, conversations, squadActivity, requests, missedCalls, campaigns, userMap, me, profile]);
 
   return { items, routeFor: routeForNotification };
 }

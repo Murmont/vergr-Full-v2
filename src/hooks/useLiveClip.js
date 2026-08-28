@@ -54,7 +54,9 @@ export default function useLiveClip({
           return;
         }
         const file = new File([blob], `clip-${Date.now()}.webm`, { type: 'video/webm' });
-        url = await uploadToR2(file, 'clip');
+        // uploadToR2 resolves to { url, key }. Taking the object whole put a map
+        // into mediaUrls, so every Chromium-path clip posted with a dead src.
+        ({ url } = await uploadToR2(file, 'clip'));
       } else {
         // Apple-webview / unsupported path: server-side ffmpeg cut on the box.
         const fn = httpsCallable(getFunctions(undefined, 'europe-west1'), 'requestStreamClip');

@@ -50,6 +50,7 @@ const axios = require('axios');
 const crypto = require('node:crypto');
 const { creditReferralPurchaseBonus } = require('./referralRevenue');
 const { regionalPrice } = require('./geoPricing');
+const coinPromos = require('./coinPromos');
 
 const db = getFirestore('vgrdb');
 const REGION = 'europe-west1';
@@ -197,19 +198,12 @@ exports.createPayramPayment = onCall({ region: REGION, secrets: SECRETS }, async
   }
 
   // Resolve order — a fixed pack, a custom coin amount, or a subscription.
-  const { packSku, customCoins, subscriptionTier, gemQuoteId, cart } = request.data || {};
+  // `gemQuoteId` and the whole buy-and-send branch were removed on 2026-08-16.
+  // It let a buyer pay by card to mint value directly into another user's
+  // wallet, which is the clearest money-transmission shape the product had.
+  const { packSku, customCoins, subscriptionTier, cart } = request.data || {};
   let order; // { kind, sku, coins, vpBonus, priceEUR, tier? }
-  if (gemQuoteId) {
-    // Buy-and-send: gems are never sold as a standing balance, only as payment
-    // for a transfer that goes out the moment the money settles. The price is
-    // taken from a server-issued, time-locked quote — never from the client.
-    const { consumeGemQuote } = require('./gemTransfer');
-    const q = await consumeGemQuote(uid, gemQuoteId);
-    order = {
-      kind: 'gem_send', sku: 'gem_send', coins: 0, vpBonus: 0,
-      priceEUR: q.eurTotal, gemQuote: q,
-    };
-  } else if (Array.isArray(cart) && cart.length) {
+  if (Array.isArray(cart) && cart.length) {
     // CART CHECKOUT. The client sends WHAT, never HOW MUCH: a list of
     // { sku, qty } and nothing else. Every line is re-priced from COIN_PACKS
     // here, which is the same rule the single-pack path has always followed and
@@ -262,10 +256,11 @@ exports.createPayramPayment = onCall({ region: REGION, secrets: SECRETS }, async
     };
   }
 
+
   // REGIONAL PRICING — SUBSCRIPTIONS ONLY. NEVER COINS.
   //
-  // A coin has a FIXED value on the way out: it converts to Gems and withdraws
-  // at a rate that does not care where it was bought. Discount the price a coin
+  // A coin has a FIXED value on the way out: it accrues a creator's revenue
+  // share at a rate that does not care where it was bought. Discount the price a coin
   // is SOLD at and you have created an arbitrage, not a promotion. Buy 100
   // coins for EUR 0.36 in a discount region, tip them to a creator, and that
   // creator withdraws against the full EUR 0.0090 per coin. Vergr funds the
@@ -289,8 +284,8 @@ exports.createPayramPayment = onCall({ region: REGION, secrets: SECRETS }, async
   // Pricing is server-authoritative — never trust a client-sent amount.
   //
   // COINS are native USD: the pack price IS the charged figure, no conversion,
-  // no FX rate to fail on, no buffer. SUBSCRIPTIONS and gem sends are still
-  // priced in EUR (subscriptions because they carry regional multipliers, which
+  // no FX rate to fail on, no buffer. SUBSCRIPTIONS are still
+  // priced in EUR (because they carry regional multipliers, which
   // are safe only on something that is consumed rather than redeemed), so they
   // still convert here and priceEurToUsd still fails closed if no trustworthy
   // rate is available.
@@ -357,20 +352,55 @@ exports.createPayramPayment = onCall({ region: REGION, secrets: SECRETS }, async
 
   const referenceId = String(resp.data.reference_id);
 
+  // COIN SALE PROMO. Changes the QUANTITY DELIVERED, never the price charged:
+  // the PayRam payment above is already created and its amount is untouched.
+  // Only `coinsToCredit` and `vpBonus` on the order below move.
+  //
+  // The bonus is CLAIMED here, at order creation, rather than at settlement,
+  // which reserves it against the promo's cap at the moment we promise it. A
+  // buyer is therefore never shown a bonus that a later purchase has exhausted.
+  // The cost is that an abandoned order holds a slice of the cap, which errs
+  // toward under-issuing, the right direction for a spend limit. Idempotent on
+  // `referenceId` so a retry cannot double-reserve.
+  let promo = null;
+  if (order.kind === 'coins') {
+    try {
+      const granted = await coinPromos.applyPromo({
+        packId: (order.sku === 'cart' || order.sku === 'custom') ? null : order.sku,
+        coins: order.coins,
+        priceUSD: order.priceUSD,
+        uid,
+        orderId: referenceId,
+      });
+      if (granted.promoId) {
+        order.coins += granted.bonusCoins;
+        order.vpBonus += granted.bonusVp;
+        promo = granted;
+      }
+    } catch (e) {
+      // A promo must never block a purchase that has already been created.
+      // Worst case the buyer gets exactly what they paid for.
+      console.warn('createPayramPayment: promo skipped', e?.message || e);
+    }
+  }
+
   // Doc id = PayRam reference_id so circleWallets.processInboundDeposit can
   // match a Circle deposit's refId straight to payram_orders/{refId}.
   await db.collection('payram_orders').doc(referenceId).set({
     referenceId,
     uid,
-    kind: order.kind,                  // 'coins' | 'subscription' | 'gem_send'
+    // Stamped so a bonus is distinguishable from the base purchase forever,
+    // in the order and in the transaction row settlement writes from it.
+    promoId: promo?.promoId || null,
+    promoBonusCoins: promo?.bonusCoins || 0,
+    promoBonusVp: promo?.bonusVp || 0,
+    kind: order.kind,                  // 'coins' | 'subscription'
     packSku: order.sku,
     subscriptionTier: order.tier || null,
-    // Buy-and-send only: who receives, and how much, fixed at quote time.
-    gemSend: order.gemQuote || null,
     coinsToCredit: order.coins,        // field name circleWallets reads (0 for subs)
     vpBonus: order.vpBonus,
     // null for coins since 2026-08-11: they are natively USD and never had a EUR
-    // price to record. Subscriptions and gem sends still carry one.
+    // price to record. Subscriptions still carry one.
     amountEUR: typeof order.priceEUR === 'number' ? order.priceEUR : null,
     // `amountUSD` is what the buyer is CHARGED (subtotal + fees + tax).
     // `subtotalUSD` is what we intend to net. platformRevenue.js books the two
@@ -462,48 +492,6 @@ async function settlePayramOrder(referenceId, ctx = {}) {
       return { credited: true, uid: order.uid, kind: 'subscription', tier, periodEnd };
     }
 
-    // ── Buy-and-send (gem transfer paid by card) ──
-    // The buyer NEVER receives a gem balance from this. Gems are minted
-    // straight into the recipient's wallet, net of the transfer fee, so a
-    // purchase can't be used as a top-up-then-withdraw route. That property is
-    // the whole reason gems aren't sold standalone — do not "simplify" this
-    // into crediting the buyer and then transferring.
-    if (order.kind === 'gem_send') {
-      const g = order.gemSend;
-      if (!g || !g.recipientId || !(g.netGems > 0)) {
-        return { credited: false, reason: 'order-malformed' };
-      }
-      t.set(db.collection('wallets').doc(g.recipientId), {
-        gems: FieldValue.increment(g.netGems),
-        updatedAt: FieldValue.serverTimestamp(),
-      }, { merge: true });
-
-      t.create(db.collection('transactions').doc(), {
-        userId: order.uid, type: 'gem_transfer_sent', currency: 'gems',
-        amount: -g.gems, counterpartyId: g.recipientId,
-        description: `Sent ${g.netGems} gems (card)`,
-        meta: { gross: g.gems, net: g.netGems, feePct: g.feePct, paidEUR: order.amountEUR, quoteId: g.quoteId },
-        gateway: 'payram', payramReferenceId: referenceId,
-        createdAt: FieldValue.serverTimestamp(),
-      });
-      t.create(db.collection('transactions').doc(), {
-        userId: g.recipientId, type: 'gem_transfer_received', currency: 'gems',
-        amount: g.netGems, counterpartyId: order.uid,
-        description: `Received ${g.netGems} gems`,
-        meta: { gross: g.gems, net: g.netGems, feePct: g.feePct, quoteId: g.quoteId },
-        createdAt: FieldValue.serverTimestamp(),
-      });
-      t.create(db.collection('notifications').doc(), {
-        recipientId: g.recipientId, type: 'gem_transfer',
-        title: `+${g.netGems} gems received`,
-        body: 'Someone sent you gems',
-        read: false, data: { type: 'gem_transfer', gems: g.netGems, fromUid: order.uid },
-        createdAt: FieldValue.serverTimestamp(),
-      });
-
-      t.update(orderRef, settleStamp);
-      return { credited: true, uid: order.uid, kind: 'gem_send', gems: g.netGems, recipientId: g.recipientId };
-    }
 
     // ── Coin purchase ──
     if (typeof order.coinsToCredit !== 'number') return { credited: false, reason: 'order-malformed' };
@@ -756,9 +744,9 @@ exports.getPayramOrderStatus = onCall({ region: REGION, secrets: SECRETS }, asyn
 });
 
 exports._settlePayramOrder = settlePayramOrder;
-// Shared so the gem quote prices in USD through the SAME rate source, cache and
-// safety buffer as every other purchase. A second FX path would drift from this
-// one and be the thing that silently undercharges.
+// Shared so every caller prices in USD through the SAME rate source, cache and
+// safety buffer. A second FX path would drift from this one and be the thing
+// that silently undercharges.
 exports._priceEurToUsd = priceEurToUsd;
 
 /**

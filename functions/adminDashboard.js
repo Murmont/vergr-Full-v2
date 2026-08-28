@@ -29,7 +29,6 @@ exports.adminGetDashboardSummary = functions.https.onCall(
     if (cache.data && (now - cache.at) < 30_000) return { ...cache.data, cached: true };
 
     const users = db.collection('users');
-    const tournaments = db.collection('tournaments');
     const reports = db.collection('reports');
     const streams = db.collection('streams');
     const weekAgo = now - 7 * 24 * 3600 * 1000;
@@ -39,22 +38,36 @@ exports.adminGetDashboardSummary = functions.https.onCall(
       totalUsers, activeWeek, liteCount, proCount,
       liveStreams,
       pendingReports, actionedToday,
-      tournamentsThisMonth,
+      owedAgg, creatorsOwed,
       recentActions, recentUsers, topGamesSnap,
+      guestCount, newsBotCount, shortsBotCount,
     ] = await Promise.all([
       users.count().get().then(r => r.data().count).catch(() => 0),
-      users.where('lastSeen', '>=', weekAgo).count().get().then(r => r.data().count).catch(() => 0),
+      // `lastSeen` is a Firestore Timestamp and `weekAgo` was a raw number of
+      // millis. Firestore compares across types by type order, never by value, so
+      // this filter matched NOTHING and "Active (7d)" read 0 no matter what.
+      users.where('lastSeen', '>=', new Date(weekAgo)).count().get().then(r => r.data().count).catch(() => 0),
       users.where('subscription', '==', 'lite').count().get().then(r => r.data().count).catch(() => 0),
       users.where('subscription', '==', 'pro').count().get().then(r => r.data().count).catch(() => 0),
       streams.where('status', '==', 'live').count().get().then(r => r.data().count).catch(() => 0),
       reports.where('status', '==', 'pending').count().get().then(r => r.data().count).catch(() => 0),
       reports.where('actionedAt', '>=', new Date(now - 24 * 3600 * 1000))
         .count().get().then(r => r.data().count).catch(() => 0),
-      tournaments.where('createdAt', '>=', monthAgo).count().get().then(r => r.data().count).catch(() => 0),
+      // What Vergr owes its creators. This is a LIABILITY, not a balance they can
+      // call on, and it is the number that replaced the tournaments count.
+      db.collection('wallets').aggregate({ total: AggregateField.sum('owedMicroUsd') })
+        .get().then(r => r.data().total || 0).catch(() => 0),
+      db.collection('wallets').where('owedMicroUsd', '>', 0).count().get()
+        .then(r => r.data().count).catch(() => 0),
       db.collection('admin_actions').orderBy('createdAt', 'desc').limit(8).get().catch(() => ({ docs: [] })),
       users.orderBy('createdAt', 'desc').limit(5).get().catch(() => ({ docs: [] })),
       // Top games — group by `game` field on streams currently live.
       streams.where('status', '==', 'live').limit(50).get().catch(() => ({ docs: [] })),
+      // Netted out of totalUsers so this agrees with the Users screen instead of
+      // quietly reporting a bigger number on the landing page of the same app.
+      users.where('isGuest', '==', true).count().get().then(r => r.data().count).catch(() => 0),
+      users.where('accountType', '==', 'news_bot').count().get().then(r => r.data().count).catch(() => 0),
+      users.where('accountType', '==', 'shorts_bot').count().get().then(r => r.data().count).catch(() => 0),
     ]);
 
     const mrrEUR = liteCount * PRICE_EUR.lite + proCount * PRICE_EUR.pro;
@@ -90,7 +103,9 @@ exports.adminGetDashboardSummary = functions.https.onCall(
     }));
 
     const data = {
-      totalUsers,
+      totalUsers: Math.max(0, totalUsers - guestCount - newsBotCount - shortsBotCount),
+      totalUsersRaw: totalUsers,
+      guestCount,
       activeWeek,
       paidSubscriptions: liteCount + proCount,
       liteCount, proCount,
@@ -98,7 +113,8 @@ exports.adminGetDashboardSummary = functions.https.onCall(
       mrrEUR,
       pendingReports,
       actionedToday,
-      tournamentsThisMonth,
+      owedMicroUsd: owedAgg,
+      creatorsOwed,
       topGames,
       activity,
       newUsers,

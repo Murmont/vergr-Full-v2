@@ -80,8 +80,8 @@ const SECTIONS = [
     content: 'VERGR has three tiers. Plans do NOT change your revenue share: the share is set by your lifetime earnings only. Plans give you VP multipliers, monthly bonuses, and feature unlocks.',
     items: [
       { label: 'Free', value: 'Ads, 200MB uploads, 480p streaming, no day-one public streaming' },
-      { label: 'Lite ($4.99/mo)', value: 'No ads, 1GB uploads, 720p60 streaming from day one, 1.5\u00d7 VP, scheduled posts, voice messages' },
-      { label: 'Pro ($9.99/mo)', value: 'No ads, 5GB uploads, 1080p60 streaming, co-streaming, 2\u00d7 VP, custom vergr.me domain, advanced analytics, priority support' },
+      { label: 'Lite ($4.99/mo)', value: 'No ads, 1GB uploads, 720p streaming from day one, 4 hours a day, 1.5\u00d7 VP, scheduled posts and DMs, creator analytics' },
+      { label: 'Pro ($9.99/mo)', value: 'No ads, 5GB uploads, 1080p streaming with no daily limit, 90-day replays, 2\u00d7 VP, advanced analytics' },
     ],
   },
   {
@@ -104,7 +104,7 @@ const SECTIONS = [
     icon: 'live_tv',
     color: '#C87FFF',
     title: 'Streaming',
-    content: 'You can broadcast straight from the browser or stream in with OBS, and viewers watch and chat inside VERGR. You can also link a Twitch, YouTube, or Kick stream instead, and your VERGR followers will see it and watch the embedded stream in the app. Pro creators can co-stream with a guest, with gameplay in picture-in-picture.',
+    content: 'You can broadcast straight from the browser or stream in with OBS, and viewers watch and chat inside VERGR. You can also link a Twitch, YouTube, or Kick stream instead, and your VERGR followers will see it and watch the embedded stream in the app. Anyone can co-stream with a guest, with gameplay in picture-in-picture.',
   },
   {
     id: 'posts',

@@ -10,6 +10,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../../firebase/config';
 import { useAuth } from '../../context/AuthContext';
+import UserName from '../../components/UserName';
 
 export default function LinkShopifyScreen() {
   const [params] = useSearchParams();
@@ -75,7 +76,7 @@ export default function LinkShopifyScreen() {
           <>
             <h1 className="text-lg font-bold mb-2">Connect your Shopify store</h1>
             <p className="text-sm text-text-secondary mb-5">
-              This links your Shopify store to <b className="text-white">@{currentUser.displayName || 'your account'}</b> so
+              This links your Shopify store to <b className="text-white">@<UserName user={currentUser} masked fallback={'your account'} /></b> so
               your products can appear on your Vergr page. Buyers check out in your own
               Shopify checkout, and Vergr takes no cut of those sales.
             </p>

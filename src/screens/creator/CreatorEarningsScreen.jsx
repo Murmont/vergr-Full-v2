@@ -22,7 +22,7 @@ import {
   ResponsiveContainer, BarChart, Bar, AreaChart, Area, XAxis, YAxis,
   CartesianGrid, Tooltip as RTooltip, LabelList,
 } from 'recharts';
-import { GEM_VALUE_USD as GEM_USD } from '../../utils/vpSystem';
+
 import { revenueShareTier, REVENUE_SHARE_RATES, REVENUE_SHARE_THRESHOLDS } from '../../utils/vpSystem';
 import Icon from '../../components/Icon';
 import '../../styles/surface.css';
@@ -50,6 +50,12 @@ const coinsToUsd = (coins) => `$${Math.floor((Number(coins) || 0) / 100).toLocal
  * reported "$0" to an account holding $0.01 and made three figures on this
  * screen contradict each other.
  */
+/** A figure that is ALREADY in dollars. */
+const usdStr = (usd) => `$${(Number(usd) || 0).toLocaleString(undefined, {
+  minimumFractionDigits: 2, maximumFractionDigits: 2,
+})}`;
+
+/** COINS (or cents) to dollars. Never pass a dollar figure to this. */
 const unitsToUsd = (units) => `$${((Number(units) || 0) / 100).toLocaleString(undefined, {
   minimumFractionDigits: 2, maximumFractionDigits: 2,
 })}`;
@@ -74,57 +80,28 @@ const SOURCE_DEFS = [
 ];
 
 /**
- * WHAT COUNTS AS EARNED. An explicit allowlist, verified against every writer
- * of a positive gems row in functions/.
+ * WHAT COUNTS AS EARNED.
  *
- * This was a DENYLIST and that was wrong. A denylist fails OPEN: any row type
- * it had not anticipated was counted as income. It let `gem_transfer_received`
- * (someone sending you gems, which functions/gemTransfer.js explicitly says
- * "must never get counted as creator earnings in the Studio breakdowns") and
- * `withdrawal_cancelled` (your own held gems being returned) through, and
- * reported earnings to an account that had earned nothing.
+ * This used to be a hand-kept allowlist of transaction TYPE strings, because
+ * nothing on the row said whether it was income. That was fragile in both
+ * directions: it had to be updated every time an earning surface shipped, and
+ * four of the eight types it listed could never match anyway, because their
+ * writers never stamped the currency the filter also required.
  *
- * Money fails CLOSED. An unrecognised type is NOT income. If a new earning
- * surface ships, add it here deliberately.
+ * The server now stamps `earning: true` on every row that is real creator
+ * income, at the moment it writes it (coinLedger.js, and each earning surface).
+ * Filtering on a fact the writer asserted beats inferring from a name.
  *
- * Sources, all confirmed in functions/:
- *   tip_received           index.js, earnedGemCredit
- *   earned_auto_converted  coinLedger.js settleEarnedToGems — the shared path
- *                          used by memberships, eventTickets, admobReward,
- *                          referralRevenue and friends
- *   content_unlock_sale    entitlements / lockedPosts
- *   event_ticket_sale      eventTickets
- *   season_pass_sale       eventTickets
- *   vergrme_sale           vergrMeShop
- *   coaching_earning       coaching
- *   coin_to_gem_conversion economy.js gem-side row. Only EARNED coins can be
- *                          converted (purchased coins never can), so this is a
- *                          creator receiving their share, and it is the one
- *                          path that also increments totalGemsEarned.
- *
- * Deliberately NOT here: gem_transfer_received, withdrawal_cancelled,
- * payout_refunded, conversion_commission, admin grants, any purchase.
- *
- * DURABLE FIX (not done): have the server stamp `earning: true` on these rows
- * so the client filters on a fact instead of a name. Until then this list has
- * to be maintained by hand, which is why it is one constant and not a regex.
+ * Money still fails CLOSED: a row without the flag is NOT income. Admin grants,
+ * refunds, purchases and coin movements do not carry it, deliberately.
  */
-const EARNING_TYPES = new Set([
-  'tip_received',
-  'earned_auto_converted',
-  'content_unlock_sale',
-  'event_ticket_sale',
-  'season_pass_sale',
-  'vergrme_sale',
-  'coaching_earning',
-  'coin_to_gem_conversion',
-]);
-
-/** One definition of "earned", used by every figure on this screen. */
 function isEarning(t) {
-  return (t?.amount || 0) > 0
-    && t?.currency === 'gems'
-    && EARNING_TYPES.has(String(t?.type || ''));
+  return t?.earning === true && (Number(t?.amountMicroUsd) || 0) > 0;
+}
+
+/** Micro-USD on an earning row. One accessor so no figure invents its own. */
+function earnedMicro(t) {
+  return Number(t?.amountMicroUsd) || 0;
 }
 
 function classify(tx) {
@@ -875,7 +852,7 @@ function EarningsOverTime({ transactions, payoutCount = 0, wallet, txCapped }) {
       if (!isEarning(t)) continue;
       const d = new Date(tsMs(t.createdAt));
       const i = index.get(`${d.getUTCFullYear()}-${d.getUTCMonth()}`);
-      if (i != null) buckets[i].usd += (t.amount || 0) * GEM_USD;
+      if (i != null) buckets[i].usd += earnedMicro(t) / 1e6;
     }
     const vals = buckets.map((b) => b.usd);
     const sum = vals.reduce((a, b) => a + b, 0);
@@ -887,7 +864,7 @@ function EarningsOverTime({ transactions, payoutCount = 0, wallet, txCapped }) {
     // Lifetime is the whole allowlisted ledger, not just the charted window.
     const lifetimeKept = (transactions || [])
       .filter(isEarning)
-      .reduce((a, t) => a + (t.amount || 0), 0);
+      .reduce((a, t) => a + earnedMicro(t), 0) / 1e6;
 
     return {
       data: buckets,
@@ -923,7 +900,7 @@ function EarningsOverTime({ transactions, payoutCount = 0, wallet, txCapped }) {
 
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4 mt-4">
           <KpiCard
-            label="Your share, all time" tone="gold" icon="paid" value={unitsToUsd(lifetimeKept)}
+            label="Your share, all time" tone="gold" icon="paid" value={usdStr(lifetimeKept)}
             sub={growth == null ? <span className="text-text-muted">Kept after your revenue share</span> : (
               <span className={growth >= 0 ? 'text-emerald-400' : 'text-brand-ember'}>
                 {growth >= 0 ? '↗' : '↘'} {Math.abs(growth).toFixed(0)}% vs previous period
@@ -998,10 +975,12 @@ function EarningsOverTime({ transactions, payoutCount = 0, wallet, txCapped }) {
 
 function WhereItCameFrom({ bySource, totalUsd }) {
   const [sel, setSel] = useState(0);
+  // `value` is already USD: the ledger rows carry micro-USD and the aggregator
+  // divides once, at the point of summing.
   const rows = (bySource || []).map((s) => ({
     ...s,
-    usd: s.value * GEM_USD,
-    pct: totalUsd > 0 ? (s.value * GEM_USD / totalUsd) * 100 : 0,
+    usd: s.value,
+    pct: totalUsd > 0 ? (s.value / totalUsd) * 100 : 0,
   }));
   const money = (v) => `$${v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -1800,10 +1779,10 @@ export default function CreatorEarningsScreen() {
     const byDay = {};
     for (const t of earn) {
       const k = classify(t);
-      totals[k] = (totals[k] || 0) + (t.amount || 0);
+      totals[k] = (totals[k] || 0) + earnedMicro(t) / 1e6;
       const d = new Date(tsMs(t.createdAt)).toISOString().slice(0, 10);
       byDay[d] = byDay[d] || { name: d };
-      byDay[d][k] = (byDay[d][k] || 0) + (t.amount || 0);
+      byDay[d][k] = (byDay[d][k] || 0) + earnedMicro(t) / 1e6;
     }
     return {
       bySource: Object.entries(totals)
@@ -1813,8 +1792,9 @@ export default function CreatorEarningsScreen() {
     };
   }, [transactions]);
 
+  // bySource values are already USD.
   const sourceTotalUsd = useMemo(
-    () => (bySource || []).reduce((a, b) => a + b.value * GEM_USD, 0),
+    () => (bySource || []).reduce((a, b) => a + b.value, 0),
     [bySource],
   );
 

@@ -9,6 +9,7 @@ import { useUI } from '../../context/UIContext';
 import Icon from '../Icon';
 import UserAvatar from '../UserAvatar';
 import WalletChip from './WalletChip';
+import UserName from '../UserName';
 
 export default function AppHeader({ title, subtitle, actions, showSearch = true }) {
   const navigate = useNavigate();

@@ -1,0 +1,20 @@
+[Unit]
+Description=Vergr adaptive video transcode worker
+After=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/vergr-vod-archive.env
+Environment=TRANSCODE_PORT=8098
+Environment=NODE_PATH=/opt/stream-node-agent/node_modules
+WorkingDirectory=/opt/vergr-transcode
+ExecStart=/usr/bin/node /opt/vergr-transcode/worker.js
+Restart=always
+RestartSec=5
+# Never let a transcode storm take the box with it.
+CPUQuota=200%
+MemoryMax=2G
+Nice=10
+
+[Install]
+WantedBy=multi-user.target

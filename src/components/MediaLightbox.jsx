@@ -10,10 +10,17 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import Icon from './Icon';
 import InlineVideoPlayer from './media/InlineVideoPlayer';
+import ErrorBoundary from './ErrorBoundary';
 import { useUI } from '../context/UIContext';
 import { isGallerySaveSupported, saveMediaToGallery, isMediaSaved } from '../utils/saveToGallery';
 
-export default function MediaLightbox({ items, startIndex = 0, onClose }) {
+// `allowSave` gates the save-to-gallery button. It defaults to true, because
+// saving media someone sent you in a chat is normal and every messenger does
+// it. It exists for PAID content: LockedMedia renders unlocked purchases
+// through this same lightbox, so a bought photo or video was one tap from the
+// camera roll (audit A18, found while looking for something `allowDownloads`
+// could honestly protect).
+export default function MediaLightbox({ items, startIndex = 0, onClose, allowSave = true }) {
   const [index, setIndex] = useState(startIndex);
   const [scale, setScale] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
@@ -25,7 +32,7 @@ export default function MediaLightbox({ items, startIndex = 0, onClose }) {
   const count = items.length;
 
   const { showToast } = useUI();
-  const canSaveToGallery = isGallerySaveSupported();
+  const canSaveToGallery = allowSave && isGallerySaveSupported();
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
@@ -193,7 +200,22 @@ export default function MediaLightbox({ items, startIndex = 0, onClose }) {
       >
         {item.type === 'video' ? (
           <div className="w-full max-h-full" onPointerDown={(e) => e.stopPropagation()}>
-            <InlineVideoPlayer src={item.url} poster={item.poster} className="w-full max-h-[80vh]" />
+            {/* This exact spot is where A41 #1 blanked the entire app: enlarging
+                a chat video mounted a player that threw, and with no boundary
+                React unmounted everything. That bug is fixed, but a broken
+                video should never be able to do it again — the fallback keeps
+                the lightbox itself alive so the user can still close it. */}
+            <ErrorBoundary
+              label="lightbox-video"
+              fallback={(
+                <div className="w-full h-[50vh] flex flex-col items-center justify-center gap-2 text-center px-6">
+                  <Icon name="videocam_off" size={40} className="text-white/30" />
+                  <div className="text-white/70 text-sm">This video could not be played.</div>
+                </div>
+              )}
+            >
+              <InlineVideoPlayer src={item.url} poster={item.poster} className="w-full max-h-[80vh]" ambilight ambilightSpread={140} />
+            </ErrorBoundary>
           </div>
         ) : (
           <img

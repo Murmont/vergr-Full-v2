@@ -25,6 +25,7 @@ import TopBar from '../../components/TopBar';
 import UserAvatar from '../../components/UserAvatar';
 import Icon from '../../components/Icon';
 import { IS_NATIVE_BUILD } from '../../utils/platform';
+import UserName from '../../components/UserName';
 
 const MAX_VIDEO_PUBLISHERS = 2;
 
@@ -323,7 +324,7 @@ export default function SquadStreamScreen() {
           <div className="flex items-center gap-3 p-3 rounded-xl bg-white/[0.03] border border-white/[0.08]">
             <UserAvatar user={currentUser} size={44} />
             <div className="flex-1">
-              <p className="font-bold text-sm">{currentUser?.displayName || 'You'}</p>
+              <p className="font-bold text-sm"><UserName user={currentUser} masked fallback={'You'} /></p>
               <p className="text-xs text-text-muted">
                 {micOn ? 'Mic on' : 'Mic muted'}{camOn ? ' • Camera on' : ''}
               </p>

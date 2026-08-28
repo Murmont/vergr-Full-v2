@@ -16,6 +16,8 @@ import {
 import { getFollowingSet } from './followingCache';
 
 // Same detection ExploreScreen uses (isBotAccount): accountType contains "bot".
+import { isBoosted, POST_BOOST_REACH } from './promoBoost';
+
 export const isBotAccount = (u) => /bot/i.test(String(u?.accountType || ''));
 
 // Keyword → CONTENT_TOPICS label, for scoring-time topic inference on posts that
@@ -100,18 +102,36 @@ export const captureInterest = (post, amount = 1) => {
 
 // Watching a live stream = a host (author) affinity signal + the stream's
 // game/topic. Called from the viewers after a short dwell. Device-local + free.
-export const captureStreamInterest = (streamDoc, amount = 1) => {
-  if (!streamDoc) return;
-  const host = streamDoc.hostUid || streamDoc.streamerId;
-  if (host) bumpAuthor(host, amount);
+/**
+ * The topics a live stream is about, inferred from its game and title.
+ *
+ * ⚠ EXTRACTED FROM captureStreamInterest, NOT REWRITTEN. This logic used to be
+ * inline in the capture path only, so the app could LEARN what you like about
+ * streams but had nothing that could rank streams BY what you like. Boost
+ * needed the read side; duplicating the inference would have given two
+ * definitions of "what is this stream about" that could drift apart — the exact
+ * failure that produced two disagreeing theme systems.
+ *
+ * Costs nothing: string matching on fields the stream doc already carries.
+ */
+export const inferStreamTopics = (streamDoc) => {
   const topics = new Set();
+  if (!streamDoc) return [];
   if (streamDoc.game) topics.add('Gaming');
   if (streamDoc.topic) topics.add(streamDoc.topic);
   const hay = `${streamDoc.game || ''} ${streamDoc.title || ''}`.toLowerCase();
   if (hay.trim()) {
     for (const [tok, topic] of Object.entries(TOPIC_TOKENS)) { if (hay.includes(tok)) topics.add(topic); }
   }
-  if (topics.size) bumpTopics([...topics], amount * 0.5);
+  return [...topics];
+};
+
+export const captureStreamInterest = (streamDoc, amount = 1) => {
+  if (!streamDoc) return;
+  const host = streamDoc.hostUid || streamDoc.streamerId;
+  if (host) bumpAuthor(host, amount);
+  const topics = inferStreamTopics(streamDoc);
+  if (topics.length) bumpTopics(topics, amount * 0.5);
 };
 
 const tsMs = (t) => (t?.toMillis ? t.toMillis() : (t ? new Date(t).getTime() : 0)) || 0;
@@ -225,6 +245,15 @@ const scorePost = (post, ctx, nowMs) => {
     if (tags.some(t => ctx.negativeTopics.has(t))) s -= 4;
     else for (const t of topics) { if (ctx.negativeTopics.has(t.toLowerCase())) { s -= 4; break; } }
   }
+
+  // ⚠ PAID POST BOOST. Applied LAST and as a MULTIPLIER, so it scales whatever
+  // the post had already earned rather than swamping it. `BOOST_COSTS.post.desc`
+  // has promised "3x visibility in For You" since the day it shipped, and until
+  // 2026-08-28 NOTHING read the boost at all, so the promise was false.
+  //
+  // Guarded on s > 0: multiplying a negative score would push a muted author
+  // FURTHER down, which is not what was bought.
+  if (s > 0 && isBoosted(post, nowMs)) s *= POST_BOOST_REACH;
 
   return s;
 };

@@ -15,6 +15,7 @@ const NOTIF_ICONS = {
   like:       { icon: 'favorite',         color: 'text-brand-ember',  bg: 'bg-brand-ember/15',  webp: '/notif-icons/like.webp' },
   comment:    { icon: 'chat_bubble',      color: 'text-brand-violet', bg: 'bg-brand-violet/15', webp: '/notif-icons/comment.webp' },
   tip:        { icon: 'monetization_on',  color: 'text-brand-gold',   bg: 'bg-brand-gold/15',   webp: '/notif-icons/coins.webp' },
+  vp_level_up:{ icon: 'military_tech',    color: 'text-brand-violet-light', bg: 'bg-brand-violet/15', webp: null },
   coins:      { icon: 'paid',             color: 'text-brand-gold',   bg: 'bg-brand-gold/15',   webp: '/notif-icons/coins.webp' },
   vp:         { icon: 'auto_awesome',     color: 'text-brand-violet', bg: 'bg-brand-violet/15', webp: '/notif-icons/vp.webp' },
   gem_transfer: { icon: 'diamond',       color: 'text-gem-blue',     bg: 'bg-gem-blue/15' },

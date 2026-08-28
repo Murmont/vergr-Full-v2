@@ -2,9 +2,9 @@
 //
 // Founder-locked economics (2026-07-17):
 //   - Platform fee = 8% of the sale, taken at purchase. LOCKED.
-//   - Seller is credited GEMS DIRECTLY (floor(price * 0.92)) — gems are the
-//     withdrawable currency, so the coin→gem conversion commission (30%→15%)
-//     is bypassed entirely. "No withdraw fee" is literally true: 8% total.
+//   - Seller is credited THE PAYABLE DIRECTLY (floor(price * 0.92), in
+//     micro-USD), so there is no second deduction
+//     on top of it. 8% total, and that is the whole fee.
 //   - Everyone can sell (all tiers). Tier only caps the FILE size
 //     (free 200MB / lite 1GB / pro 5GB — mirrors r2.js SIZE_CAPS).
 //
@@ -35,8 +35,9 @@ const db = getFirestore('vgrdb');
 // External-store write-back (Shopify/Woo inventory decrement). Best-effort,
 // called AFTER the purchase transaction commits — see shopSync.js.
 const { decrementExternalStock } = require('./shopSync');
+const { COIN_MICRO_USD, microUsdToStr } = require('./coinLedger');
 
-const SALE_FEE = 0.08; // LOCKED — founder 2026-07-17. 8% flat, gems-direct payout.
+const SALE_FEE = 0.08; // LOCKED — founder 2026-07-17. 8% flat, credited straight to the payable.
 const MAX_PRICE_COINS = 500_000; // sanity ceiling, mirrors the largest platform amount (prize cap)
 const R2_SECRETS = ['R2_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET'];
 
@@ -121,7 +122,7 @@ exports.getVergrMeProductUploadUrl = functions.https.onCall(
 );
 
 // ─────────────────────────────────────────────────────────────────────
-// purchaseVergrMeProduct — buyer pays coins, seller receives gems.
+// purchaseVergrMeProduct — buyer pays coins, seller accrues their 92% share.
 //
 // DIGITAL: deterministic purchase doc = one grant per buyer, idempotent.
 // PHYSICAL (founder-locked 2026-07-18): same 8% fee ON THE PRODUCT PRICE
@@ -224,18 +225,20 @@ exports.purchaseVergrMeProduct = functions.https.onCall(
       const name = p.name || (kind === 'physical' ? 'Product' : 'Digital product');
 
       // Shared credit/ledger writer.
-      const settle = ({ total, gemsToSeller, platformCut, refCollectionDoc, extraSellerBody }) => {
+      const settle = ({ total, owedToSeller, platformCut, refCollectionDoc, extraSellerBody }) => {
         tx.update(buyerWalletRef, {
           balance: FieldValue.increment(-total),
           totalSpent: FieldValue.increment(total),
           updatedAt: FieldValue.serverTimestamp(),
         });
-        // Gems-direct credit: the whole point of the wedge. No coin leg, no
-        // conversion commission — 8% total, done.
+        // Straight to the payable: the whole point of the wedge. No coin leg
+        // and no second deduction — 8% total, done. The RATE is unchanged by
+        // the removal of gems; only the unit it is recorded in changed, from an
+        // integer cent to micro-USD.
         tx.set(sellerWalletRef, {
-          gems: FieldValue.increment(gemsToSeller),
-          totalGemsEarned: FieldValue.increment(gemsToSeller),
-          vergrMeSalesGems: FieldValue.increment(gemsToSeller),
+          owedMicroUsd: FieldValue.increment(owedToSeller),
+          totalOwedMicroUsd: FieldValue.increment(owedToSeller),
+          vergrMeSalesMicroUsd: FieldValue.increment(owedToSeller),
           updatedAt: FieldValue.serverTimestamp(),
         }, { merge: true });
         tx.update(productRef, { salesCount: FieldValue.increment(1) });
@@ -245,22 +248,23 @@ exports.purchaseVergrMeProduct = functions.https.onCall(
           meta: { sellerUid, productId }, createdAt: FieldValue.serverTimestamp(),
         });
         tx.set(db.collection('transactions').doc(), {
-          userId: sellerUid, type: 'vergrme_sale', amount: gemsToSeller, currency: 'gems',
-          description: `Sold "${name}" (${total} coins, 8% fee, paid in gems)`,
+          userId: sellerUid, type: 'vergrme_sale', earning: true,
+          amount: owedToSeller, amountMicroUsd: owedToSeller, currency: 'usd',
+          description: `Sold "${name}" (${total} coins, your 92% share is ${microUsdToStr(owedToSeller)})`,
           meta: { buyerUid: uid, productId, coinsTotal: total, platformCut },
           createdAt: FieldValue.serverTimestamp(),
         });
         tx.set(db.collection('platform_commissions').doc(), {
           type: 'vergrme_sale_fee', userId: sellerUid,
-          priceCoins: total, gemsCredited: gemsToSeller, platformCut, feePct: SALE_FEE,
+          priceCoins: total, owedMicroUsd: owedToSeller, platformCut, feePct: SALE_FEE,
           createdAt: FieldValue.serverTimestamp(),
         });
         tx.set(db.collection('notifications').doc(), {
           recipientId: sellerUid, type: 'vergrme_sale',
           title: kind === 'physical' ? 'New order!' : 'Product sold!',
           body: kind === 'physical'
-            ? `"${name}" ordered for ${total} coins — ${gemsToSeller} gems added. Check your orders to ship it.`
-            : `"${name}" sold for ${total} coins — ${gemsToSeller} gems added to your wallet`,
+            ? `"${name}" ordered for ${total} coins — you earned ${microUsdToStr(owedToSeller)}. Check your orders to ship it.`
+            : `"${name}" sold for ${total} coins — you earned ${microUsdToStr(owedToSeller)}`,
           senderId: uid, read: false, data: { productId, ...(refCollectionDoc ? { orderId: refCollectionDoc.id } : {}) },
           createdAt: FieldValue.serverTimestamp(),
         });
@@ -274,17 +278,18 @@ exports.purchaseVergrMeProduct = functions.https.onCall(
         if (balance < price) {
           throw new functions.https.HttpsError('failed-precondition', `Need ${price} coins. You have ${balance}.`);
         }
-        const gemsToSeller = Math.floor(price * (1 - SALE_FEE));
-        const platformCut = price - gemsToSeller;
-        settle({ total: price, gemsToSeller, platformCut });
+        const sellerCoins = Math.floor(price * (1 - SALE_FEE));
+        const owedToSeller = sellerCoins * COIN_MICRO_USD;
+        const platformCut = price - sellerCoins;
+        settle({ total: price, owedToSeller, platformCut });
         tx.set(purchaseRef, {
           buyerUid: uid, sellerUid, productId,
           productName: name,
-          priceCoins: price, feePct: SALE_FEE, gemsToSeller,
+          priceCoins: price, feePct: SALE_FEE, owedToSeller,
           coverUrl: p.coverUrl || null, fileName: p.fileName || null,
           createdAt: FieldValue.serverTimestamp(),
         });
-        return { ok: true, purchaseId: purchaseRef.id, gemsToSeller };
+        return { ok: true, purchaseId: purchaseRef.id, owedToSeller };
       }
 
       // ── PHYSICAL ──
@@ -314,12 +319,12 @@ exports.purchaseVergrMeProduct = functions.https.onCall(
         throw new functions.https.HttpsError('failed-precondition', `Need ${total} coins (incl. shipping). You have ${balance}.`);
       }
       // Fee on the PRODUCT price only; shipping passes through in full.
-      const gemsFromPrice = Math.floor(price * (1 - SALE_FEE));
-      const gemsToSeller = gemsFromPrice + shipCoins;
-      const platformCut = price - gemsFromPrice;
+      const sellerCoinsFromPrice = Math.floor(price * (1 - SALE_FEE));
+      const owedToSeller = (sellerCoinsFromPrice + shipCoins) * COIN_MICRO_USD;
+      const platformCut = price - sellerCoinsFromPrice;
 
       const orderRef = db.collection('vergrme_orders').doc();
-      settle({ total, gemsToSeller, platformCut, refCollectionDoc: orderRef });
+      settle({ total, owedToSeller, platformCut, refCollectionDoc: orderRef });
       if (hasStock) tx.update(productRef, { stock: FieldValue.increment(-1) });
       if (variantTracksStock) {
         // No array-element increment in Firestore, so rewrite the row. Safe:
@@ -347,7 +352,7 @@ exports.purchaseVergrMeProduct = functions.https.onCall(
         buyerUid: uid, sellerUid, productId,
         productName: name,
         priceCoins: price, shippingCoins: shipCoins, totalCoins: total,
-        feePct: SALE_FEE, gemsToSeller,
+        feePct: SALE_FEE, owedToSeller,
         coverUrl: p.coverUrl || null,
         // The seller has to know WHICH option to ship.
         variantId: variant?.id || null,
@@ -358,7 +363,7 @@ exports.purchaseVergrMeProduct = functions.https.onCall(
         createdAt: FieldValue.serverTimestamp(),
       });
 
-      const result = { ok: true, orderId: orderRef.id, totalCoins: total, gemsToSeller };
+      const result = { ok: true, orderId: orderRef.id, totalCoins: total, owedToSeller };
       if (idempotencyKey) {
         tx.set(db.collection('idempotency').doc(`vmorder_${uid}_${idempotencyKey}`), {
           result, createdAt: FieldValue.serverTimestamp(),
@@ -377,7 +382,7 @@ exports.purchaseVergrMeProduct = functions.https.onCall(
 // ─────────────────────────────────────────────────────────────────────
 // cancelVergrMeOrder — SELLER cancels an unshipped order → full auto-refund.
 // The only automated refund path (founder-locked): buyer gets ALL coins
-// back (price + shipping), the seller's gem credit is clawed back. Once
+// back (price + shipping), the seller's accrued share is clawed back. Once
 // an order is marked shipped this door closes — disputes are then
 // seller-handled off-platform.
 // ─────────────────────────────────────────────────────────────────────
@@ -398,7 +403,9 @@ exports.cancelVergrMeOrder = functions.https.onCall(
       if (o.status !== 'placed') throw new functions.https.HttpsError('failed-precondition', 'Only unshipped orders can be cancelled.');
 
       const total = o.totalCoins || 0;
-      const gems = o.gemsToSeller || 0;
+      // Older order docs recorded the seller amount as an integer-cent figure
+      // under `gemsToSeller`; new ones store micro-USD under `owedToSeller`.
+      const owed = Number(o.owedToSeller ?? ((o.gemsToSeller || 0) * COIN_MICRO_USD)) || 0;
 
       // Read the product BEFORE any write. Firestore transactions require all
       // reads to precede all writes, so the old placement of this get (after
@@ -414,9 +421,9 @@ exports.cancelVergrMeOrder = functions.https.onCall(
         updatedAt: FieldValue.serverTimestamp(),
       }, { merge: true });
       tx.set(db.collection('wallets').doc(uid), {
-        gems: FieldValue.increment(-gems),
-        totalGemsEarned: FieldValue.increment(-gems),
-        vergrMeSalesGems: FieldValue.increment(-gems),
+        owedMicroUsd: FieldValue.increment(-owed),
+        totalOwedMicroUsd: FieldValue.increment(-owed),
+        vergrMeSalesMicroUsd: FieldValue.increment(-owed),
         updatedAt: FieldValue.serverTimestamp(),
       }, { merge: true });
       // Restock one unit if the product tracks stock.
@@ -438,8 +445,8 @@ exports.cancelVergrMeOrder = functions.https.onCall(
         meta: { orderId, sellerUid: uid }, createdAt: FieldValue.serverTimestamp(),
       });
       tx.set(db.collection('transactions').doc(), {
-        userId: uid, type: 'vergrme_refund', amount: -gems, currency: 'gems',
-        description: `Order cancelled: "${o.productName}" — gems returned for buyer refund`,
+        userId: uid, type: 'vergrme_refund', amount: -owed, amountMicroUsd: -owed, currency: 'usd',
+        description: `Order cancelled: "${o.productName}" — your share reversed for the buyer refund`,
         meta: { orderId, buyerUid: o.buyerUid }, createdAt: FieldValue.serverTimestamp(),
       });
       tx.set(db.collection('notifications').doc(), {

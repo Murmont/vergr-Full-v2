@@ -52,8 +52,11 @@ export const TOTAL_BADGES = 30;
 // `custom` overrides the flat "+N VP" amount for non-flat earners (e.g. gifting,
 // which scales with coins sent and is capped daily — see GIFT_* in vpSystem).
 export const EARN_ITEMS = [
-  { key: 'host_event',       label: 'Host a live event', icon: 'confirmation_number' },
-  { key: 'win_match',        label: 'Win a match',       icon: 'sports_esports' },
+  // host_event is earned via the creator_host_event quest (150 VP), not a
+  // per-action award, so it carries a custom label and has no VP_ACTIONS entry.
+  // win_match was removed: tournaments are retired and unrouted, so there is no
+  // way to win a match and its VP could never be earned.
+  { key: 'host_event',       label: 'Host a live event', icon: 'confirmation_number', custom: '+150 VP' },
   { key: 'gift',             label: 'Gift / tip a creator', icon: 'redeem', custom: '+1 VP / 25c' },
   { key: 'go_live',          label: 'Go live',           icon: 'sensors' },
   { key: 'complete_quest',   label: 'Complete a quest',  icon: 'task_alt' },

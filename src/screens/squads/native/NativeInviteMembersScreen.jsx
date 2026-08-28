@@ -9,6 +9,7 @@ import {
 } from '../../../firebase/firestore';
 import { avatarClass, initials, nameOf } from '../../../components/squad/squadHelpers';
 import NativeSquadScaffold from './NativeSquadScaffold';
+import UserName from '../../../components/UserName';
 
 export default function NativeInviteMembersScreen() {
   const { squadId } = useParams();
@@ -93,8 +94,8 @@ export default function NativeInviteMembersScreen() {
                 <div key={uid} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 12, background: 'rgba(255,255,255,.025)', border: '1px solid rgba(255,255,255,.06)', borderRadius: 12 }}>
                   <div className={`squad-avatar ${avatarClass(uid)}`} style={{ width: 36, height: 36, fontSize: 13 }}>{u.avatar ? <img src={u.avatar} alt="" /> : initials(nameOf(u))}</div>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontFamily: 'Syne', fontWeight: 700, color: '#fff', fontSize: 13 }}>{u.displayName || u.username || 'Player'}</div>
-                    <div style={{ fontFamily: 'DM Mono', fontSize: 10, color: 'var(--t3)' }}>@{u.username || uid.slice(0, 6)}</div>
+                    <div style={{ fontFamily: 'Syne', fontWeight: 700, color: '#fff', fontSize: 13 }}><UserName user={u} masked fallback={'Player'} /></div>
+                    <div style={{ fontFamily: 'DM Mono', fontSize: 10, color: 'var(--t3)' }}><UserName user={u} masked handle fallback={uid.slice(0, 6)} /></div>
                   </div>
                   {isMember
                     ? <span style={{ fontFamily: 'DM Mono', fontSize: 10, color: 'var(--violet-light)', textTransform: 'uppercase', letterSpacing: '.08em' }}>Member</span>

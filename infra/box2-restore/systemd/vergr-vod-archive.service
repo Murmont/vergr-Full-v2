@@ -1,0 +1,16 @@
+[Unit]
+Description=VERGR VOD archive transcoder (box 2)
+After=network.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/vergr-vod-archive.env
+WorkingDirectory=/opt/vergr-vod-archive
+ExecStart=/usr/bin/node /opt/vergr-vod-archive/launcher.js
+Restart=always
+RestartSec=5
+LimitNOFILE=4096
+Nice=10
+
+[Install]
+WantedBy=multi-user.target

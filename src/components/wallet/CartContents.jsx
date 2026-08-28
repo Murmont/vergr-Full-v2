@@ -26,10 +26,15 @@ import LocalPrice from '../LocalPrice';
 import { useCart } from '../../context/CartContext';
 import { useUser } from '../../context/UserContext';
 import { getCoinPriceQuote } from '../../firebase/firestore';
+import { hasLocalEstimate } from '../../utils/currency';
 import { COIN_PACKS } from '../../utils/vpSystem';
 import { isPlayBillingSupported, fetchPlayPrices, playProductIdFor } from '../../utils/nativeBilling';
 import PaymentMethodPicker from './PaymentMethodPicker';
 import { WALLET_TOKENS, CoinGlyph, fmtNum } from './primitives';
+// The operating entity is named on a checkout disclosure, so it must come from
+// the one source of truth rather than be typed here. Costs no bundle weight:
+// AppRouter already pulls legalContent into the main chunk via TosVersionGate.
+import { OPERATOR } from '../../screens/marketing/legal/legalContent';
 
 const packById = (sku) => COIN_PACKS.find((p) => p.id === sku);
 
@@ -417,8 +422,16 @@ export default function CartContents({ onCheckout, busy, onClose, variant = 'dra
             <span>Charged by Google Play in your account currency</span>
           ) : (
             <>
-              {quote && <LocalPrice usd={quote.checkout?.total ?? quote.priceUSD} prefix="≈ " />}
-              <span>{quote ? ' · ' : ''}charged in USD</span>
+              {/* The estimate is suppressed for a buyer already on USD (A3), so
+                  the separator has to go with it or the line reads
+                  " · charged in USD". */}
+              {quote && hasLocalEstimate(quote.checkout?.total ?? quote.priceUSD) && (
+                <>
+                  <LocalPrice usd={quote.checkout?.total ?? quote.priceUSD} prefix="≈ " />
+                  <span> · </span>
+                </>
+              )}
+              <span>charged in USD</span>
             </>
           )}
         </div>
@@ -489,7 +502,7 @@ export default function CartContents({ onCheckout, busy, onClose, variant = 'dra
           <Link to="/platform/privacy" style={{ color: WALLET_TOKENS.textSecondary, textDecoration: 'underline' }}>
             Privacy Policy
           </Link>
-          . Payment is handled by our payment provider on behalf of Murmont LLC, the operator of Vergr.
+          . Payment is handled by our payment provider on behalf of {OPERATOR.legalName}, the operator of Vergr.
         </p>
       </div>
     </div>

@@ -29,14 +29,14 @@ Parts:
 
 Vergr currently takes money from one user, holds it as a balance, and pays it out
 on demand to a different user's nominated crypto address, which is the textbook
-description of money transmission, and Murmont LLC is not licensed to do it.
+description of money transmission, and Vergr LLC is not licensed to do it.
 
 ### 1.2 The specific legal exposure
 
 Three facts combine into the exposure. Any one alone is survivable, all three
 together are not:
 
-1. **Murmont LLC is a US entity**, so FinCEN rules apply directly, and unlicensed
+1. **Vergr LLC is a US entity**, so FinCEN rules apply directly, and unlicensed
    money transmission is a criminal statute (18 USC 1960) as well as a civil one.
 2. **We hold user funds.** All float sits in a developer-controlled Circle
    omnibus wallet with `wallets/{uid}` as a ledger against it. That is custody.
@@ -436,7 +436,7 @@ pick. Part 2 cannot start until these are answered.
 ## 7. Honest limits of this plan
 
 - I am not a lawyer and this is not legal advice. The plan implements a structure
-  that is standard in the industry; whether it is sufficient for Murmont LLC
+  that is standard in the industry; whether it is sufficient for Vergr LLC
   specifically is a question this document cannot answer.
 - Everything in §2 was read from code and is verifiable. Everything in §3 and §5
   is proposal.

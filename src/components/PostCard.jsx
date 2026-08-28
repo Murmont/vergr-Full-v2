@@ -1,4 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
+
+// Below this a post shows no view count at all. See the note at the render site.
+const PUBLIC_VIEW_FLOOR = 50;
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import AnimatedNumber from './AnimatedNumber';
@@ -10,6 +13,8 @@ import { toggleLike, isPostLiked, toggleBookmark, isBookmarked, incrementShareCo
 import { captureInterest } from '../utils/feedRank';
 import { addNegativeAuthor, addNegativeTopic } from '../utils/feedPrefs';
 import UserAvatar from './UserAvatar';
+import UserName from './UserName';
+import RankBadge from './RankBadge';
 import VanguardBadge from './VanguardBadge';
 import { applyVanguardMask } from '../utils/vanguard';
 import Icon from './Icon';
@@ -18,11 +23,14 @@ import { langLabel } from '../utils/localePrefs';
 import PollCard from './PollCard';
 import PostRichText, { stripPostFormatting, truncateFormatted } from './PostRichText';
 import TierBadge from './TierBadge';
-import EmbedVideoPlayer from './EmbedVideoPlayer';
+import EmbedVideoPlayer, { parseVideoUrl, getThumbnailUrl } from './EmbedVideoPlayer';
+import Ambilight from './effects/visual/Ambilight';
 import InlineVideoPlayer from './media/InlineVideoPlayer';
 import TipPostModal from './TipPostModal';
 import CreateComposer from './composer/CreateComposer';
 import { CoinIcon } from './CoinIcon';
+import BoostSheet from './boost/BoostSheet';
+import { isBoosted, boostRemainingMs, formatBoostRemaining } from '../utils/promoBoost';
 import LockedMedia from './monetization/LockedMedia';
 import { timeAgo } from '../utils/helpers';
 import { withRef } from '../utils/shareRef';
@@ -95,7 +103,15 @@ function MediaHeart({ heartKey }) {
 // each tile keeps its own aspect ratio (width auto at a shared height) so
 // several show at once, the next peeks in, and nothing is ever cropped.
 // Handles images + videos in any mix.
-function MediaRow({ items, onImageClick, onDoubleTapLike }) {
+// `renditions` was read off `post` in here, but MediaRow never received a
+// `post` prop, so the multi-media branch threw `ReferenceError: post is not
+// defined` on any post containing a video (audit A41 #2). MediaContent, its
+// only caller, has the post and just was not passing it down.
+//
+// ⚠ `post?.adaptiveRenditions` looked defensive and was not: optional chaining
+// guards against a null VALUE, never against an undeclared IDENTIFIER. `post?.x`
+// with no `post` binding in scope still throws.
+function MediaRow({ items, post, onImageClick, onDoubleTapLike }) {
   const scrollerRef = useRef(null);
   const { onTap, heartKey } = useMediaTap(onDoubleTapLike);
   const scrollBy = (dir) => { const el = scrollerRef.current; if (el) el.scrollBy({ left: dir * Math.round(el.clientWidth * 0.8), behavior: 'smooth' }); };
@@ -124,6 +140,33 @@ function MediaRow({ items, onImageClick, onDoubleTapLike }) {
       <div className="absolute top-2 right-2 px-2 py-0.5 rounded-full bg-black/60 text-white text-[11px] font-dmmono flex items-center gap-1 pointer-events-none">
         <Icon name="collections" size={12} /> {items.length}
       </div>
+    </div>
+  );
+}
+
+// Anchors the ambilight to the MEDIA, not to the card.
+//
+// ⚠ THE MISTAKE THIS EXISTS TO PREVENT. A previous version put one glow at
+// `inset: 0` on the whole post card. That stretches a 16:9 sample across a tall
+// card, so the light loses any resemblance to the picture it came from and
+// floods the entire card with one colour. The founder's words: "it shouldn't
+// keep a resemblance of the share, not stretch out over the entire card."
+//
+// This wrapper is sized by the media inside it, so the glow box is
+// media + BLEED on every side and keeps the media's aspect ratio. The post card
+// sets `overflow: hidden`, which is what stops it reaching a neighbouring card
+// — containment comes from the clip, not from padding.
+//
+// `isolation: isolate` makes this a stacking context so the z-index:-1 glow
+// paints above this wrapper and below the media (00-RULES R6).
+const MEDIA_GLOW_BLEED = 56;
+
+function MediaGlow({ src, children }) {
+  if (!src) return children;
+  return (
+    <div className="relative" style={{ isolation: 'isolate' }}>
+      <Ambilight src={src} enabled bleed={MEDIA_GLOW_BLEED} intensity={0.45} feather={false} />
+      {children}
     </div>
   );
 }
@@ -211,7 +254,7 @@ function MediaContent({ post, onImageClick, onDoubleTapLike }) {
     );
   }
 
-  return <MediaRow items={items} onImageClick={openImageLightbox} onDoubleTapLike={onDoubleTapLike} />;
+  return <MediaRow items={items} post={post} onImageClick={openImageLightbox} onDoubleTapLike={onDoubleTapLike} />;
 }
 
 function ImageLightbox({ urls, startIndex, onClose }) {
@@ -335,9 +378,10 @@ function EmbeddedPost({ post, onClick }) {
     <button onClick={onClick} className="w-full rounded-2xl border border-white/[0.06] bg-surface-1/30 p-3.5 text-left hover:border-white/[0.06] transition-colors">
       <div className="flex items-center gap-2 mb-1.5">
         <UserAvatar src={author?.avatar} size={18} />
-        <span className="text-text-primary text-xs font-semibold">{author?.displayName || 'User'}</span>
+        <span className="text-text-primary text-xs font-semibold"><UserName user={author} masked fallback={'User'} /></span>
+        <RankBadge level={author?.vpLevel} role={author?.role} size={12} style={{ verticalAlign: '-2px' }} />
         {author?.vanguardBadge && <VanguardBadge rank={post.author?.vanguard?.rank} size={12} />}
-        <span className="text-text-muted text-xs">@{author?.username}</span>
+        <span className="text-text-muted text-xs"><UserName user={author} masked handle /></span>
         <span className="text-text-muted text-xs">· {timeAgo(post.createdAt)}</span>
       </div>
       {post.content && <p className="text-text-secondary text-sm leading-relaxed line-clamp-3">{post.content}</p>}
@@ -374,6 +418,44 @@ function LinkPreviewImage({ src }) {
   );
 }
 
+/**
+ * The visible proof a boost is running.
+ *
+ * ⚠ Shown to EVERYONE, not just the buyer. Two reasons: the person who paid
+ * needs to see the thing they bought actually working, and labelling promoted
+ * content is the honest default rather than hiding that reach was purchased.
+ *
+ * Ticks once a second and stops itself the moment the boost lapses — a
+ * countdown still running on an expired boost is a wrong number on screen.
+ */
+function BoostedPill({ post }) {
+  const [ms, setMs] = useState(() => boostRemainingMs(post));
+  useEffect(() => {
+    if (!isBoosted(post)) return undefined;
+    const id = setInterval(() => {
+      const left = boostRemainingMs(post);
+      setMs(left);
+      if (left <= 0) clearInterval(id);
+    }, 1000);
+    return () => clearInterval(id);
+  }, [post]);
+
+  if (ms <= 0) return null;
+  return (
+    <span
+      title={`Boosted — shown to more people for another ${formatBoostRemaining(ms)}`}
+      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold"
+      style={{ background: 'rgba(240,64,96,0.15)', color: '#F04060' }}
+    >
+      <Icon name="rocket_launch" size={11} />
+      Boosted
+      <span style={{ opacity: 0.75, fontVariantNumeric: 'tabular-nums' }}>
+        {formatBoostRemaining(ms)}
+      </span>
+    </span>
+  );
+}
+
 export default function PostCard({ post, onDeleted, onLikeUpdate }) {
   const navigate = useNavigate();
   const { currentUser } = useAuth();
@@ -387,6 +469,9 @@ export default function PostCard({ post, onDeleted, onLikeUpdate }) {
   const [shareCount, setShareCount] = useState(post.shareCount || 0);
   const [reposted, setReposted] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
+  // Boosts are tokens you own and may spend on ANYONE's post, so this is not
+  // gated on authorship — the sheet handles buying one if you have none.
+  const [showBoost, setShowBoost] = useState(false);
   const [showRepostMenu, setShowRepostMenu] = useState(false);
   const [showTipModal, setShowTipModal] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
@@ -636,6 +721,32 @@ export default function PostCard({ post, onDeleted, onLikeUpdate }) {
     ? { ...baseContentPost, mediaUrls: mediaOverride, mediaUrl: mediaOverride[0] || null }
     : baseContentPost;
 
+  // ── The one image the card's ambilight samples ────────────────────────
+  //
+  // Resolved here, once, rather than by each media component, because the card
+  // draws ONE glow behind everything (see the render). Priority is the frame a
+  // viewer actually sees first:
+  //   1. an uploaded video's poster
+  //   2. a YouTube/Twitch embed's poster — the ONLY thing reachable for an
+  //      embed, because a cross-origin iframe's pixels cannot be sampled
+  //   3. the first image
+  // A text-only post resolves to null and draws no glow at all, so an ordinary
+  // feed of text posts costs exactly what it did before.
+  const cardPosterUrl = useMemo(() => {
+    const p = contentPost || post;
+    if (p?.thumbnailUrl) return p.thumbnailUrl;
+    if (p?.youtubeVideoId || p?.embedVideoUrl) {
+      const parsed = p.youtubeVideoId
+        ? { platform: 'youtube', videoId: p.youtubeVideoId }
+        : parseVideoUrl(p.embedVideoUrl);
+      const t = getThumbnailUrl(parsed);
+      if (t) return t;
+    }
+    const urls = p?.mediaUrls?.length ? p.mediaUrls : (p?.mediaUrl ? [p.mediaUrl] : []);
+    const firstImage = urls.find((u) => typeof u === 'string' && !/\.(mp4|webm|mov|m3u8)(\?|$)/i.test(u));
+    return firstImage || null;
+  }, [contentPost, post]);
+
   // Vanguard identity mask for the author chip. If the author is an active
   // Vanguard and the viewer isn't allied, the author renders as
   // "@Vanguard" / "@Commander" with the rank avatar instead of the real
@@ -651,7 +762,17 @@ export default function PostCard({ post, onDeleted, onLikeUpdate }) {
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.25, ease: [0.25, 0.1, 0.25, 1] }}
-      className="w-full border-b border-white/[0.04] hover:bg-surface-1/30 transition-colors"
+      className="w-full border-b border-white/[0.04] hover:bg-surface-1/30 transition-colors relative"
+      // `isolation: isolate` makes the card a stacking context, so the
+      // z-index:-1 glow below paints ABOVE the card's own background and BELOW
+      // every piece of card content. Without it the glow escapes to an ancestor
+      // context and is covered by the first opaque background above it
+      // (docs/effects/00-RULES.md R6).
+      //
+      // `overflow: hidden` is what CONTAINS the glow. The glow is anchored to
+      // the media and bleeds past it, so the clip — not padding — is what stops
+      // it reaching the card above or below.
+      style={{ isolation: 'isolate', overflow: 'hidden' }}
     >
       <div className="px-4 py-4">
         {/* Repost header — masked author */}
@@ -676,11 +797,15 @@ export default function PostCard({ post, onDeleted, onLikeUpdate }) {
           </button>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-1.5">
-              <button onClick={() => navigate(`/user/${(contentPost || post).authorId}`)} className="font-semibold text-text-primary text-sm hover:underline truncate">{maskedAuthor?.displayName || 'User'}</button>
+              <button onClick={() => navigate(`/user/${(contentPost || post).authorId}`)} className="font-semibold text-text-primary text-sm hover:underline truncate"><UserName user={maskedAuthor} masked context="feed" /></button>
+              {/* Rank crest, after the name. Static: only live chat asks for
+                  the sweep. Free — _hydrateAuthors already loads the full user
+                  doc, so vpLevel is in hand with no extra read. */}
+              <RankBadge level={maskedAuthor?.vpLevel} role={maskedAuthor?.role} size={13} style={{ verticalAlign: '-2px' }} />
               {!isAuthorMasked && (contentPost || post).author?.isVerified && <span className="w-4 h-4 rounded-full bg-brand-violet flex items-center justify-center shrink-0"><Icon name="check" size={10} className="text-white" /></span>}
               {(contentPost || post).author?.vanguard?.rank && <VanguardBadge rank={(contentPost || post).author?.vanguard?.rank} size={14} />}
               {!isAuthorMasked && <TierBadge tier={(contentPost || post).author?.tier} size="xs" />}
-              <span className="text-text-muted text-sm truncate">@{maskedAuthor?.username}</span>
+              <span className="text-text-muted text-sm truncate"><UserName user={maskedAuthor} masked handle context="feed" /></span>
               <span className="text-text-muted text-xs shrink-0">· {timeAgo((contentPost || post).createdAt)}</span>
               {!isRepostType && isEdited && <span className="text-text-muted text-xs shrink-0">· edited</span>}
             </div>
@@ -713,6 +838,7 @@ export default function PostCard({ post, onDeleted, onLikeUpdate }) {
             )}
 
             {!isRepostType && (post.youtubeVideoId || post.embedVideoUrl) && (
+              <MediaGlow src={cardPosterUrl}>
               <EmbedVideoPlayer
                 videoId={post.youtubeVideoId}
                 videoUrl={post.embedVideoUrl}
@@ -720,15 +846,16 @@ export default function PostCard({ post, onDeleted, onLikeUpdate }) {
                   if (post.youtubeVideoId) navigate(`/clip/${post.id}`);
                 }}
               />
+              </MediaGlow>
             )}
 
             {!isRepostType && !(post.youtubeVideoId || post.embedVideoUrl) && (
               <>
                 {(contentPost?.type === 'photo' || contentPost?.type === 'carousel' || contentPost?.type === 'video' || contentPost?.type === 'clip' || contentPost?.type === 'media') && (
-                  <MediaContent post={contentPost} onImageClick={(urls, i) => setLightbox({ urls, index: i })} onDoubleTapLike={handleDoubleTapLike} />
+                  <MediaGlow src={cardPosterUrl}><MediaContent post={contentPost} onImageClick={(urls, i) => setLightbox({ urls, index: i })} onDoubleTapLike={handleDoubleTapLike} /></MediaGlow>
                 )}
                 {contentPost?.type === 'text' && (contentPost?.mediaUrl || contentPost?.mediaUrls?.length > 0) && (
-                  <MediaContent post={contentPost} onImageClick={(urls, i) => setLightbox({ urls, index: i })} onDoubleTapLike={handleDoubleTapLike} />
+                  <MediaGlow src={cardPosterUrl}><MediaContent post={contentPost} onImageClick={(urls, i) => setLightbox({ urls, index: i })} onDoubleTapLike={handleDoubleTapLike} /></MediaGlow>
                 )}
                 {contentPost?.type === 'poll' && <PollCard post={contentPost} />}
                 {contentPost?.type === 'lfg' && <LFGContent data={contentPost?.lfgData} />}
@@ -825,14 +952,39 @@ export default function PostCard({ post, onDeleted, onLikeUpdate }) {
                 {saveCount > 0 && <span className="text-xs font-dmmono">{saveCount}</span>}
               </button>
 
-              {(post.viewCount || 0) > 0 && (
+              {/* ⚠ A DISPLAY FLOOR, NOT A ZERO CHECK. Founder, 2026-08-28: a
+                  view counter was hidden originally because the first users would
+                  see tiny numbers and be discouraged. The fix is a floor, not
+                  concealment — below it the post simply shows no count.
+
+                  ⚠ `viewCount` IS STILL NEVER WRITTEN. incrementViewCount() has
+                  no callers, and counting every post is the thing we cannot afford
+                  (docs/BOOST_DELIVERY_PLAN.md §6.3). Only BOOSTED items are
+                  counted, and those numbers are private to the buyer. This floor
+                  exists so that if public counting is ever built, it cannot ship
+                  showing "3 views". */}
+              {(post.viewCount || 0) >= PUBLIC_VIEW_FLOOR && (
                 <span className="flex items-center gap-1 px-2 py-1.5 text-text-muted text-xs font-dmmono">
                   <Icon name="visibility" size={16} /> {post.viewCount >= 1000 ? `${(post.viewCount / 1000).toFixed(1)}k` : post.viewCount}
                 </span>
               )}
 
+              <BoostedPill post={post} />
               <div className="flex-1" />
 
+              {/* ⚠ ONLY THE AUTHOR SEES THIS. Founder, 2026-08-28: a boost button
+                  on your own post, while everyone else reaches it from the
+                  three-dot menu. It sits in the slot Tip uses on other people's
+                  posts, which is free here because you cannot tip yourself. */}
+              {isOwnPost ? (
+                <button
+                  onClick={(e) => { e.stopPropagation(); setShowBoost(true); }}
+                  className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-brand-ember/12 border border-brand-ember/30 text-brand-ember hover:bg-brand-ember/20 transition-colors"
+                >
+                  <Icon name="rocket_launch" size={13} />
+                  <span className="text-[11px] font-bold">Boost</span>
+                </button>
+              ) : (
               <button
                 onClick={(e) => { e.stopPropagation(); setShowTipModal(true); }}
                 className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-brand-violet/12 border border-brand-violet/30 text-brand-violet hover:bg-brand-violet/20 transition-colors"
@@ -840,6 +992,7 @@ export default function PostCard({ post, onDeleted, onLikeUpdate }) {
                 <CoinIcon size={13} />
                 <span className="text-[11px] font-bold">Tip</span>
               </button>
+              )}
             </div>
           </div>
 
@@ -855,6 +1008,9 @@ export default function PostCard({ post, onDeleted, onLikeUpdate }) {
                 </button>
                 <button onClick={() => { handleBookmark(); setShowMenu(false); }} className="w-full px-4 py-3 text-left text-sm text-text-primary hover:bg-surface-2 transition-colors flex items-center gap-2.5">
                   <Icon name={bookmarked ? 'bookmark' : 'bookmark_border'} size={16} className="text-text-muted" /> {bookmarked ? 'Remove bookmark' : 'Bookmark'}
+                </button>
+                <button onClick={() => { setShowBoost(true); setShowMenu(false); }} className="w-full px-4 py-3 text-left text-sm text-text-primary hover:bg-surface-2 transition-colors flex items-center gap-2.5">
+                  <Icon name="rocket_launch" size={16} className="text-text-muted" /> Boost this post
                 </button>
                 {isOwnPost ? (
                   <>
@@ -890,6 +1046,16 @@ export default function PostCard({ post, onDeleted, onLikeUpdate }) {
             )}
           </div>
         </div>
+
+        {showBoost && (
+          <BoostSheet
+            target="post"
+            targetId={post.id}
+            isLfg={post.type === 'lfg'}
+            targetLabel={isOwnPost ? 'your post' : 'this post'}
+            onClose={() => setShowBoost(false)}
+          />
+        )}
 
         {lightbox && (
           <ImageLightbox urls={lightbox.urls} startIndex={lightbox.index} onClose={() => setLightbox(null)} />

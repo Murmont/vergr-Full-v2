@@ -27,6 +27,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import { VPIcon } from '../../components/CoinIcon';
 import { REFERRAL_VP_REFERRER, REFERRAL_VP_REFEREE } from '../../utils/vpSystem';
 import { resolveTier } from '../../utils/tierSystem';
+import UserName from '../../components/UserName';
 
 const BASE_URL = 'https://vergr.app';
 
@@ -395,7 +396,7 @@ function ReferralHub({ variant }) {
                 )
               }
               <div className="flex-1 min-w-0">
-                <p className="font-semibold text-sm text-text-primary truncate">{inv.displayName}</p>
+                <p className="font-semibold text-sm text-text-primary truncate"><UserName user={inv} masked /></p>
                 <p className="text-text-muted text-xs">{inv.verified ? 'Phone verified ✓' : 'Setup not finished'}{inv.subscribed ? ' · Paid plan' : ''}</p>
               </div>
               {claimedFriendIds.includes(inv.uid) ? (

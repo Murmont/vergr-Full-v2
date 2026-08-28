@@ -3,6 +3,7 @@ import Icon from '../Icon';
 import { uploadToR2 } from '../../utils/r2Storage';
 import { VERGRME_DISPLAY_PREFIX } from '../../utils/vergrMeUrl';
 import { Card, Field } from './EditorUI';
+import UserName from '../UserName';
 
 export function ProfileCard({ form, patch, profile, username }) {
   const avatar = form.useProfileAvatar ? (profile?.avatar || profile?.photoURL) : form.customAvatarUrl;

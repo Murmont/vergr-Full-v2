@@ -35,7 +35,6 @@ export const getMyWalletSecurityStatus   = call('getMyWalletSecurityStatus');
 // Admin bypass — mints an unlock token without PIN. Server rejects non-admins.
 export const adminMintWalletUnlockToken  = call('adminMintWalletUnlockToken');
 
-// Phase 4 — withdrawals
-export const requestWithdrawal           = call('requestWithdrawal');
-export const cancelWithdrawal            = call('cancelWithdrawal');
-export const getMyWithdrawals            = call('getMyWithdrawals');
+// Withdrawal callables REMOVED 2026-08-16 with functions/withdrawals.js. There
+// is no user-initiated withdrawal: Vergr pays creators their revenue share on
+// its own schedule (functions/creatorPayouts.js).

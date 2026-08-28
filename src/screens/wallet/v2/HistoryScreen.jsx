@@ -5,11 +5,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useUser } from '../../../context/UserContext';
 import {
-  WalletCard, WalletButton, StatusPill, WALLET_TOKENS, fmtNum, fmtEUR,
+  WalletCard, WalletButton, StatusPill, WALLET_TOKENS, fmtNum, fmtEUR, txUnit,
 } from '../../../components/wallet/primitives';
 import Icon from '../../../components/Icon';
 import { getTransactions } from '../../../firebase/firestore';
-import { getMyWithdrawals, cancelWithdrawal } from '../../../firebase/walletCallables';
 
 const FILTERS = [
   { id: 'all',          label: 'All',              match: () => true },
@@ -25,7 +24,6 @@ export default function HistoryScreen() {
   const [search, setSearch] = useState('');
   const [txs, setTxs] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [withdrawals, setWithdrawals] = useState([]);
 
   useEffect(() => {
     if (!profile?.uid) return;
@@ -36,28 +34,11 @@ export default function HistoryScreen() {
       .finally(() => setLoading(false));
   }, [profile?.uid]);
 
-  // Poll withdrawals every 20s so the user sees status transitions
-  // (pending → processing → sent) without manually refreshing.
-  const loadWithdrawals = useCallback(async () => {
-    try {
-      const res = await getMyWithdrawals({ limit: 25 });
-      setWithdrawals(res?.rows || []);
-    } catch { /* silent */ }
-  }, []);
-
-  useEffect(() => {
-    if (!profile?.uid) return;
-    loadWithdrawals();
-    const t = setInterval(loadWithdrawals, 20_000);
-    return () => clearInterval(t);
-  }, [profile?.uid, loadWithdrawals]);
-
-  // Only "active" withdrawals get the dedicated section at top.
-  // Terminal states (sent/cancelled/failed) flow into the main transaction
-  // table via the existing withdrawal_* ledger rows.
-  const activeWithdrawals = withdrawals.filter(w =>
-    w.status === 'pending' || w.status === 'ready' || w.status === 'processing'
-  );
+  // The in-flight withdrawals section was removed on 2026-08-16 along with the
+  // user-initiated withdrawal pipeline. There is no request for a user to make,
+  // and therefore none to track or cancel. Money owed to a creator is paid on
+  // Vergr's schedule and is reported in Creator Studio, not here: this screen is
+  // the BUYER ledger (coins bought, tips sent, unlocks, subscriptions).
 
   const filtered = useMemo(() => {
     const f = FILTERS.find(x => x.id === filter);
@@ -74,21 +55,6 @@ export default function HistoryScreen() {
         <div style={{ fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: WALLET_TOKENS.violetLight, fontWeight: 600, marginBottom: 8 }}>History</div>
         <h1 style={{ fontFamily: 'Syne, sans-serif', fontWeight: 700, fontSize: 30, letterSpacing: '-0.02em' }}>Transactions.</h1>
       </div>
-
-      {/* Active withdrawals — pending / processing rows with cancel + countdown */}
-      {activeWithdrawals.length > 0 && (
-        <div style={{ marginBottom: 24 }}>
-          <div style={{
-            fontSize: 11, letterSpacing: '0.10em', textTransform: 'uppercase',
-            color: WALLET_TOKENS.textMuted, fontWeight: 600, marginBottom: 10,
-          }}>Active withdrawals · {activeWithdrawals.length}</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {activeWithdrawals.map(w => (
-              <WithdrawalRow key={w.id} w={w} onChanged={loadWithdrawals} />
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* Filter pills */}
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 16 }}>
@@ -159,7 +125,7 @@ function HistoryRow({ tx }) {
     : '';
   const amount = tx.amount || 0;
   const credit = amount >= 0;
-  const currency = tx.currency === 'gems' ? 'gems' : 'c';
+  const currency = txUnit(tx.currency);
   return (
     <div style={{
       display: 'grid',
@@ -186,126 +152,6 @@ function HistoryRow({ tx }) {
   );
 }
 
-// Single active-withdrawal card. Shows status, amount, destination, countdown
-// to release, and cancel button (when within cancelDeadline + status=pending).
-function WithdrawalRow({ w, onChanged }) {
-  const [now, setNow] = useState(Date.now());
-  const [cancelling, setCancelling] = useState(false);
-  const [error, setError] = useState(null);
-
-  // Tick countdown every second while displayed
-  useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(t);
-  }, []);
-
-  const canCancel = w.status === 'pending' && w.cancelDeadline && now < w.cancelDeadline;
-  const releaseIn = w.releasesAt ? w.releasesAt - now : 0;
-  const cancelIn = w.cancelDeadline ? w.cancelDeadline - now : 0;
-
-  const STATUS_META = {
-    pending:    { color: '#3B82F6', label: 'Pending', icon: 'schedule' },
-    ready:      { color: '#A78BFA', label: 'Ready to send', icon: 'task_alt' },
-    processing: { color: '#B44FFF', label: 'Processing on Base', icon: 'sync' },
-  };
-  const meta = STATUS_META[w.status] || { color: WALLET_TOKENS.textMuted, label: w.status, icon: 'help' };
-
-  const cancel = async () => {
-    if (!confirm('Cancel this withdrawal and refund your gems?')) return;
-    setCancelling(true);
-    setError(null);
-    try {
-      await cancelWithdrawal({ payoutId: w.id });
-      onChanged?.();
-    } catch (e) {
-      setError(e?.message || 'Cancel failed');
-    } finally {
-      setCancelling(false);
-    }
-  };
-
-  const addrShort = w.destinationAddress
-    ? `${w.destinationAddress.slice(0, 8)}…${w.destinationAddress.slice(-6)}`
-    : '—';
-
-  return (
-    <WalletCard padding={0}>
-      <div style={{
-        padding: 16, display: 'grid',
-        gridTemplateColumns: '32px 1fr auto', gap: 14, alignItems: 'flex-start',
-      }}>
-        <div style={{
-          width: 32, height: 32, borderRadius: 8,
-          background: `${meta.color}25`, color: meta.color,
-          display: 'grid', placeItems: 'center', marginTop: 2,
-        }}>
-          <Icon name={meta.icon} size={18} />
-        </div>
-        <div style={{ minWidth: 0 }}>
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 4 }}>
-            <span style={{
-              fontSize: 10, padding: '3px 8px', borderRadius: 999,
-              background: `${meta.color}20`, color: meta.color,
-              fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em',
-            }}>{meta.label}</span>
-            <span className="font-dmmono" style={{ fontSize: 13, fontWeight: 600 }}>
-              {fmtNum(w.gemsRequested)} gems
-            </span>
-            {w.netUSDC && (
-              <span style={{ fontSize: 12, color: WALLET_TOKENS.textMuted }}>
-                → {w.netUSDC} USDC
-              </span>
-            )}
-          </div>
-          <div style={{ fontSize: 12, color: WALLET_TOKENS.textMuted, fontFamily: 'monospace' }}>
-            {addrShort}
-          </div>
-          <div style={{ marginTop: 8, display: 'flex', gap: 14, fontSize: 11, color: WALLET_TOKENS.textMuted, flexWrap: 'wrap' }}>
-            {w.status === 'pending' && releaseIn > 0 && (
-              <span><Icon name="schedule" size={11} style={{ verticalAlign: 'middle', marginRight: 4 }} />
-                Releases in {fmtDuration(releaseIn)}
-              </span>
-            )}
-            {w.status === 'pending' && cancelIn > 0 && (
-              <span style={{ color: '#FCD34D' }}>
-                <Icon name="undo" size={11} style={{ verticalAlign: 'middle', marginRight: 4 }} />
-                Cancellable for {fmtDuration(cancelIn)}
-              </span>
-            )}
-            {w.status === 'processing' && (
-              <span><Icon name="sync" size={11} style={{ verticalAlign: 'middle', marginRight: 4 }} />
-                Submitted to Circle, awaiting confirmation
-              </span>
-            )}
-            {w.status === 'ready' && (
-              <span><Icon name="task_alt" size={11} style={{ verticalAlign: 'middle', marginRight: 4 }} />
-                Queued for next batch (every 15 min)
-              </span>
-            )}
-          </div>
-          {error && (
-            <div style={{ marginTop: 8, fontSize: 12, color: '#FCA5A5' }}>{error}</div>
-          )}
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-end' }}>
-          {canCancel && (
-            <WalletButton variant="ghost" size="sm" icon="close"
-                          onClick={cancel} disabled={cancelling}>
-              {cancelling ? 'Cancelling…' : 'Cancel'}
-            </WalletButton>
-          )}
-          {w.circleTxHash && (
-            <a href={`https://sepolia.basescan.org/tx/${w.circleTxHash}`}
-               target="_blank" rel="noreferrer noopener"
-               style={{ fontSize: 11, color: WALLET_TOKENS.violetLight, textDecoration: 'none' }}>
-              View on Basescan ↗
-            </a>
-          )}
-        </div>
-      </div>
-    </WalletCard>
-  );
-}
 
 function fmtDuration(ms) {
   if (ms <= 0) return '0s';

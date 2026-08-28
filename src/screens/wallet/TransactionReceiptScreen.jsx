@@ -12,6 +12,7 @@ export default function TransactionReceiptScreen() {
   const navigate = useNavigate();
   const { txId } = useParams();
   const [transaction, setTransaction] = useState(null);
+  const [notFound, setNotFound] = useState(false);
   const { isMobile } = useResponsive();
   const { setRightPanel, setContentAlign } = useLayout();
 
@@ -29,21 +30,18 @@ export default function TransactionReceiptScreen() {
     const load = async () => {
       const snap = await getDoc(doc(db, 'transactions', txId));
       if (snap.exists()) setTransaction({ id: snap.id, ...snap.data() });
+      setNotFound(!snap.exists());
     };
     load();
   }, [txId]);
 
-  // Fallback mock data for demo
-  const tx = transaction || {
-    id: txId || 'TXN-2026-0302-001',
-    type: 'Purchase',
-    item: '500 Coin Pack',
-    amount: '€4.49',
-    coins: '+550',
-    method: 'Visa •••• 4242',
-    date: new Date().toLocaleString(),
-    status: 'Completed'
-  };
+  // There used to be a "fallback mock data for demo" object here: a FABRICATED
+  // receipt for a "500 Coin Pack" at "€4.49" paid by "Visa •••• 4242", rendered
+  // whenever the transaction was not found (audit A28). A screenshot of it would
+  // have been indistinguishable from a real receipt for a purchase that never
+  // happened — and there is no 500 Coin Pack in COIN_PACKS, and no Visa on file
+  // anywhere in the product. Payment records are never invented.
+  const tx = transaction;
 
   const formatDate = (ts) => {
     if (!ts) return '';
@@ -65,6 +63,30 @@ export default function TransactionReceiptScreen() {
       <header className="flex items-center gap-3 px-5 pt-4 pb-4">
         <h1 className="text-white font-syne font-bold text-lg">Receipt</h1>
       </header>
+      {!tx ? (
+        <main className="flex-1 px-5 pb-8">
+          <div className="bg-surface-1 rounded-2xl p-8 border border-white/[0.06] text-center">
+            <Icon name={notFound ? 'receipt_long' : 'hourglass_empty'} size={36} className="text-text-muted mb-3" />
+            <p className="text-white font-semibold text-sm">
+              {notFound ? 'Receipt not found' : 'Loading receipt…'}
+            </p>
+            {notFound && (
+              <>
+                <p className="text-text-muted text-xs mt-1 leading-relaxed">
+                  We could not find a transaction with this reference on your account.
+                </p>
+                <button
+                  onClick={() => navigate('/wallet/history')}
+                  className="mt-4 px-4 py-2 rounded-lg text-xs font-bold text-white"
+                  style={{ background: 'linear-gradient(135deg, #7B1FFF, #B44FFF)' }}
+                >
+                  View your history
+                </button>
+              </>
+            )}
+          </div>
+        </main>
+      ) : (
       <main className="flex-1 px-5 pb-8">
         <div className="bg-surface-1 rounded-2xl p-6 border border-white/[0.06]">
           <div className="flex justify-center mb-6">
@@ -91,6 +113,7 @@ export default function TransactionReceiptScreen() {
           </div>
         </div>
       </main>
+      )}
     </div>
   );
 }

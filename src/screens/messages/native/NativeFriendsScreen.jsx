@@ -9,6 +9,7 @@ import { useLiveUsers } from '../../../context/LiveUsersContext';
 import TopBar from '../../../components/TopBar';
 import UserAvatar from '../../../components/UserAvatar';
 import Icon from '../../../components/Icon';
+import UserName from '../../../components/UserName';
 
 export default function NativeFriendsScreen() {
   const { showToast } = useUI();
@@ -90,8 +91,8 @@ export default function NativeFriendsScreen() {
                 <button onClick={() => navigate(`/user/${u.id}`)} className="flex-1 flex items-center gap-3 text-left min-w-0">
                   <UserAvatar src={u.avatar || u.photoURL} size={42} isVerified={u.isVerified} isLive={isUserLive(u.id)} />
                   <div className="flex-1 min-w-0">
-                    <div className="text-sm font-semibold text-text-primary truncate">{u.displayName || u.username || 'Unknown'}</div>
-                    {u.username && <div className="text-[11px] font-dmmono text-text-muted truncate">@{u.username}</div>}
+                    <div className="text-sm font-semibold text-text-primary truncate"><UserName user={u} masked fallback={'Unknown'} /></div>
+                    {u.username && <div className="text-[11px] font-dmmono text-text-muted truncate"><UserName user={u} masked handle /></div>}
                   </div>
                 </button>
                 <button onClick={() => handleMessage(u)} disabled={busyId === u.id}

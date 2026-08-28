@@ -24,6 +24,7 @@ import Icon from '../Icon';
 import { spring, prefersReducedMotion } from '../primitives/springs';
 import { haptic } from '../../utils/haptics';
 import { followUser, unfollowUser, isFollowing } from '../../firebase/firestore';
+import UserName from '../UserName';
 
 const C = {
   bg: '#12121e',
@@ -167,13 +168,13 @@ export default function UserQuickSheet({ open, uid, onClose, watchLiveStreamId =
                       display: 'flex', alignItems: 'center', gap: 6,
                       fontSize: 17, fontWeight: 800,
                     }}>
-                      {user.displayName || user.username}
+                      <UserName user={user} masked />
                       {user.verified && (
                         <Icon name="verified" size={16} className="" />
                       )}
                     </div>
                     <div style={{ fontSize: 13, color: C.textDim, marginTop: 2 }}>
-                      @{user.username}
+                      <UserName user={user} masked handle />
                     </div>
                     <div style={{
                       display: 'flex', gap: 14, marginTop: 8, fontSize: 12,

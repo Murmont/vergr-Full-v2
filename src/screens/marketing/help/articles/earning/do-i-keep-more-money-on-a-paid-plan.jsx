@@ -7,7 +7,7 @@ export default {
     { list: [
       "Faster VP gains (1.5x on Lite, 2x on Pro), so you reach lower-fee ranks sooner.",
       "Higher streaming quality and day-one public streaming, which helps you earn more tips.",
-      "More upload space, scheduling, analytics, and co-streaming (Pro) to grow your audience.",
+      "More upload space, longer streams, scheduling and analytics to grow your audience.",
     ]},
     { h2: "What a plan does NOT change" },
     { list: [

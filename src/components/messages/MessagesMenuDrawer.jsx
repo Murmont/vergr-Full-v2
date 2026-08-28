@@ -9,15 +9,41 @@ import Icon from '../Icon';
 import { MESSAGING_NAV } from '../../config/navConfig';
 import { isQrScanSupported, scanQr, qrValueToPath } from '../../utils/qrScanner';
 import { useUI } from '../../context/UIContext';
+import { useNotifications } from '../../context/NotificationContext';
 import MyQrModal from './MyQrModal';
 
 const MSG_MENU = MESSAGING_NAV.groups[0].items;
+
+// One badge style everywhere. No colour coding: a colour cannot tell a user
+// what it means or where to go, and this drawer already names the destination
+// on the row the number sits on.
+function Count({ n }) {
+  if (!n) return null;
+  return (
+    <span className="ml-auto min-w-[18px] h-[18px] px-1.5 rounded-full bg-brand-ember text-white flex items-center justify-center text-[10px] font-black tabular-nums leading-none">
+      {n > 99 ? '99+' : n}
+    </span>
+  );
+}
 
 export default function MessagesMenuDrawer({ open, onClose }) {
   const navigate = useNavigate();
   const location = useLocation();
   const { showToast } = useUI();
   const [showQr, setShowQr] = useState(false);
+  const {
+    unreadChatCount = 0, squadUnreadCount = 0, missedCallCount = 0, requestCount = 0,
+  } = useNotifications();
+
+  // Per-destination count, keyed on the same paths MESSAGING_NAV declares so
+  // the drawer and the desktop rail cannot drift apart.
+  const countFor = (path) => {
+    if (path === '/messages') return unreadChatCount;
+    if (path === '/messages/hub/calls') return missedCallCount;
+    if (path === '/messages/hub/squads') return squadUnreadCount;
+    if (path === '/messages/requests') return requestCount;
+    return 0;
+  };
 
   // Native-only: scan a Vergr QR code (add friend / join squad / join
   // tournament / event check-in) and deep-link into the app.
@@ -82,6 +108,7 @@ export default function MessagesMenuDrawer({ open, onClose }) {
                   <Icon name={m.icon} size={22} filled={active} />
                 )}
                 <span className="text-[14px] font-medium">{m.label}</span>
+                <Count n={countFor(m.path)} />
               </button>
             );
           })}

@@ -42,7 +42,7 @@ import BannedWordsEditor from '../../components/streams/BannedWordsEditor';
 import useStreamClipBuffer from '../../hooks/useStreamClipBuffer';
 import { useStreamJoinEvents } from '../../hooks/useStreamJoinEvents';
 import { uploadToR2 } from '../../utils/r2Storage';
-import { createPost, getStreamIngest } from '../../firebase/firestore';
+import { createPost, getStreamIngest, markStatusPosted } from '../../firebase/firestore';
 import { renderShareCard } from '../../utils/shareCard';
 import { resolveTier } from '../../utils/tierSystem';
 
@@ -229,7 +229,8 @@ export default function BroadcasterScreen() {
 
   const rawJoinEvents = useStreamJoinEvents(streamId);
   const joinEvents = useMemo(() => rawJoinEvents.map((e) => ({
-    id: e.id, kind: e.kind, tier: e.tier, user: { uid: e.uid, displayName: e.displayName, avatar: e.avatar },
+    id: e.id, kind: e.kind, tier: e.tier, level: e.level, rankId: e.rankId,
+    user: { uid: e.uid, displayName: e.displayName, avatar: e.avatar },
   })), [rawJoinEvents]);
 
   // Hide the app shell side panel on this screen.
@@ -464,7 +465,13 @@ export default function BroadcasterScreen() {
     if (streamDoc.hostUid !== currentUser?.uid) { showToast('Not your stream.', 'error'); return; }
     setStarting(true);
     try {
-      await updateDoc(doc(db, 'streams', streamDoc.id), { status: 'live', startedAt: serverTimestamp() });
+      // `status:'live'` is written at the END now, once ingest has actually been
+      // established. It used to be the FIRST thing this function did, so the
+      // doc said live, discovery listed the stream, viewers joined and the
+      // counter ticked — while the upload had not even been attempted. When it
+      // then failed, nothing rolled the status back: audit A44 recorded a
+      // 31-minute "LIVE" broadcast that never sent one byte. LIVE has to mean
+      // media is flowing, or every indicator on the product is decorative.
       setStartedAt(Date.now());
       setDuration(0);
 
@@ -479,7 +486,20 @@ export default function BroadcasterScreen() {
           throw new Error('Add a source first — share your screen or enable your camera.');
         }
 
-        const plan = streamDoc.hostPlan || resolveTier(profile);
+        // The publish key lives server-side and is fetched asynchronously by the
+        // snapshot handler above. Pressing Go Live before that lands used to
+        // reach startBrowserIngest with `streamKey: undefined`, which throws —
+        // AFTER the doc had already been flipped to live. Resolve it here
+        // instead of racing.
+        let sd = streamDoc; // local: streamDoc is state and cannot be reassigned
+        if (!sd.streamKey) {
+          const ing = await getStreamIngest(sd.id).catch(() => null);
+          if (!ing?.streamKey) throw new Error('Could not get a publish key for this stream. Try again in a moment.');
+          sd = { ...sd, ...ing };
+          setStreamDoc((d) => (d ? { ...d, ...ing } : d));
+        }
+
+        const plan = sd.hostPlan || resolveTier(profile);
         const phone = isTouchPhone();
         const useCompositor = (isDesktop && !phone) ? true : ((phone || !isDesktop) && mobileStudio);
         const aspect = (isDesktop && !phone) ? 'landscape' : 'portrait';
@@ -510,7 +530,7 @@ export default function BroadcasterScreen() {
         let videoBitrate = SOURCE_BITRATE[planTier] || SOURCE_BITRATE.free;
         // Pre-flight uplink probe: cap STARTING bitrate to ~60% of measured uplink.
         try {
-          const up = await probeUplink({ streamKey: streamDoc.streamKey, ingestBase: streamDoc.ingestUrl });
+          const up = await probeUplink({ streamKey: sd.streamKey, ingestBase: sd.ingestUrl });
           if (up) {
             const cap = Math.floor(up * 1000 * 0.6);
             if (cap < videoBitrate) {
@@ -522,11 +542,11 @@ export default function BroadcasterScreen() {
         } catch {}
 
         const session = await startBrowserIngest({
-          streamKey: streamDoc.streamKey,
+          streamKey: sd.streamKey,
           mediaStream: ingestStream,
           plan,
           videoBitrate,
-          ingestBase: streamDoc.ingestUrl,
+          ingestBase: sd.ingestUrl,
           onChunkSent: (_seq, ms, bytes) => { setChunkLatencyMs(ms); if (bytes > 0) setBitrateKbps(Math.round((bytes * 8) / 1000)); },
           onBackpressure: (depth) => {
             lastBackpressureAtRef.current = Date.now();
@@ -542,8 +562,19 @@ export default function BroadcasterScreen() {
         });
         ingestSessionRef.current = session;
       }
+      // Ingest is up (or this is a co-stream/RTMP path that does not use it).
+      // ONLY NOW is the stream live: this write is what puts it in discovery.
+      await updateDoc(doc(db, 'streams', streamDoc.id), { status: 'live', startedAt: serverTimestamp() });
       setIsLive(true);
     } catch (err) {
+      // Never leave a stream advertised as live after a failed start. Nothing
+      // rolled this back before, which is how a broadcast sat in discovery for
+      // 31 minutes emitting nothing (audit A44).
+      try { await ingestSessionRef.current?.stop?.(); } catch { /* ignore */ }
+      ingestSessionRef.current = null;
+      updateDoc(doc(db, 'streams', streamDoc.id), { status: 'created' }).catch(() => {});
+      setIsLive(false);
+      setStartedAt(null);
       showToast(err?.message || 'Could not go live.', 'error');
     } finally {
       setStarting(false);
@@ -887,7 +918,7 @@ export default function BroadcasterScreen() {
           {isLive && streamDoc.goal?.active && <div style={{ maxWidth: 360 }}><StreamGoalBar goal={streamDoc.goal} compact /></div>}
           {isLive ? (
             <div style={{ height: '28vh', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-              <ChatPanel streamId={streamDoc.id} layout="overlay" hostUid={streamDoc.hostUid} slowModeSec={streamDoc.slowModeSec || 0} followersOnly={!!streamDoc.followersOnly} pinnedMessage={streamDoc.pinnedMessage || null} composerExtras={composerExtras} />
+              <ChatPanel streamId={streamDoc.id} layout="overlay" hostUid={streamDoc.hostUid} slowModeSec={streamDoc.slowModeSec || 0} followersOnly={!!streamDoc.followersOnly} ttsEnabled={!!streamDoc.ttsEnabled} pinnedMessage={streamDoc.pinnedMessage || null} composerExtras={composerExtras} />
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -1064,7 +1095,7 @@ export default function BroadcasterScreen() {
         <div style={{ width: 340, flexShrink: 0, background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
           <div style={{ padding: '12px 14px', borderBottom: `1px solid ${C.border}`, fontSize: 12, fontWeight: 800, letterSpacing: '0.08em', color: C.textDim }}>LIVE CHAT</div>
           <div style={{ flex: 1, minHeight: 0 }}>
-            <ChatPanel streamId={streamDoc.id} layout="side" hostUid={streamDoc.hostUid} slowModeSec={streamDoc.slowModeSec || 0} followersOnly={!!streamDoc.followersOnly} pinnedMessage={streamDoc.pinnedMessage || null} />
+            <ChatPanel streamId={streamDoc.id} layout="side" hostUid={streamDoc.hostUid} slowModeSec={streamDoc.slowModeSec || 0} followersOnly={!!streamDoc.followersOnly} ttsEnabled={!!streamDoc.ttsEnabled} pinnedMessage={streamDoc.pinnedMessage || null} />
           </div>
         </div>
       </div>
@@ -1299,7 +1330,7 @@ function StreamSummary({ stats, onClose }) {
       });
       if (!blob) throw new Error('Could not render card');
       const { url } = await uploadToR2(new File([blob], 'vergr-stream.png', { type: 'image/png' }), 'post');
-      await addDoc(collection(db, 'statuses'), {
+      const ref = await addDoc(collection(db, 'statuses'), {
         authorId: currentUser.uid,
         text: null, bgColor: null,
         mediaUrl: url, mediaType: 'image',
@@ -1308,6 +1339,9 @@ function StreamSummary({ stats, onClose }) {
         createdAt: serverTimestamp(),
         expiresAt: Timestamp.fromDate(new Date(Date.now() + 24 * 60 * 60 * 1000)),
       });
+      // Same denormalisation as the Status composer, so the avatar ring knows
+      // about a status posted from the broadcaster without a query.
+      await markStatusPosted(currentUser.uid, ref.id, Date.now() + 24 * 60 * 60 * 1000);
       showToast?.('Posted to your Status', 'success');
     } catch (e) {
       showToast?.(e?.message || 'Could not post to Status', 'error');

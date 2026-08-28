@@ -33,7 +33,6 @@ export function SpectatorBetPanel({ tournamentId, matchId }) {
   // value, so on Google Play this falls under the Real-Money Gambling, Games,
   // and Contests policy — a licensed category we are not licensed for. Hidden
   // on the Play build ONLY: web, desktop and the sideloaded APK are untouched.
-  if (IS_STORE_BUILD) return null;
   const { showToast } = useUI();
   const fns = getFunctions(undefined, 'europe-west1');
   const [match, setMatch] = useState(null);
@@ -42,10 +41,16 @@ export function SpectatorBetPanel({ tournamentId, matchId }) {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
+    if (IS_STORE_BUILD) return undefined;
     const unsub = onSnapshot(doc(db, 'tournaments', tournamentId, 'matches', matchId), (s) => setMatch(s.data()));
     return () => unsub();
   }, [tournamentId, matchId]);
 
+  // ⚠ Both guards sit BELOW every hook. This one used to return before the
+  // hooks ran, which is a rules-of-hooks violation even though IS_STORE_BUILD is
+  // compile-time constant. The effect above skips its listener on the Play build,
+  // so the behaviour is unchanged: no subscription, nothing rendered.
+  if (IS_STORE_BUILD) return null;
   if (!match || match.status === 'completed' || match.bothVerifiedAt) return null;
 
   const pools = match.bettingPools || {};

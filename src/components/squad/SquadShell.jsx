@@ -19,8 +19,8 @@ import { getUserSquads, getSquad } from '../../firebase/firestore';
 import { getNavOrigin, clearNavOrigin } from '../../utils/navOrigin';
 import Icon from '../Icon';
 import UserAvatar from '../UserAvatar';
-import { IS_NATIVE_BUILD } from '../../utils/platform';
 import '../../styles/squad.css';
+import UserName from '../UserName';
 
 const GLOBAL_NAV = [
   { group: 'Squads', items: [
@@ -135,6 +135,23 @@ export default function SquadShell({
 
   return (
     <div className="sqd">
+      {/* ───── MOBILE TOP BAR ─────
+          Nav belongs at the top of the screen, not floating over the content.
+          This replaces a fixed FAB that hovered above the page: a floating
+          hamburger is a phone antipattern, it covered whatever was underneath
+          it, and it put the primary navigation somewhere no one looks for it.
+          Lives in the shell rather than in each screen's own .page-header, so
+          all ~19 squad screens get back + menu from one place. Hidden by CSS
+          above 1100px, the same breakpoint that shows the left rail. */}
+      <div className="sqd-mtop">
+        <button className="sqd-mtop-btn" onClick={goBack} aria-label={backLabel}>
+          <span className="material-symbols-outlined">arrow_back</span>
+        </button>
+        <div className="sqd-mtop-ttl">{mode === 'squad' ? (squad?.name || 'Squad') : 'Squads'}</div>
+        <button className="sqd-mtop-btn" onClick={() => setNavOpen(true)} aria-label="Squad menu">
+          <span className="material-symbols-outlined">menu</span>
+        </button>
+      </div>
       <div className={`app${rightRail ? '' : ' no-rail'}`}>
         {/* ───── LEFT RAIL ───── */}
         <aside className="rail-l">
@@ -240,7 +257,7 @@ export default function SquadShell({
                 {profile?.avatar ? <CachedImg src={profile.avatar} permanent alt="" /> : (profile?.displayName?.[0] || 'V').toUpperCase()}
               </div>
               <div style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
-                <div className="user-name">{profile?.displayName || profile?.username || 'Gamer'}</div>
+                <div className="user-name"><UserName user={profile} masked fallback={'Gamer'} /></div>
                 <div className="user-role">VERGR {profile?.role === 'creator' ? 'Creator' : 'Member'}</div>
               </div>
             </button>
@@ -265,13 +282,8 @@ export default function SquadShell({
         {rightRail}
       </div>
 
-      {/* ───── NATIVE NAV (APK only — left rail is hidden on the phone) ───── */}
-      {IS_NATIVE_BUILD && (
-        <>
-          <button className="sqd-native-fab" onClick={() => setNavOpen(true)} aria-label="Squad menu">
-            <span className="material-symbols-outlined">menu</span>
-          </button>
-          {navOpen && (
+      {/* Nav sheet, opened from the mobile top bar above. */}
+      {navOpen && (
             <div className="sqd-native-sheet-backdrop" onClick={() => setNavOpen(false)}>
               <div className="sqd-native-sheet" onClick={(e) => e.stopPropagation()}>
                 <div className="sqd-native-grab" />
@@ -279,9 +291,17 @@ export default function SquadShell({
                   <div className="ttl">{mode === 'squad' ? (squad?.name || 'Squad') : 'Squads'}</div>
                   <button onClick={() => setNavOpen(false)} aria-label="Close"><span className="material-symbols-outlined">close</span></button>
                 </div>
+                {/* The origin-aware back ("Back to Community" when you entered
+                    from the Community hub) lived only in .rail-l, which is
+                    display:none below 1100px — so on mobile it disappeared
+                    entirely and there was no way out of the squad section
+                    except the browser back button. */}
+                <button className="sqd-native-home" onClick={() => { setNavOpen(false); goBack(); }}>
+                  <span className="material-symbols-outlined">arrow_back</span> {backLabel}
+                </button>
                 {mode === 'squad' && (
                   <button className="sqd-native-home" onClick={() => { setNavOpen(false); navigate('/squads'); }}>
-                    <span className="material-symbols-outlined">arrow_back</span> All squads
+                    <span className="material-symbols-outlined">groups</span> All squads
                   </button>
                 )}
                 <div className="sqd-native-scroll">
@@ -301,8 +321,6 @@ export default function SquadShell({
                 </div>
               </div>
             </div>
-          )}
-        </>
       )}
     </div>
   );

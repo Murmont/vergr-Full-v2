@@ -216,9 +216,9 @@ function ProductPage() {
         <h2 className="vg-syne" style={{ fontSize: 26, fontWeight: 800, margin: 0 }}>What you get</h2>
         <div style={{ display: 'grid', gap: 14, marginTop: 18, gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))' }}>
           {[
-            ['videocam', 'Higher streaming quality', 'Lite streams publicly at 720p from your first day. Pro streams at 1080p and can co-stream with a guest.'],
-            ['cloud_upload', 'Larger uploads', 'Upload limits rise from 200MB on the free plan to 1GB on Lite and 5GB on Pro, with higher resolution photos.'],
-            ['insights', 'Creator tools and analytics', 'Post boosts, scheduled posts, a custom banner on Lite. Advanced analytics, replays of past broadcasts and a custom vergr.me domain on Pro.'],
+            ['videocam', 'Higher streaming quality', 'Lite streams publicly at 720p from your first day, up to four hours daily. Pro streams at 1080p with no daily limit.'],
+            ['cloud_upload', 'Larger uploads', 'Upload limits rise from 200MB on the free plan to 1GB on Lite and 5GB on Pro. Pro keeps photos at full 4K.'],
+            ['insights', 'Creator tools and analytics', 'Scheduled posts, scheduled messages and creator analytics on Lite. Advanced analytics and 90-day replays of past broadcasts on Pro.'],
             ['block', 'No advertising', 'Both paid plans remove advertising from your feed.'],
           ].map(([icon, title, body]) => (
             <div key={title} style={{

@@ -1,13 +1,15 @@
-import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation, Link } from 'react-router-dom';
 import { AuthProvider } from '../context/AuthContext';
 import { UserProvider } from '../context/UserContext';
 import { NotificationProvider } from '../context/NotificationContext';
 import { UIProvider } from '../context/UIContext';
 import { LayoutProvider } from '../context/LayoutContext';
 import { CartProvider } from '../context/CartContext';
+import GlobalCartDrawer from '../components/wallet/GlobalCartDrawer';
 import { isTauri, IS_NATIVE_BUILD } from '../utils/platform';
 import { pruneNavOrigin } from '../utils/navOrigin';
 import ProtectedRoute from '../components/ProtectedRoute';
+import ErrorBoundary from '../components/ErrorBoundary';
 import DisplaySettingsApplier from '../components/DisplaySettingsApplier';
 import KycGate from '../components/KycGate';
 import RegionGate from '../components/RegionGate';
@@ -23,7 +25,9 @@ import DesktopNotificationManager from '../components/DesktopNotificationManager
 import NotificationsDrawer from '../components/NotificationsDrawer';
 import ConsentSheet from '../components/ConsentSheet';
 import TosVersionGate from '../components/TosVersionGate';
+import LevelUpWatcher from '../components/engagement/LevelUpWatcher';
 import GuestSignupPrompt from '../components/GuestSignupPrompt';
+import AnnouncementPopup from '../components/AnnouncementPopup';
 import GuestModeBanner from '../components/GuestModeBanner';
 import { captureSignals } from '../utils/captureSignals';
 import { setTrackingUser } from '../utils/trackEvent';
@@ -216,11 +220,59 @@ function VLinkHandback() {
 
 function CatchAllRoute() {
   // Two or more segments (/vlink/admin/..., /l/handle) land here.
+  // LOAD-BEARING — see memory `never-break-vlink`. Unchanged.
   if (VLINK_PATH.test(window.location.pathname)) return <VLinkHandback />;
 
-  // Unchanged for every Vergr path: root, which sends logged-out visitors on
-  // to /platform exactly as before.
-  return <Navigate to="/" replace />;
+  // This used to `<Navigate to="/" replace />`, so a mistyped link, a stale
+  // push-notification actionUrl, an old email link or any of the many URLs
+  // unrouted by the tournament and withdrawal cleanups silently dumped the user
+  // on the home feed with no explanation — and `replace` meant Back could not
+  // undo it either (audit A21). It gets worse over time, not better, as more
+  // old links go stale.
+  return <NotFoundScreen />;
+}
+
+/**
+ * 404. Says what was missed and offers a way on, instead of pretending the
+ * navigation succeeded.
+ */
+function NotFoundScreen() {
+  // BrowserRouter (line ~746), so the real path is on `pathname`. CLAUDE.md
+  // still describes HashRouter; the code moved and the note did not.
+  const path = typeof window !== 'undefined' ? window.location.pathname : '';
+  return (
+    <div style={{
+      minHeight: '70vh', display: 'flex', flexDirection: 'column',
+      alignItems: 'center', justifyContent: 'center', gap: 14,
+      padding: 24, textAlign: 'center', color: '#fff',
+    }}>
+      <span className="material-symbols-outlined" style={{ fontSize: 48, opacity: 0.35 }}>explore_off</span>
+      <div style={{ fontFamily: 'Syne, sans-serif', fontWeight: 800, fontSize: 22 }}>Page not found</div>
+      <div style={{ fontSize: 14, color: '#9CA3AF', maxWidth: 460, lineHeight: 1.6 }}>
+        This page has moved or no longer exists.
+        {path && (
+          <div className="font-dmmono" style={{ fontSize: 12, opacity: 0.6, marginTop: 8, wordBreak: 'break-all' }}>
+            {path}
+          </div>
+        )}
+      </div>
+      <div style={{ display: 'flex', gap: 10, marginTop: 6, flexWrap: 'wrap', justifyContent: 'center' }}>
+        {/* <Link>, not <a>: this is BrowserRouter, so a plain anchor would do a
+            full page reload. '/' already routes logged-out visitors on to
+            /platform, so one destination works for both states. */}
+        <Link to="/" style={{
+          padding: '10px 18px', borderRadius: 10, textDecoration: 'none',
+          background: 'linear-gradient(135deg, #7B1FFF, #B44FFF)',
+          color: '#fff', fontWeight: 700, fontSize: 13,
+        }}>Go home</Link>
+        <Link to="/explore" style={{
+          padding: '10px 18px', borderRadius: 10, textDecoration: 'none',
+          background: 'transparent', color: '#9CA3AF',
+          border: '1px solid rgba(255,255,255,0.14)', fontSize: 13,
+        }}>Search</Link>
+      </div>
+    </div>
+  );
 }
 
 function RootRoute() {
@@ -279,6 +331,7 @@ import {
   AboutScreen as MarketingAboutScreen,
   CareersScreen,
   ContactScreen,
+  CreditsScreen,
   DeleteAccountScreen,
   CodeOfConductScreen,
   ForumsScreen,
@@ -288,11 +341,11 @@ import {
   StudioToolsScreen,
   PartnerProgramScreen,
   LearnLiveScreen,
-  LearnTournamentsScreen,
   LearnSquadsScreen,
   LearnClipsScreen,
   LearnCoinsScreen,
   LinkInBioScreen,
+  WhatsNewScreen,
 } from '../screens/marketing/marketingLazy';
 
 // Onboarding — the setup-first flow (rebuilt 2026-07-09). The old screen
@@ -379,6 +432,8 @@ const MessagesInboxScreen = lazy(() => import('../screens/messages/MessagesInbox
 const NativeMessagesInboxScreen = lazy(() => import('../screens/messages/native/NativeMessageScreens').then((m) => ({ default: m.NativeMessagesInboxScreen })));
 const ChatThreadScreen = lazy(() => import('../screens/messages/ChatThreadScreen'));
 const MessageRequestsScreen = lazy(() => import('../screens/messages/MessageRequestsScreen'));
+// Official Vergr channels: the broadcast threads that sit in the message list.
+const ChannelThreadScreen = lazy(() => import('../screens/messages/ChannelThreadScreen'));
 const CallHistoryScreen = lazy(() => import('../screens/messages/CallHistoryScreen'));
 const CreateGroupChatScreen = lazy(() => import('../screens/messages/CreateGroupChatScreen'));
 const NewMessageScreen = lazy(() => import('../screens/messages/NewMessageScreen'));
@@ -455,8 +510,9 @@ const VanguardMeScreen = lazy(() => import('../screens/vanguard/VanguardMeScreen
 const VanguardTodayScreen = lazy(() => import('../screens/vanguard/VanguardTodayScreen'));
 const VanguardScheduleScreen = lazy(() => import('../screens/vanguard/VanguardScheduleScreen'));
 const VanguardModerationRoomScreen = lazy(() => import('../screens/vanguard/VanguardModerationRoomScreen'));
-const TournamentOverlayScreen = lazy(() => import('../screens/overlay/TournamentOverlayScreen'));
-const TournamentOverlayNeon = lazy(() => import('../screens/overlay/TournamentOverlayNeon'));
+// The two tournament OBS overlays are no longer imported here: neither had a
+// Route, so they were dead weight. TournamentOverlayNeon.jsx itself stays on
+// disk because StreamerBattleOverlay imports its exported OVERLAY_CSS.
 const StreamerBattleOverlay = lazy(() => import('../screens/overlay/StreamerBattleOverlay'));
 const VanguardQueueScreen = lazy(() => import('../screens/vanguard/VanguardQueueScreen'));
 const VanguardTreasuryScreen = lazy(() => import('../screens/vanguard/VanguardTreasuryScreen'));
@@ -480,14 +536,10 @@ const VanguardLookupActionScreen = lazy(() => import('../screens/vanguard/Vangua
 const InviteMembersScreen = lazy(() => import('../screens/squads/InviteMembersScreen'));
 
 // Wallet & Coins
-const WalletScreen = lazy(() => import('../screens/wallet/WalletScreen'));
-const ConvertCoinsScreen = lazy(() => import('../screens/wallet/ConvertCoinsScreen'));
 const TransactionReceiptScreen = lazy(() => import('../screens/wallet/TransactionReceiptScreen'));
 const TransactionFiltersScreen = lazy(() => import('../screens/wallet/TransactionFiltersScreen'));
-const RequestPayoutScreen = lazy(() => import('../screens/wallet/RequestPayoutScreen'));
 const PayoutSuccessScreen = lazy(() => import('../screens/wallet/PayoutSuccessScreen'));
 const WalletSecurityScreen = lazy(() => import('../screens/wallet/WalletSecurityScreen'));
-const SavedAddressesScreen = lazy(() => import('../screens/wallet/PayoutScreens').then((m) => ({ default: m.SavedAddressesScreen })));
 
 // Wallet v2 (Session 1 redesign) — own layout, own routes, own onboarding.
 // See src/layouts/WalletLayout.jsx and src/screens/wallet/v2/*.jsx.
@@ -608,33 +660,11 @@ import LiveInviteBanner from '../components/LiveInviteBanner';
 // component file is kept; re-import and re-mount below to restore it.
 
 // Tournaments
-const TournamentScreen = lazy(() => import('../screens/tournaments/TournamentScreen'));
-const NativeTournamentScreen = lazy(() => import('../screens/tournaments/native/NativeTournamentScreen'));
-const TournamentStandingsScreen = lazy(() => import('../screens/tournaments/TournamentStandingsScreen'));
-const TournamentPrizePoolScreen = lazy(() => import('../screens/tournaments/TournamentPrizePoolScreen'));
-const MatchDetailsScreen = lazy(() => import('../screens/tournaments/MatchDetailsScreen'));
-const NativeMatchDetailsScreen = lazy(() => import('../screens/tournaments/native/NativeMatchDetailsScreen'));
-const TournamentMatchScreen = lazy(() => import('../screens/tournaments/TournamentMatchScreen'));
-const TournamentStatsScreen = lazy(() => import('../screens/tournaments/TournamentStatsScreen'));
 const ModWallScreen = lazy(() => import('../screens/tournaments/ModWallScreen'));
 const VanguardReviewQueueScreen = lazy(() => import('../screens/tournaments/VanguardReviewQueueScreen'));
 const HudOverlay = lazy(() => import('../screens/hud/HudOverlay'));
-const TeamManagementScreen = lazy(() => import('../screens/tournaments/TeamManagementScreen'));
-const TeamFundingScreen = lazy(() => import('../screens/tournaments/TeamFundingScreen'));
-const ContributeScreen = lazy(() => import('../screens/tournaments/ContributeScreen'));
-const ContributionSuccessScreen = lazy(() => import('../screens/tournaments/ContributionSuccessScreen'));
-const PrizeReceiptScreen = lazy(() => import('../screens/tournaments/PrizeReceiptScreen'));
-const CreateTournamentScreen = lazy(() => import('../screens/tournaments/CreateTournamentScreen'));
-// Redesigned Create Tournament flow. To revert: swap CreateTournamentV2 back to
-// CreateTournamentScreen in the /create-tournament route below.
-const CreateTournamentV2 = lazy(() => import('../screens/tournaments/CreateTournamentV2'));
 const EventLandingScreen = lazy(() => import('../screens/events/EventLandingScreen'));
 const CreateEventScreen = lazy(() => import('../screens/events/CreateEventScreen'));
-const ModeratorMatchControlScreen = lazy(() => import('../screens/tournaments/ModeratorMatchControlScreen'));
-const TournamentListScreen = lazy(() => import('../screens/tournaments/TournamentListScreen'));
-const TournamentApplicationsScreen = lazy(() => import('../screens/tournaments/TournamentApplicationsScreen'));
-const CheatFlagClipScreen = lazy(() => import('../screens/clips/CheatFlagClipScreen'));
-const WarmupLobbyScreen = lazy(() => import('../screens/tournaments/WarmupLobbyScreen'));
 
 // Settings
 const SettingsScreen = lazy(() => import('../screens/settings/SettingsScreen'));
@@ -717,6 +747,7 @@ export default function AppRouter() {
   const host = typeof window !== 'undefined' ? window.location.hostname : '';
   if (host === 'pro.vergr.app') return <ProSubscriptionSite />;
 
+
   return (
     <BrowserRouter>
       <AuthProvider>
@@ -728,6 +759,11 @@ export default function AppRouter() {
                 <LiveUsersProvider>
                 <div className="app-container mx-auto min-h-screen bg-bg-dark text-text-primary relative">
                   <NavOriginTracker />
+                  {/* The basket, on every page. CartProvider was already global
+                      but CartDrawer was mounted only inside wallet/v2/BuyScreen,
+                      so a basket opened from a stream had nowhere to render.
+                      Renders nothing while closed. */}
+                  <GlobalCartDrawer />
                   <Toast />
                   <PushToast />
                   <LiveInviteBanner />
@@ -741,7 +777,12 @@ export default function AppRouter() {
                   <SignalsCapture />
                   <ConsentSheet />
                   <TosVersionGate />
+                  {/* Levelling up was completely silent: LevelUpCelebration was
+                      built and rendered nowhere (audit A111). Mounted app-wide so
+                      the moment lands whatever screen earned it. */}
+                  <LevelUpWatcher />
                   <GuestSignupPrompt />
+                  <AnnouncementPopup />
                   <GuestModeBanner />
                   <NotificationsDrawer />
                   <FirstBootGate />
@@ -749,6 +790,13 @@ export default function AppRouter() {
                   <DevChannelBadge />
                   <InstallAppBanner />
                   <MobileNavDrawerHost />
+                  {/* Route-level boundary (audit A50). Sits INSIDE the app
+                      shell, so a screen that throws during render shows the
+                      fallback while the nav, drawers and banners above stay
+                      mounted and usable — instead of React unmounting the whole
+                      tree to a black page. The root boundary in main.jsx is the
+                      backstop for anything above this. */}
+                  <ErrorBoundary label="route">
                   <Suspense fallback={<RouteFallback />}>
                   <SplashHandoff />
                   <Routes>
@@ -757,6 +805,10 @@ export default function AppRouter() {
                     {/* ---------- PUBLIC: PLATFORM (marketing/info, SEO-indexed) ---------- */}
                     <Route path="/platform" element={<LandingScreen />} />
                     <Route path="/platform/store" element={<StoreScreen />} />
+                    {/* Public changelog. Two routes, one component: the list and
+                        a single entry are the same data at two depths. */}
+                    <Route path="/whats-new" element={<WhatsNewScreen />} />
+                    <Route path="/whats-new/:slug" element={<WhatsNewScreen />} />
                     <Route path="/platform/download" element={<DownloadScreen />} />
                     <Route path="/platform/download/mobile" element={<MobileAppScreen />} />
                     <Route path="/platform/download/desktop" element={<DesktopAppScreen />} />
@@ -786,6 +838,7 @@ export default function AppRouter() {
                     <Route path="/platform/about" element={<MarketingAboutScreen />} />
                     <Route path="/platform/careers" element={<CareersScreen />} />
                     <Route path="/platform/contact" element={<ContactScreen />} />
+                    <Route path="/platform/credits" element={<CreditsScreen />} />
                     <Route path="/platform/delete-account" element={<DeleteAccountScreen />} />
                     <Route path="/platform/code-of-conduct" element={<CodeOfConductScreen />} />
                     <Route path="/platform/forums" element={<ForumsScreen />} />
@@ -953,10 +1006,11 @@ export default function AppRouter() {
                       <Route path="/messages/:chatId/settings" element={IS_NATIVE_BUILD ? <NativeChatSettingsScreen /> : <ChatSettingsScreen />} />
                       <Route path="/messages/:chatId/details" element={IS_NATIVE_BUILD ? <NativeChatDetailScreen /> : <ChatDetailScreen />} />
                       <Route path="/messages/:chatId/group" element={IS_NATIVE_BUILD ? <NativeGroupInfoScreen /> : <GroupInfoScreen />} />
-                      <Route path="/call/:chatId/:callType" element={IS_NATIVE_BUILD ? <NativeCallScreen /> : <CallScreen />} />
-                      {/* Group calls run on the SFU, not P2P — one screen for
-                          web + native (it's already a single-column layout). */}
-                      <Route path="/group-call/:callId" element={<GroupCallScreen />} />
+                      {/* Call routes MOVED OUT of MainLayout — see the standalone
+                          block below. ResponsiveLayout returns five different
+                          trees keyed on isDesktop/isTablet, so crossing a
+                          breakpoint remounted the call screen and tore down the
+                          live WebRTC connection. */}
 
                       {/* /squads/create was here under MainLayout — moved out
                           to the standalone squad route group below (line ~600)
@@ -1075,6 +1129,26 @@ export default function AppRouter() {
                         to wherever the user came from. */}
                     <Route path="/vergrme/edit" element={<ProtectedRoute><VergrMeEditorScreen /></ProtectedRoute>} />
 
+                    {/* ---------- CALLS (standalone, NO app shell) ----------
+                        These screens are `fixed inset-0 z-[100]` and cover the
+                        whole viewport, so they never used the shell's chrome.
+                        Mounting them INSIDE it was actively harmful:
+                        (1) ResponsiveLayout returns a different tree per
+                            breakpoint, so resizing across the mobile/desktop
+                            boundary remounted the screen mid-call and killed the
+                            RTCPeerConnection — verified live, the timer reset
+                            1:21 -> 0:02 and the remote tracks came back muted
+                            with videoWidth 0 while the call doc still read
+                            status:'active'. A dead call that looks connected.
+                        (2) The 15 nav controls behind the overlay stayed
+                            keyboard-focusable during a call, so Tab+Enter could
+                            navigate away mid-conversation.
+                        Same pattern the wallet already uses. */}
+                    <Route path="/call/:chatId/:callType" element={<ProtectedRoute>{IS_NATIVE_BUILD ? <NativeCallScreen /> : <CallScreen />}</ProtectedRoute>} />
+                    {/* Group calls run on the SFU, not P2P — one screen for
+                        web + native (it's already a single-column layout). */}
+                    <Route path="/group-call/:callId" element={<ProtectedRoute><GroupCallScreen /></ProtectedRoute>} />
+
                     {/* ---------- WALLET v2 (own layout — sidebar + topbar + mobile bottom-nav) ---------- */}
                     <Route element={<ProtectedRoute><RegionGate feature="the VERGR wallet"><WalletLayout /></RegionGate></ProtectedRoute>}>
                       <Route path="/wallet"                          element={IS_NATIVE_BUILD ? <NativeHomeScreen /> : <WalletHomeScreen />} />
@@ -1150,7 +1224,7 @@ export default function AppRouter() {
                       <Route path="/creator/community"  element={IS_NATIVE_BUILD ? <NativeCreatorCommunityScreen /> : <CreatorCommunityScreen />} />
                       <Route path="/creator/analytics"  element={IS_NATIVE_BUILD ? <NativeCreatorAnalyticsScreen /> : creatorChunk('analytics', 'Analytics', 'What is working, and when', AnalyticsSkeleton, <MonthlyAnalyticsScreen />)} />
                       <Route path="/creator/quests"     element={IS_NATIVE_BUILD ? <NativeCreatorQuestsScreen /> : <CreatorLayout page="quests" title="Creator Quests" subtitle="Earn VP — level up your creator rank"><CreatorQuestsScreen embedded /></CreatorLayout>} />
-                      <Route path="/creator/membership" element={IS_NATIVE_BUILD ? <NativeCreatorMembershipScreen /> : <CreatorLayout page="memberships" title="Membership Tiers" subtitle="Offer paid perks to your fans" requiredTier="pro" lockDescription="Build paid tiers with perks, Discord roles and monthly earnings caps. Upgrade to Pro to enable."><MembershipTiersScreen embedded /></CreatorLayout>} />
+                      <Route path="/creator/membership" element={IS_NATIVE_BUILD ? <NativeCreatorMembershipScreen /> : <CreatorLayout page="memberships" title="Membership Tiers" subtitle="Offer paid perks to your fans"><MembershipTiersScreen embedded /></CreatorLayout>} />
                       <Route path="/creator/ads"        element={IS_NATIVE_BUILD ? <NativeCreatorAdsScreen /> : <CreatorLayout page="ads" title="Ad Center" subtitle="Run targeted in-feed campaigns"><AdCenterScreen embedded /></CreatorLayout>} />
                       <Route path="/creator/verify"     element={IS_NATIVE_BUILD ? <NativeCreatorVerifyScreen /> : <CreatorLayout page="verify" title="Creator Verification" subtitle="Identity check — required for Ad Center, payouts and membership tiers"><CreatorVerificationScreen embedded /></CreatorLayout>} />
                     </Route>
@@ -1170,6 +1244,9 @@ export default function AppRouter() {
                       <Route path="hub/calls" element={<CallsScreen />} />
                       <Route path="hub/status" element={<StatusScreen />} />
                       <Route path="hub/squads" element={<SquadsHub />} />
+                      {/* Official Vergr channel. Two segments, so it can never
+                          collide with the single-segment :chatId below. */}
+                      <Route path="c/:channelId" element={<ChannelThreadScreen />} />
                       <Route path=":chatId" element={IS_NATIVE_BUILD ? <NativeChatThreadScreen /> : <ChatThreadScreen />} />
                     </Route>
 
@@ -1211,6 +1288,7 @@ export default function AppRouter() {
                     <Route path="*" element={<CatchAllRoute />} />
                   </Routes>
                   </Suspense>
+                  </ErrorBoundary>
                 </div>
                 </LiveUsersProvider>
                 </CartProvider>

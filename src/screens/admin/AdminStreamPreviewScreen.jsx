@@ -79,7 +79,8 @@ export default function AdminStreamPreviewScreen() {
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', marginBottom: 16 }}>
           <Seg options={[{ value: 'broadcaster', label: 'Broadcaster' }, { value: 'viewer', label: 'Viewer' }]} value={role} onChange={setRole} />
           <Seg options={[{ value: 'desktop', label: 'Desktop' }, { value: 'mobile', label: 'Mobile' }]} value={device} onChange={setDevice} />
-          <Seg options={[{ value: 'solo', label: 'Solo' }, { value: 'cohost', label: 'Co-host' }, { value: 'tournament', label: 'Tournament' }]} value={streamType} onChange={setStreamType} />
+          {/* The 'tournament' preview mode is gone with the tournament overlays. */}
+          <Seg options={[{ value: 'solo', label: 'Solo' }, { value: 'cohost', label: 'Co-host' }]} value={streamType} onChange={setStreamType} />
           {streamType === 'cohost' && (
             <Seg options={[{ value: 2, label: '2' }, { value: 3, label: '3' }, { value: 4, label: '4' }]} value={guestCount} onChange={setGuestCount} />
           )}

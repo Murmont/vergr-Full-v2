@@ -10,16 +10,22 @@ import { useUI } from '../../context/UIContext';
 import Icon from '../../components/Icon';
 import AdminShell, { ADMIN_COLORS as C } from './AdminShell';
 import { call, fmtRelative, useGuardedCall, Tabs } from './_adminGuarded';
+import AdminChannelsTab from './AdminChannelsTab';
+import AdminCampaignsTab from './AdminCampaignsTab';
+import AdminEmailsTab from './AdminEmailsTab';
 
 const TABS = [
-  { id: 'create',  label: 'Create Announcement' },
-  { id: 'history', label: 'Announcement History' },
+  { id: 'channels',  label: 'Channels' },
+  { id: 'campaigns', label: 'Announcements' },
+  { id: 'emails',    label: 'Emails' },
 ];
 
 const TYPES = [
   { id: 'system', label: 'Notification', desc: 'In-app drawer', icon: 'notifications' },
   { id: 'coins', label: 'Coin Reward', desc: 'Send notif + grant coins', icon: 'paid' },
-  { id: 'tournament', label: 'Tournament', desc: 'Tournament-related broadcast', icon: 'emoji_events' },
+  // The 'tournament' broadcast type was removed 2026-08-17 with the rest of the
+  // tournament surfaces. It was a free-text notification type, so nothing else
+  // depended on it existing.
 ];
 
 const AUDIENCES = [
@@ -30,7 +36,7 @@ const AUDIENCES = [
 ];
 
 export default function AdminAnnounceScreen() {
-  const [tab, setTab] = useState('create');
+  const [tab, setTab] = useState('channels');
   const { guarded, overlay } = useGuardedCall();
   return (
     <AdminShell
@@ -39,8 +45,9 @@ export default function AdminAnnounceScreen() {
       subtitle="Create and send system notifications or popup banners to your users."
     >
       <Tabs tabs={TABS} active={tab} onChange={setTab} />
-      {tab === 'create'  && <CreateTab guarded={guarded} />}
-      {tab === 'history' && <HistoryTab />}
+      {tab === 'channels'  && <AdminChannelsTab />}
+      {tab === 'campaigns' && <AdminCampaignsTab />}
+      {tab === 'emails'    && <AdminEmailsTab />}
       {overlay}
     </AdminShell>
   );
@@ -86,7 +93,8 @@ function CreateTab({ guarded }) {
     <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr', gap: 20 }}>
       <div>
         <Section number={1} title="Type">
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+          {/* Column count follows TYPES so removing one does not leave a gap. */}
+          <div style={{ display: 'grid', gridTemplateColumns: `repeat(${TYPES.length}, 1fr)`, gap: 10 }}>
             {TYPES.map(t => (
               <ChoiceCard key={t.id} icon={t.icon} label={t.label} desc={t.desc}
                 active={type === t.id} onClick={() => setType(t.id)} />
@@ -114,7 +122,7 @@ function CreateTab({ guarded }) {
           </Field>
           <Field label="Action URL (optional)">
             <Input value={actionUrl} onChange={setActionUrl}
-              placeholder="https://vergr.app/tournaments" />
+              placeholder="https://vergr.app/explore" />
           </Field>
           {type === 'coins' && (
             <Field label="Coin reward per recipient">

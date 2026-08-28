@@ -266,7 +266,9 @@ function SystemTab({ autoRefresh }) {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10, marginBottom: 14 }}>
         <SmallStat label="Users" value={fmtNumber(fb.users)} />
         <SmallStat label="Posts" value={fmtNumber(fb.posts)} />
-        <SmallStat label="Tournaments" value={fmtNumber(fb.tournaments)} />
+        {/* The `tournaments` collection now holds ticketed EVENTS. Same docs,
+            honest label. */}
+        <SmallStat label="Events" value={fmtNumber(fb.tournaments)} />
         <SmallStat label="Streams" value={fmtNumber(fb.streams)} />
         <SmallStat label="Subscriptions" value={fmtNumber(fb.subscriptions)} />
         <SmallStat label="Transactions" value={fmtNumber(fb.transactions)} />
@@ -963,7 +965,7 @@ function EngagementTab({ autoRefresh }) {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 16 }}>
         <KpiCard icon="post_add" color="#7c3aed" label="Posts (24h)" value={fmtNumber(data.posts24h)} sub={`${fmtNumber(data.posts7d)} this week`} />
         <KpiCard icon="live_tv" color="#f04060" label="Streams (24h)" value={fmtNumber(data.streams24h)} sub={`${fmtNumber(data.streams7d)} this week`} />
-        <KpiCard icon="emoji_events" color="#f0a500" label="Tournaments (7d)" value={fmtNumber(data.tournaments7d)} />
+        <KpiCard icon="confirmation_number" color="#f0a500" label="Events (7d)" value={fmtNumber(data.tournaments7d)} />
         <KpiCard icon="paid" color="#22c55e" label="Tips (24h)" value={fmtNumber(data.tips24h)} />
         <KpiCard icon="flag" color="#f04060" label="Reports pending" value={fmtNumber(data.reportsPending)} />
       </div>

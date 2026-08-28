@@ -312,7 +312,9 @@ function GeneralTab({ get, setField }) {
 function FeaturesTab({ get, setField }) {
   const features = [
     { key: 'liveStreamingPaused', label: 'Live Streaming', invert: true, hint: 'Master switch for HLS + browser ingest. ON = streaming allowed.', sensitive: true },
-    { key: 'tournamentsEnabled', label: 'Tournaments', defaultOn: true, hint: 'Bracket-based competitive play.' },
+    // 'tournamentsEnabled' removed 2026-08-17: there is nothing left for it to
+    // switch, and a toggle that reads ON for a retired feature is worse than no
+    // toggle. Ticketed events are separate and have no kill switch of their own.
     { key: 'squadsEnabled', label: 'Squads', defaultOn: true, hint: 'Group / guild surfaces + voice hangouts.' },
     { key: 'newsBotsEnabled', label: 'News Bots', defaultOn: true, hint: 'Auto-syndicated gaming news posts.' },
     { key: 'verificationEnabled', label: 'Account Verification', defaultOn: true, hint: 'KYC + creator verification surfaces.' },
@@ -383,11 +385,17 @@ function PaymentsTab({ get, setField }) {
   return (
     <>
       <Group title="Kill Switches" icon="power_settings_new" color="#f04060">
-        <Toggle label="Pause Coin → Gem Conversions" sensitive
-          hint="Prevents users from converting earned coins to cashable gems"
+        {/* These two labels described coin→gem conversion and a withdrawal
+            queue, neither of which exists any more, and BOTH disagreed with
+            what /admin/economy calls the very same flags. An operator reading
+            this screen would have thought "Pause Coin → Gem Conversions"
+            stopped a dead feature when the flag now gates creator revenue
+            accrual. Wording matches AdminEconomyScreen exactly. */}
+        <Toggle label="Pause revenue-share accrual" sensitive
+          hint="Stops earned coins accruing a creator share. For use during an economy investigation."
           value={get('conversionsPaused', false)} onChange={v => setField('conversionsPaused', v)} />
-        <Toggle label="Pause Payouts" sensitive
-          hint="Withdrawal queue continues to accept new requests but processing halts"
+        <Toggle label="Pause creator payouts" sensitive
+          hint="The scheduled payout run skips everyone. Accrual continues, so nothing is lost; creators are paid on the next run after this is resumed."
           value={get('payoutsPaused', false)} onChange={v => setField('payoutsPaused', v)} />
         <Toggle label="Pause Tipping" sensitive
           hint="Disables coin tipping platform-wide"
@@ -489,7 +497,7 @@ function NotificationsTab({ get, setField }) {
           <TextInput value={get('emailReplyTo', 'noreply@vergr.app')} onChange={v => setField('emailReplyTo', v)} />
         </Field>
         <div style={{ fontSize: 11, color: C.textMuted }}>
-          Per-template / per-channel toggles (e.g. "send tournament reminders by email")
+          Per-template / per-channel toggles (e.g. "send event reminders by email")
           will land in a follow-up pass once an email provider is wired.
         </div>
       </Group>

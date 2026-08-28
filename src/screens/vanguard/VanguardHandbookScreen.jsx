@@ -121,7 +121,7 @@ export default function VanguardHandbookScreen() {
           <div style={{ fontFamily: 'DM Mono', fontSize: 10, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '.14em', marginBottom: 12 }}>Active perks — every rank, every day</div>
           <ul style={{ margin: 0, paddingLeft: 18, fontFamily: 'DM Sans', fontSize: 13, color: C.textDim, lineHeight: 1.8 }}>
             <li><strong style={{ color: C.text }}>Treasury share</strong> — every active mod earns from the 5% tournament mod cut on tournaments they preside over. Pool distributes 1st of each month at 00:05 UTC.</li>
-            <li><strong style={{ color: C.text }}>0% coin → gem conversion fee</strong> — Vanguard+ pay zero commission converting. Normal users pay 5-30%.</li>
+            <li><strong style={{ color: C.text }}>100% revenue share</strong> — while your Vanguard status is active you keep everything your content earns. Everyone else keeps 50% to 80%, set by lifetime earnings.</li>
             <li><strong style={{ color: C.text }}>+VP per moderation action</strong> — Recruit +10, Vanguard +50, Senior +100, Commander +200, Overseer +500.</li>
             <li><strong style={{ color: C.text }}>Unlimited referral cap</strong> — normal users capped at 5/week (Free) or 20/week (Lite/Pro). You're uncapped.</li>
             <li><strong style={{ color: C.text }}>Unlimited Vanguard squad cap</strong> — 100-member cap doesn't apply to the Vanguard squad.</li>

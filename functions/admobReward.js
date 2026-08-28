@@ -216,10 +216,12 @@ exports.admobSsvCallback = functions.https.onRequest(
 
         // Credit coins (cashable balance) + record the verified watch.
         // convertible: ad-reward coins are platform income to the user, not a
-        // purchase, so they may convert to gems — see coinLedger.js
+        // purchase, so they may accrue revenue share — see coinLedger.js
         tx.set(walletRef, {
-          balance: FieldValue.increment(rewardCoins),
-          earnedBalance: FieldValue.increment(rewardCoins),
+          // earnedCoinCredit supplies balance + earnedBalance +
+          // totalEarnedCoinsGross, the last of which drives the revenue share
+          // ladder and was missing from this hand-rolled write.
+          ...require('./coinLedger').earnedCoinCredit(rewardCoins),
         }, { merge: true });
         tx.set(rewardRef, {
           uid, coins: rewardCoins, txId, day,
@@ -237,11 +239,11 @@ exports.admobSsvCallback = functions.https.onRequest(
 
       // AUTO-CONVERT AT RECEIPT: rewarded-ad coins are income from the
       // platform, so they follow the same rule as every other earned credit and
-      // become gems at the user's current rate. Post-commit, guarded, idempotent
+      // accrue at the user's current rate. Post-commit, guarded, idempotent
       // on the AdMob transaction id, so Google's retries cannot convert twice.
       if (result.status === 'credited' && result.coins > 0) {
-        const { settleEarnedToGems } = require('./coinLedger');
-        await settleEarnedToGems(db, {
+        const { settleEarnedShare } = require('./coinLedger');
+        await settleEarnedShare(db, {
           uid, coins: result.coins, source: 'ad_reward', sourceId: `ad:${txId}`,
         });
       }

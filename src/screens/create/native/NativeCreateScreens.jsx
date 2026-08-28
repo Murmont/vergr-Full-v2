@@ -26,6 +26,7 @@ import { timeAgo } from '../../../utils/helpers';
 import UserAvatar from '../../../components/UserAvatar';
 import Icon from '../../../components/Icon';
 import InlineVideoPlayer from '../../../components/media/InlineVideoPlayer';
+import UserName from '../../../components/UserName';
 
 // ───────────────────────────── shared native scaffold
 function Spinner() {
@@ -177,7 +178,7 @@ export function NativeCreateTextPostScreen() {
       <div className="flex gap-3.5">
         <UserAvatar src={profile?.avatar || profile?.photoURL} size={44} />
         <div className="flex-1 min-w-0">
-          <p className="text-brand-violet-light text-xs font-dmmono mb-2">@{profile?.username || 'you'}</p>
+          <p className="text-brand-violet-light text-xs font-dmmono mb-2"><UserName user={profile} masked handle fallback={'you'} /></p>
           <textarea ref={textRef} value={content} onChange={e => setContent(e.target.value)} placeholder="What's on your mind?"
             className="w-full bg-transparent text-text-primary text-[17px] leading-relaxed placeholder:text-text-muted/40 outline-none resize-none min-h-[220px]" maxLength={MAX + 50} />
           {tags.length > 0 && (
@@ -335,7 +336,7 @@ export function NativeCreateClipPostScreen() {
 
   return (
     <NativeCreateShell
-      title="Video Clip" subtitle={mode === 'embed' ? 'Paste a video URL' : `Any length · ${tierConfig.videoMaxHeight === Infinity ? '4K' : `${tierConfig.videoMaxHeight}p`}`} onBack={() => navigate(-1)}
+      title="Video Clip" subtitle={mode === 'embed' ? 'Paste a video URL' : `Any length · up to ${tierConfig.maxFileUploadMB}MB`} onBack={() => navigate(-1)}
       progress={loading && mode === 'upload' ? (compressing ? compressProgress : uploadProgress) : null}
       action={<PostBtn onClick={handlePost} disabled={loading || !canPost}>{loading ? <span className="flex items-center gap-2"><Spinner />{mode === 'upload' ? (compressing ? `${compressProgress}%` : `${uploadProgress}%`) : '...'}</span> : 'Post'}</PostBtn>}
     >
@@ -492,7 +493,7 @@ export function NativeCreateArticleScreen() {
       ) : (
         <button onClick={() => fileInputRef.current?.click()} className="w-full aspect-[21/9] rounded-2xl border-2 border-dashed border-white/[0.06] flex items-center justify-center gap-3 mb-6 active:bg-white/5"><Icon name="add_photo_alternate" size={24} className="text-text-muted" /><span className="text-text-muted text-sm">Add cover image</span></button>
       )}
-      <p className="text-brand-pink text-[10px] font-dmmono uppercase tracking-widest mb-3">Article by @{profile?.username || 'you'}</p>
+      <p className="text-brand-pink text-[10px] font-dmmono uppercase tracking-widest mb-3">Article by <UserName user={profile} masked handle fallback={'you'} /></p>
       <input type="text" value={title} onChange={e => setTitle(e.target.value)} placeholder="Article title" className="w-full bg-transparent text-white text-2xl font-syne font-extrabold placeholder:text-text-muted/30 outline-none mb-4 leading-tight" maxLength={200} />
       <textarea value={body} onChange={e => setBody(e.target.value)} placeholder="Start writing... (minimum 50 characters)" className="w-full bg-transparent text-text-primary text-[15px] leading-[1.8] placeholder:text-text-muted/30 outline-none resize-none min-h-[360px]" />
       {!canPost && title.trim().length > 0 && <div className="mt-4 px-3 py-2 rounded-xl bg-brand-gold/10 border border-brand-gold/20 text-brand-gold text-xs">{title.trim().length < 5 ? 'Title needs at least 5 characters' : `${Math.max(0, 50 - body.trim().length)} more characters needed`}</div>}
@@ -720,7 +721,7 @@ export function NativeQuotePostScreen() {
       <div className="flex gap-3.5 mb-4">
         <UserAvatar src={profile?.avatar || profile?.photoURL} size={44} />
         <div className="flex-1 min-w-0">
-          <p className="text-brand-violet-light text-xs font-dmmono mb-2">@{profile?.username || 'you'}</p>
+          <p className="text-brand-violet-light text-xs font-dmmono mb-2"><UserName user={profile} masked handle fallback={'you'} /></p>
           <textarea autoFocus value={content} onChange={e => setContent(e.target.value)} placeholder="Add your thoughts..." className="w-full bg-transparent text-text-primary text-[16px] leading-relaxed placeholder:text-text-muted/60 outline-none resize-none min-h-[100px]" maxLength={MAX + 20} />
         </div>
       </div>
@@ -730,8 +731,8 @@ export function NativeQuotePostScreen() {
         <div className="rounded-2xl border border-white/[0.06] bg-surface-1/30 p-4">
           <div className="flex items-center gap-2 mb-2 flex-wrap">
             <UserAvatar src={originalPost.author?.avatar} size={20} />
-            <span className="text-text-primary text-xs font-semibold">{originalPost.author?.displayName}</span>
-            <span className="text-text-muted text-xs">@{originalPost.author?.username}</span>
+            <span className="text-text-primary text-xs font-semibold"><UserName user={originalPost.author} masked /></span>
+            <span className="text-text-muted text-xs"><UserName user={originalPost.author} masked handle /></span>
             <span className="text-text-muted text-xs">· {timeAgo(originalPost.createdAt)}</span>
           </div>
           {originalPost.content && <p className="text-text-secondary text-sm leading-relaxed line-clamp-4">{originalPost.content}</p>}

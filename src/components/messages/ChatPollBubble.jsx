@@ -66,7 +66,9 @@ export default function ChatPollBubble({ pollId, isMe }) {
   return (
     <div className="w-64 px-3.5 pt-3 pb-2">
       <div className="flex items-start gap-2 mb-2.5">
-        <Icon name="bar_chart" size={16} className={isMe ? 'text-white/70' : 'text-brand-violet-light'} />
+        <Icon name="bar_chart" size={16}
+          className={isMe ? 'text-white/70' : ''}
+          style={isMe ? undefined : { color: 'var(--vg-chat-accent, #B44FFF)' }} />
         <div className="min-w-0">
           <p className="text-[14px] font-bold leading-snug break-words">{poll.question}</p>
           <p className={`text-[10px] mt-0.5 ${isMe ? 'text-white/50' : 'text-text-muted'}`}>
@@ -84,18 +86,21 @@ export default function ChatPollBubble({ pollId, isMe }) {
             <button key={idx} onClick={() => tap(idx)} disabled={busy}
               className="relative w-full text-left rounded-xl overflow-hidden border transition-colors"
               style={{
-                borderColor: mine ? 'rgba(180,79,255,0.7)' : 'rgba(255,255,255,0.12)',
+                borderColor: mine ? 'var(--vg-chat-accent-70, rgba(180,79,255,0.7))' : 'rgba(255,255,255,0.12)',
                 background: 'rgba(0,0,0,0.20)',
               }}>
               {/* Animated result fill */}
               <span className="absolute inset-y-0 left-0 transition-all duration-500 ease-out"
                 style={{
                   width: `${total > 0 ? pct : 0}%`,
-                  background: mine ? 'rgba(123,31,255,0.45)' : lead ? 'rgba(123,31,255,0.28)' : 'rgba(255,255,255,0.10)',
+                  background: mine
+                    ? 'var(--vg-chat-accent-45, rgba(123,31,255,0.45))'
+                    : lead ? 'var(--vg-chat-accent-28, rgba(123,31,255,0.28))' : 'rgba(255,255,255,0.10)',
                 }} />
               <span className="relative flex items-center gap-2 px-3 py-2">
                 <Icon name={mine ? 'check_circle' : 'radio_button_unchecked'} size={15}
-                  className={mine ? 'text-brand-violet-light' : (isMe ? 'text-white/40' : 'text-text-muted/60')} filled={mine} />
+                  className={mine ? '' : (isMe ? 'text-white/40' : 'text-text-muted/60')}
+                  style={mine ? { color: 'var(--vg-chat-accent, #B44FFF)' } : undefined} filled={mine} />
                 <span className="flex-1 text-[13px] font-medium break-words">{opt}</span>
                 {total > 0 && <span className="text-[11px] font-bold tabular-nums opacity-80">{pct}%</span>}
               </span>

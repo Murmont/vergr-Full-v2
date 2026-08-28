@@ -1,9 +1,14 @@
 import { useState, useEffect } from 'react';
-import { doc, getDoc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, deleteField, serverTimestamp } from 'firebase/firestore';
 import { db, auth } from '../firebase/config';
 import { BLOCK_REGISTRY } from '../utils/vergrMeThemes';
 
 const REF = (uid) => doc(db, 'users', uid, 'vergrMe', 'page');
+// The draft lives in its OWN document because Firestore rules gate documents,
+// never fields. While it was a `draft` field on the world-readable `page` doc,
+// anyone could read every unpublished edit (audit A30). `page` stays public;
+// `draft` is owner-only in firestore.rules.
+const DRAFT_REF = (uid) => doc(db, 'users', uid, 'vergrMe', 'draft');
 
 export function useVergrMe(uid) {
   const [page, setPage] = useState(null);
@@ -125,7 +130,10 @@ export function defaultPage(profile) {
     showShare: true,
     showSubscribe: true,
     hideBranding: false,
-    isPublic: true,
+    // PRIVATE until the user presses Publish (audit A19). A builder with a
+    // Publish button implies nothing is live until it is pressed, and opening
+    // the editor used to create a public page at /u/<username> immediately.
+    isPublic: false,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   };
@@ -145,22 +153,28 @@ export function pageContent(obj) {
 
 export async function initVergrMePage(uid, profile) {
   const ref = REF(uid);
-  const snap = await getDoc(ref);
+  const [snap, draftSnap] = await Promise.all([getDoc(ref), getDoc(DRAFT_REF(uid))]);
   if (snap.exists()) {
     const data = snap.data();
-    // Edit the DRAFT when one exists; otherwise the live (flat) content, which
-    // is promoted to a draft the first time the user saves. Hydrate blocks for
-    // legacy docs without persisting yet.
-    const editing = data.draft ? { ...data, ...data.draft } : data;
+    // Prefer the private draft DOC. Fall back to the legacy `draft` FIELD for
+    // pages that predate the split (it is migrated off the public doc on the
+    // next save or publish). Otherwise edit the live flat content.
+    const draft = draftSnap.exists() ? draftSnap.data() : (data.draft || null);
+    const editing = draft ? { ...data, ...draft } : data;
     return {
       ...editing,
-      blocks: getBlocks(data.draft || data),
+      blocks: getBlocks(draft || data),
       hasUnpublishedChanges: !!data.hasUnpublishedChanges,
     };
   }
+  // A brand-new page is created PRIVATE. Merely opening the builder used to
+  // publish a live page at /u/<username> carrying the user's name, bio and
+  // avatar, before they had touched the Publish button sitting in the corner
+  // (audit A19). publishVergrMePage is what flips isPublic to true.
   const defaults = defaultPage(profile);
   const content = pageContent(defaults);
-  await setDoc(ref, { ...defaults, draft: content, published: content, hasUnpublishedChanges: false });
+  await setDoc(ref, { ...defaults, published: content, hasUnpublishedChanges: false });
+  await setDoc(DRAFT_REF(uid), content);
   return { ...defaults, hasUnpublishedChanges: false };
 }
 
@@ -180,19 +194,33 @@ async function writeVergrMe(uid, fields) {
 }
 
 // Save the working draft. Does NOT touch the live (published) page.
+// The draft goes to its own owner-only document; `draft` is simultaneously
+// stripped from the public `page` doc, which migrates legacy pages off the
+// leak the first time their owner edits anything.
 export async function saveVergrMeDraft(form) {
   const uid = auth.currentUser?.uid;
   if (!uid) return;
-  await writeVergrMe(uid, { draft: pageContent(form), hasUnpublishedChanges: true, updatedAt: serverTimestamp() });
+  const content = pageContent(form);
+  await setDoc(DRAFT_REF(uid), content);
+  await writeVergrMe(uid, { draft: deleteField(), hasUnpublishedChanges: true, updatedAt: serverTimestamp() });
 }
 
 // Promote the draft to live. Mirrors content to the top-level flat fields so
 // every existing reader (public page, SSR, enrich) sees the published snapshot.
+// This is also the ONLY thing that makes a page public: see initVergrMePage.
 export async function publishVergrMePage(form) {
   const uid = auth.currentUser?.uid;
   if (!uid) return;
   const content = pageContent(form);
-  await writeVergrMe(uid, { ...content, draft: content, published: content, hasUnpublishedChanges: false, updatedAt: serverTimestamp() });
+  await setDoc(DRAFT_REF(uid), content);
+  await writeVergrMe(uid, {
+    ...content,
+    isPublic: true,
+    draft: deleteField(),
+    published: content,
+    hasUnpublishedChanges: false,
+    updatedAt: serverTimestamp(),
+  });
 }
 
 // ---- Legacy link helpers (kept for back-compat) ----------------

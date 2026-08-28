@@ -62,10 +62,16 @@ function BrandLogo({ id, color, size = 22 }) {
 }
 
 const PLATFORMS = [
-  { id: 'steam',       name: 'Steam',         color: '#1b2838', letter: 'S', textColor: '#c7d5e0', desc: 'Link Steam to enable auto-result detection in CS2 and Dota 2 tournaments via Valve\'s Game State Integration.', placeholder: '7656119xxxxxxxxxx (your 17-digit Steam64 ID)' },
-  { id: 'riotgames',   name: 'Riot Games',    color: '#c6362f', letter: 'R', textColor: '#fff',    desc: 'Connect your Riot account to verify your identity and (once Riot approves our key) auto-detect Valorant / LoL / TFT match results.',  placeholder: 'Name#TAG' },
-  { id: 'battlenet',   name: 'Battle.net',    color: '#00aeff', letter: 'B', textColor: '#fff',    desc: 'Link your Battle.net BattleTag to enable Overwatch 2 auto-result detection. Your career profile must be public.', placeholder: 'YourTag#1234' },
-  { id: 'origin',      name: 'EA / Origin',   color: '#ff5252', letter: 'O', textColor: '#fff',    desc: 'Connect your EA / Origin handle to enable Apex Legends auto-result detection.', placeholder: 'Your Origin or Steam handle' },
+  // These four used to sell "auto-result detection" for tournaments. Tournaments
+  // are gone and the ~70 Cloud Functions behind that detection were deleted on
+  // 2026-08-17, so linking could not produce a result for anything. The rows
+  // STAY (linkSteamAccount / unlinkSteamAccount / getSteamGsiConfig are still
+  // deployed and the screen is live) and now describe the benefit that survives:
+  // showing the handle on your profile.
+  { id: 'steam',       name: 'Steam',         color: '#1b2838', letter: 'S', textColor: '#c7d5e0', desc: 'Link Steam to show your Steam handle on your Vergr profile so people can find you in game.', placeholder: '7656119xxxxxxxxxx (your 17-digit Steam64 ID)' },
+  { id: 'riotgames',   name: 'Riot Games',    color: '#c6362f', letter: 'R', textColor: '#fff',    desc: 'Connect your Riot account to show your Riot ID on your Vergr profile.',  placeholder: 'Name#TAG' },
+  { id: 'battlenet',   name: 'Battle.net',    color: '#00aeff', letter: 'B', textColor: '#fff',    desc: 'Link your Battle.net BattleTag to show it on your Vergr profile.', placeholder: 'YourTag#1234' },
+  { id: 'origin',      name: 'EA / Origin',   color: '#ff5252', letter: 'O', textColor: '#fff',    desc: 'Connect your EA / Origin handle to show it on your Vergr profile.', placeholder: 'Your Origin or Steam handle' },
   { id: 'openxbl',     name: 'Xbox',          color: '#107c10', letter: 'X', textColor: '#fff',    desc: 'Sign in with Xbox to connect your Gamertag and enable cross-platform squad matchmaking.', placeholder: 'Your Gamertag' },
   { id: 'discord',     name: 'Discord',       color: '#5865f2', letter: 'D', textColor: '#fff',    desc: "Connect Discord to join our community and get role rewards.",                placeholder: 'Username#1234' },
   { id: 'playstation', name: 'PlayStation™ Network', color: '#003087', letter: 'P', textColor: '#fff', desc: 'Connect your PlayStation account to track trophies and game progress.',     placeholder: 'Your PSN ID' },

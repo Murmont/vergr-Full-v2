@@ -9,6 +9,7 @@ import Icon from '../../../components/Icon';
 import UserAvatar from '../../../components/UserAvatar';
 import CloneDiscordModal from '../../../components/messages/CloneDiscordModal';
 import { useUI } from '../../../context/UIContext';
+import UserName from '../../../components/UserName';
 
 export default function NativeCreateGroupChatScreen() {
   const navigate = useNavigate();
@@ -136,8 +137,8 @@ export default function NativeCreateGroupChatScreen() {
                 <button key={f.uid} onClick={() => toggleSelection(f)} className="flex items-center gap-3 w-full py-3 px-3 rounded-xl active:bg-surface-1 transition-colors">
                   <UserAvatar src={f.avatar} size={44} />
                   <div className="flex-1 text-left min-w-0">
-                    <p className="text-text-primary font-bold text-sm truncate">{f.displayName}</p>
-                    <p className="text-text-muted text-xs truncate">@{f.username}</p>
+                    <p className="text-text-primary font-bold text-sm truncate"><UserName user={f} masked /></p>
+                    <p className="text-text-muted text-xs truncate"><UserName user={f} masked handle /></p>
                   </div>
                   <div className={`w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all ${isSelected ? 'bg-brand-violet border-brand-violet scale-110' : 'border-white/[0.1]'}`}>
                     {isSelected && <Icon name="check" size={15} className="text-white font-bold" />}

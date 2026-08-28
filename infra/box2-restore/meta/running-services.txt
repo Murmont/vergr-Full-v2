@@ -1,0 +1,29 @@
+  atd.service                 loaded active running Deferred execution scheduler
+  containerd.service          loaded active running containerd container runtime
+  cron.service                loaded active running Regular background program processing daemon
+  dbus.service                loaded active running D-Bus System Message Bus
+  docker.service              loaded active running Docker Application Container Engine
+  getty@tty1.service          loaded active running Getty on tty1
+  multipathd.service          loaded active running Device-Mapper Multipath Device Controller
+  nginx.service               loaded active running A high performance web server and a reverse proxy server
+  polkit.service              loaded active running Authorization Manager
+  qemu-guest-agent.service    loaded active running QEMU Guest Agent
+  r2-sync.service             loaded active running Push HLS segments to Cloudflare R2
+  rsyslog.service             loaded active running System Logging Service
+  serial-getty@ttyS0.service  loaded active running Serial Getty on ttyS0
+  ssh.service                 loaded active running OpenBSD Secure Shell server
+  systemd-journald.service    loaded active running Journal Service
+  systemd-logind.service      loaded active running User Login Management
+  systemd-networkd.service    loaded active running Network Configuration
+  systemd-resolved.service    loaded active running Network Name Resolution
+  systemd-timesyncd.service   loaded active running Network Time Synchronization
+  systemd-udevd.service       loaded active running Rule-based Manager for Device Events and Files
+  unattended-upgrades.service loaded active running Unattended Upgrades Shutdown
+  user@0.service              loaded active running User Manager for UID 0
+  vergr-ingest.service        loaded active running VERGR ingest — browser fMP4 chunked uploader → HLS segments
+  vergr-node-agent.service    loaded active running VERGR stream node heartbeat agent
+  vergr-rtmp-auth.service     loaded active running VERGR RTMP auth + bitrate watchdog
+  vergr-sfu.service           loaded active running VERGR SFU (Pion-based) — squad voice/video + co-host ingest
+  vergr-thumbnailer.service   loaded active running VERGR live discovery thumbnailer (60s frame grab per active stream)
+  vergr-transcode.service     loaded active running Vergr adaptive video transcode worker
+  vergr-vod-archive.service   loaded active running VERGR VOD archive transcoder (box 2)

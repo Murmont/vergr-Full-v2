@@ -35,12 +35,17 @@ export default function PrestigeLevelsScreen() {
       <TopBar title="VP & Prestige" showBack />
       {isDesktop ? (
         <div className="px-4 py-4">
-          <div className="flex gap-6 max-w-6xl">
+          {/* w-full, not a fixed cap. max-w-6xl computes to 1008px, so with the
+              left nav COLLAPSED (main grows to ~1458px) it left 435px of dead
+              space beside the help rail. The cap only looked right while the
+              nav happened to be expanded. */}
+          <div className="flex gap-6 w-full max-w-[1500px]">
             <div className="flex-1 min-w-0">
               <PrestigeShowcase
                 totalVP={wallet?.vp || 0}
                 plan={resolveTier(profile)}
                 prestige={profile?.prestige || 0}
+                boostTokens={wallet?.boostTokens || 0}
                 navigate={navigate}
               />
             </div>
@@ -57,6 +62,7 @@ export default function PrestigeLevelsScreen() {
             totalVP={wallet?.vp || 0}
             plan={resolveTier(profile)}
             prestige={profile?.prestige || 0}
+                boostTokens={wallet?.boostTokens || 0}
             navigate={navigate}
           />
         </div>

@@ -29,6 +29,7 @@ import { shouldHideFromEnumeration } from '../../utils/enumerationFilter';
 import { getPlaybackUrl } from '../../utils/streamConfig';
 import HlsPlayer from '../../components/streams/HlsPlayer';
 import useSeo from '../../utils/seo';
+import UserName from '../../components/UserName';
 
 const C = {
   bg: '#07080D', surface: '#0F1118', surface2: '#161922',
@@ -99,7 +100,12 @@ function CtaCard({ line }) {
         {line || 'Join the players earning on VERGR'}
       </div>
       <div style={{ color: C.text2, fontSize: 14, lineHeight: 1.6, marginBottom: 16 }}>
-        Compete in skill-based tournaments, stream and earn tips from day one, and run squads with shared prize pools. Free to join, 18+.
+        {/* ⚠ No tournaments, prize pools, competitions or wagering may appear
+            here. Tournaments were retired 2026-08-09 and public/llms.txt states
+            outright that Vergr runs no prize competitions or games of chance,
+            so this page contradicting that is a compliance problem, not just
+            stale copy. This is an INDEXED page. */}
+        Go live, post clips, and earn tips from day one. Build a squad, grow an audience, and keep a share of what your content makes. Free to join, 18+.
       </div>
       <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
         <Link to="/signup" style={{
@@ -163,7 +169,7 @@ function AuthorRow({ who, sub }) {
             fontWeight: 800, color: C.violet, fontSize: 18,
           }}>{(who.displayName || 'V')[0].toUpperCase()}</div>}
       <div>
-        <div style={{ fontWeight: 700, fontSize: 15 }}>{who.displayName}</div>
+        <div style={{ fontWeight: 700, fontSize: 15 }}><UserName user={who} masked /></div>
         <div style={{ color: C.text3, fontSize: 13 }}>
           {who.username ? `@${who.username}` : ''}{sub ? `${who.username ? ' · ' : ''}${sub}` : ''}
         </div>
@@ -271,7 +277,7 @@ export function PublicPostScreen() {
             {comments.filter((c) => c.who).map((c, i) => (
               <div key={i} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: '12px 14px' }}>
                 <div style={{ fontSize: 13, color: C.text3, marginBottom: 4 }}>
-                  <strong style={{ color: C.text2 }}>{c.who.displayName}</strong> · {fmtDate(c.createdAt)}
+                  <strong style={{ color: C.text2 }}><UserName user={c.who} masked /></strong> · {fmtDate(c.createdAt)}
                 </div>
                 <div style={{ fontSize: 14, lineHeight: 1.55 }}>{(c.content || c.text || '').slice(0, 400)}</div>
               </div>
@@ -352,8 +358,8 @@ export function PublicUserScreen() {
                   justifyContent: 'center', fontWeight: 800, color: C.violet, fontSize: 26,
                 }}>{(who.displayName || 'V')[0].toUpperCase()}</div>}
           </div>
-          <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 20, marginTop: 10 }}>{who.displayName}</div>
-          {who.username ? <div style={{ color: C.text3, fontSize: 14 }}>@{who.username}</div> : null}
+          <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 20, marginTop: 10 }}><UserName user={who} masked /></div>
+          {who.username ? <div style={{ color: C.text3, fontSize: 14 }}><UserName user={who} masked handle /></div> : null}
           {raw?.bio ? <p style={{ color: C.text2, fontSize: 14.5, lineHeight: 1.6, margin: '10px 0 0' }}>{raw.bio}</p> : null}
           <div style={{ display: 'flex', gap: 18, marginTop: 12, fontSize: 13.5, color: C.text3 }}>
             <span><strong style={{ color: C.text }}>{compact(raw?.followerCount)}</strong> followers</span>
@@ -364,7 +370,7 @@ export function PublicUserScreen() {
             <Link to="/signup" style={{
               color: '#0B0B14', background: C.cyan, fontSize: 13.5, fontWeight: 700,
               textDecoration: 'none', padding: '9px 20px', borderRadius: 999, display: 'inline-block',
-            }}>Follow {who.displayName}</Link>
+            }}>Follow <UserName user={who} masked /></Link>
           </div>
         </div>
       </section>

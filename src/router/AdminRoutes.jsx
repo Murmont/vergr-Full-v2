@@ -16,7 +16,7 @@ import { Routes, Route } from 'react-router-dom';
 import AdminDashboardScreen from '../screens/admin/AdminDashboardScreen';
 import AdminAccessScreen from '../screens/admin/AdminAccessScreen';
 import AdminUsersScreen from '../screens/admin/AdminUsersScreen';
-const AdminCreatorsScreen = lazy(() => import('../screens/admin/AdminCreatorsScreen'));
+import AdminCreatorsScreen from '../screens/admin/AdminCreatorsScreen';
 import AdminEconomyScreen from '../screens/admin/AdminEconomyScreen';
 import AdminModerationScreen from '../screens/admin/AdminModerationScreen';
 import AdminModerationAuditScreen from '../screens/admin/AdminModerationAuditScreen';
@@ -27,11 +27,11 @@ import AdminSecurityScreen from '../screens/admin/AdminSecurityScreen';
 import AdminConfigScreen from '../screens/admin/AdminConfigScreen';
 import AdminAuditScreen from '../screens/admin/AdminAuditScreen';
 import AdminSubscriptionsScreen from '../screens/admin/AdminSubscriptionsScreen';
-import AdminTournamentsScreen from '../screens/admin/AdminTournamentsScreen';
 import AdminStatsScreen from '../screens/admin/AdminStatsScreen';
 import AdminStreamPreviewScreen from '../screens/admin/AdminStreamPreviewScreen';
-import CheatSignaturesScreen from '../screens/admin/CheatSignaturesScreen';
-import AdminRouteGate from '../components/AdminRouteGate';
+// AdminTournamentsScreen and CheatSignaturesScreen unmounted 2026-08-17 (founder).
+// Files stay on disk per the no-deletion rule; nothing imports them, so they are
+// no longer in the admin chunk and their callables are undeployed.
 
 // Paths are relative to the /admin/* parent route in AppRouter.
 export default function AdminRoutes() {
@@ -50,9 +50,7 @@ export default function AdminRoutes() {
       <Route path="security" element={<AdminSecurityScreen />} />
       <Route path="config" element={<AdminConfigScreen />} />
       <Route path="audit" element={<AdminAuditScreen />} />
-      <Route path="cheat-signatures" element={<AdminRouteGate screen="cheat-signatures"><CheatSignaturesScreen /></AdminRouteGate>} />
       <Route path="subscriptions" element={<AdminSubscriptionsScreen />} />
-      <Route path="tournaments" element={<AdminTournamentsScreen />} />
       <Route path="stats" element={<AdminStatsScreen />} />
       <Route path="stream-preview" element={<AdminStreamPreviewScreen />} />
     </Routes>

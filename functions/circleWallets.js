@@ -617,14 +617,12 @@ async function logOutboundEvent(tx, ctx = {}) {
     recordedAt: FieldValue.serverTimestamp(),
   }, { merge: true });
 
-  // Update payout_requests row if this tx belongs to a tracked withdrawal.
-  try {
-    const { _internal_handleOutboundWebhook } = require('./withdrawals');
-    const handled = await _internal_handleOutboundWebhook(tx);
-    if (handled) functions.logger.info('outbound webhook updated payout', { txId });
-  } catch (err) {
-    functions.logger.error('outbound webhook payout update failed', { txId, message: err.message });
-  }
+  // The outbound leg used to update a `payout_requests` row here. That queue
+  // belonged to the user-initiated withdrawal pipeline, deleted 2026-08-16 with
+  // the gem unit. Outbound transactions are still RECORDED above; there is just
+  // no user-facing request for them to settle against. When a payout partner is
+  // wired, creatorPayouts.js owns that reconciliation through its own
+  // statements, not through this webhook.
 }
 
 // ════════════════════════════════════════════════════════════════════

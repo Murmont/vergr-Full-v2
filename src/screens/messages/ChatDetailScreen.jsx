@@ -16,6 +16,7 @@ import { isChatMutedFor, setChatMuted, markChatCleared, deleteChatForMe, getChat
 import { clearChatCache, getCachedMessages } from '../../utils/messageCache';
 import { setContactNickname } from '../../firebase/firestore';
 import { peekChatUser } from '../../utils/chatIdentity';
+import UserName from '../../components/UserName';
 
 // A shared-media photo tile. A dead/expired URL used to render the browser's
 // broken-image glyph (what the founder saw); now it degrades to a quiet
@@ -399,9 +400,15 @@ export function ChatDetailsPanel({ chatId, variant = 'page', onClose }) {
               </span>
               {isOnline && <div className="absolute bottom-2 right-2 w-4 h-4 bg-green-500 border-2 border-bg-dark rounded-full" />}
             </div>
-            <h2 className="text-white font-bold text-2xl drop-shadow-sm">{displayName}</h2>
+            {/* A nickname is YOUR private label for someone, not their identity,
+                so it must never pick up their cosmetics. Only the real name
+                goes through UserName; the line below already shows the real
+                name underneath whenever a nickname is overriding it. */}
+            <h2 className="text-white font-bold text-2xl drop-shadow-sm">
+              {nickname ? displayName : <UserName user={otherProfile} masked fallback={displayName} />}
+            </h2>
             {nickname && otherProfile?.displayName && otherProfile.displayName !== nickname && (
-              <p className="text-white/60 text-xs mt-0.5">{otherProfile.displayName}</p>
+              <p className="text-white/60 text-xs mt-0.5"><UserName user={otherProfile} masked /></p>
             )}
             {username && <p className="text-white/80 text-sm mt-0.5">@{username}</p>}
             <p className={`text-xs mt-1 font-medium ${isOnline ? 'text-green-400' : 'text-white/60'}`}>{formatLastSeen()}</p>

@@ -9,6 +9,7 @@ import { getSquad, getSquadLeaderboard } from '../../firebase/firestore';
 import SquadShell from '../../components/squad/SquadShell';
 import SquadInfoRail from '../../components/squad/SquadInfoRail';
 import { roleMeta, avatarClass, initials, nameOf, compact } from '../../components/squad/squadHelpers';
+import UserName from '../../components/UserName';
 
 export default function SquadLeaderboardScreen() {
   const { squadId } = useParams();
@@ -116,7 +117,7 @@ export default function SquadLeaderboardScreen() {
                       </div>
                       <div>
                         <div className="nm">{nameOf(m.user)}</div>
-                        <div className="hd">@{m.user?.username || 'user'}</div>
+                        <div className="hd"><UserName user={m.user} masked handle fallback={'user'} /></div>
                       </div>
                     </div>
                     <div>

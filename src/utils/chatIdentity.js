@@ -44,6 +44,17 @@ function slimUser(u) {
     vanguard: u.vanguard || null,
     role: u.role || null,
     accountType: u.accountType || null,
+    // ⚠ COSMETICS BELONG IN THE PERSISTED SUBSET. Without these two, a COLD
+    // start rendered every chat surface with no name colour, no typeface, no
+    // name gradient and the default typing indicator until the async refetch
+    // landed — the same flash of not-quite-right identity this cache exists to
+    // prevent, just for cosmetics instead of names. They are small: an accent
+    // hex, a font id, up to six gradient stops, a style id.
+    // `vpLevel` rides along because every resolver re-checks the level against
+    // the equipped id (typingStyleFor, isEffectOn), so persisting the choice
+    // without the level would resolve everything back to the default anyway.
+    vpLevel: u.vpLevel || null,
+    cosmetics: u.cosmetics || null,
   };
 }
 
@@ -150,12 +161,45 @@ export function chatUsername(liveUser) {
  */
 export function chatPartner(conv, me, viewerProfile, liveUsers) {
   const otherId = (conv?.participants || []).find((p) => p !== me) || null;
+  // Official announcement channels. Their identity lives on the channel doc, not
+  // on a user doc, and `participants` is just [me], so without this branch the
+  // generic path below resolves otherId to null and renders "Unknown" with no
+  // avatar. Handled here rather than at each callsite because this function is
+  // the single resolver every chat surface uses.
+  if (conv?.isOfficial) {
+    const ch = conv.otherUsers?.[0] || {};
+    return {
+      otherId: null,
+      channelId: conv.channelId || null,
+      isOfficial: true,
+      name: ch.displayName || 'Vergr',
+      username: ch.username || '',
+      avatar: ch.avatar || null,
+      coinsSpent: 0,
+      live: null,
+      resolved: true, // the channel doc IS the live source; nothing to hydrate
+    };
+  }
   if (conv?.isGroup) {
     return {
       otherId: null,
       name: conv.groupName || 'Group',
       username: '',
-      avatar: conv.groupIcon || null,
+      // TWO field names exist for the same thing and this resolver only knew
+      // one of them:
+      //   groupIcon   — written by GroupInfoScreen when a USER sets a group's
+      //                 picture. What this line used to read.
+      //   groupAvatar — written by the SERVER when it creates a group-shaped
+      //                 conversation: supportChannel.js:184 (the support
+      //                 thread) and officialChannels.js:641 (a community
+      //                 channel's room).
+      // So every server-created conversation rendered with no picture in the
+      // inbox and fell through to UserAvatar's grey person placeholder. It
+      // looked like a broken upload because `groupName` DID resolve — the name
+      // was right and only the avatar was missing.
+      // Both are read here rather than renaming either, because both have live
+      // writers and readers elsewhere and a rename needs a data migration.
+      avatar: conv.groupIcon || conv.groupAvatar || null,
       coinsSpent: 0,
       live: null,
       resolved: true, // group name/icon live on the conversation doc, never stale

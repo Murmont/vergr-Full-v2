@@ -1,0 +1,15 @@
+[Unit]
+Description=VERGR SFU (Pion-based) — squad voice/video + co-host ingest
+After=network-online.target
+Wants=network-online.target
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/vergr-sfu
+ExecStart=/opt/vergr-sfu/vergr-sfu -listen :8088 -creds /etc/vergr-sfu/firebase-admin.json -origins "https://vergr.app,https://vergr-44494.web.app,https://vergr-44494.firebaseapp.com" -public-ip 178.105.238.230 -udp-min 50000 -udp-max 50100
+Restart=always
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+[Install]
+WantedBy=multi-user.target

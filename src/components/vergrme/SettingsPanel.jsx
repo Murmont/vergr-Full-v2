@@ -215,15 +215,13 @@ export default function SettingsPanel({ form, up, patch, isPro, canHideBranding,
         <p className="text-[11px] text-text-muted mt-2 leading-relaxed">Styles only your page (scoped). Inline styles win, so use <span className="font-mono">!important</span>. CSS only — scripts, <span className="font-mono">@import</span>, and off-site URLs are removed for safety.</p>
       </Card>
 
-      <Card title="Custom domain" badge={!isPro ? 'Pro' : null}>
-        <div className="flex items-center gap-3 p-3 bg-surface-2/60 rounded-xl border border-white/5">
-          <Icon name="language" size={20} className="text-brand-violet-light" />
-          <div className="flex-1">
-            <p className="text-sm">{isPro ? 'Connect your own domain' : 'yourname.com'}</p>
-            <p className="text-xs text-text-muted">{isPro ? 'Contact support to point your domain at this page.' : 'Use your own domain on the Pro plan.'}</p>
-          </div>
-        </div>
-      </Card>
+      {/* The "Custom domain" card was REMOVED 2026-08-20 (founder decision).
+          It had never worked: the entire implementation was a line reading
+          "Contact support to point your domain at this page". The self-serve
+          build that replaced it needs Cloudflare for SaaS custom hostnames,
+          which this account has no quota for (API errors 1456 and 1404), and
+          the only route to it is Enterprise. Rather than keep selling it, the
+          claim is gone from the plan too. */}
     </div>
   );
 }

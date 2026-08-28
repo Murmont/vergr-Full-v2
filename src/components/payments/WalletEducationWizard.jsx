@@ -2,7 +2,7 @@
 // can receive USDT-TRX or USDC-Polygon payouts from VERGR.
 // Pure educational content — we never see their seed phrase.
 //
-// Used inside RequestPayoutScreen when the user clicks "I need a wallet".
+// Wallet-setup explainer. Its old host (RequestPayoutScreen) was deleted with the
 import { useState } from 'react';
 import Icon from '../Icon';
 

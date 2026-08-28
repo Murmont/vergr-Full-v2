@@ -27,7 +27,7 @@ const META = {
   appearance:   { title: 'Appearance', sub: 'Customize your page design and style' },
   links:        { title: 'Links & Blocks', sub: 'Add, edit and reorder your content' },
   media:        { title: 'Media', sub: 'Images, galleries and video' },
-  products:     { title: 'Products', sub: 'Sell digital downloads — keep 92%, paid in gems' },
+  products:     { title: 'Products', sub: 'Sell digital downloads, keep 92% of every sale' },
   analytics:    { title: 'Analytics', sub: 'See how your page performs' },
   integrations: { title: 'Integrations', sub: 'Socials and connected accounts' },
   settings:     { title: 'Settings', sub: 'Visibility, branding and domain' },
@@ -154,7 +154,12 @@ export default function VergrMeEditorScreen() {
             </span>
             <button onClick={() => setShowPreview(true)} className="lg:hidden flex items-center gap-1.5 px-3 py-2 text-xs border border-white/10 rounded-lg text-text-secondary"><Icon name="visibility" size={14} /> Preview</button>
             <button onClick={openPage} className="hidden sm:flex items-center gap-1.5 px-3 py-2 text-xs border border-white/10 rounded-lg text-text-secondary hover:text-text-primary"><Icon name="open_in_new" size={14} /> View live</button>
-            <button onClick={handlePublish} disabled={publishing || (!hasUnpublished && draftStatus === 'saved')} className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-lg text-white disabled:opacity-50" style={{ background: 'linear-gradient(135deg, #7B1FFF, #B44FFF)' }}>
+            {/* A never-published page has no unpublished CHANGES either, so the
+                old condition disabled Publish on exactly the page that needs it
+                most and left the user stuck with a private page and a dead
+                button (audit A19). Publish stays enabled while isPublic is
+                false. */}
+            <button onClick={handlePublish} disabled={publishing || (form?.isPublic !== false && !hasUnpublished && draftStatus === 'saved')} className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-lg text-white disabled:opacity-50" style={{ background: 'linear-gradient(135deg, #7B1FFF, #B44FFF)' }}>
               <Icon name="publish" size={14} /> {publishing ? 'Publishing…' : 'Publish'}
             </button>
           </div>

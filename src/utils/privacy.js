@@ -20,10 +20,15 @@ export const PRIVACY_DEFAULTS = {
   receiveMsg: 'Friends & Followers', msgReq: true,
   tagMe: 'Friends & Followers',
   readReceipts: true, onlineStatus: true,
-  activityFeed: true, friendReq: true,
+  // activityFeed, friendReq and allowDownloads removed 2026-08-19 (audit A18):
+  // all three had zero enforcement callers, and none could be given any. There
+  // is no activity feed, no friend-request feature anywhere in the codebase,
+  // and no honest place to enforce a download ban (see PrivacySettingsScreen).
+  // Existing stored values are simply ignored; nothing reads them.
+  //
   // viewContent + shareContent removed as options (founder 2026-06-16): their
   // "Friends & Followers" default would break public browsing app-wide.
-  commentContent: 'Everyone', allowDownloads: false,
+  commentContent: 'Everyone',
   suggestedUsers: true, hashtagSearch: true, showTrending: false,
 };
 
@@ -79,16 +84,17 @@ export const canMessageUser = async (viewerId, targetUser) => {
   return true;
 };
 
-export const canSendFriendRequest = async (viewerId, targetUser) => {
-  if (!targetUser) return true;
-  const targetId = targetUser.id || targetUser.uid;
-  if (!viewerId || viewerId === targetId) return true;
-  return getPrivacy(targetUser).friendReq !== false;
-};
-
-// Downloads are an absolute per-owner toggle (default off).
-export const canDownloadContentOf = (ownerUser) => getPrivacy(ownerUser).allowDownloads === true;
-export const showsActivityFeed = (ownerUser) => getPrivacy(ownerUser).activityFeed !== false;
+// canSendFriendRequest, canDownloadContentOf and showsActivityFeed were removed
+// 2026-08-19 with the settings they read (audit A18). Each had ZERO callers, so
+// each was a privacy promise the app never kept. They are deleted rather than
+// left here, because a helper with no callers is what let the switches ship in
+// the first place: the module looked like it enforced them.
+//
+// If a friend-request system or an activity feed is ever built, the helper
+// comes back WITH it and with a call site, in the same change.
+//
+// `canCommentOn` above is now genuinely enforced, at addComment in
+// firebase/firestore.js.
 
 // ── Synchronous absolute filters for bulk lists (no relationship reads) ──
 // A user is hidden from a discovery surface when their setting forbids it for

@@ -14,15 +14,16 @@
 //
 // `functions/withdrawals.js` is deliberately NOT deleted or modified by this
 // file. Cutting over is a separate, explicit step: two systems that can both
-// move the same gems must never be live at once, so the switch is a single
+// move the same payable must never be live at once, so the switch is a single
 // change to which cron is scheduled, made when the partner is wired.
 //
 // ## Where the money lives
 //
-// `wallets/{uid}.gems` IS the accrued payable. It is not a parallel ledger,
+// `wallets/{uid}.owedMicroUsd` IS the accrued payable, in micro-USD. It is not
+// a parallel ledger,
 // deliberately: a second per-creator balance would be a thing that can drift
 // from the first, and reconciling two internal ledgers against each other is a
-// class of bug with no upside. Gems are already credited at the creator's
+// class of bug with no upside. It is already credited at the creator's
 // revenue-share rate by coinLedger.js, so the number is already correct.
 //
 // What did NOT exist is the PLATFORM-side aggregate, which is what answers "how
@@ -33,7 +34,7 @@
 // `disbursePayout()` is the only partner-specific function. Everything else —
 // eligibility, cadence, batching, statements, the ledger — runs and is testable
 // without a partner. Until one is chosen it throws, and a run that cannot
-// disburse marks itself `blocked` and moves nothing rather than debiting gems
+// disburse marks itself `blocked` and moves nothing rather than debiting value
 // it cannot actually send.
 
 const functions = require('firebase-functions/v2');
@@ -44,8 +45,14 @@ const REGION = 'europe-west1';
 
 // ── Constants ─────────────────────────────────────────────────────────
 
-/** 1 gem = $0.01. Mirrors GEM_TO_MICRO_USDC in functions/withdrawals.js. */
-const GEM_TO_MICRO_USD = 10_000;
+/**
+ * $100 in micro-USD. The payable is stored in micro-USD on
+ * `wallets/{uid}.owedMicroUsd`, so there is no unit conversion left in this
+ * file: it used to hold the amount in "gems" and translate every threshold
+ * back into dollars, which meant the minimum was written as 10,000 of a unit
+ * that only ever meant $100.
+ */
+const MICRO_USD = 1_000_000;
 
 /**
  * $100 minimum, flat at every cadence stage. Founder decision 2026-08-14.
@@ -53,7 +60,7 @@ const GEM_TO_MICRO_USD = 10_000;
  * never swept. A creator who earns $40 in January is paid $140 in February if
  * they earn $100 more, not $100 with $40 forfeited.
  */
-const MIN_PAYOUT_GEMS = 10_000;
+const MIN_PAYOUT_MICRO_USD = 100 * MICRO_USD;
 
 /**
  * Cadence stages. A stage only ever changes what DAYS a creator is paid on; the
@@ -113,11 +120,19 @@ const MAX_PAYEES_PER_RUN = 500;
  * Mirrors KYC_LIMITS in functions/withdrawals.js. Keep the two equal until that
  * file is retired at cutover.
  */
+// ⚠ The unit is MICRO-USD, so these are DOLLARS. The comments used to read
+// "€50/mo", "€2,500/mo", "€15,000/mo" on a constant literally named
+// _MICRO_USD, and that mismatch propagated outward: the wallet KYC screen and
+// SIX statements in the published AML policy and ToS all quoted euros for a
+// control enforced in dollars (audit A28). Since €15,000 > $15,000, the
+// published figure OVERSTATED the cap, which is exactly the shape this file's
+// own comment warns about ("a control we publish and do not enforce is the one
+// we get held to"). All of them now say US dollars.
 const KYC_MONTHLY_CAP_MICRO_USD = {
   0: 0,               // no payment at all
-  1: 50_000_000,      // €50/mo   — ID + selfie
-  2: 2_500_000_000,   // €2,500/mo — adds proof of address
-  3: 15_000_000_000,  // €15,000/mo — adds source of funds
+  1: 50_000_000,      // $50/mo     — ID + selfie
+  2: 2_500_000_000,   // $2,500/mo  — adds proof of address
+  3: 15_000_000_000,  // $15,000/mo — adds source of funds
 };
 
 /**
@@ -127,9 +142,9 @@ const KYC_MONTHLY_CAP_MICRO_USD = {
  * remittance advice: "we paid you $144" with no composition is not something a
  * creator can check, reconcile, or hand to an accountant.
  *
- * Read from `transactions` (currency 'gems', positive amount), which is the same
- * ledger the Earnings screen charts, so the statement and the charts can never
- * disagree about where money came from.
+ * Read from `transactions` rows the server stamped `earning: true`, which is the
+ * same ledger the Earnings screen charts, so the statement and the charts can
+ * never disagree about where money came from.
  */
 const STATEMENT_SOURCES = [
   { key: 'Tips',           match: ['tip', 'gift'] },
@@ -143,7 +158,7 @@ async function buildStatementBreakdown(uid, sinceMs) {
   try {
     let q = db.collection('transactions')
       .where('userId', '==', uid)
-      .where('currency', '==', 'gems')
+      .where('earning', '==', true)
       .orderBy('createdAt', 'desc')
       .limit(2000);
     if (sinceMs) q = q.where('createdAt', '>=', new Date(sinceMs));
@@ -152,13 +167,13 @@ async function buildStatementBreakdown(uid, sinceMs) {
     const totals = {};
     for (const d of snap.docs) {
       const t = d.data();
-      const gems = Number(t.amount || 0);
-      if (gems <= 0) continue; // payouts are negative; only count earnings
+      const micro = Number(t.amountMicroUsd || 0);
+      if (micro <= 0) continue; // payouts are negative; only count earnings
       const type = String(t.type || '').toLowerCase();
       const hit = STATEMENT_SOURCES.find((s) => s.match.some((m) => type.includes(m)));
       const key = hit ? hit.key : 'Other';
-      const entry = totals[key] || (totals[key] = { key, gems: 0, grossCoins: 0 });
-      entry.gems += gems;
+      const entry = totals[key] || (totals[key] = { key, micro: 0, grossCoins: 0 });
+      entry.micro += micro;
       // meta.coins / meta.grossCoins is the pre-share figure where the crediting
       // site recorded it. Absent on older rows, which is why it is not derived
       // by dividing by the rate: the rate may have changed since.
@@ -168,8 +183,8 @@ async function buildStatementBreakdown(uid, sinceMs) {
     return Object.values(totals)
       .map((e) => ({
         key: e.key,
-        shareMicroUsd: e.gems * GEM_TO_MICRO_USD,
-        grossMicroUsd: e.grossCoins > 0 ? e.grossCoins * GEM_TO_MICRO_USD : null,
+        shareMicroUsd: e.micro,
+        grossMicroUsd: e.grossCoins > 0 ? e.grossCoins * 10_000 : null,
       }))
       .sort((a, b) => b.shareMicroUsd - a.shareMicroUsd);
   } catch (e) {
@@ -209,7 +224,7 @@ async function paidLast30Days(uid, now = Date.now()) {
 
 // ── Helpers ───────────────────────────────────────────────────────────
 
-const gemsToMicroUsd = (gems) => Math.floor((Number(gems) || 0) * GEM_TO_MICRO_USD);
+const owedMicroUsd = (wallet) => Math.max(0, Math.floor(wallet?.owedMicroUsd || 0));
 const microUsdToStr = (m) => `$${(m / 1_000_000).toFixed(2)}`;
 
 /**
@@ -288,7 +303,7 @@ function blockingReason(account, wallet, kycLevel, now = Date.now(), ageDays = n
   if (kycLevel < 1) return 'kyc_required';
   if (account?.taxFormStatus !== 'on_file') return 'tax_form_required';
   if (!account?.partnerPayeeId) return 'payout_account_required';
-  if ((wallet?.gems || 0) < MIN_PAYOUT_GEMS) return 'below_minimum';
+  if (owedMicroUsd(wallet) < MIN_PAYOUT_MICRO_USD) return 'below_minimum';
   return null;
 }
 
@@ -313,6 +328,19 @@ async function disbursePayout({ payeeId, amountMicroUsd, idempotencyKey }) {
     + `Would have sent ${microUsdToStr(amountMicroUsd)} to payee ${payeeId} (key ${idempotencyKey}).`
   );
 }
+
+/**
+ * Is a payout partner actually wired?
+ *
+ * Checked BEFORE any balance is reserved. `disbursePayout` is the seam and it
+ * throws until a partner exists, so without this gate every run debited the
+ * creator's accrued share and then failed to send it, permanently, because the
+ * failure handler deliberately leaves the debit in place (it cannot tell a
+ * network timeout from a real send). A run that cannot pay must move nothing.
+ *
+ * Flip this to `true` in the same commit that implements `disbursePayout`.
+ */
+const PAYOUT_PARTNER_CONFIGURED = false;
 
 // ── The run ───────────────────────────────────────────────────────────
 
@@ -361,17 +389,16 @@ async function buildRunPlan(now = new Date()) {
     // entirely, pay up to the remaining headroom and let the excess roll over:
     // a cap is a limit on how fast money may leave, not a reason to withhold
     // money that is legitimately payable within it.
-    let gems = Math.floor(wallet.gems || 0);
+    const owedTotal = owedMicroUsd(wallet);
+    let amountMicroUsd = owedTotal;
     const capMicro = KYC_MONTHLY_CAP_MICRO_USD[Math.min(kycLevel, 3)] ?? 0;
     const alreadyPaidMicro = await paidLast30Days(uid, now.getTime());
     const headroomMicro = Math.max(0, capMicro - alreadyPaidMicro);
 
-    if (gemsToMicroUsd(gems) > headroomMicro) {
-      gems = Math.floor(headroomMicro / GEM_TO_MICRO_USD);
-    }
+    if (amountMicroUsd > headroomMicro) amountMicroUsd = headroomMicro;
     // Capping can push the payment under the minimum, in which case nothing goes
     // out this run and the whole balance carries forward.
-    if (gems < MIN_PAYOUT_GEMS) {
+    if (amountMicroUsd < MIN_PAYOUT_MICRO_USD) {
       skipped.push({
         uid,
         reason: headroomMicro <= 0 ? 'kyc_monthly_cap_reached' : 'below_minimum_after_cap',
@@ -383,11 +410,10 @@ async function buildRunPlan(now = new Date()) {
 
     plan.push({
       uid,
-      gems,
-      amountMicroUsd: gemsToMicroUsd(gems),
+      amountMicroUsd,
       cadence: cadence.key,
       payeeId: account.partnerPayeeId,
-      cappedByKyc: gems < Math.floor(wallet.gems || 0),
+      cappedByKyc: amountMicroUsd < owedTotal,
     });
 
     if (plan.length >= MAX_PAYEES_PER_RUN) break;
@@ -403,11 +429,18 @@ async function buildRunPlan(now = new Date()) {
  *
  * Ordering is deliberate: debit FIRST, then call the partner. The reverse would
  * risk paying and failing to debit, which pays twice on retry. This way the
- * failure mode is a debit with no payment, which is visible, refundable and
- * caught by the `pending` statement status.
+ * failure mode is a debit with no payment, which is visible and caught by the
+ * `pending` statement status.
+ *
+ * That ordering is only safe once a partner EXISTS. With no partner wired,
+ * `disbursePayout` throws every time, so debiting first meant zeroing a
+ * creator's accrued share and sending nothing, on every run, with the error
+ * handler deliberately leaving it debited to avoid double-paying a partner
+ * that had never been called. `assertPartnerConfigured()` below is checked
+ * before anything is reserved so that cannot happen.
  */
 async function payOne(runId, entry) {
-  const { uid, gems, amountMicroUsd, payeeId, cadence } = entry;
+  const { uid, amountMicroUsd, payeeId, cadence } = entry;
   // Built BEFORE the reserve transaction: it reads the transactions ledger, and
   // a Firestore transaction may not run queries. Also means a slow breakdown
   // cannot hold a write lock on the wallet.
@@ -417,27 +450,27 @@ async function payOne(runId, entry) {
   const walletRef = db.collection('wallets').doc(uid);
   const accountRef = db.collection('payout_accounts').doc(uid);
 
-  // 1. Reserve: debit gems and write the statement as pending, atomically.
+  // 1. Reserve: debit the payable and write the statement as pending, atomically.
   const reserved = await db.runTransaction(async (tx) => {
     const existing = await tx.get(statementRef);
     if (existing.exists) return false; // already handled in an earlier attempt
 
     const walletSnap = await tx.get(walletRef);
     if (!walletSnap.exists) return false;
-    const live = Math.floor(walletSnap.data().gems || 0);
-    // Re-check against the LIVE balance: the plan was built earlier and the
-    // creator may have been credited or debited since. Never pay more than is
-    // actually there.
-    if (live < MIN_PAYOUT_GEMS || live < gems) return false;
+    const live = Math.max(0, Math.floor(walletSnap.data().owedMicroUsd || 0));
+    // Re-check against the LIVE payable: the plan was built earlier and the
+    // creator may have accrued or been paid since. Never pay more than is
+    // actually owed.
+    if (live < MIN_PAYOUT_MICRO_USD || live < amountMicroUsd) return false;
 
     tx.update(walletRef, {
-      gems: FieldValue.increment(-gems),
-      totalPaidOut: FieldValue.increment(gems),
+      owedMicroUsd: FieldValue.increment(-amountMicroUsd),
+      totalPaidMicroUsd: FieldValue.increment(amountMicroUsd),
       updatedAt: FieldValue.serverTimestamp(),
     });
 
     tx.set(statementRef, {
-      runId, uid, gems, amountMicroUsd, cadence, payeeId,
+      runId, uid, amountMicroUsd, cadence, payeeId,
       sources: sources || null,
       periodFromMs: lastPaid || null,
       status: 'pending',
@@ -447,8 +480,9 @@ async function payOne(runId, entry) {
     tx.set(db.collection('transactions').doc(), {
       userId: uid,
       type: 'revenue_share_payout',
-      currency: 'gems',
-      amount: -gems,
+      currency: 'usd',
+      amountMicroUsd: -amountMicroUsd,
+      amount: -amountMicroUsd,
       description: `Revenue share payout ${microUsdToStr(amountMicroUsd)}`,
       meta: { runId, cadence, amountMicroUsd },
       createdAt: FieldValue.serverTimestamp(),
@@ -501,7 +535,7 @@ async function payOne(runId, entry) {
 
     return { uid, status: 'paid', amountMicroUsd };
   } catch (e) {
-    // Leave the statement `pending` and the gems debited. A pending statement
+    // Leave the statement `pending` and the payable debited. A pending statement
     // is the signal for a human to reconcile, and refunding automatically here
     // could double-credit if the partner actually did accept the payment.
     await statementRef.update({
@@ -529,7 +563,48 @@ async function executeRun(now = new Date()) {
     return { runId, status: 'already_complete' };
   }
 
+  // Admin kill switch. `payoutsPaused` is offered as a toggle on BOTH
+  // /admin/config and /admin/economy and, until 2026-08-19, was read by nothing
+  // at all: an operator could flip "Pause creator payouts", believe money had
+  // stopped, and the next run would pay everyone anyway. A safety control that
+  // does nothing is worse than no control, because it is trusted.
+  //
+  // Checked BEFORE buildRunPlan so a pause costs nothing to honour, and it
+  // records itself as a blocked run so the reason is visible on the Economy
+  // screen rather than looking like a run that silently never happened.
+  const cfgSnap = await db.collection('app_config').doc('general').get();
+  if (cfgSnap.exists && cfgSnap.data()?.payoutsPaused === true) {
+    await runRef.set({
+      runId, dayKey,
+      status: 'blocked',
+      blockedReason: 'payouts_paused_by_admin',
+      startedAt: FieldValue.serverTimestamp(),
+      completedAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+    console.warn('runCreatorPayouts BLOCKED: payoutsPaused is set in app_config/general.');
+    return { runId, status: 'blocked', reason: 'payouts_paused' };
+  }
+
   const { plan, skipped } = await buildRunPlan(now);
+
+  // A run that cannot disburse moves NOTHING. Reserving first and discovering
+  // the partner is missing is how a creator's accrued share gets zeroed with no
+  // payment made, so this is checked before a single wallet is touched.
+  if (plan.length && !PAYOUT_PARTNER_CONFIGURED) {
+    await runRef.set({
+      runId, dayKey,
+      status: 'blocked',
+      blockedReason: 'payout_partner_not_configured',
+      plannedCount: plan.length,
+      plannedMicroUsd: plan.reduce((s, p) => s + p.amountMicroUsd, 0),
+      skippedCount: skipped.length,
+      startedAt: FieldValue.serverTimestamp(),
+      completedAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+    console.warn('runCreatorPayouts BLOCKED: no payout partner wired.',
+      `${plan.length} creator(s) were due. Nothing was debited.`);
+    return { runId, status: 'blocked', wouldPay: plan.length };
+  }
 
   await runRef.set({
     runId, dayKey,
@@ -590,7 +665,7 @@ exports.previewCreatorPayoutRun = functions.https.onCall(
       date: when.toISOString().slice(0, 10),
       wouldPay: plan.length,
       wouldPayMicroUsd: plan.reduce((s, p) => s + p.amountMicroUsd, 0),
-      plan: plan.map(({ uid, gems, amountMicroUsd, cadence }) => ({ uid, gems, amountMicroUsd, cadence })),
+      plan: plan.map(({ uid, amountMicroUsd, cadence }) => ({ uid, amountMicroUsd, cadence })),
       skipped,
     };
   },
@@ -654,9 +729,8 @@ exports.getPayoutAccount = functions.https.onCall(
         return { key: nextKey, label: CADENCE[nextKey].label, ...r };
       })(),
       suspended: activeStrikeCount(account || {}, now) >= STRIKE_SUSPEND_THRESHOLD,
-      availableGems: Math.floor(wallet.gems || 0),
-      availableMicroUsd: gemsToMicroUsd(Math.floor(wallet.gems || 0)),
-      minimumMicroUsd: gemsToMicroUsd(MIN_PAYOUT_GEMS),
+      availableMicroUsd: owedMicroUsd(wallet),
+      minimumMicroUsd: MIN_PAYOUT_MICRO_USD,
       accountAgeDays: accountAgeDays(userSnap.exists ? userSnap.data() : null, now),
       minAccountAgeDays: MIN_ACCOUNT_AGE_DAYS,
       blockedBy: blockingReason(
@@ -901,9 +975,13 @@ exports._internal = {
   activeStrikeCount,
   buildRunPlan,
   executeRun,
-  gemsToMicroUsd,
+  owedMicroUsd,
   CADENCE,
   CADENCE_REQUIREMENTS,
-  MIN_PAYOUT_GEMS,
+  MIN_PAYOUT_MICRO_USD,
   STRIKE_SUSPEND_THRESHOLD,
+  // Exposed so the admin Economy screen reads the LIVE flag instead of
+  // restating it. A hardcoded copy in the UI is how a screen ends up claiming a
+  // payout partner is wired when the code still refuses to send anything.
+  PAYOUT_PARTNER_CONFIGURED,
 };

@@ -8,6 +8,7 @@ import useResponsive from '../../hooks/useResponsive';
 import { useUser } from '../../context/UserContext';
 import UserAvatar from '../../components/UserAvatar';
 import Icon from '../../components/Icon';
+import UserName from '../../components/UserName';
 
 export default function CreateArticleScreen() {
   const [title, setTitle] = useState('');
@@ -54,7 +55,7 @@ export default function CreateArticleScreen() {
         ) : (
           <button onClick={() => fileInputRef.current?.click()} className="w-full aspect-[21/9] rounded-2xl border-2 border-dashed border-white/[0.04] bg-surface-1/20 flex items-center justify-center gap-3 mb-6 hover:border-brand-pink/30 hover:bg-brand-pink/5 transition-all group cursor-pointer"><Icon name="add_photo_alternate" size={24} className="text-text-muted group-hover:text-brand-pink transition-colors" /><span className="text-text-muted text-sm group-hover:text-brand-pink transition-colors">Add cover image</span></button>
         )}
-        <div className="flex items-start gap-3 mb-2"><UserAvatar src={profile?.avatar} size={36} className="mt-1 shrink-0" /><p className="text-brand-pink text-[10px] font-dmmono uppercase tracking-widest mt-2">Article by @{profile?.username || 'you'}</p></div>
+        <div className="flex items-start gap-3 mb-2"><UserAvatar src={profile?.avatar} size={36} className="mt-1 shrink-0" /><p className="text-brand-pink text-[10px] font-dmmono uppercase tracking-widest mt-2">Article by <UserName user={profile} masked handle fallback={'you'} /></p></div>
         <input type="text" value={title} onChange={e => setTitle(e.target.value)} placeholder="Article title" className="w-full bg-transparent text-white text-2xl lg:text-3xl font-syne font-extrabold placeholder:text-text-muted/30 outline-none mb-4 leading-tight" maxLength={200} />
         <textarea value={body} onChange={e => setBody(e.target.value)} placeholder="Start writing your article... (minimum 50 characters)" className="w-full bg-transparent text-text-primary text-[15px] leading-[1.8] placeholder:text-text-muted/30 outline-none resize-none min-h-[400px]" />
         {!canPost && title.trim().length > 0 && <div className="mt-4 px-3 py-2 rounded-xl bg-brand-gold/10 border border-brand-gold/20 text-brand-gold text-xs">{title.trim().length < 5 ? 'Title needs at least 5 characters' : `${Math.max(0, 50 - body.trim().length)} more characters needed`}</div>}

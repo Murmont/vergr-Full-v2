@@ -16,6 +16,7 @@ const functions = require('firebase-functions/v2');
 const { getFirestore } = require('firebase-admin/firestore');
 const crypto = require('crypto');
 const nodemailer = require('nodemailer');
+const emailTemplates = require('./emailTemplates');
 
 const db = getFirestore('vgrdb');
 
@@ -110,12 +111,24 @@ exports.sendEmailVerificationCode = functions.https.onCall({ secrets: EMAIL_SECR
     port, secure: port === 465,
     auth: { user: SMTP_USER.value(), pass: SMTP_PASS.value() },
   });
+  // Rendered from the editable template (founder decision D3). renderEmail
+  // NEVER throws and falls back to its own shipped default, so a bad edit in the
+  // admin cannot stop someone verifying their email. `buildEmail` below is kept
+  // as a second net for the case where the module itself is unavailable.
+  let rendered = null;
+  try {
+    rendered = await emailTemplates.renderEmail('verification', { name, code });
+  } catch (e) {
+    console.warn('emailVerification: template render failed, using built-in', e?.message || e);
+  }
+
   await transporter.sendMail({
     from: SMTP_FROM.value() || 'Vergr <noreply@vergr.app>',
     to: email,
-    subject: `${code} is your Vergr verification code`,
-    text: `Hi ${name}, your Vergr verification code is ${code}. It expires in 10 minutes. If you didn't create a Vergr account, ignore this email.`,
-    html: buildEmail(code, name),
+    subject: rendered?.subject || `${code} is your Vergr verification code`,
+    text: rendered?.text
+      || `Hi ${name}, your Vergr verification code is ${code}. It expires in 10 minutes. If you didn't create a Vergr account, ignore this email.`,
+    html: rendered?.html || buildEmail(code, name),
   });
   return { sent: true, email };
 });

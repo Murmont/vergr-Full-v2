@@ -149,12 +149,23 @@ exports.cleanupExpiredStreamSegments = onSchedule(
       .get();
     const endedKeyToEndedAt = new Map();
     const tournamentLinkedKeys = new Set();
+    // Keys under a live replay hold. A Pro past broadcast IS the HLS manifest
+    // and segments already sitting under streams/<key>/ — vergr-ingest writes
+    // #EXT-X-ENDLIST when it finalizes, and r2-sync only ever copies. So the
+    // replay costs nothing to produce; the only thing that ever killed it was
+    // this sweep deleting the segments at 24h. Holding them until vodExpiresAt
+    // is the whole feature. See functions/vodArchive.js.
+    const replayHeldKeys = new Map(); // streamKey → expiry ms
     for (const d of endedSnap.docs) {
       const data = d.data();
       const ms = data.endedAt?.toMillis?.();
       if (data.streamKey && ms) endedKeyToEndedAt.set(data.streamKey, ms);
       if (data.streamKey && (data.tournamentMatchId || data.tournamentId)) {
         tournamentLinkedKeys.add(data.streamKey);
+      }
+      const expiry = data.vodExpiresAt?.toMillis?.();
+      if (data.streamKey && expiry && data.vodKind === 'hls') {
+        replayHeldKeys.set(data.streamKey, expiry);
       }
     }
 
@@ -181,6 +192,12 @@ exports.cleanupExpiredStreamSegments = onSchedule(
     const deleteKeys = [];
     for (const [streamKey, objects] of keysByStream.entries()) {
       if (liveKeys.has(streamKey)) continue;
+      // A Pro replay is served straight from these objects, so they outlive the
+      // 24h sweep until the retention window closes. Once vodExpiresAt passes,
+      // this stops matching and the normal TTL below deletes them on the same
+      // run that block 2c clears the replay fields off the doc.
+      const heldUntil = replayHeldKeys.get(streamKey);
+      if (heldUntil && heldUntil > now) continue;
       const endedAt = endedKeyToEndedAt.get(streamKey);
       const ttl = tournamentLinkedKeys.has(streamKey) ? TOURNAMENT_TTL_MS : ENDED_TTL_MS;
       if (endedAt && (now - endedAt) >= ttl) {

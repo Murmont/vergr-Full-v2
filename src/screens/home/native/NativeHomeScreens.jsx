@@ -22,13 +22,12 @@ import { useUI } from '../../../context/UIContext';
 import { useLayout } from '../../../context/LayoutContext';
 import {
   getUser, getComments, addComment as addCommentToFirestore, getPostByIdOrSlug,
-  getGameWeeklyLeaderboard, getQuestClaims, getUserPosts, getFollowing, getTransactions,
-  toggleCommentLike, getLikedCommentIds, reportComment,
+  getQuestClaims, getUserPosts, getFollowing, getTransactions,
+  toggleCommentLike, getLikedCommentIds, reportComment, COMMENT_BLOCKED,
 } from '../../../firebase/firestore';
 import ReportSheet from '../../../components/ReportSheet';
 import { uploadMediaFile } from '../../../utils/mediaHelpers';
 import { applyVanguardMask } from '../../../utils/vanguard';
-import { TOURNAMENT_GAMES } from '../../../utils/tournamentGames';
 import { PLAN_VP_MULTIPLIER, REFERRAL_VP_REFERRER, REFERRAL_VP_REFEREE } from '../../../utils/vpSystem';
 import { resolveTier } from '../../../utils/tierSystem';
 import { timeAgo } from '../../../utils/helpers';
@@ -46,6 +45,7 @@ import MediaPanel from '../../../components/MediaPanel';
 import EmojiPicker from '../../../components/EmojiPicker';
 import VanguardBadge from '../../../components/VanguardBadge';
 import { FeedSkeleton, ListSkeleton, StackSkeleton } from '../../../components/skeletons/GlassSkeletons';
+import UserName from '../../../components/UserName';
 
 // ═══════════════════════════════════════ NOTIFICATIONS
 
@@ -152,27 +152,29 @@ export function NativeTrendingHashtagsScreen() {
 
 // ═══════════════════════════════════════ LEADERBOARD
 
+// Every entry below was listed TWICE (earnings, xp, posts, followers,
+// streamers), so the chip row rendered ten tabs for five boards. Deduped.
+//
+// `predictorStreak` ("Hottest Streak") is removed: it ranked Champion Picks,
+// the prediction layer that went with tournaments, and llms.txt states
+// publicly that Vergr runs no prediction markets.
+//
+// ⚠ Several of these still cannot have data (audit A20 — vp, vpLevel,
+// streamHours and totalEarned are written to `wallets`, not `users`, or have
+// no writer at all). That is a separate fix and is NOT done here.
 const LB_CATEGORIES = [
   { key: 'vp', label: 'Top VP', field: 'vp', icon: 'star', suffix: 'VP' },
   { key: 'vpLevel', label: 'Highest Level', field: 'vpLevel', icon: 'trending_up', suffix: 'LVL' },
-  { key: 'streamers', label: 'Top Streamers', field: 'streamHours', icon: 'live_tv', suffix: 'hrs' },
   { key: 'followers', label: 'Most Followed', field: 'followerCount', icon: 'group' },
   { key: 'earnings', label: 'Top Earners', field: 'totalEarned', icon: 'paid' },
   { key: 'xp', label: 'Top XP', field: 'totalXP', icon: 'military_tech' },
   { key: 'posts', label: 'Top Posters', field: 'postCount', icon: 'edit_note' },
-  { key: 'predictorStreak', label: 'Hottest Streak', field: 'predictor.currentStreak', icon: 'local_fire_department' },
-  { key: 'earnings', label: 'Top Earners', field: 'totalEarned', icon: 'paid' },
-  { key: 'xp', label: 'Top XP', field: 'totalXP', icon: 'military_tech' },
-  { key: 'posts', label: 'Top Posters', field: 'postCount', icon: 'edit_note' },
-  { key: 'followers', label: 'Most Followed', field: 'followerCount', icon: 'group' },
   { key: 'streamers', label: 'Top Streamers', field: 'streamHours', icon: 'live_tv', suffix: 'hrs' },
 ];
-const LB_GAME_PICKS = ['Counter-Strike 2', 'VALORANT', 'League of Legends', 'EA Sports FC 25 (FIFA)', 'NBA 2K', 'Apex Legends', 'Rocket League', 'Fortnite'].filter((g) => TOURNAMENT_GAMES.some((tg) => tg.label === g));
 const PODIUM_COLORS = { 0: '#F5C542', 1: '#C0C0C0', 2: '#CD7F32' };
 
 export function NativeLeaderboardScreen() {
   const [category, setCategory] = useState(LB_CATEGORIES[0]);
-  const [selectedGame, setSelectedGame] = useState(LB_GAME_PICKS[0] || 'Counter-Strike 2');
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const { currentUser } = useAuth();
@@ -182,22 +184,19 @@ export function NativeLeaderboardScreen() {
     const load = async () => {
       setLoading(true);
       try {
-        if (category.perGame) {
-          const rows = await getGameWeeklyLeaderboard(selectedGame);
-          setEntries(rows.map((u, i) => ({ ...u, rank: i + 1, isYou: u.id === currentUser?.uid })));
-        } else {
-          const q = query(collection(db, 'users'), orderBy(category.field, 'desc'), limit(50));
-          const snap = await getDocs(q);
-          const getVal = (u, path) => path.split('.').reduce((o, k) => (o == null ? null : o[k]), u);
-          setEntries(snap.docs.map((d, i) => ({ id: d.id, rank: i + 1, ...d.data(), isYou: d.id === currentUser?.uid })).filter(u => (getVal(u, category.field) || 0) > 0));
-        }
+        // The per-game weekly board is gone with tournaments: it tallied wins
+        // from COMPLETED TOURNAMENTS, so it could only ever be empty now.
+        const q = query(collection(db, 'users'), orderBy(category.field, 'desc'), limit(50));
+        const snap = await getDocs(q);
+        const getVal = (u, path) => path.split('.').reduce((o, k) => (o == null ? null : o[k]), u);
+        setEntries(snap.docs.map((d, i) => ({ id: d.id, rank: i + 1, ...d.data(), isYou: d.id === currentUser?.uid })).filter(u => (getVal(u, category.field) || 0) > 0));
       } catch (err) { console.error('Leaderboard error:', err); setEntries([]); }
       setLoading(false);
     };
     load();
-  }, [category, selectedGame, currentUser]);
+  }, [category, currentUser]);
 
-  const valOf = (u) => category.perGame ? (u.wins || 0) : (category.field ? category.field.split('.').reduce((o, k) => (o == null ? null : o[k]), u) : 0);
+  const valOf = (u) => (category.field ? category.field.split('.').reduce((o, k) => (o == null ? null : o[k]), u) : 0);
   const top3 = entries.slice(0, 3);
   const rest = entries.slice(3);
   const formatVal = (n) => !n ? '0' : n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'K' : n.toLocaleString();
@@ -212,15 +211,7 @@ export function NativeLeaderboardScreen() {
           </button>
         ))}
       </div>
-      {category.perGame && (
-        <div className="flex gap-2 px-4 pb-3 overflow-x-auto no-scrollbar">
-          {LB_GAME_PICKS.map((g) => (
-            <button key={g} onClick={() => setSelectedGame(g)} className={`px-3 py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap ${selectedGame === g ? 'bg-brand-violet text-white' : 'bg-surface-2 text-text-secondary'}`}>{g}</button>
-          ))}
-        </div>
-      )}
       <div className="px-4">
-        {category.perGame && <p className="text-text-muted text-[11px] mb-3">Top players in {selectedGame} this week (by tournament wins + activity).</p>}
         {loading ? <ListSkeleton rows={8} /> : entries.length === 0 ? (
           <div className="text-center py-16"><Icon name="leaderboard" size={48} className="text-text-muted/20 mx-auto mb-3" /><p className="text-text-muted text-sm">No data yet. Be the first on the board!</p></div>
         ) : (
@@ -237,7 +228,7 @@ export function NativeLeaderboardScreen() {
                         <div className="rounded-full p-[2px]" style={{ background: PODIUM_COLORS[idx] }}><UserAvatar src={user.avatar} size={isFirst ? 64 : 48} /></div>
                         <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black text-bg-dark" style={{ background: PODIUM_COLORS[idx] }}>{idx + 1}</div>
                       </div>
-                      <p className={`font-bold truncate max-w-[84px] ${isFirst ? 'text-sm' : 'text-xs'} ${user.isYou ? 'text-brand-violet-light' : 'text-text-primary'}`}>{user.displayName || user.username}</p>
+                      <p className={`font-bold truncate max-w-[84px] ${isFirst ? 'text-sm' : 'text-xs'} ${user.isYou ? 'text-brand-violet-light' : 'text-text-primary'}`}><UserName user={user} masked /></p>
                       <p className="text-text-muted text-[10px] font-dmmono">{formatVal(valOf(user))}</p>
                     </button>
                   );
@@ -249,7 +240,7 @@ export function NativeLeaderboardScreen() {
                 <button key={user.id} onClick={() => navigate(`/user/${user.id}`)} className={`w-full flex items-center gap-3 p-3 rounded-xl ${user.isYou ? 'bg-brand-violet/10 border border-brand-violet/30' : 'bg-surface-1 border border-white/[0.06]'}`}>
                   <span className="w-8 text-center text-text-muted text-xs font-dmmono font-bold">{user.rank}</span>
                   <UserAvatar src={user.avatar} size={40} />
-                  <div className="flex-1 text-left min-w-0"><p className={`text-sm font-semibold truncate ${user.isYou ? 'text-brand-violet-light' : 'text-text-primary'}`}>{user.displayName || user.username}</p><p className="text-text-muted text-xs font-dmmono">@{user.username}</p></div>
+                  <div className="flex-1 text-left min-w-0"><p className={`text-sm font-semibold truncate ${user.isYou ? 'text-brand-violet-light' : 'text-text-primary'}`}><UserName user={user} masked /></p><p className="text-text-muted text-xs font-dmmono"><UserName user={user} masked handle /></p></div>
                   <span className="text-sm font-dmmono font-bold text-brand-gold">{formatVal(valOf(user))}{category.suffix && <span className="text-[10px] text-text-muted ml-1">{category.suffix}</span>}</span>
                 </button>
               ))}
@@ -321,12 +312,16 @@ export function NativeEarnCoinsScreen() {
     if (claiming || claimedIds.includes(quest.id)) return;
     setClaiming(quest.id);
     try {
-      await httpsCallable(functions, 'claimQuestReward')({ questId: quest.id, reward: quest.reward, title: quest.title });
+      const res = await httpsCallable(functions, 'claimQuestReward')({ questId: quest.id, reward: quest.reward, title: quest.title });
       setClaimedIds(prev => [...prev, quest.id]);
-      showToast(`+${quest.reward} VP earned!`, 'success');
+      // Server-reported payout (plan multiplier included), not the card's base.
+      showToast(`+${res?.data?.reward ?? quest.reward} VP earned!`, 'success');
     } catch (err) {
       if (err.code === 'functions/already-exists' || err.message?.includes('already claimed')) { showToast('Already claimed today', 'info'); setClaimedIds(prev => [...prev, quest.id]); }
-      else { showToast('Failed to claim reward', 'error'); console.error(err); }
+      // Quests verify server-side now, so a refusal carries a specific reason
+      // ("Like 5 posts today to claim this."). Surface it, don't swallow it.
+      else if (err.code === 'functions/failed-precondition') { showToast(err.message || 'You have not completed this quest yet.', 'info'); }
+      else { showToast(err.message || 'Failed to claim reward', 'error'); console.error(err); }
     }
     setClaiming(null);
   }, [claiming, claimedIds, showToast]);
@@ -338,7 +333,7 @@ export function NativeEarnCoinsScreen() {
     { icon: 'phone', title: 'Add Phone Number', desc: 'Unlock contact invites', reward: '1000 VP', color: 'text-brand-violet-light', action: () => navigate('/messages/new') },
     { icon: 'confirmation_number', title: 'Host an Event', desc: 'Sell tickets to a live event', reward: 'Coins + VP', color: 'text-brand-ember', action: () => navigate('/events/create') },
     { icon: 'person_add', title: 'Refer Friends', desc: 'Invite a friend who sets up properly', reward: '5000 VP (+3000 for them)', color: 'text-brand-pink', action: () => setActiveTab('special') },
-    { icon: 'trending_up', title: 'Level Up', desc: '30% → 15% commission', reward: 'Ranks 1–100', color: 'text-brand-gold', action: () => navigate('/settings/ranks') },
+    { icon: 'trending_up', title: 'Level Up', desc: 'Climb 11 ranks, collect badges', reward: 'Ranks 1–100', color: 'text-brand-gold', action: () => navigate('/settings/ranks') },
     { icon: 'workspace_premium', title: 'Lite / Pro Plans', desc: '1.5×/2× VP + monthly VP & coins', reward: '+1k–3k VP / mo', color: 'text-brand-violet', action: () => navigate('/settings/subscription') },
   ];
 
@@ -542,7 +537,7 @@ export function NativeReferralScreen() {
               {invites.map(inv => (
                 <div key={inv.uid} className="flex items-center gap-3 p-3 rounded-xl bg-white/[0.03]">
                   {inv.avatar ? <img src={inv.avatar} alt={inv.displayName} className="w-9 h-9 rounded-full object-cover" /> : <div className="w-9 h-9 rounded-full bg-brand-violet/30 flex items-center justify-center"><Icon name="person" size={16} className="text-brand-violet-light" /></div>}
-                  <div className="flex-1 min-w-0"><p className="font-semibold text-sm text-text-primary truncate">{inv.displayName}</p><p className="text-text-muted text-xs">{inv.verified ? 'Phone verified ✓' : 'Setup not finished'}</p></div>
+                  <div className="flex-1 min-w-0"><p className="font-semibold text-sm text-text-primary truncate"><UserName user={inv} masked /></p><p className="text-text-muted text-xs">{inv.verified ? 'Phone verified ✓' : 'Setup not finished'}</p></div>
                   {claimedFriendIds.includes(inv.uid) ? (
                     <span className="text-xs font-semibold text-brand-violet-light shrink-0">Claimed ✓</span>
                   ) : inv.verified ? (
@@ -676,7 +671,13 @@ export function NativePostDetailScreen() {
       if (parentId) setExpandedReplies(prev => new Set(prev).add(parentId));
       setInput(''); setAttachment(null); setReplyingTo(null); setShowMediaPanel(null); setShowEmoji(false);
       if (!parentId) setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 200);
-    } catch (err) { console.error('Failed to add comment:', err); }
+    } catch (err) {
+      // Say why. A comment refused by the owner's privacy setting used to fail
+      // silently, leaving the user staring at their own text (audit A18).
+      if (err?.code === COMMENT_BLOCKED) showToast(err.message, 'info');
+      else showToast('Could not post your comment. Please try again.', 'error');
+      console.error('Failed to add comment:', err);
+    }
     setPosting(false);
   };
 
@@ -731,7 +732,7 @@ export function NativePostDetailScreen() {
         <button onClick={() => navigate(`/user/${realAuthor?.id || comment.authorId}`)} className="shrink-0"><UserAvatar src={author?.avatar} size={isReply ? 30 : 36} /></button>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-0.5">
-            <span className="font-semibold text-sm">{author?.displayName || author?.username || 'User'}</span>
+            <span className="font-semibold text-sm"><UserName user={author} masked fallback={'User'} /></span>
             {!isMasked && realAuthor?.isVerified && <span className="w-3.5 h-3.5 rounded-full bg-brand-violet flex items-center justify-center"><Icon name="check" size={9} className="text-white" /></span>}
             {vRank && <VanguardBadge rank={vRank} size={12} />}
             <span className="text-text-muted text-xs font-dmmono">{timeAgo(comment.createdAt?.toDate ? comment.createdAt.toDate() : comment.createdAt)}</span>

@@ -48,10 +48,65 @@ const BLOCKED_EXACT = [
 
 const norm = (s) => String(s || '').toLowerCase().replace(/[\s_\-.]+/g, '');
 
+// ── Lookalike defence (mirror of functions/usernameIndex.js) ──────────
+// A substring test only catches the exact spelling, so v3rgr, verqr, vrgr and
+// veregr all passed, and those are the handles an impersonator would pick.
+// Fold confusable glyphs to a base letter, then allow one edit anywhere.
+// Deliberately over-blocks: the brand has one spelling worth protecting.
+const CONFUSABLE = {
+  0: 'o', 1: 'i', 2: 'z', 3: 'e', 4: 'a', 5: 's', 6: 'g',
+  7: 't', 8: 'b', 9: 'g', '@': 'a', $: 's', '!': 'i', '|': 'i',
+  '+': 't', '(': 'c', q: 'g', j: 'i', y: 'i', z: 's', k: 'c',
+};
+
+const foldConfusables = (s) => {
+  const base = String(s || '').toLowerCase().replace(/[^a-z0-9@$!|+(]/g, '');
+  let out = '';
+  for (const ch of base) out += (CONFUSABLE[ch] || ch);
+  return out.replace(/(.)\1+/g, '$1');
+};
+
+/** Damerau-Levenshtein, capped: bails out as soon as it cannot beat `max`. */
+function editDistance(a, b, max) {
+  if (Math.abs(a.length - b.length) > max) return max + 1;
+  const prev2 = [];
+  const prev = [];
+  const cur = [];
+  for (let j = 0; j <= b.length; j++) prev[j] = j;
+  for (let i = 1; i <= a.length; i++) {
+    cur[0] = i;
+    let best = cur[0];
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      cur[j] = Math.min(cur[j - 1] + 1, prev[j] + 1, prev[j - 1] + cost);
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) {
+        cur[j] = Math.min(cur[j], prev2[j - 2] + 1);
+      }
+      if (cur[j] < best) best = cur[j];
+    }
+    if (best > max) return max + 1;
+    for (let j = 0; j <= b.length; j++) { prev2[j] = prev[j]; prev[j] = cur[j]; }
+  }
+  return prev[b.length];
+}
+
+const looksLike = (handle, target) => {
+  const f = foldConfusables(handle);
+  const t = foldConfusables(target);
+  if (!f || !t) return false;
+  if (f.includes(t)) return true;
+  for (let len = Math.max(3, t.length - 1); len <= t.length + 1; len++) {
+    for (let i = 0; i + len <= f.length; i++) {
+      if (editDistance(f.slice(i, i + len), t, 1) <= 1) return true;
+    }
+  }
+  return false;
+};
+
 export const isReservedUsername = (username) => {
   const n = norm(username);
   if (!n) return true;
-  if (RESERVED_SUBSTRINGS.some(r => n.includes(r))) return true;
+  if (RESERVED_SUBSTRINGS.some(r => n.includes(r) || looksLike(username, r))) return true;
   return HARD_RESERVED.some(r => norm(r) === n);
 };
 
@@ -62,10 +117,17 @@ export const isBlockedUsername = (username) => {
 };
 
 // Returns null if the username is available, or a string describing why not.
-export const checkUsername = async (username) => {
+//
+// `isAdmin` skips the RESERVED check only. The brand reservation exists to stop
+// users passing themselves off as Vergr, and the founder is Vergr, so it must
+// never lock him out of his own name. This mirrors the `isAdminAccount` exemption
+// the server already has in `maintainUsernameIndex`; without it the client would
+// reject a handle the server would happily accept. Obscenity and uniqueness
+// still apply to everyone.
+export const checkUsername = async (username, { isAdmin = false } = {}) => {
   if (!username) return 'Username required.';
   if (!USERNAME_REGEX.test(username)) return 'Use 3–20 letters, numbers, or underscore.';
-  if (isReservedUsername(username)) return 'That username is reserved.';
+  if (!isAdmin && isReservedUsername(username)) return 'That username is reserved.';
   if (isBlockedUsername(username)) return "That username isn't allowed.";
   // Case-insensitive uniqueness via the usernames/{lower} reservation index,
   // plus an exact-case fallback for any user not yet backfilled.

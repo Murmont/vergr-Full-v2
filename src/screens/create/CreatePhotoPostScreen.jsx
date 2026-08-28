@@ -10,6 +10,7 @@ import useResponsive from '../../hooks/useResponsive';
 import { getTierConfig, checkFileSizeAccess, resolveTier } from '../../utils/tierSystem';
 import UserAvatar from '../../components/UserAvatar';
 import Icon from '../../components/Icon';
+import UserName from '../../components/UserName';
 
 const MAX_PHOTOS = 10;
 
@@ -185,7 +186,7 @@ export default function CreatePhotoPostScreen() {
           <div className="flex gap-3 mb-4">
             <UserAvatar src={profile?.avatar || profile?.photoURL} size={40} />
             <div className="flex-1">
-              <p className="text-brand-violet-light text-xs font-dmmono mb-1">@{profile?.username || 'you'}</p>
+              <p className="text-brand-violet-light text-xs font-dmmono mb-1"><UserName user={profile} masked handle fallback={'you'} /></p>
               <textarea
                 value={content}
                 onChange={e => setContent(e.target.value)}
@@ -198,7 +199,9 @@ export default function CreatePhotoPostScreen() {
           <div className="p-3.5 rounded-xl bg-surface-1 border border-white/[0.06] mb-4">
             <div className="flex items-center justify-between">
               <span className="text-text-muted text-[10px] uppercase tracking-wider font-bold">Quality</span>
-              <span className="text-brand-violet-light text-[11px] font-dmmono font-bold">{tierConfig.imageMaxDim === Infinity ? 'Original 4K' : `${tierConfig.imageMaxDim}p`}</span>
+              {/* Mirrors mediaCompression.postPresetForTier(): Pro keeps 4K,
+                  everyone else is resized to 1600px. */}
+              <span className="text-brand-violet-light text-[11px] font-dmmono font-bold">{tierConfig.imageMaxDim >= 3840 ? '4K' : `${tierConfig.imageMaxDim}px`}</span>
             </div>
             <div className="flex items-center justify-between mt-1.5">
               <span className="text-text-muted text-[10px] uppercase tracking-wider font-bold">Max upload</span>

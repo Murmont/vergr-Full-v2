@@ -7,7 +7,8 @@ import { useNavigate } from 'react-router-dom';
 import { auth } from '../../../firebase/config';
 import { useNotifications } from '../../../context/NotificationContext';
 import { useUser } from '../../../context/UserContext';
-import { resolveChatUsers, chatPartner } from '../../../utils/chatIdentity';
+import { resolveChatUsers, chatPartner, peekChatUser } from '../../../utils/chatIdentity';
+import TypingIndicator from '../../../components/TypingIndicator';
 import {
   isChatMutedFor, isChatPinnedFor, setChatPinned,
   isChatArchivedFor, setChatArchived, sortInboxChats,
@@ -29,6 +30,11 @@ import ChatFolderEditor from '../../../components/messages/ChatFolderEditor';
 import { timeAgo, getTier } from '../../../utils/helpers';
 import { ListSkeleton } from '../../../components/skeletons/GlassSkeletons';
 import useOnlineStatus from '../../../hooks/useOnlineStatus';
+import {
+  subscribeOfficialChannels, subscribeChannelState, buildOfficialRows,
+  setChannelPinned, setChannelArchived, resolveChannelTarget, syncChannelPushSubscriptions,
+} from '../../../firebase/officialChannels';
+import { getPushToken } from '../../../utils/pushNotifications';
 
 // Status-bar inset only. The extra +8px on top of the inset stacked with the
 // header's own 52px row and read as a dead gap above "Messages".
@@ -37,13 +43,34 @@ const safeTop = { paddingTop: 'env(safe-area-inset-top, 0px)' };
 // ── Inbox ───────────────────────────────────────────────────────────
 export function NativeMessagesInboxScreen() {
   const navigate = useNavigate();
-  const { conversations } = useNotifications();
+  const {
+    conversations, squadUnreadCount = 0, missedCallCount = 0, requestCount = 0,
+  } = useNotifications();
+  // Count for everything reachable from the hamburger menu but NOT visible on
+  // this screen: calls, squad activity and message requests. All Chats is
+  // deliberately excluded because that list is what the user is already looking
+  // at, so badging the menu for it would be telling them to go where they are.
+  const menuBadgeCount = squadUnreadCount + missedCallCount + requestCount;
   const { profile } = useUser();
   const loading = !conversations;
   const [search, setSearch] = useState('');
   const [voiceChannels, setVoiceChannels] = useState([]);
   const [showCreateVoice, setShowCreateVoice] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  // Official Vergr channels. These were MISSING from the native inbox while web
+  // had them, so the APK simply never showed a channel. Same synthetic rows and
+  // the same helpers, so every filter, sort and folder below treats them as
+  // ordinary chats.
+  const [officialChannels, setOfficialChannels] = useState([]);
+  const [channelState, setChannelState] = useState({});
+
+  useEffect(() => {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return undefined;
+    const a = subscribeOfficialChannels(uid, setOfficialChannels);
+    const b = subscribeChannelState(uid, setChannelState);
+    return () => { a(); b(); };
+  }, [profile?.uid]);
 
   useEffect(() => {
     const uid = auth.currentUser?.uid;
@@ -70,13 +97,33 @@ export function NativeMessagesInboxScreen() {
     return () => { alive = false; };
   }, [conversations]);
 
+  const officialRows = buildOfficialRows(officialChannels, channelState, auth.currentUser?.uid, profile);
+  // See MessagesListPanel: the synthetic support row steps aside once a real
+  // support ticket exists, so "Vergr Support" appears exactly once and the
+  // surviving row is the one carrying unread state (audit A36).
+  const hasSupportThread = (conversations || []).some(c => c.supportThread === true);
+  const visibleOfficial = hasSupportThread
+    ? officialRows.filter(r => r.kind !== 'support')
+    : officialRows;
+  const allChats = [...visibleOfficial, ...(conversations || [])];
+
+  // Subscribe this device to each channel topic, and drop it on mute. Without
+  // this a channel post reaches the thread and pushes to nobody.
+  useEffect(() => {
+    const uid = auth.currentUser?.uid;
+    if (!uid || !officialChannels.length) return;
+    const token = getPushToken();
+    if (!token) return;
+    syncChannelPushSubscriptions(officialChannels, channelState, token).catch(() => {});
+  }, [officialChannels, channelState]);
+
   const searched = search
-    ? (conversations || []).filter((c) => {
+    ? allChats.filter((c) => {
         const { name, username } = chatPartner(c, auth.currentUser.uid, profile, liveUsers);
         const q = search.toLowerCase();
         return name?.toLowerCase().includes(q) || username.toLowerCase().includes(q);
       })
-    : (conversations || []);
+    : allChats;
 
   // Saved Messages renders as its own static row; archived chats collapse
   // behind a section; the rest is pinned-first then most-recent.
@@ -85,8 +132,10 @@ export function NativeMessagesInboxScreen() {
   const [activeFolder, setActiveFolder] = useState('all');
   const archived = sortInboxChats(visible.filter((c) => isChatArchivedFor(c, me)), me);
   const filtered = sortInboxChats(visible.filter((c) => !isChatArchivedFor(c, me)), me);
-  const dms = filtered.filter((c) => !c.isGroup);
-  const groups = filtered.filter((c) => c.isGroup);
+  // A support ticket is a group technically, not to the user. It lists with the
+  // official channel row it replaces, never under GROUPS.
+  const dms = filtered.filter((c) => !c.isGroup || c.supportThread === true);
+  const groups = filtered.filter((c) => c.isGroup && c.supportThread !== true);
   // Folder tabs (Telegram-style, incl. user custom folders).
   const customFolders = profile?.settings?.chatFolders || [];
   const view = computeFolderView(activeFolder, customFolders);
@@ -178,8 +227,15 @@ export function NativeMessagesInboxScreen() {
       <header className="sticky top-0 z-40 glass-header" style={safeTop}>
         <div className="flex items-center justify-between px-4 h-[52px]">
           <div className="flex items-center gap-2">
-            <button onClick={() => setMenuOpen(true)} className="w-8 h-8 -ml-1 rounded-full flex items-center justify-center text-text-secondary active:text-text-primary" aria-label="Messages menu">
+            {/* Same rule as web: a count for what is BEHIND the menu (calls,
+                squads, requests), never for All Chats, which is this screen. */}
+            <button onClick={() => setMenuOpen(true)} className="relative w-8 h-8 -ml-1 rounded-full flex items-center justify-center text-text-secondary active:text-text-primary" aria-label="Messages menu">
               <Icon name="menu" size={24} />
+              {menuBadgeCount > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-brand-ember text-white flex items-center justify-center text-[9px] font-black tabular-nums leading-none">
+                  {menuBadgeCount > 99 ? '99+' : menuBadgeCount}
+                </span>
+              )}
             </button>
             <h1 className="font-syne text-[19px] font-black text-text-primary">Messages</h1>
           </div>
@@ -389,21 +445,38 @@ function NativeInboxRow({ conv, me, liveUsers, profile, navigate, archivedView =
   const { isOnline: otherOnline } = useOnlineStatus(!conv.isGroup ? otherId : null);
   const isOnline = !conv.isGroup && otherOnline;
   const typers = freshTypers(conv.typingUsers, me);
+  const official = !!conv.isOfficial;
+  // A channel row does not always point at the channel thread: a support channel
+  // opens the user's own conversation, a community channel opens the room.
+  const openOfficial = async () => {
+    try {
+      const path = await resolveChannelTarget(conv);
+      if (path) navigate(path);
+    } catch {
+      navigate(`/messages/c/${conv.channelId}`);
+    }
+  };
   return (
     <SwipeableRow
       rightIcon={pinned ? 'keep_off' : 'keep'} rightLabel={pinned ? 'Unpin' : 'Pin'}
       leftIcon={archivedView ? 'unarchive' : 'archive'} leftLabel={archivedView ? 'Unarchive' : 'Archive'}
-      onSwipeRight={() => setChatPinned(conv.id, !pinned).catch(() => {})}
-      onSwipeLeft={() => setChatArchived(conv.id, !archivedView).catch(() => {})}
+      onSwipeRight={() => (official ? setChannelPinned(me, conv.channelId, !pinned) : setChatPinned(conv.id, !pinned)).catch(() => {})}
+      onSwipeLeft={() => (official ? setChannelArchived(me, conv.channelId, !archivedView) : setChatArchived(conv.id, !archivedView)).catch(() => {})}
     >
-      <button onClick={() => navigate(`/messages/${conv.id}`)}
+      <button onClick={() => (official ? openOfficial() : navigate(`/messages/${conv.id}`))}
         className={`w-full flex items-center gap-3.5 px-4 py-3.5 text-left border-b border-white/[0.04] ${unread > 0 ? 'bg-brand-violet/[0.02]' : 'active:bg-surface-1/40'}`}>
         {/* `flex` matters: UserAvatar is inline-flex, so a block wrapper adds a
             baseline descender gap under it and the online dot (bottom-anchored)
             lands BELOW the avatar instead of on its edge. */}
-        <div className="relative shrink-0 flex" onClick={(e) => { e.stopPropagation(); if (!conv.isGroup && otherId) navigate(`/user/${otherId}`); }}>
+        <div className="relative shrink-0 flex" onClick={(e) => { e.stopPropagation(); if (official) openOfficial(); else if (!conv.isGroup && otherId) navigate(`/user/${otherId}`); }}>
           <UserAvatar src={d.avatar} size={52} tier={tier} isGroup={conv.isGroup} />
-          {isOnline && <div className="absolute bottom-0 right-0 z-20 w-3.5 h-3.5 bg-green-500 border-[2.5px] border-bg-dark rounded-full" />}
+          {official && (
+            <div className="absolute bottom-0 right-0 z-20 w-4 h-4 rounded-full flex items-center justify-center border-2 border-bg-dark"
+                 style={{ background: conv.accentColor || '#7B1FFF' }} title="Official Vergr channel">
+              <Icon name="verified" size={9} className="text-white" />
+            </div>
+          )}
+          {!official && isOnline && <div className="absolute bottom-0 right-0 z-20 w-3.5 h-3.5 bg-green-500 border-[2.5px] border-bg-dark rounded-full" />}
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex justify-between items-baseline mb-0.5">
@@ -421,7 +494,13 @@ function NativeInboxRow({ conv, me, liveUsers, profile, navigate, archivedView =
               {conv.lastMessageSenderId === me && !getDraft(conv.id) && <Icon name="done_all" size={14} className="text-brand-violet-light/50 shrink-0" />}
               {muted && <Icon name="notifications_off" size={13} className="text-text-muted/70 shrink-0" />}
               {typers.length > 0 ? (
-                <p className="text-sm truncate leading-none text-brand-violet-light animate-pulse">{conv.isGroup ? `${typers[0].name || 'Someone'} is typing…` : 'typing…'}</p>
+                <TypingIndicator
+                  variant="inline"
+                  className="text-sm leading-none text-brand-violet-light"
+                  users={typers}
+                  typist={peekChatUser(typers[0]?.uid)}
+                  label={conv.isGroup ? `${typers[0].name || 'Someone'} is typing…` : 'typing…'}
+                />
               ) : getDraft(conv.id) ? (
                 <p className="text-sm truncate leading-none"><span className="text-brand-ember font-semibold">Draft: </span><span className="text-text-muted">{getDraft(conv.id)}</span></p>
               ) : (

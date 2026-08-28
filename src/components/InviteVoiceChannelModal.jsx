@@ -7,6 +7,7 @@ import { auth } from '../firebase/config';
 import { getFollowing, getUser } from '../firebase/firestore';
 import Icon from './Icon';
 import UserAvatar from './UserAvatar';
+import UserName from './UserName';
 
 export default function InviteVoiceChannelModal({ channel, onSave, onClose }) {
   const myUid = auth.currentUser?.uid;
@@ -112,9 +113,9 @@ export default function InviteVoiceChannelModal({ channel, onSave, onClose }) {
                     <UserAvatar src={u.avatar} size={36} />
                     <div className="flex-1 text-left min-w-0">
                       <div className="text-sm font-semibold text-text-primary truncate">
-                        {u.displayName || u.username}
+                        <UserName user={u} masked />
                       </div>
-                      <div className="text-[11px] text-text-muted truncate">@{u.username}</div>
+                      <div className="text-[11px] text-text-muted truncate"><UserName user={u} masked handle /></div>
                     </div>
                     <div className={`w-5 h-5 rounded border flex items-center justify-center ${
                       on ? 'bg-brand-violet border-brand-violet' : 'border-white/20 bg-white/[0.04]'

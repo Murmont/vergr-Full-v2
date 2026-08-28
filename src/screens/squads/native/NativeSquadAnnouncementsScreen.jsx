@@ -6,6 +6,7 @@ import { useUI } from '../../../context/UIContext';
 import { getSquad, getSquadMembers, getSquadAnnouncements, createSquadAnnouncement } from '../../../firebase/firestore';
 import { roleKey, roleMeta, avatarClass, initials, nameOf } from '../../../components/squad/squadHelpers';
 import NativeSquadScaffold from './NativeSquadScaffold';
+import UserName from '../../../components/UserName';
 
 const tsMs = (t) => (t?.toDate ? t.toDate().getTime() : t?.seconds ? t.seconds * 1000 : t ? new Date(t).getTime() : 0);
 const when = (t) => { const d = new Date(tsMs(t)); return d.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' · ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); };
@@ -85,7 +86,7 @@ export default function NativeSquadAnnouncementsScreen() {
               <div className="composer">
                 <div className="composer-h">
                   <div className={`av ${avatarClass(currentUser?.uid)}`}>{initials(currentUser?.displayName || 'You')}</div>
-                  <div className="name">Posting as {currentUser?.displayName || 'You'}</div>
+                  <div className="name">Posting as <UserName user={currentUser} masked fallback={'You'} /></div>
                   <div className="lbl">New announcement</div>
                 </div>
                 <input className="title" placeholder="Announcement title…" value={title} onChange={(e) => setTitle(e.target.value)} />

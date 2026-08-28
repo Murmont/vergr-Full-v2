@@ -1,4 +1,8 @@
 import { useState, useEffect, useCallback, useRef, useMemo, lazy, Suspense } from 'react';
+import SuggestedPeopleBlock from '../../components/boost/SuggestedPeopleBlock';
+// How often a people-to-follow block appears in the feed. Deliberately not the
+// same number as the ad interval, so the two never land together.
+const SUGGEST_EVERY = 14;
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { haptic } from '../../utils/haptics';
@@ -45,6 +49,7 @@ import { doc, getDoc, collection, query, where, orderBy, limit as fbLimit, Times
 import { db } from '../../firebase/config';
 import { getUser, loadFollowingStatuses } from '../../firebase/firestore';
 import { isGroupSeen } from '../../utils/statusSeen';
+import UserName from '../../components/UserName';
 
 const FEED_TABS = ['For You', 'Following', 'Gaming News', 'Trending'];
 export { FEED_TABS };
@@ -799,6 +804,7 @@ export default function HomeFeedScreen({ initialTab, nativeFullWidth = false }) 
     // Track real-post index separately so PropellerAds slots are spaced
      // by *content posts seen*, not by mixed (post + user-ad) positions.
     let postsSinceAd = 0;
+    let postsSinceSuggest = 0;
     feedItems.forEach((item, index) => {
       if (item.isAd) {
         elements.push(<AdCard key={`ad-${item.id || index}`} ad={item} />);
@@ -815,6 +821,15 @@ export default function HomeFeedScreen({ initialTab, nativeFullWidth = false }) 
         if (postsSinceAd >= ADS_CONFIG.feedAdInterval) {
           elements.push(<VergrAd key={`vergrad-${index}`} zone="inpage" />);
           postsSinceAd = 0;
+        }
+        // ⚠ THE ONLY BOOST INVENTORY THAT SCALES. A rail has four slots forever;
+        // this appears again every SUGGEST_EVERY posts, so inventory grows with
+        // scroll depth. Offset from the ad interval so a reader never gets an ad
+        // and a suggestion block back to back.
+        postsSinceSuggest++;
+        if (postsSinceSuggest >= SUGGEST_EVERY) {
+          elements.push(<SuggestedPeopleBlock key={`suggest-${index}`} slotKey={index} />);
+          postsSinceSuggest = 0;
         }
       }
     });
@@ -1268,7 +1283,7 @@ export function HomeStoriesStrip({ onNavigate }) {
                   <div className={`absolute inset-0 z-20 rounded-full ring-2 ring-offset-2 ring-offset-bg-dark pointer-events-none ${seen ? 'ring-white/15' : 'ring-brand-violet-light'}`} />
                 )}
               </div>
-              <span className="text-[10px] font-dmmono text-text-secondary truncate w-full text-center">{name}</span>
+              <span className="text-[10px] font-dmmono text-text-secondary truncate w-full text-center"><UserName user={a} masked fallback={name} /></span>
             </button>
           );
         })}

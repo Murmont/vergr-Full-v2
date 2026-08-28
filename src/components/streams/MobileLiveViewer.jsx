@@ -31,13 +31,15 @@ import useLiveClip from '../../hooks/useLiveClip';
 import { connectChat } from '../../utils/chatRelay';
 import { safeReload } from '../../utils/platform';
 import Icon from '../Icon';
+import { BoostTimer } from './BoostStreamSheet';
+import BoostSheet from '../boost/BoostSheet';
 import InlineVideoPlayer from '../media/InlineVideoPlayer';
 import UserAvatar from '../UserAvatar';
 import VanguardPresence from '../VanguardPresence';
 import { getPlaybackUrl } from '../../utils/streamConfig';
 import { captureStreamInterest } from '../../utils/feedRank';
 import { getFunctions, httpsCallable } from 'firebase/functions';
-import { followUser, unfollowUser, isFollowing, sendCoins, getEventTicketStatus, getContentAccess } from '../../firebase/firestore';
+import { followUser, unfollowUser, isFollowing, sendCoins, getEventTicketStatus, getContentAccess, announceStreamJoin } from '../../firebase/firestore';
 import StreamPaywall from '../monetization/StreamPaywall';
 import EventTicketCard from '../tournament/EventTicketCard';
 import InStreamTicketWidget from './InStreamTicketWidget';
@@ -45,7 +47,6 @@ import StreamShareSheet from './StreamShareSheet';
 import JoinAnnouncer from './JoinAnnouncer';
 import UserQuickSheet from './UserQuickSheet';
 import ChatPanel from './ChatPanel';
-import TournamentOverlay from './TournamentOverlay';
 import ReactionsFloor from './ReactionsFloor';
 import NowPlayingCard from './NowPlayingCard';
 import { StreamGoalBar, TipAlertOverlay, SubAlertOverlay } from './StreamGoalAndAlerts';
@@ -62,6 +63,7 @@ import vcCoinIconAsset from '../../assets/stream/vc-coin.webp';
 import giftboxIconAsset from '../../assets/stream/giftbox.webp';
 import sendIconAsset from '../../assets/stream/send.webp';
 import { resolveTier } from '../../utils/tierSystem';
+import UserName from '../UserName';
 
 // Frosted-glass surface tokens — match the Stream Preview design (the background
 // image behind the blur is what makes the glass read).
@@ -345,7 +347,12 @@ export default function MobileLiveViewer() {
 
   // Subscribe to stream doc.
   useEffect(() => {
-    if (!streamId) return;
+    // Identical hang to ViewerStreamScreen (audit A15): `loading` clears only
+    // inside the snapshot callback, so an absent streamId left this spinning
+    // forever. A15's sweep listed nine screens it had cleared, but not this
+    // one — it is the mobile twin of the screen the finding is about, and it
+    // had the same defect.
+    if (!streamId) { setLoading(false); return; }
     return onSnapshot(doc(db, 'streams', streamId), (snap) => {
       setLoading(false);
       setStreamDoc(snap.exists() ? { id: snap.id, ...snap.data() } : null);
@@ -431,23 +438,19 @@ export default function MobileLiveViewer() {
     isFollowing(currentUser.uid, streamDoc.hostUid).then(async (isFollower) => {
       setFollowed(isFollower);
       setFollowChecked(true);
-      if (!isFollower || joinAnnouncedRef.current) return;
+      if (joinAnnouncedRef.current) return;
       joinAnnouncedRef.current = true;
-      let kind = 'follower'; let tier = null;
-      const subTier = resolveTier(profile);
-      if (subTier && subTier !== 'free') { kind = 'subscriber'; tier = subTier; }
-      try {
-        await addDoc(collection(db, 'streams', streamDoc.id, 'joins'), {
-          uid: currentUser.uid, displayName: profile?.displayName || profile?.username || null,
-          avatar: profile?.avatar || null, kind, tier, ts: serverTimestamp(), clientTs: Date.now(),
-        });
-      } catch {}
+      // Server-owned: follower state, tier and VP rank are resolved in
+      // `announceStreamJoin`, never sent from here. See
+      // docs/ENTRY_ANNOUNCEMENTS_SPEC.md for why the client write was removed.
+      try { await announceStreamJoin(streamDoc.id); } catch {}
     }).catch(() => {});
   }, [currentUser?.uid, streamDoc?.hostUid, streamDoc?.id, profile?.subscription]);
 
   const rawJoinEvents = useStreamJoinEvents(streamDoc?.id);
   const joinEvents = useMemo(() => rawJoinEvents.map((e) => ({
-    id: e.id, kind: e.kind, tier: e.tier, user: { uid: e.uid, displayName: e.displayName, avatar: e.avatar },
+    id: e.id, kind: e.kind, tier: e.tier, level: e.level, rankId: e.rankId,
+    user: { uid: e.uid, displayName: e.displayName, avatar: e.avatar },
   })), [rawJoinEvents]);
 
   const toggleFollow = async () => {
@@ -584,7 +587,8 @@ export default function MobileLiveViewer() {
 
   // ── Guards ──
   if (loading) return <Centered label="Loading stream…" />;
-  if (!streamDoc) return <Centered label="Stream not found." action={{ label: 'Browse live', onClick: () => navigate('/') }} />;
+  // /streams is the live list; '/' is the home feed.
+  if (!streamDoc) return <Centered label="Stream not found." action={{ label: 'Browse live', onClick: () => navigate('/streams') }} />;
 
   const isHost = !!currentUser?.uid && streamDoc.hostUid === currentUser.uid;
   const isAdmin = profile?.role === 'admin' || currentUser?.email === 'vergenerd@gmail.com';
@@ -618,7 +622,7 @@ export default function MobileLiveViewer() {
       <div style={{ minHeight: '100vh', background: `radial-gradient(circle at 50% 0%, #1a1030 0%, ${C.bg} 60%)`, color: C.text, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, fontFamily: '"Inter", system-ui, sans-serif' }}>
         <div style={{ width: 'min(420px, 100%)', background: C.card, border: `1px solid ${C.border}`, borderRadius: 18, padding: 24, textAlign: 'center' }}>
           <UserAvatar src={hostInfo?.avatar} size="lg" />
-          <div style={{ fontSize: 17, fontWeight: 800, marginTop: 12 }}>{hostInfo?.displayName || hostInfo?.username || 'The stream'} has ended</div>
+          <div style={{ fontSize: 17, fontWeight: 800, marginTop: 12 }}><UserName user={hostInfo} masked fallback={'The stream'} /> has ended</div>
           <div style={{ fontSize: 12, color: C.textDim, marginTop: 4, marginBottom: 18 }}>
             {replayUrl ? 'Catch the replay or follow for the next one.'
               : streamDoc.vodPending ? 'The replay is still processing — check back in a few minutes.'
@@ -672,7 +676,7 @@ export default function MobileLiveViewer() {
           <UserAvatar src={hostInfo?.avatar} size="lg" />
           <div style={{ fontSize: 17, fontWeight: 800, marginTop: 12 }}>This stream is for followers</div>
           <div style={{ fontSize: 12, color: C.textDim, marginTop: 4, marginBottom: 18 }}>
-            {hostInfo?.displayName || hostInfo?.username || 'The host'} made this stream {streamDoc.audience === 'friends' ? 'friends-only' : 'followers-only'}. Follow to watch.
+            <UserName user={hostInfo} masked fallback={'The host'} /> made this stream {streamDoc.audience === 'friends' ? 'friends-only' : 'followers-only'}. Follow to watch.
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {currentUser ? (
@@ -788,7 +792,7 @@ export default function MobileLiveViewer() {
             <div style={{ position: 'absolute', right: 10, top: 'calc(env(safe-area-inset-top,0px) + 52px)', bottom: 'calc(env(safe-area-inset-bottom,0px) + 10px)', width: 'min(42%, 360px)', display: 'flex', flexDirection: 'column', minHeight: 0, zIndex: 5 }}>
               <ChatPanel
                 streamId={streamDoc.id} layout="overlay" hostUid={streamDoc.hostUid}
-                slowModeSec={streamDoc.slowModeSec || 0} followersOnly={!!streamDoc.followersOnly}
+                slowModeSec={streamDoc.slowModeSec || 0} followersOnly={!!streamDoc.followersOnly} ttsEnabled={!!streamDoc.ttsEnabled}
                 pinnedMessage={streamDoc.pinnedMessage || null}
                 composerExtras={fsComposerExtras}
               />
@@ -813,6 +817,13 @@ export default function MobileLiveViewer() {
         )}
 
         <ReactionsFloor events={reactions} position="right" />
+        {/* Entry ribbons were absent from the fullscreen branch entirely, so a
+            viewer watching in landscape silently missed every entrance. Anchored
+            bottom-left, clear of the right-hand chat column. */}
+        <JoinAnnouncer
+          events={joinEvents} side="left"
+          bottom="calc(env(safe-area-inset-bottom, 0px) + 124px)"
+        />
       </div>
     );
   }
@@ -882,12 +893,8 @@ export default function MobileLiveViewer() {
           thumb={bgImage}
           visible={hasVideo && !isTwitchMirror && !videoStarted && streamDoc.status === 'live'}
         />
-        {streamDoc?.hostUid && (
-          <TournamentOverlay
-            hostUid={streamDoc.hostUid}
-            offset={{ top: 'calc(env(safe-area-inset-top, 0px) + 64px)', right: 10 }}
-          />
-        )}
+        {/* TournamentOverlay removed 2026-08-19 — see the note in
+            ViewerStreamScreen. Same component, same reasons. */}
         {/* Corner fullscreen toggle — shown in split (landscape source) so the
             viewer can expand without hunting through the "…" sheet. */}
         {!pipActive && useSplit && hasVideo && !isTwitchMirror && (
@@ -949,7 +956,7 @@ export default function MobileLiveViewer() {
           </div>
           <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: 12, fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {hostInfo?.displayName || hostInfo?.username || 'Live'}
+              <UserName user={hostInfo} masked fallback={'Live'} />
             </div>
             <div style={{ fontSize: 9.5, color: 'rgba(255,255,255,0.8)', display: 'flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
@@ -1054,7 +1061,7 @@ export default function MobileLiveViewer() {
         <div style={{ height: kb > 0 ? 96 : CHAT_FEED_HEIGHT, display: 'flex', flexDirection: 'column', minHeight: 0, transition: 'height 0.18s ease-out' }}>
           <ChatPanel
             streamId={streamDoc.id} layout="overlay" hostUid={streamDoc.hostUid}
-            slowModeSec={streamDoc.slowModeSec || 0} followersOnly={!!streamDoc.followersOnly}
+            slowModeSec={streamDoc.slowModeSec || 0} followersOnly={!!streamDoc.followersOnly} ttsEnabled={!!streamDoc.ttsEnabled}
             pinnedMessage={streamDoc.pinnedMessage || null}
             composerExtras={composerExtras}
           />
@@ -1065,13 +1072,22 @@ export default function MobileLiveViewer() {
       {!pipActive && <SubAlertOverlay lastSub={streamDoc.lastSub} anchor="top" />}
 
       {showTip && (
-        <TipModal amount={tipAmount} setAmount={setTipAmount} message={tipMessage} setMessage={setTipMessage} onClose={() => setShowTip(false)} onSend={sendTip} sending={tipping} host={hostInfo} tipCatalog={hostInfo?.tipCatalog} />
+        <TipModal streamId={streamDoc?.id} stream={streamDoc} amount={tipAmount} setAmount={setTipAmount} message={tipMessage} setMessage={setTipMessage} onClose={() => setShowTip(false)} onSend={sendTip} sending={tipping} host={hostInfo} tipCatalog={hostInfo?.tipCatalog} />
       )}
       {shareOpen && (
         <StreamShareSheet streamId={streamDoc.id} streamTitle={streamDoc.title} hostName={hostInfo?.displayName || streamDoc.hostUsername} live={streamDoc.status === 'live'} onClose={() => setShareOpen(false)} />
       )}
       <ReactionsFloor events={reactions} position="right" />
-      {!pipActive && <JoinAnnouncer events={joinEvents} side="left" bottom={`calc(env(safe-area-inset-bottom, 0px) + ${CHAT_FEED_HEIGHT} + 24px)`} />}
+      {/* Anchored to the LIVE chat height, not the constant. The chat feed
+          collapses to 96px when the keyboard is open (see above), and pinning
+          this to CHAT_FEED_HEIGHT left the ribbons floating detached over the
+          video while typing. */}
+      {!pipActive && (
+        <JoinAnnouncer
+          events={joinEvents} side="left"
+          bottom={`calc(env(safe-area-inset-bottom, 0px) + ${kb > 0 ? '96px' : CHAT_FEED_HEIGHT} + 24px)`}
+        />
+      )}
       <UserQuickSheet open={!!quickSheet} uid={quickSheet?.uid} watchLiveStreamId={quickSheet?.streamId} onClose={() => setQuickSheet(null)} />
       <VanguardPresence parentPath={`streams/${streamDoc.id}`} />
 
@@ -1315,6 +1331,7 @@ function ReportStreamSheet({ streamId, onClose, showToast }) {
         </div>
         <textarea value={details} maxLength={1000} onChange={(e) => setDetails(e.target.value)} placeholder="What happened? (optional)" rows={3}
           style={{ width: '100%', boxSizing: 'border-box', background: 'rgba(255,255,255,0.04)', border: `1px solid ${C.border}`, borderRadius: 12, padding: 12, color: C.text, fontSize: 13, outline: 'none', resize: 'none', marginBottom: 12 }} />
+
         <div style={{ display: 'flex', gap: 10 }}>
           <button onClick={onClose} disabled={busy} style={{ flex: 1, padding: 13, borderRadius: 12, border: `1px solid ${C.border}`, background: 'transparent', color: C.textDim, fontSize: 13, fontWeight: 800, cursor: 'pointer' }}>Cancel</button>
           <button onClick={send} disabled={busy} style={{ flex: 2, padding: 13, borderRadius: 12, border: 'none', background: C.red, color: '#fff', fontSize: 13, fontWeight: 800, cursor: 'pointer', opacity: busy ? 0.6 : 1 }}>{busy ? 'Sending…' : 'Send report'}</button>
@@ -1426,7 +1443,7 @@ function GiftersSheet({ gifters, hostName, onClose, onTip }) {
               <div key={g.uid} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 12, background: 'rgba(255,255,255,0.04)' }}>
                 <span style={{ width: 20, textAlign: 'center', fontSize: 13, fontWeight: 900, fontFamily: 'DM Mono, monospace', color: MEDAL[i] || C.textMuted }}>{i + 1}</span>
                 <UserAvatar src={g.avatar} size="sm" />
-                <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{g.displayName || 'Supporter'}</span>
+                <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}><UserName user={g} masked fallback={'Supporter'} /></span>
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 13, fontWeight: 800, fontFamily: 'DM Mono, monospace', color: '#F5C842' }}>
                   <Icon name="paid" size={13} />{compactNum(g.coins)}
                 </span>
@@ -1463,7 +1480,12 @@ function GiftSoonSheet({ onClose, onTip }) {
 const iconBtn = { width: 34, height: 34, borderRadius: '50%', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0, ...glassDark };
 const pillBtn = { padding: '8px 14px', borderRadius: 99, border: 'none', background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 };
 function pillSm(extra = {}) { return { padding: '2px 8px', borderRadius: 99, fontSize: 10, fontWeight: 800, letterSpacing: '0.06em', color: '#fff', ...extra }; }
-function TipModal({ amount, setAmount, message, setMessage, onClose, onSend, sending, host, tipCatalog }) {
+function TipModal({ amount, setAmount, message, setMessage, onClose, onSend, sending, host, tipCatalog, streamId, stream }) {
+  // ⚠ TIP AND BOOST ARE THE SAME GESTURE — giving something to the person
+  // streaming — so they share one surface. Founder, 2026-08-27: boost sits in
+  // the gift menu like TikTok's, not as its own pill on the stream. Tip stays
+  // the default; boost is the deliberate second step.
+  const [giftTab, setGiftTab] = useState('tip');
   const PRESETS = [10, 50, 100, 500, 1000];
   const suggested = (tipCatalog || []).filter((e) => amount >= e.minCoins).sort((a, b) => b.minCoins - a.minCoins)[0];
   return (
@@ -1471,8 +1493,29 @@ function TipModal({ amount, setAmount, message, setMessage, onClose, onSend, sen
       <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: 480, background: C.card, border: `1px solid ${C.border}`, borderTopLeftRadius: 18, borderTopRightRadius: 18, padding: 20, paddingBottom: 'calc(env(safe-area-inset-bottom,0px) + 20px)', color: C.text, fontFamily: '"Inter", system-ui, sans-serif' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
           <UserAvatar src={host?.avatar} size="md" />
-          <div><div style={{ fontSize: 12, color: C.textDim }}>Tip</div><div style={{ fontSize: 15, fontWeight: 800 }}>{host?.displayName || 'host'}</div></div>
+          <div><div style={{ fontSize: 12, color: C.textDim }}>{giftTab === 'boost' ? 'Boost' : 'Tip'}</div><div style={{ fontSize: 15, fontWeight: 800 }}><UserName user={host} masked fallback={'host'} /></div></div>
+        </div>        <div style={{ display: 'flex', gap: 6, marginBottom: 14 }}>
+          {[['tip', 'Tip'], ['boost', 'Boost']].map(([id, label]) => (
+            <button key={id} type="button" onClick={() => setGiftTab(id)}
+              style={{
+                flex: 1, padding: '8px 10px', borderRadius: 9, cursor: 'pointer',
+                border: 'none', fontSize: 13, fontWeight: 800,
+                background: giftTab === id ? C.purpleSoft : 'rgba(255,255,255,0.04)',
+                color: giftTab === id ? C.purpleLight : C.textDim,
+                boxShadow: giftTab === id ? 'inset 0 0 0 1px ' + C.purple : 'none',
+              }}>{label}</button>
+          ))}
         </div>
+
+        {giftTab === 'boost' ? (
+          <BoostSheet
+                      target="stream"
+                      targetId={streamId}
+                      embedded
+                      onClose={onClose}
+                    />
+        ) : (<>
+
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
           {PRESETS.map((p) => (
             <button key={p} onClick={() => setAmount(p)} style={{ padding: '8px 14px', borderRadius: 10, background: amount === p ? C.purpleSoft : 'rgba(255,255,255,0.04)', border: `1px solid ${amount === p ? C.purple : C.border}`, color: amount === p ? C.purpleLight : C.textDim, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>{p}c</button>
@@ -1483,8 +1526,9 @@ function TipModal({ amount, setAmount, message, setMessage, onClose, onSend, sen
         <div style={{ fontSize: 11, color: C.textMuted, marginBottom: 14, lineHeight: 1.4 }}>Every message is moderated before broadcast. Vergr pays the host their revenue share of this tip.</div>
         <div style={{ display: 'flex', gap: 10 }}>
           <button onClick={onClose} disabled={sending} style={{ flex: 1, padding: 14, borderRadius: 12, border: `1px solid ${C.border}`, background: 'transparent', color: C.textDim, fontSize: 13, fontWeight: 800, cursor: 'pointer' }}>Cancel</button>
-          <button onClick={onSend} disabled={sending} style={{ flex: 2, padding: 14, borderRadius: 12, border: 'none', background: `linear-gradient(135deg, ${C.purple}, ${C.purpleLight})`, color: '#fff', fontSize: 13, fontWeight: 800, cursor: 'pointer', opacity: sending ? 0.6 : 1 }}>{sending ? 'Sending…' : `Send ${amount}c`}</button>
+          {giftTab === 'tip' && (<button onClick={onSend} disabled={sending} style={{ flex: 2, padding: 14, borderRadius: 12, border: 'none', background: `linear-gradient(135deg, ${C.purple}, ${C.purpleLight})`, color: '#fff', fontSize: 13, fontWeight: 800, cursor: 'pointer', opacity: sending ? 0.6 : 1 }}>{sending ? 'Sending…' : `Send ${amount}c`}</button>)}
         </div>
+      </>)}
       </div>
     </div>
   );

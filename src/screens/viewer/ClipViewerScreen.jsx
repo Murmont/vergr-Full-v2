@@ -12,6 +12,7 @@ import InlineVideoPlayer from '../../components/media/InlineVideoPlayer';
 import { getEmbedUrl } from '../../components/EmbedVideoPlayer';
 import { triggerInterstitial } from '../../utils/interstitialAd';
 import { timeAgo } from '../../utils/helpers';
+import UserName from '../../components/UserName';
 
 /**
  * Full-screen vertical video viewer.
@@ -279,8 +280,8 @@ export default function ClipViewerScreen() {
             <UserAvatar src={currentClip.author?.avatar} size={36} />
           </button>
           <div>
-            <p className="text-white font-bold text-sm">{currentClip.author?.displayName || 'User'}</p>
-            <p className="text-white/50 text-xs font-dmmono">@{currentClip.author?.username}</p>
+            <p className="text-white font-bold text-sm"><UserName user={currentClip.author} masked fallback={'User'} /></p>
+            <p className="text-white/50 text-xs font-dmmono"><UserName user={currentClip.author} masked handle /></p>
           </div>
         </div>
         {currentClip.content && (
@@ -333,7 +334,7 @@ export default function ClipViewerScreen() {
                     <UserAvatar src={c.author?.avatar} size={30} />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5 mb-0.5">
-                        <span className="text-text-primary text-xs font-semibold truncate">{c.author?.displayName || 'User'}</span>
+                        <span className="text-text-primary text-xs font-semibold truncate"><UserName user={c.author} masked fallback={'User'} /></span>
                         <span className="text-text-muted text-[10px] font-dmmono">· {timeAgo(c.createdAt?.toDate ? c.createdAt.toDate() : c.createdAt)}</span>
                       </div>
                       {c.content && <p className="text-text-secondary text-xs leading-relaxed break-words">{c.content}</p>}

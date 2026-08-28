@@ -21,6 +21,7 @@
 // sees is the one they will argue about.
 import { useUser } from '../../context/UserContext';
 import LocalPrice from '../LocalPrice';
+import { hasLocalEstimate } from '../../utils/currency';
 
 /**
  * @param {object} quote     one entry from getCoinPriceQuote (priceEUR, amountUSD)
@@ -51,11 +52,15 @@ export default function PriceQuote({ quote, size = 'lg', fallback = null }) {
 
       {/* The buyer's own currency, as an estimate. Never the charged figure:
           the charge is the USD above, and saying otherwise would recreate the
-          problem this component exists to fix. */}
-      <div style={{ fontSize: big ? 11 : 10, opacity: 0.62, marginTop: 2 }}>
-        <LocalPrice usd={quote.priceUSD} prefix="≈ " />
-        <span> · charged in USD</span>
-      </div>
+          problem this component exists to fix.
+          Hidden entirely for a buyer already on USD — there is no estimate to
+          give, and printing the same number twice reads as a bug (audit A3). */}
+      {hasLocalEstimate(quote.priceUSD) && (
+        <div style={{ fontSize: big ? 11 : 10, opacity: 0.62, marginTop: 2 }}>
+          <LocalPrice usd={quote.priceUSD} prefix="≈ " />
+          <span> · charged in USD</span>
+        </div>
+      )}
     </div>
   );
 }

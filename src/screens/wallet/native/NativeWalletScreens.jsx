@@ -19,11 +19,11 @@ import { useWalletUnlock } from '../../../context/WalletUnlockContext';
 import {
   WalletCard, WalletButton, SectionLabel, Pill, Callout, FeeBreakdown,
   CoinGlyph, GemGlyph, VPGlyph, AnimatedNumber, StatusPill,
-  WALLET_TOKENS, fmtNum, fmtEUR, fmtUsd,
+  WALLET_TOKENS, fmtNum, fmtEUR, fmtUsd, txUnit,
 } from '../../../components/wallet/primitives';
 import Icon from '../../../components/Icon';
-import { getTransactions, convertCoinsToGems } from '../../../firebase/firestore';
-import { getVPLevel, getNextVPLevel, getCommission, COIN_PACKS, GEM_VALUE_USD, COIN_VALUE_USD } from '../../../utils/vpSystem';
+import { getTransactions } from '../../../firebase/firestore';
+import { getVPLevel, getNextVPLevel, COIN_PACKS, COIN_VALUE_USD } from '../../../utils/vpSystem';
 import { IS_STORE_BUILD, IS_HUAWEI_BUILD } from '../../../utils/platform';
 import { useAuth } from '../../../context/AuthContext';
 import {
@@ -38,13 +38,15 @@ import {
 // absorbed in the PRICE of the Play SKU instead, which is set in Play Console
 // and read back at runtime through fetchPlayPrices(). See storePricing.js.
 const ACTIVE_COIN_PACKS = COIN_PACKS;
-import { getMyWalletSecurityStatus, getMyWithdrawals, cancelWithdrawal } from '../../../firebase/walletCallables';
+import { getMyWalletSecurityStatus } from '../../../firebase/walletCallables';
 import { useBuyCheckout, MIN_CUSTOM_USD, COIN_PRICE_USD } from '../v2/buyCheckout';
 import PaymentMethodPicker from '../../../components/wallet/PaymentMethodPicker';
+import { BonusPacksTab, BoostsTab } from '../../../components/wallet/StoreTabs';
+import UserName from '../../../components/UserName';
 
-// GEM_VALUE_USD and COIN_VALUE_USD come from vpSystem (imported above) and are
-// never re-declared here. This file used to hardcode `GEM_TO_EUR = 0.009`, which
-// understated every gem figure on the native wallet by 10%.
+// COIN_VALUE_USD comes from vpSystem (imported above) and is never re-declared
+// here. This file used to hardcode `GEM_TO_EUR = 0.009`, which
+// understated every money figure on the native wallet by 10%.
 const COL = { display: 'flex', flexDirection: 'column' };
 
 const useGreeting = () => {
@@ -251,184 +253,13 @@ function TxRow({ tx }) {
         <div style={{ fontSize: 12, color: WALLET_TOKENS.textMuted }}>{when}</div>
       </div>
       <div className="font-dmmono tabular-nums" style={{ fontWeight: 600, fontSize: 14, color: credit ? '#86EFAC' : WALLET_TOKENS.text, flexShrink: 0 }}>
-        {credit ? '+' : ''}{fmtNum(amount)} {currency === 'gems' ? 'gems' : 'c'}
+        {credit ? '+' : ''}{fmtNum(amount)} {txUnit(currency)}
       </div>
     </div>
   );
 }
-
-// ───────────────────────────────────────────────────────── CONVERT
-
-export function NativeConvertScreen() {
-  const { profile, wallet } = useUser();
-  const { requirePin } = useWalletUnlock();
-  const navigate = useNavigate();
-
-  // Only RECEIVED coins convert to gems; purchased coins are spendable but
-  // never cashable. Mirrors convertibleCoins() in functions/coinLedger.js.
-  // The server enforces this — the UI just avoids offering a refused amount.
-  const totalCoins = wallet?.balance || 0;
-  const coins = Math.min(Math.max(0, wallet?.earnedBalance || 0), totalCoins);
-  const lockedCoins = Math.max(0, totalCoins - coins);
-  const vp = wallet?.vp || 0;
-  const vpInfo = getVPLevel(vp);
-  const vpNext = getNextVPLevel(vp);
-  const commission = getCommission(vp);
-  const commissionPct = Math.round(commission * 100);
-
-  const [amount, setAmount] = useState(Math.min(1000, coins));
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState(null);
-  const [done, setDone] = useState(false);
-  const [received, setReceived] = useState(0);
-
-  const gemsOut = Math.floor(amount * (1 - commission));
-  const valid = amount > 0 && amount <= coins && !submitting;
-
-  const submit = () => {
-    if (!valid) return;
-    requirePin(async () => {
-      setSubmitting(true); setError(null);
-      try {
-        const result = await convertCoinsToGems(profile.uid, amount);
-        setReceived(result?.gemsReceived ?? gemsOut);
-        setDone(true);
-      } catch (e) {
-        setError(e?.message || 'Conversion failed. Try again.');
-      } finally { setSubmitting(false); }
-    });
-  };
-
-  if (done) {
-    return (
-      <WalletCard padding={36} style={{ textAlign: 'center' }}>
-        <div style={{ width: 72, height: 72, margin: '0 auto 18px', borderRadius: '50%', background: 'rgba(34,197,94,0.14)', display: 'grid', placeItems: 'center', border: '1px solid rgba(34,197,94,0.4)' }}>
-          <Icon name="check" size={32} className="text-emerald-400" />
-        </div>
-        <div style={{ fontFamily: 'Syne, sans-serif', fontWeight: 700, fontSize: 24, marginBottom: 6 }}>
-          <AnimatedNumber value={received} /> gems credited.
-        </div>
-        <div style={{ color: WALLET_TOKENS.textSecondary, fontSize: 14, marginBottom: 20 }}>Conversion settled.</div>
-        <div style={{ ...COL, gap: 10 }}>
-          <WalletButton variant="primary" onClick={() => navigate('/creator/earnings')} iconRight="arrow_forward">View earnings</WalletButton>
-          <WalletButton variant="secondary" onClick={() => { setDone(false); setAmount(0); }}>Convert more</WalletButton>
-        </div>
-      </WalletCard>
-    );
-  }
-
-  return (
-    <div style={{ ...COL, gap: 16, width: '100%', maxWidth: '100%' }}>
-      <div>
-        <div style={{ fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: WALLET_TOKENS.violetLight, fontWeight: 600, marginBottom: 6 }}>Convert</div>
-        <h1 style={{ fontFamily: 'Syne, sans-serif', fontWeight: 700, fontSize: 26, letterSpacing: '-0.02em' }}>Coins to gems.</h1>
-        <p style={{ color: WALLET_TOKENS.textSecondary, fontSize: 13, marginTop: 6 }}>
-          Gems are the only currency that cashes out. Rate depends on your rank.
-        </p>
-      </div>
-
-      {/* FROM */}
-      <WalletCard>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-          <CoinGlyph size={28} />
-          <div>
-            <div style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: WALLET_TOKENS.gold, fontWeight: 600 }}>From</div>
-            <div style={{ fontWeight: 600, fontSize: 15 }}>Coins</div>
-          </div>
-        </div>
-        <input value={amount} inputMode="numeric"
-          onChange={(e) => setAmount(Math.max(0, parseInt(e.target.value.replace(/\D/g, '')) || 0))}
-          style={{
-            width: '100%', height: 60, padding: '0 16px', fontSize: 30, fontWeight: 700,
-            fontFamily: 'DM Mono, monospace', color: WALLET_TOKENS.goldLight,
-            background: WALLET_TOKENS.surface2, border: `1px solid ${WALLET_TOKENS.hairlineStrong}`,
-            borderRadius: 12, outline: 'none', boxSizing: 'border-box',
-          }} />
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
-          <span className="font-dmmono" style={{ fontSize: 13, color: WALLET_TOKENS.textMuted }}>{fmtNum(coins)} c convertible</span>
-          <div style={{ display: 'flex', gap: 6 }}>
-            <SmallBtn onClick={() => setAmount(Math.floor(coins / 2))}>50%</SmallBtn>
-            <SmallBtn onClick={() => setAmount(coins)}>Max</SmallBtn>
-          </div>
-        </div>
-        {lockedCoins > 0 && (
-          <p style={{ marginTop: 8, fontSize: 11, lineHeight: 1.5, color: WALLET_TOKENS.textMuted }}>
-            {fmtNum(lockedCoins)} of your {fmtNum(totalCoins)} coins were purchased. Purchased
-            coins can be spent anywhere in VERGR, but only coins you have earned
-            can be converted to gems and withdrawn.
-          </p>
-        )}
-      </WalletCard>
-
-      {/* Arrow (points down in the stack) */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
-        <div style={{ width: 44, height: 44, borderRadius: '50%', background: WALLET_TOKENS.surface2, border: `1px solid ${WALLET_TOKENS.hairlineStrong}`, display: 'grid', placeItems: 'center', color: WALLET_TOKENS.violetLight }}>
-          <Icon name="arrow_downward" size={20} />
-        </div>
-        <Pill tone="violet" size="sm">{commissionPct}% commission</Pill>
-      </div>
-
-      {/* TO */}
-      <WalletCard>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-          <GemGlyph size={28} />
-          <div>
-            <div style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: WALLET_TOKENS.gemBlue, fontWeight: 600 }}>To</div>
-            <div style={{ fontWeight: 600, fontSize: 15 }}>Gems</div>
-          </div>
-        </div>
-        <div style={{
-          display: 'flex', alignItems: 'center', paddingLeft: 16, width: '100%', height: 60,
-          fontSize: 30, fontWeight: 700, fontFamily: 'DM Mono, monospace', color: '#7CA3FF',
-          background: WALLET_TOKENS.surface2, border: `1px solid ${WALLET_TOKENS.hairline}`,
-          borderRadius: 12, boxSizing: 'border-box',
-        }}>
-          <AnimatedNumber value={gemsOut} />
-        </div>
-        <div className="font-dmmono" style={{ fontSize: 13, color: WALLET_TOKENS.textMuted, marginTop: 10 }}>
-          Worth ≈ {fmtUsd(gemsOut * GEM_VALUE_USD)}
-        </div>
-      </WalletCard>
-
-      <FeeBreakdown
-        items={[
-          { label: 'You spend', value: `${fmtNum(amount)} c` },
-          { label: `Commission (${vpInfo.name} L${vpInfo.level}, ${commissionPct}%)`, value: `-${fmtNum(amount - gemsOut)} c` },
-          { label: 'Conversion rate', value: `1 c → ${(1 - commission).toFixed(2)} gems`, tone: 'muted' },
-        ]}
-        total={`+${fmtNum(gemsOut)} gems · ≈ ${fmtUsd(gemsOut * GEM_VALUE_USD)}`}
-      />
-
-      {vpNext && (
-        <WalletCard>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10, gap: 10 }}>
-            <div>
-              <div style={{ fontWeight: 600, fontSize: 14 }}>{fmtNum(Math.max(0, vpNext.vpRequired - vp))} VP to Lvl {vpNext.level}</div>
-              <div style={{ color: WALLET_TOKENS.textSecondary, fontSize: 13, marginTop: 4 }}>
-                Reach Lvl {vpNext.level} to drop your commission to {Math.round(vpNext.commission * 100)}%.
-              </div>
-            </div>
-            <Pill tone="violet" size="sm">{vpInfo.name} L{vpInfo.level}</Pill>
-          </div>
-          <div style={{ height: 6, background: 'rgba(255,255,255,0.06)', borderRadius: 3, overflow: 'hidden' }}>
-            <div style={{ width: `${Math.min(100, (vp / vpNext.vpRequired) * 100)}%`, height: '100%', background: WALLET_TOKENS.violetLight }} />
-          </div>
-        </WalletCard>
-      )}
-
-      {error && (
-        <div style={{ padding: '10px 14px', borderRadius: 10, background: 'rgba(240,64,96,0.10)', border: '1px solid rgba(240,64,96,0.28)', color: '#FCA5A5', fontSize: 13 }}>{error}</div>
-      )}
-
-      <div style={{ ...COL, gap: 10 }}>
-        <WalletButton variant="primary" size="lg" disabled={!valid} onClick={submit} iconRight="arrow_forward">
-          {submitting ? 'Converting…' : 'Convert'}
-        </WalletButton>
-        <WalletButton variant="secondary" onClick={() => navigate('/wallet')}>Cancel</WalletButton>
-      </div>
-    </div>
-  );
-}
+// NativeConvertScreen REMOVED 2026-08-16. It was never routed, and it was a gem surface:
+// coins-to-gems conversion is not a user action and gems no longer exist.
 
 function SmallBtn({ children, onClick }) {
   return (
@@ -454,7 +285,7 @@ export function NativeSettingsScreen() {
 
       <Section title="Account">
         <Card title="Account info">
-          <Row label="Username">@{profile?.username || '—'}</Row>
+          <Row label="Username"><UserName user={profile} masked handle fallback={'—'} /></Row>
           <Row label="Email">{profile?.email ? maskEmail(profile.email) : '—'}</Row>
           <Row label="Member since" last>{profile?.createdAt
             ? new Date(profile.createdAt.seconds ? profile.createdAt.seconds * 1000 : profile.createdAt).toLocaleDateString()
@@ -560,7 +391,7 @@ export function NativeHistoryScreen() {
   const [filter, setFilter] = useState('all');
   const [txs, setTxs] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [withdrawals, setWithdrawals] = useState([]);
+
 
   useEffect(() => {
     if (!profile?.uid) return;
@@ -569,7 +400,8 @@ export function NativeHistoryScreen() {
   }, [profile?.uid]);
 
   const loadWithdrawals = useCallback(async () => {
-    try { const res = await getMyWithdrawals({ limit: 25 }); setWithdrawals(res?.rows || []); } catch { /* silent */ }
+    /* User-initiated withdrawal was removed 2026-08-16; nothing to load. */
+    return;
   }, []);
   useEffect(() => {
     if (!profile?.uid) return;
@@ -578,7 +410,6 @@ export function NativeHistoryScreen() {
     return () => clearInterval(t);
   }, [profile?.uid, loadWithdrawals]);
 
-  const activeWithdrawals = withdrawals.filter(w => w.status === 'pending' || w.status === 'ready' || w.status === 'processing');
   const filtered = useMemo(() => {
     const f = HIST_FILTERS.find(x => x.id === filter);
     return txs.filter(t => f.match(t));
@@ -590,13 +421,6 @@ export function NativeHistoryScreen() {
         <div style={{ fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: WALLET_TOKENS.violetLight, fontWeight: 600, marginBottom: 6 }}>History</div>
         <h1 style={{ fontFamily: 'Syne, sans-serif', fontWeight: 700, fontSize: 26, letterSpacing: '-0.02em' }}>Transactions.</h1>
       </div>
-
-      {activeWithdrawals.length > 0 && (
-        <div style={{ ...COL, gap: 8 }}>
-          <SectionLabel>Active withdrawals · {activeWithdrawals.length}</SectionLabel>
-          {activeWithdrawals.map(w => <NativeWithdrawalRow key={w.id} w={w} onChanged={loadWithdrawals} />)}
-        </div>
-      )}
 
       {/* Filter pills — horizontal scroller (no width-dependent wrapping) */}
       <div style={{ display: 'flex', gap: 6, overflowX: 'auto', WebkitOverflowScrolling: 'touch', paddingBottom: 2 }}>
@@ -627,7 +451,7 @@ function NativeHistoryRow({ tx }) {
     : '';
   const amount = tx.amount || 0;
   const credit = amount >= 0;
-  const currency = tx.currency === 'gems' ? 'gems' : 'c';
+  const currency = txUnit(tx.currency);
   const showStatus = tx.status && tx.status !== 'settled' && tx.status !== 'completed';
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 10px', borderBottom: `1px solid ${WALLET_TOKENS.hairline}` }}>
@@ -650,44 +474,7 @@ function NativeHistoryRow({ tx }) {
   );
 }
 
-function NativeWithdrawalRow({ w, onChanged }) {
-  const [now, setNow] = useState(Date.now());
-  const [cancelling, setCancelling] = useState(false);
-  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, []);
-
-  const META = {
-    pending:    { color: '#3B82F6', label: 'Pending', icon: 'schedule' },
-    ready:      { color: '#A78BFA', label: 'Ready to send', icon: 'task_alt' },
-    processing: { color: '#B44FFF', label: 'Processing', icon: 'sync' },
-  };
-  const m = META[w.status] || { color: WALLET_TOKENS.textMuted, label: w.status, icon: 'help' };
-  const canCancel = w.status === 'pending' && w.cancelDeadline && now < w.cancelDeadline;
-  const addrShort = w.destinationAddress ? `${w.destinationAddress.slice(0, 8)}…${w.destinationAddress.slice(-6)}` : '—';
-
-  const cancel = async () => {
-    if (!confirm('Cancel this withdrawal and refund your gems?')) return;
-    setCancelling(true);
-    try { await cancelWithdrawal({ payoutId: w.id }); onChanged?.(); } catch { /* surfaced elsewhere */ } finally { setCancelling(false); }
-  };
-
-  return (
-    <WalletCard>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, flexWrap: 'wrap' }}>
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 10, padding: '3px 8px', borderRadius: 999, background: `${m.color}20`, color: m.color, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-          <Icon name={m.icon} size={12} /> {m.label}
-        </span>
-        <span className="font-dmmono" style={{ fontSize: 13, fontWeight: 600 }}>{fmtNum(w.gemsRequested)} gems</span>
-        {w.netUSDC && <span style={{ fontSize: 12, color: WALLET_TOKENS.textMuted }}>→ {w.netUSDC} USDC</span>}
-      </div>
-      <div style={{ fontSize: 12, color: WALLET_TOKENS.textMuted, fontFamily: 'monospace', marginBottom: 8 }}>{addrShort}</div>
-      {canCancel && (
-        <WalletButton variant="ghost" size="sm" icon="close" onClick={cancel} disabled={cancelling}>
-          {cancelling ? 'Cancelling…' : 'Cancel'}
-        </WalletButton>
-      )}
-    </WalletCard>
-  );
-}
+// NativeWithdrawalRow REMOVED 2026-08-16 with the withdrawal pipeline.
 
 // ───────────────────────────────────────────────────────── KYC
 
@@ -792,10 +579,11 @@ export function NativeKycScreen() {
 export function NativeBuyScreen() {
   const { showToast } = useUI();
   const [tab, setTab] = useState('packs');
-  const [customEUR, setCustomEUR] = useState(20);
+  // USD, not EUR — the ladder is natively USD. See NativeCustomBuy below.
+  const [customUSD, setCustomUSD] = useState(20);
   // ONE shared checkout implementation (money flow) — see ../v2/buyCheckout.
   const { checkout, startCheckout, cancelCheckout } = useBuyCheckout(showToast);
-  const customCoins = Math.floor((parseFloat(customEUR) || 0) / COIN_PRICE_USD);
+  const customCoins = Math.floor((parseFloat(customUSD) || 0) / COIN_PRICE_USD);
   const { currentUser } = useAuth();
   const [playBusy, setPlayBusy] = useState('');
   const [playPrices, setPlayPrices] = useState({});
@@ -899,6 +687,11 @@ export function NativeBuyScreen() {
             permitted. Hiding it removed a legitimate option from Play users for
             no policy reason. */}
         <NativeTabBtn active={tab === 'custom'} onClick={() => setTab('custom')}>Custom</NativeTabBtn>
+        {/* Spending COINS, not opening a second payment rail, so there is no
+            Play Billing question here: the coins were already bought through
+            whichever rail the user chose. */}
+        <NativeTabBtn active={tab === 'bonuses'} onClick={() => setTab('bonuses')}>Bonuses</NativeTabBtn>
+        <NativeTabBtn active={tab === 'boosts'} onClick={() => setTab('boosts')}>Boosts</NativeTabBtn>
       </div>
 
       {tab === 'packs' && (
@@ -911,9 +704,13 @@ export function NativeBuyScreen() {
           ))}
         </div>
       )}
+      {/* Shared with /wallet/buy and /prestige so the card cannot drift. */}
+      {tab === 'bonuses' && <BonusPacksTab compact />}
+      {tab === 'boosts' && <BoostsTab compact />}
+
 
       {tab === 'custom' && (
-        <NativeCustomBuy eur={customEUR} setEur={setCustomEUR} busy={busy}
+        <NativeCustomBuy usd={customUSD} setUsd={setCustomUSD} busy={busy}
           onContinue={() => startCheckout({ customCoins }, `${fmtNum(customCoins)} coins`)} />
       )}
 
@@ -1063,28 +860,37 @@ function NativePackCard({ pack, onBuy, busy, playPrice }) {
   );
 }
 
-function NativeCustomBuy({ eur, setEur, onContinue, busy }) {
-  const eurNum = parseFloat(eur) || 0;
-  const coins = Math.floor(eurNum / COIN_PRICE_USD);
-  const valid = eurNum >= MIN_CUSTOM_USD;
-  const procFee = eurNum * 0.015;
+// USD throughout — see the long note on CustomTab in wallet/v2/BuyScreen.jsx.
+// This is the native mirror of the same panel and carried the identical A27
+// bug: `fmtEUR` is a EUR->local CONVERTER, so USD chips rendered inflated by
+// the live FX rate, the input was prefixed `€`, and "You pay" echoed the typed
+// amount rather than the charge for the whole (floored) coin count.
+function NativeCustomBuy({ usd, setUsd, onContinue, busy }) {
+  const usdNum = parseFloat(usd) || 0;
+  const coins = Math.floor(usdNum / COIN_PRICE_USD);
+  const valid = usdNum >= MIN_CUSTOM_USD;
+  // You are charged for whole coins, and `coins` is floored, so $20 buys 1574
+  // coins = $19.99. Unlike the web panel this screen has no server quote to
+  // read, so the floored catalogue value is the closest honest figure.
+  const chargedUsd = coins * COIN_PRICE_USD;
+  const procFee = chargedUsd * 0.015;
   return (
     <WalletCard>
       <SectionLabel>Amount</SectionLabel>
       <div style={{ display: 'flex', gap: 6, overflowX: 'auto', WebkitOverflowScrolling: 'touch', marginBottom: 14, paddingBottom: 2 }}>
         {[10, 20, 50, 100, 250].map(n => (
-          <button key={n} onClick={() => setEur(n)} style={{
+          <button key={n} onClick={() => setUsd(n)} style={{
             flexShrink: 0, padding: '8px 14px', borderRadius: 10, fontSize: 13, fontWeight: 600,
-            background: eur === n ? WALLET_TOKENS.violet : WALLET_TOKENS.surface2,
-            color: eur === n ? '#fff' : WALLET_TOKENS.textSecondary,
-            border: `1px solid ${eur === n ? WALLET_TOKENS.violet : WALLET_TOKENS.hairlineStrong}`,
-          }}>{fmtEUR(n)}</button>
+            background: usd === n ? WALLET_TOKENS.violet : WALLET_TOKENS.surface2,
+            color: usd === n ? '#fff' : WALLET_TOKENS.textSecondary,
+            border: `1px solid ${usd === n ? WALLET_TOKENS.violet : WALLET_TOKENS.hairlineStrong}`,
+          }}>{fmtUsd(n)}</button>
         ))}
       </div>
       <div style={{ position: 'relative', marginBottom: 14 }}>
-        <span style={{ position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)', fontSize: 26, fontWeight: 700, color: WALLET_TOKENS.goldLight, fontFamily: 'DM Mono, monospace' }}>€</span>
-        <input value={eur} inputMode="decimal"
-          onChange={(e) => setEur(e.target.value.replace(/[^\d.]/g, ''))}
+        <span style={{ position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)', fontSize: 26, fontWeight: 700, color: WALLET_TOKENS.goldLight, fontFamily: 'DM Mono, monospace' }}>$</span>
+        <input value={usd} inputMode="decimal"
+          onChange={(e) => setUsd(e.target.value.replace(/[^\d.]/g, ''))}
           style={{
             width: '100%', padding: '14px 14px 14px 40px', fontSize: 26, fontWeight: 700,
             fontFamily: 'DM Mono, monospace', color: WALLET_TOKENS.goldLight,
@@ -1103,14 +909,14 @@ function NativeCustomBuy({ eur, setEur, onContinue, busy }) {
       </div>
       <FeeBreakdown
         items={[
-          { label: 'You pay', value: fmtUsd(eurNum) },
-          { label: 'Payment processing (~1.5%)', value: `-${fmtEUR(procFee)}`, tone: 'muted' },
+          { label: 'You pay', value: fmtUsd(chargedUsd) },
+          { label: 'Payment processing (~1.5%)', value: `-${fmtUsd(procFee)}`, tone: 'muted' },
           { label: 'VERGR fee', value: fmtUsd(0), tone: 'muted' },
         ]}
         total={`${fmtNum(coins)} coins`}
         totalLabel="You receive"
       />
-      {!valid && eur && (
+      {!valid && usd && (
         <div style={{ marginTop: 12, fontSize: 12, color: '#FCD34D' }}>
           Minimum is {fmtUsd(MIN_CUSTOM_USD)} (set by our card processor).
         </div>

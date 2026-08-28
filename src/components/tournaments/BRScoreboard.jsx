@@ -62,6 +62,16 @@ export default function BRScoreboard({ standings = [], gameCount = 3, playerLook
   );
 }
 
+// Column heading cell. Was referenced four times above and never defined, so
+// this component threw on render for its entire life (found by eslint
+// react/jsx-no-undef, 2026-08-27 - the bundler compiles an unresolved JSX name
+// without complaint).
+function Header({ children }) {
+  return (
+    <span className="text-text-muted text-[10px] uppercase tracking-widest font-bold truncate">{children}</span>
+  );
+}
+
 function ord(n) {
   const s = ['th', 'st', 'nd', 'rd'];
   const v = n % 100;

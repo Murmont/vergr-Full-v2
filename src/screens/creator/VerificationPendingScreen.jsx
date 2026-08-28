@@ -15,7 +15,7 @@ export default function VerificationPendingScreen() {
   const navigate = useNavigate();
   return (
     <div className={isDesktop ? "min-h-screen flex flex-col items-center justify-center p-6" : "screen-container min-h-screen flex flex-col items-center justify-center p-6"}>
-      <div className="w-24 h-24 rounded-full bg-yellow-500/10 flex items-center justify-center mb-8"><Icon name="clock" size={44} className="text-yellow-400"/></div>
+      <div className="w-24 h-24 rounded-full bg-yellow-500/10 flex items-center justify-center mb-8"><Icon name="schedule" size={44} className="text-yellow-400"/></div>
       <h1 className="font-syne text-text-primary text-2xl font-bold text-center mb-3">Under Review</h1>
       <p className="text-text-secondary text-base text-center max-w-[280px] mb-2">Your verification application has been submitted.</p>
       <p className="text-text-secondary text-sm text-center max-w-[280px] mb-8">This usually takes 2-5 business days. We'll notify you once it's reviewed.</p>

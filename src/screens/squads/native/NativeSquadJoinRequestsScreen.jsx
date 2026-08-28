@@ -6,6 +6,7 @@ import { useAuth } from '../../../context/AuthContext';
 import { getSquad, getSquadMember, getSquadJoinRequests, handleJoinRequest, getUser } from '../../../firebase/firestore';
 import { avatarClass, initials } from '../../../components/squad/squadHelpers';
 import NativeSquadScaffold from './NativeSquadScaffold';
+import UserName from '../../../components/UserName';
 
 export default function NativeSquadJoinRequestsScreen() {
   const { squadId } = useParams();
@@ -63,7 +64,7 @@ export default function NativeSquadJoinRequestsScreen() {
                 <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: 14, background: 'rgba(255,255,255,.025)', border: '1px solid rgba(255,255,255,.06)', borderRadius: 14 }}>
                   <div className={`squad-avatar ${avatarClass(r.userId)}`} style={{ width: 44, height: 44, fontSize: 16 }}>{r.user?.avatar ? <img src={r.user.avatar} alt="" /> : initials(r.user?.displayName || r.user?.username || '?')}</div>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontFamily: 'Syne', fontWeight: 700, color: '#fff', fontSize: 14 }}>{r.user?.displayName || r.user?.username || 'Player'}</div>
+                    <div style={{ fontFamily: 'Syne', fontWeight: 700, color: '#fff', fontSize: 14 }}><UserName user={r.user} masked fallback={'Player'} /></div>
                     {r.message && <div style={{ marginTop: 4, fontSize: 12, color: 'var(--t2)', lineHeight: 1.5 }}>“{r.message}”</div>}
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>

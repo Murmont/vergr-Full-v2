@@ -148,15 +148,25 @@ export default function EarnCoinsScreen() {
     if (claiming || claimedIds.includes(quest.id)) return;
     setClaiming(quest.id);
     try {
-      await httpsCallable(functions, 'claimQuestReward')({ questId: quest.id, reward: quest.reward, title: quest.title });
+      const res = await httpsCallable(functions, 'claimQuestReward')({ questId: quest.id, reward: quest.reward, title: quest.title });
       setClaimedIds(prev => [...prev, quest.id]);
-      showToast(`+${quest.reward} ${quest.currency === "coins" ? "coins" : "VP"} earned!`, quest.currency === "coins" ? "coins" : "success");
+      // Show what the SERVER paid (plan multiplier included), not the base
+      // number on the card. The server is the only thing that knows.
+      const paid = res?.data?.reward ?? quest.reward;
+      showToast(`+${paid} ${quest.currency === "coins" ? "coins" : "VP"} earned!`, quest.currency === "coins" ? "coins" : "success");
     } catch (err) {
       if (err.code === 'functions/already-exists' || err.message?.includes('already claimed')) {
         showToast('Already claimed today', 'info');
         setClaimedIds(prev => [...prev, quest.id]);
+      } else if (err.code === 'functions/failed-precondition') {
+        // The quest is genuinely not done yet. The server sends the specific
+        // reason ("Like 5 posts today to claim this."); a generic "Failed to
+        // claim" would leave the user with no idea what to do. Quests only
+        // started refusing when server-side verification landed, so before
+        // that this branch could not happen.
+        showToast(err.message || 'You have not completed this quest yet.', 'info');
       } else {
-        showToast('Failed to claim reward', 'error');
+        showToast(err.message || 'Failed to claim reward', 'error');
         console.error(err);
       }
     }

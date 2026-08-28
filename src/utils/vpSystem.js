@@ -2,7 +2,7 @@
 // VERGR ECONOMY — THREE CURRENCIES
 // ═══════════════════════════════════════════
 // Coins: bought with real money, spent in-app
-// Gems: earned when someone spends coins ON YOU, cashable
+// Revenue share: accrued when someone spends coins ON YOU, paid on Vergr's schedule
 // VP: earned through activity, drives levels/perks/commission
 
 // ── RANK TIERS (11 ranks, 10 levels each; L100 = Immortal) ──
@@ -28,7 +28,7 @@ const getRankForLevel = (level) => RANK_TIERS.find(t => level >= t.min && level 
 // Per-level VP cost to reach level N from N-1.
 // L2..L10 = 2000, L11..L20 = 3000, ... +1000 per 10-level bracket. L91..L100 = 11000.
 // Total to hit L100 = 648,000 VP.
-const levelCost = (level) => {
+export const levelCost = (level) => {
   if (level <= 1) return 0;
   const bracket = Math.floor((level - 1) / 10); // 0..9
   return 2000 + 1000 * bracket;
@@ -79,10 +79,26 @@ export const revenueShareTier = (earnedGross = 0) => {
   };
 };
 
-// ── COMMISSION (coin→gem conversion) — DEPRECATED ──
-// @deprecated Superseded by shareForEarnings() above. Still imported by screens
-// that have not moved yet (VPRanksScreen, wallet v2, marketing rate tables); see
-// docs/REVENUE_SHARE_PART3_SCREENS.md §14.4 for the list. Do not add new uses.
+// ── COMMISSION — DEAD. CHARGES NOTHING. DO NOT SHOW IT TO A USER. ──
+//
+// This described a commission on coin→gem conversion. Gems, conversion and
+// user-initiated withdrawal were all deleted from the product (2026-08-15/16),
+// and revenue share is now the ONLY model: there is no fee, commission or
+// spread on any surface. Verified 2026-08-19 — nothing in functions/ or src/
+// calls commissionForVP to charge anything.
+//
+// It is kept ONLY because VP_LEVELS below still stamps a `commission` field on
+// each level and removing that field is a wider change than it looks. Nothing
+// renders it.
+//
+// The deprecation note here used to say it was "still imported by VPRanksScreen,
+// wallet v2 and marketing rate tables". That was stale, and it was cover for
+// five LIVE screens telling users they paid 5-30% commission to convert coins
+// to gems, long after both the commission and the gems were gone. All five were
+// rewritten on 2026-08-19.
+//
+// DO NOT use these numbers in user-facing copy. The only rate that exists is the
+// revenue share: the creator KEEPS 50% rising to 80%, by lifetime gross earnings.
 export const COMMISSION_RATES = [0.30, 0.28, 0.25, 0.22, 0.20, 0.18, 0.15];
 export const VP_THRESHOLDS    = [0,    500,  2000, 5000, 15000, 40000, 100000];
 export const commissionForVP = (vp = 0) => {
@@ -161,10 +177,10 @@ export const getNextVPLevel = (totalVP) => {
   return VP_LEVELS[current.level];
 };
 
-// Commission + gem rate at the user's CURRENT VP (use these for any gem-output
-// math so the UI matches what the server will actually credit).
+// @deprecated Commission at the user's CURRENT VP. Superseded by
+// shareForEarnings(); kept only for screens that have not moved yet.
+// `getGemRate` was removed on 2026-08-16 with the gem unit.
 export const getCommission = (totalVP) => commissionForVP(totalVP);
-export const getGemRate = (totalVP) => 1 - commissionForVP(totalVP);
 
 // ── PLAN VP MULTIPLIERS ──
 // Applied server-side when granting VP. Pro users level up 2× as fast.
@@ -208,13 +224,29 @@ export const VP_ACTIONS = {
 export const GIFT_COINS_PER_VP = 25;   // 25 coins gifted → 1 VP (pre plan-multiplier)
 
 // ── BOOST COSTS ──
+// ⚠ THE LABEL AND desc ARE WHAT A USER READS, so they say what the buyer GETS,
+// not which of our surfaces is involved. The old copy was "3x visibility in For
+// You", "Shown in Suggested Users" and "Pinned to top of LFG" — internal names.
+// Founder, 2026-08-28: *"i dont even know what an LFG boost is so how the fuck is
+// a user going to know?"*
 export const BOOST_COSTS = {
-  post:       { coins: 50,  duration: 24, label: 'Post Boost',       desc: '3x visibility in For You for 24h' },
-  profile:    { coins: 100, duration: 48, label: 'Profile Boost',    desc: 'Shown in Suggested Users for 48h' },
-  lfg:        { coins: 25,  duration: 12, label: 'LFG Boost',        desc: 'Pinned to top of LFG for 12h' },
-  squad:      { coins: 75,  duration: 48, label: 'Squad Boost',      desc: 'Featured in Explore → Squads for 48h' },
-  tournament: { coins: 100, duration: 0,  label: 'Tournament Boost', desc: 'Promoted on home feed until start' },
-  stream:     { coins: 60,  duration: 4,  label: 'Stream Boost',     desc: 'Pinned to Live tab for 4h' },
+  post:       { coins: 50,  duration: 24, label: 'Post Boost',       desc: 'Your post is shown to 3x more people for 24 hours' },
+  profile:    { coins: 100, duration: 48, label: 'Profile Boost',    desc: 'You appear in people’s suggested-to-follow list for 48 hours' },
+  // "LFG" means looking for group. Nobody outside gaming forums reads that as
+  // "find me teammates", and there is no separate LFG LIST to pin to — an LFG
+  // post is a post, so this boosts it in the feed like any other, cheaper and
+  // shorter because a teammate hunt is urgent and short-lived.
+  lfg:        { coins: 25,  duration: 12, label: 'Teammate Search Boost', desc: 'Your looking-for-teammates post is shown to 3x more people for 12 hours' },
+  squad:      { coins: 75,  duration: 48, label: 'Squad Boost',      desc: 'Your squad is shown to people looking for one, for 48 hours' },
+  // 'tournament' boost removed 2026-08-19: it was a purchasable product for a
+  // feature that no longer exists.
+  //
+  // ⚠ 'stream' REMOVED 2026-08-28, same reason. It sold 60 coins for 4 hours
+  // "pinned to the Live tab", a pin nothing ever read, while BOOST_TIERS.boost
+  // in streamBoost.js sells 50 coins for real discovery reach and IS honoured.
+  // Two products, one name, different prices. The live one wins.
+  // `purchaseBoost` still refuses type 'stream' explicitly, for any client that
+  // has not reloaded.
 };
 
 // ── COIN PACK CONFIG ──────────────────────────────────────────────
@@ -297,11 +329,12 @@ export const MIN_SHOWN_VALUE_BONUS_PCT = 5;
 //
 // ## The per-coin rate, which is the number that actually matters
 //
-// Payout is anchored to the gem at EUR 0.01 and does NOT move when the sale
-// price moves: one earned coin costs us EUR 0.0075 to pay out at the worst rank
-// (Immortal, 15% commission, then the 2% withdrawal spread). So every cent added
-// to the sale price is a cent of pure margin, and nothing else in the economy is
-// that direct.
+// Payout does NOT move when the sale price moves: one earned coin can cost up
+// to $0.008 to pay out, because a creator at the top of the revenue-share
+// ladder keeps 80% of the $0.01 that coin represents. So every cent added to the
+// sale price is a cent of pure margin, and nothing else in the economy is that
+// direct. (This used to be reasoned from gems at EUR 0.01, a 15% commission and
+// a 2% withdrawal spread. All three are gone; the conclusion is unchanged.)
 //
 // The old EUR ladder bottomed out at EUR 0.0090/coin (~$0.0104), which left
 // roughly 17% gross against that EUR 0.0075 payout, and under 13% after
@@ -354,21 +387,13 @@ export const PAYOUT_CURRENCIES = [
 
 // ── ECONOMY CONSTANTS ──
 //
-// THE ONE TRUE GEM VALUE. Mirrors functions/withdrawals.js
-// `GEM_TO_MICRO_USDC = 10_000`, which is the ONLY place that decides real money.
+// The gem unit was REMOVED on 2026-08-16. Accrued revenue share is stored and
+// displayed as money (micro-USD on `wallets/{uid}.owedMicroUsd`), so there is no
+// intermediate unit left to price. One coin is one cent of gross revenue, which
+// is what COIN_TO_EUR below still records for the few legacy callers.
 //
-// Before 2026-08-11 three files disagreed about what a gem was worth: this one
-// said 0.01, while ConvertScreen.jsx and NativeWalletScreens.jsx each hardcoded
-// their own `GEM_TO_EUR = 0.009`. The two hardcoded copies were display-only, so
-// nobody lost money, but every wallet screen quietly UNDERSTATED what a user was
-// about to receive by 10%. Import this instead of writing the number again.
-//
-// It is USD, not EUR: withdrawals settle in USDC on Base, and 1 gem is 0.01
-// USDC exactly. There is no FX step and never was.
-export const GEM_VALUE_USD = 0.01;
-
-/** @deprecated Use GEM_VALUE_USD. Same number, honest name. */
-export const GEM_TO_EUR = 0.01;
+// GEM_VALUE_USD / GEM_TO_EUR / getGemRate are gone. If you are reaching for one
+// of them you are converting into a currency that no longer exists.
 export const COIN_TO_EUR = 0.01;
 export const MIN_CASHOUT_GEMS = 1000;
 export const CASHOUT_PLATFORM_FEE = 0;

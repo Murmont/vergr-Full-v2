@@ -175,7 +175,7 @@ an invoice, not like a transaction receipt.
 Contents:
 
 - Header: period covered, run date, status
-- **From:** Murmont LLC, address
+- **From:** Vergr LLC, address
 - **To:** creator legal name (from the tax form), not the display handle
 - Line items grouped by source:
   `Tips · gross $120.00 · your share 60% · $72.00`

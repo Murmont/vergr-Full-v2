@@ -17,7 +17,8 @@ import InboxFolderTabs, { computeFolderView } from './messages/InboxFolderTabs';
 import DiscordRejoinPrompt from './messages/DiscordRejoinPrompt';
 import ChatFolderEditor from './messages/ChatFolderEditor';
 import { useUI } from '../context/UIContext';
-import { resolveChatUsers, chatPartner } from '../utils/chatIdentity';
+import { resolveChatUsers, chatPartner, peekChatUser } from '../utils/chatIdentity';
+import TypingIndicator from './TypingIndicator';
 import {
   isChatMutedFor, isChatPinnedFor, setChatPinned,
   isChatArchivedFor, setChatArchived, sortInboxChats,
@@ -32,6 +33,12 @@ import CreateVoiceChannelModal from './CreateVoiceChannelModal';
 import CreateGroupModal from './messages/CreateGroupModal';
 import { timeAgo, getTier } from '../utils/helpers';
 import useOnlineStatus from '../hooks/useOnlineStatus';
+import {
+  subscribeOfficialChannels, subscribeChannelState, buildOfficialRows,
+  setChannelPinned, setChannelArchived, resolveChannelTarget, syncChannelPushSubscriptions,
+} from '../firebase/officialChannels';
+import { getPushToken } from '../utils/pushNotifications';
+import UserName from './UserName';
 
 export default function MessagesListPanel({ hideSearch = false }) {
   const { conversations } = useNotifications();
@@ -46,6 +53,28 @@ export default function MessagesListPanel({ hideSearch = false }) {
   const [activeFolder, setActiveFolder] = useState('all');
   const [folderEditorOpen, setFolderEditorOpen] = useState(false);
   const [folderToEdit, setFolderToEdit] = useState(null);
+  // Official Vergr channels. This DESKTOP panel is what /messages actually
+  // renders on a wide screen, and it had no channel support at all: channels
+  // created in admin were invisible here while the mobile and native inboxes
+  // showed them. Same helpers, same synthetic row shape, so every filter,
+  // sort and folder below treats them as ordinary chats.
+  const [officialChannels, setOfficialChannels] = useState([]);
+  const [channelState, setChannelState] = useState({});
+
+  useEffect(() => {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return undefined;
+    const a = subscribeOfficialChannels(uid, setOfficialChannels);
+    const b = subscribeChannelState(uid, setChannelState);
+    return () => { a(); b(); };
+  }, [profile?.uid]);
+
+  useEffect(() => {
+    const uid = auth.currentUser?.uid;
+    if (!uid || !officialChannels.length) return;
+    const token = getPushToken();
+    if (token) syncChannelPushSubscriptions(officialChannels, channelState, token).catch(() => {});
+  }, [officialChannels, channelState]);
   // Live identity map (uid → user doc). The conversation `metadata` snapshot
   // is taken ONCE at creation and never updated — stale names/avatars forever
   // and no @username. Resolve live docs instead (module-level TTL cache).
@@ -74,15 +103,48 @@ export default function MessagesListPanel({ hideSearch = false }) {
     return () => unsub();
   }, []);
 
+  const meUid = auth.currentUser?.uid;
+
+  // Where a row goes when clicked. An official channel is not a conversation
+  // id: support opens the user's own thread, community opens the room, a
+  // broadcast opens the channel thread, so the destination is resolved.
+  const openRow = async (conv) => {
+    if (!conv.isOfficial) { navigate(`/messages/${conv.id}`); return; }
+    try {
+      const path = await resolveChannelTarget(conv);
+      if (path) navigate(path);
+    } catch {
+      navigate(`/messages/c/${conv.channelId}`);
+    }
+  };
+
+  // Channels are merged in BEFORE the search and folder filters so they behave
+  // as ordinary chats from here down: searchable by name, sortable by recency,
+  // pinnable and archivable through the same helpers.
+  const officialRows = buildOfficialRows(officialChannels, channelState, meUid, profile);
+  // "Vergr Support" appeared TWICE, under two headings (audit A36): once as the
+  // synthetic official channel row and again under GROUPS, because the ticket
+  // resolveSupportChannel provisions is a real group conversation. Same name,
+  // same call to action, and no way to tell which one reaches a human.
+  //
+  // Once a real ticket exists it is the row that matters: it carries the unread
+  // count and the actual last message, while the synthetic row cannot. So the
+  // official row is the entry point only UNTIL the thread exists, then it steps
+  // aside. Keeping the synthetic one instead would have made users miss replies.
+  const hasSupportThread = (conversations || []).some(c => c.supportThread === true);
+  const visibleOfficial = hasSupportThread
+    ? officialRows.filter(r => r.kind !== 'support')
+    : officialRows;
+  const allChats = [...visibleOfficial, ...(conversations || [])];
+
   const filtered = search
-    ? (conversations || []).filter(c => {
+    ? allChats.filter(c => {
         const { name, username } = chatPartner(c, auth.currentUser?.uid, profile, liveUsers);
         const q = search.toLowerCase();
         return name?.toLowerCase().includes(q) || username.toLowerCase().includes(q);
       })
-    : (conversations || []);
+    : allChats;
 
-  const meUid = auth.currentUser?.uid;
   // Saved Messages renders as its own static row (created lazily on first
   // open) — keep the convo doc out of the DM list.
   const visible = filtered.filter(c => !c.isSaved);
@@ -90,8 +152,11 @@ export default function MessagesListPanel({ hideSearch = false }) {
   // pinned-first then most-recent.
   const archived = sortInboxChats(visible.filter(c => isChatArchivedFor(c, meUid)), meUid);
   const active   = visible.filter(c => !isChatArchivedFor(c, meUid));
-  const groups = sortInboxChats(active.filter(c => c.isGroup), meUid);
-  const dms    = sortInboxChats(active.filter(c => !c.isGroup), meUid);
+  // A support ticket is technically a group, but it is not one to the user, and
+  // listing it under GROUPS is what produced the duplicate. It belongs with the
+  // official channel row it replaces, in DIRECT MESSAGES.
+  const groups = sortInboxChats(active.filter(c => c.isGroup && c.supportThread !== true), meUid);
+  const dms    = sortInboxChats(active.filter(c => !c.isGroup || c.supportThread === true), meUid);
   // Folder tabs (Telegram-style, incl. user custom folders) — same
   // settings.chatFolders store as the mobile inbox, so folders sync across
   // desktop/mobile. Scopes which sections show + unread + hand-picked chat set.
@@ -239,7 +304,7 @@ export default function MessagesListPanel({ hideSearch = false }) {
           {!dmsCollapsed && (
             dmRows.length > 0 ? (
               <div className="space-y-0.5">
-                {dmRows.map(conv => <DmRow key={conv.id} conv={conv} liveUsers={liveUsers} viewerProfile={profile} active={location.pathname === `/messages/${conv.id}`} onClick={() => navigate(`/messages/${conv.id}`)} />)}
+                {dmRows.map(conv => <DmRow key={conv.id} conv={conv} liveUsers={liveUsers} viewerProfile={profile} active={location.pathname === `/messages/${conv.id}`} onClick={() => openRow(conv)} />)}
               </div>
             ) : (activeFolder === 'all' || activeFolder === 'dms') ? (
               <button
@@ -267,7 +332,7 @@ export default function MessagesListPanel({ hideSearch = false }) {
               </button>
             </div>
             <div className="space-y-0.5">
-              {groupRows.map(conv => <GroupRow key={conv.id} conv={conv} active={location.pathname === `/messages/${conv.id}`} onClick={() => navigate(`/messages/${conv.id}`)} />)}
+              {groupRows.map(conv => <GroupRow key={conv.id} conv={conv} active={location.pathname === `/messages/${conv.id}`} onClick={() => openRow(conv)} />)}
             </div>
           </div>
         )}
@@ -306,8 +371,8 @@ export default function MessagesListPanel({ hideSearch = false }) {
             {showArchived && (
               <div className="space-y-0.5">
                 {archived.map(conv => conv.isGroup
-                  ? <GroupRow key={conv.id} conv={conv} archivedView active={location.pathname === `/messages/${conv.id}`} onClick={() => navigate(`/messages/${conv.id}`)} />
-                  : <DmRow key={conv.id} conv={conv} archivedView liveUsers={liveUsers} viewerProfile={profile} active={location.pathname === `/messages/${conv.id}`} onClick={() => navigate(`/messages/${conv.id}`)} />)}
+                  ? <GroupRow key={conv.id} conv={conv} archivedView active={location.pathname === `/messages/${conv.id}`} onClick={() => openRow(conv)} />
+                  : <DmRow key={conv.id} conv={conv} archivedView liveUsers={liveUsers} viewerProfile={profile} active={location.pathname === `/messages/${conv.id}`} onClick={() => openRow(conv)} />)}
               </div>
             )}
           </div>
@@ -519,8 +584,11 @@ function NewDmModal({ onClose }) {
             >
               <UserAvatar src={u.avatar} size={40} />
               <div className="flex-1 min-w-0">
-                <p className="text-text-primary font-bold text-sm truncate">{u.displayName || u.name || 'Member'}</p>
-                {u.username && <p className="text-text-muted text-xs truncate">@{u.username}</p>}
+                <p className="text-text-primary font-bold text-sm truncate">{/* `u.name` is the legacy shape some member rows still carry. UserName tries
+    username before reaching the fallback, which is a better answer than
+    "Member" whenever a handle exists. */}
+<UserName user={u} masked fallback={u.name || 'Member'} /></p>
+                {u.username && <p className="text-text-muted text-xs truncate"><UserName user={u} masked handle /></p>}
               </div>
               {busyId === u.uid && <Icon name="hourglass_top" size={16} className="text-text-muted" />}
             </button>
@@ -536,6 +604,7 @@ function RowActions({ conv, archivedView }) {
   const [open, setOpen] = useState(false);
   const me = auth.currentUser?.uid;
   const pinned = isChatPinnedFor(conv, me);
+  const official = !!conv.isOfficial;
   return (
     <div className="relative shrink-0" onClick={(e) => e.stopPropagation()}>
       <button
@@ -549,15 +618,29 @@ function RowActions({ conv, archivedView }) {
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
           <div className="absolute right-0 top-7 z-50 w-36 bg-surface-1 border border-white/[0.08] rounded-xl shadow-2xl overflow-hidden">
+            {/* An official row has a synthetic id (`official:<channelId>`) and no
+                conversation document behind it, so pin and archive must go to the
+                channel helpers. Calling setChatPinned here would write to a
+                conversation that does not exist and silently do nothing. */}
             <button
-              onClick={() => { setChatPinned(conv.id, !pinned).catch(() => {}); setOpen(false); }}
+              onClick={() => {
+                (official
+                  ? setChannelPinned(me, conv.channelId, !pinned)
+                  : setChatPinned(conv.id, !pinned)).catch(() => {});
+                setOpen(false);
+              }}
               className="w-full flex items-center gap-2 px-3 py-2 text-left text-[12px] text-text-primary hover:bg-surface-2"
             >
               <Icon name={pinned ? 'keep_off' : 'keep'} size={14} className="text-text-secondary" />
               {pinned ? 'Unpin' : 'Pin'}
             </button>
             <button
-              onClick={() => { setChatArchived(conv.id, !archivedView).catch(() => {}); setOpen(false); }}
+              onClick={() => {
+                (official
+                  ? setChannelArchived(me, conv.channelId, !archivedView)
+                  : setChatArchived(conv.id, !archivedView)).catch(() => {});
+                setOpen(false);
+              }}
               className="w-full flex items-center gap-2 px-3 py-2 text-left text-[12px] text-text-primary hover:bg-surface-2 border-t border-white/[0.04]"
             >
               <Icon name={archivedView ? 'unarchive' : 'archive'} size={14} className="text-text-secondary" />
@@ -586,6 +669,7 @@ function DmRow({ conv, active, onClick, liveUsers, viewerProfile, archivedView =
   const preview = conv.lastMessageText || conv.lastMessage || '';
   const when = conv.lastMessageAt?.toDate ? timeAgo(conv.lastMessageAt.toDate()) : '';
   const pinned = isChatPinnedFor(conv, me);
+  const official = !!conv.isOfficial;
   return (
     <div
       role="button" tabIndex={0}
@@ -598,8 +682,19 @@ function DmRow({ conv, active, onClick, liveUsers, viewerProfile, archivedView =
       {/* `flex`: UserAvatar is inline-flex, so a block wrapper leaves a baseline
           gap under it and the bottom-anchored online dot falls off the avatar. */}
       <div className="relative shrink-0 flex">
-        <UserAvatar src={avatar} size={34} tier={tier} showTierRing={false} isLive={isUserLive(otherId)} />
-        {online && <span className="absolute bottom-0 right-0 z-20 w-2 h-2 rounded-full bg-green-500 border border-[#0B0E1A]" />}
+        <UserAvatar src={avatar} size={34} tier={tier} showTierRing={false} isLive={!official && isUserLive(otherId)} />
+        {/* zIndex above the avatar image, which UserAvatar renders as
+             and which would otherwise paint over this. */}
+        {official && (
+          <span
+            className="absolute bottom-0 right-0 z-20 w-3 h-3 rounded-full flex items-center justify-center border-2 border-[#0B0E1A]"
+            style={{ background: conv.accentColor || '#7B1FFF' }}
+            title="Official Vergr channel"
+          >
+            <Icon name="verified" size={7} className="text-white" />
+          </span>
+        )}
+        {!official && online && <span className="absolute bottom-0 right-0 z-20 w-2 h-2 rounded-full bg-green-500 border border-[#0B0E1A]" />}
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-baseline justify-between gap-2">
@@ -612,7 +707,13 @@ function DmRow({ conv, active, onClick, liveUsers, viewerProfile, archivedView =
         <div className="flex items-center gap-1 min-w-0">
           {muted && <Icon name="notifications_off" size={11} className="text-text-muted/70 shrink-0" />}
           {typers.length > 0 ? (
-            <span className="text-[11px] truncate text-brand-violet-light animate-pulse">typing…</span>
+            <TypingIndicator
+              variant="inline"
+              className="text-[11px] text-brand-violet-light"
+              users={typers}
+              typist={liveUsers?.[typers[0]?.uid] || peekChatUser(typers[0]?.uid)}
+              label="typing…"
+            />
           ) : draft ? (
             <span className="text-[11px] truncate"><span className="text-brand-ember font-semibold">Draft: </span><span className="text-text-muted">{draft}</span></span>
           ) : (
@@ -638,7 +739,7 @@ function GroupRow({ conv, active, onClick, archivedView = false }) {
   const mentioned = !!conv.mentions?.[me];
   const muted = isChatMutedFor(conv, me);
   const typers = freshTypers(conv.typingUsers, me);
-  const preview = typers.length > 0 ? `${typers[0].name || 'Someone'} is typing…` : (conv.lastMessageText || conv.lastMessage || '');
+  const preview = conv.lastMessageText || conv.lastMessage || '';
   const when = conv.lastMessageAt?.toDate ? timeAgo(conv.lastMessageAt.toDate()) : '';
   const pinned = isChatPinnedFor(conv, me);
   return (
@@ -659,10 +760,22 @@ function GroupRow({ conv, active, onClick, archivedView = false }) {
             {when && <span className="text-[9px] text-text-muted">{when}</span>}
           </span>
         </div>
-        {preview && (
+        {(typers.length > 0 || preview) && (
           <div className="flex items-center gap-1 min-w-0">
             {muted && <Icon name="notifications_off" size={11} className="text-text-muted/70 shrink-0" />}
-            <span className={`text-[11px] truncate ${unread > 0 ? 'text-text-secondary' : 'text-text-muted'}`}>{preview}</span>
+            {typers.length > 0 ? (
+              // Was a plain interpolated string, so a group row could never
+              // show the typist's style. Same sentence, now with the glyph.
+              <TypingIndicator
+                variant="inline"
+                className="text-[11px] text-brand-violet-light"
+                users={typers}
+                typist={peekChatUser(typers[0]?.uid)}
+                label={`${typers[0].name || 'Someone'} is typing…`}
+              />
+            ) : (
+              <span className={`text-[11px] truncate ${unread > 0 ? 'text-text-secondary' : 'text-text-muted'}`}>{preview}</span>
+            )}
           </div>
         )}
       </div>

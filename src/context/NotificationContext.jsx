@@ -157,7 +157,13 @@ export function NotificationProvider({ children }) {
             // participant's copy. A new message clears the flag (resurrects it).
             const convos = snapshot.docs
               .map(d => ({ id: d.id, ...d.data() }))
-              .filter(c => c.hiddenFor?.[currentUser.uid] !== true);
+              .filter(c => c.hiddenFor?.[currentUser.uid] !== true)
+              // A support thread has every support agent in `participants` so
+              // any of them can read and answer it. Without this filter, giving
+              // someone the support role would dump every open ticket into their
+              // personal message list. The person who OPENED the ticket still
+              // sees it, because for them it is their own conversation.
+              .filter(c => c.supportThread !== true || c.supportUserId === currentUser.uid);
             setConversations(convos);
             let count = 0;
             for (const c of convos) {

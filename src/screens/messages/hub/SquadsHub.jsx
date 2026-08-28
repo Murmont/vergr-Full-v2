@@ -8,6 +8,8 @@ import { useUser } from '../../../context/UserContext';
 import { getUserSquads } from '../../../firebase/firestore';
 import { setNavOrigin } from '../../../utils/navOrigin';
 import Icon from '../../../components/Icon';
+import TopBar from '../../../components/TopBar';
+import useResponsive from '../../../hooks/useResponsive';
 import { ListSkeleton } from '../../../components/skeletons/GlassSkeletons';
 
 const SQUAD_GRADIENTS = [
@@ -36,6 +38,7 @@ const NAV_ACTIONS = [
 export default function SquadsHub() {
   const { profile } = useUser();
   const navigate = useNavigate();
+  const { isDesktop } = useResponsive();
   // The squads section swaps the community rail for its own chrome, so leave a
   // breadcrumb: its "Back" button returns here instead of the home feed.
   const openSquads = (path) => {
@@ -136,6 +139,20 @@ export default function SquadsHub() {
       </div>
     </div>
   );
+
+  // Mobile: the list IS the screen. This was missing entirely, so the phone got
+  // the desktop two-pane layout — a 300px column squeezed against a "Pick a
+  // squad" placeholder for a pane that does not exist on mobile, with dead
+  // space underneath. Both sibling hub screens (CallsScreen, StatusScreen)
+  // already branch this way; SquadsHub was the only one that did not.
+  if (!isDesktop) {
+    return (
+      <div className="min-h-screen pb-20">
+        <TopBar title="Squads" showBack />
+        {listCol}
+      </div>
+    );
+  }
 
   return (
     <div className="h-full flex">

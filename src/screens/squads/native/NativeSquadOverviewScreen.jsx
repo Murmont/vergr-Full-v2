@@ -100,7 +100,7 @@ export default function NativeSquadOverviewScreen() {
               <div className="qa-grid">
                 <button className="qa chat" onClick={() => navigate(`/squads/${squadId}/chat`)}><div className="ic"><span className="material-symbols-outlined">chat</span></div><div><div className="t">Open Chat</div><div className="s">Squad messages</div></div></button>
                 <button className="qa voice" onClick={() => navigate(`/squads/${squadId}/stream`)}><div className="ic"><span className="material-symbols-outlined">mic</span></div><div><div className="t">Voice Hangout</div><div className="s">Drop into voice now</div></div></button>
-                <button className="qa events" onClick={() => navigate(`/squads/${squadId}/events`)}><div className="ic"><span className="material-symbols-outlined">event</span></div><div><div className="t">Events</div><div className="s">Scrims & tournaments</div></div></button>
+                <button className="qa events" onClick={() => navigate(`/squads/${squadId}/events`)}><div className="ic"><span className="material-symbols-outlined">event</span></div><div><div className="t">Events</div><div className="s">Scrims & events</div></div></button>
                 <button className="qa lb" onClick={() => navigate(`/squads/${squadId}/leaderboard`)}><div className="ic"><span className="material-symbols-outlined">leaderboard</span></div><div><div className="t">Leaderboard</div><div className="s">VP rankings</div></div></button>
               </div>
 
