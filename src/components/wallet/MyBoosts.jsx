@@ -68,19 +68,20 @@ function RunningBoost({ row }) {
       </div>
       <div style={{ display: 'flex', gap: 18 }}>
         {stat(row.views, 'views')}
-        {stat(row.impressions, 'engagement')}
+        {stat(row.engagements, 'engagement')}
         {row.followersGained != null && stat(row.followersGained, 'follows')}
       </div>
-      {/* ⚠ EVERY WORD HERE IS DEFINED, because the last two labels were not.
-          "feed viewers" claimed people while the counter counted PAGE LOADS, and
-          the founder caught it by noticing a boost claimed 5 viewers on a
-          platform with 2 accounts. views = devices (localStorage-deduped per
-          boost run), engagement = total times shown including repeats, follows =
-          real follows and the only COMPLETE number of the three. */}
+      {/* ⚠ EVERY WORD MEANS WHAT IT SAYS, and two of them did not before.
+          "feed viewers" claimed people while counting PAGE LOADS, and
+          "engagement" was pointed at the impression count, which is a render and
+          not an interaction at all. Founder, 2026-08-28: "how can engagement be
+          two if we didn't engage in anyway with the post?" Now: views = devices
+          shown, engagement = opened the profile or followed from the card,
+          follows = actual follows. */}
       <div style={{ color: WALLET_TOKENS.textMuted, fontSize: 10, lineHeight: 1.4 }}>
-        Views counts devices, once per boost. Engagement counts every time it was
-        shown, repeats included. Both are counted in the feed only, so they are a
-        floor, not your total reach. Follows counts every surface.
+        Views counts devices, once per boost. Engagement counts people who opened
+        your profile or followed from the card. Both are counted in the feed only,
+        so they are a floor. Follows counts every surface.
       </div>
     </div>
   );

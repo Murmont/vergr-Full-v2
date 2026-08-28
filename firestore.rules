@@ -349,7 +349,7 @@ service cloud.firestore {
             // suggested-users rail.
             'boostExpiresAt', 'boostedAt', 'boostBucket',
             // Delivery counters shown to the BUYER as proof the boost ran.
-            'boostImpressions', 'boostViews'
+            'boostImpressions', 'boostViews', 'boostEngagements'
           ])
         ) && (
           cosmeticsAllowed()
@@ -508,7 +508,7 @@ service cloud.firestore {
       // purchaseBoost, after it has debited the coins.
       allow update: if ((isRegisteredOwner(resource.data.authorId) || isModerator())
           && !request.resource.data.diff(resource.data).affectedKeys()
-                .hasAny(['boostExpiresAt', 'boostedAt', 'boostImpressions', 'boostViews']))
+                .hasAny(['boostExpiresAt', 'boostedAt', 'boostImpressions', 'boostViews', 'boostEngagements']))
         || (isAuth() && request.resource.data.diff(resource.data).affectedKeys()
               // ⚠ `viewCount` REMOVED from this allowlist 2026-08-28. It let any
               // signed-in user write any post's view count — including someone
@@ -609,7 +609,7 @@ service cloud.firestore {
       // other field, and a self-stamped boost is a free slot in Explore.
       allow update: if ((isSquadAdmin(squadId) || isModerator()) && envWriteOk()
           && !request.resource.data.diff(resource.data).affectedKeys()
-                .hasAny(['boostExpiresAt', 'boostedAt', 'boostImpressions', 'boostViews'])) || (
+                .hasAny(['boostExpiresAt', 'boostedAt', 'boostImpressions', 'boostViews', 'boostEngagements'])) || (
         get(/databases/$(database)/documents/squads/$(squadId)).data.isPublic == true &&
         request.auth.uid != null &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberIds', 'memberCount', 'updatedAt']) &&

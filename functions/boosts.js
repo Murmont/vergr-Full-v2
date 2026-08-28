@@ -271,11 +271,18 @@ exports.recordBoostImpressions = functions.https.onCall(
       // Clamped: a client claiming 10,000 impressions in one batch is lying.
       const imp = Math.max(0, Math.min(50, Math.floor(Number(e.impressions) || 0)));
       const views = Math.max(0, Math.min(50, Math.floor(Number(e.views) || 0)));
-      if (imp === 0 && views === 0) return;
+      // ⚠ ENGAGEMENT IS AN INTERACTION (profile opened from the card, or a follow
+      // from it), NOT a render. The receipt briefly labelled impressions
+      // "engagement", which is simply not what the word means. Clamped hardest of
+      // the three because it is the rarest and therefore the most suspicious in
+      // volume: nobody legitimately clicks one card 50 times in 20 seconds.
+      const eng = Math.max(0, Math.min(20, Math.floor(Number(e.engagements) || 0)));
+      if (imp === 0 && views === 0 && eng === 0) return;
 
       await ref.set({
         boostImpressions: FieldValue.increment(imp),
         boostViews: FieldValue.increment(views),
+        boostEngagements: FieldValue.increment(eng),
       }, { merge: true });
       counted += 1;
     }));

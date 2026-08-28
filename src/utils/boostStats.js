@@ -86,7 +86,7 @@ export const recordBoostImpressions = (items) => {
   for (const it of items) {
     if (!it?.targetId || !it?.target) continue;
     const key = `${it.target}:${it.targetId}`;
-    const row = pending.get(key) || { target: it.target, targetId: it.targetId, impressions: 0, views: 0 };
+    const row = pending.get(key) || { target: it.target, targetId: it.targetId, impressions: 0, views: 0, engagements: 0 };
     row.impressions += 1;
     // The boost RUN is identified by its expiry, which the caller has in hand
     // off the document it just rendered. Without it a second boost on the same
@@ -107,3 +107,27 @@ if (typeof document !== 'undefined') {
     }
   });
 }
+
+/**
+ * Record that someone ENGAGED with a boosted item: opened the profile from the
+ * card, or followed from it.
+ *
+ * ⚠ ENGAGEMENT IS AN INTERACTION, NOT A RENDER. The receipt briefly labelled the
+ * impression count "engagement", which is wrong and the founder said so:
+ * *"how can engagement be two if we didn't engage in anyway with the post?"*
+ * Showing a card to someone is an impression. Engagement is them acting on it.
+ *
+ * ⚠ COSTS ESSENTIALLY NOTHING, and that is by construction. It rides the SAME
+ * pending row and the SAME 20s flush as the impression that must already have
+ * happened, because you cannot click a card that was never shown. So it adds a
+ * FIELD to a write that was going to happen anyway, not a new write, and clicks
+ * are orders of magnitude rarer than renders regardless.
+ */
+export const recordBoostEngagement = (item) => {
+  if (!item?.targetId || !item?.target) return;
+  const key = `${item.target}:${item.targetId}`;
+  const row = pending.get(key) || { target: item.target, targetId: item.targetId, impressions: 0, views: 0, engagements: 0 };
+  row.engagements = (row.engagements || 0) + 1;
+  pending.set(key, row);
+  schedule();
+};

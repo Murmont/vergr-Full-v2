@@ -2080,12 +2080,13 @@ export const getMyActiveBoosts = async (uid) => {
   };
 
   return Promise.all(rows.map(norm).map(async (b) => {
-    let impressions = 0, views = 0, followersGained = null;
+    let impressions = 0, views = 0, engagements = 0, followersGained = null;
     try {
       const t = await getDoc(doc(db, COL[b.target] || 'posts', b.targetId));
       if (t.exists()) {
         impressions = Number(t.data().boostImpressions) || 0;
         views = Number(t.data().boostViews) || 0;
+        engagements = Number(t.data().boostEngagements) || 0;
       }
     } catch { /* stats are decoration; never fail the list over them */ }
 
@@ -2102,7 +2103,7 @@ export const getMyActiveBoosts = async (uid) => {
         followersGained = f.size;
       } catch { /* needs a composite index; absent until it exists */ }
     }
-    return { ...b, impressions, views, followersGained };
+    return { ...b, impressions, views, engagements, followersGained };
   }));
 };
 

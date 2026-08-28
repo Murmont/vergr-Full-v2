@@ -15,7 +15,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { getBoostedUsers, followUser } from '../../firebase/firestore';
 import { isBoosted } from '../../utils/promoBoost';
-import { recordBoostImpressions } from '../../utils/boostStats';
+import { recordBoostImpressions, recordBoostEngagement } from '../../utils/boostStats';
 import UserAvatar from '../UserAvatar';
 import UserName from '../UserName';
 import Icon from '../Icon';
@@ -74,6 +74,13 @@ export default function SuggestedPeopleBlock({ slotKey }) {
     setGone(true);
   };
 
+  // ⚠ ONLY a BOOSTED card reports. An organic suggestion costs the platform
+  // nothing and nobody is owed a number for it, so counting it would be a write
+  // with no buyer attached.
+  const engaged = (u) => { if (isBoosted(u)) recordBoostEngagement({ target: 'user', targetId: u.id }); };
+
+  const openProfile = (u) => { engaged(u); navigate(`/user/${u.id}`); };
+
   const follow = async (uid) => {
     if (!currentUser?.uid || followed[uid]) return;
     setFollowed((f) => ({ ...f, [uid]: true }));
@@ -100,12 +107,12 @@ export default function SuggestedPeopleBlock({ slotKey }) {
       <div className="space-y-2">
         {people.map((u) => (
           <div key={u.id} className="flex items-center gap-3">
-            <button onClick={() => navigate(`/user/${u.id}`)} className="shrink-0">
+            <button onClick={() => openProfile(u)} className="shrink-0">
               <UserAvatar src={u.avatar} size={38} />
             </button>
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5">
-                <button onClick={() => navigate(`/user/${u.id}`)} className="min-w-0 text-left">
+                <button onClick={() => openProfile(u)} className="min-w-0 text-left">
                   <UserName user={u} className="text-sm font-bold" />
                 </button>
                 {/* ⚠ The label. Paid placement is disclosed, never disguised. */}
@@ -123,7 +130,7 @@ export default function SuggestedPeopleBlock({ slotKey }) {
               </p>
             </div>
             <button
-              onClick={() => follow(u.id)}
+              onClick={() => { engaged(u); follow(u.id); }}
               disabled={!!followed[u.id]}
               className="px-3 py-1.5 rounded-full text-[11px] font-bold shrink-0"
               style={followed[u.id]

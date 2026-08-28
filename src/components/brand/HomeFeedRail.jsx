@@ -249,7 +249,13 @@ export default function HomeFeedRail() {
                       {c.verified && <Icon name="verified" size={11} className="text-brand-violet-light shrink-0" />}
                     </div>
                     <div className="text-[10px] text-text-muted font-dmmono truncate">
-                      {c.handle} · {compact(c.followers)}
+                      {/* ⚠ HANDLE ONLY. A follower count belongs on the public
+                          profile, not on a suggestion card. Founder, 2026-08-28: it is
+                          not appropriate here, number nor label. A bare count next to
+                          a handle also reads as an unlabelled mystery number, and on a
+                          small platform it mostly advertises that nobody has followers
+                          yet. Do not put a metric back on this card. */}
+                      {c.handle}
                     </div>
                   </button>
                   <button
