@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { DEFAULT_MEMBERSHIP_TIERS } from '../../utils/membershipDefaults';
 import { useAuth } from '../../context/AuthContext';
 import { useUI } from '../../context/UIContext';
 import TopBar from '../../components/TopBar';
@@ -25,11 +26,9 @@ const COMMUNITY_TYPES = [
 
 const mkId = () => `t_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 
-const DEFAULT_TIERS = [
-  { id: mkId(), name: 'Supporter', priceCoins: 100, perks: ['Subscriber badge in chat & profile', 'Exclusive posts & behind-the-scenes', 'Priority chat'], badge: { color: '#7B1FFF', icon: 'favorite' }, seatLimit: null, communities: [], published: true, popular: false, order: 0 },
-  { id: mkId(), name: 'VIP', priceCoins: 500, perks: ['Everything in Supporter', 'Custom emotes (5 slots)', 'Monthly shoutout on stream', 'Discord members channel'], badge: { color: '#C87FFF', icon: 'star' }, seatLimit: null, communities: [], published: true, popular: true, order: 1 },
-  { id: mkId(), name: 'Legend', priceCoins: 1000, perks: ['Everything in VIP', 'Co-stream invites', 'Private Discord channel', 'Merch discounts'], badge: { color: '#F0A500', icon: 'workspace_premium' }, seatLimit: null, communities: [], published: false, popular: false, order: 2 },
-];
+// Moved to utils/membershipDefaults.js: the stream preview restated these by
+// hand for the subscribe and gift-a-sub sheets and the perks had already drifted.
+const DEFAULT_TIERS = DEFAULT_MEMBERSHIP_TIERS;
 
 // Coins are natively USD (re-denominated 2026-08-11). This used a hardcoded
 // EUR_PER_COIN = 0.0099, which was the PRE-redenomination anchor, so a 100-coin

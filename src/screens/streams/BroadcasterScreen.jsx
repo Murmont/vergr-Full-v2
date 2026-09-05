@@ -13,6 +13,7 @@
 // runs the portrait compositor for dual-camera + scene cards.
 
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { CoinIcon } from '../../components/CoinIcon';
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
 import {
   doc, onSnapshot, updateDoc, serverTimestamp,
@@ -35,6 +36,7 @@ import HypeMeter from '../../components/tournament/HypeMeter';
 import JoinAnnouncer from '../../components/streams/JoinAnnouncer';
 import ChatPanel from '../../components/streams/ChatPanel';
 import { StreamGoalBar, TipAlertOverlay, SubAlertOverlay } from '../../components/streams/StreamGoalAndAlerts';
+import { ZeroViewers, VpEarnedChip, HealthWarningView, MovableGoal } from '../../components/streams/states';
 import { useActiveStreamPoll, StreamPollCard, CreateStreamPollModal } from '../../components/streams/StreamPoll';
 import StreamShareSheet from '../../components/streams/StreamShareSheet';
 import TipCatalogEditor from '../../components/streams/TipCatalogEditor';
@@ -189,6 +191,25 @@ export default function BroadcasterScreen() {
   const [bitrateKbps, setBitrateKbps] = useState(0);
   const [chunkLatencyMs, setChunkLatencyMs] = useState(0);
   const [netWarn, setNetWarn] = useState(false);
+
+  // ⚠⚠ THE GOAL COVERED THE BROADCASTER'S FACE AND THEY COULD NOT MOVE IT. It
+  // rendered at a FIXED position on both layouts. Founder: the host must be able to
+  // move it and resize it.
+  //
+  // ⚠ PERSISTED PER HOST, IN THIS BROWSER, AND IT CHANGES ONLY WHAT THE HOST SEES.
+  // Writing the placement to the stream doc would move it for every VIEWER too, and
+  // whether a host's layout should follow their audience around is a product
+  // decision nobody has made. Local is the half that is unambiguously theirs.
+  const goalKey = `vergr.goalBox.${currentUser?.uid || 'anon'}`;
+  const [goalBox, setGoalBoxState] = useState(() => {
+    try { const raw = localStorage.getItem(goalKey); return raw ? JSON.parse(raw) : null; } catch { return null; }
+  });
+  const [goalEdit, setGoalEdit] = useState(false);
+  const setGoalBox = (b) => {
+    setGoalBoxState(b);
+    // null is a RESET, so it clears rather than storing null and looking placed
+    try { if (b) localStorage.setItem(goalKey, JSON.stringify(b)); else localStorage.removeItem(goalKey); } catch { /* private mode */ }
+  };
 
   // Telemetry
   const [tipEvents, setTipEvents] = useState([]);
@@ -483,7 +504,7 @@ export default function BroadcasterScreen() {
         // camera). Require at least one source (camera stream, active screen
         // share, or an already-built compositor holding the screen track).
         if (!mediaStreamRef.current && !screenSharing && !compositorRef.current) {
-          throw new Error('Add a source first — share your screen or enable your camera.');
+          throw new Error('Add a source first. Share your screen or enable your camera.');
         }
 
         // The publish key lives server-side and is fetched asynchronously by the
@@ -594,7 +615,7 @@ export default function BroadcasterScreen() {
       compositorRef.current = null;
       if (streamDoc?.id) {
         const r = await httpsCallable(getFunctions(undefined, 'europe-west1'), 'endStreamSession')({ streamId: streamDoc.id });
-        if (r.data?.refunded) showToast('Boost refunded — your tips covered the fee!', 'success');
+        if (r.data?.refunded) showToast('Boost refunded. Your tips covered the fee!', 'success');
       }
       const tipCoins = tipEvents.reduce((s, t) => s + (t.coins || 0), 0);
       const tipperMap = {};
@@ -848,7 +869,7 @@ export default function BroadcasterScreen() {
       }
       const fn = httpsCallable(getFunctions(undefined, 'europe-west1'), 'requestStreamClip');
       const { data } = await fn({ streamId: streamDoc?.id, durationSec: clipCfg.sec });
-      if (!data?.clipUrl) throw new Error('Clip failed — try again in a few seconds.');
+      if (!data?.clipUrl) throw new Error('Clip failed. Try again in a few seconds.');
       await publishClip(data.clipUrl);
       setClipsUsed((n) => n + 1);
       showToast('Clip saved to your profile.', 'success');
@@ -862,8 +883,8 @@ export default function BroadcasterScreen() {
   if (endedStats) return <StreamSummary stats={endedStats} onClose={() => navigate('/')} />;
 
   const mobileImmersive = !isDesktop || isTouchPhone();
-  const stability = chunkLatencyMs === 0 ? '—' : chunkLatencyMs < 600 ? 'Excellent' : chunkLatencyMs < 1500 ? 'Good' : 'Poor';
-  const stabilityColor = stability === 'Excellent' ? C.green : stability === 'Good' ? C.amber : stability === '—' ? C.textMuted : C.red;
+  const stability = chunkLatencyMs === 0 ? '-' : chunkLatencyMs < 600 ? 'Excellent' : chunkLatencyMs < 1500 ? 'Good' : 'Poor';
+  const stabilityColor = stability === 'Excellent' ? C.green : stability === 'Good' ? C.amber : stability === '-' ? C.textMuted : C.red;
 
   const hiddenSceneInput = (
     <input ref={sceneFileInputRef} type="file" accept="image/*,image/gif,video/*" style={{ display: 'none' }}
@@ -882,7 +903,7 @@ export default function BroadcasterScreen() {
       </>
     );
     return (
-      <div style={{ position: 'fixed', inset: 0, background: '#000', overflow: 'hidden', color: C.text, fontFamily: '"Inter","DM Sans",system-ui,sans-serif', zIndex: 90 }}>
+      <div style={{ position: 'fixed', inset: 0, background: '#000', overflow: 'hidden', color: C.text, fontFamily: '"DM Sans",system-ui,sans-serif', zIndex: 90 }}>
         <video ref={videoRef} autoPlay muted playsInline style={{ width: '100%', height: '100%', objectFit: 'contain', background: '#000' }} />
 
         {/* Top overlay */}
@@ -891,15 +912,45 @@ export default function BroadcasterScreen() {
           {isLive && <span style={{ fontSize: 12, fontWeight: 700, color: '#fff', fontFamily: 'DM Mono, ui-monospace, monospace' }}>{fmtTime(duration)}</span>}
           {isLive && <HypeMeter streamId={streamId} mode="compact" />}
           <div style={{ flex: 1 }} />
-          {isLive && <span style={statChip(C.amber)}><Icon name="paid" size={12} />{tipCoins}</span>}
+          {isLive && <span style={statChip(C.amber)}><CoinIcon size={12} />{tipCoins}</span>}
           {isLive && followerDelta > 0 && <span style={statChip(C.purpleLight)}><Icon name="person_add" size={12} />+{followerDelta}</span>}
+          {/* ⚠ THE HOST'S OWN VP, AND ONLY THE HOST'S. go_live and stream_hour are both
+              server-awarded, so this figure is real. A VIEWER equivalent must never be
+              added: nothing awards watch_stream_hour, so it would promise VP that never
+              arrives. The chip renders as a plain element here because there is nowhere
+              useful to send someone, and a button that does nothing is worse than none. */}
+          {isLive && <VpEarnedChip host minutes={duration / 60} />}
           <span style={statChip('#fff')}><Icon name="visibility" size={12} />{streamDoc.viewerCount || 0}</span>
           <button onClick={() => { if (isLive) setEndConfirm(true); else navigate(-1); }} aria-label={isLive ? 'End stream' : 'Back'} style={roundBtn}><Icon name="close" size={18} /></button>
         </div>
 
+          {/* ⚠⚠ THE FIRST MINUTES OF EVERY STREAM SHOWED THE DIGIT 0 AND NOTHING ELSE.
+              It is the state a new creator sees most and the one most likely to make them
+              stop, and there was no copy, no explanation and nothing to do about it. The
+              card frames the moment as EARLY rather than as nobody watching, and offers
+              the things that actually change the number.
+
+              ⚠ Actions without a handler are not rendered, so this is safe on a surface
+              with no boost entry point: it shows the two it can do. */}
+          {isLive && (streamDoc.viewerCount || 0) === 0 && (
+            <div style={{ position: 'absolute', top: 'calc(env(safe-area-inset-top, 0px) + 92px)', left: 12, right: 12, zIndex: 5 }}>
+              <ZeroViewers compact onShare={() => setShareOpen(true)} onInvite={() => setShareOpen(true)} />
+            </div>
+          )}
+
+        {/* ⚠ THE CARD, WITH THE PILL'S OWN MESSAGE. The signal here is the uplink probe
+            capping the bitrate, so the truthful statement is that quality was ALREADY
+            lowered. The card's built-in unstable copy says "switch to a lower quality",
+            which is advice for a situation that has not happened: shipping it would have
+            replaced an accurate message with an inaccurate one.
+        
+            No action is passed, because the system has already acted and there is nothing
+            for the host to press. The card hides its button when there is no handler. */}
         {netWarn && isLive && (
-          <div style={{ position: 'absolute', top: 'calc(env(safe-area-inset-top, 0px) + 58px)', left: 12, ...warnPill }}>
-            <Icon name="signal_cellular_alt" size={13} /> Quality lowered to keep you live
+          <div style={{ position: 'absolute', top: 'calc(env(safe-area-inset-top, 0px) + 58px)', left: 12, right: 12, zIndex: 5 }}>
+            <HealthWarningView state="unstable"
+              title="Quality lowered to keep you live"
+              body="Your upload could not carry the full bitrate, so it was reduced. Close other uploads and it will climb back on its own." />
           </div>
         )}
 
@@ -915,7 +966,11 @@ export default function BroadcasterScreen() {
         {/* Bottom dock */}
         <div style={{ position: 'absolute', left: 10, right: 10, bottom: 'calc(env(safe-area-inset-bottom, 0px) + 10px)', display: 'flex', flexDirection: 'column', gap: 8, zIndex: 8 }}>
           {streamPoll && <div style={{ maxWidth: 320 }}><StreamPollCard poll={streamPoll} closed={streamPollClosed} uid={currentUser?.uid} compact /></div>}
-          {isLive && streamDoc.goal?.active && <div style={{ maxWidth: 360 }}><StreamGoalBar goal={streamDoc.goal} compact /></div>}
+          {isLive && streamDoc.goal?.active && (
+            <MovableGoal goal={streamDoc.goal} box={goalBox} onChange={setGoalBox}
+              editable editing={goalEdit} compact
+              fallback={{ xPct: 3, yPct: 20, wPct: 62 }} />
+          )}
           {isLive ? (
             <div style={{ height: '28vh', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
               <ChatPanel streamId={streamDoc.id} layout="overlay" hostUid={streamDoc.hostUid} slowModeSec={streamDoc.slowModeSec || 0} followersOnly={!!streamDoc.followersOnly} ttsEnabled={!!streamDoc.ttsEnabled} pinnedMessage={streamDoc.pinnedMessage || null} composerExtras={composerExtras} />
@@ -942,7 +997,7 @@ export default function BroadcasterScreen() {
         </div>
 
         {alertsOn && <TipAlertOverlay lastTip={streamDoc.lastTip} anchor="top" />}
-        {alertsOn && <SubAlertOverlay lastSub={streamDoc.lastSub} anchor="top" />}
+        {alertsOn && <SubAlertOverlay lastSub={streamDoc.lastSub} anchor="bottom" />}
         {pollModalOpen && <CreateStreamPollModal hostUid={streamDoc.hostUid} streamId={streamDoc.id} onClose={() => setPollModalOpen(false)} showToast={showToast} />}
         <JoinAnnouncer events={joinEvents} side="left" bottom="calc(env(safe-area-inset-bottom, 0px) + 28vh + 24px)" />
         {hiddenSceneInput}
@@ -975,6 +1030,12 @@ export default function BroadcasterScreen() {
                 <SheetRow icon="content_cut" label="Clip the last moment" onClick={() => { setMoreOpen(false); handleClip(); }} />
                 <SheetRow icon="volunteer_activism" label="Tip catalog" onClick={() => { setMoreOpen(false); setTipCatalogOpen(true); }} />
                 <SheetRow icon="block" label="Banned words" onClick={() => { setMoreOpen(false); setBannedWordsOpen(true); }} />
+                {/* ⚠ WITHOUT AN ENTRY POINT THE DRAG CAN NEVER BE TURNED ON, and a
+                    goal that is always draggable gets moved by accident mid-stream. */}
+                {isLive && streamDoc.goal?.active && (
+                  <SheetRow icon="open_with" label={goalEdit ? 'Done moving the tip goal' : 'Move the tip goal'}
+                    onClick={() => { setMoreOpen(false); setGoalEdit((v) => !v); }} />
+                )}
                 <SheetRow icon="share" label="Share stream" onClick={() => { setMoreOpen(false); setShareOpen(true); }} />
               </motion.div>
             </motion.div>
@@ -1009,7 +1070,7 @@ export default function BroadcasterScreen() {
   // DESKTOP FRAMED STUDIO LAYOUT
   // ────────────────────────────────────────────────────────────
   return (
-    <div style={{ background: C.bg, minHeight: '100vh', color: C.text, fontFamily: '"Inter","DM Sans",system-ui,sans-serif', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ background: C.bg, minHeight: '100vh', color: C.text, fontFamily: '"DM Sans",system-ui,sans-serif', display: 'flex', flexDirection: 'column' }}>
       <div style={{ display: 'flex', flex: 1, minHeight: 0, gap: 14, padding: 16 }}>
         {/* LEFT: preview + controls */}
         <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -1022,17 +1083,47 @@ export default function BroadcasterScreen() {
               {isLive && <span style={{ fontSize: 12, fontWeight: 700, color: '#fff', fontFamily: 'DM Mono, ui-monospace, monospace' }}>{fmtTime(duration)}</span>}
               {isLive && <HypeMeter streamId={streamId} mode="compact" />}
               <div style={{ flex: 1 }} />
-              {isLive && <span style={statChip(C.amber)}><Icon name="paid" size={12} />{tipCoins}</span>}
+              {isLive && <span style={statChip(C.amber)}><CoinIcon size={12} />{tipCoins}</span>}
               {isLive && followerDelta > 0 && <span style={statChip(C.purpleLight)}><Icon name="person_add" size={12} />+{followerDelta}</span>}
+              {/* ⚠ THE HOST'S OWN VP, AND ONLY THE HOST'S. go_live and stream_hour are both
+                  server-awarded, so this figure is real. A VIEWER equivalent must never be
+                  added: nothing awards watch_stream_hour, so it would promise VP that never
+                  arrives. The chip renders as a plain element here because there is nowhere
+                  useful to send someone, and a button that does nothing is worse than none. */}
+              {isLive && <VpEarnedChip host minutes={duration / 60} />}
               <span style={statChip('#fff')}><Icon name="visibility" size={12} />{streamDoc.viewerCount || 0}</span>
             </div>
 
-            {netWarn && isLive && <div style={{ position: 'absolute', top: 48, left: 12, ...warnPill }}><Icon name="signal_cellular_alt" size={13} /> Quality lowered to keep you live</div>}
+              {/* ⚠⚠ THE FIRST MINUTES OF EVERY STREAM SHOWED THE DIGIT 0 AND NOTHING ELSE.
+                  It is the state a new creator sees most and the one most likely to make them
+                  stop, and there was no copy, no explanation and nothing to do about it. The
+                  card frames the moment as EARLY rather than as nobody watching, and offers
+                  the things that actually change the number.
+
+                  ⚠ Actions without a handler are not rendered, so this is safe on a surface
+                  with no boost entry point: it shows the two it can do. */}
+              {isLive && (streamDoc.viewerCount || 0) === 0 && (
+                <div style={{ position: 'absolute', top: 'calc(env(safe-area-inset-top, 0px) + 92px)', left: 12, right: 12, zIndex: 5 }}>
+                  <ZeroViewers compact onShare={() => setShareOpen(true)} onInvite={() => setShareOpen(true)} />
+                </div>
+              )}
+
+            {netWarn && isLive && (
+              <div style={{ position: 'absolute', top: 48, left: 12, right: 12, zIndex: 5 }}>
+                <HealthWarningView state="unstable"
+                  title="Quality lowered to keep you live"
+                  body="Your upload could not carry the full bitrate, so it was reduced. Close other uploads and it will climb back on its own." />
+              </div>
+            )}
             {buffering && <div style={{ position: 'absolute', top: 48, right: 12, ...warnPill }}><Icon name="warning" size={13} /> Viewers may be buffering</div>}
 
-            {isLive && streamDoc.goal?.active && <div style={{ position: 'absolute', left: 12, right: 12, bottom: 12 }}><StreamGoalBar goal={streamDoc.goal} /></div>}
+            {isLive && streamDoc.goal?.active && (
+              <MovableGoal goal={streamDoc.goal} box={goalBox} onChange={setGoalBox}
+                editable editing={goalEdit} compact={false}
+                fallback={{ xPct: 3, yPct: 22, wPct: 52 }} />
+            )}
             {alertsOn && <TipAlertOverlay lastTip={streamDoc.lastTip} anchor="top" />}
-            {alertsOn && <SubAlertOverlay lastSub={streamDoc.lastSub} anchor="top" />}
+            {alertsOn && <SubAlertOverlay lastSub={streamDoc.lastSub} anchor="bottom" />}
           </div>
 
           {/* Control bar */}
@@ -1084,7 +1175,7 @@ export default function BroadcasterScreen() {
           {/* Status strip */}
           {isLive && (
             <div style={{ display: 'flex', gap: 14, fontSize: 12, color: C.textDim, padding: '0 4px' }}>
-              <span>Bitrate <b style={{ color: C.text, fontFamily: 'DM Mono, monospace' }}>{bitrateKbps ? `${bitrateKbps} kbps` : '—'}</b></span>
+              <span>Bitrate <b style={{ color: C.text, fontFamily: 'DM Mono, monospace' }}>{bitrateKbps ? `${bitrateKbps} kbps` : '-'}</b></span>
               <span>Stability <b style={{ color: stabilityColor }}>{stability}</b></span>
               {activeBoost && <span style={{ color: C.amber }}>Boosted</span>}
             </div>
@@ -1134,7 +1225,7 @@ function EditInfoModal({ title, game, saving, onSave, onClose }) {
   const [g, setG] = useState(game || '');
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 210, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: 'min(440px, 100%)', background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: 20, color: C.text, fontFamily: '"Inter","DM Sans",system-ui,sans-serif' }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: 'min(440px, 100%)', background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: 20, color: C.text, fontFamily: '"DM Sans",system-ui,sans-serif' }}>
         <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 14 }}>Edit stream info</div>
         <label style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.06em', color: C.textDim }}>TITLE</label>
         <input value={t} maxLength={140} onChange={(e) => setT(e.target.value)} placeholder="What are you streaming?"
@@ -1192,7 +1283,7 @@ function DockBtn({ icon, onClick, label, danger = false }) {
 
 function SheetRow({ icon, label, onClick }) {
   return (
-    <button onClick={onClick} style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', padding: '13px 12px', borderRadius: 12, border: 'none', marginBottom: 6, background: 'rgba(255,255,255,0.04)', color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer', textAlign: 'left' }}>
+    <button onClick={onClick} style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', padding: '13px 12px', borderRadius: 12, border: 'none', marginBottom: 6, background: '#191527', color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer', textAlign: 'left' }}>
       <Icon name={icon} size={18} />{label}
     </button>
   );
@@ -1278,7 +1369,7 @@ function AudioMeter({ level, compact = false }) {
 
 function FullCenter({ label, action }) {
   return (
-    <div style={{ minHeight: '100vh', background: C.bg, color: C.text, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 14, fontFamily: '"Inter", system-ui, sans-serif' }}>
+    <div style={{ minHeight: '100vh', background: C.bg, color: C.text, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 14, fontFamily: '"DM Sans", system-ui, sans-serif' }}>
       <div style={{ fontSize: 14, color: C.textDim }}>{label}</div>
       {action && <button onClick={action.onClick} style={{ padding: '12px 20px', borderRadius: 10, border: 'none', background: `linear-gradient(135deg, ${C.purple}, ${C.purpleLight})`, color: '#fff', fontSize: 13, fontWeight: 800, cursor: 'pointer' }}>{action.label}</button>}
     </div>
@@ -1308,7 +1399,7 @@ function StreamSummary({ stats, onClose }) {
   const { showToast } = useUI();
   const [postingStory, setPostingStory] = useState(false);
   const share = async () => {
-    const text = `Just wrapped a stream on VERGR — ${formatDuration(stats.duration)}, ${(stats.peakViewers || 0)} peak viewers, ${stats.tipCoins.toLocaleString()} coins tipped. ⚡`;
+    const text = `Just wrapped a stream on VERGR: ${formatDuration(stats.duration)}, ${(stats.peakViewers || 0)} peak viewers, ${stats.tipCoins.toLocaleString()} coins tipped. ⚡`;
     try { if (navigator.share) await navigator.share({ title: 'VERGR stream recap', text, url: 'https://vergr.app' }); else await navigator.clipboard.writeText(text + ' https://vergr.app'); } catch {}
   };
   // One-tap "share to my Status": renders a branded 9:16 recap card client-side,
@@ -1348,7 +1439,7 @@ function StreamSummary({ stats, onClose }) {
     } finally { setPostingStory(false); }
   };
   return (
-    <div style={{ minHeight: '100vh', background: `radial-gradient(circle at 50% 0%, #1a1030 0%, ${C.bg} 60%)`, color: C.text, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, fontFamily: '"Inter", system-ui, sans-serif' }}>
+    <div style={{ minHeight: '100vh', background: `radial-gradient(circle at 50% 0%, #1a1030 0%, ${C.bg} 60%)`, color: C.text, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, fontFamily: '"DM Sans", system-ui, sans-serif' }}>
       <div style={{ width: 'min(540px, 100%)', background: C.card, border: `1px solid ${C.border}`, borderRadius: 18, padding: 24, boxShadow: '0 24px 60px rgba(0,0,0,0.5)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
           <span style={{ width: 36, height: 36, borderRadius: '50%', background: C.purpleSoft, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="live_tv" size={20} /></span>

@@ -7,7 +7,20 @@
 // co-host grid). Real stream art drops straight into PreviewVideoStage later.
 // Only generic stream-UI icon assets are reused.
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
+// ⚠ THE REAL COMPONENTS. Every cosmetic the VP ladder sells is resolved
+// inside them from `vpLevel` alone, so a plain name here means a capture
+// that shows none of it. Prop-driven, so importing is read-only.
+import UserName from '../../../components/UserName';
+import RankBadge from '../../../components/RankBadge';
+import ComboMeter from '../../../components/streams/ComboMeter';
+import { StreamGoalBar } from '../../../components/streams/StreamGoalAndAlerts';
+import { useFaces, usePreviewSim } from './previewAssetsContext';
+import { ComposerPill } from './previewStates';
+// ⚠ MovableGoal MOVED to components/streams/states so the real broadcaster can
+// use it. Imported back and RE-EXPORTED, so no preview call site changed.
+import { MovableGoal } from '../../../components/streams/states';
+export { MovableGoal };
 import Icon from '../../../components/Icon';
 import UserAvatar from '../../../components/UserAvatar';
 import modBadgeIcon from '../../../assets/stream/mod-badge.webp';
@@ -24,8 +37,14 @@ export const C = {
   purple: '#7c3aed', purpleLight: '#b44fff', gold: '#F5C842',
 };
 
-export const glass = { background: 'rgba(255,255,255,0.10)', backdropFilter: 'blur(16px) saturate(140%)', WebkitBackdropFilter: 'blur(16px) saturate(140%)', border: '1px solid rgba(255,255,255,0.18)' };
-export const glassDark = { background: 'rgba(10,8,22,0.42)', backdropFilter: 'blur(18px) saturate(140%)', WebkitBackdropFilter: 'blur(18px) saturate(140%)', border: '1px solid rgba(255,255,255,0.12)' };
+// ⚠⚠ A THIRD COPY OF THE SAME TWO TOKENS. previewChrome and MobileLiveViewer each
+// had their own, and this file a third — so solidifying two of them left the split and
+// landscape viewers still drawing the old wash, which is exactly what the live probe
+// then reported. Same value, same reasoning: these are PILLS ON GAMEPLAY, and a
+// translucent fill with a BRIGHTER hairline is the border-soup the founder has now
+// rejected three times.
+export const glass = { background: '#1E1A2E', border: 'none' };
+export const glassDark = { background: '#100C1C', border: 'none' };
 
 export function compactNum(n) {
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(1).replace(/\.0$/, '') + 'M';
@@ -37,7 +56,7 @@ export function compactNum(n) {
 // scene = 'game' (gameplay capture) or 'cam' (camera-only / just chatting). A
 // solo broadcaster's main feed — distinct from a co-host grid. CSS only so it
 // reads under the glass blur without shipping a binary; swap for live <video>.
-export function PreviewVideoStage({ scene = 'game', src = null }) {
+export function PreviewVideoStage({ scene = 'game', src = null, videoUrl = null }) {
   // The video region — the ONLY part of a preview screenshot that is not real
   // UI. Everything around it (host capsule, chat, dock, gifters) is a faithful
   // reproduction of production and must be captured as-is.
@@ -66,6 +85,18 @@ export function PreviewVideoStage({ scene = 'game', src = null }) {
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
+
+  // ⚠ AN UPLOADED VIDEO OUTRANKS EVERYTHING. The measured grey block below is a
+  // developer aid, not something anyone should ever screenshot; once a real clip
+  // is supplied it is the stage.
+  if (videoUrl) {
+    return (
+      <div style={{ position: 'absolute', inset: 0, background: '#000', overflow: 'hidden' }}>
+        <video src={videoUrl} autoPlay muted loop playsInline
+          style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+      </div>
+    );
+  }
 
   if (src) {
     return (
@@ -115,13 +146,43 @@ export function PreviewVideoStage({ scene = 'game', src = null }) {
 // ── Solo facecam picture-in-picture ─────────────────────────────────────────
 // The small camera tile a solo broadcaster overlays on their gameplay (Twitch
 // facecam pattern). Its OWN component — nothing to do with co-host tiles.
-export function FacecamPip({ w = 132, style }) {
+//
+// ⚠ THIS IS THE SECOND VIDEO, AND IT MUST NOT BE THE STAGE'S. A PiP layout is
+// two sources by definition: the stage plays the gameplay, this plays the
+// camera. Feeding both from one upload renders the same frames twice, which
+// reads as a mirror rather than a broadcast, so the simulator carries a
+// separate `facecamVideo` upload and this is its only consumer besides the
+// broadcaster's own PiP inset.
+// ⚠⚠ NO FACECAM VIDEO MEANS NO PiP, NOT AN EMPTY GREY BOX.
+// THE WHOLE POINT OF THIS TOOL IS CAPTURING STORE SCREENSHOTS, and with no facecam
+// uploaded this drew a grey rectangle with a person glyph over the video on EVERY
+// surface, with no way to remove it. Founder, 2026-09-03: *"how the fuck am i supposed
+// to capture content if there is a constant PiP on the screen that has no way to be
+// turned off"*. A placeholder that cannot be dismissed is worse than no placeholder:
+// it is in every frame he ships.
+//
+// The upload slot in the rail is how you put a facecam here. Until something is in it,
+// this draws nothing.
+
+export function FacecamPip({ w = 132, style, videoUrl = null }) {
+  // ⚠ NO EARLY RETURN ON A MISSING CLIP. The Game+cam / Camera only toggle decides
+  // whether this renders; returning null when the facecam slot is empty made that
+  // toggle look broken and turned the placeholder below into dead code.
   return (
-    <div style={{ width: w, aspectRatio: '16 / 10', borderRadius: 12, overflow: 'hidden', position: 'relative', border: '1px solid rgba(255,255,255,0.22)', boxShadow: '0 6px 18px rgba(0,0,0,0.45)', background: 'radial-gradient(90% 70% at 50% 30%, #2a2440 0%, #14101f 60%, #0a0810 100%)', ...style }}>
-      <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,0.32)' }}>
-        <Icon name="person" size={30} filled />
-      </div>
-      <span style={{ position: 'absolute', top: 5, right: 5, color: C.gold }}><Icon name="auto_awesome" size={13} filled /></span>
+    <div style={{ width: w, aspectRatio: '16 / 10', borderRadius: 12, overflow: 'hidden', position: 'relative', border: 'none', boxShadow: '0 6px 18px rgba(0,0,0,0.45)', background: 'radial-gradient(90% 70% at 50% 30%, #2a2440 0%, #14101f 60%, #0a0810 100%)', ...style }}>
+      {videoUrl ? (
+        <video src={videoUrl} autoPlay muted loop playsInline style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+      ) : (
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,0.32)' }}>
+          <Icon name="person" size={30} filled />
+        </div>
+      )}
+      {/* ⚠ NO BADGE ON THE PiP. A gold auto_awesome sparkle used to sit here with no
+          comment, no prop and no condition — it rendered unconditionally, so it reported
+          nothing. In the rest of the product that glyph means an AR filter ("Angel") or
+          "Share to my Status", neither of which is a facecam. So it either meant nothing
+          or it implied a filter was on and lied, in every store screenshot. Founder asked
+          what it was, which is the answer: an unexplained mark is a defect. */}
     </div>
   );
 }
@@ -132,10 +193,11 @@ export function FacecamPip({ w = 132, style }) {
 // same not change"). Verified check sits INLINE by the name (TikTok pattern), NOT
 // overlaid on the avatar. Tapping the capsule opens the profile sheet (Follow
 // lives there); there is no inline Follow pill.
-export function HostCapsule({ host, hearts }) {
+export function HostCapsule({ host, hearts, onOpen }) {
+  const faceOf = useFaces();
   return (
-    <button type="button" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px 5px 5px', borderRadius: 22, minWidth: 0, cursor: 'pointer', textAlign: 'left', ...glass }}>
-      <UserAvatar src={host?.avatar} size={38} />
+    <button type="button" onClick={onOpen} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px 5px 5px', borderRadius: 22, minWidth: 0, cursor: 'pointer', textAlign: 'left', ...glass }}>
+      <UserAvatar src={faceOf(host)} size={38} />
       <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 0 }}>
           <span style={{ fontSize: 15, fontWeight: 800, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0, maxWidth: 150 }}>{host?.displayName || 'Live'}</span>
@@ -156,49 +218,84 @@ export function HostCapsule({ host, hearts }) {
 // ringed gold, NO coin pills (those overlapped each other + diverged from the
 // current screen). Per-gifter totals live in the tap-through leaderboard.
 export function GiftersClusterCoins({ gifters }) {
+  const faceOf = useFaces();
   const top = (gifters || []).slice(0, 3);
   if (!top.length) return null;
   return (
     <div style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
       {top.map((g, i) => (
         <span key={g.uid} style={{ marginLeft: i ? -7 : 0, display: 'inline-flex', borderRadius: '50%', border: `2px solid ${i === 0 ? C.gold : 'rgba(10,8,22,0.6)'}`, zIndex: 3 - i }}>
-          <UserAvatar src={g.avatar} size={24} />
+          <UserAvatar src={faceOf(g)} size={24} />
         </span>
       ))}
     </div>
   );
 }
 
-export function ViewerPill({ count }) {
+// ⚠ THE VIEWER COUNT OPENS THE VIEWER LIST. It was a dead label on every
+// surface, and "who is watching?" had no answer anywhere in the product —
+// measured zero references to a viewer list in the real screens too. This is
+// where people already look to ask the question, so it is the way in.
+export function ViewerPill({ count, onClick }) {
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '4px 8px', borderRadius: 999, fontSize: 11, fontWeight: 800, flexShrink: 0, ...glassDark }}>
+    <button type="button" aria-label="Viewers" onClick={onClick}
+      style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '4px 8px', borderRadius: 999, fontSize: 11, fontWeight: 800, flexShrink: 0, border: 'none', color: '#fff', cursor: onClick ? 'pointer' : 'default', ...glassDark }}>
       <Icon name="visibility" size={14} />{compactNum(count || 0)}
-    </span>
+    </button>
   );
 }
 
-export function CloseBtn() {
-  return <button type="button" style={{ width: 28, height: 28, borderRadius: '50%', border: 'none', background: 'rgba(10,8,22,0.4)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}><Icon name="close" size={17} /></button>;
+export function CloseBtn({ onClose }) {
+  return <button aria-label="Close" type="button" onClick={onClose} style={{ width: 28, height: 28, borderRadius: '50%', border: 'none', background: '#100C1C', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}><Icon name="close" size={17} /></button>;
 }
 
 // Fullscreen toggle — same glass treatment as the dock / heart controls.
-export function FullscreenBtn({ style }) {
+export function FullscreenBtn({ style, onClick }) {
   return (
-    <button type="button" title="Fullscreen" style={{ width: 38, height: 38, borderRadius: '50%', border: 'none', cursor: 'pointer', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', ...glass, ...style }}>
+    <button aria-label="Fullscreen" type="button" onClick={onClick} title="Fullscreen" style={{ width: 38, height: 38, borderRadius: '50%', border: 'none', cursor: 'pointer', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', ...glass, ...style }}>
       <Icon name="fullscreen" size={20} />
     </button>
   );
 }
 
+// ⚠⚠ THIS BUTTON HAD NO onClick AT ALL. It rendered, it looked pressable, and
+// it did nothing on every surface except the immersive viewer — so the hearts
+// work was only ever half-delivered, and the founder found it rather than me.
+// It pulls the emitter out of the sim context itself instead of waiting for a
+// caller to remember a prop, which is what went wrong the first three times.
+// ⚠ THE METER IS PART OF THE BUTTON, NOT A SIBLING. Mounting <ComboMeter>
+// separately meant five surfaces each had to place it at the right offset above
+// their own heart, and one of them had a meter with no button at all. Bundled,
+// the bar is always directly above the thing being tapped, there is no offset
+// to tune per screen, and a surface cannot have one without the other.
 export function FloatingHeart({ style }) {
+  const { fireReaction, combo = 0, comboMax } = usePreviewSim();
+  const { width = 46, height = 46, ...pos } = style || {};
   return (
-    <button type="button" aria-label="Like" style={{ width: 46, height: 46, borderRadius: 16, cursor: 'pointer', padding: 0, border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.20)', ...style }}>
-      <img src={likeIcon} alt="" style={{ width: 30, height: 30, objectFit: 'contain' }} />
-    </button>
+    <div style={{ position: 'absolute', width, height, ...pos }}>
+      {/* Anchored to the button's own top edge, so it rides whatever position
+          the caller chose. `right:auto` cancels the meter's own default. */}
+      <ComboMeter combo={combo} max={comboMax}
+        style={{ bottom: '100%', right: 'auto', left: '50%', marginBottom: 8, transform: 'translateX(-50%)' }} />
+      <button type="button" aria-label="Like" onClick={() => fireReaction?.(1)} style={{ width: '100%', height: '100%', borderRadius: 16, cursor: 'pointer', padding: 0, border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#100C1C' }}>
+        <img src={likeIcon} alt="" style={{ width: 30, height: 30, objectFit: 'contain' }} />
+      </button>
+    </div>
   );
 }
 
-// ── Gift drops (TikTok-style combo feed) ─────────────────────────────────────
+// ── Tip drops (TikTok-style combo feed) ─────────────────────────────────────
+//
+// ⚠⚠ THERE ARE NO GIFTS. COINS (VC) ARE THE ONLY THING A VIEWER CAN SEND.
+// Gifting is DEFERRED in CLAUDE.md ("do NOT start without explicit go-ahead")
+// and there is no gift catalogue anywhere in the product. This feed used to
+// render "Sent Rose" / "Sent Galaxy" from hardcoded names, which advertises a
+// feature that does not exist — in a screen whose captures go on the Play
+// listing. The row shows the coin and the amount, nothing else.
+//
+// ⚠ THE `gift` VOCABULARY IN THIS FILE IS LEGACY NAMING (GiftFeed, useGiftFeed,
+// sendGift, lastGift). It does NOT mean a gift system exists. Do not build one
+// off the back of these names.
 // A gift toast is TRANSIENT — it appears when someone sends a gift and auto-fades
 // (it is NOT permanently parked on the video). When the SAME person keeps sending
 // the SAME gift, that row's combo counter climbs (x1 → x2 …) instead of adding a
@@ -207,14 +304,25 @@ export function FloatingHeart({ style }) {
 
 const GIFT_COMBO_MS = 4200; // a row lives this long after its last hit
 
-// One transient row: avatar · name · "Sent {gift}" · gift icon · big xN combo.
+// One transient row: avatar · name · "Tipped" · coin · big xN coin count.
+// ⚠ THE NAME TRUNCATED AT SIX CHARACTERS ("ZERO…") IN A PILL WITH ROOM TO SPARE,
+// and TikTok does not do that — it shows the whole handle. The cause was
+// `maxWidth: '88%'`: a PERCENTAGE resolved against an absolutely positioned,
+// shrink-to-fit parent whose own width depends on this child. That circularity
+// resolves tiny, and the flex column had `minWidth: 0` so it was allowed to
+// collapse to nothing — the ellipsis fired on LAYOUT, not on the name being long.
+// Fixed at both ends: a PIXEL cap on the pill, so there is nothing circular to
+// resolve, and the name gets its own generous cap so it only ellipsises on a
+// genuinely long handle. Verified by rendering: ZER0_kade / Priya_S /
+// Emma_Quinn all render in full; only a 33-character handle ellipsises.
 function GiftRow({ t }) {
+  const faceOf = useFaces();
   return (
-    <div style={{ animation: 'vgrGiftIn 0.22s ease-out', display: 'inline-flex', alignItems: 'center', gap: 7, padding: '4px 12px 4px 4px', borderRadius: 999, maxWidth: '88%', boxShadow: '0 6px 18px rgba(0,0,0,0.42)', ...glassDark }}>
-      <UserAvatar src={t.avatar} size={30} />
-      <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', lineHeight: 1.18 }}>
-        <span style={{ fontSize: 11.5, fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.name}</span>
-        <span style={{ fontSize: 9.5, color: C.textDim, whiteSpace: 'nowrap' }}>Sent {t.gift}</span>
+    <div style={{ animation: 'vgrGiftIn 0.22s ease-out', display: 'inline-flex', alignItems: 'center', gap: 8, padding: '4px 13px 4px 4px', borderRadius: 999, maxWidth: 300, boxShadow: '0 6px 18px rgba(0,0,0,0.42)', ...glassDark }}>
+      <UserAvatar src={faceOf(t)} size={30} />
+      <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', lineHeight: 1.2 }}>
+        <span style={{ fontSize: 12, fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 168 }}>{t.name}</span>
+        <span style={{ fontSize: 9.5, color: C.textDim, whiteSpace: 'nowrap' }}>Tipped</span>
       </div>
       <img src={vcCoinIcon} alt="" style={{ width: 26, height: 26, objectFit: 'contain', flexShrink: 0 }} />
       {/* keyed on count so each combo hit re-runs the pop animation */}
@@ -246,17 +354,25 @@ export function useGiftFeed(lastGift) {
 
   const sendGift = useCallback((g) => {
     const name = g?.name || 'TestFan';
-    const gift = g?.gift || 'Galaxy';
+    // ⚠ NO GIFT TYPE. There was a `gift` field defaulting to 'Galaxy', which is
+    // how an invented item name reached a screen whose captures ship on the Play
+    // listing. Coins (VC) are the only thing a viewer can send.
     const qty = g?.qty || 1;
     const avatar = g?.avatar || null;
+    // ⚠ CARRY THE uid. Without it a gift toast can only ever show the cast's
+    // identicon, because faceOf has no key to look the upload up by.
+    const uid = g?.uid || null;
     setToasts((prev) => {
-      const i = prev.findIndex((t) => t.name === name && t.gift === gift);
+      // ⚠ KEYED ON THE PERSON ALONE. It used to key on name + gift type, which
+      // with a single currency means every tip from the same person would still
+      // stack — but the gift half of the key implied a taxonomy that is not real.
+      const i = prev.findIndex((t) => t.name === name);
       if (i >= 0) {
         const next = prev.slice();
         next[i] = { ...next[i], count: next[i].count + qty, ts: Date.now() };
         return next;
       }
-      const row = { id: `${name}-${gift}-${Date.now()}`, name, gift, avatar, count: qty, ts: Date.now() };
+      const row = { id: `${name}-${Date.now()}`, uid, name, avatar, count: qty, ts: Date.now() };
       return [...prev, row].slice(-3);
     });
   }, []);
@@ -284,10 +400,15 @@ export function useGiftFeed(lastGift) {
 }
 
 // ── Chat ────────────────────────────────────────────────────────────────────
-function ModBadge() {
+// ⚠ EXPORTED SO THERE IS ONE MOD BADGE AND ONE SUB PILL, not four. The chat
+// row in previewChrome hand-rolled its own of each; the MOD one was a cyan
+// pill, which is both a second visual language in the same list and against
+// [[project-brand-no-cyan]] — violet, pink and gold only. The real badge is
+// founder-supplied ART, which no hand-rolled pill was ever going to match.
+export function ModBadge() {
   return <img src={modBadgeIcon} alt="moderator" style={{ height: 15, width: 'auto', objectFit: 'contain', verticalAlign: '-3px' }} />;
 }
-function SubPill() {
+export function SubPill() {
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, verticalAlign: '-2px', padding: '1px 5px 1px 3px', borderRadius: 6, fontSize: 8.5, fontWeight: 900, letterSpacing: '0.04em', color: '#fff', background: `linear-gradient(135deg, ${C.purple}, ${C.purpleLight})` }}>
       <Icon name="star" size={9} filled style={{ color: C.gold }} />SUB
@@ -297,22 +418,34 @@ function SubPill() {
 
 // `inline` = immersive overlay (badges before name, one wrapping line).
 // stacked (default) = name+badges line, message below (the portrait panel).
-export function SoloChatRow({ user, text, mod = false, sub = false, inline = false, avatarSize = 'sm' }) {
+// ⚠  was hardcoded to null here, so every row drew an empty disc and an
+// uploaded face would have been silently ignored.
+export function SoloChatRow({ user, text, uid = null, vpLevel = 0, mod = false, sub = false, inline = false, avatarSize = 'sm', avatar = null }) {
   return (
     <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-      <span style={{ flexShrink: 0 }}><UserAvatar src={null} size={inline ? 'xs' : avatarSize} /></span>
-      <div style={{ flex: 1, minWidth: 0, fontSize: inline ? 12 : 13, lineHeight: 1.4 }}>
+      <span style={{ flexShrink: 0 }}><UserAvatar src={avatar} size={inline ? 'xs' : avatarSize} /></span>
+      {/* ⚠⚠ `inline` ROWS ARE DRAWN STRAIGHT ONTO THE VIDEO with no backing, and they
+          carried NO text shadow. Over a dark frame that reads fine, which is why it
+          survived; over a lit close-up of the broadcaster's face it is white-on-white and
+          the messages disappear into the picture. Measured on the landscape viewer, where
+          four rows sat across the host's face.
+
+          A shadow, not a plate: a backing panel would cover the video the rows are
+          deliberately floating over, and the founder's landscape reference has none. The
+          stacked variant sits in a real panel and needs nothing. */}
+      <div style={{ flex: 1, minWidth: 0, fontSize: inline ? 12 : 13, lineHeight: 1.4,
+        textShadow: inline ? '0 1px 3px rgba(0,0,0,0.95), 0 0 10px rgba(0,0,0,0.7)' : undefined }}>
         {inline ? (
           <>
             {mod && <span style={{ marginRight: 4 }}><ModBadge /></span>}
             {sub && <span style={{ marginRight: 5 }}><SubPill /></span>}
-            <span style={{ fontWeight: 800, color: '#fff', marginRight: 6 }}>{user}</span>
+            <span style={{ fontWeight: 800, color: '#fff', marginRight: 6 }}><UserName user={{ displayName: user, vpLevel }} masked context="chat" fallback="guest" /><RankBadge level={vpLevel} uid={uid} size={12} animated style={{ marginLeft: 4, verticalAlign: '-2px' }} /></span>
             <span style={{ color: 'rgba(255,255,255,0.94)', wordBreak: 'break-word' }}>{text}</span>
           </>
         ) : (
           <>
             <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap', marginBottom: 2 }}>
-              <span style={{ fontWeight: 800, color: '#fff' }}>{user}</span>
+              <span style={{ fontWeight: 800, color: '#fff' }}><UserName user={{ displayName: user, vpLevel }} masked context="chat" fallback="guest" /><RankBadge level={vpLevel} uid={uid} size={12} animated style={{ marginLeft: 4, verticalAlign: '-2px' }} /></span>
               {mod && <ModBadge />}
               {sub && <SubPill />}
             </div>
@@ -328,7 +461,7 @@ export function JoinRow() {
   return (
     <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'rgba(255,255,255,0.92)' }}>
       <img src={waveIcon} alt="" aria-hidden style={{ width: 24, height: 24, objectFit: 'contain', flexShrink: 0 }} />
-      <span><b style={{ fontWeight: 800 }}>ZERO_taeyeon</b> joined via share invitation</span>
+      <span><b style={{ fontWeight: 800 }}>ZER0_kade</b> joined via share invitation</span>
     </div>
   );
 }
@@ -354,14 +487,17 @@ function DockGlassBtn({ src, alt, onClick }) {
 // Composer: input + invite / Tips&VC / Gift Box / Share. Tapping Tips & VC fires
 // a gift drop (`onTip`) — the gift component only shows on this action, it is not
 // parked on screen.
-export function SoloDock({ onTip }) {
+export function SoloDock({ onTip, onInvite, onGift, onShare }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-      <div style={{ flex: 1, minWidth: 0, padding: '11px 14px', borderRadius: 999, fontSize: 13, color: C.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', ...glassDark }}>Add a comment…</div>
-      <DockGlassBtn src={inviteIcon} alt="Invite" />
+      <ComposerPill />
+      {/* ⚠ THREE OF THESE FOUR HAD NO HANDLER. Only Tips & VC did anything; Invite,
+          Gift Box and Share were dock buttons that swallowed the press. Each now opens the
+          sheet the real product opens. */}
+      <DockGlassBtn src={inviteIcon} alt="Invite" onClick={onInvite} />
       <DockGlassBtn src={vcCoinIcon} alt="Tips & VC" onClick={onTip} />
-      <DockGlassBtn src={giftboxIcon} alt="Gift Box" />
-      <DockGlassBtn src={sendIcon} alt="Share" />
+      <DockGlassBtn src={giftboxIcon} alt="Gift Box" onClick={onGift} />
+      <DockGlassBtn src={sendIcon} alt="Share" onClick={onShare} />
     </div>
   );
 }

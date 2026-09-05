@@ -34,3 +34,16 @@ _*_tmp/
 # Demo/build output (105MB each) — never commit
 dist-demo/
 dist-demo-native/
+
+# A live Google OAuth access token was sitting untracked in the repo root as
+# `.tok` (ya29.a0...). Ignored so it can never be swept into a commit by an
+# `add .`. If it is no longer needed, delete the file; ignoring it does not
+# revoke it.
+.tok
+# 0-byte junk from mistyped shell redirects, and a saved Cloudflare challenge page
+100
+to
+nw.html
+.preview/
+scripts/.gradient-lab/
+scripts/.gradient-lab.png

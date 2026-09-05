@@ -1,10 +1,10 @@
 {
-  "androidVersion": "1.0.197",
-  "androidVersionCode": 197,
-  "apkUrl": "https://cdn.vergr.app/downloads/VERGR.apk?v=1000197",
+  "androidVersion": "1.0.206",
+  "androidVersionCode": 206,
+  "apkUrl": "https://cdn.vergr.app/downloads/VERGR.apk?v=1000206",
   "minSupportedVersionCode": 1,
-  "notes": "Tournaments are gone from the app: the drawer, profile menu, leaderboard, explore tiles and quests. Host ticketed events instead, from DMs, groups, squads or go-live.",
-  "apkSize": 128324459,
-  "apkSha256": "9c31c74418ebec8b2b96a41cce2c309c09ac7ebb571a56056ed605a4d47a6866",
-  "apkPublishedAt": "2026-08-16T17:02:37.928Z"
+  "notes": "Live streaming got the work this release. If nobody has found your stream yet the screen now says so and gives you the three things that change it, instead of a bare 0. Your upload dropping is called out while you are live, and the tip goal can be dragged and resized so it stops covering your face. You can go live audio only, and choose who is allowed to clip you. Being timed out or banned from a chat is now shown before you type rather than after your message is rejected, with a real appeal. Viewers who lose their connection are told it is their end, not the streamer. You can gift someone a month of a creator membership, and share a replay when a stream ends.",
+  "apkSize": 124365604,
+  "apkSha256": "72e2eac76e1b9f7e72fb13b30cfacb7cd98a93af6358b3eb517a295b15abe3be",
+  "apkPublishedAt": "2026-08-23T21:44:54.729Z"
 }

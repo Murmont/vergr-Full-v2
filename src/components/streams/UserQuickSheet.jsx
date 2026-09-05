@@ -39,7 +39,7 @@ const C = {
   gold: '#F0A500',   // tips are coins — gold, not a recoloured cyan
 };
 
-export default function UserQuickSheet({ open, uid, onClose, watchLiveStreamId = null }) {
+export default function UserQuickSheet({ open, uid, onClose, watchLiveStreamId = null, onGiftSub = null }) {
   const navigate = useNavigate();
   const { currentUser } = useAuth();
   const { showToast } = useUI();
@@ -144,7 +144,7 @@ export default function UserQuickSheet({ open, uid, onClose, watchLiveStreamId =
               borderTopLeftRadius: 18, borderTopRightRadius: 18,
               padding: '12px 18px 28px',
               color: C.text,
-              fontFamily: '"Inter", system-ui, sans-serif',
+              fontFamily: '"DM Sans", system-ui, sans-serif',
               maxHeight: '70vh',
               overflowY: 'auto',
             }}
@@ -194,7 +194,7 @@ export default function UserQuickSheet({ open, uid, onClose, watchLiveStreamId =
                     padding: '10px 12px', borderRadius: 10,
                     background: C.bgSoft, border: `1px solid ${C.border}`,
                     marginBottom: 14,
-                  }}>{user.bio}</div>
+                  }} dir="auto">{user.bio}</div>
                 )}
 
                 <div style={{ display: 'flex', gap: 8 }}>
@@ -221,6 +221,13 @@ export default function UserQuickSheet({ open, uid, onClose, watchLiveStreamId =
                   {watchLiveStreamId && (
                     <button onClick={goWatchLive} style={ghostBtn(C.green)}>
                       <Icon name="play_circle" size={14} className="" /> Watch live
+                    </button>
+                  )}
+                  {/* Gift a sub. Rendered only when the surface can actually do it,
+                      so a screen with no gift sheet draws no button. */}
+                  {onGiftSub && (
+                    <button onClick={() => onGiftSub(user)} style={ghostBtn(C.gold)}>
+                      <Icon name="redeem" size={14} className="" /> Gift a sub
                     </button>
                   )}
                   <button onClick={goProfile} style={ghostBtn(C.textDim)}>

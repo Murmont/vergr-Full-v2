@@ -190,7 +190,7 @@ export default function CoStreamingScreen() {
   return (
     <div style={{
       background: C.bg, minHeight: '100%', color: C.text,
-      fontFamily: '"Inter", "DM Sans", system-ui, sans-serif',
+      fontFamily: '"DM Sans", system-ui, sans-serif',
     }}>
       <TopBar title="Co-Stream Setup" showBack />
 
@@ -211,7 +211,7 @@ export default function CoStreamingScreen() {
               placeholder="Co-stream title…"
               style={{
                 width: '100%', boxSizing: 'border-box',
-                background: 'rgba(255,255,255,0.04)', border: `1px solid ${C.border}`,
+                background: '#191527', border: `1px solid ${C.border}`,
                 borderRadius: 8, padding: '10px 14px', color: C.text, fontSize: 14,
                 outline: 'none', marginBottom: 14,
               }}
@@ -298,7 +298,7 @@ export default function CoStreamingScreen() {
                     placeholder="Search by username or display name…"
                     style={{
                       width: '100%', boxSizing: 'border-box',
-                      background: 'rgba(255,255,255,0.04)', border: `1px solid ${C.border}`,
+                      background: '#191527', border: `1px solid ${C.border}`,
                       borderRadius: 8, padding: '10px 14px', color: C.text, fontSize: 13,
                       outline: 'none', marginBottom: 10,
                     }}
@@ -314,7 +314,7 @@ export default function CoStreamingScreen() {
                           style={{
                             display: 'flex', alignItems: 'center', gap: 10,
                             padding: '8px 10px', borderRadius: 8,
-                            background: 'rgba(255,255,255,0.03)',
+                            background: '#191527',
                             border: `1px solid ${C.border}`, color: C.text,
                             cursor: disabled ? 'default' : 'pointer',
                             opacity: disabled ? 0.5 : 1, textAlign: 'left',

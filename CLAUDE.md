@@ -4,6 +4,32 @@ Keep this current. Condensed 2026-05-22 (full historical detail preserved in `CL
 
 ---
 
+## 🔎 AUDIT RULES — `docs/AUDIT_RULES.md`, READ IT BEFORE AUDITING ANYTHING
+
+**An audit is never only cosmetic and never only technical.** Founder, 2026-09-03, after a
+"finished" audit reported clean and he found fake glass, the wrong typeface and a clipped
+verified tick in the first minute of reading it. Every audit covers, and reports on, all
+five: **technical** (does it work), **cosmetic** (does it look designed), **UI/UX** (does it
+make sense to use), **improvements** (not just defects), and **coverage** (every surface x
+role x device x state x overlay x TRANSIENT).
+
+The two rules the rest depends on:
+
+- ⚠⚠ **MEASURE THE RENDERED PAGE. A SOURCE GREP IS NOT AN AUDIT.** Rules checked in source
+  miss every shipped component the surface imports and every value the browser computes.
+- ⚠⚠ **EVERY PROBE NEEDS A CONTROL RUN.** Three findings in that session were artifacts of
+  the harness, not the product, and each would have sent a session rewriting working code.
+
+⚠ **TRANSIENTS ARE THE BLIND SPOT.** Alerts, ribbons, toasts, celebrations, poll cards and
+countdown banners expire, so a sweep that walks the DOM sees whichever happens to be up —
+usually none. Fire each one, let its entry animation settle, then measure. That single hole
+hid four defects behind a completed audit.
+
+Running record and open items: `docs/LIVE_STREAM_AUDIT.md`. **Listing an item does not close
+it** — deferrals stay open until the founder decides.
+
+---
+
 ## ⚠⚠ READ BEFORE TRUSTING ANYTHING BELOW (audited 2026-08-16)
 
 This file was found stale in five places on 2026-08-16, and a session repeated the stale facts to a
@@ -1151,6 +1177,102 @@ worse than refusing it.
 "Shown in Suggested Users", "Pinned to top of LFG". **There is no LFG list to pin
 to** — an LFG post is a post, so that boost is now a cheaper, shorter post boost
 named "Teammate Search Boost".
+
+### 💵 BOOSTS + VP BONUSES NOW HAVE A CASH PRICE (2026-08-30, SHIPPED + DEPLOYED)
+
+Founder: *"a user can only be charged coins for the boosts if they have in their
+wallet, so the boosts need to be set up to charge usd"*, and every card in both
+tabs was greyed out and unbuyable: *"we cant create a design that prevents the
+user from checking out if they are already there and willing to pay."*
+
+Full record, including both wrong pricings: `docs/play/BOOST_BONUS_PRICING_PLAN.md`.
+
+**The rule.** `priceUSD = charmRound(max(coins × RETAIL_COIN_USD, $0.99))`,
+`RETAIL_COIN_USD = $0.99 / 78` — the Starter pack, the ladder's WORST per-coin
+rate. `functions/payram.js` already uses that exact number as
+`CUSTOM_COIN_PRICE_USD` so a custom amount cannot undercut a pack; this is its
+mirror. A coin therefore has ONE value on both routes, which is the answer to
+*"are you trying to devalue the coins?"*: the cash price is DERIVED from the coin
+price, at retail.
+
+⚠⚠ **NEVER PRICE AN ITEM OFF `playPriceFor(item.coins)` OR OFF THE NET FLOOR.**
+Two pricings shipped past review and both were wrong in the same direction:
+`playPriceFor(75)` gave $1.09, which is what a 78-coin pack costs; anchoring on
+the net floor ($0.011628) and doubling gave **$2.09, worse than the bug it
+replaced**. $0.99 buys 78 coins, spend 75, keep 3. **The net floor is what a coin
+must be WORTH after Google's cut. It is not what anyone PAYS for one.**
+
+⚠ **THE GUARD THAT CATCHES BOTH:** an item must never cost MORE in cash than the
+cheapest coin pack that would buy it outright, or the cash button is irrational.
+In `coin-ladder-check.mjs`, **negative-tested both ways** before being believed.
+`npm run check` is **183**. A tie passes on purpose: under 78 coins the $0.99 Play
+minimum and the Starter pack are the same money.
+
+⚠ **DURATIONS DID NOT CHANGE.** Founder: *"I did not say that you can change the
+times."* One hour is still cheapest in coins. In cash the Play floor flattens the
+bottom four items to $0.99, which is Google's constraint, not a re-spec.
+
+**The buy rule lives in ONE place**, `useStoreBuy` in `StoreTabs.jsx`, so a bonus
+and a boost cannot diverge: wallet covers it → coins, in place; else Play build →
+the Play sheet; else → the basket. Both prices always shown, payable one large.
+
+⚠ **THE CASH GRANT CALLS THE SAME HELPERS THE COIN GRANT CALLS.** `applyPack` and
+`creditBoosts` are now exported from `functions/{vpBonuses,boosts}.js` and used by
+BOTH `redeemPlayPurchase` and `settlePayramOrder`, inside the transaction that
+records the payment. A second grant path would be a second definition of what
+owning a boost means.
+
+⚠⚠ **`circleWallets.js` HAS A SECOND SETTLEMENT PATH AND IT WOULD HAVE EATEN THE
+ITEM.** A Circle USDC deposit carrying a PayRam `refId` credits `coinsToCredit`
+and marks the order settled **on its own**, knowing nothing about items, and an
+order settles once. A mixed basket would have credited the coins and dropped the
+boost with no way to recover. It now defers any order carrying items to
+`settlePayramOrder`, exactly as it already defers subscriptions. **Any new order
+`kind` must be added to that carve-out.**
+
+⚠ **`settlePayramOrder` IS BUNDLED INTO `payramWebhook` AND `pollPayramOrders`**,
+same trap as `coinLedger.js`. Redeployed together with `circleWalletsWebhook` and
+`pollCircleDeposits`.
+
+⚠ **A STORE ITEM'S SKU *IS* ITS PLAY PRODUCT ID** (`vpb_flash`, `boost_post`),
+one namespace across the cart, Play and the ledger. Running one through
+`playProductIdFor()` asks Play for `coins_vpb_flash` and the sheet reports
+"product not loaded". `isStoreItemSku()` guards the two places that map it.
+
+⚠ **`playBilling.js` AND `payram.js` ARE CRLF; THE REST OF THE REPO IS LF.** A
+multi-line patch anchor silently matches nothing across that boundary. Normalise
+anchor and replacement to the file's own endings.
+[[reference-mixed-line-endings]]
+
+⚠⚠ **CLICKING A BOOST CRASHED THE BASKET TO THE ERRORBOUNDARY, AND BOTH THE BUILD
+AND THE GUARD WERE GREEN.** The cart's line renderer resolved a coin pack and
+branched at every field (`pack ? pack.x : item.x`). Forty lines below the
+resolve, the line TOTAL still read `pack.priceUSD * line.qty`. A store item has
+no pack, so the first boost added dereferenced null and took the whole cart down.
+**Nothing caught it because nothing had ever resolved a boost SKU.**
+
+Fixed by removing the class, not the instance: `rowFor(sku)` in `CartContents.jsx`
+flattens a pack and an item into ONE non-null row, and `pack`/`item` are
+deliberately **out of scope** in the renderer, so no field can deref through an
+absent one by omission. `coin-ladder-check` now resolves every shop SKU and
+asserts each row carries every field the basket renders (**239 assertions**,
+negative-tested by blanking one field).
+
+⚠ `src/utils/storeItems.js` imports with **explicit `.js` extensions**, unlike the
+rest of `src/`. Vite does not care; raw node does, and the guard imports it. Drop
+the extension and the guard can no longer load the file it guards.
+
+⚠ **GOOGLE PAY ON THE WEB IS NOT A BUG AND NOT A CONSOLE SETTING.** Play Billing
+is an Android-app API (`window.VergrBilling`, the Kotlin bridge); a browser has
+no bridge, and Play Console products are IAPs redeemable only inside the app.
+Google Pay is a different product entirely, added as a wallet inside a processor.
+Founder decision, separate work.
+
+✅ **GEO PRICING DONE, 40 MARKETS.** `docs/play/play-products.csv` is now **26
+products** and `play-prices-by-market.csv` carries all 16 items. Coin pack prices
+were NOT touched: `coins_starter` US is still $1.09, matching live Console.
+🔴 **The 16 products still need CREATING in Play Console** (one-time, consumable).
+Until then the Play build offers only the coin price.
 
 ### 🛒 THE SHOP IS ONE CARD, THREE TONES (2026-08-28)
 
@@ -2968,6 +3090,86 @@ Self-hosted nginx-rtmp on **Hetzner CX23 `vergr-stream-1`** (NBG1, `91.98.79.244
 
 **Streaming TODOs:** ~~clip button is fake~~ ✅ DONE 2026-05-26 — in-stream clipping is now functional + user-authored. New `src/hooks/useStreamClipBuffer.js` runs a continuous `MediaRecorder` on the HLS `<video>` via `captureStream()` with a 1s timeslice, keeping the header chunk + a pruned rolling window (95s cap) so memory stays bounded; `grab(n)` assembles the last N seconds into one WebM Blob. ViewerStreamScreen has a "Clip" ActionPill (tier-gated Free 30s/3, Lite 60s/5, Pro 90s/∞ per session) → `uploadToR2(file,'clip')` → `createPost(uid,{type:'clip',...})`, so the clip is a USER-CHOSEN post on their own profile. captureStream+MediaRecorder is a Chromium-class feature (hls.js/MSE path; Windows-Tauri WebView2 + Android WebView qualify). **Apple webviews (macOS/iOS = WebKit, incl. desktop Safari) taint the cross-origin video → client path `isSupported()` returns false; ViewerStreamScreen then transparently falls back to a SERVER-SIDE cut** so clipping works on every device: new `requestStreamClip` callable (`functions/streamClips.js`, deployed europe-west1) tier-gates + quota-counts (`stream_clip_quota/{streamId}_{uid}`) then POSTs the Hetzner vod-archive box's new synchronous `POST /clip` endpoint (`infra/vod-archive/launcher.js`, deployed on `archive.vergr.app`/:8097), which parses the live HLS manifest, downloads the tail segments (+ EXT-X-MAP init for fMP4), binary-concats, `ffmpeg -ss <total-want> -t <want>` → mp4 → R2 `clips/`, returns the URL; the client then `createPost(type:'clip')`. Box endpoint verified live (healthz, 401 no-auth, clean error on bad manifest). ⚠️ Both the Chromium MediaRecorder path and the server ffmpeg-cut against a REAL live manifest still need an end-to-end test on an actual broadcast (no live stream available to test from here). Still TODO: R2 segment cleanup cron (below); canvas compositor in `BroadcasterScreen` (game-share + facecam PiP); "Browser broadcast" entry in `GoLiveSetupScreen`; cohost auto-trigger; broadcaster-side clip button; boost-effectiveness metrics.
 
+## 📺 LIVE STREAM: THE SIMULATOR IS DONE, THE REAL SCREENS ARE NOT (2026-09-02)
+
+**Read `docs/LIVE_STREAM_READINESS.md` before touching anything live-stream.** And
+**`docs/LIVE_STREAM_PORT_PLAN.md` before touching a real stream screen** (2026-09-04):
+it is the execution doc for moving the preview design onto production, and it
+records the fact that decides most of the work, that **`/broadcast` and `/go-live`
+each have TWO implementations** (web + native) while the viewer has one. It is the
+current state; the 2026-05-22 punchlist immediately below is older than it and describes the
+REAL screens, which are still largely as it says.
+
+`/admin/stream-preview` went through a seven-stage rebuild and is now the design surface for
+the whole feature. Guard: `scripts/stream-preview-check.mjs`, **851 assertions**, wired into
+`npm run check`, so `npm run build` fails if any of it regresses. Session-by-session detail
+is in `docs/UPDATE_LOG.md` (newest first).
+
+⚠⚠ **THE PREVIEW IS NOW AHEAD OF THE REAL SCREENS, so the port is no longer a copy in one
+direction.** These exist in the simulator and NOT in `MobileLiveViewer` /
+`ViewerStreamScreen` / `BroadcasterScreen`: the **zero-viewer state** (the shipped
+broadcaster renders the digit `0` and nothing else), **broadcast health warnings** (the real
+screen shows a kbps number nobody reads mid-stream), the **empty-chat state**, the four
+**replay states** with real actions, **share the replay / up next / schedule next**, the
+**appeal path** and the **guidelines link from chat**, **VP earned this stream** for both
+sides, **audio-only broadcasts**, the **who-can-watch / who-can-clip** host controls, and
+the **mod-only channel**.
+
+### Founder decisions, answered 2026-09-02 (full reasoning in the readiness doc)
+
+| | |
+|---|---|
+| Giveaways / raffles | ❌ **NO.** Do not build. Matches `llms.txt`. |
+| Audio-only streams | ✅ yes — a co-host already joins audio-only, so refusing a solo host was an inconsistency |
+| Paid / subscriber-only streams | ✅ yes, at launch |
+| Mod-only chat channel | ✅ **BUILT + DEPLOYED** — relay enforces the join (`canJoinModRoom`, box 1) |
+| Who may clip | ✅ followers and/or subs, and the per-plan limits are SEPARATE |
+| Gift-a-sub | ✅ no gifter gate, no renewal, bulk at qty × price **with no discount** |
+| Raid / host | ✅ **BUILT + DEPLOYED** — `functions/raids.js` + `RaidControls.jsx`. Target controls who may raid them; countdown + Stay here; VP capped daily. Host mode dropped. |
+
+✅ **THE MOD CHANNEL IS LIVE END TO END** — relay gate, client, and the switch in the real
+`ChatPanel` (which both viewers render). The composer names the room, because the one
+failure mode is a mod typing something private into public chat.
+
+✅ **ENFORCED AT THE RELAY** (`canJoinModRoom`, `infra/chat/src/main.go`,
+tested by `modroom_test.go`, deployed to box 1 on 2026-09-02). Room is `streamID + ":mods"`.
+
+⚠⚠ **VANGUARD READ IT, SILENTLY, AND EVERY READ IS AUDITED.** A private room the platform
+cannot see is a moderation blind spot. They are excluded from `viewerCount` and presence
+(`Peer.silent`) so a named platform moderator is not identified by elimination in a
+three-person room, and each join writes a `vanguard_actions` row. **Vanguard do NOT get the
+broadcaster’s mute/ban tier — `loadStreamForMod` refuses them.**
+
+⚠ **THE MODS ROOM RUNS NO PRESENCE**: `startPresence` would write
+`streams/<id>:mods.viewerCount` every 10s to a doc that does not exist.
+
+⚠ **TWO SEPARATE CLIP LIMITS AND CONFLATING THEM BREAKS THE PLANS.** The HOST picks WHO may
+clip; HOW MUCH is the CLIPPER's own plan — Free 30s/3, Lite 60s/5, Pro 90s/unlimited
+(`functions/streamClips.js:24`). A Pro subscriber on a followers-only stream still gets 90s.
+
+⚠ **`Icon` IS NOW `aria-hidden` AND THAT IS APP-WIDE** (~97 files). A screen reader was
+announcing every icon button by its ligature ("close", "cameraswitch", "micMic").
+**Consequence:** an icon-only button anywhere that relied on that accidental name now has
+none until it gets an `aria-label`. The stream surfaces were all labelled; sweep the rest as
+you touch it.
+
+⚠ **DESIGN RULES THE FOUNDER RESTATED, having said them before:** no semi-transparent pill
+backgrounds (use a solid value from `S` in `previewStates.jsx`), no hairline ring on a solid
+fill, and **a pill is not a switch** — a switch is a track with a sliding knob. Guard rule
+43 enforces it, with deliberate exemptions for sheet scrims, the shipped `glass` dock
+treatment, the `border` token and the drawn `SceneFallback` art.
+
+⚠ **TWO STALE RATE COMMENTS CORRECTED** while answering the gift-sub question:
+`memberships.js` claimed "10% platform fee, creator keeps 90% (mirrors tips)" — both halves
+false (the full price is credited as gross and the share is taken at accrual; tips have no
+fee). `coaching.js` charges a real 10%, but **COACHING DOES NOT EXIST ON VERGR** — the file is
+dead code from the retired tournaments build: unrouted, imported by nothing, and **not
+exported from `functions/index.js`, so none of it is deployed.** I raised it to the founder
+as a live pricing decision and it is not one. **Check routed AND exported before calling a
+rate a policy.**
+
+---
+
 ### Live-stream screens — rebuild punchlist (🔴 P1, audited 2026-05-22)
 
 **New design source:** `C:\Users\damie\Downloads\New UI Screens\Streamng-Live stream Screens\` (PNG mockups): `Go Live Screen.png` + `Go live screen (2).png` (setup), `Streaming screen - broadcaster view - co hosting stream.png` (+ `- full screen mode.png`), `Streaming screen - user viewer view - co hosting stream.png` (+ `- full screen mode.png`). The new design centres on **co-hosting** (broadcaster + viewer, each normal + fullscreen). Earlier Go-Live HTML pass came from `Vergr Wallet (6).zip` (misnamed — contains Settings + Go Live; extract → `_wallet6_tmp/Go Live Screens.html`, screens 02–05 = broadcaster/viewer/broadcaster-fullscreen/viewer-fullscreen). `GoLiveSetupScreen` already got the design pass; broadcaster/viewer views did NOT.
@@ -2978,7 +3180,7 @@ Self-hosted nginx-rtmp on **Hetzner CX23 `vergr-stream-1`** (NBG1, `91.98.79.244
 | Screen | Route | File | State | Needs |
 |---|---|---|---|---|
 | **Setup** | `/go-live` | `GoLiveSetupScreen` | ❌ dead end | `goLive()` only `navigate('/')` + toast. Must call `createStreamSession`, persist title/tags/visibility on the `streams` doc, then route to `/broadcast/:streamId` (solo) or `/go-live/co-stream` → co-host. |
-| **Co-host setup** | `/go-live/co-stream` | `CoStreamingScreen` | ⚠️ stub (74 lines) | Only an invite-picker that bounces to `/go-live`. Must create a co-host stream + SFU `ingest_<streamId>` room and route invited publishers into the co-host broadcast screen. |
+| **Co-host setup** | `/go-live/co-stream` | `CoStreamingScreen` | ✅ **BUILT, this row was STALE** | ⚠ CORRECTED 2026-09-04. It is **429 lines**, not 74, and it is functional: `createStreamSession({ kind: co_stream })` at :82, `inviteToCoStream` at :142, `cancelCoHostInvite` at :157, `removeCoHost` at :170, then routes to `/broadcast/{id}?cohost=1` at :181. The "stub that bounces to /go-live" description was wrong and would have sent a session rebuilding something that already works. |
 | **Solo broadcast** | `/broadcast/:streamId` | `BroadcasterScreen` | ⚠️ pipeline real, UI faked | REAL: `getUserMedia`, mic/cam toggles, `createStreamSession`, chunked ingest upload, `endStreamSession`, Gemini frame sampler. FAKE: viewer count (`getDummyViewerCount`), bitrate/dropped/mic/desktop meters (`Math.random`), activity feed (random follows/tips/subs/raids from hardcoded names), earnings counter, poll votes, chat (local + `PREVIEW_CHAT_MESSAGES`, no relay). Drop `GCORE_CONFIG.enabled` preview gate. |
 | **Co-host broadcast** | — | **does not exist** | 🔴 missing | No UI joins the Pion SFU `ingest_<streamId>` room as a 2nd publisher. Infra exists (`vergr-cohost` ffmpeg `xstack` composite + SFU ingest rooms) but no front-end. Build it (publisher tiles, host controls, leave). |
 | **Viewer** | `/watch/:streamId` | `ViewerStreamScreen` | ⚠️ player real, rest faked | REAL: `HlsPlayer` + p2p-media-loader. FAKE: `isPreview = !GCORE_CONFIG.enabled` keeps it in mock mode; `getPlaybackUrl` returns a Gcore URL not `cdn.vergr.app/streams/<key>/index.m3u8`; chat simulated; viewer count/list dummy; metadata hardcoded ("NovaKill"/"Valorant"). Repoint playback to CDN, subscribe to the real `streams/{id}` doc, add real chat + presence. |

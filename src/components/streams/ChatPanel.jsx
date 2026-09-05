@@ -17,6 +17,7 @@ import { useUser } from '../../context/UserContext';
 import { useUI } from '../../context/UIContext';
 import { connectChat } from '../../utils/chatRelay';
 import { createTtsQueue, armStreamTts, canUseStreamTts, TTS_MAX_CHARS } from '../../utils/streamTts';
+import { ChatStateBanner, composerCopy, EmptyChat } from './states';
 import { UID_ATTR } from '../../utils/goldenThread';
 import { isUnlocked } from '../../utils/rankUnlocks';
 import UserAvatar from '../UserAvatar';
@@ -95,11 +96,28 @@ export default function ChatPanel({
   streamId, layout = 'side', hostUid = null,
   slowModeSec = 0, followersOnly = false, ttsEnabled = false, pinnedMessage = null,
   composerExtras = null,
+  // Optional. When absent the banner renders WITHOUT a CTA rather than drawing a
+  // dead one, so a surface that has no sheet plumbing can still mount this safely.
+  onAppeal = null, onOpenSheet = null,
 }) {
   // 'overlay' = TikTok-style transparent feed over the video: no header,
   // scrim-chip message rows, top fade mask, slim composer. Used by the
   // mobile immersive viewer + native broadcaster.
   const overlay = layout === 'overlay';
+
+  // ⚠⚠ BEING MUTED OR BANNED WAS ONLY DISCOVERABLE BY FAILING. The relay
+  // rejects the send and this panel showed a toast, so a timed-out viewer typed a
+  // whole message, pressed send, and only then found out. The state is now
+  // remembered and shown above the composer before they type.
+  //
+  // ⚠ ONLY muted AND banned LOCK THE INPUT. `followersOnly` and slow mode are
+  // properties of the ROOM, not of this viewer: a follower can chat in a
+  // followers-only room, and slow mode rate-limits rather than blocks. Locking on
+  // either would stop people who are allowed to speak. The banner still states
+  // the room rule, because that is true for everyone.
+  const [chatBlock, setChatBlock] = useState('');
+  const chatState = chatBlock || (followersOnly ? 'followers' : (slowModeSec > 0 ? 'slow' : 'open'));
+  const chatLock = composerCopy(chatBlock || 'open');
   const { currentUser } = useAuth();
   // ⚠ `wallet` is here for ONE reason: the crest card's own progress bar.
   // It is never used for another user — their VP is not readable.
@@ -134,6 +152,19 @@ export default function ChatPanel({
   const [threadUid, setThreadUid] = useState(null);
   const isHost = currentUser?.uid === hostUid;
   const canModerate = isHost || iAmMod;
+  // ⚠⚠ THE MOD-ROOM AUDIENCE IS WIDER THAN `canModerate`, AND THE TWO MUST NOT BE
+  // CONFLATED. `iAmMod` comes from the relay hello frame, which reports
+  // `isStreamMod` — the host or someone in `streams/{id}.moderatorUids`. A Vanguard
+  // is NOT that, but the relay still lets them into the room, because a private
+  // room the platform cannot see is a moderation blind spot. So the switch has to
+  // check Vanguard separately or a platform moderator would be refused a door the
+  // server would have opened.
+  //
+  // ⚠ AND THE REVERSE IS ALSO TRUE: Vanguard read the room but do NOT get the
+  // broadcaster’s mute/ban tier — `loadStreamForMod` refuses them — which is why
+  // this is a separate expression and not an extension of `canModerate`.
+  const isVanguard = !!profile?.vanguardRank;
+  const canSeeModRoom = canModerate || isVanguard;
 
   // @mention autocomplete from recent chatters.
   const mentionQuery = (() => {
@@ -164,6 +195,13 @@ export default function ChatPanel({
   const [ttsMuted, setTtsMuted] = useState(false);
   const [ttsSeen, setTtsSeen] = useState(false);
   const [ttsNeedsGesture, setTtsNeedsGesture] = useState(false);
+  // ── The broadcaster’s moderators-only room ────────────────────────────
+  // ⚠⚠ SWITCHING CHANNEL REOPENS THE SOCKET. It is a SECOND room on the relay
+  // (`<streamId>:mods`) whose join the server refuses for anyone who is not the
+  // host, in `streams/{id}.moderatorUids`, or Vanguard (`canJoinModRoom`,
+  // infra/chat/src/main.go). It is NOT a filter over the public feed — whatever the
+  // server sends, the client can read, so a filter would not be private at all.
+  const [channel, setChannel] = useState('public');
   const clientRef = useRef(null);
   const listRef = useRef(null);
   const autoScrollRef = useRef(true);
@@ -185,6 +223,7 @@ export default function ChatPanel({
     (async () => {
       const c = await connectChat({
         streamId,
+        channel,
         getIdToken: () => currentUser.getIdToken(),
         onHello:   (m) => { setConnState('open'); setIAmMod(!!m?.mod); },
         onMessage: (m) => {
@@ -198,9 +237,12 @@ export default function ChatPanel({
         onReject:  (m) => {
           if (cancelled) return;
           const r = m.reason || 'policy';
+          // Remembered, not just announced. These two are facts about THIS viewer
+          // that the client cannot know any other way.
+          if (r === 'muted' || r === 'banned') setChatBlock(r);
           const friendly =
-            r === 'slow-mode'      ? 'Slow mode is on — wait a moment before sending again.' :
-            r === 'followers-only' ? 'Followers-only chat — follow to join the conversation.' :
+            r === 'slow-mode'      ? 'Slow mode is on. Wait a moment before sending again.' :
+            r === 'followers-only' ? 'Followers-only chat. Follow to join the conversation.' :
             r === 'muted'          ? 'You are muted in this chat.' :
             r === 'banned'         ? 'You are banned from this chat.' :
             r === 'rate-limit'     ? 'Slow down a little.' :
@@ -238,7 +280,15 @@ export default function ChatPanel({
       try { ttsRef.current?.stop(); } catch {}
       ttsRef.current = null;
     };
-  }, [streamId, currentUser, showToast]);
+  // ⚠ `channel` IS A DEPENDENCY ON PURPOSE. Without it the switch would flip a
+  // label and keep the old socket open, which is the "control that does nothing"
+  // failure this codebase already has a list of.
+  }, [streamId, currentUser, showToast, channel]);
+
+  // ⚠ THE TWO ROOMS MUST NOT SHARE A MESSAGE LIST. Carrying public chat into the
+  // mods room (or the reverse) would show a moderator the wrong conversation and,
+  // worse, leave private lines on screen after switching back.
+  useEffect(() => { setMessages([]); }, [channel]);
 
   // Auto-scroll to bottom unless user scrolled up.
   useEffect(() => {
@@ -353,7 +403,7 @@ export default function ChatPanel({
       display: 'flex', flexDirection: 'column', minHeight: 0,
       height: '100%', background: layout === 'side' ? C.bg : 'transparent',
       borderLeft: layout === 'side' ? `1px solid ${C.border}` : 'none',
-      fontFamily: '"Inter", system-ui, sans-serif',
+      fontFamily: '"DM Sans", system-ui, sans-serif',
     }}>
       {translateText && <TranslationSheet text={translateText} kind="streamchat" refId={streamId} onClose={() => setTranslateText(null)} />}
       {/* Effect 21. Tapping a rank crest opens the ladder card.
@@ -389,6 +439,36 @@ export default function ChatPanel({
           </span>
         )}
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+          {/* ⚠ A SWITCH, NOT A PILL. Founder, 2026-09-02: "a pill and a switch are
+              not the same thing." A track with a sliding knob reads as a state you
+              are holding open; a chip that changes colour reads as a filter you
+              tapped. Solid fills throughout — no semi-transparent washes. */}
+          {canSeeModRoom && (
+            <button type="button"
+              onClick={() => setChannel((c2) => (c2 === 'mods' ? 'public' : 'mods'))}
+              role="switch"
+              aria-checked={channel === 'mods'}
+              aria-label="Show the moderators-only room"
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0,
+                padding: '3px 7px 3px 9px', borderRadius: 8, cursor: 'pointer', border: 'none',
+                background: channel === 'mods' ? '#3A1420' : '#191527',
+                color: channel === 'mods' ? '#ff8fa3' : C.textDim,
+                fontSize: 10.5, fontWeight: 800,
+              }}>
+              <Icon name={channel === 'mods' ? 'lock' : 'shield_person'} size={12} className=""/>
+              {channel === 'mods' ? 'Mods only' : 'Mods'}
+              <span style={{
+                width: 24, height: 14, borderRadius: 999, position: 'relative', flexShrink: 0,
+                background: channel === 'mods' ? '#F04060' : '#2A2A38', transition: 'background .15s',
+              }}>
+                <span style={{
+                  position: 'absolute', top: 2, left: channel === 'mods' ? 12 : 2,
+                  width: 10, height: 10, borderRadius: '50%', background: '#fff', transition: 'left .15s',
+                }} />
+              </span>
+            </button>
+          )}
           <ConnDot state={connState}/>
           {isHost && (
             <button onClick={() => setSettingsOpen((v) => !v)} aria-label="Chat settings"
@@ -457,6 +537,16 @@ export default function ChatPanel({
             not a designed element. The highlight on the row below replaces it.
             Full reasoning in docs/effects/07-golden-thread.md §11. */}
         {overlay && <div style={{ marginTop: 'auto' }} />}
+        {/* ⚠⚠ AN EMPTY CHAT READ AS BROKEN, AND IT IS EVERY STREAM'S FIRST
+            MINUTES. There was no empty state at all: a live stream with nobody
+            talking yet rendered a blank column, which looks like a failure to load
+            rather than a room waiting for someone to speak. The host and the viewer
+            get different copy, because the useful next action differs.
+
+            ⚠ GATED ON connState === 'open'. Before the socket connects there is
+            legitimately nothing to show and the loading path owns the screen; saying
+            "no messages yet" then would be a claim we cannot support. */}
+        {messages.length === 0 && connState === 'open' && <EmptyChat isHost={isHost} />}
         <AnimatePresence initial={false}>
           {messages.map((m) => (
             <ChatRow key={m.id || (m.ts + ':' + m.uid)} m={m}
@@ -537,6 +627,13 @@ export default function ChatPanel({
               {ttsNeedsGesture ? "Tap to hear spoken messages" : (ttsMuted ? "Spoken messages muted" : "Mute spoken messages")}
             </button>
           )}
+          <ChatStateBanner
+            state={chatState}
+            seconds={slowModeSec}
+            reserveRight={overlay ? 56 : 0}
+            onAppeal={onAppeal}
+            onOpenSheet={onOpenSheet}
+          />
           <form onSubmit={onSend} style={{
             padding: overlay ? '6px 0 0' : '8px 8px calc(8px + env(safe-area-inset-bottom))',
             display: 'flex', gap: overlay ? 8 : 6, alignItems: 'center',
@@ -557,13 +654,22 @@ export default function ChatPanel({
                 <Icon name="mood" size={20} className="" />
               </button>
             )}
+            {/* ⚠⚠ THE COMPOSER NAMES THE ROOM. The single failure mode of this feature
+                is a moderator typing something private into public chat, and the
+                placeholder is the last thing they look at before doing it. A switch in
+                the header is not enough on its own — it is above the fold of attention;
+                the input is where the mistake happens.
+                (A JSX comment is a CHILD, never an attribute — putting it between props
+                is a parse error, and this is the fifth time today.) */}
             <input
               value={draft}
               maxLength={240}
               onChange={(e) => setDraft(e.target.value)}
               onFocus={() => setEmojiOpen(false)}
-              placeholder={connState === 'open' ? 'Say something…' : 'Connecting…'}
-              disabled={connState !== 'open'}
+              placeholder={connState !== 'open' ? 'Connecting…'
+                : chatLock.locked ? chatLock.text
+                : channel === 'mods' ? 'Message moderators only…' : 'Say something…'}
+              disabled={connState !== 'open' || chatLock.locked}
               style={{
                 flex: 1, minWidth: 0,
                 padding: overlay ? '10px 14px' : '8px 12px', borderRadius: 99,
@@ -633,7 +739,7 @@ export default function ChatPanel({
             style={{
               width: 'min(320px, 88vw)', background: C.bg, color: C.text,
               border: `1px solid ${C.border}`, borderRadius: 14, padding: 16,
-              fontFamily: '"Inter", system-ui, sans-serif',
+              fontFamily: '"DM Sans", system-ui, sans-serif',
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
@@ -680,7 +786,7 @@ function ChatSettingsPopover({ slowModeSec, followersOnly, ttsEnabled, saving, o
         position: 'absolute', top: '100%', right: 8, marginTop: 6, zIndex: 256,
         width: 244, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 12,
         padding: 12, boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
-        fontFamily: '"Inter", system-ui, sans-serif',
+        fontFamily: '"DM Sans", system-ui, sans-serif',
       }}>
         <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.06em', color: C.textDim, marginBottom: 10 }}>CHAT SETTINGS</div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
@@ -945,6 +1051,7 @@ function ChatRow({ m, isSelf, vpLevel, onTap, onReport, streamId, onTranslate, o
               role={m.role}
               size={13}
               animated
+              feed
               style={{ marginLeft: 4, verticalAlign: '-2px' }}
               onOpen={(rect) => onCrest?.({ level: vpLevel, rect, isSelf })}
             />
@@ -964,6 +1071,7 @@ function ChatRow({ m, isSelf, vpLevel, onTap, onReport, streamId, onTranslate, o
             )}
           </span>
           <span
+            dir="auto"
             style={{ color: C.text, wordBreak: 'break-word', cursor: isTauri() && !isSelf && m.text ? 'pointer' : undefined }}
             onClick={() => { if (isTauri() && !isSelf && m.text && m.type !== 'tip' && onTranslate) onTranslate(m.text); }}
           >{m.text}</span>

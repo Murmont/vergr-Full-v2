@@ -96,6 +96,8 @@ export default function GoLiveSetupScreen() {
   // force-cleared if the host drops the price back to free, so it can never be
   // left set on a stream that then goes out to a public feed.
   const [isNsfwStream, setIsNsfwStream] = useState(false);
+  const [audioOnly, setAudioOnly] = useState(false);
+  const [clipPolicy, setClipPolicy] = useState('everyone');
   const [accessSheet, setAccessSheet] = useState(false);
   const [ticketedEventName, setTicketedEventName] = useState('');
   const [showEventPicker, setShowEventPicker] = useState(false);
@@ -363,7 +365,7 @@ export default function GoLiveSetupScreen() {
   const goLive = async () => {
     if (starting) return;
     if (followerGated) {
-      showToast(`You need ${STREAM_FOLLOWER_GATE} followers to go live publicly — you have ${followerCount}. Squad streams are free.`, 'error');
+      showToast(`You need ${STREAM_FOLLOWER_GATE} followers to go live publicly. You have ${followerCount}. Squad streams are free.`, 'error');
       return;
     }
     if (!title.trim()) {
@@ -394,6 +396,13 @@ export default function GoLiveSetupScreen() {
         orientation,
         language: streamLang || null,
         audience, // server sets discoverable/unlisted from this (honest enforcement)
+        // ⚠ A REAL FORMAT, NOT A CAMERA THAT HAPPENS TO BE OFF. The field was read
+        // in two places and written by nothing, so the viewer could never draw the
+        // audio stage. Founder-approved 2026-09-02.
+        audioOnly,
+        // ⚠ WHO may clip. HOW MUCH stays the clipper's own plan, enforced separately
+        // in functions/streamClips.js. Founder, 2026-09-02.
+        clipPolicy,
         // A paid stream's playback URL is withheld from the world-readable
         // stream doc and served only by getAccess. See functions/streaming.js.
         access: accessPrice > 0 ? { mode: 'paid', priceCoins: accessPrice } : { mode: 'free' },
@@ -449,7 +458,7 @@ export default function GoLiveSetupScreen() {
   // notifyScheduledStreams cron reminds the host + followers ~10 min before.
   const scheduleStream = async () => {
     if (scheduling) return;
-    if (followerGated) { showToast(`You need ${STREAM_FOLLOWER_GATE} followers to stream publicly — you have ${followerCount}.`, 'error'); return; }
+    if (followerGated) { showToast(`You need ${STREAM_FOLLOWER_GATE} followers to stream publicly. You have ${followerCount}.`, 'error'); return; }
     if (!title.trim()) { showToast('Add a title', 'error'); return; }
     const startMs = scheduledAt ? new Date(scheduledAt).getTime() : 0;
     if (!startMs || Number.isNaN(startMs)) { showToast('Pick a date & time', 'error'); return; }
@@ -477,7 +486,7 @@ export default function GoLiveSetupScreen() {
         createdAt: serverTimestamp(),
       });
       persistStreamDefaults();
-      showToast('Stream scheduled — we\'ll remind you and your followers.', 'success');
+      showToast('Stream scheduled. We\'ll remind you and your followers.', 'success');
       navigate('/');
     } catch (err) {
       showToast(err?.message || 'Could not schedule', 'error');
@@ -516,7 +525,7 @@ export default function GoLiveSetupScreen() {
   return (
     <div style={{
       background: C.bg, minHeight: '100%', color: C.text,
-      fontFamily: '"Inter", "DM Sans", system-ui, sans-serif',
+      fontFamily: '"DM Sans", system-ui, sans-serif',
     }}>
       {isMobile && <TopBar title="Go Live" showBack />}
 
@@ -550,10 +559,10 @@ export default function GoLiveSetupScreen() {
                 Public live streaming unlocks at {STREAM_FOLLOWER_GATE} followers
               </div>
               <div style={{ fontSize: 12.5, color: C.textDim, marginTop: 3, lineHeight: 1.5 }}>
-                You have <b style={{ color: C.text }}>{followerCount}</b> — {followersToGo} to go. This keeps brand-new
+                You have <b style={{ color: C.text }}>{followerCount}</b>, {followersToGo} to go. This keeps brand-new
                 accounts from spamming live. In the meantime you can host a <b style={{ color: C.text }}>free Squad stream</b> to your crew.
               </div>
-              <div style={{ marginTop: 9, height: 6, borderRadius: 999, background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
+              <div style={{ marginTop: 9, height: 6, borderRadius: 999, background: '#2A2A38', overflow: 'hidden' }}>
                 <div style={{ height: '100%', width: `${Math.min(100, (followerCount / STREAM_FOLLOWER_GATE) * 100)}%`, background: C.amber, borderRadius: 999 }} />
               </div>
               <div style={{ display: 'flex', gap: 8, marginTop: 11, flexWrap: 'wrap' }}>
@@ -671,7 +680,7 @@ export default function GoLiveSetupScreen() {
               <span style={{ flex: 1, minWidth: 0 }}>
                 <span style={{ display: 'block', fontSize: 13, fontWeight: 700, color: C.text }}>Stream to both</span>
                 <span style={{ display: 'block', fontSize: 11.5, color: C.textDim }}>
-                  Relay this broadcast to your Twitch channel too — your Twitch audience sees no change while your Vergr channel grows.
+                  Relay this broadcast to your Twitch channel too. Your Twitch audience sees no change while your Vergr channel grows.
                   {ingestMode !== 'rtmp' && mirrorToTwitch ? ' Needs the OBS / RTMP source (switch below).' : ''}
                 </span>
               </span>
@@ -679,7 +688,7 @@ export default function GoLiveSetupScreen() {
                 onChange={(e) => {
                   setMirrorToTwitch(e.target.checked);
                   if (e.target.checked && !twitchNudgeText) {
-                    setTwitchNudgeText(`I'm also live on Vergr — same stream, and tips pay me up to 80%: https://vergr.app/user/${currentUser?.uid}?ref=${currentUser?.uid}`);
+                    setTwitchNudgeText(`I'm also live on Vergr: same stream, and tips pay me up to 80%: https://vergr.app/user/${currentUser?.uid}?ref=${currentUser?.uid}`);
                   }
                 }}
                 style={{ width: 18, height: 18, accentColor: '#9146FF', flexShrink: 0 }} />
@@ -752,7 +761,7 @@ export default function GoLiveSetupScreen() {
                   {previewError
                     ? previewError
                     : !previewStarted
-                      ? 'Your camera is off. Enable it to preview yourself before going live — nothing is recorded or shared until you go live.'
+                      ? 'Your camera is off. Enable it to preview yourself before going live. Nothing is recorded or shared until you go live.'
                       : (!camOn && !screenSharing)
                         ? 'Camera off. Turn on Camera or share your Screen to preview.'
                         : 'Starting preview…'}
@@ -890,7 +899,7 @@ export default function GoLiveSetupScreen() {
             <FieldLabel>Tags</FieldLabel>
             <div style={{
               display: 'flex', flexWrap: 'wrap', gap: 6,
-              padding: '9px 12px', background: 'rgba(255,255,255,0.04)',
+              padding: '9px 12px', background: '#191527',
               border: `1px solid ${C.border}`, borderRadius: 8,
             }}>
               {tags.map(t => (
@@ -939,7 +948,7 @@ export default function GoLiveSetupScreen() {
                 style={{
                   display: 'flex', alignItems: 'center', gap: 8,
                   padding: '10px 14px', borderRadius: 8,
-                  background: 'rgba(255,255,255,0.04)', border: `1px dashed ${C.border}`,
+                  background: '#191527', border: `1px dashed ${C.border}`,
                   color: C.textDim, fontSize: 12, fontWeight: 600, cursor: coverBusy ? 'wait' : 'pointer',
                 }}
               >
@@ -1026,7 +1035,7 @@ export default function GoLiveSetupScreen() {
                   </span>
                   <span style={{ flex: 1, textAlign: 'left' }}>
                     {accessPrice > 0
-                      ? `Paid entry — ${accessPrice.toLocaleString()} coins`
+                      ? `Paid entry: ${accessPrice.toLocaleString()} coins`
                       : 'Free to watch (tap to charge for entry)'}
                   </span>
                   <span className="material-symbols-outlined" style={{ fontSize: 16 }}>chevron_right</span>
@@ -1056,7 +1065,7 @@ export default function GoLiveSetupScreen() {
                   </span>
                   <span style={{ flex: 1, textAlign: 'left' }}>
                     {isNsfwStream
-                      ? 'Marked NSFW — age-verified viewers only'
+                      ? 'Marked NSFW: age-verified viewers only'
                       : 'Mark as NSFW (adult content)'}
                   </span>
                 </button>
@@ -1108,6 +1117,32 @@ export default function GoLiveSetupScreen() {
                 onClose={() => setShowPromotePicker(false)}
                 onSelect={(t) => { setPromotedEventId(t.id); setPromotedEventName(t.name); setShowPromotePicker(false); }}
               />
+              {/* ⚠ AUDIO-ONLY IS A FORMAT CHOICE, so it sits with the other things that
+                  describe the broadcast rather than with the camera controls. A co-host
+                  could already join audio-only; refusing a solo host was an
+                  inconsistency. Founder-approved 2026-09-02. */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, fontSize: 12, color: C.textDim }}>
+                <span className="material-symbols-outlined" style={{ fontSize: 16, color: C.purpleLight }}>graphic_eq</span>
+                <span style={{ flex: 1 }}>Audio only, no camera</span>
+                <ToggleSm checked={audioOnly} onChange={setAudioOnly}/>
+              </div>
+
+              {/* ⚠⚠ WHO MAY CLIP. NOT HOW MUCH. The clipper's own plan still decides
+                  length and count (free 30s/3, lite 60s/5, pro 90s/unlimited), so a Pro
+                  subscriber on a followers-only stream still gets the full 90s.
+                  Conflating the two would silently re-price every plan. The rule is
+                  enforced in functions/streamClips.js, because a client check is a
+                  suggestion. Founder, 2026-09-02. */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, fontSize: 12, color: C.textDim }}>
+                <span className="material-symbols-outlined" style={{ fontSize: 16, color: C.purpleLight }}>content_cut</span>
+                <span style={{ flex: 1 }}>Who can clip this stream</span>
+                <select value={clipPolicy} onChange={(e) => setClipPolicy(e.target.value)}
+                  style={{ background: '#191527', border: `1px solid ${C.border}`, borderRadius: 8, color: C.text, fontSize: 12, padding: '5px 8px', outline: 'none' }}>
+                  <option value="everyone">Everyone</option>
+                  <option value="followers">Followers</option>
+                  <option value="subscribers">Subscribers</option>
+                </select>
+              </div>
               {audience !== 'friends' && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, fontSize: 12, color: C.textDim }}>
                   <span className="material-symbols-outlined" style={{ fontSize: 16, color: C.purpleLight }}>notifications_active</span>
@@ -1122,7 +1157,7 @@ export default function GoLiveSetupScreen() {
                   value={streamLang}
                   onChange={e => setStreamLang(e.target.value)}
                   style={{
-                    padding: '6px 10px', background: 'rgba(255,255,255,0.04)',
+                    padding: '6px 10px', background: '#191527',
                     border: `1px solid ${C.border}`, borderRadius: 8, color: C.text,
                     fontSize: 12, fontWeight: 600, cursor: 'pointer',
                   }}
@@ -1195,7 +1230,7 @@ export default function GoLiveSetupScreen() {
                     <div style={{ fontSize: 11, color: C.textDim, marginBottom: 6 }}>Goal amount</div>
                     <div style={{
                       display: 'flex', alignItems: 'center', gap: 6,
-                      padding: '8px 12px', background: 'rgba(255,255,255,0.04)',
+                      padding: '8px 12px', background: '#191527',
                       border: `1px solid ${C.border}`, borderRadius: 8,
                     }}>
                       <svg width="14" height="14" viewBox="0 0 16 16" fill={C.purpleLight}>
@@ -1243,7 +1278,7 @@ export default function GoLiveSetupScreen() {
                 icon="captive_portal"
                 title="Browser broadcast"
                 desc="Go live from this tab. Best for quick streams, mobile, just-chatting."
-                note={!browserCanIngest() ? 'Browser unsupported — update Chrome 88+ / Safari 18.4+' : null}
+                note={!browserCanIngest() ? 'Browser unsupported. Update Chrome 88+ / Safari 18.4+' : null}
               />
               <IngestCard
                 active={ingestMode === 'rtmp'}
@@ -1274,7 +1309,7 @@ export default function GoLiveSetupScreen() {
             </div>
             <button
               type="button"
-              onClick={() => showToast('Viewer preview opens once you go live — your watch page is shareable then.', 'info')}
+              onClick={() => showToast('Viewer preview opens once you go live. Your watch page is shareable then.', 'info')}
               style={{
                 display: 'flex', alignItems: 'center', gap: 6,
                 padding: '7px 14px', background: 'transparent',
@@ -1336,7 +1371,7 @@ export default function GoLiveSetupScreen() {
             </div>
             <div style={{ display: 'flex', gap: 5, justifyContent: 'center' }}>
               {Array.from({ length: 5 }).map((_, i) => (
-                <div key={i} style={{ width: 28, height: 28, borderRadius: '50%', background: 'rgba(255,255,255,0.06)' }}/>
+                <div key={i} style={{ width: 28, height: 28, borderRadius: '50%', background: '#1A1A2A' }}/>
               ))}
             </div>
           </PanelSection>
@@ -1357,7 +1392,7 @@ export default function GoLiveSetupScreen() {
               navigator.clipboard?.writeText(window.location.href);
               showToast('Stream link copied', 'success');
             }}>Share Stream</QAItem>
-            <QAItem icon="content_cut" onClick={() => showToast('Clip moments while you\'re live — viewers can clip too.', 'info')}>Clip Moment</QAItem>
+            <QAItem icon="content_cut" onClick={() => showToast('Clip moments while you\'re live. Viewers can clip too.', 'info')}>Clip Moment</QAItem>
           </PanelSection>
 
           <div style={{
@@ -1512,7 +1547,7 @@ function DevicePicker({ icon, label, value, devices, fallback, onChange }) {
       </span>
       <div style={{
         display: 'flex', alignItems: 'center', gap: 8,
-        background: 'rgba(255,255,255,0.04)', border: `1px solid ${C.border}`,
+        background: '#191527', border: `1px solid ${C.border}`,
         borderRadius: 8, padding: '2px 10px',
       }}>
         <select
@@ -1549,7 +1584,10 @@ function MicMeter({ level = 0, muted = false }) {
         return (
           <div key={i} style={{
             width: 3, height: 4 + i * 1.1,
-            background: on ? color : 'rgba(255,255,255,0.12)',
+            // ⚠ A SWITCH TRACK IS A SOLID VALUE. A 12% white wash has no value of its
+            // own: it takes whatever is behind it, so the OFF state changed shade from
+            // section to section. #2A2A38 is the track token the state layer uses.
+            background: on ? color : '#2A2A38',
             borderRadius: 1, transition: 'background 0.06s linear',
           }}/>
         );
@@ -1595,7 +1633,7 @@ const btnPrimary = {
 };
 const inputField = {
   width: '100%', boxSizing: 'border-box',
-  background: 'rgba(255,255,255,0.04)', border: `1px solid ${C.border}`,
+  background: '#191527', border: `1px solid ${C.border}`,
   borderRadius: 8, padding: '10px 14px', color: C.text, fontSize: 13, outline: 'none',
 };
 const coverChip = {

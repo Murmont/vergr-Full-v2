@@ -11,6 +11,7 @@
 // get, never cropped). Top/bottom overlays respect the status-bar safe area.
 
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { CoinIcon } from '../../../components/CoinIcon';
 import { useKeepAwake } from '../../../utils/keepAwake';
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
 import { doc, onSnapshot, updateDoc, serverTimestamp, collection, query, where, orderBy, limit, addDoc, Timestamp } from 'firebase/firestore';
@@ -31,6 +32,7 @@ import { uploadToR2 } from '../../../utils/r2Storage';
 import { renderShareCard } from '../../../utils/shareCard';
 import { createPost, getStreamIngest, markStatusPosted } from '../../../firebase/firestore';
 import StreamShareSheet from '../../../components/streams/StreamShareSheet';
+import { ZeroViewers, VpEarnedChip, MovableGoal, HealthWarningView } from '../../../components/streams/states';
 import { motion, AnimatePresence } from 'framer-motion';
 import { spring } from '../../../components/primitives/springs';
 import { useStreamJoinEvents } from '../../../hooks/useStreamJoinEvents';
@@ -89,6 +91,16 @@ export default function NativeBroadcasterScreen() {
   const [bitrateKbps, setBitrateKbps] = useState(0);
   const [chunkLatencyMs, setChunkLatencyMs] = useState(0);
 
+  // THE NATIVE BROADCASTER HAD NO HEALTH WARNING AT ALL, and the reason was not
+  // that the signal was missing: `chunkLatencyMs` is written on every chunk
+  // (onChunkSent below) and nothing ever read it. The web broadcaster derives a
+  // stability label from the same value at the same thresholds
+  // (BroadcasterScreen.jsx:886: under 600 Excellent, under 1500 Good, else Poor),
+  // so this uses those, not a new number.
+  //
+  // A host mid-broadcast needs to be told, not left to read a latency figure.
+  const uplinkStruggling = chunkLatencyMs >= 1500;
+
   const [tipEvents, setTipEvents] = useState([]);
   const [startingFollowers, setStartingFollowers] = useState(null);
   const [currentFollowers, setCurrentFollowers] = useState(0);
@@ -115,6 +127,21 @@ export default function NativeBroadcasterScreen() {
     } catch (err) { showToast(err?.message || 'Could not update', 'error'); } finally { setSavingInfo(false); }
   };
   const [shareOpen, setShareOpen] = useState(false);
+
+  // The same movable tip goal the web broadcaster got. Persisted per host in
+  // this browser, and it changes only what the HOST sees: writing the placement
+  // to the stream doc would move it for every viewer too, which is a product
+  // decision nobody has made.
+  const goalKey = `vergr.goalBox.${currentUser?.uid || 'anon'}`;
+  const [goalBox, setGoalBoxState] = useState(() => {
+    try { const raw = localStorage.getItem(goalKey); return raw ? JSON.parse(raw) : null; } catch { return null; }
+  });
+  const [goalEdit, setGoalEdit] = useState(false);
+  const setGoalBox = (b) => {
+    setGoalBoxState(b);
+    // null is a RESET, so it clears rather than storing null and looking placed
+    try { if (b) localStorage.setItem(goalKey, JSON.stringify(b)); else localStorage.removeItem(goalKey); } catch { /* private mode */ }
+  };
   const { poll: streamPoll, closed: streamPollClosed } = useActiveStreamPoll(streamDoc?.hostUid, currentUser?.uid);
 
   // Subscribe to stream doc.
@@ -276,7 +303,7 @@ export default function NativeBroadcasterScreen() {
       const isCoStream = streamDoc.kind === 'co_stream' || isCohostQuery;
       if (!isCoStream && streamDoc.ingestType === 'browser') {
         if (!browserCanIngest()) throw new Error('Your browser cannot do live ingest. Use OBS, or update the app.');
-        if (!mediaStreamRef.current) throw new Error('No camera/mic — grant permission first.');
+        if (!mediaStreamRef.current) throw new Error('No camera or mic. Grant permission first.');
         const session = await startBrowserIngest({
           streamKey: streamDoc.streamKey,
           mediaStream: mediaStreamRef.current,
@@ -300,7 +327,7 @@ export default function NativeBroadcasterScreen() {
       if (streamDoc?.id) {
         const fn = httpsCallable(getFunctions(undefined, 'europe-west1'), 'endStreamSession');
         const r = await fn({ streamId: streamDoc.id });
-        if (r.data?.refunded) showToast('Boost refunded — your tips covered the fee!', 'success');
+        if (r.data?.refunded) showToast('Boost refunded. Your tips covered the fee!', 'success');
       }
       const tipCoins = tipEvents.reduce((s, t) => s + (t.coins || 0), 0);
       const tipperMap = {};
@@ -362,7 +389,7 @@ export default function NativeBroadcasterScreen() {
       }
       const fn = httpsCallable(getFunctions(undefined, 'europe-west1'), 'requestStreamClip');
       const { data } = await fn({ streamId: streamDoc?.id, durationSec: clipCfg.sec });
-      if (!data?.clipUrl) throw new Error('Clip failed — try again in a few seconds.');
+      if (!data?.clipUrl) throw new Error('Clip failed. Try again in a few seconds.');
       await publishClip(data.clipUrl);
       setClipsUsed((n) => n + 1);
       showToast('Clip saved to your profile.', 'success');
@@ -384,7 +411,7 @@ export default function NativeBroadcasterScreen() {
   );
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: '#000', overflow: 'hidden', color: C.text, fontFamily: '"Inter","DM Sans",system-ui,sans-serif', zIndex: 90 }}>
+    <div style={{ position: 'fixed', inset: 0, background: '#000', overflow: 'hidden', color: C.text, fontFamily: '"DM Sans",system-ui,sans-serif', zIndex: 90 }}>
       {/* WYSIWYG preview — contain, never cropped. */}
       <video ref={videoRef} autoPlay muted playsInline style={{ width: '100%', height: '100%', objectFit: 'contain', background: '#000' }} />
 
@@ -402,11 +429,17 @@ export default function NativeBroadcasterScreen() {
         {isLive && <HypeMeter streamId={streamId} mode="compact" />}
         <div style={{ flex: 1 }} />
         {isLive && (
-          <span style={statChip(C.amber)}><Icon name="paid" size={12} />{tipCoins}</span>
+          <span style={statChip(C.amber)}><CoinIcon size={12} />{tipCoins}</span>
         )}
         {isLive && followerDelta > 0 && (
           <span style={statChip(C.purpleLight)}><Icon name="person_add" size={12} />+{followerDelta}</span>
         )}
+        {/* ⚠ THE HOST'S OWN VP, AND ONLY THE HOST'S. go_live and stream_hour are both
+            server-awarded, so this figure is real. A VIEWER equivalent must never be
+            added: nothing awards watch_stream_hour, so it would promise VP that never
+            arrives. The chip renders as a plain element here because there is nowhere
+            useful to send someone, and a button that does nothing is worse than none. */}
+        {isLive && <VpEarnedChip host minutes={duration / 60} />}
         <span style={statChip('#fff')}><Icon name="visibility" size={12} />{streamDoc.viewerCount || 0}</span>
         <button
           onClick={() => { if (isLive) setEndConfirm(true); else navigate(-1); }}
@@ -416,6 +449,21 @@ export default function NativeBroadcasterScreen() {
           <Icon name="close" size={18} />
         </button>
       </div>
+
+        {/* ⚠⚠ THE FIRST MINUTES OF EVERY STREAM SHOWED THE DIGIT 0 AND NOTHING ELSE.
+            It is the state a new creator sees most and the one most likely to make them
+            stop, and there was no copy, no explanation and nothing to do about it. The
+            card frames the moment as EARLY rather than as nobody watching, and offers
+            the things that actually change the number.
+
+            ⚠ Actions without a handler are not rendered, so this is safe here even
+            though the native broadcaster has no boost entry point: it shows the two it
+            can do. */}
+        {isLive && (streamDoc.viewerCount || 0) === 0 && (
+          <div style={{ position: 'absolute', top: 'calc(env(safe-area-inset-top, 0px) + 92px)', left: 12, right: 12, zIndex: 5 }}>
+            <ZeroViewers compact onShare={() => setShareOpen(true)} onInvite={() => setShareOpen(true)} />
+          </div>
+        )}
 
       {/* Bottom dock: poll + goal above the PERSISTENT chat feed; the
           composer row carries mic / camera / more (TikTok host pattern —
@@ -430,10 +478,22 @@ export default function NativeBroadcasterScreen() {
             <StreamPollCard poll={streamPoll} closed={streamPollClosed} uid={currentUser?.uid} compact />
           </div>
         )}
-        {isLive && streamDoc.goal?.active && (
-          <div style={{ maxWidth: 360 }}>
-            <StreamGoalBar goal={streamDoc.goal} compact />
+        {/* The card carries the plain fact, not advice for a situation that has not
+            happened. Nothing is passed as an action because there is nothing here for
+            the host to press: the card hides its button without a handler. */}
+        {isLive && uplinkStruggling && (
+          <div style={{ marginBottom: 8 }}>
+            <HealthWarningView state="unstable"
+              title="Your upload is struggling"
+              body="Frames are taking too long to send. Move closer to your router or close other uploads." />
           </div>
+        )}
+        {/* The goal rendered at a FIXED position and covered the host face, with no
+            way to move it. Same fix as the web broadcaster. */}
+        {isLive && streamDoc.goal?.active && (
+          <MovableGoal goal={streamDoc.goal} box={goalBox} onChange={setGoalBox}
+            editable editing={goalEdit} compact
+            fallback={{ xPct: 3, yPct: 20, wPct: 62 }} />
         )}
         {isLive ? (
           <div style={{ height: '28vh', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
@@ -461,7 +521,7 @@ export default function NativeBroadcasterScreen() {
       </div>
 
       {alertsOn && <TipAlertOverlay lastTip={streamDoc.lastTip} anchor="top" />}
-      {alertsOn && <SubAlertOverlay lastSub={streamDoc.lastSub} anchor="top" />}
+      {alertsOn && <SubAlertOverlay lastSub={streamDoc.lastSub} anchor="bottom" />}
       {pollModalOpen && <CreateStreamPollModal hostUid={streamDoc.hostUid} streamId={streamDoc.id} onClose={() => setPollModalOpen(false)} showToast={showToast} />}
       <JoinAnnouncer events={joinEvents} side="left" bottom="calc(env(safe-area-inset-bottom, 0px) + 28vh + 24px)" />
 
@@ -474,6 +534,12 @@ export default function NativeBroadcasterScreen() {
               <SheetBtn icon="edit" label="Edit title / category" onClick={() => { setMoreOpen(false); setEditInfoOpen(true); }} />
               <SheetBtn icon="poll" label={streamPoll && !streamPollClosed ? 'Poll running' : 'Start a poll'} onClick={() => { setMoreOpen(false); if (!isLive) { showToast('Go live first to start a poll.', 'info'); return; } setPollModalOpen(true); }} />
               <SheetBtn icon="content_cut" label="Clip the last moment" onClick={() => { setMoreOpen(false); handleClip(); }} />
+              {/* Without an entry point the drag can never be turned on, and an
+                  always-draggable goal gets moved by accident mid-stream. */}
+              {isLive && streamDoc.goal?.active && (
+                <SheetBtn icon="open_with" label={goalEdit ? 'Done moving the tip goal' : 'Move the tip goal'}
+                  onClick={() => { setMoreOpen(false); setGoalEdit((v) => !v); }} />
+              )}
               <SheetBtn icon="share" label="Share stream" onClick={() => { setMoreOpen(false); setShareOpen(true); }} />
             </motion.div>
           </motion.div>
@@ -511,14 +577,14 @@ function EditInfoModal({ title, game, saving, onSave, onClose }) {
   const [g, setG] = useState(game || '');
   return (
     <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 80, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: 480, background: C.card, border: `1px solid ${C.border}`, borderTopLeftRadius: 18, borderTopRightRadius: 18, padding: 20, paddingBottom: 'calc(env(safe-area-inset-bottom,0px) + 20px)', color: C.text, fontFamily: '"Inter", system-ui, sans-serif' }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: 480, background: C.card, border: `1px solid ${C.border}`, borderTopLeftRadius: 18, borderTopRightRadius: 18, padding: 20, paddingBottom: 'calc(env(safe-area-inset-bottom,0px) + 20px)', color: C.text, fontFamily: '"DM Sans", system-ui, sans-serif' }}>
         <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 14 }}>Edit stream info</div>
         <label style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.06em', color: C.textDim }}>TITLE</label>
         <input value={t} maxLength={140} onChange={(e) => setT(e.target.value)} placeholder="What are you streaming?"
-          style={{ width: '100%', boxSizing: 'border-box', margin: '6px 0 14px', background: 'rgba(255,255,255,0.04)', border: `1px solid ${C.border}`, borderRadius: 10, padding: 12, color: C.text, fontSize: 14, outline: 'none' }} />
+          style={{ width: '100%', boxSizing: 'border-box', margin: '6px 0 14px', background: '#191527', border: `1px solid ${C.border}`, borderRadius: 10, padding: 12, color: C.text, fontSize: 14, outline: 'none' }} />
         <label style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.06em', color: C.textDim }}>CATEGORY / GAME</label>
         <input value={g} maxLength={60} onChange={(e) => setG(e.target.value)} placeholder="e.g. Counter-Strike 2"
-          style={{ width: '100%', boxSizing: 'border-box', margin: '6px 0 18px', background: 'rgba(255,255,255,0.04)', border: `1px solid ${C.border}`, borderRadius: 10, padding: 12, color: C.text, fontSize: 14, outline: 'none' }} />
+          style={{ width: '100%', boxSizing: 'border-box', margin: '6px 0 18px', background: '#191527', border: `1px solid ${C.border}`, borderRadius: 10, padding: 12, color: C.text, fontSize: 14, outline: 'none' }} />
         <div style={{ display: 'flex', gap: 10 }}>
           <button onClick={onClose} disabled={saving} style={{ flex: 1, padding: 13, borderRadius: 10, border: `1px solid ${C.border}`, background: 'transparent', color: C.textDim, fontSize: 13, fontWeight: 800, cursor: 'pointer' }}>Cancel</button>
           <button onClick={() => onSave({ title: t, game: g })} disabled={saving} style={{ flex: 2, padding: 13, borderRadius: 10, border: 'none', background: `linear-gradient(135deg, ${C.purple}, ${C.purpleLight})`, color: '#fff', fontSize: 13, fontWeight: 800, cursor: 'pointer', opacity: saving ? 0.6 : 1 }}>{saving ? 'Saving…' : 'Save'}</button>
@@ -530,7 +596,7 @@ function EditInfoModal({ title, game, saving, onSave, onClose }) {
 
 function FullCenter({ label, action }) {
   return (
-    <div style={{ minHeight: '100vh', background: C.bg, color: C.text, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 14, fontFamily: '"Inter", system-ui, sans-serif' }}>
+    <div style={{ minHeight: '100vh', background: C.bg, color: C.text, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 14, fontFamily: '"DM Sans", system-ui, sans-serif' }}>
       <div style={{ fontSize: 14, color: C.textDim }}>{label}</div>
       {action && <button onClick={action.onClick} style={{ padding: '12px 20px', borderRadius: 10, border: 'none', background: `linear-gradient(135deg, ${C.purple}, ${C.purpleLight})`, color: '#fff', fontSize: 13, fontWeight: 800, cursor: 'pointer' }}>{action.label}</button>}
     </div>
@@ -572,7 +638,7 @@ function SheetBtn({ icon, label, onClick }) {
     <button onClick={onClick} style={{
       display: 'flex', alignItems: 'center', gap: 12, width: '100%',
       padding: '13px 12px', borderRadius: 12, border: 'none', marginBottom: 6,
-      background: 'rgba(255,255,255,0.04)', color: '#fff', fontSize: 14, fontWeight: 700,
+      background: '#191527', color: '#fff', fontSize: 14, fontWeight: 700,
       cursor: 'pointer', textAlign: 'left',
     }}>
       <Icon name={icon} size={18} />
@@ -610,7 +676,7 @@ function StreamSummary({ stats, onClose }) {
   const { showToast } = useUI();
   const [postingStory, setPostingStory] = useState(false);
   const share = async () => {
-    const text = `Just wrapped a stream on VERGR — ${formatDuration(stats.duration)}, ${(stats.peakViewers || 0)} peak viewers, ${stats.tipCoins.toLocaleString()} coins tipped. ⚡`;
+    const text = `Just wrapped a stream on VERGR: ${formatDuration(stats.duration)}, ${(stats.peakViewers || 0)} peak viewers, ${stats.tipCoins.toLocaleString()} coins tipped. ⚡`;
     try { if (navigator.share) await navigator.share({ title: 'VERGR stream recap', text, url: 'https://vergr.app' }); else await navigator.clipboard.writeText(text + ' https://vergr.app'); } catch {}
   };
   const shareToStatus = async () => {
@@ -648,7 +714,7 @@ function StreamSummary({ stats, onClose }) {
     } finally { setPostingStory(false); }
   };
   return (
-    <div style={{ minHeight: '100vh', background: `radial-gradient(circle at 50% 0%, #1a1030 0%, ${C.bg} 60%)`, color: C.text, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, paddingTop: 'calc(env(safe-area-inset-top,0px) + 24px)', fontFamily: '"Inter", system-ui, sans-serif' }}>
+    <div style={{ minHeight: '100vh', background: `radial-gradient(circle at 50% 0%, #1a1030 0%, ${C.bg} 60%)`, color: C.text, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, paddingTop: 'calc(env(safe-area-inset-top,0px) + 24px)', fontFamily: '"DM Sans", system-ui, sans-serif' }}>
       <div style={{ width: 'min(540px, 100%)', background: C.card, border: `1px solid ${C.border}`, borderRadius: 18, padding: 24, boxShadow: '0 24px 60px rgba(0,0,0,0.5)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
           <span style={{ width: 36, height: 36, borderRadius: '50%', background: C.purpleSoft, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="live_tv" size={20} /></span>

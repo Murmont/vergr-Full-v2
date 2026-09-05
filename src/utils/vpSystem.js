@@ -213,6 +213,12 @@ export const VP_ACTIONS = {
   boost_post:        10,
   go_live:           30,
   stream_hour:       20,
+  // ⚠⚠ NOT AWARDED BY ANYTHING. `watch_stream_hour` appears in NO server path:
+  // functions/engagementVp.js ENGAGEMENT_VP has create_post, get_comment, go_live,
+  // stream_hour and raid_sent only, and this is absent from the /prestige earn table.
+  // A preview chip once displayed it to viewers as VP they were earning; it was not.
+  // DO NOT SURFACE THIS ANYWHERE until a server path awards it — that would be a new
+  // VP faucet and needs a daily cap and a founder decision, not a UI change.
   watch_stream_hour: 5,
 };
 

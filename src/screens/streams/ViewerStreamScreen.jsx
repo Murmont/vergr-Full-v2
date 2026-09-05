@@ -15,6 +15,8 @@
 // co-host (avatar + name + tap-to-view-profile).
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { RaidCountdown } from '../../components/streams/RaidControls';
+import { CoinIcon } from '../../components/CoinIcon';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   doc, onSnapshot, updateDoc, increment as fsIncrement, getDoc,
@@ -43,10 +45,12 @@ import { collection as fsCollection, query as fsQuery, orderBy as fsOrderBy, lim
 import useLiveClip from '../../hooks/useLiveClip';
 import JoinAnnouncer from '../../components/streams/JoinAnnouncer';
 import UserQuickSheet from '../../components/streams/UserQuickSheet';
+import GiftSubSheet from '../../components/streams/GiftSubSheet';
 import ChatPanel from '../../components/streams/ChatPanel';
 import { BoostTimer } from '../../components/streams/BoostStreamSheet';
 import BoostSheet from '../../components/boost/BoostSheet';
-import MobileLiveViewer, { ReconnectingOverlay, StreamLoadingCover } from '../../components/streams/MobileLiveViewer';
+import MobileLiveViewer, { ReconnectingOverlay, StreamLoadingCover, AppealSheet } from '../../components/streams/MobileLiveViewer';
+import { PlaybackStateView, AudioStageView } from '../../components/streams/states';
 import TwitchMirrorPlayer from '../../components/streams/TwitchMirrorPlayer';
 import InStreamTicketWidget from '../../components/streams/InStreamTicketWidget';
 import EventTicketCard from '../../components/tournament/EventTicketCard';
@@ -125,6 +129,20 @@ function DesktopViewerStreamScreen() {
   const [ticketStatus, setTicketStatus] = useState(null); // ticketed-stream gate
   const [followChecked, setFollowChecked] = useState(false);
   const [stalled, setStalled] = useState(false);
+  const [appealKind, setAppealKind] = useState(null);
+  const [giftTo, setGiftTo] = useState(null);
+
+  // ⚠⚠ SAME GAP AS THE MOBILE VIEWER: nothing here read navigator.onLine, so a
+  // desktop viewer who lost their connection saw "Reconnecting..." indefinitely,
+  // indistinguishable from the broadcaster having trouble.
+  const [online, setOnline] = useState(() => (typeof navigator === 'undefined' ? true : navigator.onLine !== false));
+  useEffect(() => {
+    const up = () => setOnline(true);
+    const down = () => setOnline(false);
+    window.addEventListener('online', up);
+    window.addEventListener('offline', down);
+    return () => { window.removeEventListener('online', up); window.removeEventListener('offline', down); };
+  }, []);
   const [videoStarted, setVideoStarted] = useState(false); // first real frame painted
   const [replayOpen, setReplayOpen] = useState(false);
   const [membershipTiers, setMembershipTiers] = useState([]); // creator sub tiers
@@ -657,13 +675,13 @@ function DesktopViewerStreamScreen() {
       );
     }
     return (
-      <div style={{ minHeight: '100vh', background: `radial-gradient(circle at 50% 0%, #1a1030 0%, ${C.bg} 60%)`, color: C.text, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, fontFamily: '"Inter", system-ui, sans-serif' }}>
+      <div style={{ minHeight: '100vh', background: `radial-gradient(circle at 50% 0%, #1a1030 0%, ${C.bg} 60%)`, color: C.text, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, fontFamily: '"DM Sans", system-ui, sans-serif' }}>
         <div style={{ width: 'min(420px, 100%)', background: C.card, border: `1px solid ${C.border}`, borderRadius: 18, padding: 24, textAlign: 'center' }}>
           <UserAvatar src={hostInfo?.avatar} size="lg" />
           <div style={{ fontSize: 17, fontWeight: 800, marginTop: 12 }}><UserName user={hostInfo} masked fallback={'The stream'} /> has ended</div>
           <div style={{ fontSize: 12, color: C.textDim, marginTop: 4, marginBottom: 18 }}>
             {replayUrl ? 'Catch the replay or follow for the next one.'
-              : streamDoc.vodPending ? 'The replay is still processing — check back in a few minutes.'
+              : streamDoc.vodPending ? 'The replay is still processing. Check back in a few minutes.'
                 : streamDoc.vodExpired ? 'The replay for this stream is no longer available.'
                   : 'Follow to get notified when they go live again.'}
           </div>
@@ -694,7 +712,7 @@ function DesktopViewerStreamScreen() {
   const audienceGated = !!streamDoc.unlisted && !isHost && !isAdmin && (followChecked ? !followed : !currentUser);
   if (audienceGated) {
     return (
-      <div style={{ minHeight: '100vh', background: `radial-gradient(circle at 50% 0%, #1a1030 0%, ${C.bg} 60%)`, color: C.text, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, fontFamily: '"Inter", system-ui, sans-serif' }}>
+      <div style={{ minHeight: '100vh', background: `radial-gradient(circle at 50% 0%, #1a1030 0%, ${C.bg} 60%)`, color: C.text, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, fontFamily: '"DM Sans", system-ui, sans-serif' }}>
         <div style={{ width: 'min(420px, 100%)', background: C.card, border: `1px solid ${C.border}`, borderRadius: 18, padding: 24, textAlign: 'center' }}>
           <UserAvatar src={hostInfo?.avatar} size="lg" />
           <div style={{ fontSize: 17, fontWeight: 800, marginTop: 12 }}>This stream is for followers</div>
@@ -722,7 +740,7 @@ function DesktopViewerStreamScreen() {
     && ticketStatus && !ticketStatus.hasTicket && !ticketStatus.isCompetitor;
   if (ticketGated) {
     return (
-      <div style={{ minHeight: '100vh', background: `radial-gradient(circle at 50% 0%, #1a1030 0%, ${C.bg} 60%)`, color: C.text, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, fontFamily: '"Inter", system-ui, sans-serif' }}>
+      <div style={{ minHeight: '100vh', background: `radial-gradient(circle at 50% 0%, #1a1030 0%, ${C.bg} 60%)`, color: C.text, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, fontFamily: '"DM Sans", system-ui, sans-serif' }}>
         <div style={{ width: 'min(420px, 100%)' }}>
           <div style={{ textAlign: 'center', marginBottom: 16 }}>
             <div style={{ fontSize: 18, fontWeight: 900 }}>This event is ticketed</div>
@@ -751,7 +769,7 @@ function DesktopViewerStreamScreen() {
       <div style={{
         position: 'fixed', inset: 0, background: '#000', zIndex: 95,
         display: 'flex', flexDirection: 'column',
-        color: C.text, fontFamily: '"Inter", system-ui, sans-serif',
+        color: C.text, fontFamily: '"DM Sans", system-ui, sans-serif',
       }}>
         <div style={{ flex: 1, minHeight: 0 }}>
           {sessionDenied ? (
@@ -799,7 +817,7 @@ function DesktopViewerStreamScreen() {
   return (
     <div style={{
       background: C.bg, minHeight: '100%', color: C.text,
-      fontFamily: '"Inter", system-ui, sans-serif',
+      fontFamily: '"DM Sans", system-ui, sans-serif',
     }}>
       <div style={{
         display: 'grid',
@@ -878,7 +896,23 @@ function DesktopViewerStreamScreen() {
                 Report
               </button>
             )}
-            {stalled && streamDoc.status === 'live' && <ReconnectingOverlay />}
+            {/* offline wins over stalled: "Reconnecting" is a lie when the viewer's
+                own connection is the thing that is down. */}
+            {!online
+              ? <PlaybackStateView state="offline" onRetry={() => window.location.reload()} onLeave={() => navigate(-1)} />
+              : (stalled && streamDoc.status === 'live' && <ReconnectingOverlay />)}
+            {/* ⚠⚠ AUDIO-ONLY REPLACES THE VIDEO, so it renders at the MEDIA layer and not in
+                a blocking-state ternary. In the preview it once sat there as an opaque
+                inset:0 layer mounted last and buried the chrome on six of seven surfaces:
+                the broadcaster lost End stream and Mic, the desktop viewer lost Follow and
+                the composer. z=1 keeps it under every control.
+            
+                The field is written by createStreamSession now; before this port it was READ
+                in two places and written by nothing, so this could never draw. */}
+            {streamDoc.audioOnly && (
+              <AudioStageView avatar={hostInfo?.avatar} hostName={hostInfo?.displayName || streamDoc.hostUsername}
+                title={streamDoc.title} live={streamDoc.status === 'live'} z={1} />
+            )}
             <StreamLoadingCover
               thumb={streamDoc.thumbnailUrl || streamDoc.coverUrl || null}
               visible={hasVideo && !isTwitchMirror && !videoStarted && streamDoc.status === 'live'}
@@ -906,7 +940,14 @@ function DesktopViewerStreamScreen() {
               </div>
             )}
             <TipAlertOverlay lastTip={streamDoc.lastTip} anchor="top" />
-            <SubAlertOverlay lastSub={streamDoc.lastSub} anchor="top" />
+            <SubAlertOverlay lastSub={streamDoc.lastSub} anchor="bottom" />
+            {/* ⚠ A RAID ARRIVES THROUGH THE STREAM DOC. `functions/raids.js` writes
+                `raid` onto the SOURCE stream, and this screen already holds an
+                onSnapshot on it — so the fan-out costs nothing and needs no relay. */}
+            {streamDoc?.raid?.toStreamId && (
+              <RaidCountdown raid={streamDoc.raid} hostName={hostInfo?.displayName || streamDoc.hostName}
+                onArrive={(r) => navigate(`/watch/${r.toStreamId}`)} />
+            )}
             <ReactionsFloor events={reactions} onTapEmoji={onReactionTap} position="right" />
             <div style={{
               position: 'absolute', top: 12, left: 12,
@@ -1004,7 +1045,7 @@ function DesktopViewerStreamScreen() {
                 )}
                 <button onClick={() => setShowTip(true)} disabled={currentUser?.uid === streamDoc.hostUid}
                   style={pillAction('transparent', C.amber, C.amber)}>
-                  <Icon name="paid" size={15} className=""/> Tip
+                  <CoinIcon size={15} /> Tip
                 </button>
                 {/* ⚠ THERE IS DELIBERATELY NO BOOST PILL HERE. A first pass put
                     one beside Tip / Clip / Share; founder, 2026-08-27: boost
@@ -1026,7 +1067,7 @@ function DesktopViewerStreamScreen() {
                 )}
               </div>
             </div>
-            <div style={{ fontSize: 15, fontWeight: 700, lineHeight: 1.4 }}>{streamDoc.title || 'Live stream'}</div>
+            <div dir="auto" style={{ fontSize: 15, fontWeight: 700, lineHeight: 1.4 }}>{streamDoc.title || 'Live stream'}</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               {streamDoc.game && <span style={{ fontSize: 13, color: C.purpleLight, fontWeight: 700 }}>{streamDoc.game}</span>}
               {(streamDoc.tags || []).slice(0, 4).map((t) => (
@@ -1069,6 +1110,7 @@ function DesktopViewerStreamScreen() {
           )}
           <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
             <ChatPanel
+              onAppeal={(kind) => setAppealKind(kind)}
               streamId={streamDoc.id} layout="side" hostUid={streamDoc.hostUid}
               slowModeSec={streamDoc.slowModeSec || 0} followersOnly={!!streamDoc.followersOnly}
               pinnedMessage={streamDoc.pinnedMessage || null}
@@ -1080,12 +1122,16 @@ function DesktopViewerStreamScreen() {
       {streamDoc.promotedEventId && <InStreamTicketWidget tournamentId={streamDoc.promotedEventId} />}
       <VanguardPresence parentPath={`streams/${streamDoc.id}`} />
       <JoinAnnouncer events={joinEvents} side="right" />
-      <UserQuickSheet
+      <UserQuickSheet onGiftSub={(u) => { setQuickSheet(null); setGiftTo(u); }}
         open={!!quickSheet}
         uid={quickSheet?.uid}
         watchLiveStreamId={quickSheet?.streamId}
         onClose={() => setQuickSheet(null)}
       />
+      {giftTo && (
+        <GiftSubSheet creatorId={streamDoc.hostUid} recipient={giftTo}
+          onClose={() => setGiftTo(null)} showToast={showToast} />
+      )}
 
       {showTip && (
         <TipModal
@@ -1121,9 +1167,17 @@ function DesktopViewerStreamScreen() {
           onSubmit={(reason) => {
             setShowReport(false);
             reportStream(currentUser.uid, streamId, reason)
-              .then(() => showToast('Report submitted — our moderators will review it', 'success'))
+              .then(() => showToast('Report submitted. Our moderators will review it.', 'success'))
               .catch(() => showToast('Could not submit report', 'error'));
           }} />
+      )}
+      {/* ⚠ MOUNTED WITH THE OTHER SHEETS, INSIDE THIS COMPONENT. The first attempt
+          used lastIndexOf on a closing tag and landed in a DIFFERENT function 400
+          lines below, where appealKind, streamDoc and showToast are all out of
+          scope. eslint no-undef caught it, which is the rule's whole purpose. */}
+      {appealKind && (
+        <AppealSheet streamId={streamDoc.id} kind={appealKind}
+          onClose={() => setAppealKind(null)} showToast={showToast} />
       )}
       {showSubscribe && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 220, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
@@ -1302,7 +1356,7 @@ function Centered({ label, action }) {
     <div style={{
       minHeight: '100vh', background: C.bg, color: C.text,
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-      flexDirection: 'column', gap: 14, fontFamily: '"Inter", system-ui, sans-serif',
+      flexDirection: 'column', gap: 14, fontFamily: '"DM Sans", system-ui, sans-serif',
     }}>
       <div style={{ fontSize: 14, color: C.textDim }}>{label}</div>
       {action && (
@@ -1475,7 +1529,7 @@ function TipModal({ amount, setAmount, message, setMessage, onClose, onSend, sen
       <div onClick={(e) => e.stopPropagation()} style={{
         width: 'min(380px, 92vw)', background: C.card, border: `1px solid ${C.border}`,
         borderRadius: 14, padding: 20, color: C.text,
-        fontFamily: '"Inter", system-ui, sans-serif',
+        fontFamily: '"DM Sans", system-ui, sans-serif',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
           <UserAvatar src={host?.avatar} size="md"/>
@@ -1521,7 +1575,7 @@ function TipModal({ amount, setAmount, message, setMessage, onClose, onSend, sen
           onChange={(e) => setAmount(Math.max(1, parseInt(e.target.value || '0', 10)))}
           style={{
             width: '100%', boxSizing: 'border-box',
-            background: 'rgba(255,255,255,0.04)', border: `1px solid ${C.border}`,
+            background: '#191527', border: `1px solid ${C.border}`,
             borderRadius: 8, padding: 10, color: C.text, fontSize: 14, outline: 'none',
             marginBottom: 10,
           }}
@@ -1534,7 +1588,7 @@ function TipModal({ amount, setAmount, message, setMessage, onClose, onSend, sen
           placeholder={suggested ? `Optional message (default: "${suggested.message}")` : 'Optional message (up to 80 chars)'}
           style={{
             width: '100%', boxSizing: 'border-box',
-            background: 'rgba(255,255,255,0.04)', border: `1px solid ${C.border}`,
+            background: '#191527', border: `1px solid ${C.border}`,
             borderRadius: 8, padding: 10, color: C.text, fontSize: 13, outline: 'none',
             marginBottom: 6,
           }}
@@ -1559,6 +1613,7 @@ function TipModal({ amount, setAmount, message, setMessage, onClose, onSend, sen
         </div>
       </>)}
       </div>
+
     </div>
   );
 }

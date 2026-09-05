@@ -39,6 +39,37 @@ exports.requestStreamClip = functions.https.onCall(
     if (!sSnap.exists) throw new functions.https.HttpsError('not-found', 'Stream not found');
     const s = sSnap.data();
 
+    // ⚠⚠ WHO MAY CLIP IS A SEPARATE QUESTION FROM HOW MUCH THEY MAY CLIP, AND
+    // CONFLATING THEM WOULD SILENTLY RE-PRICE EVERY PLAN. Founder, 2026-09-02: the
+    // HOST chooses who (everyone / followers / subscribers); the CLIPPER's own plan
+    // still decides length and count. A Pro subscriber on a followers-only stream
+    // gets the full 90s.
+    //
+    // ⚠ ENFORCED HERE, NOT IN THE CLIENT. A client check is a suggestion: this
+    // callable is the only thing standing between the policy and a clip.
+    const policy = s.clipPolicy || 'everyone';
+    if (policy !== 'everyone' && uid !== s.hostUid) {
+      if (policy === 'followers') {
+        const fSnap = await db.collection('users').doc(s.hostUid).collection('followers').doc(uid).get();
+        if (!fSnap.exists) {
+          throw new functions.https.HttpsError('permission-denied',
+            'The host has limited clipping to followers. Follow to clip this stream.');
+        }
+      } else if (policy === 'subscribers') {
+        // ⚠ VERIFIED AGAINST memberships.js:126, NOT AGAINST CLAUDE.md. The doc file
+        // says `memberships/{sub}_{creator}`; the real collection is
+        // `member_subscriptions` and the id is `{creatorId}_{uid}`, the opposite
+        // order. Both halves of that stale line would have made this check pass for
+        // nobody, which fails CLOSED and would have looked like a policy bug.
+        const mSnap = await db.collection('member_subscriptions').doc(`${s.hostUid}_${uid}`).get();
+        const active = mSnap.exists && mSnap.data().status === 'active';
+        if (!active) {
+          throw new functions.https.HttpsError('permission-denied',
+            'The host has limited clipping to subscribers.');
+        }
+      }
+    }
+
     // Viewer tier → duration cap + per-stream count cap.
     // Admins (founder/ops) bypass every paywall → treated as 'pro', no quota.
     const uSnap = await db.collection('users').doc(uid).get();

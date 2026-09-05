@@ -485,6 +485,17 @@ exports.setStreamTts = streamChatMod.setStreamTts;   // effect 13, host-only
 exports.pinStreamMessage      = streamChatMod.pinStreamMessage;
 exports.setStreamModerator    = streamChatMod.setStreamModerator;
 
+// Raids — a host sends their live audience to another creator at the end of a
+// stream. Founder decisions 2026-09-02: the raider earns VP, there is NO minimum
+// viewer count, and a raid may not land on an audio-only or gated stream.
+//
+// ⚠ THE TARGET DECIDES WHO MAY RAID THEM (users/{uid}.raidPolicy) and that gate is
+// enforced in the callable, never client-side. Twitch shipped its raid
+// countermeasures AFTER the hate-raid damage; they are cheap now.
+const raids = require("./raids");
+exports.raidStream    = raids.raidStream;
+exports.setRaidPolicy = raids.setRaidPolicy;
+
 // Username index — maintains usernameLower + usernames/{lower} so username
 // search and vergr.me (/u/:username) actually resolve. Trigger keeps it in
 // sync; backfillUsernameIndex (token-gated HTTP) seeds existing users.
@@ -3964,6 +3975,7 @@ exports.requestPayout = functions.https.onCall(async (request) => {
 // versions read a `memberships` collection nothing ever populated). Auto-renew cron
 // is registered in cronDaily below.
 exports.subscribeMembership = memberships.subscribeMembership;
+exports.giftMembership      = memberships.giftMembership;
 exports.cancelMembership = memberships.cancelMembership;
 exports.getMyMemberships = memberships.getMyMemberships;
 

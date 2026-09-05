@@ -15,6 +15,7 @@ Every "already done" line below was verified against the repo or a live API on
 | Play Android Developer API enabled | Service Usage API, `state: ENABLED` on project `vergr-44494` |
 | Service account in Play Console | `vergr-44494@appspot.gserviceaccount.com`, Active |
 | Coin products + subscriptions | Created by founder 2026-08-20 |
+| **16 store items NOT yet created** | 9 VP bonus packs (`vpb_*`) + 7 boosts (`boost_*`), added to `play-products.csv` 2026-08-30. **These still need creating in Console**, as one-time products, consumable, exactly as the coin packs were. Until they exist, the Play build falls back to the coin price only and a buyer with an empty wallet cannot buy a boost on Android. |
 | Privacy policy URL | https://vergr.app/platform/privacy |
 | Terms URL | https://vergr.app/platform/terms |
 | **Account deletion URL** | https://vergr.app/platform/delete-account — public, no login. This is a hard Play requirement and a common rejection. |

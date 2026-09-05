@@ -1,10 +1,22 @@
 // VERGR creator memberships — coin-funded monthly support (Patreon/Twitch model).
 //
 // Fans pay coins monthly to a creator's MembershipTier (set up in Creator Studio →
-// Memberships, stored at `creators/{uid}.membershipTiers`). 10% platform fee, creator
-// keeps 90% (mirrors tips). Active subs live in `member_subscriptions`.
+// Memberships, stored at `creators/{uid}.membershipTiers`). Active subs live in
+// `member_subscriptions`.
 //
-// - subscribeMembership      — debit fan wallet, pay creator 90%, open an auto-renewing sub
+// ⚠⚠ THIS HEADER USED TO SAY "10% platform fee, creator keeps 90% (mirrors tips)".
+// THAT IS WRONG AND HAS BEEN WRONG SINCE THE REVENUE-SHARE MIGRATION. Read the code:
+// `creatorAmount = price` — the FULL tier price is credited as GROSS earned coins, and
+// Vergr's share is taken ONCE, later, at accrual in `coinLedger.settleEarnedShare`,
+// on the 50%→80% ladder keyed to lifetime gross earned. There is no 10% membership fee
+// and there is no tip fee either (`entitlements.feePctFor()` returns 0).
+//
+// A stale comment like that one is worse than no comment: it gets quoted to founders,
+// processors and future sessions as if it were the model. Grep the code before
+// repeating any rate from a header.
+//
+// - subscribeMembership      — debit fan wallet, credit the creator the FULL price as
+//                              gross earned coins, open an auto-renewing sub
 // - cancelMembership         — flip autoRenew=false; access stays until periodEnd
 // - getMyMemberships         — fan's active/lapsing subs, enriched with creator profile
 // - renewMemberSubscriptions — daily cron: auto-debit due subs, lapse the rest
@@ -53,6 +65,135 @@ async function activeSeatCount(creatorId, tierId) {
 // ─────────────────────────────────────────────────────────────────────
 // subscribeMembership — fan pays coins, sub opens immediately + auto-renews.
 // ─────────────────────────────────────────────────────────────────────
+// GIFT A SUB. Founder decisions, 2026-09-02, all three enforced here:
+//   NO GIFTER GATE      anyone may gift; no follower or tier requirement
+//   NO RENEWAL          autoRenew is FALSE, so a gift is one month and stops
+//   BULK IS qty x price WITH NO DISCOUNT
+//
+// THE NO-DISCOUNT RULE IS ENFORCED BY THE SHAPE, NOT BY A COMMENT. The total is
+// `price * granted.length` and there is no quantity table, no ladder and no
+// percentage anywhere in this function, so there is nowhere for a discount to be
+// introduced by accident. Changing that is an economy change and a founder call.
+//
+// RECIPIENTS ARE EXPLICIT. The client picks names (it already has the viewer
+// list); the server never invents one. Gifting to "whoever" would mean the server
+// choosing who receives money-backed value, which nobody has specified.
+//
+// ALREADY-ACTIVE MEMBERS ARE FILTERED OUT AND NOT CHARGED FOR. One active sub per
+// fan per creator is the existing rule, so a gift to someone who already has one
+// cannot grant anything, and taking coins for it would be charging for a no-op.
+exports.giftMembership = functions.https.onCall(
+  { region: REGION, cors: true },
+  async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) throw new functions.https.HttpsError('unauthenticated', 'Sign in required.');
+    const { creatorId, tierId, recipients } = request.data || {};
+    if (!creatorId || !tierId) throw new functions.https.HttpsError('invalid-argument', 'creatorId and tierId required');
+    const wanted = Array.from(new Set((Array.isArray(recipients) ? recipients : []).filter((r) => typeof r === 'string' && r)));
+    if (!wanted.length) throw new functions.https.HttpsError('invalid-argument', 'Pick who the gift is for.');
+    if (wanted.length > 25) throw new functions.https.HttpsError('invalid-argument', 'Up to 25 gifts at a time.');
+    if (wanted.includes(creatorId)) throw new functions.https.HttpsError('failed-precondition', 'A creator cannot be gifted their own membership.');
+
+    const { tier } = await loadTier(creatorId, tierId);
+    const price = Math.max(0, Math.floor(tier.priceCoins || 0));
+    if (price <= 0) throw new functions.https.HttpsError('failed-precondition', 'This tier has no price set.');
+
+    // Filter to the people a gift can actually reach.
+    const granted = [];
+    for (const r of wanted) {
+      const existing = await db.collection('member_subscriptions')
+        .where('userId', '==', r).where('creatorId', '==', creatorId)
+        .where('status', '==', 'active').limit(1).get();
+      if (existing.empty) granted.push(r);
+    }
+    if (!granted.length) throw new functions.https.HttpsError('already-exists', 'Everyone you picked is already a member.');
+
+    // Seat limit, best-effort, same as the paid path.
+    if (tier.seatLimit && Number(tier.seatLimit) > 0) {
+      const taken = await activeSeatCount(creatorId, tierId);
+      if (taken + granted.length > Number(tier.seatLimit)) {
+        throw new functions.https.HttpsError('resource-exhausted', 'That tier does not have enough seats left.');
+      }
+    }
+
+    const total = price * granted.length;
+    const now = Date.now();
+    const periodEnd = now + PERIOD_MS;
+    const groupIds = (tier.communities || [])
+      .filter((c) => c.type === 'vergr_group' && c.groupId).map((c) => c.groupId);
+
+    const result = await db.runTransaction(async (tx) => {
+      const walletRef = db.collection('wallets').doc(uid);
+      const wallet = await tx.get(walletRef);
+      const balance = wallet.exists ? (wallet.data().balance || 0) : 0;
+      if (balance < total) {
+        throw new functions.https.HttpsError('failed-precondition',
+          'Need ' + total + ' coins for ' + granted.length + ' gifts. You have ' + balance + '.');
+      }
+      tx.update(walletRef, {
+        balance: FieldValue.increment(-total),
+        totalSpent: FieldValue.increment(total),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      // ONE RATE. The whole price is gross revenue; Vergr takes its share once at
+      // accrual, never twice. Same as the paid path.
+      tx.set(db.collection('wallets').doc(creatorId), {
+        ...earnedCoinCredit(total),
+        totalEarned: FieldValue.increment(total),
+        updatedAt: FieldValue.serverTimestamp(),
+      }, { merge: true });
+
+      for (const r of granted) {
+        tx.set(db.collection('member_subscriptions').doc(creatorId + '_' + r), {
+          userId: r, creatorId, tierId,
+          tierName: tier.name || 'Member',
+          priceCoins: price,
+          badge: tier.badge || null,
+          communityGroupIds: groupIds,
+          paymentType: 'coins',
+          status: 'active',
+          // A GIFT DOES NOT RENEW. The recipient never entered payment details and
+          // must not be billed when the month ends.
+          autoRenew: false,
+          giftedBy: uid,
+          startedAt: FieldValue.serverTimestamp(),
+          periodStart: now,
+          periodEnd,
+          renewsAt: null,
+          createdAt: FieldValue.serverTimestamp(),
+        });
+        tx.set(db.collection('notifications').doc(), {
+          recipientId: r, type: 'membership',
+          title: 'You were gifted a membership',
+          body: 'Someone gifted you a month of ' + (tier.name || 'membership') + '.',
+          senderId: uid, read: false, data: { creatorId, tierId }, createdAt: FieldValue.serverTimestamp(),
+        });
+      }
+
+      tx.set(db.collection('transactions').doc(), {
+        userId: uid, type: 'membership_gift', amount: -total, currency: 'coins',
+        description: 'Gifted ' + granted.length + ' x ' + (tier.name || 'membership'),
+        meta: { creatorId, tierId, count: granted.length }, createdAt: FieldValue.serverTimestamp(),
+      });
+      tx.set(db.collection('notifications').doc(), {
+        recipientId: creatorId, type: 'membership',
+        title: 'Memberships gifted!',
+        body: 'Someone gifted ' + granted.length + ' membership(s) to your channel',
+        senderId: uid, read: false, data: { tierId }, createdAt: FieldValue.serverTimestamp(),
+      });
+      tx.set(db.collection('app_config').doc('general'), { membershipsActive: true }, { merge: true });
+      return { ok: true, granted: granted.length, total };
+    });
+
+    // Post-commit, exactly like the paid path: this transaction never reads the
+    // creator's wallet, so there is no VP here to price the share with.
+    await settleEarnedShare(db, {
+      uid: creatorId, coins: result.total,
+      source: 'membership', sourceId: 'membership_gift:' + creatorId + ':' + uid + ':' + now,
+    });
+    return result;
+  },
+);
 exports.subscribeMembership = functions.https.onCall(
   { region: REGION, cors: true },
   async (request) => {

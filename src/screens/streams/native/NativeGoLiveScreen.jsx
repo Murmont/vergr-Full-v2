@@ -49,6 +49,10 @@ export default function NativeGoLiveScreen() {
   const [tags, setTags] = useState([]);
   const [tagInput, setTagInput] = useState('');
   const [audience, setAudience] = useState('public');
+  // Both founder-approved 2026-09-02 and both were web-only until now, which is
+  // the two-implementations trap this file exists to remind everyone about.
+  const [audioOnly, setAudioOnly] = useState(false);
+  const [clipPolicy, setClipPolicy] = useState('everyone');
   const [notifyFollowers, setNotifyFollowers] = useState(true);
   // Spoken language of the broadcast (locality discovery); defaults from country.
   const [streamLang, setStreamLang] = useState(() => languageForCountry(profile?.country));
@@ -252,7 +256,7 @@ export default function NativeGoLiveScreen() {
 
   const goLive = async () => {
     if (starting) return;
-    if (followerGated) { showToast(`You need ${STREAM_FOLLOWER_GATE} followers to go live publicly — you have ${followerCount}. Squad streams are free.`, 'error'); return; }
+    if (followerGated) { showToast(`You need ${STREAM_FOLLOWER_GATE} followers to go live publicly. You have ${followerCount}. Squad streams are free.`, 'error'); return; }
     if (!title.trim()) { showToast('Add a title', 'error'); return; }
     setStarting(true);
     try {
@@ -267,6 +271,11 @@ export default function NativeGoLiveScreen() {
           tags: tags.slice(0, 12),
           coverUrl: coverUrl || null,
           audience,
+          // A real format, not a camera that happens to be off.
+          audioOnly,
+          // WHO may clip. HOW MUCH stays the clipper own plan, enforced in
+          // functions/streamClips.js.
+          clipPolicy,
           notifyFollowers: !!notifyFollowers,
           requestedResolution: rendition.label,
           requestedBitrateKbps: rendition.kbps,
@@ -286,7 +295,7 @@ export default function NativeGoLiveScreen() {
 
   const scheduleStream = async () => {
     if (scheduling) return;
-    if (followerGated) { showToast(`You need ${STREAM_FOLLOWER_GATE} followers to stream publicly — you have ${followerCount}.`, 'error'); return; }
+    if (followerGated) { showToast(`You need ${STREAM_FOLLOWER_GATE} followers to stream publicly. You have ${followerCount}.`, 'error'); return; }
     if (!title.trim()) { showToast('Add a title', 'error'); return; }
     const startMs = scheduledAt ? new Date(scheduledAt).getTime() : 0;
     if (!startMs || Number.isNaN(startMs)) { showToast('Pick a date & time', 'error'); return; }
@@ -314,7 +323,7 @@ export default function NativeGoLiveScreen() {
         createdAt: serverTimestamp(),
       });
       persistStreamDefaults();
-      showToast("Stream scheduled — we'll remind you and your followers.", 'success');
+      showToast("Stream scheduled. We'll remind you and your followers.", 'success');
       navigate('/');
     } catch (err) { showToast(err?.message || 'Could not schedule', 'error'); } finally { setScheduling(false); }
   };
@@ -372,7 +381,7 @@ export default function NativeGoLiveScreen() {
               </span>
               <div style={{ fontSize: 13, color: C.textDim, maxWidth: 300, lineHeight: 1.45 }}>
                 {previewError ? previewError
-                  : !previewStarted ? 'Camera off. Enable it to preview before going live — nothing is recorded or shared until you go live.'
+                  : !previewStarted ? 'Camera off. Enable it to preview before going live. Nothing is recorded or shared until you go live.'
                   : !camOn && !screenSharing ? 'Camera off. Turn on Camera or share Screen to preview.'
                   : 'Starting preview…'}
               </div>
@@ -449,7 +458,7 @@ export default function NativeGoLiveScreen() {
           <Label>Description</Label>
           <textarea value={description} onChange={(e) => setDescription(e.target.value.slice(0, 280))} placeholder="What's this stream about?" style={{ ...input, height: 72, resize: 'vertical', fontFamily: 'inherit' }} />
           <Label>Tags</Label>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '10px 12px', background: 'rgba(255,255,255,0.04)', border: `1px solid ${C.border}`, borderRadius: 12 }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '10px 12px', background: '#191527', border: `1px solid ${C.border}`, borderRadius: 12 }}>
             {tags.map((t) => (
               <span key={t} style={tagPill}>#{t}<span style={{ cursor: 'pointer', opacity: 0.7 }} onClick={() => setTags((p) => p.filter((x) => x !== t))}>×</span></span>
             ))}
@@ -466,7 +475,7 @@ export default function NativeGoLiveScreen() {
               </div>
             </div>
           ) : (
-            <button type="button" onClick={() => coverInputRef.current?.click()} disabled={coverBusy} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '13px 14px', borderRadius: 12, background: 'rgba(255,255,255,0.04)', border: `1px dashed ${C.border}`, color: C.textDim, fontSize: 13, fontWeight: 700, cursor: coverBusy ? 'wait' : 'pointer', width: '100%' }}>
+            <button type="button" onClick={() => coverInputRef.current?.click()} disabled={coverBusy} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '13px 14px', borderRadius: 12, background: '#191527', border: `1px dashed ${C.border}`, color: C.textDim, fontSize: 13, fontWeight: 700, cursor: coverBusy ? 'wait' : 'pointer', width: '100%' }}>
               <span className="material-symbols-outlined" style={{ fontSize: 18 }}>add_photo_alternate</span>
               {coverBusy ? 'Uploading…' : 'Add a cover image'}
             </button>
@@ -503,6 +512,24 @@ export default function NativeGoLiveScreen() {
               </button>
             ))}
           </div>
+          {/* AUDIO-ONLY AND WHO-CAN-CLIP WERE SENT BY THIS SCREEN WITH NO CONTROL TO SET
+              THEM, so both were permanently false. A half-ported feature is worse than an
+              unported one: the payload looks right and the user can never change it. */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, fontSize: 13, color: C.text }}>
+            <span className="material-symbols-outlined" style={{ fontSize: 18, color: C.purpleLight }}>graphic_eq</span>
+            <span style={{ flex: 1 }}>Audio only, no camera</span>
+            <Toggle checked={audioOnly} onChange={setAudioOnly} />
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, fontSize: 13, color: C.text }}>
+            <span className="material-symbols-outlined" style={{ fontSize: 18, color: C.purpleLight }}>content_cut</span>
+            <span style={{ flex: 1 }}>Who can clip</span>
+            <select value={clipPolicy} onChange={(e) => setClipPolicy(e.target.value)}
+              style={{ background: '#191527', border: `1px solid ${C.border}`, borderRadius: 8, color: C.text, fontSize: 13, padding: '6px 8px', outline: 'none' }}>
+              <option value="everyone">Everyone</option>
+              <option value="followers">Followers</option>
+              <option value="subscribers">Subscribers</option>
+            </select>
+          </div>
           {audience !== 'friends' && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, fontSize: 13, color: C.textDim }}>
               <span className="material-symbols-outlined" style={{ fontSize: 18, color: C.purpleLight }}>notifications_active</span>
@@ -517,7 +544,7 @@ export default function NativeGoLiveScreen() {
               value={streamLang}
               onChange={(e) => setStreamLang(e.target.value)}
               style={{
-                padding: '8px 12px', background: 'rgba(255,255,255,0.04)',
+                padding: '8px 12px', background: '#191527',
                 border: `1px solid ${C.border}`, borderRadius: 10, color: C.text,
                 fontSize: 13, fontWeight: 700,
               }}
@@ -565,7 +592,7 @@ export default function NativeGoLiveScreen() {
           {tipGoalOn && (
             <>
               <Label>Goal amount</Label>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '11px 14px', background: 'rgba(255,255,255,0.04)', border: `1px solid ${C.border}`, borderRadius: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '11px 14px', background: '#191527', border: `1px solid ${C.border}`, borderRadius: 12 }}>
                 <svg width="15" height="15" viewBox="0 0 16 16" fill={C.purpleLight}><polygon points="8,1 10,6 15,6 11,9.5 12.5,15 8,11.5 3.5,15 5,9.5 1,6 6,6" /></svg>
                 <input type="number" min={0} value={tipGoalCoins} onChange={(e) => setTipGoalCoins(Math.max(0, Number(e.target.value)))} placeholder="0" style={{ flex: 1, background: 'transparent', border: 'none', color: '#fff', fontSize: 15, fontWeight: 700, outline: 'none' }} />
                 <span style={{ fontSize: 12, color: C.textDim }}>coins</span>
@@ -601,9 +628,9 @@ export default function NativeGoLiveScreen() {
               <div style={{ fontSize: 13, fontWeight: 700, color: '#fff' }}>Public live unlocks at {STREAM_FOLLOWER_GATE} followers</div>
             </div>
             <div style={{ fontSize: 11.5, color: '#a0a0b8', marginTop: 5, lineHeight: 1.5 }}>
-              You have <b style={{ color: '#fff' }}>{followerCount}</b> — {followersToGo} to go. Squad streams to your crew are free anytime.
+              You have <b style={{ color: '#fff' }}>{followerCount}</b>, {followersToGo} to go. Squad streams to your crew are free anytime.
             </div>
-            <div style={{ marginTop: 8, height: 5, borderRadius: 999, background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
+            <div style={{ marginTop: 8, height: 5, borderRadius: 999, background: '#2A2A38', overflow: 'hidden' }}>
               <div style={{ height: '100%', width: `${Math.min(100, (followerCount / STREAM_FOLLOWER_GATE) * 100)}%`, background: '#f59e0b' }} />
             </div>
           </div>
@@ -658,7 +685,7 @@ function DevicePicker({ icon, label, value, devices, fallback, onChange }) {
       <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: C.textDim, marginBottom: 6 }}>
         <span className="material-symbols-outlined" style={{ fontSize: 14 }}>{icon}</span>{label}
       </span>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(255,255,255,0.04)', border: `1px solid ${C.border}`, borderRadius: 12, padding: '2px 12px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#191527', border: `1px solid ${C.border}`, borderRadius: 12, padding: '2px 12px' }}>
         <select value={value} onChange={(e) => onChange(e.target.value)} style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', color: C.text, fontSize: 13, padding: '11px 0', cursor: 'pointer', appearance: 'none', WebkitAppearance: 'none' }}>
           <option value="" style={{ background: C.card }}>{fallback}</option>
           {devices.map((d, i) => <option key={d.deviceId || i} value={d.deviceId} style={{ background: C.card }}>{d.label || `${label} ${i + 1}`}</option>)}
@@ -691,6 +718,6 @@ function Toggle({ checked, onChange }) {
 
 const iconBtn = { width: 38, height: 38, borderRadius: 12, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.05)', border: `1px solid ${C.border}`, color: C.text, cursor: 'pointer' };
 const primaryBtn = { display: 'flex', alignItems: 'center', gap: 8, padding: '12px 18px', background: `linear-gradient(135deg, ${C.purple}, ${C.purpleLight})`, border: 'none', borderRadius: 14, color: '#fff', fontSize: 13, fontWeight: 800, cursor: 'pointer', boxShadow: '0 0 16px rgba(123,31,255,0.4)' };
-const input = { width: '100%', boxSizing: 'border-box', background: 'rgba(255,255,255,0.04)', border: `1px solid ${C.border}`, borderRadius: 12, padding: '13px 15px', color: C.text, fontSize: 15, outline: 'none' };
+const input = { width: '100%', boxSizing: 'border-box', background: '#191527', border: `1px solid ${C.border}`, borderRadius: 12, padding: '13px 15px', color: C.text, fontSize: 15, outline: 'none' };
 const coverChip = { width: 30, height: 30, borderRadius: 8, border: 'none', background: 'rgba(0,0,0,0.6)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' };
 const tagPill = { display: 'flex', alignItems: 'center', gap: 5, padding: '4px 10px', background: C.purpleSoft, border: '1px solid rgba(180,79,255,0.3)', borderRadius: 20, fontSize: 12, color: C.purpleLight };

@@ -147,7 +147,7 @@ exports.createStreamSession = functions.https.onCall({ region: REGION }, async (
   if (!req.auth) throw new functions.https.HttpsError('unauthenticated', 'Sign in required.');
   const uid = req.auth.uid;
 
-  const { kind = 'public', tournamentId = null, tournamentMatchId = null, boost = null, title = '', game = null, mode = 'rtmp', twitchMirror = false, orientation = 'landscape', language = null, audience = 'public', contentRating = null } = req.data || {};
+  const { kind = 'public', tournamentId = null, tournamentMatchId = null, boost = null, title = '', game = null, mode = 'rtmp', twitchMirror = false, orientation = 'landscape', language = null, audience = 'public', contentRating = null, audioOnly = false, clipPolicy = 'everyone' } = req.data || {};
   // Audience visibility within a public stream: 'public' (discoverable to all),
   // 'followers', or 'friends' (both = unlisted, gated on the watch page). Server
   // is the source of truth so discovery queries can trust a single boolean.
@@ -489,6 +489,19 @@ exports.createStreamSession = functions.https.onCall({ region: REGION }, async (
       hostPlan: plan,
       hostFollowerCount: followerCount,
       orientation: orientation === 'portrait' ? 'portrait' : 'landscape', // desktop/mobile split in discovery
+      // ⚠ AUDIO-ONLY IS A REAL FORMAT, NOT A CAMERA THAT HAPPENS TO BE OFF.
+      // Founder, 2026-09-02: a co-host could already join audio-only, so refusing a
+      // solo host was an inconsistency. The field was READ in two places
+      // (StreamEndingScreen filters audio-only out of raid targets) and written by
+      // nothing, so the viewer could never render the audio stage.
+      audioOnly: !!audioOnly,
+      // ⚠⚠ WHO MAY CLIP, WHICH IS NOT THE SAME QUESTION AS HOW MUCH THEY MAY CLIP.
+      // Founder, 2026-09-02: followers and/or subs, and the per-plan limits stay
+      // SEPARATE. The clipper's own plan decides length and count
+      // (functions/streamClips.js CLIP_LIMITS: free 30s/3, lite 60s/5, pro 90s/
+      // unlimited), so a Pro subscriber on a followers-only stream still gets 90s.
+      // Conflating the two would silently re-price every plan.
+      clipPolicy: ['everyone', 'followers', 'subscribers'].includes(clipPolicy) ? clipPolicy : 'everyone',
       twitchMirror: mirrorMeta,                     // null unless mirroring; relay + chat bridge read this
       twitchMirrorState: mirrorMeta ? 'pending' : null, // relay stamps 'relaying'/'error'; bridge stamps chat status
       privateTurn: planRules.privateStreamingTURN,
