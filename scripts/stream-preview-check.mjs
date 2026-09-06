@@ -35,6 +35,7 @@ const PORTED_PATHS = [
   'src/screens/streams/native/NativeGoLiveScreen.jsx',
   'src/screens/streams/CoStreamingScreen.jsx',
   'src/screens/streams/StreamEndingScreen.jsx',
+  'src/components/streams/TipComboFeed.jsx',
 ];
 const STATE_PATHS = [
   'src/components/streams/states/index.jsx',
@@ -59,7 +60,15 @@ const readState = () => read('previewStates.jsx')
   + STATE_PATHS.map((f) => String.fromCharCode(10) + readFileSync(f, 'utf8')).join('');
 let n = 0;
 const fails = [];
-const check = (cond, msg) => { n++; if (!cond) fails.push(msg); };
+// ⚠ `DUMP=1` PRINTS EVERY ASSERTION, AND IT EXISTS BECAUSE THE TOTAL MOVES ON
+// ITS OWN. Several rules loop over content — the keys destructured from
+// usePreviewSim(), avatar expressions per file, video slots — so editing a
+// screen legitimately changes the count. A DROP looks identical to lost
+// coverage, and working out which five assertions had vanished cost most of a
+// session. `DUMP=1 node scripts/stream-preview-check.mjs > a.txt`, make the
+// change, dump again, and `comm` the two: gained is fine, LOST is a real
+// regression. A passing run with fewer assertions is not a passing run.
+const check = (cond, msg) => { n++; if (process.env.DUMP) console.log(`${n}\t${String(msg).slice(0, 72)}`); if (!cond) fails.push(msg); };
 
 // ⚠ STRIP COMMENTS BEFORE ASSERTING, ALWAYS. Three separate checks in this file
 // have now failed against the comment that EXPLAINS the defect they exist to
@@ -119,6 +128,26 @@ const codeOnly = (src) => src
 // never looked at the one place a gift name actually lived. A file is exempted
 // from ONE rule, at that rule, never from the whole guard.
 const FILES = readdirSync(DIR).filter((f) => f.endsWith('.jsx') || f.endsWith('.js'));
+
+// ⚠⚠ "A LIVE SURFACE" AND "A SURFACE SOMEBODY IS WATCHING" ARE NOT THE SAME
+// THING, and five rules below assumed they were. They used `<ReactionsFloor>` as
+// the marker for "this renders a running stream", which was unambiguous until an
+// OBS overlay legitimately rendered reactions too.
+//
+// An overlay is composited into the BROADCAST: the people who see it are
+// watching on Twitch or YouTube, not sitting in Vergr chat and not holding a
+// pointer. So "chat is followers-only", "you are muted", the like button, the
+// viewer list, the paywall and the reconnecting state are all addressed to
+// somebody who is not there, and the whole thing is `pointerEvents: none`.
+//
+// ⚠ ONE PREDICATE, FIVE CALL SITES — not five `if (f === 'PreviewObsOverlay')`
+// skips. Scattered exemptions are how a guard quietly stops guarding: each looks
+// reasonable alone and nobody ever counts them. The overlay is still subject to
+// every other rule here, including the live-kit rule that forces it to carry
+// tips, subs, entrances and reactions.
+const OVERLAY_SURFACES = ['PreviewObsOverlay.jsx'];
+const isWatched = (f, src) => src.includes('<ReactionsFloor') && !OVERLAY_SURFACES.includes(f);
+
 
 // Rule 1 only: these legitimately define or derive identities.
 const OWNS_IDENTITY = ['previewCast.js', 'previewFaces.js'];
@@ -293,12 +322,16 @@ for (const f of FILES) {
 // whose width depends on the row — circular, resolves tiny, and the flex column
 // (minWidth: 0) then collapsed so the ellipsis fired on LAYOUT, not on length.
 // TikTok shows the whole handle. A pixel cap has nothing circular to resolve.
-const solo = read('previewSoloParts.jsx');
-const rowAt = solo.indexOf('function GiftRow');
-const rowEnd = solo.indexOf('export function GiftFeed');
-const rowSrc = rowAt < 0 ? '' : codeOnly(solo.slice(rowAt, rowEnd));
-check(rowAt >= 0 && !rowSrc.includes("maxWidth: '"),
-  'GiftRow uses a percentage maxWidth — inside a shrink-to-fit absolute parent that resolves tiny and truncates the name');
+// ⚠ THE ROW MOVED TO PRODUCTION 2026-09-05 (components/streams/TipComboFeed).
+// It had only ever rendered inside the simulator; the real screens were still on
+// TipAlertOverlay. This rule follows it rather than passing vacuously on a file
+// that no longer defines it.
+const tipFeedSrc = readFileSync('src/components/streams/TipComboFeed.jsx', 'utf8');
+const rowAt = tipFeedSrc.indexOf('export function TipComboRow');
+const rowEnd = tipFeedSrc.indexOf('export function TipComboFeed');
+const rowSrc = rowAt < 0 ? '' : codeOnly(tipFeedSrc.slice(rowAt, rowEnd));
+check(rowAt >= 0 && rowEnd > rowAt && !rowSrc.includes("maxWidth: '"),
+  'the tip row uses a percentage maxWidth — inside a shrink-to-fit absolute parent that resolves tiny and truncates the name');
 
 // ── 13. Hearts are drawn, not an OS emoji ────────────────────
 // An emoji glyph is whatever the OS ships, so the same stream looks different
@@ -378,6 +411,13 @@ for (const f of FILES.filter((x) => x.endsWith('.jsx'))) {
   const src = codeOnly(read(f));
   if (!src.includes('<JoinAnnouncer')) continue;
   for (const [tag, what] of LIVE_KIT) {
+    // ⚠ ONE EXEMPTION, AT THIS RULE, WITH A REASON — never a blanket skip list,
+    // which is how previewCast.js once escaped the rule that mattered most.
+    // The OBS overlay is a live surface with NOBODY IN FRONT OF IT: it is a
+    // browser source composited into a scene, so there is no pointer, no tap and
+    // no sheet to open. Mounting a sheet host there would be a modal nobody can
+    // reach, rendered into somebody's stream.
+    if (f === 'PreviewObsOverlay.jsx' && tag === '<PreviewSheets') continue;
     check(src.includes(tag), `${f} is a live surface but does not render ${what} (${tag}) — that control does nothing here`);
   }
 }
@@ -599,7 +639,7 @@ for (const f of FILES.filter((x) => x.endsWith('.jsx'))) {
   // A surface that floats hearts must also offer a way to send one — with one
   // real exception: the BROADCASTER sees hearts arriving from viewers and has
   // nothing to tap, because nobody likes their own stream.
-  if (!src.includes('<ReactionsFloor') || f.includes('Broadcaster')) continue;
+  if (!isWatched(f, src) || f.includes('Broadcaster')) continue;
   check(src.includes('<FloatingHeart'),
     f + ' floats hearts but has no like button — the landscape view shipped exactly like this');
 }
@@ -775,7 +815,7 @@ check(chatSrc.includes('placeholder="Search viewers"'),
 // Every live surface offers a way into the viewer list.
 for (const f of FILES.filter((x) => x.endsWith('.jsx'))) {
   const src = codeOnly(read(f));
-  if (!src.includes('<ReactionsFloor')) continue;   // live surfaces only
+  if (!isWatched(f, src)) continue;   // surfaces a person is watching
   // ⚠ THE HANDLER, NOT THE TAG. Accepting `<ViewerPill` alone passed with the
   // onClick deleted — a pill that opens nothing is exactly the dead control this
   // rule exists to stop. Only the action counts.
@@ -802,7 +842,7 @@ check(tipBody.includes('Number.isFinite'),
 // happy path cannot design the unhappy ones.
 for (const f of FILES.filter((x) => x.endsWith('.jsx'))) {
   const src = codeOnly(read(f));
-  if (!src.includes('<ReactionsFloor')) continue;   // live surfaces only
+  if (!isWatched(f, src)) continue;   // surfaces a person is watching
   check(src.includes('<PlaybackState'),
     f + ' has no playback state overlay — reconnecting, host-dropped and offline cannot be captured there');
   check(src.includes('<StreamPaywall'),
@@ -828,10 +868,10 @@ for (const f of FILES.filter((x) => x.endsWith('.jsx'))) {
 // second-person ("you are timed out"), a host is never rate-limited by their
 // own room, and the host sees these as SETTINGS in the moderation sheet.
 const VIEWER_SURFACES = FILES.filter((x) => x.endsWith('.jsx') && x.startsWith('Preview')
-  && !x.includes('Broadcaster'));
+  && !x.includes('Broadcaster') && !OVERLAY_SURFACES.includes(x));
 for (const f of VIEWER_SURFACES) {
   const src = codeOnly(read(f));
-  if (!src.includes('<ReactionsFloor')) continue;   // live surfaces only
+  if (!isWatched(f, src)) continue;   // surfaces a person is watching
   check(src.includes('<ChatStateBanner'),
     f + ' has no chat-state banner — slow mode, followers-only, subscribers-only and a timeout are all invisible there');
   check(/chatState = 'open'/.test(src),
@@ -884,7 +924,7 @@ for (const f of VIEWER_SURFACES) {
 {
   for (const f of VIEWER_SURFACES) {
     const src = codeOnly(read(f));
-    if (!src.includes('<ReactionsFloor')) continue;
+    if (!isWatched(f, src)) continue;
     check(src.includes('<TtsStrip'),
       f + ' has no spoken-chat strip — muted, needs-a-tap and the Pro lock are all invisible there');
   }
@@ -1429,10 +1469,23 @@ for (const f of VIEWER_SURFACES) {
       // any rgba used as a FILL whose alpha is below 0.8 and which is not near-black
       let at = line.indexOf('rgba(');
       while (at >= 0) {
-        // an rgba INSIDE a border/shadow/outline declaration is a stroke, not a fill,
-        // and this rule is about fills. A mixed line carries both.
-        const before = line.slice(Math.max(0, at - 26), at);
-        if (/border|boxShadow|outline|color:s*$/.test(before)) { at = line.indexOf('rgba(', at + 1); continue; }
+        // an rgba INSIDE a border/shadow/outline declaration is a stroke or a
+        // light, not a fill, and this rule is about fills. A mixed line carries
+        // both.
+        //
+        // ⚠⚠ THE OWNING PROPERTY, NOT A FIXED LOOKBACK. This was a 26-character
+        // window, which cannot see past one stop of a multi-value shadow: the
+        // second half of `boxShadow: '0 4px 14px rgba(...), inset 0 1px 0
+        // rgba(...)'` looked back at ", inset 0 1px 0 " and got reported as a
+        // wash fill. It cried wolf on four correct declarations at once, and a
+        // guard that does that gets switched off. Walk back to the nearest
+        // property key instead and let THAT decide.
+        const head = line.slice(0, at);
+        const keys = [...head.matchAll(/([A-Za-z-]+)\s*:/g)];
+        const owner = keys.length ? keys[keys.length - 1][1] : '';
+        if (/^(border|borderColor|borderTop|borderBottom|borderLeft|borderRight|boxShadow|outline|textShadow|filter|caretColor|color|WebkitTextStroke)$/.test(owner)) {
+          at = line.indexOf('rgba(', at + 1); continue;
+        }
         const close = line.indexOf(')', at);
         if (close > at) {
           const parts = line.slice(at + 5, close).split(',').map((x) => Number(x.trim()));
@@ -1686,7 +1739,20 @@ for (const f of VIEWER_SURFACES) {
   // ⚠ `minWidth: 0` IS WHAT MAKES flex-shrink WORK. Without it the nowrap gifter
   // chips overflowed the 340px rail by 49px and overflow:hidden sliced the third
   // gifter through the middle of their name.
-  check(dv.includes("alignItems: 'center', gap: 5, minWidth: 0, padding: '3px 8px'"),
+  // ⚠ ASSERT THE PROPERTY, NOT THE WHOLE LINE. This matched an entire style
+  // fragment including `gap: 5`, so snapping the spacing scale from 5 to 6 broke
+  // a rule that is about minWidth and has nothing to do with the gap. A guard
+  // that fails on an unrelated change is a guard people start ignoring.
+  // ⚠⚠ AND SCOPED TO THE OUTER CHIP'S OWN STYLE OBJECT. The first rewrite sliced
+  // the whole map body, which also contains the NAME span — and that span carries
+  // its own `minWidth: 0` for the ellipsis. So deleting the property from the chip
+  // left the rule green: it was matching the wrong element. Negative-tested both
+  // ways this time. [[reference-self-matching-guard]]
+  const gifterChip = (() => {
+    const at = dv.indexOf('<span key={g.uid} style={{');
+    return at < 0 ? '' : dv.slice(at, dv.indexOf('}}', at) + 2);
+  })();
+  check(gifterChip.includes('minWidth: 0'),
     'the top-gifters chips lost minWidth:0 — the strip overflows its rail again and the third gifter is cut through the name');
 
   // ⚠ NO CAMERA PiP ON AN AUDIO-ONLY BROADCAST.
@@ -1841,6 +1907,23 @@ for (const f of VIEWER_SURFACES) {
     'the sheet host no longer restores focus on close — it falls to <body> and the next Tab restarts at the top of the page');
   check(ch2.includes('<PreviewSheetBody {...props} />'),
     'PreviewSheets no longer routes through the host, so the dialog semantics are bypassed');
+  // ⚠⚠ THE FOCUS EFFECT MUST BE MOUNT-ONLY, AND THIS IS NOT A STYLE RULE.
+  // It depended on [onClose]; all nine call sites pass an inline arrow, so the
+  // identity changed every render, the effect re-ran every render, and its
+  // setup MOVES FOCUS to the first control in the sheet. Typing one character
+  // into the tip message re-rendered the sheet and focus was ripped back to the
+  // close button. Measured 2026-09-05: "great stream tonight" landed as "gr".
+  // Every text field in all seventeen sheets was affected.
+  // Scoped to the FOCUS effect alone. The ref-sync effect one line above it
+  // legitimately depends on [onClose], so a file-wide substring test passes
+  // vacuously in one direction and cries wolf in the other.
+  const fxAt = body.indexOf('const prev = document.activeElement');
+  const depsAt = fxAt < 0 ? -1 : body.indexOf('}, [', fxAt);
+  const fxDeps = depsAt < 0 ? '' : body.slice(depsAt, body.indexOf(';', depsAt) + 1);
+  check(fxAt >= 0 && fxDeps === '}, []);',
+    'the sheet host focus effect has dependencies again — it re-runs on every render and steals focus out of whatever field is being typed in');
+  check(body.includes('closeRef.current'),
+    'the sheet host no longer reads its close handler through a ref, so a fresh identity can restart the mount-only effect');
 }
 
 // ── 49. USER-GENERATED TEXT CARRIES dir="auto" ─────────────────────────────
@@ -2767,6 +2850,354 @@ check(stSrc.includes('ReconnectingOverlay') && stSrc.includes('StreamLoadingCove
   check(ng.includes("onChange={(e) => setClipPolicy(e.target.value)}"),
     "the native Go Live sends clipPolicy but has no picker, so it is permanently everyone");
 }
+// ── 50. THE TYPE, RADIUS AND SPACING SCALES ────────────────────────────────
+// ⚠⚠ MEASURED 2026-09-05 BEFORE THIS RULE EXISTED: 23 distinct font sizes in
+// half-point steps from 8.5 to 24, 19 distinct border radii, and 13 distinct
+// gaps covering nearly every integer from 2 to 14. That is the single biggest
+// reason these surfaces read eyeballed rather than designed. Twitch publishes
+// six type roles, four radii and a 4px spacing scale and holds to them.
+//
+// The steps come from the frequency count, not from a ratio: 13(105) 12(83)
+// 11(74) 14(47) for type and 8(102) 6(68) 10(49) 4(29) for gaps were already
+// the de-facto design. What this bans is the half-points and the near-duplicates
+// sitting one pixel either side of them.
+//
+// ⚠ A RADIUS OF 3 OR LESS IS EXEMPT. Those are half the height of a hairline
+// bar — a 3px progress track at radius 2, a 5px meter at radius 3 — not a corner
+// on a card.
+{
+  const TYPE_OK = new Set([9, 11, 12, 13, 14, 16, 20, 24]);
+  const RADIUS_OK = new Set([4, 8, 12, 16, 22, 28, 999]);
+  const SPACE_OK = new Set([2, 4, 6, 8, 12, 16]);
+  const RULES = [['fontSize', TYPE_OK], ['borderRadius', RADIUS_OK], ['gap', SPACE_OK], ['rowGap', SPACE_OK], ['columnGap', SPACE_OK]];
+  const offenders = [];
+  for (const f of readdirSync(DIR).filter((x) => x.endsWith('.jsx'))) {
+    const src = codeOnly(read(f));
+    for (const [prop, ok] of RULES) {
+      // ⚠ A REGEX BUILT FROM A STRING NEEDS DOUBLED BACKSLASHES, and a heredoc
+      // ate them once already: `\d` inside a JS string literal is just the letter
+      // d, so the pattern silently matched almost nothing and reported one
+      // nonsense offender. Third time a generated regex has lost its escapes in
+      // this repo. Built from a literal now, so there is nothing to lose.
+      for (const m of src.matchAll(new RegExp(`${prop}: (\\d+(?:\\.\\d+)?)(?![\\d.])`, 'g'))) {
+        const v = Number(m[1]);
+        if (prop === 'borderRadius' && v <= 3) continue;
+        if (!ok.has(v)) offenders.push(f + ' ' + prop + ': ' + v);
+      }
+    }
+  }
+  check(offenders.length === 0,
+    'value(s) off the scale [' + offenders.slice(0, 6).join(' | ') + '] — src/screens/admin/streamPreview/previewScale.js is the scale, and a one-pixel exception is how 23 font sizes happened');
+}
+
+// ── 51. THE DETENT MEASUREMENT MUST NOT READ A BOX IT CONTROLS ─────────────
+// ⚠⚠ MEASURED LIVE ON THE SHIELD SHEET, 2026-09-06: the shell pumped between
+// 426px and 583px ON EVERY FRAME, which is what the founder saw as flickering.
+//
+// The loop: SheetShell sizes itself from `contentEl.scrollHeight`, but a
+// `scroll={false}` sheet hands scrolling to an inner child, so as soon as a
+// detent constrains the shell that child absorbs the overflow and
+// `contentEl.scrollHeight` collapses to the CONSTRAINED height (398 of 426).
+// The natural height then reads as short enough to fit, the detent is dropped,
+// the shell springs back to auto, the content measures 555 again, and the
+// detent is retaken. Measure -> resize -> measure, forever.
+//
+// ⚠ A SAMPLING PROBE DID NOT SEE IT. Polling the height every 50ms returned a
+// flat 426 forty times running, because the flip is per-frame and aliased with
+// the interval. Only capturing BOTH states in one rAF-paced run showed it. Do
+// not conclude a box is stable from an interval sample.
+//
+// So the measurement is valid exactly once, while unconstrained, and there is a
+// dead band of one grabber strip so a sheet sitting a pixel either side of the
+// half detent cannot chatter.
+{
+  const src = codeOnly(read('previewChrome.jsx'));
+  const shell = src.slice(src.indexOf('function SheetShell('));
+  const body = shell.slice(0, shell.indexOf('const onGrab'));
+  const guardAt = body.indexOf('if (detentRef.current) return;');
+  const readAt = body.indexOf('contentEl.scrollHeight');
+  check(guardAt > -1 && readAt > -1 && guardAt < readAt,
+    'SheetShell measures contentEl.scrollHeight without first bailing out while a detent is applied — that is the 426<->583 per-frame pump the founder reported as flickering');
+  check(body.includes('natural > half + 26'),
+    'SheetShell has no dead band on the detent threshold — content landing within a grabber strip of half height will chatter between auto and medium');
+  // ⚠ SCOPED PAST applyDetent'S OWN LINE. The first version of this flagged the
+  // one legitimate call and cried wolf, which is the self-matching-guard trap
+  // this repo has hit before: a check written against the code you just wrote
+  // matches the code you just wrote.
+  const others = shell.slice(0, shell.indexOf('function ', 10))
+    .split(String.fromCharCode(10))
+    .filter((l) => !l.includes('const applyDetent'));
+  check(!others.some((l) => l.includes('setDetent(')),
+    'SheetShell calls setDetent directly somewhere; every detent change must go through applyDetent or detentRef falls out of sync and the measurement guard stops holding');
+}
+
+// ── 52. AUTO MODERATION: THE DIAL AND THE QUEUE ARE ONE FEATURE ────────────
+// ⚠⚠ A HELD MESSAGE WITH NO QUEUE IS A SILENT PERMANENT MUTE. Holding is only
+// defensible because someone can release it, so Approve is not a nicety on the
+// side of the dial, it is the thing that makes withholding legitimate. And
+// Approve has to actually put the message in chat: a button that only removes
+// the row is the boost that bought a badge in another costume.
+//
+// ⚠ NO PER-CATEGORY DIALS. The relay returns ONE verdict plus a free-text
+// reason (parseVerdict, infra/chat/src/main.go:1447), so a per-category slider
+// would be a control the server cannot honour — the defect §0 of the
+// competitive doc opens with. If the verdict shape ever grows scores, this rule
+// is the place to revisit.
+//
+// ⚠ NO AUTO-TIMEOUT ON AN AI VERDICT. This repo already refused auto-DQ on a
+// cheat flag for the same reason: the model suggests, a person decides.
+{
+  const chrome = codeOnly(read('previewChrome.jsx'));
+  const bcast = codeOnly(read('PreviewBroadcasterScreen.jsx'));
+  const sim = codeOnly(read('useStreamSim.js'));
+
+  check(chrome.includes('function AutoModSheet') && chrome.includes('function HeldQueueSheet'),
+    'auto moderation is missing its dial or its queue — one without the other is either a setting nobody can inspect or a hold nobody can release');
+
+  const queue = chrome.slice(chrome.indexOf('function HeldQueueSheet'));
+  // ⚠ THE CALL SITE, NOT THE PROP. The first version checked for `onDeny`, which
+  // the destructured signature satisfies on its own, so deleting the actual
+  // button left the rule green. Same self-matching trap as rule 51's first
+  // attempt: assert the code that does the work, never the code that names it.
+  check(queue.includes('approve?.(h.id)') && queue.includes('deny?.(h.id)'),
+    'the held queue has no Approve or no Deny button — a held message nobody can release is a silent permanent mute');
+
+  // ⚠ THE LIVE LIST, NOT THE PAYLOAD. Measured on the deployed preview:
+  // approving a row dropped the banner 4 -> 3 while all four rows stayed in the
+  // open sheet, because `openSheet.held` is a snapshot and a payload does not
+  // re-render. The host would have posted the same message four times.
+  check(queue.includes('const rows = sim?.held ?? held'),
+    'the held queue renders the array it was opened with instead of the live one — approving a row leaves it on screen to be approved again');
+
+  const approve = sim.slice(sim.indexOf('const approveHeld'), sim.indexOf('const denyHeld'));
+  check(approve.includes('pushMessage('),
+    'approveHeld drops the row without putting the message in chat — approving a held message has to release it, or the queue is theatre');
+
+  // The banner belongs to the SHARED chat wrapper, so both the mobile overlay
+  // and the desktop column get it from one place. Adding it per branch is how
+  // the avatar orbit shipped visible to nobody.
+  const chat = bcast.slice(bcast.indexOf('function PreviewChat('));
+  check(chat.includes('held.length > 0'),
+    'the held-for-review banner is not in PreviewChat — a queue the host cannot see on the surface they are actually watching is a queue nobody empties');
+
+  for (const word of ['discrimination', 'sexuality', 'hostility slider', 'profanity slider']) {
+    check(!chrome.toLowerCase().includes(word),
+      `auto moderation offers a per-category control ("${word}") the relay cannot honour — it returns one verdict, not category scores`);
+  }
+  check(!/auto.?(timeout|ban)/i.test(chrome.slice(chrome.indexOf('function AutoModSheet'), chrome.indexOf('function SlowModeSheet'))),
+    'auto moderation appears to time out or ban on its own verdict — the model suggests, a person decides, same rule this repo already set for cheat flags');
+}
+
+// ── 53. CHAT RULES ARE SHARED STATE, AND SOMETHING SAYS THEY ARE ON ────────
+// ⚠⚠ THEY WERE `useState` INSIDE ModerationSheet. Switching followers-only on
+// and closing the sheet threw it away, and no surface outside that sheet could
+// show that chat was restricted — so a host who locked their own chat down saw
+// only that it had gone quiet, which reads as "nobody is watching".
+//
+// ⚠ AND IT MADE SHIELD MODE THEATRE. Raising the shield flipped a banner inside
+// its own sheet and moved nothing, while the copy on that sheet promised it
+// would set four rules and put the host's own settings back afterwards.
+{
+  const bcast = codeOnly(read('PreviewBroadcasterScreen.jsx'));
+  const chrome = codeOnly(read('previewChrome.jsx'));
+  const sim = codeOnly(read('useStreamSim.js'));
+
+  check(!/const \[rules, setRules\] = useState/.test(bcast),
+    'chat rules are local state inside the moderation sheet again — they are thrown away when it closes and nothing else can show that chat is restricted');
+  check(sim.includes('const [chatRules, setChatRules]'),
+    'useStreamSim no longer owns chatRules — the rules must live where every surface can read them');
+
+  // ⚠ THE NEXT FUNCTION, NOT A NAMED ONE. The first version sliced to
+  // `function AutoModSheet`, which sits ABOVE ShieldSheet in the file, so the
+  // range was empty and the rule failed against code that was correct.
+  const shieldAt = chrome.indexOf('function ShieldSheet');
+  const shield = chrome.slice(shieldAt, chrome.indexOf('function ', shieldAt + 20));
+  check(shield.includes('raiseShield?.(levers)') && shield.includes('lowerShield?.()'),
+    'Shield Mode no longer moves the real chat rules — a panic button that only changes its own banner is the badge the stream boost used to buy');
+
+  // ⚠ BOTH HALVES, NAMED. Checking for `shieldSaved` anywhere in the block
+  // passed with the save deleted, because the restore still mentions the ref —
+  // the third self-matching guard in two days. Assert the save AND the read.
+  check(sim.includes('shieldSaved.current = prev') && sim.includes('shieldSaved.current || prev'),
+    'lowering the shield no longer restores what the host had set — a blunt reset wipes their own slow mode, which is the difference between a panic button and a foot-gun');
+
+  check(bcast.includes('function ChatRulesStrip') && bcast.includes('<ChatRulesStrip'),
+    'the chat-rules strip is gone — with it, nothing on the stream tells the host they have restricted their own chat');
+  // ⚠ tts IS NOT A RESTRICTION. Padding the strip with settings that gate
+  // nobody is how a status line becomes wallpaper.
+  const strip = bcast.slice(bcast.indexOf('function ChatRulesStrip'), bcast.indexOf('function PreviewChat('));
+  check(!strip.includes('rules.tts'),
+    'the chat-rules strip lists "read chat aloud" as a restriction — it stops nobody from talking and dilutes the line that says who is blocked');
+}
+
+// ── 54. A SIM DESTRUCTURE MUST COME BEFORE ANYTHING THAT READS IT ──────────
+// ⚠⚠ SHIPPED AND CRASHED THE WHOLE PREVIEW, 2026-09-06. `const rules =
+// chatRules;` sat two lines ABOVE the `usePreviewSim()` destructure that
+// declares `chatRules`. A `const` read above its own declaration is a TEMPORAL
+// DEAD ZONE error at RENDER time, not a name error, so:
+//   • eslint `no-undef` sees a perfectly well-defined binding and says nothing
+//   • `npm run build` is green
+//   • the deployed screen is an ErrorBoundary reading
+//     "Cannot access 'p' before initialization"
+// Second one of these in two days; the first was a `useCallback` dependency
+// array reading a const declared 30 lines below it.
+//
+// ⚠ eslint's `no-use-before-define` WAS TRIED AND REJECTED, not forgotten. It
+// cannot tell a render-time read from one inside a callback that runs later, so
+// it reports 513 hits across `src/` and nearly all are harmless. A rule that
+// cries wolf gets switched off, and this file's own charter says every rule
+// added here must catch a crash. This one checks the render-time case only.
+{
+  const offenders = [];
+  for (const f of readdirSync(DIR).filter((x) => x.endsWith('.jsx') || x.endsWith('.js'))) {
+    const src = codeOnly(read(f));
+    let from = 0;
+    for (;;) {
+      const at = src.indexOf('} = usePreviewSim()', from);
+      if (at < 0) break;
+      from = at + 1;
+      const open = src.lastIndexOf('const {', at);
+      if (open < 0) continue;
+      const keys = src.slice(open + 7, at)
+        .split(',')
+        .map((k) => k.split('=')[0].split(':')[0].trim())
+        .filter((k) => /^[A-Za-z_$][\w$]*$/.test(k));
+      // ⚠ THE ENCLOSING FUNCTION, AND `export default function` COUNTS. The
+      // first version searched for '\nfunction ' only, so for a component
+      // declared `export default function X()` it walked back into the PREVIOUS
+      // top-level function and flagged that function's own parameter. It
+      // reported PreviewViewerScreen's `audioOnly` — a VideoStage parameter —
+      // as a dead-zone read. A guard that cries wolf gets switched off.
+      const head = src.slice(0, open);
+      let fnAt = -1;
+      for (const m of head.matchAll(/^(?:export (?:default )?)?function /gm)) fnAt = m.index;
+      const before = src.slice(fnAt < 0 ? 0 : fnAt, open);
+      for (const k of keys) {
+        if (new RegExp(`(^|[^\\w$.])${k}([^\\w$]|$)`).test(before)) {
+          offenders.push(`${f}: ${k}`);
+        }
+      }
+    }
+  }
+  check(offenders.length === 0,
+    `read before its usePreviewSim() destructure [${offenders.slice(0, 4).join(' | ')}] — that is a temporal dead zone crash at render time, and neither eslint nor the build can see it`);
+}
+
+// ── 55. THE HYPE TRAIN IS ON EVERY STREAM SURFACE, AND PAYS NO CURRENCY ────
+// ⚠⚠ A SHARED MOMENT THAT ONE SCREEN SHOWS IS NOT SHARED. The avatar orbit
+// shipped visible to nobody but its owner because it was mounted on one of four
+// profile views. A hype train is worse: its entire value is that the room can
+// see the same thing at the same time, so a surface that misses it shows a
+// viewer nothing while everyone else is pushing a meter.
+//
+// ⚠⚠ AND IT PAYS RECOGNITION ONLY, UNTIL THE FOUNDER SAYS OTHERWISE. Coins
+// would be minted out of a celebration; VP would inflate the ladder and collide
+// with GIFT_COINS_PER_VP, whose own comment says coins must not buy rank. Both
+// are economy decisions and neither is a session's to take.
+{
+  // The live stream surfaces, defined the way the tip-feed rules define them:
+  // a file that mounts <GiftFeed> is a stream someone is watching.
+  const surfaces = readdirSync(DIR)
+    .filter((f) => f.endsWith('.jsx') && f.startsWith('Preview'))
+    .filter((f) => read(f).includes('<GiftFeed'));
+  check(surfaces.length >= 6,
+    `only ${surfaces.length} stream surfaces found — this rule enumerates rather than hand-lists, so a drop here means the detection broke, not that screens vanished`);
+  // ⚠⚠ COUNT THE BRANCHES, NOT THE FILE. The first version asserted the file
+  // merely CONTAINED <HypeTrain> and passed while two of the broadcaster's three
+  // layout branches had none — the mount script had inserted before the first
+  // <GiftFeed> only. The train was invisible on the desktop broadcaster, which
+  // is the surface I then tested, and the guard was green throughout. A file
+  // that renders the tip feed N times is N separate screens.
+  for (const f of surfaces) {
+    const src = codeOnly(read(f));
+    const feeds = src.split('<GiftFeed').length - 1;
+    const trains = src.split('<HypeTrain').length - 1;
+    check(trains >= feeds,
+      `${f} renders the tip feed in ${feeds} layout branch(es) but the hype train in ${trains} — the branches without it show a viewer nothing while the room pushes a meter`);
+  }
+
+  const states = codeOnly(read('previewStates.jsx'));
+  const train = states.slice(states.indexOf('export function HypeTrain'));
+  check(train.includes('usePreviewSim()'),
+    'HypeTrain takes the train as a prop again — six surfaces mount it, and a prop has to be remembered at every one of them');
+
+  const sim = codeOnly(read('useStreamSim.js'));
+  const block = sim.slice(sim.indexOf('const TRAIN_LEVEL_COINS'), sim.indexOf('const endTrain'));
+  for (const banned of ['balance', 'vp:', 'setBalance', 'awardVp']) {
+    check(!block.includes(banned),
+      `the hype train pays out "${banned}" — it pays recognition only until the founder decides otherwise, because coins mint currency and VP inflates the ladder`);
+  }
+}
+
+// ── 56. DUAL FORMAT: THE CROP IS OPT-IN AND "OFF" MUST REALLY BE OFF ───────
+// ⚠⚠ "NEVER CROP THE BROADCASTER, LETTERBOX INSTEAD" IS A STANDING FOUNDER
+// RULE. He granted exactly one exception on 2026-09-06: a crop the HOST chose
+// and previewed. So an unset frame must letterbox, and the default must be
+// unset. If this rule ever fails, the product is cropping people's streams
+// without being asked.
+//
+// ⚠⚠ AND THE OFF STATE HAS TO BE VISIBLY DIFFERENT, which the first build got
+// wrong. `Scene`'s base style is already `objectFit: cover`, so a card reading
+// "Letterbox / Nothing is cut" cover-cropped exactly like the framed one —
+// measured on the deployed preview, both returned `cover / 50% 50%` and differed
+// only by a no-op `scale(1)`. A toggle whose halves are pixel-identical teaches
+// the host the wrong thing about what their viewers see.
+{
+  const chrome = codeOnly(read('previewChrome.jsx'));
+  const sim = codeOnly(read('useStreamSim.js'));
+  const mob = codeOnly(read('PreviewMobileViewer.jsx'));
+
+  check(sim.includes('const [vFrame, setVFrame] = useState(null)'),
+    'the vertical frame no longer defaults to null — a non-null default crops every stream nobody asked to crop, against the founder rule this feature bends');
+
+  const scene = chrome.slice(chrome.indexOf('export function Scene('), chrome.indexOf('// ── chat'));
+  check(scene.includes('} : null;'),
+    'Scene no longer leaves an absent frame untouched — every pre-existing caller passes no frame and must keep its current behaviour');
+
+  // ⚠⚠ THE IMMERSIVE STAGE IS FULL-BLEED BY DEFAULT AND MUST STAY THAT WAY.
+  // This briefly passed `vFrame || 'letterbox'`, which set objectFit:contain on
+  // the stage and put black bars behind the header — measured: a 1080x1920
+  // source in a 393x852 (19.5:9) phone frame letterboxes under `contain`. The
+  // founder spotted it immediately: *"there is now a black background on the
+  // header, which now contradicts the TikTok look."*
+  //
+  // The no-crop rule he set is about MEDIA UPLOADS (avatar, banner, card image)
+  // — see MediaFramer — NOT about this viewer's presentation, which he has
+  // approved as full-bleed throughout. Only a frame the host actually drew may
+  // change what this stage does.
+  check(mob.includes('frame={vFrame}'),
+    'the immersive mobile stage no longer passes the frame straight through — forcing a fit when the host set none letterboxes the stage and puts black bars behind the header');
+  check(!mob.includes("'letterbox'"),
+    'the immersive mobile stage is forcing a letterbox again — full-bleed is the approved look for this surface and only a host-drawn frame may change it');
+
+  // ⚠ THE MATHS IS LOAD-BEARING AND WAS VERIFIED BY MEASUREMENT: a 9:16 window
+  // at full height is (9/16)/(16/9) = 0.31640625 of a 16:9 frame's width, and
+  // the fallback is drawn at (16/9)^2 = 316.05% of the container width. Measured
+  // live: window 0.3162 of the container, presets landing on -39.75 / -99.375 /
+  // -159px for x = 0.2 / 0.5 / 0.8. A "tidied" constant breaks both.
+  check(chrome.includes('0.31640625'),
+    'the 9:16 window width constant changed — it is (9/16)/(16/9) and the host preview stops matching what a phone shows if it is rounded');
+  // ⚠⚠ THE HOST DRAWS THE LINES; THE PLATFORM DECIDES NOTHING. Founder,
+  // 2026-09-06: *"we shouldnt do it for the user because thats not what other
+  // platforms do, we should allow them to move lines so that will see what will
+  // be visible and what wont be visible."* A dimmed region with no words on it
+  // only says "something is different here", so BOTH sides carry a label.
+  const vf = chrome.slice(chrome.indexOf('function VerticalFramingSheet'), chrome.indexOf('/** Slow mode'));
+  // ⚠ ASSERT WHAT EXISTS, NOT WHAT I EXPECTED TO EXIST. The first version looked
+  // for `drag('left')`, but the handles are one component called as
+  // `<Handle side="left" />` which calls `drag(side)` — so the literal never
+  // appears and the rule failed against correct code.
+  check(vf.includes('drag(side)') && vf.includes('side="left"') && vf.includes('side="right"'),
+    'the framing window is no longer draggable by its edges — the host has to be able to move the lines themselves, not accept a rectangle the app placed');
+  check(vf.includes('ON PHONES') && vf.includes('CUT'),
+    'the framing preview no longer labels what is kept AND what is cut — an unlabelled dim area does not tell a host what their viewers lose');
+  check(!vf.includes("type=\"range\"") && !vf.includes("type='range'"),
+    'a zoom slider is back on the framing sheet — the gap between the lines already IS the zoom, so a second control for it can disagree with the lines');
+
+  check(chrome.includes('316.0494'),
+    'the wide-fallback constant changed — it is (16/9)^2 as a percentage, and the drawn fallback is the path that actually renders because /brand/live/preview-scene.webp does not exist');
+}
+
 if (fails.length) {
   console.error(`stream-preview-check: ${fails.length} FAILED of ${n}`);
   fails.forEach((f) => console.error('  ✗ ' + f));

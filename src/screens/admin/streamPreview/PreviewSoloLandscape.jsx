@@ -13,7 +13,7 @@
 // the counter, different senders stack (TikTok-style).
 
 import { useState } from 'react';
-import { PlaybackState, StreamPaywall, ChatStateBanner, TtsStrip, EmptyChat, VpEarnedChip, PreviewLevelUp, AudioStage, ModChannelSwitch, RaidBanner } from './previewStates';
+import { PlaybackState, StreamPaywall, ChatStateBanner, TtsStrip, EmptyChat, VpEarnedChip, PreviewLevelUp, AudioStage, ModChannelSwitch, RaidBanner, HypeTrain } from './previewStates';
 import ReactionsFloor from '../../../components/streams/ReactionsFloor';
 import { usePreviewVideos, usePreviewSim, usePreviewRole } from './previewAssetsContext';
 import { PREVIEW_VIEWER } from './previewCast';
@@ -80,7 +80,7 @@ export default function PreviewSoloLandscape({ doc, host, scene = 'game',
           <div style={{ position: 'absolute', top: 0, left: 0, right: 0, padding: 12, display: 'flex', alignItems: 'flex-start', gap: 8, zIndex: 4 }}>
             <HostCapsule host={host} hearts={d.hearts} onOpen={() => onOpenSheet?.({ kind: 'profile', uid: 'host' })} />
             <div style={{ flex: 1, minWidth: 0 }} />
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <GiftersClusterCoins gifters={d.previewGifters} />
               <ViewerPill count={d.viewerCount} onClick={() => onOpenSheet({ kind: 'viewers' })} />
               <CloseBtn onClose={() => onOpenSheet?.({ kind: 'confirm', title: 'Leave this stream?', body: 'You can come back any time while the broadcaster is still live. Your place in chat is not saved.', confirmLabel: 'Leave' })} />
@@ -99,8 +99,8 @@ export default function PreviewSoloLandscape({ doc, host, scene = 'game',
           {scene === 'game' && !audioOnly && <FacecamPip w={132} videoUrl={videoFor('facecam')} style={{ position: 'absolute', left: 12, bottom: 70, zIndex: 4 }} />}
 
           {/* Chat overlay — right side, newest at the bottom, older fade at the top. */}
-          <div style={{ position: 'absolute', right: 12, top: 70, bottom: 74, width: '42%', maxWidth: 360, zIndex: 4, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', gap: 11, textShadow: '0 1px 3px rgba(0,0,0,0.85)' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 11, overflow: 'hidden', maskImage: 'linear-gradient(to top, #000 0%, #000 55%, transparent 96%)', WebkitMaskImage: 'linear-gradient(to top, #000 0%, #000 55%, transparent 96%)' }}>
+          <div style={{ position: 'absolute', right: 12, top: 70, bottom: 74, width: '42%', maxWidth: 360, zIndex: 4, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', gap: 12, textShadow: '0 1px 3px rgba(0,0,0,0.85)' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, overflow: 'hidden', maskImage: 'linear-gradient(to top, #000 0%, #000 55%, transparent 96%)', WebkitMaskImage: 'linear-gradient(to top, #000 0%, #000 55%, transparent 96%)' }}>
 {messages.length === 0 && <EmptyChat />}
               {messages.slice(-4).map((m) => (
                 <SoloChatRow key={m.id} avatar={avatars[m.uid] || m.avatar} inline user={m.name} uid={m.uid} vpLevel={m.vpLevel} mod={m.isMod} text={m.text} sub={m.sub} />
@@ -110,6 +110,7 @@ export default function PreviewSoloLandscape({ doc, host, scene = 'game',
           </div>
 
           {/* Transient gift drops — float above the dock on the left. */}
+          <HypeTrain />
           <GiftFeed toasts={toasts} style={{ position: 'absolute', left: 12, bottom: 64, zIndex: 5 }} />
 
           {/* Composer dock — across the bottom. Tips & VC fires a gift drop. */}

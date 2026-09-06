@@ -14,7 +14,7 @@ import { HEART_COMBO_MAX } from '../../../components/streams/ComboMeter';
 import { loadAssets, putAsset, deleteAsset, avatarKey, videoKey } from './previewAssets';
 import {
   CHAT_SCRIPT, TIP_SCRIPT, SUB_SCRIPT, JOIN_SCRIPT,
-  makeMessage, makeJoinEvent, castByUid, nextId,
+  makeMessage, makeJoinEvent, castByUid, nextId, HELD_SEED,
 } from './previewCast';
 
 const MAX_MESSAGES = 40;
@@ -218,6 +218,168 @@ export default function useStreamSim(initialDoc) {
     });
   }, []);
 
+  // ── Auto moderation ──────────────────────────────────────────────────────
+  // ⚠⚠ THE DIAL CHANGES ROUTING, NOT SCANNING, SO IT COSTS NOTHING EXTRA.
+  // The relay ALREADY calls Gemini Flash on every message and returns
+  // pass | flag | block (infra/chat/src/main.go:9-21). Today a 'flag' fans out
+  // and is only logged for Vanguard. All the dial does is decide whether a flag
+  // is HELD instead — same one call per message, no second model, no new spend.
+  // The two strictest steps add signals that need no AI at all: whether this
+  // person has spoken here before, whether the text carries a link, and how old
+  // the account is. Every one of those is already on the doc.
+  //
+  // ⚠ THE SHIPPING DEFAULT IS A FOUNDER CALL. 'standard' here is a simulator
+  // default so the queue has something in it to look at. Twitch ships AutoMod
+  // OFF. Do not read this line as a policy decision.
+  const [autoMod, setAutoMod] = useState('standard');   // off | light | standard | strict
+  const [held, setHeld] = useState(HELD_SEED);
+  const heldIdx = useRef(0);
+
+  // ⚠ APPROVE PUTS THE MESSAGE IN CHAT. A queue whose Approve button only
+  // removes the row proves nothing: the whole promise of holding a message is
+  // that approving it releases it, so the simulator has to actually release it.
+  const approveHeld = useCallback((id) => {
+    setHeld((prev) => {
+      const row = prev.find((h) => h.id === id);
+      if (row) pushMessage(row.uid, row.text, { held: true });
+      return prev.filter((h) => h.id !== id);
+    });
+  }, [pushMessage]);
+  const denyHeld = useCallback((id) => setHeld((prev) => prev.filter((h) => h.id !== id)), []);
+  const fireHeld = useCallback(() => {
+    const seed = HELD_SEED[heldIdx.current % HELD_SEED.length];
+    heldIdx.current += 1;
+    setHeld((prev) => [...prev, { ...seed, id: seed.id + ':' + heldIdx.current, at: Date.now() }]);
+  }, []);
+  const clearHeld = useCallback(() => setHeld([]), []);
+
+  // ── Chat rules ───────────────────────────────────────────────────────────
+  // ⚠⚠ THESE LIVED IN `useState` INSIDE ModerationSheet, so switching
+  // followers-only on and closing the sheet threw the setting away, and nothing
+  // outside that sheet could ever show that chat was restricted. A host who
+  // locks chat down and then wonders why it has gone quiet is the failure that
+  // makes a moderation control worse than none.
+  //
+  // ⚠ THE RAIL'S `chatState` IS A DIFFERENT AXIS, NOT A DUPLICATE OF THIS.
+  // `chatState` is what THIS viewer experiences (including being muted or
+  // banned personally); `chatRules` is what the HOST has switched on. A viewer
+  // can be muted while no rule is set, so collapsing them into one value would
+  // lose a state. Two sources for one fact is what killed the theme system; two
+  // sources for two different facts is correct.
+  //
+  // ⚠ `verified` AND `subs` HAVE NO SERVER RULE YET. Measured 2026-09-06: the
+  // relay honours `followersOnly` and `slowModeSec` and nothing else
+  // (infra/chat/src/main.go:713), and functions/streamChatMod.js writes no
+  // subscriber or verified field. They are designed here and are NOT claimed to
+  // work; the port needs one bool each, beside the two that exist.
+  const [chatRules, setChatRules] = useState({ followers: false, subs: false, verified: true, tts: false, slow: 0 });
+  const shieldSaved = useRef(null);
+  const setChatRule = useCallback((k, v) => setChatRules((prev) => ({ ...prev, [k]: v })), []);
+
+  // ⚠ THE SHIELD ACTUALLY MOVES THE RULES, and putting them back is the whole
+  // difference between a panic button and a foot-gun. The previous state is
+  // captured on the way up and restored on the way down, so a host's own slow
+  // mode survives a raid.
+  const raiseShield = useCallback((levers) => {
+    setChatRules((prev) => {
+      if (!shieldSaved.current) shieldSaved.current = prev;
+      return {
+        ...prev,
+        followers: levers.followersOnly ? true : prev.followers,
+        subs: levers.subsOnly ? true : prev.subs,
+        slow: levers.slowMode ? 30 : prev.slow,
+      };
+    });
+    if (levers.clearChat) setMessages([]);
+  }, []);
+  const lowerShield = useCallback(() => {
+    setChatRules((prev) => shieldSaved.current || prev);
+    shieldSaved.current = null;
+  }, []);
+
+  // ── Hype train ───────────────────────────────────────────────────────────
+  // A shared support moment: when support lands close together the whole room
+  // gets one escalating thing to push on, instead of each tip scrolling past
+  // alone. Twitch's version is the reference; this is the mechanic, not a copy
+  // of their rewards.
+  //
+  // ⚠⚠ THE REWARD IS RECOGNITION, AND NOTHING ELSE, UNTIL THE FOUNDER SAYS
+  // OTHERWISE. Every currency answer is an economy decision that is not mine:
+  // paying COINS mints currency out of a celebration; paying VP inflates the
+  // ladder and walks straight into `GIFT_COINS_PER_VP`, whose own comment says
+  // coins must not buy rank. So a train currently pays what it costs nothing to
+  // pay — the room sees the level, and it names who got it there.
+  //
+  // ⚠⚠ EVERY NUMBER BELOW IS MINE, NOT THE FOUNDER'S. They are one-line
+  // constants precisely so they can be replaced with his once he decides.
+  const TRAIN_LEVEL_COINS = 500;      // support needed per level
+  const TRAIN_MAX_LEVEL = 5;
+  const TRAIN_WINDOW_MS = 300_000;    // 5 min, pushed out by each contribution
+  // ⚠ A SUB'S WORTH IS A REAL UNKNOWN, NOT A ROUNDING. A creator sets their own
+  // membership price, so what one contributes to a train cannot be derived here.
+  // Placeholder, flagged, single use.
+  const TRAIN_SUB_COINS = 250;
+
+  const [train, setTrain] = useState(null);   // { level, into, endsAtMs, riders }
+  const addTrainSupport = useCallback((uid, coins) => {
+    const amount = Math.max(0, Math.floor(Number(coins) || 0));
+    if (!amount) return;
+    setTrain((prev) => {
+      const live = prev && prev.endsAtMs > Date.now() ? prev : null;
+      const base = live || { level: 1, into: 0, riders: {} };
+      let into = base.into + amount;
+      let level = base.level;
+      while (into >= TRAIN_LEVEL_COINS && level < TRAIN_MAX_LEVEL) {
+        into -= TRAIN_LEVEL_COINS;
+        level += 1;
+      }
+      if (level >= TRAIN_MAX_LEVEL) into = Math.min(into, TRAIN_LEVEL_COINS);
+      return {
+        level,
+        into,
+        goal: TRAIN_LEVEL_COINS,
+        maxLevel: TRAIN_MAX_LEVEL,
+        endsAtMs: Date.now() + TRAIN_WINDOW_MS,
+        riders: { ...base.riders, [uid]: (base.riders[uid] || 0) + amount },
+      };
+    });
+  }, []);
+  const endTrain = useCallback(() => setTrain(null), []);
+
+  // ── Vertical framing (Dual Format, route C) ──────────────────────────────
+  // ⚠⚠ ONE ENCODE. The host publishes 16:9 exactly as today; this is a rect the
+  // MOBILE VIEWER applies. Measured on box 1 before choosing this: a real
+  // server-side 9:16 transcode runs at 2.89x realtime at free-tier 480p, 1.69x
+  // at lite 720p and **0.85x at Pro 1080p** — it cannot keep up with a single
+  // Pro stream, on a 2-vCPU box that also runs chat, ingest, the SFU and the
+  // PayRam node. Viewer-side framing costs nothing and works identically at
+  // every tier.
+  //
+  // ⚠⚠ NULL IS THE DEFAULT AND MEANS "DO NOT CROP". The founder's standing rule
+  // is never crop the broadcaster, letterbox instead. He granted ONE exception
+  // (2026-09-06): a crop the host chose and previewed. So an unset frame must
+  // behave exactly as before — no silent reframing of anybody's stream.
+  //
+  // A 9:16 window at full source height is 0.3164 of a 16:9 frame's width, so
+  // the host only has two things to choose: where it sits and how far in it
+  // zooms. Anything more is a video editor, not a framing control.
+  const [vFrame, setVFrame] = useState(null);   // null | { x: 0..1, zoom: 1..2 }
+  const clearVFrame = useCallback(() => setVFrame(null), []);
+  const setFrameX = useCallback((x) => setVFrame((f) => ({ zoom: 1, ...(f || {}), x: Math.min(1, Math.max(0, x)) })), []);
+  const setFrameZoom = useCallback((z) => setVFrame((f) => ({ x: 0.5, ...(f || {}), zoom: Math.min(2, Math.max(1, z)) })), []);
+  const subCoinsForTrain = TRAIN_SUB_COINS;
+
+  // ⚠ THE TRAIN EXPIRES ON A CLOCK, so the bar has to re-read time even when no
+  // support arrives — otherwise a finished train sits on screen until the next
+  // tip. One interval for the whole simulator, not one per surface.
+  useEffect(() => {
+    if (!train) return undefined;
+    const id = setInterval(() => {
+      setTrain((t) => (t && t.endsAtMs <= Date.now() ? null : t && { ...t }));
+    }, 1000);
+    return () => clearInterval(id);
+  }, [train]);
+
   // Rolling chat. Cycles the script rather than stopping, so the feed keeps
   // moving for as long as the screen is open.
   useEffect(() => {
@@ -246,6 +408,7 @@ export default function useStreamSim(initialDoc) {
     const t = coins ? { ...scripted, coins } : scripted;
     tipIdx.current += 1;
     const c = castByUid(t.uid);
+    addTrainSupport(t.uid, t.coins);
     setDoc((d) => ({
       ...d,
       // ⚠⚠ `lastGift` IS WHAT THE DESIGNED TIP COMPONENT READS, AND NOTHING
@@ -271,6 +434,7 @@ export default function useStreamSim(initialDoc) {
     const s = SUB_SCRIPT[subIdx.current % SUB_SCRIPT.length];
     subIdx.current += 1;
     const c = castByUid(s.uid);
+    addTrainSupport(s.uid, subCoinsForTrain);
     setDoc((d) => ({
       ...d,
       lastSub: { tierName: s.tierName, fromName: c.displayName, badge: s.badge, ts: Date.now() },
@@ -446,6 +610,10 @@ export default function useStreamSim(initialDoc) {
     clipWho, setClipWho,
     chatChannel, setChatChannel, modMessages, dismissPoll,
     raiding, setRaiding,
+    autoMod, setAutoMod, held, approveHeld, denyHeld, fireHeld, clearHeld,
+    train, addTrainSupport, endTrain,
+    vFrame, setVFrame, clearVFrame, setFrameX, setFrameZoom,
+    chatRules, setChatRule, raiseShield, lowerShield,
     firePoll, fireReaction, fireBoost,
   };
 }

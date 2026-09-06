@@ -20,6 +20,7 @@ import Icon from '../../components/Icon';
 import CountrySelect from '../../components/CountrySelect';
 import { CONTENT_TOPICS } from '../../utils/constants';
 import UserName from '../../components/UserName';
+import MediaFramer from '../../components/media/MediaFramer';
 
 const TABS = [
   { id: 'profile-info',   label: 'Profile Info',   icon: 'person'         },
@@ -68,7 +69,12 @@ const FRAMES = [
 
 // Resize an image to a target canvas (cover fit) before upload.
 // Banners crop to 1500×500 (3:1) which matches the profile page banner area.
-async function resizeImageToBanner(file, targetW = 1500, targetH = 500) {
+// ⚠⚠ `crop` IS THE USER'S RECT, IN SOURCE PIXELS. Without it this cover-fits and
+// "crops overflow" — the app deciding which part of somebody's photo survives,
+// which is the thing the founder ruled out on 2026-09-06 for any media. It is
+// still optional so the function keeps working for any caller that has not been
+// given a framing step yet, but every caller in this file now passes one.
+async function resizeImageToBanner(file, targetW = 1500, targetH = 500, crop = null) {
   const dataUrl = await new Promise((resolve, reject) => {
     const r = new FileReader();
     r.onload = () => resolve(r.result);
@@ -85,13 +91,21 @@ async function resizeImageToBanner(file, targetW = 1500, targetH = 500) {
   canvas.width = targetW;
   canvas.height = targetH;
   const ctx = canvas.getContext('2d');
-  // Cover fit — fill the canvas and crop overflow.
-  const scale = Math.max(targetW / img.width, targetH / img.height);
-  const drawW = img.width * scale;
-  const drawH = img.height * scale;
-  const dx = (targetW - drawW) / 2;
-  const dy = (targetH - drawH) / 2;
-  ctx.drawImage(img, dx, dy, drawW, drawH);
+  if (crop) {
+    // The user's rect, clamped so a rounding error in the scaled preview cannot
+    // read outside the image and leave a transparent edge on their banner.
+    const sw = Math.max(1, Math.min(img.width, crop.w));
+    const sh = Math.max(1, Math.min(img.height, crop.h));
+    const sx = Math.min(img.width - sw, Math.max(0, crop.sx));
+    const sy = Math.min(img.height - sh, Math.max(0, crop.sy));
+    ctx.drawImage(img, sx, sy, sw, sh, 0, 0, targetW, targetH);
+  } else {
+    // Fallback only: cover fit, filling the canvas and cropping the overflow.
+    const scale = Math.max(targetW / img.width, targetH / img.height);
+    const drawW = img.width * scale;
+    const drawH = img.height * scale;
+    ctx.drawImage(img, (targetW - drawW) / 2, (targetH - drawH) / 2, drawW, drawH);
+  }
   const blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', 0.88));
   return new File([blob], file.name.replace(/\.\w+$/, '') + '.jpg', { type: 'image/jpeg' });
 }
@@ -397,13 +411,27 @@ export function ProfileImagesTab({ profile, form, setField, showToast }) {
   const myVpLevel = ownVpLevel(wallet, profile);
   const fileRef = useRef(null);
   const [uploading, setUploading] = useState(false);
+  // ⚠⚠ THE UPLOAD NO LONGER STARTS ON PICK. `PRESETS.avatar` is `square: true`,
+  // so this path used to hand the file straight to a centre crop and a portrait
+  // photo lost the top of somebody's head with no say from them. The file waits
+  // here until they have drawn the square. Founder, 2026-09-06: do not crop for
+  // the user on any media. [[feedback-never-crop-for-the-user]]
+  const [pending, setPending] = useState(null);
 
-  const handleFile = async (e) => {
+  const handleFile = (e) => {
     const file = e.target.files?.[0];
-    if (!file) return;
+    e.target.value = '';
+    if (file) setPending(file);
+  };
+
+  // ⚠ AN ANIMATED AVATAR IGNORES THE CROP, by design — cropping means decoding
+  // to a canvas, which keeps frame one and kills the animation. That only
+  // affects someone entitled to animated avatars uploading an animated WebP;
+  // every other upload is compressed and takes the square they drew.
+  const doUpload = async (file, crop) => {
     setUploading(true);
     try {
-      const url = await uploadAvatar(profile.uid, file);
+      const url = await uploadAvatar(profile.uid, file, crop);
       // Persist URL on the user doc — without this the new avatar never shows.
       await updateProfile({ avatar: url });
       showToast('Avatar updated', 'success');
@@ -412,7 +440,6 @@ export function ProfileImagesTab({ profile, form, setField, showToast }) {
       showToast(err?.message || 'Upload failed', 'error');
     } finally {
       setUploading(false);
-      e.target.value = '';
     }
   };
 
@@ -455,6 +482,17 @@ export function ProfileImagesTab({ profile, form, setField, showToast }) {
               </button>
             </div>
             <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={handleFile} />
+            {pending && (
+              <MediaFramer
+                file={pending}
+                aspect={1}
+                round
+                title="Position your avatar"
+                hint="Drag the square to choose what your avatar shows. Anything outside it is cut."
+                onCancel={() => setPending(null)}
+                onConfirm={(r) => { const f = pending; setPending(null); doUpload(f, { sx: r.sx, sy: r.sy, size: Math.round(r.w) }); }}
+              />
+            )}
           </div>
         </div>
       </FormSection>
@@ -682,18 +720,25 @@ export function CoverBannerTab({ profile, showToast }) {
   const fileRef = useRef(null);
   const [uploading, setUploading] = useState(false);
 
-  const handleFile = async (e) => {
+  // The picked file waits for the user to draw the crop. See MediaFramer.
+  const [pending, setPending] = useState(null);
+
+  const handleFile = (e) => {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (!file) return;
     if (file.size > 10 * 1024 * 1024) {
       showToast('Banner must be under 10MB', 'error');
-      e.target.value = '';
       return;
     }
+    setPending(file);
+  };
+
+  const doUpload = async (file, crop) => {
     setUploading(true);
     try {
-      // Auto-resize to 1500×500 (3:1) so it fits the profile page banner area.
-      const resized = await resizeImageToBanner(file);
+      // 1500x500 (3:1) to fit the profile banner area — from the user's rect.
+      const resized = await resizeImageToBanner(file, 1500, 500, crop);
       const url = await uploadBanner(profile.uid, resized);
       // Persist URL on the user doc — without this the new banner never shows.
       await updateProfile({ banner: url });
@@ -703,7 +748,6 @@ export function CoverBannerTab({ profile, showToast }) {
       showToast(err?.message || 'Upload failed', 'error');
     } finally {
       setUploading(false);
-      e.target.value = '';
     }
   };
 
@@ -758,6 +802,16 @@ export function CoverBannerTab({ profile, showToast }) {
           )}
         </div>
         <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={handleFile} />
+        {pending && (
+          <MediaFramer
+            file={pending}
+            aspect={3}
+            title="Position your banner"
+            hint="Drag to choose the strip shown across your profile. Anything outside it is cut."
+            onCancel={() => setPending(null)}
+            onConfirm={(r) => { const f = pending; setPending(null); doUpload(f, r); }}
+          />
+        )}
       </FormSection>
       <CardBackgroundSection profile={profile} showToast={showToast} />
     </>
@@ -773,17 +827,24 @@ function CardBackgroundSection({ profile, showToast }) {
   const fileRef = useRef(null);
   const [uploading, setUploading] = useState(false);
 
-  const handleFile = async (e) => {
+  // The picked file waits for the user to draw the crop. See MediaFramer.
+  const [pending, setPending] = useState(null);
+
+  const handleFile = (e) => {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (!file) return;
     if (file.size > 10 * 1024 * 1024) {
       showToast('Image must be under 10MB', 'error');
-      e.target.value = '';
       return;
     }
+    setPending(file);
+  };
+
+  const doUpload = async (file, crop) => {
     setUploading(true);
     try {
-      const resized = await resizeImageToBanner(file, 600, 800); // 3:4 portrait
+      const resized = await resizeImageToBanner(file, 600, 800, crop); // 3:4 portrait
       const url = await uploadBanner(profile.uid, resized);
       await updateProfile({ cardBackground: url });
       showToast('Card background updated', 'success');
@@ -792,7 +853,6 @@ function CardBackgroundSection({ profile, showToast }) {
       showToast(err?.message || 'Upload failed', 'error');
     } finally {
       setUploading(false);
-      e.target.value = '';
     }
   };
 
@@ -852,6 +912,16 @@ function CardBackgroundSection({ profile, showToast }) {
         </div>
       </div>
       <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={handleFile} />
+      {pending && (
+        <MediaFramer
+          file={pending}
+          aspect={0.75}
+          title="Position your card image"
+          hint="Drag to choose what shows behind your card on Explore. Anything outside it is cut."
+          onCancel={() => setPending(null)}
+          onConfirm={(r) => { const f = pending; setPending(null); doUpload(f, r); }}
+        />
+      )}
     </FormSection>
   );
 }

@@ -23,6 +23,8 @@ import { MovableGoal } from '../../../components/streams/states';
 export { MovableGoal };
 import Icon from '../../../components/Icon';
 import UserAvatar from '../../../components/UserAvatar';
+import { TipComboFeed, useTipCombo, useAboveChat } from '../../../components/streams/TipComboFeed';
+export { useAboveChat };
 import modBadgeIcon from '../../../assets/stream/mod-badge.webp';
 import watchingIcon from '../../../assets/stream/watching.webp';
 import waveIcon from '../../../assets/stream/wave.webp';
@@ -134,7 +136,7 @@ export function PreviewVideoStage({ scene = 'game', src = null, videoUrl = null 
         <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.18em' }}>
           {scene === 'cam' ? 'CAMERA AREA' : 'GAMEPLAY AREA'}
         </div>
-        <div style={{ fontSize: 15, fontWeight: 700 }}>
+        <div style={{ fontSize: 16, fontWeight: 700 }}>
           {dims.w} × {dims.h}
         </div>
         {ratioLabel && <div style={{ fontSize: 11, opacity: 0.75 }}>{ratioLabel}</div>}
@@ -200,7 +202,7 @@ export function HostCapsule({ host, hearts, onOpen }) {
       <UserAvatar src={faceOf(host)} size={38} />
       <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 0 }}>
-          <span style={{ fontSize: 15, fontWeight: 800, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0, maxWidth: 150 }}>{host?.displayName || 'Live'}</span>
+          <span style={{ fontSize: 16, fontWeight: 800, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0, maxWidth: 150 }}>{host?.displayName || 'Live'}</span>
           {host?.isVerified && (
             <span style={{ flexShrink: 0, width: 15, height: 15, borderRadius: '50%', background: `linear-gradient(135deg, ${C.purple}, ${C.purpleLight})`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Icon name="check" size={10} />
@@ -239,7 +241,7 @@ export function GiftersClusterCoins({ gifters }) {
 export function ViewerPill({ count, onClick }) {
   return (
     <button type="button" aria-label="Viewers" onClick={onClick}
-      style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '4px 8px', borderRadius: 999, fontSize: 11, fontWeight: 800, flexShrink: 0, border: 'none', color: '#fff', cursor: onClick ? 'pointer' : 'default', ...glassDark }}>
+      style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 8px', borderRadius: 999, fontSize: 11, fontWeight: 800, flexShrink: 0, border: 'none', color: '#fff', cursor: onClick ? 'pointer' : 'default', ...glassDark }}>
       <Icon name="visibility" size={14} />{compactNum(count || 0)}
     </button>
   );
@@ -302,101 +304,20 @@ export function FloatingHeart({ style }) {
 // new row; DIFFERENT senders stack as separate rows (max 3 visible). Drive it
 // with `useGiftFeed` and render `<GiftFeed>` where the drops should appear.
 
-const GIFT_COMBO_MS = 4200; // a row lives this long after its last hit
-
-// One transient row: avatar · name · "Tipped" · coin · big xN coin count.
-// ⚠ THE NAME TRUNCATED AT SIX CHARACTERS ("ZERO…") IN A PILL WITH ROOM TO SPARE,
-// and TikTok does not do that — it shows the whole handle. The cause was
-// `maxWidth: '88%'`: a PERCENTAGE resolved against an absolutely positioned,
-// shrink-to-fit parent whose own width depends on this child. That circularity
-// resolves tiny, and the flex column had `minWidth: 0` so it was allowed to
-// collapse to nothing — the ellipsis fired on LAYOUT, not on the name being long.
-// Fixed at both ends: a PIXEL cap on the pill, so there is nothing circular to
-// resolve, and the name gets its own generous cap so it only ellipsises on a
-// genuinely long handle. Verified by rendering: ZER0_kade / Priya_S /
-// Emma_Quinn all render in full; only a 33-character handle ellipsises.
-function GiftRow({ t }) {
-  const faceOf = useFaces();
-  return (
-    <div style={{ animation: 'vgrGiftIn 0.22s ease-out', display: 'inline-flex', alignItems: 'center', gap: 8, padding: '4px 13px 4px 4px', borderRadius: 999, maxWidth: 300, boxShadow: '0 6px 18px rgba(0,0,0,0.42)', ...glassDark }}>
-      <UserAvatar src={faceOf(t)} size={30} />
-      <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', lineHeight: 1.2 }}>
-        <span style={{ fontSize: 12, fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 168 }}>{t.name}</span>
-        <span style={{ fontSize: 9.5, color: C.textDim, whiteSpace: 'nowrap' }}>Tipped</span>
-      </div>
-      <img src={vcCoinIcon} alt="" style={{ width: 26, height: 26, objectFit: 'contain', flexShrink: 0 }} />
-      {/* keyed on count so each combo hit re-runs the pop animation */}
-      <span key={t.count} style={{ animation: 'vgrGiftPop 0.34s cubic-bezier(0.2,1.6,0.4,1)', fontSize: 19, fontWeight: 900, fontStyle: 'italic', color: C.gold, flexShrink: 0, textShadow: '0 1px 6px rgba(245,200,66,0.5)' }}>x{compactNum(t.count)}</span>
-    </div>
-  );
-}
-
-// Renders the active gift rows (oldest at the top, newest at the bottom).
+// ⚠ THE TIP FEED NOW LIVES IN PRODUCTION (components/streams/TipComboFeed).
+// It was built here and the real screens never got it, so the design the
+// founder approved rendered only inside the simulator. These two are thin
+// adapters kept so no preview call site changed: GiftFeed resolves the cast
+// faces the admin uploaded, and useGiftFeed keeps the name the sim writes.
 export function GiftFeed({ toasts, style }) {
-  if (!toasts?.length) return null;
-  // ABSOLUTE BY DEFAULT. Gift drops are transient chrome that appear and vanish;
-  // in normal flow they push the chat (and anything else in the column) every
-  // time one fires. Callers may override the anchor, but not the positioning.
-  return (
-    <div style={{ position: 'absolute', left: 12, bottom: 8, zIndex: 5, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 6, pointerEvents: 'none', ...style }}>
-      <style>{'@keyframes vgrGiftIn{from{transform:translateY(10px);opacity:0}to{transform:translateY(0);opacity:1}}@keyframes vgrGiftPop{0%{transform:scale(0.55)}45%{transform:scale(1.3)}100%{transform:scale(1)}}'}</style>
-      {toasts.map((t) => <GiftRow key={t.id} t={t} />)}
-    </div>
-  );
+  const faceOf = useFaces();
+  const tips = (toasts || []).map((t) => ({ ...t, avatar: faceOf(t) }));
+  return <TipComboFeed tips={tips} style={style} />;
 }
 
-// Hook: manages the transient combo feed. `lastGift` (from the admin "Fire tip"
-// button via the mock doc) pushes a drop; `sendGift` lets in-screen controls (the
-// VC dock button) push one too. Same name+gift within the combo window stacks the
-// counter; otherwise a new row is added (cap 3, oldest drops).
 export function useGiftFeed(lastGift) {
-  const [toasts, setToasts] = useState([]);
-
-  const sendGift = useCallback((g) => {
-    const name = g?.name || 'TestFan';
-    // ⚠ NO GIFT TYPE. There was a `gift` field defaulting to 'Galaxy', which is
-    // how an invented item name reached a screen whose captures ship on the Play
-    // listing. Coins (VC) are the only thing a viewer can send.
-    const qty = g?.qty || 1;
-    const avatar = g?.avatar || null;
-    // ⚠ CARRY THE uid. Without it a gift toast can only ever show the cast's
-    // identicon, because faceOf has no key to look the upload up by.
-    const uid = g?.uid || null;
-    setToasts((prev) => {
-      // ⚠ KEYED ON THE PERSON ALONE. It used to key on name + gift type, which
-      // with a single currency means every tip from the same person would still
-      // stack — but the gift half of the key implied a taxonomy that is not real.
-      const i = prev.findIndex((t) => t.name === name);
-      if (i >= 0) {
-        const next = prev.slice();
-        next[i] = { ...next[i], count: next[i].count + qty, ts: Date.now() };
-        return next;
-      }
-      const row = { id: `${name}-${Date.now()}`, uid, name, avatar, count: qty, ts: Date.now() };
-      return [...prev, row].slice(-3);
-    });
-  }, []);
-
-  // Expire rows GIFT_COMBO_MS after their last hit.
-  useEffect(() => {
-    if (!toasts.length) return undefined;
-    const id = setInterval(() => {
-      const now = Date.now();
-      setToasts((prev) => prev.filter((t) => now - t.ts < GIFT_COMBO_MS));
-    }, 600);
-    return () => clearInterval(id);
-  }, [toasts.length]);
-
-  // Admin "Fire tip" → new drop (deduped on the doc timestamp).
-  const seen = useRef(0);
-  useEffect(() => {
-    if (lastGift?.ts && lastGift.ts !== seen.current) {
-      seen.current = lastGift.ts;
-      sendGift(lastGift);
-    }
-  }, [lastGift, sendGift]);
-
-  return { toasts, sendGift };
+  const { tips, push } = useTipCombo(lastGift);
+  return { toasts: tips, sendGift: push };
 }
 
 // ── Chat ────────────────────────────────────────────────────────────────────
@@ -410,7 +331,7 @@ export function ModBadge() {
 }
 export function SubPill() {
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, verticalAlign: '-2px', padding: '1px 5px 1px 3px', borderRadius: 6, fontSize: 8.5, fontWeight: 900, letterSpacing: '0.04em', color: '#fff', background: `linear-gradient(135deg, ${C.purple}, ${C.purpleLight})` }}>
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, verticalAlign: '-2px', padding: '1px 5px 1px 3px', borderRadius: 8, fontSize: 9, fontWeight: 900, letterSpacing: '0.04em', color: '#fff', background: `linear-gradient(135deg, ${C.purple}, ${C.purpleLight})` }}>
       <Icon name="star" size={9} filled style={{ color: C.gold }} />SUB
     </span>
   );
@@ -444,7 +365,7 @@ export function SoloChatRow({ user, text, uid = null, vpLevel = 0, mod = false, 
           </>
         ) : (
           <>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap', marginBottom: 2 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 2 }}>
               <span style={{ fontWeight: 800, color: '#fff' }}><UserName user={{ displayName: user, vpLevel }} masked context="chat" fallback="guest" /><RankBadge level={vpLevel} uid={uid} size={12} animated style={{ marginLeft: 4, verticalAlign: '-2px' }} /></span>
               {mod && <ModBadge />}
               {sub && <SubPill />}
@@ -468,7 +389,7 @@ export function JoinRow() {
 
 export function WatchingRow() {
   return (
-    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 10.5, color: 'rgba(255,255,255,0.82)', width: 'fit-content' }}>
+    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'rgba(255,255,255,0.82)', width: 'fit-content' }}>
       <img src={watchingIcon} alt="" aria-hidden style={{ width: 18, height: 18, objectFit: 'contain' }} />
       <span><b style={{ fontWeight: 800 }}>Priya_S</b> started watching</span>
     </div>

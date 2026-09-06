@@ -13,6 +13,570 @@ second session (or a second machine) can pick up without re-auditing.
 
 ---
 
+## CALL PREVIEW: A SIMULATOR FOR EVERY CALL SURFACE (2026-09-06): SHIPPED + DEPLOYED
+
+Founder: *"we have a live stream preview in admin so I can see the UI and all the sheets without
+starting a live stream. I want the same for calls, video calls, group calls and squad calls."*
+
+**`/admin/call-preview`**, built the same way as `/admin/stream-preview` and sharing its cast and
+its upload store. `src/screens/admin/callPreview/` + `AdminCallPreviewScreen.jsx`. Guard:
+`scripts/call-preview-check.mjs`, **110 assertions**, wired into `npm run check`.
+
+### Every call surface, inventoried first
+
+There are eleven, and four of them are not a call screen at all. Inventoried because a surface
+missing from the picker is a surface that cannot be designed or captured, which is how the avatar
+orbit shipped visible to nobody but its owner.
+
+| Surface | Shipped file | Transport |
+|---|---|---|
+| 1:1 voice | `CallScreen.jsx` audio layout | raw WebRTC P2P |
+| 1:1 video | `CallScreen.jsx` video layout | raw WebRTC P2P |
+| Group call | `GroupCallScreen.jsx` + `utils/groupCall.js` | Pion SFU, 8-camera cap |
+| Squad hangout | `SquadStreamScreen.jsx` | Pion SFU, 2-camera cap, voice-first |
+| Voice channel | `VoiceChannelScreen.jsx` + `utils/voiceSession.js` | Pion SFU, audio only, survives navigation |
+| Incoming ring | `IncomingCallOverlay.jsx` | 1:1 / group / paid variants |
+| Floating pill | `VoiceSessionPill.jsx` | |
+| Calls hub | `screens/calls/CallsScreen.jsx` | mobile list + desktop split |
+| In-thread call row | `CallRow`, `ChatThreadScreen.jsx:516` | reads `calls_history` |
+| New channel / Invite | two modals | |
+
+✅ **NATIVE IS NOT A SECOND IMPLEMENTATION HERE, unlike the stream screens.**
+`NativeCallScreen`, `NativeVoiceChannelScreen` and `NativeSquadStreamScreen` all
+`export { default } from` the web file, so there is ONE implementation per surface and the
+preview cannot fall out of step with a fork. `/broadcast` and `/go-live` each have two; calls
+have one. Checked by reading the files, not assumed.
+
+### ⚠ EVERY SURFACE HERE IS A COPY, AND THAT IS THE OPPOSITE OF THE STREAM PREVIEW
+
+The stream preview IMPORTS `JoinAnnouncer`, `StreamGoalBar` and the alert overlays, because they
+take props and nothing else, so importing is read-only and cannot drift. **Nothing on a call
+screen is prop-only:** CallScreen owns a peer connection, GroupCallScreen subscribes to a module
+singleton, VoiceChannelScreen reads Firestore and joins the SFU on mount. Importing any of them
+would open a real socket and ask for the camera from inside an admin page. So each surface is a
+copy that records `Copied layout source: <file>:<line>` at the copy site, and guard rule 14 fails
+the build if one does not.
+
+⚠ Guard rule 1 refuses ten tokens outright: `getUserMedia`, `getDisplayMedia`,
+`RTCPeerConnection`, `connectSFU`, `joinGroupCall`, `joinVoiceChannel`, `onSnapshot`,
+`httpsCallable`, `firebase/firestore`, `WebSocket`. A screenshot tool that can ring a real person
+is not a screenshot tool.
+
+### ⚠ ONE CAST, ONE UPLOAD STORE, SHARED WITH THE STREAM PREVIEW
+
+`callCast.js` imports `CAST` from `streamPreview/previewCast`, and `useCallSim` imports the same
+`previewAssets` IndexedDB store. A face uploaded for nova_kill in either tool is her face in
+both, with no second upload. A separate store would mean two rails, two uploads, and two tools
+disagreeing about what a person looks like.
+
+### ⚠ THE WHOLE SIM GOES THROUGH THE CONTEXT, NOT A PROP LIST
+
+`simProps` in the stream preview is an allowlist maintained by hand and it silently dropped
+something **four separate times** (uploaded avatars, the PiP video, reactions, the combo meter),
+each time leaving a control mounted with nothing feeding it, and the founder found every one.
+Here the harness hands `PreviewAssetsProvider` the whole hook return and every surface reads
+`usePreviewSim()`. Guard rule 2 fails on a `simProps = {` in the harness and on a surface that
+does not call the hook.
+
+### ⚠ CAPS ARE READ OUT OF THE SERVER FILES, NEVER TYPED
+
+Guard rule 6 greps `MAX_CALL_VIDEO` out of `utils/groupCall.js` and `MAX_VIDEO_PUBLISHERS` out of
+`SquadStreamScreen.jsx` and fails on drift. A cap the server does not have is a capture of
+something impossible. Negative-tested: changing 8 to 6 in the preview reports
+`group camera cap drift: the preview says 6, groupCall.js says 8`.
+
+### 🔴 EIGHT REAL DEFECTS IN THE SHIPPED CALL SCREENS, none fixed yet
+
+Found by reading the files while building the copies. They render in the tool's own
+**"What is broken"** panel, because a simulator that quietly designs around a defect turns it
+into a screenshot nobody ever fixes. Guard rule 15 asserts the three CallScreen ones are still
+true in the file named, so a fix must remove its line in the same commit.
+
+| Where | What |
+|---|---|
+| `CallScreen.jsx:353` | **Flip camera has no `onClick` at all.** It is a styled div. On a phone this is the most used control on a video call, and it has never worked. |
+| `CallScreen.jsx:346` | The speaker button flips `speakerOn` and **nothing reads it**. No `setSinkId` in the file, so audio keeps coming out of the earpiece. On native the fix is an AudioManager route through the Kotlin bridge, not `setSinkId`. |
+| `CallScreen.jsx:357` | The only action on a failed call is `safeReload()`, a **full page reload**, which throws away the session and is a cold WebView boot on native. |
+| `IncomingCallOverlay.jsx:327` | Every ring prints **"VERGR · Encrypted P2P Call", including a GROUP one.** A group call routes through our own SFU, which decrypts and re-encrypts each hop. A specific security claim under a call that does not meet it is a bug, not copy. |
+| `VoiceChannelScreen.jsx:298` | The per-member volume slider **pushes the roster off a phone.** Measured at 393px: `input[type=range]` resolves `min-width:auto` to an intrinsic 129px, so `flex-1` cannot shrink it and the row computes to 193px inside a 154.5px column. One `min-w-0` fixes it. |
+| `GroupCallScreen.jsx:163` | A group call shows a head count and **no duration**, while the 1:1 screen has a running clock. |
+| `SquadStreamScreen.jsx:229` | The two-camera cap is explained by a **toast that has already gone**, leaving a disabled button with no reason attached to it. |
+| nothing | **No call surface reads `getStats()`.** There is no connection-quality signal anywhere, so a call degrades in silence and then dies with "Connection failed". |
+
+⚠ `IncomingCallManager.jsx` is a **second, older ringer imported nowhere** (AppRouter mounts
+`IncomingCallOverlay` only) that still holds a divergent copy of the accept and decline rules.
+Tracked in the guard so a future session does not fix the dead one by mistake.
+
+### Two things in the preview that DO NOT EXIST in the product, and say so
+
+The three-bar **connection-quality pill** and the group call's **elapsed clock** are proposals.
+The rail prints "Not built" in amber beside the quality control. A rail that lets an admin
+capture a feature the product does not have is how an unbuilt thing reaches a store listing.
+
+### Measured, not eyeballed
+
+Rendered all 14 frames in Chrome against the real stylesheet and walked the DOM.
+
+⚠ **THE FIRST PASS LOOKED BROKEN AND WAS THE HARNESS, NOT THE PRODUCT.** Icons rendered as raw
+ligature text ("expand_more", "mic_off") because the Material Symbols `@font-face` lives in
+`index.html`, not `index.css`. A control run with the font injected showed correct glyphs and a
+correct group header. Three "defects" evaporated. Every probe needs a control run.
+
+⚠ **ONE REAL LAYOUT BUG, AND `minWidth: 0` ALONE ONLY HID IT.** The voice-channel roster overflowed
+393px by 3px. Adding `minWidth: 0` stopped anything escaping the frame, and the volume row still
+computed **178.8px inside a 155px box** and was simply clipped, because the per-member wrapper is
+itself a grid and an implicit column sizes to max-content. `gridTemplateColumns: 'minmax(0, 1fr)'`
+is the actual fix. **Measuring the frame edge alone would have called it fixed.**
+Final sweep: 0 overflowing and 0 clipped elements across all 14 frames.
+
+Also caught only by rendering: the roster read **"You (you)"**, because the shipped row is
+`<UserName/> (you)` and the simulator's viewer is literally named You.
+
+### Wiring
+
+`AdminShell.jsx` nav (icon `videocam`), `AdminRoutes.jsx` route, and **`'call-preview'` added to
+`ADMIN_SCREENS` in `functions/adminAccess.js`** so a sub-admin can be granted it. That last one is
+not optional: `normalizeScreens()` drops anything not in that list, which is exactly how
+`'creators'` sat in the sidebar for months and could never be granted. The founder
+(`role: 'admin'`) gets `['*']`, so it is reachable immediately.
+
+⚠ It is mounted only from `AdminRoutes`, which is lazy and gated behind the native flag, so the
+whole admin chunk still tree-shakes out of the APK (728 kB, split). Guard rule 17 fails on a
+static import from `AppRouter`.
+
+**DEPLOYED** to hosting 2026-09-06, verified live at `/admin/call-preview` (200). The
+files are UNTRACKED in git and committing is a founder call, so it has not been done. That is a
+real exposure now rather than a note: `npm run check` requires `scripts/call-preview-check.mjs`,
+so a `git clean` would take the guard with it and break `prebuild` outright.
+
+---
+
+
+## CORRECTION: I LETTERBOXED THE IMMERSIVE STAGE AND BROKE THE TIKTOK LOOK (2026-09-06): FIXED + DEPLOYED
+
+Founder, within minutes of the deploy: *"i am looking on the preview on immersive and there is
+now a black background on the header, which now contradicts the TikTok look. you said that the
+crop was for clips and stuff but now it is effecting the mobile view live stream, did i
+misunderstand something?"* He did not misunderstand. I did this.
+
+**The cause.** `PreviewMobileViewer` was passing `frame={vFrame || 'letterbox'}`, so with no
+framing set — the default for everybody — the stage got `objectFit: contain`. Measured: a
+**1080x1920** source in a **393x852** phone frame. That frame is 19.5:9, not 16:9, so a 9:16
+video under `contain` letterboxes top and bottom, and the top bar is what sits on the black.
+
+**The mistake underneath it.** I reasoned that "off" had to mean letterbox or the toggle was
+dishonest, and generalised the no-crop rule onto the live viewer. **That rule is about MEDIA
+UPLOADS** — avatar, banner, card image, where the app was silently discarding part of a photo
+somebody chose. The immersive stage filling the screen is an approved design decision that has
+been in front of the founder for weeks. Two different things; I merged them.
+
+**Fixed:** `frame={vFrame}` — null means untouched, so only a frame the host actually drew
+changes anything. Verified on the deployed page: `objectFit` is `cover` again.
+
+**And the sheet stopped claiming something it cannot deliver.** The cards were
+"Whole picture / Bars top and bottom" versus "Fill the screen"; they are now **Automatic /
+Fills the screen, centred** versus **Choose what shows / You draw the lines**, and the phone
+preview shows full-bleed when off, which is what the viewer really does. "Automatic" is honest
+about centring; "Whole picture" was not.
+
+Guard rule 56 now asserts the immersive stage passes the frame straight through and never
+forces a letterbox — negative-tested, and it reproduces exactly the regression he spotted.
+`npm run check` is **1430**.
+
+---
+
+## NO MEDIA IS CROPPED FOR THE USER ANY MORE (2026-09-06): SHIPPED + DEPLOYED (production)
+
+Applying the founder's rule — *"if cropping on any media is [required] then we shouldnt do it
+for the user"* — beyond the live stream. **This is production, not the preview.**
+
+**Three live paths were cropping with no user control**, all found by reading rather than
+grepping for the word "crop":
+
+| Path | What it did |
+|---|---|
+| Avatar | `PRESETS.avatar` is `square: true`, so `compressImage` centre-cropped every upload to 1:1. A portrait photo lost the top of somebody's head |
+| Banner | `resizeImageToBanner(file)` cover-fits 1500x500 and "crops overflow" |
+| Explore card | the same function at 600x800, 3:4 |
+
+**One component, `src/components/media/MediaFramer.jsx`**, drives all three — three separate
+croppers would drift, and two of the three would end up without the labels. `aspect` is
+width/height: 1 for the avatar (with a circular guide, because the stored file is square but
+most surfaces render it round), 3 for the banner, 0.75 for the card. Corners resize with the
+aspect locked, the window drags, both regions are labelled **KEPT** and **CUT**, and every
+result is clamped so a rounding error in the scaled preview cannot read outside the image and
+leave a transparent edge.
+
+⚠ **IT RETURNS SOURCE PIXELS, NOT PREVIEW PIXELS.** The preview is scaled to fit the dialog,
+so handing back on-screen coordinates would crop a different part of a large photo than the
+one the user drew.
+
+⚠ **THE DEFAULT WINDOW IS THE OLD AUTOMATIC CROP.** Largest window of the right aspect,
+centred — so anyone happy with what they used to get just presses Use photo.
+
+⚠ **AN ANIMATED AVATAR IGNORES THE CROP AND THAT IS DELIBERATE.** Cropping means decoding to
+a canvas, which keeps frame one and kills the animation — the exact bug the animated
+passthrough exists to avoid. Only affects someone entitled to animated avatars uploading an
+animated WebP.
+
+⚠ **BOTH `crop` ARGUMENTS ARE OPTIONAL.** `compressImage(file, preset, rotate, crop)` and
+`resizeImageToBanner(file, w, h, crop)` fall back to the old centre/cover behaviour, so no
+caller outside this file changed.
+
+**Verified on the deployed page** by building a 1200x1600 test image in the browser and
+feeding it to the real file input: the framer opened, the gold block at the top of the test
+image sat in the CUT zone — precisely what the old centre crop silently discarded — and
+dragging the square up moved it 12.5% -> 0%, clamping at the image edge with the size held.
+
+---
+
+## FRAMING IS LINES THE HOST DRAWS (2026-09-06): SHIPPED + DEPLOYED (preview)
+
+Founder: *"we shouldnt do it for the user because thats not what other platforms do, we should
+allow them to move lines so that will see what will be visible and what wont be visible."*
+
+The first build gave the host a rectangle the app had placed, which they could slide, plus a
+zoom slider. Now it is **two draggable lines**. Dragging one moves that edge only and the
+other holds; the region between them is labelled **ON PHONES** and both outer regions are
+labelled **CUT**.
+
+⚠ **THE ZOOM SLIDER IS GONE, AND ITS ABSENCE IS THE DESIGN.** A 9:16 window at full source
+height is exactly `FRAME_WINDOW` of a 16:9 frame's width, so a narrower gap can only be
+achieved by cropping height as well — which IS zooming in. The gap therefore encodes the zoom,
+and a second control for it could disagree with the lines. Widening past `FRAME_WINDOW` is
+refused rather than silently clamped: there is no more source behind the line.
+
+**Verified live by driving the pointer:** dragging the left handle right narrowed the window
+**0.3164 → 0.1583** (the zoom-2 clamp, 0.31640625 / 2 = 0.1582) while the right edge held at
+0.658. Labels present, window exact at 0.3164 when reset.
+
+⚠ Fixed on inspection: at full zoom the **ON PHONES** pill was wider than the gap and spilled
+across the CUT area, labelling the region it exists to exclude. It hides below a 0.22 gap; the
+lines and CUT markers still carry the meaning.
+
+⚠⚠ **I DEPLOYED ON A FAILED BUILD.** The command was
+`npm run build 2>&1 | grep -E "✓ built|error" && firebase deploy`. The build failed on a bad
+guard, grep MATCHED the error line and therefore exited 0, and `&&` ran the deploy on the
+previous `dist`. Nothing broken shipped, because the old bundle was intact, but the pattern
+would ship a stale build silently every time. **Never gate a deploy on a grep of the build
+output** — grep's exit code says "I found text", not "the build passed".
+
+🔴 **THE SAME RULE HAS A PRODUCTION VIOLATION, NOT YET FIXED AND NOT MINE TO FIX UNASKED.**
+`PRESETS.avatar` in `src/utils/mediaCompression.js` sets `square: true`, so `compressImage`
+**centre-crops every avatar to 1:1 with no user control** — a portrait photo loses whatever
+falls outside the middle square, including the top of somebody's head. It is the only preset
+that crops; `post`, `background` and `chat` all fit-inside and preserve aspect. Instagram,
+TikTok and Twitch all offer a reposition-and-zoom step here. Awaiting a decision.
+
+`npm run check` is **1430**.
+
+---
+
+## DUAL FORMAT: scoped on the box, then built (2026-09-06): SHIPPED + DEPLOYED (preview)
+
+Doc item 13 of 13, the last one. Founder: *"you have access to what is on hetzner so why are
+you assuming without checking?"* — and checking changed the answer.
+
+⚠⚠ **I SCOPED IT WRONG FROM THE REPO AND SSH CORRECTED ME.** I said a server-side crop was
+blocked because Vergr has no transcoder and box 1 was loaded. On the box: **ffmpeg 6.1.1 with
+libx264 IS installed**, and idle load is **0.18–0.49**, not the 1.00 I quoted — that figure
+came from a comment in `infra/transcode/worker.js` written in the box-2 era and I repeated it
+instead of measuring.
+
+⚠⚠ **GREP WOULD HAVE CONFIRMED THE WRONG ANSWER.** Searching for "transcode" hits
+`infra/transcode/worker.js`, which sounds exactly like the doc's claim that "the RTMP path
+already transcodes". Reading it says the opposite: it transcodes **uploaded post video**, its
+output lands on "a NEW field on the post document. **Nothing reads that field yet**", and it
+"cannot degrade … **live streaming, none of which it touches**".
+
+**Read on box 1, primary source:** the live `application live` block is `hls on` with **no
+`exec` or transcode directive of any kind** — RTMP is remuxed to HLS, never re-encoded.
+
+**Measured on box 1** (2 vCPU, `-preset veryfast`, real H.264 decode included — a `testsrc2`
+benchmark skips decode and overstates by ~35%):
+
+| Output | Speed | Verdict |
+|---|---|---|
+| Free 480x854 | **2.89x** | ~2 concurrent |
+| Lite 720x1280 | **1.69x** | ~1, little headroom |
+| Pro 1080x1920 | **0.85x** | cannot keep up with one |
+
+So server-side was **tier-limited, not blocked**, and it inverts: cheapest for free, impossible
+for the paying tier. `nvenc`/`qsv`/`vaapi` are listed by `ffmpeg -encoders` but a CX23 has no
+GPU. And the box is not spare — **PayRam measured ~42% of one core sustained**, alongside
+chat, ingest, SFU, rtmp-auth, OCR and the thumbnailer.
+
+**Founder chose route C: one encode, viewer-side framing.** Rail section VERTICAL FRAMING plus
+a `vframe` sheet — wide source with a draggable 9:16 window over a dimmed backdrop, a live
+"ON A PHONE" panel, Left/Centre/Right, zoom, and a line saying desktop keeps the full picture.
+Verified live: window **0.3162** of the container vs 0.3164 expected; presets at
+**−39.75 / −99.375 / −159px** for x = 0.2/0.5/0.8, exactly −x x (inner − container).
+
+⚠ **ROTATE-TO-SWAP WAS ALREADY BUILT** — `MobileLiveViewer` has a `fullscreen` branch.
+
+**Two defects found by measuring, neither visible in source:**
+1. The frame was applied only to `<img>`/`<video>`, but **`/brand/live/preview-scene.webp`
+   does not exist** — it answers **200 with `text/html`** through the SPA rewrite, so `onError`
+   fires and every preview scene is the drawn `SceneFallback`. The feature did nothing on the
+   only path that runs. [[reference-spa-rewrite-masks-404]]
+2. **The OFF state was a lie.** `Scene`'s base style is already `objectFit: cover`, so a card
+   reading "Letterbox / Nothing is cut" cover-cropped exactly like the framed one — measured,
+   both returned `cover / 50% 50%`, differing only by a no-op `scale(1)`. `frame` now has
+   three states: absent (untouched, every old caller), `'letterbox'` (`contain`), and a rect.
+
+⚠ I also misread `chip(on)` while debugging: it sets a **gradient**, so `backgroundColor`
+computes to `rgba(0,0,0,0)` when SELECTED and a solid colour when not. I read that inverted
+and briefly thought the control was dead.
+
+Guard rule **56**, four assertions, negative-tested: crop defaults to off, the letterbox
+branch exists, the viewer letterboxes when unframed, and the two geometry constants are exact.
+`npm run check` is **1427**.
+
+---
+
+## VERGR ALERTS OVERLAY FOR OBS (2026-09-06): SHIPPED + DEPLOYED (preview)
+
+Doc item 12 of 13. A third render target beside Desktop and Mobile
+(`PreviewObsOverlay.jsx`): a true **1920x1080** canvas, scaled as one unit so every offset is
+the offset OBS gets, carrying the SAME components the viewer already uses — hype train, sub
+alert, tip combo feed, entrance ribbon, reactions, goal bar. **Zero new mechanics and zero
+lookalikes**; anything redrawn for the overlay would be a second definition that drifts.
+
+**Transparency / Over gameplay** toggle, because an overlay that looks right on a dark
+preview and turns out to carry its own panel fill becomes a grey box over somebody's game.
+Plus the browser-source settings, including the two OBS options that default to ON and both
+break alerts (shutdown-when-not-visible drops the connection on every scene switch;
+refresh-on-active reloads mid-alert).
+
+🔴 **NOT A ROUTE YET, deliberately.** `/overlay/battle/:streamId/neon` is the precedent and
+takes a stream id, which is not secret — unlike the stream KEY, which is a credential and
+must never reach a URL a host pastes into OBS and screen-shares.
+[[reference-stream-key-is-a-credential]]
+
+⚠⚠ **THE TRANSIENTS RULE PAID OUT AGAIN.** At rest the canvas is empty and looked finished.
+Firing a tip, a sub and an entrance together showed all three landing in the SAME band with
+the sub card sitting on the tip row — unreadable at exactly the busy moment a host cares
+about. Three separate bands now (340 / 180 / 96). **Reading the layout would never have shown
+this**; only firing them and looking did.
+
+⚠ **AN EMPTY CANVAS IS THE CORRECT RESTING STATE AND HAS TO SAY SO**, or it reads as broken.
+The caption lives outside the scaled canvas, so it never reaches OBS.
+
+⚠⚠ **THE GUARD FOUND SEVEN THINGS AND ONE OF THEM WAS RIGHT.** Adding the file tripped
+`ReactionsFloor` (a real catch — reactions are the alert a viewer fires constantly, so an
+overlay without them is the quietest surface carrying the loudest signal) plus six
+viewer-chrome rules: sheets, chat-state banner, spoken-chat strip, like button, viewer list,
+playback state and the paywall. **None of those belong on an overlay**: it is composited into
+the BROADCAST, so the people who see it are watching on Twitch or YouTube, not sitting in
+Vergr chat, and the whole thing is `pointerEvents: none`.
+
+Five of those rules used `<ReactionsFloor>` as the marker for "a live surface", which was
+unambiguous until an overlay legitimately rendered reactions. **Fixed with ONE predicate,
+`isWatched(f, src)`, at five call sites — not five `if (f === 'PreviewObsOverlay')` skips.**
+Scattered exemptions are how a guard quietly stops guarding: each looks reasonable alone and
+nobody ever counts them. Negative-tested that the overlay is STILL held to the live kit —
+removing its `<GiftFeed>` fails the build.
+
+`npm run check` is **1415**.
+
+---
+
+## HYPE TRAIN (2026-09-06): SHIPPED + DEPLOYED (preview)
+
+Doc item 11 of 13. A ribbon under the top bar on all six stream surfaces: level chip,
+progress to the next level, countdown, and the riders who got it there. Fed by the real
+support emitters (`fireTip`, `fireSub`), not a private button.
+
+⚠ **IT RIDES `train`, NOT `streams/{id}.hype`.** That field already exists and means
+something else — a reactions-per-5-seconds excitement meter (`functions/streamHype.js`). Two
+systems on one word is how the theme system died.
+
+🔴 **THE REWARD IS RECOGNITION ONLY, PENDING A FOUNDER DECISION.** Coins mint currency out
+of a celebration; VP inflates the ladder and collides with `GIFT_COINS_PER_VP`, whose own
+comment says coins must not buy rank. Guard rule 55 fails the build if a payout appears.
+🔴 **EVERY NUMBER IS MINE:** 500 coins/level, 5 levels, a 5-minute window, and 250 coins as
+a placeholder for what a sub contributes — a creator sets their own membership price, so
+that one genuinely cannot be derived here.
+
+⚠⚠ **THE MOUNT SCRIPT WIRED ONE BRANCH OF THREE AND THE GUARD SAID FINE.** It inserted
+before the FIRST `<GiftFeed>` in each file, but `PreviewBroadcasterScreen` renders the tip
+feed in **three** layout branches and `PreviewViewerScreen` in **two**. The train was
+invisible on the desktop broadcaster — the surface I then tested — while rule 55 passed,
+because it asserted the FILE contained `<HypeTrain>`. Now it counts: `trains >= feeds` per
+file. **A file that renders the tip feed N times is N separate screens.** Same family as the
+avatar orbit, one level finer.
+
+⚠⚠ **I RAN `git checkout --` ON A FILE WITH A DAY OF UNCOMMITTED WORK IN IT.** It was meant
+to restore a two-line negative test and it reverted `PreviewBroadcasterScreen.jsx` to HEAD,
+taking the auto-moderation rows, the held banner, the chat-rules strip and the TDZ fix with
+it. Recovered from a scratch copy plus re-applying two patches. **Never use `git checkout --`
+as an undo while work is uncommitted; write the file back from a copy taken first.** This is
+the tracked-file twin of the untracked-file loss that shipped a web-mode APK.
+
+`react/jsx-no-undef` then caught the restored file missing its `HypeTrain` import — the rule
+that exists because an unimported component compiles green.
+
+Guard rule **55**: every surface mounts it in every branch, it reads the sim rather than
+taking a prop, and no currency name appears in the payout block. Negative-tested three ways.
+`npm run check` is **1364**.
+
+---
+
+## CHAT RULES: shared state, a strip that says so, and a shield that actually works (2026-09-06): SHIPPED + DEPLOYED (preview)
+
+⚠⚠ **§0.2 OF THE COMPETITIVE DOC WAS WRONG AND I ALMOST "FIXED" A BUG THAT IS NOT REACHING
+USERS.** It says the "Subscribers only" stream gate is offered in the stream settings sheet
+while the server understands only `paid`. The server half is right — `'subs'` appears nowhere
+in `functions/` and `createStreamSession` writes `paid` or `free` only
+(`functions/streaming.js:421`). But **nothing shipped ever asks for it**: the real go-live
+screen offers Free or Ticketed (`GoLiveSetupScreen.jsx:408`) and the production paywall
+(`components/monetization/StreamPaywall.jsx`) has **no `kind` prop at all**. The `subs`
+paywall is the PREVIEW's copy. Doc corrected in place.
+
+**What the same measurement did find:** the relay honours exactly `followersOnly` and
+`slowModeSec` (`infra/chat/src/main.go:713`) and `streamChatMod.js` writes no subscriber or
+verified field, so **"Subscribers-only" and "Verified accounts only" chat are inert toggles**
+— the kill-switch class again.
+
+**Built in the preview:**
+
+- **Chat rules moved into the sim.** They were `useState` INSIDE `ModerationSheet`, so
+  switching followers-only on and closing the sheet threw it away, and nothing outside could
+  see chat was restricted.
+- **A "Chat is limited" strip** above the composer, in the shared `PreviewChat` so both the
+  mobile overlay and the desktop column get it from one place. `tts` is deliberately absent:
+  reading chat aloud stops nobody from talking.
+- **Shield Mode now moves the real rules and restores the host's own.** Until now it flipped
+  a banner inside its own sheet and changed nothing, while its copy promised both.
+
+Verified live: `Verified only` → raise → `Followers only · Verified only · Slow 30s` → lower
+→ `Verified only`.
+
+⚠⚠ **A TDZ CRASH SHIPPED TO THE DEPLOYED PREVIEW AND EVERYTHING WAS GREEN.** `const rules =
+chatRules;` sat two lines ABOVE the `usePreviewSim()` destructure that declares `chatRules`.
+A `const` read above its own declaration is a temporal-dead-zone error at RENDER time, not a
+name error, so eslint `no-undef` saw a well-defined binding, `npm run build` passed, and the
+page was an ErrorBoundary reading *"Cannot access 'p' before initialization"*. **Second one
+in two days** — the first was a `useCallback` dep array.
+
+New guard rule **54** catches it. ⚠ **eslint's `no-use-before-define` was TRIED AND
+REJECTED, not overlooked:** it cannot tell a render-time read from one inside a callback, and
+reports **513** hits across `src/`. Nearly all are harmless, and a rule that cries wolf gets
+switched off. Rule 54 checks the render-time case only, and its first version had the same
+fault — it walked back past `export default function` into the PREVIOUS function and flagged
+`VideoStage`'s own parameter. Negative-tested by reproducing the exact shipped crash.
+
+⚠ **`DUMP=1` ADDED TO THE GUARD.** The total moves on its own, because several rules loop
+over content (sim keys, avatar expressions, video slots), so a DROP looks identical to lost
+coverage. Working out which assertions had vanished cost most of a session; now it is
+`DUMP=1 … > a.txt`, change, dump again, `comm` the two. **A passing run with fewer assertions
+is not a passing run.**
+
+Rule **53** (5 assertions) guards the shared rules, the strip and the shield. Its fifth check
+passed with the fault present on the first attempt — `shieldSaved` still appeared in the
+slice — the third self-matching guard in two days. `npm run check` is **1350**.
+
+---
+
+## AUTO MODERATION: the dial and the held queue (2026-09-06): SHIPPED + DEPLOYED (preview)
+
+Doc item 9 of 13. Four levels in the broadcaster's chat-moderation menu, a held-message
+queue with Approve / Deny / time out, and a count banner above the composer.
+
+⚠⚠ **IT ADDS NO GEMINI SPEND, AND THAT IS THE WHOLE DESIGN.** The relay already calls
+Gemini Flash once per message and returns `pass | flag | block`
+(`infra/chat/src/main.go:9-21`). Today a `flag` FANS OUT and is only written to
+`streams/{id}/chat_moderation` for Vanguard to read afterwards, which means the viewer
+already saw it. The dial does not add a scan, it decides whether that same verdict HOLDS the
+message. The two strictest notches use signals that need no model at all: has this person
+spoken here before, does the text carry a link, is the account under a week old.
+
+⚠ **NO PER-CATEGORY SLIDERS.** Twitch has four because its model returns per-category
+scores. Ours returns one verdict plus a free-text reason (`parseVerdict`, main.go:1447), so
+a category slider would be a control the server cannot honour — the exact defect §0 of the
+competitive doc opens with.
+
+⚠ **A REASON CHIP IS ONLY RED WHEN THE SCANNER ACCUSED SOMEBODY.** `first message here` and
+`link` are the host's own precaution, not a finding. Painting them the same red as
+`hostility` trains a host to deny newcomers, so the seed carries `by: 'scanner' | 'rule'`
+and the chip takes its tone from that.
+
+⚠ **`openAt` ADDED TO `SheetShell`.** The dial opened at the half detent showing 1 of 4
+options, and not the selected one, so the host had to scroll to find out what their own
+setting was. Apple's line, already quoted in that file: do not use the medium detent when
+the content is more useful at full height. A sheet whose content IS a choice now opens
+large; it still drags down.
+
+**Three defects caught during the build, each by measurement rather than reading:**
+
+| Defect | How it surfaced |
+|---|---|
+| `approveHeld` read `pushMessage` in a `useCallback` dep array declared 30 lines below it | TDZ crash on mount — caught before shipping, see [[reference-usecallback-dep-tdz]] |
+| Held sheet rendered `openSheet.held`, a SNAPSHOT | Approving dropped the banner 4 -> 3 while all four rows stayed in the open sheet; the host would have posted the same message four times. Now reads the live list from the sim, prop kept as the harness fallback |
+| `Account 412 days old` in the queue vs `1.1 years` on the moderator card | Two formatters for one fact. Extracted `accountAgeLabel()`; both use it |
+
+⚠ **THE FIRST PASS OF THE VERIFICATION WAS CONTAMINATED.** Checking `body.innerText` for the
+released message returned true while the sheet was still open — the sheet contains that text.
+Re-run with a control (`controlBefore: false`), then approve, then CLOSE the sheet, then
+check: rows 4 -> 3, banner 4 -> 3, message present in chat.
+
+The shipping default is `standard` in the simulator only. **Twitch ships AutoMod off; the
+launch default is a founder call, not a line of code I get to set.**
+
+Guard: rule **52**, five assertions, negative-tested. The first version checked for `onDeny`,
+which the destructured signature satisfies on its own, so deleting the button left it green —
+same self-matching trap as rule 51. `npm run check` is **1348**.
+
+---
+
+## SHEET FLICKER: the shell was pumping 426px <-> 583px every frame (2026-09-06): SHIPPED + DEPLOYED
+
+Founder: *"why is the shield flickering?"* Three sheets were, not one.
+
+`SheetShell` (`previewChrome.jsx`) sized itself from `contentEl.scrollHeight`,
+but a `scroll={false}` sheet hands scrolling to an inner child, so the moment a
+detent constrained the shell that child absorbed the overflow and `scrollHeight`
+collapsed to the **constrained** height. The natural height then read as short
+enough to fit, the detent was dropped, the shell sprang back to `auto`, the
+content measured tall again, and the detent was retaken. **A measurement that
+sets the size of the thing it measures.**
+
+Measured in the lab at 150 rAF-paced frames, both directions:
+
+| sheet | before | after |
+|---|---|---|
+| shield | `426px/398` <-> `auto/583/555` | `426px/426/398` |
+| viewers | `426px/398` <-> `auto/640/612` | `426px/426/398` |
+| subscribe | `426px/398` <-> `auto/468/440` | `426px/426/398` |
+| profile, gifters, tip, more, slowmode | already single-state | unchanged |
+
+`profile` was stable because it uses `scroll={true}`, where `contentEl` IS the
+scroller and its `scrollHeight` stays honest under constraint. That is the exact
+line between the affected and unaffected sheets.
+
+**Fix:** the read is valid once, while unconstrained. `detentRef` holds the
+decision, `measure()` bails out whenever a detent is already applied, every
+detent change routes through `applyDetent`, and there is a dead band of one
+grabber strip (26px) so content landing beside the threshold cannot chatter.
+
+⚠ **THREE PROBES SAID IT WAS FINE BEFORE ONE SAW IT.** A 50ms interval sample
+read a flat 426 forty times (the flip is per-frame, so it aliased). A
+MutationObserver over the whole body saw nothing, because a CSS-driven size
+change mutates no DOM. `getAnimations()` listed only the 7s beam. What actually
+showed it was two consecutive framebuffer captures rendering DIFFERENT content at
+the same coordinates.
+
+⚠ **THE LIVE TAB COULD NOT VERIFY THE FIX.** `document.visibilityState` was
+`hidden`, which freezes rAF and ResizeObserver delivery, so the broken code would
+have measured clean too. Verified in `.preview/lab/detent.mjs` (headless reports
+`visible`) with the bug deliberately restored as the control run.
+
+Guard: rule **51** in `scripts/stream-preview-check.mjs`, three assertions, each
+negative-tested (drop the bail-out, drop the dead band, call `setDetent`
+directly). `npm run check` is **1329**.
+
+---
+
 ## THE PORT: preview design onto the real stream screens (2026-09-04): SHIPPED + DEPLOYED
 
 Founder: *"if it is not done then why have you stopped"*. Everything below is

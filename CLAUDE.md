@@ -2303,7 +2303,7 @@ Docker container `payram` (image `payramapp/payram:latest`), host ports `127.0.0
 | 🟢 | Admin dashboard rebuild — every primary screen wired; remaining: real-data wiring for Live Stats System sub-tab (Cloudflare/GCP adapters — see PLANNED specs below). |
 | 🟡 | Admin live metrics — Hetzner CPU/mem/bw, R2 storage, Circle balance, active streams, treasury size (replaces 5 vendor dashboards). |
 | 🟡 | Admin upgrade-needed notifications (SFU/Hetzner capacity alerts). |
-| 🟡 | R2 segment cleanup cron (delete ended-stream segments after 24h — see TODO below). |
+| ✅ | R2 segment cleanup cron. **BUILT + DEPLOYED, this row read 🟡 for months and was wrong** (verified 2026-09-06: `exports.cleanupExpiredStreamSegments` at `functions/index.js:472` ← `functions/streamingCleanup.js:108`, hourly). |
 | 🟡 Partial | Identity-mask coverage: ✅ rosters; ⏳ notifications drawer + live-stream chat write-time mask. |
 | 🔴 | **Live-stream UI rebuild** — current screens are old Gcore-era + mostly dummy. See "Live-stream screens" section below for the full per-screen punchlist. |
 
@@ -2693,6 +2693,32 @@ Status legend: ✅ done · 🟢 in progress · 🟡 planned · 🟡 Partial · �
   2. `app.security.assetProtocol` off or unscoped → **every `convertFileSrc()` URL dies** (gallery thumbnails, on-device media cache, transcode, share-in). Same check, same file.
   3. A CSP directive that is ABSENT inherits `default-src`, which is deliberately tight, so it BLOCKS rather than allows. `media-src` missing killed all video and audio; Android serves the asset protocol over `http://asset.localhost`, not `https://`.
 - **Nothing that decides how the app is built may sit UNTRACKED in git.** All four `src-tauri/tauri.*.conf.json` files are tracked for this reason. A `git checkout`/`reset`/`clean` deleted them once and nothing failed, it just built the wrong app. If a build config is not in `git ls-files`, that is a bug to fix, not a detail.
+- ⚠⚠ **YOU ARE NEVER ALLOWED TO MAKE A CHOICE THAT COSTS THE FOUNDER MONEY. EVER.**
+  Founder, 2026-09-06, verbatim, after a Cloudflare bill arrived: *"YOU ARE NEVER ALLOWED TO
+  MAKE A CHOICE THAT WILL COST ME MONEY, EVER! IS THAT UNDERSTOOD!"*
+
+  **Absolute. Not a default, not a trade-off, no threshold below which it is fine.** "It is
+  only a few dollars", "it is inside the free tier" and "it pays for itself" are all
+  violations. When a design needs spending: STOP, say what it would cost, say what the free
+  alternative is, and let him choose.
+
+  **What counts as spending — all banned without an explicit yes:** a storage class,
+  lifecycle rule or retention setting; a Cloud Scheduler job or any new cron; a new service,
+  box, plan, add-on or paid tier (Hetzner, Cloudflare, Firebase, GCP, Play, a processor);
+  anything billed per call, Gemini above all — **including raising the RATE at which an
+  existing paid call fires**; raising a cap, quota, cadence or sampling frequency with a
+  per-unit cost; writes that scale with users (Firestore bills per write, so a per-view or
+  per-impression write is a spending decision even at fractions of a cent); moving a counter
+  or log onto a billed backend.
+
+  **It has already happened twice.** (1) The R2 `cold-storage` lifecycle rule was switched on
+  as an "optimisation" and produced this project's first Cloudflare bill: **$9.92 for 38
+  objects totalling 32 MB**, because Infrequent Access has NO free tier and every transition
+  rounds up to a whole billing unit. See the R2 section. (2) Boost-impression counting was
+  moved into a shared reader "for correctness", which widened how many sessions reported;
+  reverted the same day — *"you changed it without my permission which in effect will
+  increase my costs."* **Correctness is never a reason to spend his money.**
+
 - **Zero out-of-pocket cost.** No new paid services. Firebase Spark-compatible only.
 - **NEVER use em dashes (—) in any output to the user** (chat, commits, PRs, emails, code comments, this file). Use commas/periods/parentheses/colons.
 - **Terse output.** No trailing recaps, no emoji in code/docs unless asked.
@@ -3088,7 +3114,75 @@ Self-hosted nginx-rtmp on **Hetzner CX23 `vergr-stream-1`** (NBG1, `91.98.79.244
 
 **Oracle Cloud (dormant):** account live, retry script `C:\Users\damie\oci-retry\retry.js` (4 OCPU/24GB ARM, Frankfurt) — capacity sold out, still failing. If it opens: mirror box, promote to primary with an 80%-of-free-tier auto-switch back to Hetzner (10TB egress cap). Don't burn $300 trial credits on a paid x86 shape. Holds at €0 — keep.
 
-**Streaming TODOs:** ~~clip button is fake~~ ✅ DONE 2026-05-26 — in-stream clipping is now functional + user-authored. New `src/hooks/useStreamClipBuffer.js` runs a continuous `MediaRecorder` on the HLS `<video>` via `captureStream()` with a 1s timeslice, keeping the header chunk + a pruned rolling window (95s cap) so memory stays bounded; `grab(n)` assembles the last N seconds into one WebM Blob. ViewerStreamScreen has a "Clip" ActionPill (tier-gated Free 30s/3, Lite 60s/5, Pro 90s/∞ per session) → `uploadToR2(file,'clip')` → `createPost(uid,{type:'clip',...})`, so the clip is a USER-CHOSEN post on their own profile. captureStream+MediaRecorder is a Chromium-class feature (hls.js/MSE path; Windows-Tauri WebView2 + Android WebView qualify). **Apple webviews (macOS/iOS = WebKit, incl. desktop Safari) taint the cross-origin video → client path `isSupported()` returns false; ViewerStreamScreen then transparently falls back to a SERVER-SIDE cut** so clipping works on every device: new `requestStreamClip` callable (`functions/streamClips.js`, deployed europe-west1) tier-gates + quota-counts (`stream_clip_quota/{streamId}_{uid}`) then POSTs the Hetzner vod-archive box's new synchronous `POST /clip` endpoint (`infra/vod-archive/launcher.js`, deployed on `archive.vergr.app`/:8097), which parses the live HLS manifest, downloads the tail segments (+ EXT-X-MAP init for fMP4), binary-concats, `ffmpeg -ss <total-want> -t <want>` → mp4 → R2 `clips/`, returns the URL; the client then `createPost(type:'clip')`. Box endpoint verified live (healthz, 401 no-auth, clean error on bad manifest). ⚠️ Both the Chromium MediaRecorder path and the server ffmpeg-cut against a REAL live manifest still need an end-to-end test on an actual broadcast (no live stream available to test from here). Still TODO: R2 segment cleanup cron (below); canvas compositor in `BroadcasterScreen` (game-share + facecam PiP); "Browser broadcast" entry in `GoLiveSetupScreen`; cohost auto-trigger; broadcaster-side clip button; boost-effectiveness metrics.
+**Streaming TODOs:** ~~clip button is fake~~ ✅ DONE 2026-05-26 — in-stream clipping is now functional + user-authored. New `src/hooks/useStreamClipBuffer.js` runs a continuous `MediaRecorder` on the HLS `<video>` via `captureStream()` with a 1s timeslice, keeping the header chunk + a pruned rolling window (95s cap) so memory stays bounded; `grab(n)` assembles the last N seconds into one WebM Blob. ViewerStreamScreen has a "Clip" ActionPill (tier-gated Free 30s/3, Lite 60s/5, Pro 90s/∞ per session) → `uploadToR2(file,'clip')` → `createPost(uid,{type:'clip',...})`, so the clip is a USER-CHOSEN post on their own profile. captureStream+MediaRecorder is a Chromium-class feature (hls.js/MSE path; Windows-Tauri WebView2 + Android WebView qualify). **Apple webviews (macOS/iOS = WebKit, incl. desktop Safari) taint the cross-origin video → client path `isSupported()` returns false; ViewerStreamScreen then transparently falls back to a SERVER-SIDE cut** so clipping works on every device: new `requestStreamClip` callable (`functions/streamClips.js`, deployed europe-west1) tier-gates + quota-counts (`stream_clip_quota/{streamId}_{uid}`) then POSTs the Hetzner vod-archive box's new synchronous `POST /clip` endpoint (`infra/vod-archive/launcher.js`, deployed on `archive.vergr.app`/:8097), which parses the live HLS manifest, downloads the tail segments (+ EXT-X-MAP init for fMP4), binary-concats, `ffmpeg -ss <total-want> -t <want>` → mp4 → R2 `clips/`, returns the URL; the client then `createPost(type:'clip')`. Box endpoint verified live (healthz, 401 no-auth, clean error on bad manifest). ⚠️ Both the Chromium MediaRecorder path and the server ffmpeg-cut against a REAL live manifest still need an end-to-end test on an actual broadcast (no live stream available to test from here). Still TODO: R2 segment cleanup cron (below); cohost auto-trigger; broadcaster-side clip button; boost-effectiveness metrics.
+
+⚠ **"canvas compositor in `BroadcasterScreen`" WAS ON THIS LIST AND IS BUILT.** Corrected
+2026-09-06 by reading the file, not grepping. `src/utils/streamCompositor.js` is a
+multi-layer rAF compositor with five layouts (`camera`, `screen`, `screen_cam_pip`,
+`cam_screen_pip`, `side_by_side`), scene cards, AR effects and per-plan sizing;
+`BroadcasterScreen.jsx` composites on desktop always and on mobile behind an opt-in Studio
+toggle. **It already renders `'landscape'` (16:9) AND `'portrait'` (9:16)** via
+`canvasSize()`. What it cannot do is both AT ONCE — MediaRecorder binds one MediaStream at
+construction, so one canvas is one encode is one upload. That distinction is the whole of
+the Dual Format problem; see `docs/LIVE_COMPETITIVE_AND_UI.md` §6.
+
+## ☎ CALL PREVIEW: EVERY CALL SURFACE HAS A SIMULATOR (2026-09-06, SHIPPED + DEPLOYED)
+
+`/admin/call-preview`, the same tool as the stream preview but for calls. Full
+record: `docs/UPDATE_LOG.md`, newest entry. Guard:
+`scripts/call-preview-check.mjs`, **110 assertions**, in `npm run check`.
+
+**Eleven surfaces, and four are not a call screen:** 1:1 voice, 1:1 video
+(`CallScreen.jsx`, one file, branches on `callType`), group call
+(`GroupCallScreen.jsx` + `utils/groupCall.js`), squad hangout
+(`SquadStreamScreen.jsx`), voice channel (`VoiceChannelScreen.jsx` +
+`utils/voiceSession.js`), incoming ring (`IncomingCallOverlay.jsx`), floating
+pill, calls hub, in-thread call row, and the two channel modals.
+
+✅ **CALLS HAVE ONE IMPLEMENTATION EACH, UNLIKE THE STREAM SCREENS.**
+`NativeCallScreen`, `NativeVoiceChannelScreen` and `NativeSquadStreamScreen` all
+`export { default } from` the web file. Do NOT go looking for a native fork the
+way `/broadcast` and `/go-live` have one; there isn't one.
+
+⚠ **EVERY PREVIEW SURFACE IS A COPY, AND THAT IS THE OPPOSITE RULE TO THE STREAM
+PREVIEW.** That tool imports its prop-only components because importing cannot
+drift. NOTHING on a call screen is prop-only: CallScreen owns a peer connection,
+GroupCallScreen subscribes to a module singleton, VoiceChannelScreen reads
+Firestore and joins the SFU on mount. Importing one would open a real socket and
+ask for the camera from inside an admin page. Each copy records
+`Copied layout source: <file>:<line>`; the guard fails the build without it.
+
+⚠ **THE CAST AND THE UPLOAD STORE ARE SHARED WITH THE STREAM PREVIEW.**
+`callCast.js` imports `CAST` from `streamPreview/previewCast` and the sim uses
+the same `previewAssets` IndexedDB store, so a face uploaded in either tool is
+that person's face in both. Do not add a second store.
+
+🔴 **EIGHT REAL DEFECTS IN THE SHIPPED CALL SCREENS, NONE FIXED.** They render in
+the tool's own "What is broken" panel and guard rule 15 asserts the CallScreen
+ones are still true, so a fix must delete its line in the same commit. The worst
+three: **flip camera has no `onClick` at all** (`CallScreen.jsx:353`, a styled
+div, the most used control on a phone video call); the **speaker button flips a
+state nothing reads** (:346, no `setSinkId`, so audio stays on the earpiece); and
+**every incoming ring claims "Encrypted P2P Call" including a GROUP one**
+(`IncomingCallOverlay.jsx:327`), which is false because a group call routes
+through our own SFU. Also: no call surface reads `getStats()`, so a call degrades
+in silence and then dies.
+
+⚠ **`IncomingCallManager.jsx` IS DEAD CODE.** AppRouter mounts
+`IncomingCallOverlay` only. It still holds a divergent copy of the accept and
+decline rules, so it is the file a session fixes by mistake.
+
+⚠ **TWO THINGS IN THE PREVIEW DO NOT EXIST IN THE PRODUCT** and the rail says so
+in amber: the connection-quality pill and the group call's elapsed clock. Do not
+screenshot either as a shipped feature.
+
+⚠⚠ **EVERY FILE IN THIS FEATURE IS UNTRACKED IN GIT, INCLUDING THE GUARD.**
+`src/screens/admin/callPreview/*`, `AdminCallPreviewScreen.jsx` and
+`scripts/call-preview-check.mjs` are all `??`. Same exposure as the boost work
+and as the four `src-tauri/tauri.*.conf.json` files that a `git checkout` once
+deleted silently: a `checkout`, `reset` or `clean` takes the lot. It is worse
+here, because `npm run check` now RUNS that guard, so losing it breaks
+`prebuild` outright. **Committing is a founder call and has not been done.**
 
 ## 📺 LIVE STREAM: THE SIMULATOR IS DONE, THE REAL SCREENS ARE NOT (2026-09-02)
 
@@ -3191,14 +3285,78 @@ rate a policy.**
 
 **streamConfig.js must be repointed:** retire `GCORE_CONFIG`; `getPlaybackUrl(streamId)` → `https://cdn.vergr.app/streams/<streamKey>/index.m3u8`; ingest base comes from `createStreamSession` (browser fMP4 via `vergr-ingest`, or RTMP key for OBS).
 
-### TODO: R2 segment cleanup cron
-`cleanupExpiredStreamSegments` hourly in `functions/streaming.js`: `ListObjectsV2` on `vergr-media/streams/`, per stream-key match `streams` doc; if `status:'ended'` AND `endedAt < now-24h` → `DeleteObjects` (batch 1000); orphans (no doc) delete after 6h. Log to `streaming_cleanup_logs/`. Path is per-key (`hls_nested on`). nginx `hls_cleanup` only clears local disk, not R2.
+### R2 segment cleanup cron — ✅ BUILT + DEPLOYED (this section said "TODO" for months and was WRONG)
+
+Verified against source 2026-09-06. It lives in **`functions/streamingCleanup.js:108`** (NOT `functions/streaming.js`, as this section used to claim) and is exported at `functions/index.js:472`. Runs `every 60 minutes`. Retention, read off the constants:
+
+| Content | Deleted after |
+|---|---|
+| Ended streams | **24h** (`ENDED_TTL_MS`) |
+| Orphans (no stream doc) | **6h** (`ORPHAN_TTL_MS`) |
+| Two-camera proof chunks | **30d** (`PROOF_TTL_MS`, `cleanupExpiredProofChunks`) |
+| ~~Tournament-linked~~ | `TOURNAMENT_TTL_MS` (7d) is **INERT DEAD CODE** — tournaments are retired, so `tournamentLinkedKeys` is always empty and every stream falls to the 24h branch. Harmless, but do not cite it as a live policy. |
+
+⚠ This is why live streaming does not threaten the 10 GB free tier: a 1h stream at 3 Mbps is ~1.35 GB of segments, and they are gone within 24h of the stream ending.
 
 ---
 
 ## Media storage on Cloudflare R2 (LIVE)
 
-All user media → R2, served `https://cdn.vergr.app` ($0 egress). KYC docs stay on Firebase Storage (need Auth scoping). `functions/r2.js → getR2UploadUrl` (presigned PUT, plan size caps, content-type allowlist) + `src/utils/r2Storage.js → uploadToR2(file, kind)`. `uploadPostMedia(postId, file)` ignores postId, just returns the R2 URL. Video format = **WebM/VP9** (~50% smaller than MP4 — don't switch). Plan caps: Free 200MB / Lite 1GB / Pro 5GB. Clip duration: Free 5min / Lite 15min / Pro 60min. Lifecycle rule auto-tiers to IA after 90 days; `coldStorageDemotion` cron dormant until 5,000 posts. Kill switch `freeUploadsPaused`. `<ImageProtection />` in AppRouter blocks right-click/drag on all `<img>`.
+All user media → R2, served `https://cdn.vergr.app` ($0 egress). KYC docs stay on Firebase Storage (need Auth scoping). `functions/r2.js → getR2UploadUrl` (presigned PUT, plan size caps, content-type allowlist) + `src/utils/r2Storage.js → uploadToR2(file, kind)`. `uploadPostMedia(postId, file)` ignores postId, just returns the R2 URL. Video format = **WebM/VP9** (~50% smaller than MP4 — don't switch). Plan caps: Free 200MB / Lite 1GB / Pro 5GB. Clip duration: Free 5min / Lite 15min / Pro 60min. ⚠⚠ **NO COLD TIERING. THE `cold-storage` LIFECYCLE RULE IS DISABLED (2026-09-06) AND MUST STAY THAT WAY.** The line that used to sit here called it a saving. It was the opposite, and it caused the FIRST Cloudflare bill this project ever received: **$9.92 for 38 objects totalling 32 MB.** Facts, all measured: Infrequent Access has **NO free tier** (Standard's 10 GB / 1M / 10M does not apply to it), and each IA line item rounds UP to a whole billing unit, so **38 transitions were billed as a full million at $9.00**. Cost scales with **OBJECT COUNT, not bytes** — an 11 KB avatar costs the same transition as a 5 GB video. Break-even vs Standard is **~1.8 TB**; the bucket is 0.74 GB. A lifecycle rule filters on **PREFIX ONLY**, so it can never express "Pro users only" while keys are `post/<uid>/...`. `coldStorageDemotion` (`functions/r2.js`) is deployed, dormant at `totalPosts=0 < 5000`, and has **NO tier filter**, so arming it repeats this exactly. Kill switch `freeUploadsPaused`. `<ImageProtection />` in AppRouter blocks right-click/drag on all `<img>`.
+
+### 💬 DM/CHAT MEDIA: OWN PREFIX + EXPIRY MECHANISM (2026-09-06, SHIPPED + DEPLOYED, SWEEP OFF)
+
+**The on-device half was always real** (`src/utils/fileMediaCache.js`, native
+`window.VergrCache` bridge, Android; `deviceMediaCache.js` Dexie fallback on
+desktop). What never worked was the *server copy being transient*.
+
+⚠⚠ **THE CAUSE WAS A NO-OP TERNARY.** `uploadMediaFile()` in `mediaHelpers.js`
+read `const kind = folder.startsWith('post') ? 'post' : 'post'` — both branches
+'post' — so the `folder` argument did nothing and **every DM photo, video, voice
+note and comment attachment went to `post/<uid>/...`, mixed in with real feed
+media.** `uploadBlob()` hardcoded `'post'` too. That is precisely why the expiry
+sweep could never be repointed at R2: an age-based delete over `post/` would
+have destroyed users' actual posts.
+
+Three other pieces were broken in the same chain:
+- `tierConfig.mediaRetentionDays` **did not exist in `tierSystem.js`**, so every
+  caller passed `undefined`.
+- `uploadMediaFile`'s `ttlDays` param was accepted and never used.
+- `_cleanupExpiredMedia` (nightly, in `cronDaily`) swept
+  `admin.storage().bucket()` = **FIREBASE STORAGE**, folders `chat_media/`,
+  `voice_notes/` etc. Nothing has written there since the R2 migration on
+  2026-05-06, so it scanned an empty backend every night for four months.
+
+**Now:** `chat` + `comment` are in `ALLOWED_KINDS`; `kindForFolder()` maps folder
+to prefix; `deleteExpiredR2ChatMedia()` sweeps R2 and resolves each uploader's
+tier from the uid in the key (one Firestore read per uid, cached).
+
+⚠⚠ **THE SWEEP IS OFF AND MUST STAY OFF UNTIL THE FOUNDER SETS RETENTION.** Two
+keys in `app_config/general` (both in the adminConfig allowlist, no deploy
+needed): `chatMediaExpiryEnabled: true` and `chatMediaRetentionDays:
+{free,lite,pro}` in DAYS. A tier absent or null is **kept forever**. There is no
+default number on purpose. **Arming it DELETES user media, and the device cache
+is ANDROID-ONLY** — desktop/web fall back to evictable Dexie, so an expired DM
+photo is gone permanently there.
+
+⚠ **`post/` IS NEVER SWEPT.** Legacy chat media already living there stays
+forever: message docs store absolute URLs and nothing can distinguish an old DM
+photo from a real post. Do not add `post/` to `R2_CHAT_PREFIXES`.
+
+⚠ **DEPLOY ORDER IS FORCED: FUNCTIONS BEFORE HOSTING.** The client now requests
+`kind: 'chat'`; a server without it in `ALLOWED_KINDS` throws and every DM media
+send fails. Deployed in that order 2026-09-06.
+
+⚠ `firebase deploy` failed once with *"Cannot determine backend specification.
+Timeout after 10000"*. **Not a code fault** — `index.js` loads in 5.5s but the
+analyzer's 10s budget is tight on this machine. `FUNCTIONS_DISCOVERY_TIMEOUT=180`
+fixes it. Use that before hunting for a load-time bug.
+
+---
+
+⚠ **ADAPTIVE (PER-VIEWER QUALITY) VIDEO IS PAUSED, NOT LOST, AND THE PAUSE IS DELIBERATE.** Verified 2026-09-06. `enqueueVideoTranscode` (`functions/transcodeQueue.js`, exported at `index.js:593`) is still deployed and still writes rows to `transcode_jobs`, but the worker that consumed them (`infra/transcode/worker.js`) ran on **BOX 2, which the founder deliberately deleted 2026-08-17** to save ~€35/mo until there is revenue. `archive.vergr.app` returns **HTTP 503** (measured). So today every viewer gets the single uploaded file at whatever quality `compressMedia` produced; nothing renders a per-connection rendition. The 4 `adaptive/` objects in R2 (`selftest-probe`, `queuetest-1`, 2026-08-12) are test artifacts from before the box went.
+
+✅ **THE RESTORE PATH IS INTACT AND WAS PLANNED FOR:** Hetzner snapshot **420931000** (4.69 GB), plus `infra/box2-restore/` (43 files, 11-step `RESTORE.md`, all 8 executables sha256-verified before deletion) and a second copy with secrets at `~/Downloads/vergr-box2-backup-2026-08-17/`. **Bring box 2 back and adaptive video works again with no code change.** Do NOT describe this as broken or as something that needs rebuilding, and do not "fix" it by rewriting the transcode path.
 - ⚠️ **If R2 uploads fail:** `/admin` has "Apply CORS / Diagnose" (`setR2CorsPolicy` callable) printing bucket/endpoint/CORS/presigned-URL state. Past root cause: every R2 secret had a trailing `\n` (set via `echo` not `printf`) → bucket name `vergr-media\n` → CORS never matched. Fix in `r2.js` trims every secret on read (`env()`); **don't remove the trim**. AWS SDK v3 auto-injects `x-amz-sdk-checksum-algorithm` which R2 CORS doesn't match → client uses `requestChecksumCalculation:'WHEN_REQUIRED'`. CORS managed via Cloudflare dashboard (token is Object R/W, can't PutBucketCors). Allowed origins include vergr.app + web.app + firebaseapp.com + localhost. `ALLOWED_KINDS`: avatar/banner/post/short/clip/article/squad/tournament.
 
 ---

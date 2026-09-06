@@ -18,7 +18,7 @@
 
 import { useState, useEffect } from 'react';
 import Icon from '../../../components/Icon';
-import { PlaybackState, StreamPaywall, ChatStateBanner, TtsStrip, VpEarnedChip, PreviewLevelUp, AudioStage, ModChannelSwitch, RaidBanner, ComposerPill } from './previewStates';
+import { PlaybackState, StreamPaywall, ChatStateBanner, TtsStrip, VpEarnedChip, PreviewLevelUp, AudioStage, ModChannelSwitch, RaidBanner, ComposerPill, HypeTrain } from './previewStates';
 import { usePreviewVideos, usePreviewSim, usePreviewRole } from './previewAssetsContext';
 import { PREVIEW_VIEWER } from './previewCast';
 import UserAvatar from '../../../components/UserAvatar';
@@ -30,7 +30,7 @@ import { StreamPollCard } from '../../../components/streams/StreamPoll';
 import ReactionsFloor from '../../../components/streams/ReactionsFloor';
 import { BoostTimer } from '../../../components/streams/BoostStreamSheet';
 import { Scene, PreviewChat, PreviewSheets, glass, glassDark, iconBtn, C, compact } from './previewChrome';
-import { GiftFeed, useGiftFeed, FloatingHeart, MovableGoal } from './previewSoloParts';
+import { GiftFeed, useGiftFeed, useAboveChat, FloatingHeart, MovableGoal } from './previewSoloParts';
 // ⚠ THE DOCK USES IMAGE ASSETS, NOT MATERIAL GLYPHS. A first pass substituted
 // Icon names here (group_add / monetization_on / redeem / send) and it was simply
 // wrong: the shipped dock renders these .webp files through GlassDockBtn, so the
@@ -59,7 +59,7 @@ export default function PreviewMobileViewer({ doc, host, messages, joinEvents, o
   // went missing from simProps in an unrelated edit, and nothing failed — the
   // PiP simply rendered empty. A context cannot be forgotten at a call site.
   const { videoFor } = usePreviewVideos();
-  const { goalBox, setGoalBox, goalEdit } = usePreviewSim();
+  const { goalBox, setGoalBox, goalEdit, vFrame = null } = usePreviewSim();
   // ⚠ REACTIONS COME FROM THE SIM CONTEXT, NOT A PROP. Threading them was how
   // the like button ended up dead on the solo views: the component was mounted
   // and the data never arrived. Third time for this class — see rule 20.
@@ -77,10 +77,14 @@ export default function PreviewMobileViewer({ doc, host, messages, joinEvents, o
   const { reactions = [], playback = 'live', gate = 'none', chatState = 'open', tts = 'off', watchMinutes = 0, levelUp = false, setLevelUp, audioOnly = false, chatChannel = 'public', setChatChannel, raiding = false, setRaiding, dismissPoll } = usePreviewSim();
   const previewRole = usePreviewRole();
   const { toasts: gifts, sendGift } = useGiftFeed(doc?.lastGift);
+  // Transients sit directly above the newest chat, measured, never at a fixed
+  // offset: the chat box is a fixed 30% and bottom-anchored, so with a sparse
+  // feed most of that box is empty and a constant left a hole.
+  const { setList: setChatList, setAnchor: setFrame, bottom: aboveChat } = useAboveChat(messages?.length);
   const gifters = doc.previewGifters || [];
 
   return (
-    <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', background: C.bg, color: '#fff', fontFamily: 'DM Sans, system-ui, sans-serif' }}>
+    <div ref={setFrame} style={{ position: 'absolute', inset: 0, overflow: 'hidden', background: C.bg, color: '#fff', fontFamily: 'DM Sans, system-ui, sans-serif' }}>
       <MovableGoal editing={goalEdit} fallback={{ xPct: 3, yPct: 13, wPct: 62 }} goal={doc.goal} box={goalBox} onChange={setGoalBox} editable={false} />
       {/* ⚠⚠ AUDIO-ONLY BELONGS AT THE MEDIA LAYER, NOT IN THE BLOCKING-STATE
           TERNARY BELOW. It sat there as an opaque `inset: 0` layer at z-4,
@@ -88,11 +92,18 @@ export default function PreviewMobileViewer({ doc, host, messages, joinEvents, o
           mobile broadcaster lost End stream and Mic, the desktop viewer lost
           Follow and the composer. It replaces the VIDEO, so it renders here,
           straight after it, under everything the surface draws on top. */}
-      <Scene scene={backdrop} videoUrl={videoFor('stage')} />
+      {/* ⚠⚠ NULL MEANS UNTOUCHED, NOT LETTERBOX. This briefly passed
+          'letterbox' when no framing was set, which turned the immersive stage
+          into objectFit:contain and put black bars behind the header — measured
+          1080x1920 source in a 393x852 (19.5:9) frame. Full-bleed IS the
+          approved TikTok look for this surface; the founder's no-crop rule is
+          about MEDIA UPLOADS, not this viewer's presentation. Only a frame the
+          host actually drew changes anything here. */}
+      <Scene scene={backdrop} videoUrl={videoFor('stage')} frame={vFrame} />
       {audioOnly && <AudioStage host={host} hostName={host?.displayName} title={doc?.title} z={1} />}
 
       {/* header — MobileLiveViewer ~930-1040 */}
-      <div style={{ position: 'absolute', top: 10, left: 10, right: 10, display: 'flex', alignItems: 'center', gap: 7, zIndex: 6 }}>
+      <div style={{ position: 'absolute', top: 10, left: 10, right: 10, display: 'flex', alignItems: 'center', gap: 8, zIndex: 6 }}>
         <button
           onClick={() => onOpenSheet({ kind: 'profile', uid: 'host' })}
           style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px 5px 5px', borderRadius: 999, cursor: 'pointer', border: 'none', minWidth: 0, ...glassDark }}
@@ -114,7 +125,7 @@ export default function PreviewMobileViewer({ doc, host, messages, joinEvents, o
                 <Icon name="check" size={9} />
               </span>
             </div>
-            <div style={{ fontSize: 9.5, color: 'rgba(255,255,255,0.8)', display: 'flex', alignItems: 'center', gap: 4 }}>
+            <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.8)', display: 'flex', alignItems: 'center', gap: 4 }}>
               <Icon name="favorite" size={9} style={{ color: C.red }} />
               {compact(doc.hearts)} Likes
             </div>
@@ -190,7 +201,7 @@ export default function PreviewMobileViewer({ doc, host, messages, joinEvents, o
           it, so the two together overflowed the dock and the newest message slid
           underneath the input — visible in every viewer capture taken before
           this fix. The feed must flex inside the box, never own the box. */}
-      <div style={{ height: 'calc(var(--vg-frame-h, 852px) * 0.30)', display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
+      <div style={{ height: 'calc(var(--vg-frame-h, 852px) * 0.30)', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
         {/* ⚠ `minHeight: 0` STOPS A FLEX CHILD PUSHING ITS SIBLINGS. IT DOES NOT
             STOP IT PAINTING OUTSIDE ITS BOX. Measured on the live site: chat rows
             at y=808 against a composer band starting at y=738 — "Sable: the new
@@ -198,7 +209,7 @@ export default function PreviewMobileViewer({ doc, host, messages, joinEvents, o
             The clip and the absolute fill are what actually bound it. */}
         <div style={{ position: 'relative', flex: 1, minHeight: 0, overflow: 'hidden' }}>
           <PreviewChat
-            fill messages={messages} layout="overlay" avatars={avatars}
+            fill messages={messages} layout="overlay" avatars={avatars} scrollRef={setChatList}
             onOpenProfile={(uid) => onOpenSheet({ kind: 'profile', uid })}
           />
         </div>
@@ -216,7 +227,7 @@ export default function PreviewMobileViewer({ doc, host, messages, joinEvents, o
         <TtsStrip state={tts} onOpenSheet={onOpenSheet} />
         <ChatStateBanner onOpenSheet={onOpenSheet} onAppeal={(k) => onOpenSheet?.({ kind: 'appeal', appealKind: k })} state={chatState} />
         {/* composer + the four dock buttons, in shipped order */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 7, paddingTop: 8, flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingTop: 8, flexShrink: 0 }}>
           <ComposerPill />
           {/* Shipped order and labels — MobileLiveViewer.jsx:872-875. The coin
               sends one coin; the gift box opens the tip sheet. */}
@@ -238,10 +249,11 @@ export default function PreviewMobileViewer({ doc, host, messages, joinEvents, o
           when the same person sends again (previewSoloParts.jsx). The solo views
           always had it; these surfaces never did, so a tip here rendered as the
           generic centred pill instead — the thing that was replaced. */}
-      <GiftFeed toasts={gifts} style={{ bottom: 'calc(30% + 84px)' }} />
-      <SubAlertOverlay lastSub={doc.lastSub} anchor="bottom" bottom="calc(30% + 84px)" />
+      <HypeTrain />
+      <GiftFeed toasts={gifts} style={{ bottom: aboveChat ?? 'calc(30% + 84px)', left: 10 }} />
+      <SubAlertOverlay lastSub={doc.lastSub} anchor="bottom" bottom={aboveChat ?? 'calc(30% + 84px)'} />
       <ReactionsFloor events={reactions} position="right" />
-      <JoinAnnouncer events={joinEvents} side="left" sound={false} bottom="calc(30% + 84px)" />
+      <JoinAnnouncer events={joinEvents} side="left" sound={false} bottom={aboveChat ?? 'calc(30% + 84px)'} />
 
       {/* ⚠ STATE OVERLAYS GO ON EVERY LIVE SURFACE. Mounting them on one is
           how reactions, the poll, the boost timer and the combo meter each ended

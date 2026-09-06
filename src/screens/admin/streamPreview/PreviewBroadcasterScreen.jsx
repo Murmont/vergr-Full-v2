@@ -8,10 +8,10 @@
 // Production BroadcasterScreen.jsx is never touched.
 
 import { useState } from 'react';
-import { PlaybackState, StreamPaywall, HealthWarning, ZeroViewers, VpEarnedChip, AudioStage, ModChannelSwitch, S } from './previewStates';
+import { PlaybackState, StreamPaywall, HealthWarning, ZeroViewers, VpEarnedChip, AudioStage, ModChannelSwitch, S, HypeTrain } from './previewStates';
 import ReactionsFloor from '../../../components/streams/ReactionsFloor';
 import { usePreviewVideos, usePreviewSim } from './previewAssetsContext';
-import { GiftFeed, useGiftFeed, MovableGoal } from './previewSoloParts';
+import { GiftFeed, useGiftFeed, useAboveChat, MovableGoal } from './previewSoloParts';
 import { motion, AnimatePresence } from 'framer-motion';
 import Icon from '../../../components/Icon';
 import HypeMeter from '../../../components/tournament/HypeMeter';
@@ -81,6 +81,10 @@ export default function PreviewBroadcasterScreen({
   // and the data never arrived. Third time for this class — see rule 20.
   const { goalBox, setGoalBox, goalEdit,reactions = [], firePoll, playback = 'live', gate = 'none', health = 'ok', watchMinutes = 0, audioOnly = false, chatChannel = 'public', setChatChannel } = usePreviewSim();
   const { toasts: gifts } = useGiftFeed(doc?.lastGift);
+  // Measured, not a constant. `bottom: 76` put the drops on top of the newest
+  // messages on both mobile branches, because a bottom-anchored chat has its
+  // content wherever the content happens to end, not at a fixed offset.
+  const { setList: setChatList, setAnchor: setFrame, bottom: aboveChat } = useAboveChat(messages?.length);
   const streamDoc = doc;
   const isDesktop = device === 'desktop';
   const mobileImmersive = device === 'mobile';
@@ -180,13 +184,13 @@ export default function PreviewBroadcasterScreen({
             LAYOUT is what is being captured — an empty tile still shows where
             the facecam sits, and it fills the moment the second video is up. */}
         {pipMode && (
-          <div style={{ position: 'absolute', ...pipPos, width: fullscreen ? 200 : 132, aspectRatio: '16 / 10', borderRadius: 10, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.22)', boxShadow: '0 6px 18px rgba(0,0,0,0.45)', background: '#12101c' }}>
+          <div style={{ position: 'absolute', ...pipPos, width: fullscreen ? 200 : 132, aspectRatio: '16 / 10', borderRadius: 12, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.22)', boxShadow: '0 6px 18px rgba(0,0,0,0.45)', background: '#12101c' }}>
             {insetSrc ? (
               <video src={insetSrc} autoPlay muted loop playsInline style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
             ) : (
               <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, color: 'rgba(255,255,255,0.32)' }}>
                 <Icon name="person" size={22} filled />
-                <span style={{ fontSize: 8.5, fontWeight: 800, letterSpacing: '0.08em' }}>{insetLabel}</span>
+                <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: '0.08em' }}>{insetLabel}</span>
               </div>
             )}
           </div>
@@ -212,7 +216,7 @@ export default function PreviewBroadcasterScreen({
   // PreviewViewerScreen uses for its co-host, so the two sides now match.
   if (mobileImmersive && isCoHost && isLive) {
     return (
-      <div style={{ position: 'absolute', inset: 0, background: '#07070d', overflow: 'hidden', color: C.text, fontFamily: '"DM Sans",system-ui,sans-serif', display: 'flex', flexDirection: 'column' }}>
+      <div ref={setFrame} style={{ position: 'absolute', inset: 0, background: '#07070d', overflow: 'hidden', color: C.text, fontFamily: '"DM Sans",system-ui,sans-serif', display: 'flex', flexDirection: 'column' }}>
         <div style={{ flexShrink: 0, padding: '12px 12px 10px', display: 'flex', alignItems: 'center', gap: 8 }}>
           <LivePill />
           <span style={{ fontSize: 12, fontWeight: 700, color: '#fff', fontFamily: 'DM Mono, monospace' }}>{fmtTime(duration)}</span>
@@ -269,7 +273,7 @@ export default function PreviewBroadcasterScreen({
         {/* Chat takes every pixel the grid and the composer do not. */}
         <div style={{ flex: 1, minHeight: 0, position: 'relative', padding: '8px 10px 0', display: 'flex', flexDirection: 'column' }}>
           <div style={{ position: 'relative', flex: 1, minHeight: 0, overflow: 'hidden' }}>
-            <SimChat fill messages={messages} avatars={avatars} layout="overlay" onOpenProfile={(uid) => onOpenSheet({ kind: 'profile', uid })} />
+            <SimChat fill messages={messages} avatars={avatars} layout="overlay" scrollRef={setChatList} onOpenProfile={(uid) => onOpenSheet({ kind: 'profile', uid })} />
           </div>
         </div>
 
@@ -280,10 +284,11 @@ export default function PreviewBroadcasterScreen({
           <DockBtn icon="more_horiz" onClick={() => setMoreOpen(true)} label="More" />
         </div>
 
-        <GiftFeed toasts={gifts} style={{ bottom: 76 }} />
-        <SubAlertOverlay lastSub={streamDoc.lastSub} anchor="bottom" />
+        <HypeTrain />
+        <GiftFeed toasts={gifts} style={{ bottom: aboveChat ?? 76, left: 10 }} />
+        <SubAlertOverlay lastSub={streamDoc.lastSub} anchor="bottom" bottom={aboveChat ?? 90} />
         <ReactionsFloor events={reactions} position="right" />
-        <JoinAnnouncer events={joinEvents} side="left" sound={false} bottom="calc(42% + 8px)" />
+        <JoinAnnouncer events={joinEvents} side="left" sound={false} bottom={aboveChat ?? 96} />
         {/* ⚠ EVERY RENDER BRANCH, NOT JUST THE FIRST. This file has three, and a
             single replace() mounted the states on one of them: broadcaster desktop
             could not draw a reconnect or a gated stream at all, and the guard
@@ -343,7 +348,7 @@ export default function PreviewBroadcasterScreen({
   // ── MOBILE IMMERSIVE ──
   if (mobileImmersive) {
     return (
-      <div style={{ position: 'absolute', inset: 0, background: '#000', overflow: 'hidden', color: C.text, fontFamily: '"DM Sans",system-ui,sans-serif' }}>
+      <div ref={setFrame} style={{ position: 'absolute', inset: 0, background: '#000', overflow: 'hidden', color: C.text, fontFamily: '"DM Sans",system-ui,sans-serif' }}>
         {isLive && <MovableGoal editing={goalEdit} fallback={{ xPct: 3, yPct: 20, wPct: 62 }} goal={streamDoc.goal} box={goalBox} onChange={setGoalBox} editable />}
         {/* ⚠⚠ AUDIO-ONLY BELONGS AT THE MEDIA LAYER, NOT IN THE BLOCKING-STATE
             TERNARY BELOW. It sat there as an opaque `inset: 0` layer at z-4,
@@ -398,7 +403,7 @@ export default function PreviewBroadcasterScreen({
           {/* the goal moved out of this band and onto the stage — see MovableGoal below */}
           {isLive ? (
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
-              <PreviewChat overlay messages={messages} avatars={avatars} onOpenProfile={(uid) => onOpenSheet({ kind: 'profile', uid })} composerExtras={
+              <PreviewChat overlay messages={messages} avatars={avatars} scrollRef={setChatList} onOpenProfile={(uid) => onOpenSheet({ kind: 'profile', uid })} composerExtras={
                 <>
                   <DockBtn icon={micOn ? 'mic' : 'mic_off'} danger={!micOn} onClick={() => setMicOn((v) => !v)} label="Mic" />
                   <DockBtn icon={camLive ? 'videocam' : 'videocam_off'} danger={!camLive} onClick={() => setCamOn((v) => !v)} label="Camera" />
@@ -407,7 +412,7 @@ export default function PreviewBroadcasterScreen({
               } />
             </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <DockBtn icon={micOn ? 'mic' : 'mic_off'} danger={!micOn} onClick={() => setMicOn((v) => !v)} label="Mic" />
                 <DockBtn icon={camLive ? 'videocam' : 'videocam_off'} danger={!camLive} onClick={() => setCamOn((v) => !v)} label="Camera" />
@@ -420,12 +425,12 @@ export default function PreviewBroadcasterScreen({
                     a BRIGHTER rgba(255,255,255,0.09) hairline when off, and a tint under a
                     ring when on — the two patterns the founder has rejected, one in each
                     state of a single control. Off is a real value step; on is a solid fill. */}
-                <button onClick={() => setMobileStudio((v) => !v)} style={{ padding: '14px 12px', borderRadius: 14, display: 'flex', alignItems: 'center', gap: 6, border: 'none', background: mobileStudio ? C.purple : S.chip, color: '#fff', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}><Icon name="dashboard_customize" size={16} /> Studio</button>
+                <button onClick={() => setMobileStudio((v) => !v)} style={{ padding: '14px 12px', borderRadius: 16, display: 'flex', alignItems: 'center', gap: 6, border: 'none', background: mobileStudio ? C.purple : S.chip, color: '#fff', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}><Icon name="dashboard_customize" size={16} /> Studio</button>
                 {/* ⚠ THE BUTTON THAT STARTS A STREAM DID NOT START ONE. Every phase
                     transition was dead, so the two moments that bracket a
                     broadcast — going live and ending — could not be captured at
                     all, which is most of what this tool exists for. */}
-                <button onClick={onGoLive} style={{ flex: 1, padding: 15, borderRadius: 14, border: 'none', background: `linear-gradient(135deg, ${C.purple}, ${C.purpleLight})`, color: '#fff', fontSize: 15, fontWeight: 800, cursor: 'pointer' }}>Start Stream</button>
+                <button onClick={onGoLive} style={{ flex: 1, padding: 15, borderRadius: 16, border: 'none', background: `linear-gradient(135deg, ${C.purple}, ${C.purpleLight})`, color: '#fff', fontSize: 16, fontWeight: 800, cursor: 'pointer' }}>Start Stream</button>
               </div>
             </div>
           )}
@@ -436,12 +441,13 @@ export default function PreviewBroadcasterScreen({
           when the same person sends again (previewSoloParts.jsx). The solo views
           always had it; these surfaces never did, so a tip here rendered as the
           generic centred pill instead — the thing that was replaced. */}
-        <GiftFeed toasts={gifts} style={{ bottom: 76 }} />
-        <SubAlertOverlay lastSub={streamDoc.lastSub} anchor="bottom" />
+        <HypeTrain />
+        <GiftFeed toasts={gifts} style={{ bottom: aboveChat ?? 76, left: 10 }} />
+        <SubAlertOverlay lastSub={streamDoc.lastSub} anchor="bottom" bottom={aboveChat ?? 90} />
         {/* side="left" and the chat-height offset match the mobile viewer, which
             is what the native broadcaster mirrors. */}
         <ReactionsFloor events={reactions} position="right" />
-        <JoinAnnouncer events={joinEvents} side="left" sound={false} bottom="calc(42% + 8px)" />
+        <JoinAnnouncer events={joinEvents} side="left" sound={false} bottom={aboveChat ?? 96} />
         {/* ⚠ EVERY RENDER BRANCH, NOT JUST THE FIRST. This file has three, and a
             single replace() mounted the states on one of them: broadcaster desktop
             could not draw a reconnect or a gated stream at all, and the guard
@@ -507,8 +513,8 @@ export default function PreviewBroadcasterScreen({
   return (
     <div style={{ position: 'absolute', inset: 0, background: C.bg, color: C.text, fontFamily: '"DM Sans",system-ui,sans-serif', display: 'flex', flexDirection: 'column' }}>
       <div style={{ display: 'flex', flex: 1, minHeight: 0, gap: 12, padding: 12 }}>
-        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <div style={{ position: 'relative', flex: 1, minHeight: 0, background: '#000', borderRadius: 14, overflow: 'hidden' }}>
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ position: 'relative', flex: 1, minHeight: 0, background: '#000', borderRadius: 16, overflow: 'hidden' }}>
             {/* ⚠⚠ AUDIO-ONLY BELONGS AT THE MEDIA LAYER, NOT IN THE BLOCKING-STATE
                 TERNARY BELOW. It sat there as an opaque `inset: 0` layer at z-4,
                 mounted last, and buried the chrome on six of seven surfaces — the
@@ -531,11 +537,12 @@ export default function PreviewBroadcasterScreen({
           when the same person sends again (previewSoloParts.jsx). The solo views
           always had it; these surfaces never did, so a tip here rendered as the
           generic centred pill instead — the thing that was replaced. */}
+        <HypeTrain />
         <GiftFeed toasts={gifts} style={{ bottom: 76 }} />
         <SubAlertOverlay lastSub={streamDoc.lastSub} anchor="bottom" />
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', background: C.card, borderRadius: 12, padding: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', background: C.card, borderRadius: 12, padding: 12 }}>
             <CtrlBtn icon={micOn ? 'mic' : 'mic_off'} label="Mic" active={micOn} danger={!micOn} onClick={() => setMicOn((v) => !v)} />
             <CtrlBtn icon={camLive ? 'videocam' : 'videocam_off'} label="Camera" active={camLive} danger={!camLive} onClick={() => setCamOn((v) => !v)} />
             <CtrlBtn icon="screen_share" label={screenSharing ? 'Stop share' : 'Share screen'} active={screenSharing} onClick={() => setScreenSharing((v) => !v)} />
@@ -635,10 +642,18 @@ function ModerationSheet({ onClose, onOpenSheet }) {
   //   Followers-only etc.     → a toggle you can SEE the state of
   // Per-person actions route to the viewer list, which then opens the person
   // sheet, which is where timeout/ban/appoint actually live. One path, not two.
-  const [rules, setRules] = useState({ followers: false, subs: false, verified: true, tts: false });
-  const toggle = (k) => setRules((r) => ({ ...r, [k]: !r[k] }));
+  // ⚠ THE RULES COME FROM THE SIM NOW. As local state they were thrown away
+  // every time this sheet closed, and no other surface could see that chat was
+  // restricted.
+  // ⚠⚠ THIS DESTRUCTURE MUST STAY ABOVE `const rules`. It went below it once and
+  // took the whole preview to the ErrorBoundary with "Cannot access 'p' before
+  // initialization" — a `const` read above its own declaration is a TDZ error at
+  // RENDER time, not a name error, so eslint's no-undef sees a defined binding,
+  // the build is green, and the screen is dead.
+  const { autoMod = 'standard', setAutoMod = () => {}, held = [], approveHeld, denyHeld, chatRules = {}, setChatRule = () => {} } = usePreviewSim();
+  const rules = chatRules;
+  const toggle = (k) => setChatRule(k, !rules[k]);
   const pickPerson = () => { onClose(); onOpenSheet?.({ kind: 'viewers' }); };
-
   const modActs = [
     ['Timeout a viewer', 'timer_off', pickPerson],
     ['Ban a viewer', 'gavel', pickPerson],
@@ -650,8 +665,52 @@ function ModerationSheet({ onClose, onOpenSheet }) {
       <motion.div onClick={(e) => e.stopPropagation()} initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} transition={{ type: 'spring', stiffness: 380, damping: 38 }}
         style={{ position: 'absolute', left: 0, right: 0, bottom: 0, maxHeight: '80%', overflowY: 'auto', background: C.bg, borderTopLeftRadius: 16, borderTopRightRadius: 16, padding: 14 }}>
         <div style={{ fontSize: 13, fontWeight: 800, color: C.textDim, marginBottom: 10 }}>Chat moderation</div>
+        {/* ⚠ FIRST, AND IT LOOKS DIFFERENT. Shield Mode is the control a host
+            reaches for while something is actively going wrong, so burying it in
+            a list of equals is the same as not having it. Every other row here
+            changes one setting; this one changes four. */}
+        <button type="button" onClick={() => { onClose(); onOpenSheet?.({ kind: 'shield' }); }} style={{
+          display: 'flex', alignItems: 'center', gap: 12, width: '100%', textAlign: 'left',
+          padding: 12, borderRadius: 12, marginBottom: 8, cursor: 'pointer', border: 'none',
+          background: 'linear-gradient(180deg, #2a1015 0%, #1a0a0f 100%)',
+          boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.06)',
+        }}>
+          <span style={{ flexShrink: 0, width: 32, height: 32, borderRadius: 12, background: 'linear-gradient(135deg, #ff6b6b, #a3122b)', display: 'grid', placeItems: 'center', color: '#fff' }}>
+            <Icon name="shield" size={16} />
+          </span>
+          <span style={{ flex: 1, minWidth: 0 }}>
+            <span style={{ display: 'block', fontSize: 13, fontWeight: 800, color: '#ff9d9d' }}>Shield mode</span>
+            <span style={{ display: 'block', fontSize: 11, color: C.textMuted, marginTop: 2 }}>Lock chat down in one press</span>
+          </span>
+          <Icon name="chevron_right" size={16} style={{ color: C.textMuted, flexShrink: 0 }} />
+        </button>
         {modActs.map(([l, ic, fn]) => <SheetRow key={l} icon={ic} label={l} onClick={fn} />)}
-        <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: '0.08em', color: C.textMuted, margin: '14px 0 6px' }}>CHAT RULES · HOST ONLY</div>
+        {/* ⚠ THE QUEUE SITS DIRECTLY UNDER THE DIAL THAT FILLS IT, and only
+            appears when it has something in it. A permanent "Held (0)" row is
+            furniture; a row that appears when there is work is a prompt. */}
+        {held.length > 0 && (
+          <button type="button" onClick={() => { onClose(); onOpenSheet?.({ kind: 'held', held, level: autoMod, onApprove: approveHeld, onDeny: denyHeld }); }} style={{
+            display: 'flex', alignItems: 'center', gap: 12, width: '100%', textAlign: 'left',
+            padding: 12, borderRadius: 12, marginBottom: 6, cursor: 'pointer', border: 'none',
+            background: 'linear-gradient(180deg, #2a1015 0%, #1a0a0f 100%)',
+            boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.06)',
+          }}>
+            <span style={{ flexShrink: 0, width: 32, height: 32, borderRadius: 12, background: 'linear-gradient(135deg, #ff6b6b, #a3122b)', display: 'grid', placeItems: 'center', color: '#fff' }}>
+              <Icon name="inventory_2" size={16} />
+            </span>
+            <span style={{ flex: 1, minWidth: 0 }}>
+              <span style={{ display: 'block', fontSize: 13, fontWeight: 800, color: '#ff9d9d' }}>Held for review · {held.length}</span>
+              <span style={{ display: 'block', fontSize: 11, color: C.textMuted, marginTop: 2 }}>Nobody watching has seen them</span>
+            </span>
+            <Icon name="chevron_right" size={16} style={{ color: C.textMuted, flexShrink: 0 }} />
+          </button>
+        )}
+        <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', color: C.textMuted, margin: '14px 0 6px' }}>CHAT RULES · HOST ONLY</div>
+        {/* ⚠ THE ROW CARRIES ITS CURRENT VALUE. A settings row that just says
+            "Auto moderation" makes the host open the sheet to find out whether
+            it is even on, which is how a safety setting goes unchecked. */}
+        <SheetRow icon="auto_awesome" label="Auto moderation" value={AUTOMOD_LABEL[autoMod] || 'Standard'}
+          onClick={() => { onClose(); onOpenSheet?.({ kind: 'automod', level: autoMod, onLevel: setAutoMod, heldCount: held.length }); }} />
         <SheetRow icon="timer" label="Slow mode" onClick={() => { onClose(); onOpenSheet?.({ kind: 'slowmode' }); }} />
         <ToggleRow icon="group" label="Followers-only" on={rules.followers} onClick={() => toggle('followers')} />
         <ToggleRow icon="star" label="Subscribers-only" on={rules.subs} onClick={() => toggle('subs')} />
@@ -668,6 +727,8 @@ function ModerationSheet({ onClose, onOpenSheet }) {
   );
 }
 
+const AUTOMOD_LABEL = { off: 'Off', light: 'Light', standard: 'Standard', strict: 'Strict' };
+
 /** A rule you can see the state of. A toggle that never looks on is a label. */
 function ToggleRow({ icon, label, on, onClick }) {
   return (
@@ -681,9 +742,9 @@ function ToggleRow({ icon, label, on, onClick }) {
   );
 }
 
-function CtrlBtn({ icon, label, onClick, active, danger }) { return <button onClick={onClick} title={label} style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: 3, padding: '6px 10px', borderRadius: 10, border: 'none', background: danger ? S.dangerDim : active ? C.purple : C.cardSoft, color: danger ? '#fff' : active ? '#fff' : C.text, cursor: 'pointer', minWidth: 58 }}><Icon name={icon} size={18} /><span style={{ fontSize: 10, fontWeight: 700 }}>{label}</span></button>; }
+function CtrlBtn({ icon, label, onClick, active, danger }) { return <button onClick={onClick} title={label} style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: 4, padding: '6px 10px', borderRadius: 12, border: 'none', background: danger ? S.dangerDim : active ? C.purple : C.cardSoft, color: danger ? '#fff' : active ? '#fff' : C.text, cursor: 'pointer', minWidth: 58 }}><Icon name={icon} size={18} /><span style={{ fontSize: 11, fontWeight: 700 }}>{label}</span></button>; }
 function DockBtn({ icon, onClick, label, danger }) { return <button onClick={onClick} aria-label={label} style={{ width: 42, height: 42, borderRadius: '50%', border: 'none', background: danger ? 'rgba(239,68,68,0.35)' : 'rgba(0,0,0,0.45)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}><Icon name={icon} size={20} /></button>; }
-function SheetRow({ icon, label, onClick }) { return <button onClick={onClick} style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', padding: '13px 12px', borderRadius: 12, border: 'none', marginBottom: 6, background: S.row, color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer', textAlign: 'left' }}><Icon name={icon} size={18} />{label}</button>; }
+function SheetRow({ icon, label, value, onClick }) { return <button onClick={onClick} style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', padding: '13px 12px', borderRadius: 12, border: 'none', marginBottom: 6, background: S.row, color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer', textAlign: 'left' }}><Icon name={icon} size={18} /><span style={{ flex: 1, minWidth: 0 }}>{label}</span>{value ? <span style={{ flexShrink: 0, fontSize: 12, fontWeight: 800, color: C.textMuted }}>{value}</span> : null}</button>; }
 function AudioMeter({ level, compact }) {
   const bars = compact ? 12 : 20;
   return <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2, height: compact ? 12 : 14 }}>{Array.from({ length: bars }).map((_, i) => { const lit = level >= ((i + 1) / bars) * 100; const color = i < bars * 0.6 ? C.green : i < bars * 0.85 ? C.amber : C.red; return <div key={i} style={{ width: 3, height: compact ? 4 + (i / bars) * 8 : 4 + (i / bars) * 10, background: lit ? color : S.track, borderRadius: 1 }} />; })}</div>;
@@ -696,22 +757,66 @@ function LayoutMenu({ layoutMode, pipCorner, scene, onLayout, onCorner, onScene,
         <div style={menuHdr}>Layout</div>
         {LAYOUT_PRESETS.map((p) => <button key={p.id} onClick={() => onLayout(p.id)} style={menuRow(layoutMode === p.id && !scene)}><Icon name={p.icon} size={16} /><span style={{ flex: 1 }}>{p.label}</span>{layoutMode === p.id && !scene && <Icon name="check" size={15} />}</button>)}
         <div style={menuHdr}>PiP corner</div>
-        <div style={{ display: 'flex', gap: 6, padding: '0 2px' }}>{PIP_CORNERS.map((c) => <button key={c.id} onClick={() => onCorner(c.id)} style={{ flex: 1, padding: '7px 0', borderRadius: 8, border: 'none', background: pipCorner === c.id ? C.purpleSoft : C.cardSoft, color: pipCorner === c.id ? C.purpleLight : C.textDim, fontSize: 10, fontWeight: 700, cursor: 'pointer' }}>{c.id.toUpperCase()}</button>)}</div>
+        <div style={{ display: 'flex', gap: 6, padding: '0 2px' }}>{PIP_CORNERS.map((c) => <button key={c.id} onClick={() => onCorner(c.id)} style={{ flex: 1, padding: '7px 0', borderRadius: 8, border: 'none', background: pipCorner === c.id ? C.purpleSoft : C.cardSoft, color: pipCorner === c.id ? C.purpleLight : C.textDim, fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>{c.id.toUpperCase()}</button>)}</div>
         <div style={menuHdr}>Scene cards</div>
         {SCENE_CARDS.map((s) => <button key={s.id} onClick={() => onScene(s.id)} style={menuRow(scene === s.id)}><Icon name="image" size={16} /><span style={{ flex: 1 }}>{s.title}</span>{scene === s.id && <Icon name="check" size={15} />}</button>)}
       </div>
     </>
   );
 }
-const menuHdr = { fontSize: 10, fontWeight: 800, letterSpacing: '0.08em', color: C.textMuted, textTransform: 'uppercase', margin: '8px 4px 6px' };
-function menuRow(active) { return { display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '9px 8px', borderRadius: 8, border: 'none', background: active ? C.purpleSoft : 'transparent', color: active ? C.purpleLight : C.text, fontSize: 13, fontWeight: 600, cursor: 'pointer', textAlign: 'left' }; }
+const menuHdr = { fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', color: C.textMuted, textTransform: 'uppercase', margin: '8px 4px 6px' };
+function menuRow(active) { return { display: 'flex', alignItems: 'center', gap: 12, width: '100%', padding: '9px 8px', borderRadius: 8, border: 'none', background: active ? C.purpleSoft : 'transparent', color: active ? C.purpleLight : C.text, fontSize: 13, fontWeight: 600, cursor: 'pointer', textAlign: 'left' }; }
 
 // Inert mock chat — no relay socket, no Firestore. Mirrors ChatPanel's look.
 // ⚠ THE STATIC `PREVIEW_MSGS` THAT WAS HERE IS GONE. It was five hardcoded
 // lines with no avatars and no member badges, so the broadcaster's chat did not
 // look like the chat that ships. Messages now come from the simulator and render
 // through the shared SimChat, which reproduces ChatPanel's own row treatment.
-function PreviewChat({ overlay = false, composerExtras = null, messages = [], onOpenProfile, avatars = {} }) {
+/**
+ * What the host has switched on, said out loud.
+ *
+ * ⚠⚠ THE HOST HAD NO WAY TO SEE THAT THEY HAD RESTRICTED THEIR OWN CHAT. Every
+ * rule lived inside the moderation sheet, so once it closed the only evidence
+ * was that chat had gone quiet — which reads as "nobody is watching", not as
+ * "I turned off everyone who is". After Shield Mode that is worse, because four
+ * rules go on at once and none of them show anywhere.
+ *
+ * ⚠ IT IS A STATUS LINE, NOT A CONTROL. The action is one tap away in the
+ * moderation menu. Wiring a handler through this component's two call sites is
+ * the "remembered at every hop" pattern that has gone wrong four times in this
+ * repo; the strip earns its place by answering "why is chat quiet", which no
+ * surface answered at all.
+ *
+ * ⚠ `tts` IS NOT A RESTRICTION and is deliberately absent. Reading chat aloud
+ * stops nobody from talking, and padding this line with settings that do not
+ * gate anyone is how a status strip becomes wallpaper.
+ */
+function ChatRulesStrip({ overlay, rules = {} }) {
+  const on = [
+    rules.followers && 'Followers only',
+    rules.subs && 'Subscribers only',
+    rules.verified && 'Verified only',
+    rules.slow > 0 && `Slow ${rules.slow}s`,
+  ].filter(Boolean);
+  if (!on.length) return null;
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap',
+      margin: overlay ? '0 0 8px' : '0 12px 8px', padding: '6px 10px', borderRadius: 12,
+      background: 'linear-gradient(180deg, #221a3d 0%, #171029 100%)',
+      boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.06)',
+    }}>
+      <Icon name="lock" size={13} style={{ color: C.purpleLight, flexShrink: 0 }} />
+      <span style={{ fontSize: 11, fontWeight: 800, color: C.purpleLight }}>Chat is limited</span>
+      {on.map((label) => (
+        <span key={label} style={{ fontSize: 11, fontWeight: 700, color: C.textDim, background: C.cardSoft, padding: '2px 8px', borderRadius: 999 }}>{label}</span>
+      ))}
+    </div>
+  );
+}
+
+function PreviewChat({ overlay = false, composerExtras = null, messages = [], onOpenProfile, avatars = {}, scrollRef }) {
+  const { held = [], autoMod = 'standard', approveHeld, denyHeld, setOpenSheet, chatRules = {} } = usePreviewSim();
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
       {/* ⚠ `overflow:hidden` AND AN EXPLICIT 100% ARE BOTH LOAD-BEARING. A flex
@@ -726,9 +831,35 @@ function PreviewChat({ overlay = false, composerExtras = null, messages = [], on
           messages={messages}
           avatars={avatars}
           layout={overlay ? 'overlay' : 'side'}
+          scrollRef={scrollRef}
           onOpenProfile={onOpenProfile}
         />
       </div>
+      <ChatRulesStrip overlay={overlay} rules={chatRules} />
+      {/* ⚠⚠ A QUEUE NOBODY SEES IS A QUEUE NOBODY EMPTIES. The dial withholds
+          messages from viewers, so the host has to be told, on the surface they
+          are already staring at, that people are waiting on them. Burying the
+          count two taps deep in a settings menu is how a held message becomes an
+          accidental permanent mute.
+          ⚠ IT RENDERS ONLY WHEN THERE IS SOMETHING HELD, so it costs the chat no
+          height the rest of the time — this row sits above the composer and
+          would otherwise push the chat up for nothing. */}
+      {held.length > 0 && (
+        <button type="button" onClick={() => setOpenSheet?.({ kind: 'held', held, level: autoMod, onApprove: approveHeld, onDeny: denyHeld })} style={{
+          display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left',
+          margin: overlay ? '0 0 8px' : '0 12px', padding: '8px 12px', borderRadius: 12,
+          border: 'none', cursor: 'pointer',
+          background: 'linear-gradient(180deg, #2a1015 0%, #14080c 100%)',
+          boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.07)',
+        }}>
+          <Icon name="inventory_2" size={16} style={{ color: '#ff9d9d', flexShrink: 0 }} />
+          <span style={{ flex: 1, minWidth: 0, fontSize: 12, fontWeight: 800, color: '#ff9d9d' }}>
+            {held.length} held for review
+          </span>
+          <span style={{ flexShrink: 0, fontSize: 12, fontWeight: 800, color: '#fff' }}>Review</span>
+          <Icon name="chevron_right" size={14} style={{ color: '#ff9d9d', flexShrink: 0 }} />
+        </button>
+      )}
       {/* ⚠⚠ THE DESKTOP BROADCASTER COULD NOT SEND A MESSAGE. This row rendered a
           bare placeholder with no send button and no emoji — the host, the one
           person who is definitely going to talk in their own chat, had no way to.

@@ -131,7 +131,7 @@ export function PreviewCoHostGrid({
               a tall one, so the count is what varies: 32% at one or two guests, 24% at three
               or more, which lands the stack at ~62% of the height instead of 81%. */}
           {guests.length > 0 && (
-            <div style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', width: guests.length >= 3 ? '24%' : '32%', display: 'flex', flexDirection: 'column', gap: 5, zIndex: 3 }}>
+            <div style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', width: guests.length >= 3 ? '24%' : '32%', display: 'flex', flexDirection: 'column', gap: 6, zIndex: 3 }}>
               {guests.map((t, i) => (
                 <div key={t.uid} style={{ width: '100%', aspectRatio: '4 / 5', borderRadius: 4, overflow: 'hidden', position: 'relative', background: '#000' }}>
                   <Tile tile={t} fullscreen edge fill panelGuest
@@ -236,7 +236,7 @@ function Tile({ tile, fullscreen, bigLeft, edge, videoUrl = null, camOff = false
         {!compact && !panelGuest && (
           <span style={{
             padding: '2px 7px', borderRadius: 4, marginBottom: 1,
-            fontSize: 9.5, fontWeight: 800, letterSpacing: '0.08em',
+            fontSize: 9, fontWeight: 800, letterSpacing: '0.08em',
             background: tile.role === 'HOST' ? '#7c3aed' : '#100C1C', color: '#fff',
           }}>{tile.role}</span>
         )}
@@ -280,7 +280,7 @@ function InviteSlot({ edge = false, showInvite = false }) {
 export function PreviewTournamentCard({ offset = { top: 12, left: 12 } }) {
   return (
     <div style={{
-      position: 'absolute', ...offset, display: 'flex', alignItems: 'center', gap: 10,
+      position: 'absolute', ...offset, display: 'flex', alignItems: 'center', gap: 12,
       padding: '6px 12px 6px 8px', borderRadius: 12, background: '#12121E', border: 'none',
       boxShadow: '0 10px 28px rgba(0,0,0,0.55)',
       color: C.text, fontSize: 11, fontWeight: 700, zIndex: 5, maxWidth: 320,
@@ -294,9 +294,9 @@ export function PreviewTournamentCard({ offset = { top: 12, left: 12 } }) {
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 11, fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Preview Cup · Finals</div>
-        <div style={{ fontSize: 10, color: C.textDim, marginTop: 1 }}>Round 3 vs Nova</div>
+        <div style={{ fontSize: 11, color: C.textDim, marginTop: 1 }}>Round 3 vs Nova</div>
       </div>
-      <div style={{ padding: '2px 8px', borderRadius: 99, background: '#3A2A05', color: C.gold, fontSize: 10, fontWeight: 800 }}>50,000c</div>
+      <div style={{ padding: '2px 8px', borderRadius: 999, background: '#3A2A05', color: C.gold, fontSize: 11, fontWeight: 800 }}>50,000c</div>
     </div>
   );
 }

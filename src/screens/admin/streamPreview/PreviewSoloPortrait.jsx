@@ -11,7 +11,7 @@
 // sender+gift combos the counter, different senders stack (TikTok-style).
 
 import {SubAlertOverlay, StreamGoalBar} from '../../../components/streams/StreamGoalAndAlerts';
-import { PlaybackState, StreamPaywall, ChatStateBanner, TtsStrip, EmptyChat, VpEarnedChip, PreviewLevelUp, AudioStage, ModChannelSwitch, RaidBanner } from './previewStates';
+import { PlaybackState, StreamPaywall, ChatStateBanner, TtsStrip, EmptyChat, VpEarnedChip, PreviewLevelUp, AudioStage, ModChannelSwitch, RaidBanner, HypeTrain } from './previewStates';
 import Icon from '../../../components/Icon';
 import ReactionsFloor from '../../../components/streams/ReactionsFloor';
 import { usePreviewVideos, usePreviewSim, usePreviewRole } from './previewAssetsContext';
@@ -106,15 +106,15 @@ export default function PreviewSoloPortrait({ doc, host, scene = 'game',
             are short enough that the row can never wrap. Two rows on purpose
             beats three chips wrapping by accident. */}
         {d.title && (
-          <div style={{ fontSize: 12.5, fontWeight: 700, color: 'rgba(255,255,255,0.94)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textShadow: '0 1px 3px rgba(0,0,0,0.8)' }}>{d.title}</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: 'rgba(255,255,255,0.94)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textShadow: '0 1px 3px rgba(0,0,0,0.8)' }}>{d.title}</div>
         )}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {d.game && (
             <span style={{ ...glassDark, padding: '5px 11px', borderRadius: 999, fontSize: 12, fontWeight: 700, color: C.purpleLight, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{d.game}</span>
           )}
           {/* The ask comes last: an ask before the context reads as a paywall. */}
           <span style={{
-            display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 11px', borderRadius: 999,
+            display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 11px', borderRadius: 999,
             fontSize: 12, fontWeight: 800, whiteSpace: 'nowrap', color: '#fff', flexShrink: 0,
             ...(subscribed
               ? { background: '#7c3aed', border: 'none' }
@@ -164,7 +164,7 @@ export default function PreviewSoloPortrait({ doc, host, scene = 'game',
 
       {/* Chat panel — sized to its content and pinned above the composer, so the
           leftover space is split evenly above and below the band. */}
-      <div style={{ position: 'relative', zIndex: 2, flex: '0 1 auto', minHeight: 0, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', padding: '0 12px', gap: 10 }}>
+      <div style={{ position: 'relative', zIndex: 2, flex: '0 1 auto', minHeight: 0, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', padding: '0 12px', gap: 12 }}>
         <FloatingHeart style={{ position: 'absolute', right: 8, bottom: 12, zIndex: 6 }} />
         {/* Chat block, wrapped so gift drops can be anchored directly ABOVE it.
             The wrapper exists because the chat block has overflow:hidden — an
@@ -173,8 +173,9 @@ export default function PreviewSoloPortrait({ doc, host, scene = 'game',
           {/* Transient gift drops — sit in the empty space ABOVE the chat, never
               over it. Covering the newest messages is exactly what the chat is
               for reading. */}
+          <HypeTrain />
           <GiftFeed toasts={toasts} style={{ position: 'absolute', bottom: '100%', left: 0, marginBottom: 8, zIndex: 5 }} />
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 13, paddingTop: 24, overflow: 'hidden', maskImage: 'linear-gradient(to top, #000 0%, #000 62%, transparent 96%)', WebkitMaskImage: 'linear-gradient(to top, #000 0%, #000 62%, transparent 96%)' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, paddingTop: 24, overflow: 'hidden', maskImage: 'linear-gradient(to top, #000 0%, #000 62%, transparent 96%)', WebkitMaskImage: 'linear-gradient(to top, #000 0%, #000 62%, transparent 96%)' }}>
           {/* Presentable copy — this preview is what store screenshots are taken
               from, so no lorem and no width stress-test strings. One long-ish
               line is kept so wrapping is still visible. */}

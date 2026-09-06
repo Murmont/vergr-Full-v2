@@ -4517,7 +4517,7 @@ const ANIMATED_IMAGE_TYPES = new Set(['image/gif', 'image/webp', 'image/apng']);
 // every list. The server cap in functions/r2.js still applies on top.
 const MAX_ANIMATED_AVATAR_BYTES = 8 * 1024 * 1024;
 
-export const uploadAvatar = async (uid, file) => {
+export const uploadAvatar = async (uid, file, crop = null) => {
   // Animated avatars are EARNED AT L45 **OR** included with Pro. Everyone else's
   // avatar goes through the canvas and comes out a still JPEG, which is also
   // what makes an accidental 12MP phone photo cheap to serve. Note that someone
@@ -4547,7 +4547,11 @@ export const uploadAvatar = async (uid, file) => {
       && ANIMATED_IMAGE_TYPES.has(file.type)
       && file.size <= MAX_ANIMATED_AVATAR_BYTES;
 
-    out = wantsAnimated ? file : await compressMedia(file, tier, 'avatar');
+    // ⚠ AN ANIMATED AVATAR CANNOT TAKE THE CROP, and that is not an oversight.
+    // Cropping means decoding to a canvas, which keeps frame one and throws the
+    // animation away — the exact bug this passthrough exists to avoid. So the
+    // framing step is not offered for one, and it uploads whole.
+    out = wantsAnimated ? file : await compressMedia(file, tier, 'avatar', { crop });
   }
   const { url } = await uploadToR2(out, 'avatar');
   return url;

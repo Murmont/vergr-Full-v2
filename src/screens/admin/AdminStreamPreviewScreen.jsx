@@ -26,6 +26,7 @@ import AdminShell, { ADMIN_COLORS as C } from './AdminShell';
 import Icon from '../../components/Icon';
 import { makePreviewStreamDoc, PREVIEW_HOST } from './streamPreview/previewStream';
 import PreviewBroadcasterScreen from './streamPreview/PreviewBroadcasterScreen';
+import PreviewObsOverlay from './streamPreview/PreviewObsOverlay';
 import PreviewViewerScreen from './streamPreview/PreviewViewerScreen';
 import PreviewDesktopViewer from './streamPreview/PreviewDesktopViewer';
 import PreviewMobileViewer from './streamPreview/PreviewMobileViewer';
@@ -116,6 +117,14 @@ export default function AdminStreamPreviewScreen() {
   const [phase, setPhase] = useState('live');   // setup | live | ended
   const [gated, setGated] = useState(false);
   const [other, setOther] = useState('cohost-setup');
+  // The OBS connect panel: which source is picked, and what the ingest is doing.
+  // `obsState` is the one a capture needs, because 'waiting for OBS' and
+  // 'receiving' are two completely different screens and only one of them shows
+  // a bitrate.
+  const [ingest, setIngest] = useState('rtmp');
+  const [obsState, setObsState] = useState('waiting');
+  const [obsPlan, setObsPlan] = useState('pro');
+  const [obsMirror, setObsMirror] = useState(true);
   const [role, setRole] = useState('viewer');
   // Which KIND of viewer: plain / appointed stream moderator / Vanguard.
   const [viewerRole, setViewerRole] = useState('viewer');
@@ -209,7 +218,11 @@ export default function AdminStreamPreviewScreen() {
   const stageInner = phase === 'other'
     ? OTHER[other]
     : phase === 'setup'
-    ? (mobile ? <PreviewNativeGoLive doc={doc} gated={gated} onGoLive={() => setPhase('live')} /> : <PreviewGoLive doc={doc} gated={gated} onGoLive={() => setPhase('live')} />)
+    ? (mobile
+      ? <PreviewNativeGoLive doc={doc} gated={gated} onGoLive={() => setPhase('live')} />
+      : <PreviewGoLive doc={doc} gated={gated} advancedOpen={ingest === 'rtmp'} ingest={ingest}
+          obsState={obsState} plan={obsPlan} mirror={obsMirror}
+          onGoLive={() => setPhase('live')} />)
     : phase === 'ended'
     ? (
       <>
@@ -227,6 +240,8 @@ export default function AdminStreamPreviewScreen() {
           onClose={() => sim.setOpenSheet(null)} onOpen={sim.setOpenSheet} />
       </>
     )
+    : device === 'overlay'
+    ? <PreviewObsOverlay doc={doc} backdrop={backdrop} />
     : mobileImmersiveViewer
     ? <PreviewMobileViewer doc={doc} host={PREVIEW_HOST} backdrop={backdrop} {...simProps} />
     : desktopViewer
@@ -266,6 +281,38 @@ export default function AdminStreamPreviewScreen() {
               value={gated} onChange={setGated}
             />
           )}
+          {phase === 'setup' && !mobile && (
+            <>
+              <Field label="Source">
+                <Seg
+                  options={[{ value: 'browser', label: 'Browser' }, { value: 'rtmp', label: 'OBS / RTMP' }]}
+                  value={ingest} onChange={setIngest}
+                />
+              </Field>
+              {ingest === 'rtmp' && (
+                <>
+                  <Field label="OBS state">
+                    <Seg
+                      options={[{ value: 'waiting', label: 'Waiting' }, { value: 'live', label: 'Receiving' }, { value: 'unstable', label: 'Unstable' }]}
+                      value={obsState} onChange={setObsState}
+                    />
+                  </Field>
+                  <Field label="Plan">
+                    <Seg
+                      options={[{ value: 'free', label: 'Free' }, { value: 'lite', label: 'Lite' }, { value: 'pro', label: 'Pro' }]}
+                      value={obsPlan} onChange={setObsPlan}
+                    />
+                  </Field>
+                  <Field label="Twitch">
+                    <Seg
+                      options={[{ value: false, label: 'Off' }, { value: true, label: 'Stream to both' }]}
+                      value={obsMirror} onChange={setObsMirror}
+                    />
+                  </Field>
+                </>
+              )}
+            </>
+          )}
           {phase === 'other' && (
             <select value={other} onChange={(e) => setOther(e.target.value)} style={{
               background: C.card2, border: `1px solid ${C.border}`, borderRadius: 8,
@@ -294,7 +341,7 @@ export default function AdminStreamPreviewScreen() {
           {phase === 'live' && role === 'viewer' && (
             <Seg options={PREVIEW_ROLES.map((r) => ({ value: r.id, label: r.id === 'viewer' ? 'Plain viewer' : r.label }))} value={viewerRole} onChange={setViewerRole} />
           )}
-          <Seg options={[{ value: 'desktop', label: 'Desktop' }, { value: 'mobile', label: 'Mobile' }]} value={device} onChange={setDevice} />
+          <Seg options={[{ value: 'desktop', label: 'Desktop' }, { value: 'mobile', label: 'Mobile' }, { value: 'overlay', label: 'OBS overlay' }]} value={device} onChange={setDevice} />
           {mobile && (
             <select value={deviceId} onChange={(e) => setDeviceId(e.target.value)} style={{
               background: C.card2, border: '1px solid ' + C.border, borderRadius: 8,
@@ -388,6 +435,42 @@ export default function AdminStreamPreviewScreen() {
               {CHAT_STATES.map((p) => (
                 <button key={p.id} onClick={() => sim.setChatState(p.id)} style={chip(sim.chatState === p.id)}>{p.label}</button>
               ))}
+            </div>
+            {/* ⚠ THE QUEUE NEEDS A WAY TO FILL, or the empty state is the only
+                state anyone ever sees. "Hold one" pushes a real sample through
+                the same path the relay would, and Approve releases it into the
+                live chat so the whole loop is visible rather than described. */}
+            {/* ⚠ THE TRAIN IS FED BY THE REAL SUPPORT BUTTONS, not a switch of its
+                own. Tip and Subscribe above already drive it, which is the whole
+                point — a shared meter with a private "start" button proves
+                nothing about the mechanic. These are here to jump levels and to
+                clear it, because waiting out a five-minute window to look at the
+                design is not a review. */}
+            {/* Dual Format, route C. Off is the default and means letterbox —
+                the founder rule is never crop unless the host chose it. */}
+            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', color: C.textMuted, margin: '14px 0 8px' }}>VERTICAL FRAMING</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              <button onClick={() => sim.clearVFrame()} style={chip(!sim.vFrame)}>Automatic</button>
+              <button onClick={() => sim.setVFrame({ x: 0.5, zoom: 1 })} style={chip(!!sim.vFrame)}>Fill screen</button>
+              <button onClick={() => sim.setOpenSheet({ kind: 'vframe' })} style={chip(false)}>Frame it…</button>
+            </div>
+            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', color: C.textMuted, margin: '14px 0 8px' }}>HYPE TRAIN</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              <button onClick={() => sim.addTrainSupport('c1', 500)} style={chip(false)}>+1 level</button>
+              <button onClick={() => sim.addTrainSupport('c4', 250)} style={chip(false)}>+250c</button>
+              <button onClick={sim.endTrain} style={chip(false)}>
+                End{sim.train ? ' (LV ' + sim.train.level + ')' : ''}
+              </button>
+            </div>
+            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', color: C.textMuted, margin: '14px 0 8px' }}>AUTO MODERATION</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {[['off', 'Off'], ['light', 'Light'], ['standard', 'Standard'], ['strict', 'Strict']].map(([id, label]) => (
+                <button key={id} onClick={() => sim.setAutoMod(id)} style={chip(sim.autoMod === id)}>{label}</button>
+              ))}
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
+              <button onClick={sim.fireHeld} style={chip(false)}>Hold one</button>
+              <button onClick={sim.clearHeld} style={chip(false)}>Clear held ({(sim.held || []).length})</button>
             </div>
             {/* ⚠ FOUNDER DECISION 2026-09-02: audio-only broadcasts are allowed —
                 a co-host already joins audio-only, and a creator with no camera

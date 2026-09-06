@@ -9,7 +9,7 @@
 // this ports to the live screens.
 
 import { useState } from 'react';
-import { PlaybackState, StreamPaywall, ChatStateBanner, TtsStrip, VpEarnedChip, PreviewLevelUp, AudioStage, ModChannelSwitch, RaidBanner, composerCopy } from './previewStates';
+import { PlaybackState, StreamPaywall, ChatStateBanner, TtsStrip, VpEarnedChip, PreviewLevelUp, AudioStage, ModChannelSwitch, RaidBanner, composerCopy, HypeTrain } from './previewStates';
 import ReactionsFloor from '../../../components/streams/ReactionsFloor';
 import { usePreviewVideos, usePreviewSim, usePreviewRole } from './previewAssetsContext';
 import { useFaces } from './previewAssetsContext';
@@ -158,10 +158,10 @@ export default function PreviewDesktopViewer({
               Anchored left at a readable width instead, the way the mobile surfaces draw it. */}
           <MovableGoal editing={goalEdit} fallback={{ xPct: 2, yPct: 70, wPct: 46 }} goal={d.goal} box={goalBox} onChange={setGoalBox} editable={false} />
           {/* hover control bar */}
-          <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, padding: '20px 14px 10px', background: 'linear-gradient(0deg, rgba(0,0,0,0.75), transparent)', display: 'flex', alignItems: 'center', gap: 14 }}>
+          <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, padding: '20px 14px 10px', background: 'linear-gradient(0deg, rgba(0,0,0,0.75), transparent)', display: 'flex', alignItems: 'center', gap: 16 }}>
             <Icon name="play_arrow" size={20} filled />
             <Icon name="volume_up" size={19} />
-            <div style={{ width: 90, height: 4, borderRadius: 99, background: '#4A4A58' }} />
+            <div style={{ width: 90, height: 4, borderRadius: 999, background: '#4A4A58' }} />
             <div style={{ flex: 1 }} />
             <Icon name="settings" size={18} />
             <Icon name="picture_in_picture_alt" size={18} />
@@ -172,6 +172,7 @@ export default function PreviewDesktopViewer({
               when the same person sends again (previewSoloParts.jsx). The solo views
               always had it; these surfaces never did, so a tip here rendered as the
               generic centred pill instead — the thing that was replaced. */}
+          <HypeTrain />
           <GiftFeed toasts={gifts} style={{ bottom: 64 }} />
           <SubAlertOverlay lastSub={d.lastSub} anchor="bottom" />
         </div>
@@ -184,13 +185,13 @@ export default function PreviewDesktopViewer({
                 React handlers, and a label instructing you to press it. Every earlier sweep
                 missed it because they asked whether a control could be HIT, never whether
                 pressing it DID anything. */}
-            <button type="button" onClick={() => onOpenSheet({ kind: 'profile', uid: 'host' })} style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left' }}>
+            <button type="button" onClick={() => onOpenSheet({ kind: 'profile', uid: 'host' })} style={{ display: 'flex', alignItems: 'center', gap: 12, background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left' }}>
               <div style={{ position: 'relative', flexShrink: 0, padding: 2, borderRadius: '50%', background: `linear-gradient(135deg, ${T.violet}, ${T.violetL})` }}>
                 <UserAvatar src={faceOf(host)} size={48} />
               </div>
               <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                  <span style={{ fontSize: 17, fontWeight: 800 }}>{host?.displayName || 'Host'}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ fontSize: 16, fontWeight: 800 }}>{host?.displayName || 'Host'}</span>
                   {host?.isVerified && <Icon name="verified" size={15} filled style={{ color: T.violetL }} />}
                 </div>
                 {/* ⚠ THIS WAS THE LITERAL STRING "Click name to open profile" — an
@@ -221,7 +222,7 @@ export default function PreviewDesktopViewer({
               <Icon name="star" size={15} filled style={{ color: T.gold }} /> Subscribe
             </button>
           </div>
-          <div dir="auto" style={{ fontSize: 15, fontWeight: 700 }}>{d.title || 'LIVE stream'}</div>
+          <div dir="auto" style={{ fontSize: 16, fontWeight: 700 }}>{d.title || 'LIVE stream'}</div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 13, color: T.violetL, fontWeight: 700 }}>{d.game || 'Nightfall Protocol'}</span>
             <span style={{ ...tag }}>English</span>
@@ -238,12 +239,12 @@ export default function PreviewDesktopViewer({
 
         {/* About card */}
         <div style={{ padding: 14 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 10 }}>
-            <span style={{ fontSize: 15, fontWeight: 800 }}>About {host?.displayName || 'Host'}</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+            <span style={{ fontSize: 16, fontWeight: 800 }}>About {host?.displayName || 'Host'}</span>
             {host?.isVerified && <Icon name="verified" size={14} filled style={{ color: T.violetL }} />}
           </div>
-          <div style={{ background: T.panel, borderRadius: 10, padding: 14 }}>
-            <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 4 }}>{compactNum(d.followers || 48200)} followers</div>
+          <div style={{ background: T.panel, borderRadius: 12, padding: 14 }}>
+            <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 4 }}>{compactNum(d.followers || 48200)} followers</div>
             <div style={{ fontSize: 13, color: T.dim }}>Ranked grinds, scrims and the occasional disaster</div>
           </div>
         </div>
@@ -278,7 +279,7 @@ export default function PreviewDesktopViewer({
               third gifter through the middle of their name. The name already carries an
               ellipsis; it was simply never allowed to reach it. */}
           {(d.previewGifters || []).slice(0, 3).map((g, i) => (
-            <span key={g.uid} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, minWidth: 0, padding: '3px 8px', borderRadius: 999, background: T.panel2, fontSize: 11.5, fontWeight: 700 }}>
+            <span key={g.uid} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minWidth: 0, padding: '3px 8px', borderRadius: 999, background: T.panel2, fontSize: 12, fontWeight: 700 }}>
               {i === 0 ? <Icon name="emoji_events" size={13} style={{ color: T.gold, flexShrink: 0 }} /> : <img src={cheerGem} alt="" style={{ width: 13, height: 13, flexShrink: 0 }} />}
               <span style={{ maxWidth: 64, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{g.displayName}</span>
               <span style={{ color: T.gold, flexShrink: 0 }}>{compactNum(g.coins)}</span>
@@ -339,8 +340,8 @@ export default function PreviewDesktopViewer({
           </div>
 
           {/* bottom row: VP balance (left) · mod / settings / Chat (right) */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 10 }}>
-            <span title="VP Rewards" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 13, fontWeight: 800, color: T.text }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 10 }}>
+            <span title="VP Rewards" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 800, color: T.text }}>
               <img src={vpCrystal} alt="" style={{ width: 20, height: 20 }} /> {compactNum(d.viewerVp || 0)}
             </span>
             <div style={{ flex: 1 }} />
@@ -403,7 +404,7 @@ function FooterPanel({ which, verifiedOnly, setVerifiedOnly, onClose, role = 'vi
           {items.map((l) => (
             <button key={l} type="button" onClick={() => setIdentity(l)} style={{
               display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 8,
-              background: T.input, fontSize: 12.5, cursor: 'pointer', color: T.text,
+              background: T.input, fontSize: 13, cursor: 'pointer', color: T.text,
               border: `1px solid ${identity === l ? T.violet : 'transparent'}`, textAlign: 'left', width: '100%',
             }}>
               <Icon name={identity === l ? 'radio_button_checked' : 'radio_button_unchecked'} size={16} style={{ color: identity === l ? T.violetL : T.muted }} />{l}
@@ -422,7 +423,7 @@ function FooterPanel({ which, verifiedOnly, setVerifiedOnly, onClose, role = 'vi
             what the button beside the input implies they do. */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: 6 }}>
           {['😀','😂','🔥','💜','👀','🎮','🏆','😎','💀','🥳','👑','⚡','🙌','💎','❤️','😭'].map((e, i) => (
-            <button key={i} type="button" onClick={() => onInsert?.(e)} style={{ fontSize: 18, textAlign: 'center', cursor: 'pointer', background: 'none', border: 'none', padding: 4, borderRadius: 6, lineHeight: 1 }}>{e}</button>
+            <button key={i} type="button" onClick={() => onInsert?.(e)} style={{ fontSize: 20, textAlign: 'center', cursor: 'pointer', background: 'none', border: 'none', padding: 4, borderRadius: 8, lineHeight: 1 }}>{e}</button>
           ))}
         </div>
         <div style={{ fontSize: 11, color: T.muted, marginTop: 10 }}>Unlock more emotes by subscribing.</div>
@@ -441,7 +442,7 @@ function FooterPanel({ which, verifiedOnly, setVerifiedOnly, onClose, role = 'vi
     const hostActs = [['Slow mode', 'timer'], ['Followers-only', 'group'], ['Subscribers-only', 'star'], ['Verified accounts only', 'verified_user'], ['Banned words', 'block'], ['Appoint a moderator', 'shield_person']];
     const Row = ([l, ic], on) => (
       <div key={l} onClick={l === 'Verified accounts only' ? () => setVerifiedOnly((v) => !v) : undefined}
-        style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '8px 10px', borderRadius: 8, fontSize: 12.5, cursor: 'pointer' }}>
+        style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 8, fontSize: 13, cursor: 'pointer' }}>
         <Icon name={ic} size={16} style={{ color: T.dim }} /><span style={{ flex: 1 }}>{l}</span>
         {l === 'Verified accounts only' && (
           <span style={{ width: 34, height: 20, borderRadius: 999, background: on ? T.violet : T.muted, position: 'relative', flexShrink: 0 }}>
@@ -457,7 +458,7 @@ function FooterPanel({ which, verifiedOnly, setVerifiedOnly, onClose, role = 'vi
         </div>
         {canConfigureChat(role) ? (
           <>
-            <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: '0.08em', color: T.muted, margin: '12px 0 6px' }}>CHAT RULES · HOST ONLY</div>
+            <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', color: T.muted, margin: '12px 0 6px' }}>CHAT RULES · HOST ONLY</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               {hostActs.map((a) => Row(a, a[0] === 'Verified accounts only' ? verifiedOnly : false))}
             </div>
@@ -483,7 +484,7 @@ function FooterPanel({ which, verifiedOnly, setVerifiedOnly, onClose, role = 'vi
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
         {KEYS.map(([l, k]) => (
           <button key={l} type="button" onClick={() => setPrefs((p) => ({ ...p, [k]: !p[k] }))}
-            style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 8, fontSize: 12.5, cursor: 'pointer', background: 'none', border: 'none', color: T.text, width: '100%', textAlign: 'left' }}>
+            style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 8, fontSize: 13, cursor: 'pointer', background: 'none', border: 'none', color: T.text, width: '100%', textAlign: 'left' }}>
             <span style={{ flex: 1 }}>{l}</span>
             <span style={{ width: 34, height: 20, borderRadius: 999, background: prefs[k] ? T.violet : T.muted, position: 'relative', flexShrink: 0, transition: 'background .15s' }}>
               <span style={{ position: 'absolute', top: 2, left: prefs[k] ? 16 : 2, width: 16, height: 16, borderRadius: '50%', background: '#fff', transition: 'left .15s' }} />
@@ -495,7 +496,7 @@ function FooterPanel({ which, verifiedOnly, setVerifiedOnly, onClose, role = 'vi
   );
 }
 
-const badge = { display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 9px', borderRadius: 6, background: '#100C1C', color: '#fff', fontSize: 11, fontWeight: 800 };
+const badge = { display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 9px', borderRadius: 8, background: '#100C1C', color: '#fff', fontSize: 11, fontWeight: 800 };
 const tag = { padding: '3px 9px', borderRadius: 999, background: T.panel2, color: T.dim, fontSize: 12, fontWeight: 600 };
-const iconBtn = { background: 'none', border: 'none', padding: 4, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 6 };
+const iconBtn = { background: 'none', border: 'none', padding: 4, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 8 };
 const pillBtn = (bg) => ({ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 800, color: '#fff', background: bg });

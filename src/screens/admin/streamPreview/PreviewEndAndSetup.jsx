@@ -87,8 +87,8 @@ function IngestCard({ active, icon, title, desc, note }) {
         <Icon name={icon} size={18} style={{ color: active ? C.purpleLight : C.textDim }} />
         <span style={{ fontSize: 13, fontWeight: 800, color: C.text }}>{title}</span>
       </div>
-      <div style={{ fontSize: 11.5, color: C.textDim, lineHeight: 1.5 }}>{desc}</div>
-      {note && <div style={{ fontSize: 10.5, color: C.textMuted, marginTop: 6 }}>{note}</div>}
+      <div style={{ fontSize: 12, color: C.textDim, lineHeight: 1.5 }}>{desc}</div>
+      {note && <div style={{ fontSize: 11, color: C.textMuted, marginTop: 6 }}>{note}</div>}
     </div>
   );
 }
@@ -102,7 +102,199 @@ function IngestCard({ active, icon, title, desc, note }) {
  * all right now. Being able to capture it anyway is a large part of why this
  * surface belongs in the simulator.
  */
-export function PreviewGoLive({ doc, gated = false, advancedOpen = false, ingest = 'browser', onGoLive }) {
+// ── OBS / RTMP connect panel ────────────────────────────────────────────────
+//
+// ⚠⚠ THE SHIPPED GO LIVE SCREEN NEVER SHOWS THE STREAM KEY. `createStreamSession`
+// returns `{ ingestUrl, streamKey }` (functions/streaming.js:575) and
+// GoLiveSetupScreen renders neither: the entire OBS branch is one line of bitrate
+// advice at ~line 1190. A host who picks OBS is told what bitrate to use and is
+// never told where to send it, so the source they chose cannot be connected at
+// all. This panel is what that branch should have been.
+//
+// ⚠ THE KEY IS A CREDENTIAL. It is masked by default, revealed deliberately, and
+// carries its own warning — anyone holding it can broadcast as this person
+// ([[reference-stream-key-is-a-credential]]).
+//
+// ⚠ THE BITRATE IS THE PLAN'S, NOT A SUGGESTION. `infra/rtmp-auth` reads the
+// plan on nginx-rtmp's on_publish and a 5s watchdog DISCONNECTS anything over
+// the cap for 15 seconds (Free 4 / Lite 6 / Pro 9 Mbps). Printing a number the
+// server will hang up on is worse than printing nothing, so the copy says what
+// happens rather than advising.
+
+const OBS_PLANS = {
+  free: { label: 'Free', kbps: 4000, res: '480p30' },
+  lite: { label: 'Lite', kbps: 6000, res: '720p60' },
+  pro: { label: 'Pro', kbps: 9000, res: '1080p60' },
+};
+
+// waiting  — key minted, OBS has not connected
+// live     — receiving, healthy
+// unstable — receiving, over cap or dropping frames
+const OBS_STATES = {
+  waiting: { label: 'Waiting for OBS', tone: '#9298ab', dot: '#6b7280' },
+  live: { label: 'Receiving', tone: '#22c55e', dot: '#22c55e' },
+  unstable: { label: 'Unstable', tone: '#f59e0b', dot: '#f59e0b' },
+};
+
+function ObsRow({ label, value, mono = true, secret = false, revealed, onReveal, onCopy, copied }) {
+  const shown = secret && !revealed ? '•'.repeat(28) : value;
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5 }}>
+        <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.07em', color: C.textMuted, textTransform: 'uppercase' }}>{label}</span>
+        {secret && (
+          <button type="button" onClick={onReveal} style={{
+            display: 'inline-flex', alignItems: 'center', gap: 4, padding: 0, background: 'transparent',
+            border: 'none', cursor: 'pointer', color: C.purpleLight, fontSize: 11, fontWeight: 800,
+          }}>
+            <Icon name={revealed ? 'visibility_off' : 'visibility'} size={13} />
+            {revealed ? 'Hide' : 'Reveal'}
+          </button>
+        )}
+      </div>
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 8,
+        background: 'linear-gradient(180deg, #150f2e 0%, #0f0d21 100%)',
+        border: `1px solid ${C.fieldEdge}`, borderRadius: 12, padding: '11px 12px',
+      }}>
+        <span className={mono ? 'vg-mono' : ''} style={{
+          flex: 1, minWidth: 0, fontSize: 13, color: C.text,
+          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+          letterSpacing: secret && !revealed ? '0.06em' : 0,
+        }}>{shown}</span>
+        <button type="button" onClick={onCopy} aria-label={`Copy ${label}`} style={{
+          flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 6,
+          padding: '6px 10px', borderRadius: 8, cursor: 'pointer', border: 'none',
+          background: copied ? '#1f4d2e' : '#23233A', color: copied ? '#7ee2a8' : C.text,
+          fontSize: 12, fontWeight: 800,
+        }}>
+          <Icon name={copied ? 'check' : 'content_copy'} size={13} />{copied ? 'Copied' : 'Copy'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export function ObsConnectPanel({ plan = 'free', state = 'waiting', kbps = null, dropped = 0, twitchLinked = false, mirror = false }) {
+  const [revealed, setRevealed] = useState(false);
+  const [copied, setCopied] = useState(null);
+  const p = OBS_PLANS[plan] || OBS_PLANS.free;
+  const s = OBS_STATES[state] || OBS_STATES.waiting;
+  const live = state !== 'waiting';
+  // The real values come back from createStreamSession; these are the shapes it
+  // returns, so a capture of this screen matches what a host actually sees.
+  const server = 'rtmp://rtmp.vergr.app/live';
+  // ⚠ New key ACTUALLY MINTS ONE. A regenerate button that does nothing is the
+  // defect the guard exists for, and it is worse here than elsewhere: a host
+  // presses it because they believe the old key is compromised.
+  const [key, setKey] = useState('vgr_7f3c91ab24e05d68fa1c4b7e92a5d0');
+  const newKey = () => {
+    const hex = Array.from({ length: 26 }, () => '0123456789abcdef'[Math.floor(Math.random() * 16)]).join('');
+    setKey('vgr_' + hex);
+    setRevealed(false);
+    setCopied(null);
+  };
+  const copy = (what, text) => {
+    try { navigator.clipboard?.writeText(text); } catch { /* clipboard blocked */ }
+    setCopied(what);
+    setTimeout(() => setCopied((c) => (c === what ? null : c)), 1400);
+  };
+
+  return (
+    <div style={{
+      background: 'linear-gradient(180deg, #17132f 0%, #131228 55%, #0e0d22 100%)',
+      border: '1px solid #2e2a46', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.055)',
+      borderRadius: 16, padding: 14, marginTop: 12,
+    }}>
+      {/* status first: the question a host has open OBS to answer */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 13 }}>
+        <span style={{ position: 'relative', width: 9, height: 9, flexShrink: 0 }}>
+          <span style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: s.dot }} />
+          {live && <span style={{ position: 'absolute', inset: -4, borderRadius: '50%', border: `1px solid ${s.dot}`, opacity: 0.45 }} />}
+        </span>
+        <span style={{ fontSize: 14, fontWeight: 800, color: s.tone }}>{s.label}</span>
+        {live && kbps != null && (
+          <span className="vg-mono" style={{ fontSize: 12, color: C.textDim }}>
+            {kbps.toLocaleString()} kbps
+          </span>
+        )}
+        {live && dropped > 0 && (
+          <span className="vg-mono" style={{ fontSize: 12, color: '#f59e0b' }}>{dropped} dropped</span>
+        )}
+        <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 800, letterSpacing: '0.06em', color: C.textMuted }}>
+          {p.label.toUpperCase()} · {p.res}
+        </span>
+      </div>
+
+      <ObsRow label="Server" value={server}
+        onCopy={() => copy('server', server)} copied={copied === 'server'} />
+      <ObsRow label="Stream key" value={key} secret revealed={revealed}
+        onReveal={() => setRevealed((v) => !v)}
+        onCopy={() => copy('key', key)} copied={copied === 'key'} />
+
+      <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+        <button type="button" onClick={() => copy('both', `${server}\n${key}`)} style={{
+          flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+          padding: 12, borderRadius: 12, border: 'none', cursor: 'pointer',
+          background: 'linear-gradient(135deg, #a84dff 0%, #9a43f8 38%, #7427f4 100%)',
+          boxShadow: '0 8px 20px rgba(124,58,237,0.42), inset 0 1px 0 rgba(255,255,255,0.3)',
+          color: '#fff', fontSize: 13, fontWeight: 800,
+        }}>
+          <Icon name={copied === 'both' ? 'check' : 'content_copy'} size={15} />
+          {copied === 'both' ? 'Copied both' : 'Copy both'}
+        </button>
+        <button type="button" onClick={newKey} style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+          padding: '12px 14px', borderRadius: 12, cursor: 'pointer',
+          background: 'linear-gradient(180deg, #1c1c3c 0%, #141530 100%)',
+          border: '1px solid #423a5f', color: C.text, fontSize: 13, fontWeight: 800,
+        }}>
+          <Icon name="autorenew" size={15} />New key
+        </button>
+      </div>
+
+      {/* ⚠ WHAT THE SERVER DOES, NOT ADVICE. The watchdog hangs up; say so. */}
+      <div style={{
+        display: 'flex', gap: 12, marginTop: 12, padding: 12, borderRadius: 12,
+        background: 'linear-gradient(180deg, #100e26 0%, #0c0b1f 100%)', border: '1px solid #2e2a46',
+      }}>
+        <Icon name="tune" size={17} style={{ color: C.purpleLight, flexShrink: 0, marginTop: 1 }} />
+        <div style={{ fontSize: 12, color: C.textDim, lineHeight: 1.55 }}>
+          In OBS set the video bitrate to <strong className="vg-mono" style={{ color: '#fff' }}>{p.kbps.toLocaleString()} kbps</strong> or
+          under, and the keyframe interval to <strong style={{ color: '#fff' }}>2s</strong>.
+          Go over the cap for 15 seconds and the server drops the connection.
+        </div>
+      </div>
+
+      {/* Twitch is only offered on the OBS source, because the relay-out happens
+          on the RTMP path. Saying so where the choice is made stops the founder's
+          own question: why is "stream to both" greyed out on browser. */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 12, marginTop: 10, padding: '11px 12px',
+        borderRadius: 12, background: 'linear-gradient(180deg, #17132f 0%, #0e0d22 100%)',
+        border: '1px solid #2e2a46',
+      }}>
+        <Icon name="cast_connected" size={17} style={{ color: twitchLinked ? '#B44FFF' : C.textMuted, flexShrink: 0 }} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: C.text }}>Stream to Twitch as well</div>
+          <div style={{ fontSize: 11, color: C.textMuted, marginTop: 2 }}>
+            {twitchLinked ? 'One OBS feed, both platforms. Chat is bridged both ways.' : 'Connect Twitch in Settings to switch this on.'}
+          </div>
+        </div>
+        {/* a switch is a track with a knob, never a pill */}
+        <span aria-hidden style={{
+          flexShrink: 0, width: 40, height: 23, borderRadius: 999, padding: 2,
+          background: mirror && twitchLinked ? 'linear-gradient(180deg, #9a4cf5, #7526f5)' : '#2A2A38',
+          display: 'flex', justifyContent: mirror && twitchLinked ? 'flex-end' : 'flex-start',
+        }}>
+          <span style={{ width: 19, height: 19, borderRadius: '50%', background: '#fff' }} />
+        </span>
+      </div>
+    </div>
+  );
+}
+
+export function PreviewGoLive({ doc, gated = false, advancedOpen = false, ingest = 'browser', obsState = 'waiting', plan = 'free', twitchLinked = true, mirror = false, onGoLive }) {
   const [advanced, setAdvanced] = useState(advancedOpen);
   const followersToGo = 100 - 42;
 
@@ -112,7 +304,7 @@ export function PreviewGoLive({ doc, gated = false, advancedOpen = false, ingest
 
         {/* camera preview + live controls */}
         <div style={{
-          position: 'relative', width: '100%', aspectRatio: '16 / 9', borderRadius: 14,
+          position: 'relative', width: '100%', aspectRatio: '16 / 9', borderRadius: 16,
           overflow: 'hidden', marginBottom: 16,
           background: 'radial-gradient(120% 80% at 50% 0%, #241a3a 0%, #0c0c16 70%)',
           display: 'grid', placeItems: 'center',
@@ -129,7 +321,7 @@ export function PreviewGoLive({ doc, gated = false, advancedOpen = false, ingest
             ))}
           </div>
           {/* mic meter */}
-          <div style={{ position: 'absolute', right: 12, bottom: 18, width: 90, height: 4, borderRadius: 99, background: '#2A2A38', overflow: 'hidden' }}>
+          <div style={{ position: 'absolute', right: 12, bottom: 18, width: 90, height: 4, borderRadius: 999, background: '#2A2A38', overflow: 'hidden' }}>
             <div style={{ width: '62%', height: '100%', background: C.green }} />
           </div>
         </div>
@@ -138,7 +330,7 @@ export function PreviewGoLive({ doc, gated = false, advancedOpen = false, ingest
         <div style={{ marginBottom: 14 }}>
           <FieldLabel>Title</FieldLabel>
           <input readOnly value={doc?.title || ''} placeholder="Give your stream a title…" style={inputField} />
-          <div style={{ fontSize: 10.5, color: C.textMuted, marginTop: 4, textAlign: 'right' }}>
+          <div style={{ fontSize: 11, color: C.textMuted, marginTop: 4, textAlign: 'right' }}>
             {(doc?.title || '').length}/140
           </div>
         </div>
@@ -147,7 +339,7 @@ export function PreviewGoLive({ doc, gated = false, advancedOpen = false, ingest
         <button type="button" onClick={() => setAdvanced((v) => !v)} style={{
           display: 'flex', alignItems: 'center', gap: 8, width: '100%',
           padding: '10px 12px', marginBottom: advanced ? 16 : 8,
-          background: C.card, borderRadius: 10,
+          background: C.card, borderRadius: 12,
           color: C.textDim, fontSize: 12, fontWeight: 700, cursor: 'pointer',
         }}>
           <Icon name="tune" size={16} />
@@ -162,17 +354,27 @@ export function PreviewGoLive({ doc, gated = false, advancedOpen = false, ingest
             <div style={{ fontSize: 11, fontWeight: 800, color: C.textDim, letterSpacing: '0.08em', margin: '14px 0 10px' }}>
               6 · BROADCAST FROM
             </div>
-            <div style={{ display: 'flex', gap: 10 }}>
+            <div style={{ display: 'flex', gap: 12 }}>
               <IngestCard active={ingest === 'browser'} icon="language" title="This browser"
                 desc="Share your screen or camera straight from here." note="Nothing to install" />
               <IngestCard active={ingest === 'rtmp'} icon="desktop_windows" title="OBS / RTMP"
                 desc="Keep your scenes, overlays and alerts." note="Standard RTMP" />
             </div>
 
+            {/* ⚠ THE PANEL APPEARS WHERE THE SOURCE IS CHOSEN. Picking OBS and then
+                having to hunt for the key is the shipped behaviour, except the shipped
+                one never shows the key at all. */}
+            {ingest === 'rtmp' && (
+              <ObsConnectPanel plan={plan} state={obsState}
+                kbps={obsState === 'unstable' ? 9800 : 5600}
+                dropped={obsState === 'unstable' ? 42 : 0}
+                twitchLinked={twitchLinked} mirror={mirror} />
+            )}
+
             <div style={{ fontSize: 11, fontWeight: 800, color: C.textDim, letterSpacing: '0.08em', margin: '18px 0 10px' }}>
               5 · TIPS &amp; GOAL
             </div>
-            <div style={{ display: 'flex', gap: 10 }}>
+            <div style={{ display: 'flex', gap: 12 }}>
               <div style={{ flex: 1 }}>
                 <FieldLabel>Goal amount</FieldLabel>
                 <input readOnly value={doc?.goal?.targetCoins || 0} style={inputField} />
@@ -258,7 +460,7 @@ export function PreviewStreamEnded({ stats = {}, role = 'broadcaster', host = nu
           <div style={{ height: 3, borderRadius: 2, background: '#2A2A38', overflow: 'hidden' }}>
             <div style={{ width: '34%', height: '100%', background: C.purpleLight }} />
           </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: C.textMuted, marginTop: 6 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: C.textMuted, marginTop: 6 }}>
             <span className="vg-mono">28:41</span><span className="vg-mono">1:24:06</span>
           </div>
         </div>
@@ -268,12 +470,12 @@ export function PreviewStreamEnded({ stats = {}, role = 'broadcaster', host = nu
         <button onClick={onShare} aria-label="Share this replay" style={{
           position: 'absolute', top: 14, right: 12, padding: '8px 14px', borderRadius: 999,
           background: CHIP_ON_VIDEO, border: 'none', color: '#fff',
-          fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5,
+          fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
         }}><Icon name="ios_share" size={15} /> Share</button>
         <button onClick={() => setReplayOpen(false)} style={{
           position: 'absolute', top: 14, left: 12, padding: '8px 14px', borderRadius: 999,
           background: CHIP_ON_VIDEO, border: 'none', color: '#fff',
-          fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5,
+          fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
         }}><Icon name="arrow_back" size={15} /> Back</button>
       </div>
     );
@@ -310,10 +512,10 @@ export function PreviewStreamEnded({ stats = {}, role = 'broadcaster', host = nu
             background: '#14141F', border: 'none',
           }}>
             <Icon name={s.icon} size={20} style={{ color: C.textMuted }} />
-            <p className="vg-mono" style={{ fontWeight: 700, fontSize: 16, margin: '4px 0 2px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
+            <p className="vg-mono" style={{ fontWeight: 700, fontSize: 16, margin: '4px 0 2px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
               {s.coin && <CoinIcon size={15} />}{s.value}
             </p>
-            <p style={{ fontSize: 10, color: C.textMuted, textTransform: 'uppercase', margin: 0 }}>{s.label}</p>
+            <p style={{ fontSize: 11, color: C.textMuted, textTransform: 'uppercase', margin: 0 }}>{s.label}</p>
           </div>
         ))}
       </div>
@@ -378,13 +580,13 @@ export function PreviewStreamEnded({ stats = {}, role = 'broadcaster', host = nu
             NOT built here. This is the viewer choosing, on their own screen. */}
         {viewer && (
           <div style={{ width: '100%', marginTop: 4, marginBottom: 4 }}>
-            <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: '0.08em', color: C.textMuted, marginBottom: 8, textAlign: 'left' }}>UP NEXT</div>
+            <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', color: C.textMuted, marginBottom: 8, textAlign: 'left' }}>UP NEXT</div>
             <button onClick={onDone} style={{
-              display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '10px 12px',
-              borderRadius: 14, border: 'none', background: '#14141F',
+              display: 'flex', alignItems: 'center', gap: 12, width: '100%', padding: '10px 12px',
+              borderRadius: 16, border: 'none', background: '#14141F',
               cursor: 'pointer', textAlign: 'left', color: '#fff',
             }}>
-              <span style={{ width: 44, height: 44, borderRadius: 10, flexShrink: 0, background: 'linear-gradient(135deg,#2a1b4d,#12121e)', display: 'grid', placeItems: 'center' }}>
+              <span style={{ width: 44, height: 44, borderRadius: 12, flexShrink: 0, background: 'linear-gradient(135deg,#2a1b4d,#12121e)', display: 'grid', placeItems: 'center' }}>
                 <Icon name="sensors" size={19} style={{ color: C.purpleLight }} />
               </span>
               <span style={{ flex: 1, minWidth: 0 }}>
@@ -425,7 +627,7 @@ export function PreviewNativeGoLive({ doc, gated = false, onGoLive }) {
   const nInput = {
     width: '100%', boxSizing: 'border-box', background: FIELD,
     border: `1px solid ${C.fieldEdge}`, borderRadius: 12, padding: '13px 15px',
-    color: C.text, fontSize: 15, outline: 'none',
+    color: C.text, fontSize: 16, outline: 'none',
   };
   const Section = ({ children }) => (
     <div style={{ fontSize: 12, fontWeight: 800, color: C.textDim, letterSpacing: '0.06em', margin: '4px 0 2px' }}>{children}</div>
@@ -442,13 +644,13 @@ export function PreviewNativeGoLive({ doc, gated = false, onGoLive }) {
         <span style={{ width: 34, height: 34, borderRadius: '50%', background: FIELD, display: 'grid', placeItems: 'center', color: C.text }}>
           <Icon name="arrow_back_ios_new" size={16} />
         </span>
-        <div className="vg-syne" style={{ flex: 1, fontWeight: 800, fontSize: 18 }}>Go Live</div>
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 34, padding: '0 12px', borderRadius: 99, background: FIELD, color: C.textDim, fontSize: 12, fontWeight: 700 }}>
+        <div className="vg-syne" style={{ flex: 1, fontWeight: 800, fontSize: 20 }}>Go Live</div>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 34, padding: '0 12px', borderRadius: 999, background: FIELD, color: C.textDim, fontSize: 12, fontWeight: 700 }}>
           <Icon name="schedule" size={16} /> Later
         </span>
       </div>
 
-      <div style={{ padding: '14px 14px 150px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <div style={{ padding: '14px 14px 150px', display: 'flex', flexDirection: 'column', gap: 16 }}>
         <div style={{
           position: 'relative', aspectRatio: '16/9', width: '100%', borderRadius: 16,
           overflow: 'hidden',
@@ -466,7 +668,7 @@ export function PreviewNativeGoLive({ doc, gated = false, onGoLive }) {
         <textarea readOnly placeholder="What's this stream about?" style={{ ...nInput, height: 72, resize: 'none', fontFamily: 'inherit' }} />
 
         <Section>Tips &amp; goal</Section>
-        <div style={{ display: 'flex', gap: 10 }}>
+        <div style={{ display: 'flex', gap: 12 }}>
           <input readOnly value={doc?.goal?.targetCoins || 0} style={{ ...nInput, flex: 1 }} />
           <input readOnly value={doc?.goal?.reason || ''} placeholder="New mic fund" style={{ ...nInput, flex: 2 }} />
         </div>
@@ -478,12 +680,12 @@ export function PreviewNativeGoLive({ doc, gated = false, onGoLive }) {
         background: 'linear-gradient(to top, rgba(9,9,15,1) 65%, rgba(9,9,15,0))', zIndex: 40,
       }}>
         {gated && (
-          <div style={{ marginBottom: 10, padding: '11px 13px', borderRadius: 13, background: '#2A1D06', border: 'none' }}>
-            <div style={{ display: 'flex', gap: 9, alignItems: 'center' }}>
+          <div style={{ marginBottom: 10, padding: '11px 13px', borderRadius: 12, background: '#2A1D06', border: 'none' }}>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <Icon name="lock" size={19} style={{ color: '#f59e0b' }} />
               <div style={{ fontSize: 13, fontWeight: 700, color: '#fff' }}>Public live unlocks at {GATE} followers</div>
             </div>
-            <div style={{ fontSize: 11.5, color: C.textDim, marginTop: 5, lineHeight: 1.5 }}>
+            <div style={{ fontSize: 12, color: C.textDim, marginTop: 5, lineHeight: 1.5 }}>
               You have <b style={{ color: '#fff' }}>{followerCount}</b>, {GATE - followerCount} to go. Squad streams to your crew are free anytime.
             </div>
             <div style={{ marginTop: 8, height: 5, borderRadius: 999, background: '#4A3A12', overflow: 'hidden' }}>
@@ -495,9 +697,9 @@ export function PreviewNativeGoLive({ doc, gated = false, onGoLive }) {
             broadcast begins could not be captured — and that is one of the two
             screens this whole tool exists to reach without going live. */}
         <button type="button" onClick={gated ? undefined : onGoLive} style={{
-          width: '100%', padding: 15, borderRadius: 14, border: 'none',
+          width: '100%', padding: 15, borderRadius: 16, border: 'none',
           background: gated ? '#2A2A38' : `linear-gradient(135deg, ${C.purple}, ${C.purpleLight})`,
-          color: gated ? C.textDim : '#fff', fontSize: 15, fontWeight: 800,
+          color: gated ? C.textDim : '#fff', fontSize: 16, fontWeight: 800,
           cursor: gated ? 'not-allowed' : 'pointer',
         }}>{gated ? 'Locked' : 'Go Live'}</button>
       </div>

@@ -51,7 +51,7 @@ const _loadImage = (file) => new Promise((resolve, reject) => {
  * Always returns a `File` (not just a Blob) so downstream code can read
  * `.name` / `.type` consistently.
  */
-export const compressImage = async (file, preset = 'post', rotate = 0) => {
+export const compressImage = async (file, preset = 'post', rotate = 0, crop = null) => {
   const cfg = PRESETS[preset] || PRESETS.post;
   const img = await _loadImage(file);
   // Rotation is baked into THIS draw rather than done as its own pass. A
@@ -62,11 +62,22 @@ export const compressImage = async (file, preset = 'post', rotate = 0) => {
 
   let sx = 0, sy = 0, sw = img.width, sh = img.height;
   if (cfg.square) {
-    const side = Math.min(img.width, img.height);
-    sx = Math.floor((img.width - side) / 2);
-    sy = Math.floor((img.height - side) / 2);
+    // ⚠⚠ THE USER'S SQUARE IF THEY DREW ONE, THE CENTRE ONLY AS A FALLBACK.
+    // Founder, 2026-09-06: "if cropping on any media is [required] then we
+    // shouldnt do it for the user because thats not what other platforms do, we
+    // should allow them to move lines so that will see what will be visible and
+    // what wont be visible." A centre crop silently threw away the top of anyone
+    // whose photo was portrait, and they only found out afterwards.
+    //
+    // `crop` is in SOURCE pixels and is clamped here rather than trusted: the
+    // caller measures a scaled preview, so a rounding error must not read
+    // outside the image and leave a transparent edge on somebody's avatar.
+    const maxSide = Math.min(img.width, img.height);
+    const side = crop ? Math.round(Math.min(maxSide, Math.max(16, crop.size))) : maxSide;
     sw = side;
     sh = side;
+    sx = crop ? Math.round(Math.min(img.width - side, Math.max(0, crop.sx))) : Math.floor((img.width - side) / 2);
+    sy = crop ? Math.round(Math.min(img.height - side, Math.max(0, crop.sy))) : Math.floor((img.height - side) / 2);
   }
 
   // Fit inside (maxW, maxH) while preserving aspect ratio
@@ -433,7 +444,7 @@ export const compressMedia = async (file, tier = 'free', preset = 'chat', opts =
   }
 
   if (file.type.startsWith('image/')) {
-    return compressImage(file, preset, opts.rotate);
+    return compressImage(file, preset, opts.rotate, opts.crop);
   }
 
   // Videos: pass through, but enforce the cap above. Future: add ffmpeg.wasm

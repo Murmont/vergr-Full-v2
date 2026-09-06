@@ -18,9 +18,11 @@
 //   TipModal                      MobileLiveViewer.jsx:1518
 //   UserQuickSheet                components/streams/UserQuickSheet.jsx
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { EmptyChat } from './previewStates';
 import { CoinIcon } from '../../../components/CoinIcon';
+// .vg-beam-violet and .vg-grain live here: the founder's own material system.
+import '../../../styles/surface.css';
 // Solid surface values — see the note on `S` in previewStates.jsx.
 import { S } from './previewStates';
 // ⚠⚠ THE REAL COMPONENTS, IMPORTED. `UserName` appears in 97 files across the
@@ -207,9 +209,46 @@ function SceneFallback({ scene = 'gameplay' }) {
 }
 
 
-export function Scene({ wide = false, scene = 'gameplay', videoUrl = null }) {
+// ⚠⚠ `frame` IS THE DUAL-FORMAT RECT AND NULL MEANS DO NOT CROP. The founder's
+// standing rule is never crop the broadcaster; he granted one exception on
+// 2026-09-06 — a crop the HOST chose and previewed. So this only reframes when a
+// frame exists, and every existing caller passes nothing and is untouched.
+//
+// The maths is one line because a 16:9 source in a 9:16 box is already the
+// `cover` case: cover scales to fill the height and crops the width, which IS
+// the 0.3164-of-the-width window at zoom 1. `objectPosition` pans it, `scale()`
+// zooms further in. No canvas, no second encode, no transcode.
+// A 16:9 source drawn at a 9:16 box's height is (16/9)^2 of that box's WIDTH.
+const FRAME_WIDE_PCT = 316.0494;
+// A 9:16 window at a 16:9 frame's full height, as a fraction of its width:
+// (9/16) / (16/9). The lines cannot be dragged wider than this because there is
+// no more source behind them.
+const FRAME_WINDOW = 0.31640625;
+
+export function Scene({ wide = false, scene = 'gameplay', videoUrl = null, frame = null }) {
   const [hasArt, setHasArt] = useState(true);
   const src = wide ? '/brand/live/preview-scene-wide.webp' : '/brand/live/preview-scene.webp';
+  // ⚠⚠ THREE STATES, AND THE MIDDLE ONE IS WHY. `frame` is:
+  //   null / undefined  -> untouched. Every pre-existing caller, unchanged.
+  //   'letterbox'       -> `contain`. Bars, nothing cut.
+  //   { x, zoom }       -> the host's crop.
+  //
+  // The first version had only two states and the OFF state was a lie: Scene's
+  // base style is ALREADY `objectFit: cover`, so a card reading "Letterbox /
+  // Nothing is cut" cover-cropped exactly like the framed one. Measured on the
+  // deployed preview — both states returned `cover / 50% 50%` and differed only
+  // by a no-op `scale(1)`. A toggle whose two halves are pixel-identical is
+  // worse than no toggle, because it teaches the host the wrong thing about what
+  // their viewers see.
+  const framed = frame === 'letterbox'
+    ? { objectFit: 'contain' }
+    : frame ? {
+      objectFit: 'cover',
+      objectPosition: `${Math.round((frame.x ?? 0.5) * 100)}% 50%`,
+      transform: `scale(${frame.zoom || 1})`,
+      transformOrigin: `${Math.round((frame.x ?? 0.5) * 100)}% 50%`,
+    } : null;
+  const rect = frame && frame !== 'letterbox' ? frame : null;
   return (
     <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', background: '#0a0a14' }}>
       {/* ⚠ AN UPLOADED VIDEO WINS. autoPlay+muted+playsInline is what lets it
@@ -218,13 +257,34 @@ export function Scene({ wide = false, scene = 'gameplay', videoUrl = null }) {
       {videoUrl ? (
         <video
           src={videoUrl} autoPlay muted loop playsInline
-          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
+          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', ...framed }}
         />
       ) : hasArt && (
         <img src={src} alt="" onError={() => setHasArt(false)}
-          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', ...framed }} />
       )}
-      {!videoUrl && !hasArt && <SceneFallback scene={scene} />}
+      {/* ⚠⚠ THE FALLBACK NEEDS FRAMING TOO, AND IT IS THE PATH THAT ACTUALLY
+          RUNS. `/brand/live/preview-scene.webp` DOES NOT EXIST — measured:
+          it answers 200 with `text/html`, which is the SPA rewrite serving
+          index.html, so `onError` fires and every scene in the preview is this
+          drawn fallback. Applying the crop only to <img>/<video> made the whole
+          feature invisible. [[reference-spa-rewrite-masks-404]]
+          ⚠ `objectFit` cannot help here because nothing is an image. A 16:9
+          source at the container's height is (16/9)^2 = 3.1605x the container's
+          WIDTH, so the fallback is drawn at that width and panned by x. At
+          x=0.5 the offset is -108%, which centres it; at 0 and 1 it lands
+          exactly on each edge. */}
+      {!videoUrl && !hasArt && (rect ? (
+        <div style={{
+          position: 'absolute', top: 0, bottom: 0,
+          width: `${FRAME_WIDE_PCT}%`,
+          left: `${-((rect.x ?? 0.5) * (FRAME_WIDE_PCT - 100))}%`,
+          transform: `scale(${rect.zoom || 1})`,
+          transformOrigin: `${Math.round((rect.x ?? 0.5) * 100)}% 50%`,
+        }}>
+          <SceneFallback scene={scene} />
+        </div>
+      ) : <SceneFallback scene={scene} />)}
       <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(0,0,0,0.42) 0%, transparent 26%, transparent 52%, rgba(0,0,0,0.62) 100%)' }} />
     </div>
   );
@@ -295,8 +355,15 @@ function ChatRow({ m, overlay, avatars = {} }) {
 // percentage fell back to content height, so the composer ended up ~1,100px
 // below the visible area and the panel looked like it had no way to type in it.
 // `position: absolute; inset: 0` against a positioned parent cannot fall back.
-export function PreviewChat({ messages = [], layout = 'overlay', height, fill = false, onOpenProfile, avatars = {} }) {
+export function PreviewChat({ messages = [], layout = 'overlay', height, fill = false, onOpenProfile, avatars = {}, scrollRef }) {
   const ref = useRef(null);
+  // The tip feed is placed against the top of the visible messages, so the
+  // caller needs the scroller itself. Accepts an object ref or a callback.
+  const attach = useCallback((el) => {
+    ref.current = el;
+    if (typeof scrollRef === 'function') scrollRef(el);
+    else if (scrollRef) scrollRef.current = el;
+  }, [scrollRef]);
   const overlay = layout === 'overlay';
   useEffect(() => {
     const el = ref.current;
@@ -304,7 +371,7 @@ export function PreviewChat({ messages = [], layout = 'overlay', height, fill = 
   }, [messages]);
   return (
     <div
-      ref={ref}
+      ref={attach}
       onClick={(e) => {
         // Tapping a name or an avatar opens the person sheet.
         // ⚠ `closest`, NOT `e.target.dataset`. The avatar is an <img> inside the
@@ -352,14 +419,14 @@ export function PreviewChatPanel({ messages, onOpenProfile, width = 320 }) {
     <div style={{ width, flexShrink: 0, display: 'flex', flexDirection: 'column', background: C.card }}>
       <div style={{ padding: '11px 14px', ...ruleBottom, display: 'flex', alignItems: 'center', gap: 8 }}>
         <span style={{ width: 7, height: 7, borderRadius: '50%', background: C.green }} />
-        <span style={{ fontSize: 12.5, fontWeight: 800, color: C.text }}>Live chat</span>
+        <span style={{ fontSize: 13, fontWeight: 800, color: C.text }}>Live chat</span>
         <span style={{ marginLeft: 'auto', color: C.textMuted, display: 'grid' }}><Icon name="settings" size={15} /></span>
       </div>
       <div style={{ position: 'relative', flex: 1, minHeight: 0, padding: '8px 6px' }}>
         <PreviewChat fill messages={messages} layout="side" onOpenProfile={onOpenProfile} />
       </div>
       <div style={{ padding: 10, ...ruleTop }}>
-        <div style={{ padding: '10px 13px', borderRadius: 10, background: S.row, fontSize: 12.5, color: C.textMuted }}>
+        <div style={{ padding: '10px 13px', borderRadius: 12, background: S.row, fontSize: 13, color: C.textMuted }}>
           Say something...
         </div>
       </div>
@@ -372,11 +439,299 @@ export function PreviewChatPanel({ messages, onOpenProfile, width = 320 }) {
 // retyped: 50c/1.5x/15min, 150c/2.5x/30min, 500c/4x/60min. A preview that shows
 // a price the product does not charge is a screenshot that lies, and these go to
 // the Play listing.
+// ⚠⚠ THE PALETTE AND THE GEOMETRY HERE WERE SAMPLED OUT OF THE FOUNDER'S OWN
+// MOCKUPS, NOT CHOSEN. "ChatGPT Image Sep 5, 2026, 03_54_48/03_55_01 PM.png",
+// read with sharp. Founder, 2026-09-05: "I want it pixel by pixel the same, you
+// do not have creative freedom with this."
+//
+// ⚠ AND THE SURFACES ARE RAMPS, NOT FLAT FILLS, because the mockup's are. A
+// vertical slice through the note card reads lum 22 at its top and 14 at its
+// foot; the primary button runs #9a43f8 top-left to #7427f4 bottom-right with a
+// violet spill BELOW it (lum 71 -> 44 -> 32 in the three rows under its edge).
+// Painting those as one flat colour is what made the first pass read dull.
+const SHEET = {
+  modal: '#100f1f',
+  modalEdge: '#422b6b',
+  // measured ramp, top-lit
+  card: 'linear-gradient(180deg, #17132f 0%, #131228 55%, #0e0d22 100%)',
+  cardFlat: '#131228',
+  cardEdge: '#2e2a46',
+  cardLip: 'inset 0 1px 0 rgba(255,255,255,0.055)',
+  well: 'linear-gradient(180deg, #100e26 0%, #0c0b1f 100%)',
+  field: 'linear-gradient(180deg, #150f2e 0%, #0f0d21 100%)',
+  fieldEdge: '#8f45de',
+  chip: 'linear-gradient(180deg, #23203c 0%, #1a1830 100%)',
+  chipEdge: '#302b49',
+  sel: 'linear-gradient(180deg, #7d33e2 0%, #6a2bcb 100%)',
+  selEdge: '#a259f0',
+  tabSel: 'linear-gradient(180deg, #3b1d69 0%, #2c1550 100%)',
+  tabSelEdge: '#7c3aed',
+  rowSel: 'linear-gradient(180deg, #271552 0%, #1a1038 100%)',
+  tileOff: 'linear-gradient(135deg, #4f208a 0%, #191030 100%)',
+  tileOn: 'linear-gradient(135deg, #9a4cf5 0%, #5a20a8 100%)',
+  cancel: 'linear-gradient(180deg, #1c1c3c 0%, #141530 100%)',
+  cancelEdge: '#423a5f',
+  cta: 'linear-gradient(135deg, #a84dff 0%, #9a43f8 38%, #7427f4 100%)',
+  ctaGlow: '0 10px 26px rgba(124,58,237,0.5), inset 0 1px 0 rgba(255,255,255,0.34)',
+  gold: '#F5C842',
+  text: '#f2f0f8',
+  dim: '#9c96b4',
+  muted: '#7a7490',
+};
+
 const BOOST_TIERS = [
-  { id: 'stream_boost', name: 'Stream Boost', price: 50, detail: '1.5x · 15 min' },
-  { id: 'stream_super', name: 'Super Boost', price: 150, detail: '2.5x · 30 min' },
-  { id: 'stream_mega', name: 'Mega Boost', price: 500, detail: '4x · 60 min' },
+  { id: 'stream_boost', name: 'Stream Boost', price: 50, detail: '1.5x · 15 min', tag: 'Great for a quick boost' },
+  { id: 'stream_super', name: 'Super Boost', price: 150, detail: '2.5x · 30 min', tag: 'Most popular' },
+  { id: 'stream_mega', name: 'Mega Boost', price: 500, detail: '4x · 60 min', tag: 'Maximum impact' },
 ];
+
+// ⚠⚠ ONE SHELL FOR EVERY SHEET. Seventeen sheets each hand-rolled their own
+// scrim and card, so the tip sheet got the founder's treatment and the other
+// sixteen stayed flat: square-cornered slabs on #1A1A2A with no edge, no ramp
+// and no light. Founder, 2026-09-05: "use the same type of design for the other
+// sheets... it looks like shit and not on par with platforms like tiktok".
+//
+// The edge light has to live on a NON-SCROLLING wrapper, which is why this owns
+// the scroller rather than leaving it to the caller: an inset:0 ::after inside
+// an overflow:auto box scrolls away with the content.
+//
+// ⚠⚠ IT DOCKS TO THE BOTTOM, AND THAT IS THE DEFAULT. I shipped these centred
+// because the tip/boost mockup is a centred modal, and then applied that to the
+// profile card and every utility sheet. It is not what the platforms this is
+// being measured against do: a profile card, a report form and a confirm all
+// slide up from the bottom edge on TikTok, Instagram and YouTube, where the
+// thumb is. Founder, 2026-09-05: "on so now tiktok has the sheet in the middle
+// of the screen does it?".
+// The tip/boost sheet stays centred because that IS the drawn mockup; it owns
+// its own shell. `dock={false}` is the exception here, never the default.
+// ⚠ THE NUMBERS BELOW ARE FROM SPECS, NOT FROM ME:
+//   • 40% black scrim and a 28px top corner radius, from the Material 3 bottom
+//     sheet spec. The scrim was 72%, which hid the broadcast the sheet is
+//     supposed to sit in front of; a lighter scrim is the whole reason NN/g
+//     prefers this pattern to a dialog.
+//   • 4x32 grabber, centred, from the same spec.
+//   • Two detents, medium at half height and large at full, from Apple's HIG:
+//     "medium is about half of the fully expanded height... consider supporting
+//     the medium detent to allow progressive disclosure". Material's own
+//     half-expanded ratio default is the same 0.5.
+//   • "Include a grabber in a resizable sheet... a grabber also works with
+//     VoiceOver so people can resize the sheet without seeing the screen"
+//     (Apple HIG). So it drags, and tapping it cycles the detents.
+//   • Nielsen Norman: "provide a clear Close button (usually styled as an X or
+//     the word Close)" and never rely on the gesture alone. Every sheet has one.
+//
+// ⚠ DETENTS ARE OFFERED ONLY WHEN THERE IS SOMETHING TO EXPAND. Apple: "you
+// might not want to support the medium detent if a sheet's content is more
+// useful when it displays at full height." A confirm is 180px tall; opening it
+// at half height with a fold in it would be theatre. The natural content height
+// is measured and a short sheet stays content-sized.
+// ⚠ `openAt` EXISTS FOR SHEETS WHOSE CONTENT *IS* A CHOICE. Apple's own line,
+// already quoted above: "you might not want to support the medium detent if a
+// sheet's content is more useful when it displays at full height." A dial that
+// opens at half height hides both the options and which one is currently set,
+// so the host has to scroll to find out what their own setting is. Measured on
+// the auto-moderation sheet: 1 of 4 options visible, and not the selected one.
+// Still draggable down to medium; this only decides where it OPENS.
+function SheetShell({ children, onClose, dock = true, maxWidth = 420, pad = 17, scroll = true, openAt = 'medium' }) {
+  const [shellEl, setShellEl] = useState(null);
+  const [contentEl, setContentEl] = useState(null);
+  const [medium, setMedium] = useState(0);
+  const [detent, setDetent] = useState(null);   // null = content-sized
+  const [dragY, setDragY] = useState(0);
+
+  // ⚠⚠ THE MEASUREMENT CONTROLS THE THING IT MEASURES, SO IT IS ONLY VALID
+  // ONCE. `scroll={false}` sheets hand scrolling to an inner child, so the
+  // moment a detent constrains the shell, `contentEl.scrollHeight` collapses to
+  // the constrained height and reports the content as short enough to fit. The
+  // naive read then dropped the detent, the shell sprang back to `auto`, the
+  // content measured tall again, and it took the detent back. Measured live on
+  // the Shield sheet: 426px (scrollHeight 398) <-> auto/583px (scrollHeight 555)
+  // ON EVERY FRAME. A 50ms sampling probe read a flat 426 because the flip is
+  // per-frame and aliased with the interval; the two-state capture is what
+  // showed it. So: never re-derive the natural height while constrained, and
+  // require a real margin before taking a detent at all.
+  const detentRef = useRef(null);
+  const applyDetent = useCallback((v) => { detentRef.current = v; setDetent(v); }, []);
+
+  useLayoutEffect(() => {
+    if (!dock || !shellEl || !contentEl) return undefined;
+    const measure = () => {
+      const avail = shellEl.parentElement?.getBoundingClientRect().height || 0;
+      if (!avail) return;
+      const half = Math.round(avail * 0.5);
+      setMedium(half);
+      if (detentRef.current) return;   // constrained: this box's height is ours, not the content's
+      const natural = contentEl.scrollHeight + 26;      // + the grabber strip
+      // Dead band of one grabber strip. Within that, the sheet effectively fits
+      // and a detent would only put a fold in it.
+      if (natural > half + 26) applyDetent(openAt);
+    };
+    measure();
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const ro = new ResizeObserver(measure);
+    ro.observe(contentEl);
+    ro.observe(shellEl);
+    return () => ro.disconnect();
+  }, [dock, shellEl, contentEl, applyDetent, openAt]);
+
+  const onGrab = (e) => {
+    const startY = e.clientY;
+    const el = e.currentTarget;
+    el.setPointerCapture?.(e.pointerId);
+    const move = (ev) => setDragY(ev.clientY - startY);
+    const up = (ev) => {
+      el.removeEventListener('pointermove', move);
+      el.removeEventListener('pointerup', up);
+      el.removeEventListener('pointercancel', up);
+      const dy = ev.clientY - startY;
+      setDragY(0);
+      // A tap with no travel cycles the detents, which is what the HIG says a
+      // grabber does. Otherwise: up expands, down collapses then dismisses.
+      if (Math.abs(dy) < 6) {
+        if (detent) applyDetent(detent === 'medium' ? 'large' : 'medium');
+        return;
+      }
+      if (dy < -40 && detent === 'medium') { applyDetent('large'); return; }
+      if (dy > 90) {
+        if (detent === 'large') applyDetent('medium'); else onClose?.();
+      }
+    };
+    el.addEventListener('pointermove', move);
+    el.addEventListener('pointerup', up);
+    el.addEventListener('pointercancel', up);
+  };
+
+  const height = !dock || !detent ? 'auto' : (detent === 'large' ? '92%' : medium || 'auto');
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 200,
+        display: 'flex', justifyContent: 'center',
+        alignItems: dock ? 'flex-end' : 'center', padding: dock ? 0 : 10,
+      }}
+    >
+      <div
+        ref={setShellEl}
+        className="vg-beam vg-beam-violet vg-grain"
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          position: 'relative', isolation: 'isolate',
+          width: '100%', maxWidth: dock ? 480 : maxWidth,
+          maxHeight: dock ? '92%' : '100%',
+          height,
+          background: SHEET.modal,
+          border: `1px solid ${SHEET.modalEdge}`,
+          borderRadius: dock ? '28px 28px 0 0' : 22,
+          boxShadow: '0 26px 70px rgba(0,0,0,0.72), 0 0 46px rgba(124,58,237,0.22)',
+          overflow: 'hidden', display: 'flex', flexDirection: 'column', color: SHEET.text,
+          transform: dragY > 0 ? `translateY(${dragY}px)` : 'none',
+          transition: dragY ? 'none' : 'transform .22s cubic-bezier(.22,1,.36,1), height .28s cubic-bezier(.22,1,.36,1)',
+        }}
+      >
+        {dock && (
+          <div
+            onPointerDown={onGrab}
+            aria-hidden
+            style={{ flexShrink: 0, height: 26, display: 'grid', placeItems: 'center', cursor: 'grab', touchAction: 'none' }}
+          >
+            <span style={{ width: 32, height: 4, borderRadius: 999, background: detent ? SHEET.dim : SHEET.cardEdge }} />
+          </div>
+        )}
+        {/* ⚠ scroll={false} hands the scrolling to the caller, for a sheet that
+            pins its header and its CTA and lets only the middle move. */}
+        <div ref={setContentEl} style={{ flex: 1, minHeight: 0, overflowY: scroll ? 'auto' : 'hidden', padding: pad, paddingTop: dock ? 4 : pad, display: 'flex', flexDirection: 'column' }}>
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// The title block every sheet opens with, and the close control that used to be
+// missing from half of them.
+function SheetHead({ title, sub, onClose }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 14, flexShrink: 0 }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 16, fontWeight: 900, letterSpacing: '-0.01em' }}>{title}</div>
+        {sub && <div style={{ fontSize: 13, color: SHEET.dim, marginTop: 3, lineHeight: 1.45 }}>{sub}</div>}
+      </div>
+      {onClose && (
+        <button type="button" aria-label="Close" onClick={onClose} style={{ flexShrink: 0, width: 34, height: 34, borderRadius: '50%', background: SHEET.card, border: `1px solid ${SHEET.cardEdge}`, boxShadow: SHEET.cardLip, color: SHEET.text, cursor: 'pointer', display: 'grid', placeItems: 'center' }}>
+          <Icon name="close" size={17} />
+        </button>
+      )}
+    </div>
+  );
+}
+
+// A raised panel on a sheet: the ramp, the edge and the lit lip in one place so
+// no sheet has to remember all three.
+const sheetCard = (extra) => ({
+  background: SHEET.card, border: `1px solid ${SHEET.cardEdge}`,
+  boxShadow: SHEET.cardLip, borderRadius: 16, ...extra,
+});
+
+const sheetCta = (extra) => ({
+  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+  padding: 15, borderRadius: 16, border: 'none', background: SHEET.cta,
+  boxShadow: SHEET.ctaGlow, color: '#fff', fontSize: 14, fontWeight: 800,
+  cursor: 'pointer', ...extra,
+});
+
+const sheetGhost = (extra) => ({
+  padding: 15, borderRadius: 16, background: SHEET.cancel,
+  border: `1px solid ${SHEET.cancelEdge}`, boxShadow: SHEET.cardLip,
+  color: SHEET.text, fontSize: 14, fontWeight: 800, cursor: 'pointer', ...extra,
+});
+
+// The portrait treatment from the tip sheet, so one definition decides how a
+// ring hugs an avatar anywhere on a sheet.
+// ⚠ IT RESOLVES THE FACE ITSELF. Taking a resolved `src` meant every call site
+// had to remember faceOf(), which is the exact hop the uploads context exists to
+// remove — and the guard says so.
+function SheetAvatar({ person, size = 62, ring = true }) {
+  const faceOf = useFaces();
+  return (
+    <div style={{ position: 'relative', flexShrink: 0, width: size, height: size }}>
+      {ring && (
+        <span aria-hidden style={{
+          position: 'absolute', inset: -2, borderRadius: '50%', padding: 2,
+          background: 'conic-gradient(from 210deg, #c07bff, #7526f5 35%, #3d1a80 55%, #7526f5 78%, #c07bff)',
+          WebkitMask: 'linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)',
+          mask: 'linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)',
+          WebkitMaskComposite: 'xor', maskComposite: 'exclude',
+          boxShadow: '0 0 22px rgba(124,58,237,0.6)',
+        }} />
+      )}
+      <UserAvatar src={faceOf(person)} size={size} showLiftRing={false} />
+    </div>
+  );
+}
+
+function compactCount(n) {
+  const v = Number(n) || 0;
+  if (v >= 1_000_000) return (v / 1_000_000).toFixed(v >= 10_000_000 ? 0 : 1).replace(/\.0$/, '') + 'M';
+  if (v >= 1_000) return (v / 1_000).toFixed(v >= 10_000 ? 0 : 1).replace(/\.0$/, '') + 'K';
+  return String(v);
+}
+
+function SheetBalanceRow({ balance, short, onTopUp }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 14px', borderRadius: 16, background: SHEET.card, border: `1px solid ${SHEET.cardEdge}`, boxShadow: SHEET.cardLip, marginBottom: 14 }}>
+      <CoinIcon size={20} />
+      <span style={{ fontSize: 13, color: SHEET.dim }}>Your balance</span>
+      <span className="vg-mono" style={{ fontSize: 14, fontWeight: 800, color: short ? C.amber : SHEET.text }}>{balance.toLocaleString()}c</span>
+      {short > 0 && <span style={{ fontSize: 12, fontWeight: 700, color: C.amber }}>{short.toLocaleString()}c short</span>}
+      <button type="button" onClick={() => onTopUp?.(Math.max(short, 1))} style={{
+        marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 2, padding: 0,
+        background: 'transparent', border: 'none', cursor: 'pointer',
+        fontSize: 13, fontWeight: 800, color: C.purpleLight,
+      }}>Top up<Icon name="chevron_right" size={15} /></button>
+    </div>
+  );
+}
 
 function TipSheet({ host, onClose, onSend, onBoost, balance = 240, onTopUp }) {
   const faceOf = useFaces();
@@ -385,105 +740,277 @@ function TipSheet({ host, onClose, onSend, onBoost, balance = 240, onTopUp }) {
   const [boost, setBoost] = useState('stream_super');
   const [message, setMessage] = useState('');
   const PRESETS = [10, 50, 100, 500, 1000];
+  const MSG_MAX = 50;
+  const boosting = tab === 'boost';
+  const hostName = host?.displayName || 'the host';
   // ⚠⚠ A SHORTFALL MUST NEVER DISABLE THE BUTTON. Founder, on exactly this:
   // "we cant create a design that prevents the user from checking out if they
   // are already there and willing to pay." So the CTA changes what it does,
   // it does not stop working — and it tops up IN PLACE, because leaving a
   // live stream to buy coins means missing the moment you were paying for.
-  const cost = tab === 'boost' ? (BOOST_TIERS.find((b) => b.id === boost)?.price || 0) : amount;
+  const cost = boosting ? (BOOST_TIERS.find((b) => b.id === boost)?.price || 0) : amount;
   const short = Math.max(0, cost - balance);
+  const tabBtn = (id) => ({
+    position: 'relative', zIndex: 1,
+    flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+    padding: '13px 8px', borderRadius: 12, cursor: 'pointer',
+    fontSize: 14, fontWeight: 800, background: 'transparent', border: 'none',
+    color: tab === id ? SHEET.text : SHEET.dim,
+    transition: 'color .22s ease',
+  });
+  // ⚠⚠ THE TWO TABS ARE DIFFERENT HEIGHTS AND ALWAYS WILL BE: three tier rows
+  // and an explainer against five chips and two fields. A centred modal
+  // RE-CENTRES when its content changes height, so switching tab threw the
+  // whole sheet 64px up the screen. Removing the info box narrowed the gap and
+  // did not close it. Founder, 2026-09-05: "it is making the whole sheet resize
+  // when clicked".
+  //
+  // So the height is measured and TRANSITIONED. The modal then grows into the
+  // new tab over the same 300ms the knob takes, and re-centres continuously
+  // instead of teleporting.
+  //
+  // ⚠ overflow: clip WITH A MARGIN, not hidden. The selected chip and the CTA
+  // carry glows that reach ~24px outside their own boxes; a plain hidden would
+  // slice them off at the panel edge for the life of the sheet, not just during
+  // the animation.
+  const [panelEl, setPanelEl] = useState(null);
+  const [panelH, setPanelH] = useState(null);
+  useLayoutEffect(() => {
+    if (!panelEl) return undefined;
+    const read = () => setPanelH(panelEl.getBoundingClientRect().height);
+    read();
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const ro = new ResizeObserver(read);
+    ro.observe(panelEl);
+    return () => ro.disconnect();
+  }, [panelEl, tab]);
+
+  const cta = {
+    flex: 1.7, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+    padding: 15, borderRadius: 16, border: 'none', background: SHEET.cta,
+    boxShadow: SHEET.ctaGlow, color: '#fff', fontSize: 14, fontWeight: 800, cursor: 'pointer',
+  };
   return (
-    <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 200, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: 480, background: C.card, boxShadow: C.sheetShadow, borderTopLeftRadius: 18, borderTopRightRadius: 18, padding: 20, color: C.text }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-          <UserAvatar src={faceOf(host)} size="md" />
-          <div>
-            <div style={{ fontSize: 12, color: C.textDim }}>{tab === 'boost' ? 'Boost' : 'Tip'}</div>
-            <div style={{ fontSize: 15, fontWeight: 800 }}>{host?.displayName}</div>
+    // ⚠ A CENTRED MODAL WITH FOUR ROUNDED CORNERS, NOT A BOTTOM SHEET. That is
+    // how both mockups are drawn and it was the largest single miss.
+    <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 10 }}>
+      {/* ⚠⚠ THE EDGE IS ALIVE. `.vg-beam-violet` is the founder's own approved
+          treatment (surface.css): a conic gradient rotated through a registered
+          @property and masked to a 1px ring, so light travels the perimeter
+          instead of sitting there as a dead hairline. It has to live on a
+          NON-SCROLLING wrapper — an inset:0 ::after inside the scroller would
+          scroll away with the content. */}
+      <div
+        className="vg-beam vg-beam-violet vg-grain"
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          position: 'relative', isolation: 'isolate',
+          width: '100%', maxWidth: 420, maxHeight: '100%',
+          background: SHEET.modal, border: `1px solid ${SHEET.modalEdge}`, borderRadius: 22,
+          boxShadow: '0 26px 70px rgba(0,0,0,0.72), 0 0 46px rgba(124,58,237,0.22)',
+          overflow: 'hidden', display: 'flex', flexDirection: 'column', color: SHEET.text,
+        }}
+      >
+      <div style={{ overflowY: 'auto', padding: 17 }}>
+
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 15 }}>
+          {/* ⚠⚠ THE RING GOES AROUND THE PORTRAIT, IT IS NOT A COLLAR THE
+              PORTRAIT SITS IN. Twice I built it as padding on a wrapper, so the
+              "ring" was a thick band and the photo was whatever was left in the
+              middle; when that read wrong I widened the band, which is the same
+              mistake again. Founder, 2026-09-05: "the ring needs to be around
+              the avatar".
+              ⚠ AND THERE IS NO LIVE BADGE. This sheet opens from inside the
+              broadcast, so a LIVE chip tells the viewer where they already are.
+              Founder, same day: "the user already knows that the broadcaster is
+              live considering they are on the fucking live".
+              The ring is now a SEPARATE element sitting OUTSIDE the avatar's own
+              box (inset -5), 2px thick, cut hollow by the same xor mask
+              surface.css uses for .vg-beam. The portrait keeps its full 62px and
+              the gap between them is the page showing through, which is exactly
+              the Instagram / TikTok construction. */}
+          <div style={{ position: 'relative', flexShrink: 0, width: 62, height: 62, marginRight: 4 }}>
+            <span aria-hidden style={{
+              // ⚠ inset MUST EQUAL padding, or there is a gap. At inset -5 with a
+              // 2px band the ring orbited 3px clear of the portrait, which is the
+              // gap reported three times. inset -2 / padding 2 puts the band
+              // immediately outside the photo, touching it: ring outer 66,
+              // hole 62, avatar 62.
+              position: 'absolute', inset: -2, borderRadius: '50%', padding: 2,
+              background: 'conic-gradient(from 210deg, #c07bff, #7526f5 35%, #3d1a80 55%, #7526f5 78%, #c07bff)',
+              WebkitMask: 'linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)',
+              mask: 'linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)',
+              WebkitMaskComposite: 'xor', maskComposite: 'exclude',
+              boxShadow: '0 0 22px rgba(124,58,237,0.6)',
+            }} />
+            <UserAvatar src={faceOf(host)} size={62} showLiftRing={false} />
           </div>
-        </div>
-        <div style={{ display: 'flex', gap: 6, marginBottom: 14 }}>
-          {[['tip', 'Tip'], ['boost', 'Boost']].map(([id, label]) => (
-            <button key={id} type="button" onClick={() => setTab(id)} style={{
-              flex: 1, padding: '8px 10px', borderRadius: 9, cursor: 'pointer', border: 'none',
-              fontSize: 13, fontWeight: 800,
-              background: tab === id ? C.purple : S.row,
-              color: tab === id ? '#fff' : C.textDim,
-              boxShadow: 'none',
-            }}>{label}</button>
-          ))}
-        </div>
-        {tab === 'boost' ? (
-          // ⚠ THE THREE TIERS WERE PLAIN DIVS. You could read them and not pick
-          // one, and there was no confirm button on this tab at all — so the
-          // boost purchase was a price list, not a flow. Tiers, durations and
-          // multipliers are the shipped ones from src/utils/boosts.js.
-          <div style={{ display: 'grid', gap: 10, marginBottom: 14 }}>
-            {BOOST_TIERS.map(({ id, name, price, detail }) => (
-              <button key={id} type="button" onClick={() => setBoost(id)} style={{
-                display: 'flex', alignItems: 'center', gap: 12, padding: 13, borderRadius: 12, cursor: 'pointer',
-                textAlign: 'left', color: C.text,
-                background: boost === id ? C.purpleSoft : S.row, border: 'none',
-                boxShadow: boost === id ? C.selBar : 'none',
-              }}>
-                <span style={{ width: 34, height: 34, borderRadius: 10, background: C.purpleSoft, color: C.purpleLight, display: 'grid', placeItems: 'center' }}><Icon name="rocket_launch" size={17} /></span>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13.5, fontWeight: 800 }}>{name}</div>
-                  <div style={{ fontSize: 11.5, color: C.textDim }}>{detail}</div>
-                </div>
-                <span style={{ fontSize: 13, fontWeight: 800, color: C.purpleLight }}>{price}c</span>
-              </button>
-            ))}
-          </div>
-        ) : (
-          <>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
-              {PRESETS.map((p) => (
-                <button key={p} onClick={() => setAmount(p)} style={{
-                  padding: '8px 14px', borderRadius: 10, cursor: 'pointer', fontSize: 13, fontWeight: 700,
-                  background: amount === p ? C.purple : S.row,
-                  border: 'none',
-                  color: amount === p ? '#fff' : C.textDim,
-                }}>{p}c</button>
-              ))}
+          <div style={{ flex: 1, minWidth: 0, paddingTop: 2 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: boosting ? C.purpleLight : SHEET.dim, transition: 'color .22s ease' }}>
+              {boosting ? 'Boost the stream' : 'Tip the host'}
             </div>
-            <input type="number" min={1} value={amount} onChange={(e) => setAmount(Math.max(1, parseInt(e.target.value || '0', 10)))}
-              style={{ width: '100%', boxSizing: 'border-box', background: S.field, border: `1px solid ${C.fieldEdge}`, borderRadius: 12, padding: 13, color: C.text, fontSize: 15, outline: 'none', marginBottom: 10 }} />
-            <input type="text" value={message} maxLength={80} onChange={(e) => setMessage(e.target.value)} placeholder="Optional message (up to 80 chars)"
-              style={{ width: '100%', boxSizing: 'border-box', background: S.field, border: `1px solid ${C.fieldEdge}`, borderRadius: 12, padding: 13, color: C.text, fontSize: 14, outline: 'none', marginBottom: 6 }} />
-            <div style={{ fontSize: 11, color: C.textMuted, marginBottom: 14, lineHeight: 1.4 }}>
-              Every message is moderated before broadcast. Vergr pays the host their revenue share of this tip.
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, margin: '2px 0 4px' }}>
+              <span style={{ fontSize: 24, fontWeight: 900, letterSpacing: '-0.01em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{hostName}</span>
+              <span style={{ flexShrink: 0, width: 18, height: 18, borderRadius: '50%', background: 'linear-gradient(135deg, #b44fff, #7526f5)', boxShadow: '0 2px 8px rgba(124,58,237,0.55)', display: 'grid', placeItems: 'center' }}>
+                <Icon name="check" size={11} />
+              </span>
+            </div>
+            <div style={{ fontSize: 13, color: SHEET.dim, lineHeight: 1.45 }}>
+              {boosting ? `Help ${hostName} grow and reach more viewers!` : 'Show your support and get noticed!'}
+            </div>
+          </div>
+          <button type="button" aria-label="Close" onClick={onClose} style={{ flexShrink: 0, width: 36, height: 36, borderRadius: '50%', background: SHEET.card, border: `1px solid ${SHEET.cardEdge}`, boxShadow: SHEET.cardLip, color: SHEET.text, cursor: 'pointer', display: 'grid', placeItems: 'center' }}>
+            <Icon name="close" size={18} />
+          </button>
+        </div>
+
+        {/* ⚠ ONE KNOB THAT TRAVELS, not two buttons swapping fills. Founder:
+            "it should be a slide animation not a flicker". The indicator is a
+            single element and only its transform changes, so the browser moves
+            it on the compositor. */}
+        <div style={{ position: 'relative', display: 'flex', padding: 3, borderRadius: 16, border: `1px solid ${SHEET.cardEdge}`, marginBottom: 13 }}>
+          <span aria-hidden data-vg="tabknob" style={{
+            position: 'absolute', top: 3, bottom: 3, left: 3, width: 'calc(50% - 3px)',
+            borderRadius: 12, background: SHEET.tabSel, border: `1px solid ${SHEET.tabSelEdge}`,
+            boxShadow: '0 4px 14px rgba(124,58,237,0.32), inset 0 1px 0 rgba(255,255,255,0.09)',
+            transform: boosting ? 'translateX(100%)' : 'translateX(0)',
+            transition: 'transform .3s cubic-bezier(.22,1,.36,1)',
+          }} />
+          <button type="button" onClick={() => setTab('tip')} style={tabBtn('tip')}>
+            <CoinIcon size={21} />Tip
+          </button>
+          <button type="button" onClick={() => setTab('boost')} style={tabBtn('boost')}>
+            <Icon name="rocket_launch" size={19} />Boost
+          </button>
+        </div>
+
+        {/* keyed on the tab so the entry animation re-runs, and it enters from
+            the side the tab sits on */}
+        <div style={{ height: panelH == null ? undefined : panelH, overflow: 'clip', overflowClipMargin: '26px', transition: 'height .3s cubic-bezier(.22,1,.36,1)' }}>
+        {/* ⚠ flow-root, so the last block's bottom margin is CONTAINED. Without a
+            block formatting context it collapses straight through this element,
+            the measured height comes up 14px short and the balance row sits
+            tighter under the tiers than the tiers sit under each other. */}
+        <div ref={setPanelEl} key={tab} style={{ display: 'flow-root', animation: `${boosting ? 'vgSlideFromRight' : 'vgSlideFromLeft'} .3s cubic-bezier(.22,1,.36,1)` }}>
+        {boosting ? (
+          <>
+            <div style={{ display: 'flex', gap: 12, padding: 14, borderRadius: 16, background: SHEET.card, border: `1px solid ${SHEET.cardEdge}`, boxShadow: SHEET.cardLip, marginBottom: 12 }}>
+              <span style={{ flexShrink: 0, width: 44, height: 44, borderRadius: '50%', background: SHEET.modal, border: `1px solid ${SHEET.cardEdge}`, color: C.purpleLight, display: 'grid', placeItems: 'center' }}>
+                <Icon name="rocket_launch" size={21} />
+              </span>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 3 }}>Boost the stream</div>
+                <div style={{ fontSize: 12, color: SHEET.dim, lineHeight: 1.45 }}>
+                  Boosting increases visibility and helps {hostName} reach more viewers.
+                </div>
+              </div>
+            </div>
+
+            {/* ⚠ THE THREE TIERS WERE PLAIN DIVS. You could read them and not pick
+                one, and there was no confirm button on this tab at all — so the
+                boost purchase was a price list, not a flow. Tiers, durations and
+                multipliers are the shipped ones from src/utils/boosts.js. */}
+            <div style={{ display: 'grid', gap: 12, marginBottom: 14 }}>
+              {BOOST_TIERS.map(({ id, name, price, detail, tag }) => {
+                const on = boost === id;
+                return (
+                  <button key={id} type="button" onClick={() => setBoost(id)} style={{
+                    display: 'flex', alignItems: 'center', gap: 12, padding: 12, borderRadius: 16, cursor: 'pointer',
+                    textAlign: 'left', color: SHEET.text, width: '100%',
+                    background: on ? SHEET.rowSel : SHEET.card,
+                    border: `1px solid ${on ? SHEET.tabSelEdge : SHEET.cardEdge}`,
+                    boxShadow: on ? '0 6px 20px rgba(124,58,237,0.28), inset 0 1px 0 rgba(255,255,255,0.08)' : SHEET.cardLip,
+                    transition: 'background .2s ease, border-color .2s ease, box-shadow .2s ease',
+                  }}>
+                    <span style={{ flexShrink: 0, width: 44, height: 44, borderRadius: 12, background: on ? SHEET.tileOn : SHEET.tileOff, boxShadow: on ? '0 4px 14px rgba(124,58,237,0.5), inset 0 1px 0 rgba(255,255,255,0.28)' : 'inset 0 1px 0 rgba(255,255,255,0.12)', color: on ? '#fff' : C.purpleLight, display: 'grid', placeItems: 'center' }}>
+                      <Icon name="rocket_launch" size={21} />
+                    </span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                        <span style={{ flex: 1, minWidth: 0, fontSize: 16, fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{name}</span>
+                        <span className="vg-mono" style={{ flexShrink: 0, fontSize: 16, fontWeight: 900, color: SHEET.gold }}>{price}c</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 5 }}>
+                        <span className="vg-mono" style={{ flexShrink: 0, fontSize: 12, color: SHEET.dim }}>{detail}</span>
+                        <span style={{ minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontSize: 11, fontWeight: 700, color: on ? '#fff' : SHEET.dim, background: on ? 'linear-gradient(180deg, #9a4cf5, #7526f5)' : SHEET.well, border: `1px solid ${on ? '#a259f0' : SHEET.cardEdge}`, padding: '2px 8px', borderRadius: 999 }}>{tag}</span>
+                      </div>
+                    </div>
+                    {on
+                      ? <span style={{ flexShrink: 0, width: 24, height: 24, borderRadius: '50%', background: 'linear-gradient(180deg, #9a4cf5, #7526f5)', boxShadow: '0 3px 10px rgba(124,58,237,0.6)', display: 'grid', placeItems: 'center', color: '#fff' }}><Icon name="check" size={14} /></span>
+                      : <CoinIcon size={24} />}
+                  </button>
+                );
+              })}
             </div>
           </>
+        ) : (
+          <>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+              {PRESETS.map((p) => {
+                const on = amount === p;
+                return (
+                  <button key={p} type="button" onClick={() => setAmount(p)} style={{
+                    flex: 1, padding: '12px 2px', borderRadius: 12, cursor: 'pointer', fontSize: 14, fontWeight: 800,
+                    background: on ? SHEET.sel : SHEET.chip,
+                    border: `1px solid ${on ? '#a259f0' : SHEET.chipEdge}`,
+                    boxShadow: on
+                      ? '0 6px 20px rgba(124,58,237,0.55), inset 0 1px 0 rgba(255,255,255,0.28)'
+                      : SHEET.cardLip,
+                    color: on ? '#fff' : SHEET.dim,
+                    transition: 'background .18s ease, box-shadow .18s ease, color .18s ease',
+                  }}>{p}c</button>
+                );
+              })}
+            </div>
+
+            <div className="vg-field" style={{ display: 'flex', alignItems: 'center', gap: 12, background: SHEET.field, border: `1px solid ${SHEET.fieldEdge}`, borderRadius: 16, padding: '13px 15px', marginBottom: 11, boxShadow: '0 0 18px rgba(143,69,222,0.16), inset 0 1px 0 rgba(255,255,255,0.06)' }}>
+              <CoinIcon size={26} />
+              <input type="number" min={1} value={amount} aria-label="Tip amount in coins"
+                onChange={(e) => setAmount(Math.max(1, parseInt(e.target.value || '0', 10)))}
+                style={{ flex: 1, minWidth: 0, background: 'transparent', border: 'none', color: SHEET.text, fontSize: 24, fontWeight: 800, outline: 'none', padding: 0 }} />
+              <span style={{ fontSize: 16, color: SHEET.muted }}>c</span>
+            </div>
+
+            <div className="vg-field" style={{ background: SHEET.well, border: `1px solid ${SHEET.cardEdge}`, borderRadius: 16, padding: '13px 14px', marginBottom: 11 }}>
+              <div style={{ display: 'flex', gap: 12 }}>
+                <Icon name="chat_bubble" size={16} style={{ color: SHEET.muted, marginTop: 2, flexShrink: 0 }} />
+                <textarea value={message} maxLength={MSG_MAX} rows={3} onChange={(e) => setMessage(e.target.value)}
+                  placeholder="Add a message (optional)" aria-label="Message with your tip"
+                  style={{ flex: 1, minWidth: 0, resize: 'none', background: 'transparent', border: 'none', color: SHEET.text, fontSize: 14, outline: 'none', padding: 0, fontFamily: 'inherit', lineHeight: 1.45 }} />
+              </div>
+              <div className="vg-mono" style={{ textAlign: 'right', fontSize: 12, color: SHEET.muted, marginTop: 2 }}>{message.length} / {MSG_MAX}</div>
+            </div>
+
+          </>
         )}
+        </div>
+        </div>
+
         {/* The balance is always visible, not only when it is short — being
             surprised at the last step is what makes people abandon. */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 10, fontSize: 12 }}>
-          <CoinIcon size={14} />
-          <span style={{ color: C.textDim }}>Your balance</span>
-          <span className="vg-mono" style={{ fontWeight: 800, color: short ? C.amber : C.text }}>{balance.toLocaleString()}c</span>
-          {short > 0 && (
-            <span style={{ marginLeft: 'auto', fontSize: 11.5, fontWeight: 700, color: C.amber }}>
-              {short.toLocaleString()}c short
-            </span>
-          )}
-        </div>
-        <div style={{ display: 'flex', gap: 10 }}>
-          <button onClick={onClose} style={{ flex: 1, padding: 14, borderRadius: 12, border: 'none', background: S.row, color: C.textDim, fontSize: 13, fontWeight: 800, cursor: 'pointer' }}>Cancel</button>
+        <SheetBalanceRow balance={balance} short={short} onTopUp={onTopUp} />
+
+        <div style={{ display: 'flex', gap: 12 }}>
+          <button onClick={onClose} style={{ flex: 1, padding: 15, borderRadius: 16, background: SHEET.cancel, border: `1px solid ${SHEET.cancelEdge}`, boxShadow: SHEET.cardLip, color: SHEET.text, fontSize: 14, fontWeight: 800, cursor: 'pointer' }}>Cancel</button>
           {/* ⚠⚠ `Send` USED TO BE `onClose`. The sheet dismissed and nothing
               happened — no tip in the feed, no alert, no counter. The single
               most-captured interaction in the product did nothing, and it looked
               fine because the sheet closing reads as success.
               Both buttons now fire the real simulator events, so what you
               capture is the same overlay a viewer would see. */}
-          {tab === 'tip' ? (
-            <button onClick={() => { if (short) { onTopUp?.(short); return; } onSend?.(amount); onClose(); }} style={{ flex: 2, padding: 14, borderRadius: 12, border: 'none', background: `linear-gradient(135deg, ${C.purple}, ${C.purpleLight})`, color: '#fff', fontSize: 13, fontWeight: 800, cursor: 'pointer' }}>{short ? `Top up ${short.toLocaleString()}c` : `Send ${amount}c`}</button>
+          {boosting ? (
+            <button onClick={() => { if (short) { onTopUp?.(short); return; } onBoost?.(boost); onClose(); }} style={cta}>
+              {short ? `Top up ${short.toLocaleString()}c` : `Boost · ${cost}c`}
+              {!short && <Icon name="rocket_launch" size={17} />}
+            </button>
           ) : (
-            <button onClick={() => { if (short) { onTopUp?.(short); return; } onBoost?.(boost); onClose(); }} style={{ flex: 2, padding: 14, borderRadius: 12, border: 'none', background: `linear-gradient(135deg, ${C.purple}, ${C.purpleLight})`, color: '#fff', fontSize: 13, fontWeight: 800, cursor: 'pointer' }}>
-              {short ? `Top up ${short.toLocaleString()}c` : `Boost · ${BOOST_TIERS.find((b) => b.id === boost)?.price}c`}
+            <button onClick={() => { if (short) { onTopUp?.(short); return; } onSend?.(amount); onClose(); }} style={cta}>
+              {short ? `Top up ${short.toLocaleString()}c` : `Send ${amount.toLocaleString()}c`}
+              {!short && <Icon name="send" size={17} />}
             </button>
           )}
         </div>
+      </div>
       </div>
     </div>
   );
@@ -513,13 +1040,12 @@ function TopUpSheet({ short = 0, balance = 0, onClose }) {
   const [picked, setPicked] = useState(best?.id);
   const sel = packs.find((p) => p.id === picked) || best;
   return (
-    <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 210, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: 480, maxHeight: '86%', overflowY: 'auto', background: C.card, boxShadow: C.sheetShadow, borderTopLeftRadius: 18, borderTopRightRadius: 18, padding: 20, color: C.text }}>
+    <SheetShell onClose={onClose}>
         <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 4 }}>Top up</div>
         <div style={{ fontSize: 12, color: C.textDim, marginBottom: 14, lineHeight: 1.5 }}>
           You are {need.toLocaleString()}c short. The stream keeps playing behind this.
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 7, marginBottom: 14 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
           {packs.map((p) => {
             const on = p.id === picked;
             // ⚠ A BADGE ON EVERY ROW SAYS NOTHING. With a 50c shortfall every
@@ -529,7 +1055,7 @@ function TopUpSheet({ short = 0, balance = 0, onClose }) {
             const enough = p.id === best?.id && p.coins >= need;
             return (
               <button key={p.id} type="button" onClick={() => setPicked(p.id)} style={{
-                display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '12px 13px',
+                display: 'flex', alignItems: 'center', gap: 12, width: '100%', padding: '12px 13px',
                 borderRadius: 12, cursor: 'pointer', textAlign: 'left',
                 background: on ? C.purpleSoft : S.row, border: 'none',
                 boxShadow: on ? C.selBar : 'none',
@@ -539,20 +1065,19 @@ function TopUpSheet({ short = 0, balance = 0, onClose }) {
                 <span className="vg-mono" style={{ fontWeight: 800, fontSize: 14 }}>{p.coins.toLocaleString()}</span>
                 {/* ⚠ THE ONLY LABEL IS WHETHER IT COVERS THE SHORTFALL. Anything
                     else here would be a value claim I am not authorised to make. */}
-                {enough && <span style={{ fontSize: 10.5, fontWeight: 800, color: '#fff', background: C.purple, padding: '2px 7px', borderRadius: 6 }}>enough</span>}
+                {enough && <span style={{ fontSize: 11, fontWeight: 800, color: '#fff', background: C.purple, padding: '2px 7px', borderRadius: 8 }}>enough</span>}
                 <span className="vg-mono" style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 800 }}>${Number(p.priceUSD).toFixed(2)}</span>
               </button>
             );
           })}
         </div>
-        <div style={{ display: 'flex', gap: 10 }}>
+        <div style={{ display: 'flex', gap: 12 }}>
           <button onClick={onClose} style={{ flex: 1, padding: 14, borderRadius: 12, border: 'none', background: S.row, color: C.textDim, fontSize: 13, fontWeight: 800, cursor: 'pointer' }}>Not now</button>
           <button onClick={onClose} style={{ flex: 2, padding: 14, borderRadius: 12, border: 'none', background: `linear-gradient(135deg, ${C.purple}, ${C.purpleLight})`, color: '#fff', fontSize: 13, fontWeight: 800, cursor: 'pointer' }}>
             {sel ? `Buy ${sel.coins.toLocaleString()}c · $${Number(sel.priceUSD).toFixed(2)}` : 'Buy coins'}
           </button>
         </div>
-      </div>
-    </div>
+    </SheetShell>
   );
 }
 
@@ -583,7 +1108,7 @@ function AppealSheet({ kind = 'ban', onClose }) {
       <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={4}
         maxLength={500}
         placeholder="What happened, in your own words?"
-        style={{ width: '100%', boxSizing: 'border-box', background: S.field, border: `1px solid ${C.fieldEdge}`, borderRadius: 12, padding: 13, color: C.text, fontSize: 13.5, outline: 'none', resize: 'none', fontFamily: 'inherit' }} />
+        style={{ width: '100%', boxSizing: 'border-box', background: S.field, border: `1px solid ${C.fieldEdge}`, borderRadius: 12, padding: 13, color: C.text, fontSize: 14, outline: 'none', resize: 'none', fontFamily: 'inherit' }} />
       <div style={{ fontSize: 11, color: C.textMuted, marginTop: 8, lineHeight: 1.6 }}>
         {note.length}/500 · You can still watch the stream while this is reviewed.
       </div>
@@ -591,9 +1116,9 @@ function AppealSheet({ kind = 'ban', onClose }) {
           197x20 — the only control in the whole preview under the floor, and it was
           one I had just added. A standalone block link gets no inline exception. */}
       <a href="/platform/acceptable-use" style={{
-        display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 8,
+        display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 8,
         minHeight: 24, padding: '4px 2px',
-        fontSize: 11.5, fontWeight: 700, color: C.purpleInk, textDecoration: 'none',
+        fontSize: 12, fontWeight: 700, color: C.purpleInk, textDecoration: 'none',
       }}>
         <Icon name="menu_book" size={13} /> Read the community guidelines
       </a>
@@ -636,12 +1161,12 @@ function StreamSettingsSheet({ onClose, audioOnly, onAudioOnly, gate, onGate, cl
   return (
     <Sheet title="Stream settings" sub="Only you can see these. They apply to this broadcast." onClose={onClose}>
 
-      <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: '0.08em', color: C.textMuted, margin: '2px 0 8px' }}>FORMAT</div>
+      <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', color: C.textMuted, margin: '2px 0 8px' }}>FORMAT</div>
       <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
         {[[false, 'videocam', 'Camera'], [true, 'graphic_eq', 'Audio only']].map(([v, icon, label]) => (
           <button key={label} type="button" onClick={() => onAudioOnly?.(v)} style={{
             flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-            padding: '11px 10px', borderRadius: 10, cursor: 'pointer', fontSize: 13, fontWeight: 700,
+            padding: '11px 10px', borderRadius: 12, cursor: 'pointer', fontSize: 13, fontWeight: 700,
             background: !!audioOnly === v ? C.purple : S.row, border: 'none',
             color: !!audioOnly === v ? '#fff' : C.textDim,
           }}><Icon name={icon} size={16} /> {label}</button>
@@ -652,15 +1177,15 @@ function StreamSettingsSheet({ onClose, audioOnly, onAudioOnly, gate, onGate, cl
         when you would rather not be on camera.
       </div>
 
-      <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: '0.08em', color: C.textMuted, margin: '2px 0 8px' }}>WHO CAN WATCH</div>
+      <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', color: C.textMuted, margin: '2px 0 8px' }}>WHO CAN WATCH</div>
       {WATCH.map(([id, label, note]) => (
         <button key={id} type="button" onClick={() => onGate?.(id)} style={{
           display: 'block', width: '100%', textAlign: 'left', marginBottom: 6,
-          padding: '11px 12px', borderRadius: 10, cursor: 'pointer', color: C.text,
+          padding: '11px 12px', borderRadius: 12, cursor: 'pointer', color: C.text,
           background: gate === id ? C.purpleSoft : S.row, border: 'none',
           boxShadow: gate === id ? C.selBar : 'none',
         }}>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13.5, fontWeight: 700 }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, fontWeight: 700 }}>
             <Icon name={gate === id ? 'radio_button_checked' : 'radio_button_unchecked'} size={16} style={{ color: gate === id ? C.purpleLight : C.textMuted }} />
             {label}
           </span>
@@ -668,11 +1193,11 @@ function StreamSettingsSheet({ onClose, audioOnly, onAudioOnly, gate, onGate, cl
         </button>
       ))}
 
-      <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: '0.08em', color: C.textMuted, margin: '16px 0 8px' }}>WHO CAN CLIP</div>
+      <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', color: C.textMuted, margin: '16px 0 8px' }}>WHO CAN CLIP</div>
       <div style={{ display: 'flex', gap: 6 }}>
         {CLIP.map(([id, label]) => (
           <button key={id} type="button" onClick={() => onClipWho?.(id)} style={{
-            flex: 1, padding: '10px 8px', borderRadius: 10, cursor: 'pointer', fontSize: 12.5, fontWeight: 700,
+            flex: 1, padding: '10px 8px', borderRadius: 12, cursor: 'pointer', fontSize: 13, fontWeight: 700,
             background: clipWho === id ? C.purple : S.row, border: 'none',
             color: clipWho === id ? '#fff' : C.textDim,
           }}>{label}</button>
@@ -689,66 +1214,221 @@ function StreamSettingsSheet({ onClose, audioOnly, onAudioOnly, gate, onGate, cl
   );
 }
 
+// ── moderator context, on the card a moderator already has open ─────────
+//
+// ⚠⚠ THE PROFILE SHEET SHOWED THE WRONG THINGS TO THE PERSON DECIDING A BAN.
+// Followers, following, likes and a bio are the right payload for a viewer
+// working out whether to follow someone. A moderator is answering a completely
+// different question and none of those numbers help. Twitch's mod card carries
+// account creation date, prior timeouts, the chat log and mod notes, and that is
+// the difference between a judgement and a guess.
+//
+// ⚠ IT IS THE SAME SHEET, GATED BY ROLE. Building a second card would give the
+// two roles two designs to keep in step, which is how the tip alert ended up
+// with two placements.
+//
+// ⚠ ACCOUNT AGE IS THE SIGNAL, NOT THE DATE. "Created 2 September" makes a
+// moderator do arithmetic mid-stream. Three days old is the fact that matters,
+// and it is highlighted amber under a week because a fresh account plus a first
+// offence is the ban-evasion shape.
+// How long ago, in the shortest form that is still unambiguous. A moderator is
+// reading this mid-stream, so "2m" beats "14:32:07".
+function agoOf(ts) {
+  const secs = Math.max(0, Math.round((Date.now() - (Number(ts) || Date.now())) / 1000));
+  if (secs < 60) return secs + 's';
+  if (secs < 3600) return Math.round(secs / 60) + 'm';
+  return Math.round(secs / 3600) + 'h';
+}
+
+function ModeratorContext({ person, messages = [] }) {
+  const [note, setNote] = useState('');
+  const days = Number(person?.accountDays) || 0;
+  const fresh = days < 7;
+  const timeouts = Number(person?.priorTimeouts) || 0;
+  const theirs = messages.filter((m) => m.uid === person?.uid).slice(-4);
+  const age = accountAgeLabel(days);
+  return (
+    <div style={{ ...sheetCard({ padding: 12, marginTop: 12 }) }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+        <Icon name="shield_person" size={14} style={{ color: SHEET.muted }} />
+        <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: '0.08em', color: SHEET.muted }}>MODERATOR VIEW</span>
+      </div>
+
+      <div style={{ display: 'flex', gap: 8, marginBottom: theirs.length ? 12 : 0 }}>
+        <div style={{ flex: 1, padding: '8px 12px', borderRadius: 12, background: SHEET.well, border: `1px solid ${fresh ? '#5a4410' : SHEET.cardEdge}` }}>
+          <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: '0.06em', color: SHEET.muted }}>ACCOUNT AGE</div>
+          <div className="vg-mono" style={{ fontSize: 14, fontWeight: 800, color: fresh ? C.amber : SHEET.text, marginTop: 2 }}>{age}</div>
+        </div>
+        <div style={{ flex: 1, padding: '8px 12px', borderRadius: 12, background: SHEET.well, border: `1px solid ${timeouts > 0 ? '#5a4410' : SHEET.cardEdge}` }}>
+          <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: '0.06em', color: SHEET.muted }}>TIMED OUT HERE</div>
+          <div className="vg-mono" style={{ fontSize: 14, fontWeight: 800, color: timeouts > 0 ? C.amber : SHEET.text, marginTop: 2 }}>
+            {timeouts === 0 ? 'never' : timeouts + (timeouts === 1 ? ' time' : ' times')}
+          </div>
+        </div>
+      </div>
+
+      {/* ⚠ THE MESSAGES ARE THE EVIDENCE. Deciding on a name alone is what makes
+          moderation feel arbitrary; the reason someone is about to be banned is
+          almost always still on screen. */}
+      {theirs.length > 0 && (
+        <>
+          <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: '0.06em', color: SHEET.muted, marginBottom: 6 }}>RECENT MESSAGES</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 12 }}>
+            {/* ⚠ EACH LINE IS TIMED, AND DUPLICATES ARE NOT COLLAPSED. Seen on
+                the live page: the same line twice in a row reads as a render
+                bug, and the reflex is to dedupe it. That would be wrong —
+                repetition IS the evidence when the case is spam. A timestamp
+                makes the repeat legible as behaviour instead. */}
+            {theirs.map((m) => (
+              <div key={m.id} style={{ display: 'flex', gap: 8, alignItems: 'baseline', padding: '6px 8px', borderRadius: 8, background: SHEET.well }}>
+                <span className="vg-mono" style={{ flexShrink: 0, fontSize: 9, color: SHEET.muted }}>{agoOf(m.ts)}</span>
+                <span style={{ minWidth: 0, fontSize: 12, color: SHEET.dim, lineHeight: 1.45 }}>{m.text}</span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* A note outlives the moderator who wrote it, which is the point: the next
+          one should not have to rediscover why this person was watched. */}
+      <input value={note} onChange={(e) => setNote(e.target.value)} maxLength={120}
+        placeholder="Add a note for other moderators" aria-label="Moderator note"
+        className="vg-field"
+        style={{ width: '100%', boxSizing: 'border-box', background: SHEET.well, border: `1px solid ${SHEET.cardEdge}`, borderRadius: 12, padding: '10px 12px', color: SHEET.text, fontSize: 12, outline: 'none' }} />
+    </div>
+  );
+}
+
 // ── profile sheet — the on-stream UserQuickSheet ──────────────────────
-function QuickSheet({ person, isHost, onClose, role = 'viewer', onAction }) {
-  const faceOf = useFaces();
+//
+// ⚠⚠ THIS WAS THE FLATTEST SURFACE IN THE PRODUCT and the founder named it:
+// "especially the profile sheet, it looks like shit and not on par with
+// platforms like tiktok". What it had was an avatar, a name, a handle, a text
+// pill reading "LEVEL 94", two buttons and a list of grey rows. What every
+// comparable card has and this did not:
+//
+//   • a STATS ROW. Followers / following / likes is the first thing anyone
+//     looks at on a person and there was no number on the card at all.
+//   • a BIO. The card said nothing about who the person is.
+//   • the RANK AS ART. `RankBadge` renders the founder's own crest files out of
+//     /badges/sm/ and the sheet was drawing a Material "military_tech" glyph
+//     next to the word LEVEL instead — inventing a worse badge while the real
+//     one shipped in the same repo.
+//   • a HEADER PLATE behind the portrait, so the identity block reads as a
+//     card rather than as a row of text.
+//
+// ⚠ THE ACTIONS DID NOT CHANGE. Every row still routes to the screen that asks
+// the remaining question, and the host-only / moderator gating is untouched.
+function QuickSheet({ person, isHost, onClose, role = 'viewer', onAction, messages = [] }) {
   const [following, setFollowing] = useState(false);
   if (!person) return null;
-  return (
-    <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 210, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: 480, background: C.card, boxShadow: C.sheetShadow, borderTopLeftRadius: 18, borderTopRightRadius: 18, padding: 20, color: C.text }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 13, marginBottom: 16 }}>
-          <UserAvatar src={faceOf(person)} size="lg" />
-          <div style={{ minWidth: 0, flex: 1 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ fontSize: 17, fontWeight: 800 }}>{person.displayName}</span>
-              {isHost && <span style={{ width: 15, height: 15, borderRadius: '50%', background: `linear-gradient(135deg, ${C.purple}, ${C.purpleLight})`, display: 'grid', placeItems: 'center' }}><Icon name="check" size={9} /></span>}
-            </div>
-            <div style={{ fontSize: 12.5, color: C.textDim }}>@{person.username}</div>
-            <div style={{ marginTop: 5, display: 'inline-flex', alignItems: 'center', gap: 5, padding: '2px 8px', borderRadius: 99, background: C.purpleSoft, color: C.purpleInk, fontSize: 10.5, fontWeight: 800 }}>
-              <Icon name="military_tech" size={11} /> LEVEL {person.vpLevel}
-            </div>
-          </div>
-        </div>
-        <div style={{ display: 'flex', gap: 9 }}>
-          <button onClick={() => setFollowing((v) => !v)} style={{ flex: 2, padding: 13, borderRadius: 12, border: 'none', background: following ? C.purpleSoft : `linear-gradient(135deg, ${C.purple}, ${C.purpleLight})`, color: following ? C.purpleLight : '#fff', fontSize: 13, fontWeight: 800, cursor: 'pointer' }}>{following ? 'Following' : 'Follow'}</button>
-          <button onClick={() => onAction?.('message', person)} style={{ flex: 1, padding: 13, borderRadius: 12, border: 'none', background: S.row, color: C.text, fontSize: 13, fontWeight: 800, cursor: 'pointer' }}>Message</button>
-          <button aria-label="Close" onClick={onClose} style={{ width: 46, padding: 13, borderRadius: 12, border: 'none', background: S.row, color: C.textDim, cursor: 'pointer', display: 'grid', placeItems: 'center' }}><Icon name="close" size={16} /></button>
-        </div>
-
-        {/* ⚠⚠ THIS BLOCK IS THE POINT OF THE SHEET, and it is what was missing
-            from the entire product. Everything a live stream does TO A PERSON —
-            gift them a sub, report them, block them, time them out, ban them,
-            make them a moderator — needs somewhere to be asked, and there was
-            nowhere. A gavel with no viewer picker behind it is not moderation.
-
-            ⚠ THE HOST-ONLY / MOD ROWS ARE GATED BY THE SAME RESOLVER THE REST OF
-            THE APP USES, mirroring functions/streamChatMod.js: mute/ban/timeout
-            are host-OR-moderator (`loadStreamForMod`), appointing a moderator is
-            host-only (`loadStream`). Offering a moderator a button the server
-            answers with permission-denied is the same defect as offering it to
-            a stranger. */}
-        {!isHost && (
-          <div style={{ marginTop: 14, ...ruleTop, paddingTop: 12, display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <ActionRow icon="redeem" label="Gift a sub" onClick={() => onAction?.('giftsub', person)} />
-            <ActionRow icon="volunteer_activism" label="Send coins" onClick={() => onAction?.('tip', person)} />
-            <ActionRow icon="flag" label="Report" danger onClick={() => onAction?.('report', person)} />
-            <ActionRow icon="block" label="Block" danger onClick={() => onAction?.('block', person)} />
-
-            {canModerate(role) && (
-              <>
-                <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: '0.08em', color: C.textMuted, margin: '12px 0 4px' }}>MODERATION</div>
-                <ActionRow icon="timer_off" label="Time out" onClick={() => onAction?.('timeout', person)} />
-                <ActionRow icon="gavel" label="Ban from this stream" danger onClick={() => onAction?.('ban', person)} />
-              </>
-            )}
-            {canConfigureChat(role) && (
-              <ActionRow icon="shield_person" label={person.isMod ? 'Remove as moderator' : 'Make moderator'} onClick={() => onAction?.('appoint', person)} />
-            )}
-          </div>
-        )}
-      </div>
+  const stat = (n, label) => (
+    <div style={{ flex: 1, textAlign: 'center' }}>
+      <div className="vg-mono" style={{ fontSize: 16, fontWeight: 900, color: SHEET.text }}>{compactCount(n)}</div>
+      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', color: SHEET.muted, textTransform: 'uppercase', marginTop: 2 }}>{label}</div>
     </div>
+  );
+  return (
+    <SheetShell onClose={onClose}>
+      {/* Identity plate. The ramp and the edge are the same ones the tip sheet
+          uses, so a person reads as the same class of object everywhere. */}
+      <div style={{ ...sheetCard({ padding: 15, marginBottom: 11 }) }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+          <SheetAvatar person={person} size={64} />
+          {/* ⚠ A VISIBLE CLOSE, NOT JUST THE SCRIM AND THE HANDLE. Nielsen
+              Norman on bottom sheets: "provide a clear Close button (usually
+              styled as an X or the word Close)" and "avoid depending exclusively
+              on swipe gestures, which create ambiguity and accessibility
+              issues". This sheet had no close control at all after the rebuild. */}
+          <div style={{ minWidth: 0, flex: 1, paddingTop: 1 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+              <span style={{ fontSize: 20, fontWeight: 900, letterSpacing: '-0.01em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{person.displayName}</span>
+              {isHost && (
+                <span style={{ flexShrink: 0, width: 17, height: 17, borderRadius: '50%', background: 'linear-gradient(135deg, #b44fff, #7526f5)', boxShadow: '0 2px 8px rgba(124,58,237,0.55)', display: 'grid', placeItems: 'center' }}>
+                  <Icon name="check" size={10} />
+                </span>
+              )}
+            </div>
+            <div style={{ fontSize: 13, color: SHEET.dim, marginTop: 1 }}>@{person.username}</div>
+            {/* ⚠ THE REAL CREST, NOT A GLYPH IN A PILL. RankBadge resolves the
+                founder's art from the level alone and costs no read. */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 7 }}>
+              {/* ⚠ `feed` MAKES IT tabIndex -1. Without it the crest is the
+                  first focusable thing in the sheet, so SheetHost put the
+                  opening focus on a decorative badge instead of Follow — and
+                  the focus ring drew a violet box around the crest, which read
+                  as a bordered square in the live capture. */}
+              <RankBadge level={person.vpLevel} uid={person.uid} size={17} feed />
+              <span className="vg-mono" style={{ fontSize: 11, fontWeight: 800, color: SHEET.dim }}>LEVEL {person.vpLevel}</span>
+              {person.isMod && (
+                <span style={{ fontSize: 9, fontWeight: 900, letterSpacing: '0.06em', color: '#fff', background: 'linear-gradient(180deg, #9a4cf5, #7526f5)', padding: '2px 7px', borderRadius: 999 }}>MOD</span>
+              )}
+            </div>
+          </div>
+          <button type="button" aria-label="Close" onClick={onClose} style={{ flexShrink: 0, width: 34, height: 34, borderRadius: '50%', background: SHEET.modal, border: `1px solid ${SHEET.cardEdge}`, color: SHEET.dim, cursor: 'pointer', display: 'grid', placeItems: 'center' }}>
+            <Icon name="close" size={17} />
+          </button>
+        </div>
+
+        {person.bio && (
+          <div style={{ fontSize: 13, color: SHEET.dim, lineHeight: 1.5, marginTop: 12 }}>{person.bio}</div>
+        )}
+
+        {/* ⚠ THE DIVIDERS FADE AT BOTH ENDS. A rule that stops at full strength
+            is the cage edge the material notes already warn about. */}
+        <div style={{ display: 'flex', alignItems: 'center', marginTop: 13, paddingTop: 13, borderTop: `1px solid ${SHEET.cardEdge}` }}>
+          {stat(person.followers, 'Followers')}
+          <span aria-hidden style={{ width: 1, alignSelf: 'stretch', background: `linear-gradient(180deg, transparent, ${SHEET.cardEdge} 30%, ${SHEET.cardEdge} 70%, transparent)` }} />
+          {stat(person.following, 'Following')}
+          <span aria-hidden style={{ width: 1, alignSelf: 'stretch', background: `linear-gradient(180deg, transparent, ${SHEET.cardEdge} 30%, ${SHEET.cardEdge} 70%, transparent)` }} />
+          {stat(person.likes, 'Likes')}
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
+        <button onClick={() => setFollowing((v) => !v)} style={following
+          ? sheetGhost({ flex: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 })
+          : sheetCta({ flex: 2 })}>
+          <Icon name={following ? 'check' : 'person_add'} size={16} />{following ? 'Following' : 'Follow'}
+        </button>
+        <button onClick={() => onAction?.('message', person)} style={sheetGhost({ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 })}>
+          <Icon name="chat_bubble" size={16} />Message
+        </button>
+      </div>
+
+      {/* ⚠⚠ THIS BLOCK IS THE POINT OF THE SHEET, and it is what was missing
+          from the entire product. Everything a live stream does TO A PERSON —
+          gift them a sub, report them, block them, time them out, ban them,
+          make them a moderator — needs somewhere to be asked, and there was
+          nowhere. A gavel with no viewer picker behind it is not moderation.
+
+          ⚠ THE HOST-ONLY / MOD ROWS ARE GATED BY THE SAME RESOLVER THE REST OF
+          THE APP USES, mirroring functions/streamChatMod.js: mute/ban/timeout
+          are host-OR-moderator (`loadStreamForMod`), appointing a moderator is
+          host-only (`loadStream`). Offering a moderator a button the server
+          answers with permission-denied is the same defect as offering it to
+          a stranger. */}
+      {!isHost && (
+        <div style={{ ...sheetCard({ padding: 6 }) }}>
+          <ActionRow icon="redeem" label="Gift a sub" onClick={() => onAction?.('giftsub', person)} />
+          <ActionRow icon="volunteer_activism" label="Send coins" onClick={() => onAction?.('tip', person)} />
+          <ActionRow icon="flag" label="Report" danger onClick={() => onAction?.('report', person)} />
+          <ActionRow icon="block" label="Block" danger onClick={() => onAction?.('block', person)} />
+
+          {canModerate(role) && (
+            <>
+              <ModeratorContext person={person} messages={messages} />
+              <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', color: SHEET.muted, margin: '10px 10px 4px' }}>MODERATION</div>
+              <ActionRow icon="timer_off" label="Time out" onClick={() => onAction?.('timeout', person)} />
+              <ActionRow icon="gavel" label="Ban from this stream" danger onClick={() => onAction?.('ban', person)} />
+            </>
+          )}
+          {canConfigureChat(role) && (
+            <ActionRow icon="shield_person" label={person.isMod ? 'Remove as moderator' : 'Make moderator'} onClick={() => onAction?.('appoint', person)} />
+          )}
+        </div>
+      )}
+    </SheetShell>
   );
 }
 
@@ -778,17 +1458,16 @@ function ViewerListSheet({ onClose, onPick, role = 'viewer' }) {
   });
   const TABS = [['all', 'All'], ['subs', 'Subscribers'], ['mods', 'Moderators']];
   return (
-    <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 210, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: 480, height: '82%', display: 'flex', flexDirection: 'column', background: C.card, boxShadow: C.sheetShadow, borderTopLeftRadius: 18, borderTopRightRadius: 18, padding: 16, color: C.text }}>
+    <SheetShell onClose={onClose} pad={16}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
           <Icon name="group" size={18} style={{ color: C.purpleLight }} />
-          <div style={{ fontSize: 15, fontWeight: 800, flex: 1 }}>In this stream</div>
+          <div style={{ fontSize: 16, fontWeight: 800, flex: 1 }}>In this stream</div>
           <button aria-label="Close" onClick={onClose} style={{ ...iconBtn, width: 30, height: 30 }}><Icon name="close" size={16} /></button>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '12px 0 10px', padding: '9px 12px', borderRadius: 10, background: S.row, flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '12px 0 10px', padding: '9px 12px', borderRadius: 12, background: S.row, flexShrink: 0 }}>
           <Icon name="search" size={17} style={{ color: C.textMuted }} />
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search viewers"
-            style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', color: C.text, fontSize: 13.5 }} />
+            style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', color: C.text, fontSize: 14 }} />
           {q && <button onClick={() => setQ('')} aria-label="Clear search" style={{ background: 'none', border: 'none', color: C.textMuted, cursor: 'pointer', display: 'grid' }}><Icon name="close" size={15} /></button>}
         </div>
         <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexShrink: 0 }}>
@@ -808,17 +1487,17 @@ function ViewerListSheet({ onClose, onPick, role = 'viewer' }) {
           )}
           {rows.map((c) => (
             <button key={c.uid} onClick={() => onPick?.(c.uid)} style={{
-              display: 'flex', alignItems: 'center', gap: 11, width: '100%', textAlign: 'left',
-              padding: '9px 6px', borderRadius: 10, border: 'none', background: 'transparent', cursor: 'pointer', color: C.text,
+              display: 'flex', alignItems: 'center', gap: 12, width: '100%', textAlign: 'left',
+              padding: '9px 6px', borderRadius: 12, border: 'none', background: 'transparent', cursor: 'pointer', color: C.text,
             }}>
               <UserAvatar src={faceOf(c)} size="sm" />
               <div style={{ minWidth: 0, flex: 1 }}>
-                <div style={{ fontSize: 13.5, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <div style={{ fontSize: 14, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
                   {c.displayName}
-                  {c.sub && <span style={{ fontSize: 8.5, fontWeight: 800, padding: '1px 5px', borderRadius: 99, background: C.purple }}>SUB</span>}
-                  {c.isMod && <span style={{ fontSize: 8.5, fontWeight: 800, padding: '1px 5px', borderRadius: 99, background: C.green, color: C.onGreen }}>MOD</span>}
+                  {c.sub && <span style={{ fontSize: 9, fontWeight: 800, padding: '1px 5px', borderRadius: 999, background: C.purple }}>SUB</span>}
+                  {c.isMod && <span style={{ fontSize: 9, fontWeight: 800, padding: '1px 5px', borderRadius: 999, background: C.green, color: C.onGreen }}>MOD</span>}
                 </div>
-                <div style={{ fontSize: 11.5, color: C.textMuted }}>@{c.username} · Level {c.vpLevel}</div>
+                <div style={{ fontSize: 12, color: C.textMuted }}>@{c.username} · Level {c.vpLevel}</div>
               </div>
               <Icon name="chevron_right" size={18} style={{ color: C.textMuted }} />
             </button>
@@ -829,8 +1508,7 @@ function ViewerListSheet({ onClose, onPick, role = 'viewer' }) {
             Tap anyone to moderate, gift a sub or report.
           </div>
         )}
-      </div>
-    </div>
+    </SheetShell>
   );
 }
 
@@ -860,8 +1538,8 @@ function ReportSheet({ person, onClose }) {
       </button>}>
       {REASONS.map(([id, label]) => (
         <button key={id} onClick={() => setReason(id)} style={{
-          display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', marginBottom: 6,
-          padding: '12px 12px', borderRadius: 10, cursor: 'pointer', color: C.text, fontSize: 13.5,
+          display: 'flex', alignItems: 'center', gap: 12, width: '100%', textAlign: 'left', marginBottom: 6,
+          padding: '12px 12px', borderRadius: 12, cursor: 'pointer', color: C.text, fontSize: 14,
           background: reason === id ? S.dangerDim : S.row,
           border: 'none', boxShadow: reason === id ? C.selBarRed : 'none',
         }}>
@@ -881,12 +1559,426 @@ function ReportSheet({ person, onClose }) {
           197x20 — the only control in the whole preview under the floor, and it was
           one I had just added. A standalone block link gets no inline exception. */}
       <a href="/platform/acceptable-use" style={{
-        display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 8,
+        display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 8,
         minHeight: 24, padding: '4px 2px',
-        fontSize: 11.5, fontWeight: 700, color: C.purpleInk, textDecoration: 'none',
+        fontSize: 12, fontWeight: 700, color: C.purpleInk, textDecoration: 'none',
       }}>
         <Icon name="menu_book" size={13} /> Read the community guidelines
       </a>
+    </Sheet>
+  );
+}
+
+// ⚠ ONE DEFINITION OF ACCOUNT AGE. The held queue printed "Account 412 days
+// old" while the moderator card two taps away said "1.1 years" about the same
+// person. The fact that matters is whether the account is NEW, so the scale
+// coarsens as it gets older and the caller colours it amber under a week.
+export function accountAgeLabel(days) {
+  const d = Number(days) || 0;
+  if (d < 1) return 'today';
+  if (d === 1) return '1 day';
+  if (d < 30) return `${d} days`;
+  if (d < 365) return `${Math.round(d / 30)} months`;
+  return `${(d / 365).toFixed(1).replace(/\.0$/, '')} years`;
+}
+
+/**
+ * Auto moderation — the dial, and what each notch actually holds.
+ *
+ * ⚠⚠ IT COSTS NOTHING EXTRA TO RUN. The relay already calls Gemini Flash once
+ * per message and gets back pass | flag | block (infra/chat/src/main.go:9-21).
+ * Today a 'flag' fans out and is only written to streams/{id}/chat_moderation
+ * for Vanguard to read afterwards, which means the viewer saw it. The dial does
+ * not add a scan; it decides whether that same verdict HOLDS the message
+ * instead. Same one call, no second model, no new spend.
+ *
+ * ⚠ NO PER-CATEGORY DIALS, AND THAT IS DELIBERATE. Twitch offers four category
+ * sliders because its model returns per-category scores. Ours returns one
+ * verdict and a free-text reason (parseVerdict, main.go:1447), so a category
+ * slider would be a control the server cannot honour — the exact defect §0 of
+ * the competitive doc opens with. Levels it is, until the verdict shape changes.
+ *
+ * ⚠ THE TOP TWO NOTCHES USE SIGNALS THAT NEED NO AI AT ALL. Has this person
+ * spoken here before, does the text carry a link, how old is the account. All
+ * three are already on the doc, all three are free, and they catch the raid
+ * pattern the scanner is worst at: a hundred accounts each saying one bland
+ * thing.
+ */
+function AutoModSheet({ onClose, level, onLevel, heldCount = 0, onOpenHeld }) {
+  const [pick, setPick] = useState(level || 'standard');
+  const LEVELS = [
+    ['off', 'Off', 'Nothing is held. Chat still refuses anything the scanner blocks outright, which is not something you can turn off.'],
+    ['light', 'Light', 'Holds messages the scanner reads as hostile or sexual before anyone sees them.'],
+    ['standard', 'Standard', 'Everything in Light, plus the first message from anyone who has never spoken in your chat.'],
+    ['strict', 'Strict', 'Everything in Standard, plus links, and anyone whose account is less than a week old.'],
+  ];
+  return (
+    <Sheet title="Auto moderation"
+      sub="Held messages are not shown to anyone until you approve them. The sender sees their own as pending."
+      onClose={onClose}
+      openAt="large"
+      cta={(
+        <button type="button" onClick={() => { onLevel?.(pick); onClose?.(); }} style={sheetCta({ width: '100%' })}>
+          {pick === 'off' ? 'Turn auto moderation off' : `Set to ${LEVELS.find(([k]) => k === pick)[1]}`}
+        </button>
+      )}
+    >
+      {/* ⚠ THE QUEUE IS REACHABLE FROM THE SETTING. A host who has just made the
+          dial stricter is the single most likely person to want to see what it
+          caught, and making them close this and hunt for it is how a queue goes
+          unread. */}
+      {heldCount > 0 && (
+        <button type="button" onClick={() => { onClose?.(); onOpenHeld?.(); }} style={{
+          display: 'flex', alignItems: 'center', gap: 12, width: '100%', textAlign: 'left',
+          padding: 13, borderRadius: 16, marginBottom: 12, cursor: 'pointer',
+          background: 'linear-gradient(180deg, #2a1015 0%, #1a0a0f 100%)', border: '1px solid #5a2230',
+        }}>
+          <span style={{ flexShrink: 0, width: 32, height: 32, borderRadius: 12, background: 'linear-gradient(135deg, #ff6b6b, #a3122b)', display: 'grid', placeItems: 'center', color: '#fff' }}>
+            <Icon name="inventory_2" size={16} />
+          </span>
+          <span style={{ flex: 1, minWidth: 0 }}>
+            <span style={{ display: 'block', fontSize: 13, fontWeight: 800, color: '#ff9d9d' }}>
+              {heldCount} message{heldCount === 1 ? '' : 's'} waiting on you
+            </span>
+            <span style={{ display: 'block', fontSize: 12, color: SHEET.dim, marginTop: 2 }}>Nobody has seen them yet</span>
+          </span>
+          <Icon name="chevron_right" size={16} style={{ color: SHEET.muted, flexShrink: 0 }} />
+        </button>
+      )}
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {LEVELS.map(([key, label, hint]) => {
+          const on = pick === key;
+          return (
+            <button key={key} type="button" onClick={() => setPick(key)} style={{
+              display: 'flex', alignItems: 'flex-start', gap: 12, width: '100%', textAlign: 'left',
+              padding: 13, borderRadius: 16, cursor: 'pointer',
+              background: on ? SHEET.rowSel : SHEET.card,
+              border: `1px solid ${on ? SHEET.tabSelEdge : SHEET.cardEdge}`,
+              boxShadow: on ? '0 6px 20px rgba(124,58,237,0.28), inset 0 1px 0 rgba(255,255,255,0.08)' : SHEET.cardLip,
+            }}>
+              {/* A radio is a filled disc in a ring, not a tick and not a pill. */}
+              <span aria-hidden style={{
+                flexShrink: 0, marginTop: 2, width: 16, height: 16, borderRadius: 999,
+                border: `2px solid ${on ? '#a259f0' : '#3a3552'}`, display: 'grid', placeItems: 'center',
+              }}>
+                {on && <span style={{ width: 8, height: 8, borderRadius: 999, background: '#c79bff' }} />}
+              </span>
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <span style={{ display: 'block', fontSize: 13, fontWeight: 800, color: SHEET.text }}>{label}</span>
+                <span style={{ display: 'block', fontSize: 12, color: SHEET.dim, marginTop: 2, lineHeight: 1.45 }}>{hint}</span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      <div style={{ display: 'flex', gap: 12, marginTop: 12, padding: 13, borderRadius: 16, background: SHEET.well, border: `1px solid ${SHEET.cardEdge}` }}>
+        <Icon name="bolt" size={16} style={{ color: SHEET.muted, flexShrink: 0, marginTop: 1 }} />
+        <div style={{ fontSize: 12, color: SHEET.dim, lineHeight: 1.5 }}>
+          Your banned words run before any of this and are never held for review, they are simply refused. Moderators are never held.
+        </div>
+      </div>
+    </Sheet>
+  );
+}
+
+/**
+ * The held queue — the half of auto moderation that makes it honest.
+ *
+ * ⚠⚠ HOLDING WITHOUT A QUEUE IS JUST DELETING. If a message is withheld and
+ * nobody can release it, the host has silently muted a viewer who may have said
+ * nothing wrong, and neither of them ever finds out. The queue is not a nicety
+ * attached to the dial, it is the thing that makes holding defensible.
+ *
+ * ⚠ EVERY ROW SAYS WHY IT WAS HELD. "Held by auto moderation" teaches nobody
+ * anything and gives the host no way to tell their dial is set wrong. A row that
+ * says `link` when the host wanted hostility caught is how the dial gets tuned.
+ *
+ * ⚠ DENY OFFERS THE NEXT STEP, IT DOES NOT TAKE IT. Someone posting a scam link
+ * usually wants a timeout, not just a dropped message, and making the host
+ * reopen the profile sheet to do it is how the same account posts it four more
+ * times. It is offered, never automatic: an auto-timeout on an AI verdict is the
+ * auto-DQ this repo already refused for cheat flags.
+ */
+function HeldQueueSheet({ onClose, held = [], onApprove, onDeny, onTimeout, level }) {
+  // ⚠⚠ THE LIVE LIST, NOT THE SNAPSHOT IT WAS OPENED WITH. Measured on the
+  // deployed preview: approving a message dropped the banner from 4 to 3 and
+  // left all four rows sitting in the open sheet, because the array arrived
+  // through the `openSheet` payload and payloads do not re-render. The host
+  // would have approved the same message repeatedly and posted it four times.
+  // The prop stays as the fallback so the isolated harness can still drive this
+  // sheet with fixtures.
+  const sim = usePreviewSim();
+  const rows = sim?.held ?? held;
+  const approve = sim?.approveHeld ?? onApprove;
+  const deny = sim?.denyHeld ?? onDeny;
+  return (
+    <Sheet title="Held for review"
+      sub={rows.length
+        ? 'Nobody watching has seen these. Approving one puts it in chat where it would have been.'
+        : 'Messages auto moderation holds land here before anyone sees them.'}
+      onClose={onClose}
+      openAt="large"
+      cta={<button type="button" onClick={onClose} style={sheetGhost({ width: '100%' })}>Done</button>}
+    >
+      {rows.length === 0 ? (
+        <div style={{ padding: '28px 16px', textAlign: 'center' }}>
+          <div style={{ width: 44, height: 44, margin: '0 auto 12px', borderRadius: 16, background: SHEET.well, border: `1px solid ${SHEET.cardEdge}`, display: 'grid', placeItems: 'center' }}>
+            <Icon name="check" size={20} style={{ color: SHEET.muted }} />
+          </div>
+          <div style={{ fontSize: 13, fontWeight: 800, color: SHEET.text }}>Nothing waiting</div>
+          <div style={{ fontSize: 12, color: SHEET.dim, marginTop: 4, lineHeight: 1.5 }}>
+            {level === 'off'
+              ? 'Auto moderation is off, so nothing will be held.'
+              : 'Chat is running clean at your current setting.'}
+          </div>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {rows.map((h) => {
+            const who = castByUid(h.uid);
+            return (
+              <div key={h.id} style={{ padding: 13, borderRadius: 16, background: SHEET.card, border: `1px solid ${SHEET.cardEdge}`, boxShadow: SHEET.cardLip }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <UserAvatar user={who} size={24} showLiftRing={false} />
+                  <span style={{ fontSize: 13, fontWeight: 800, color: SHEET.text, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{who.displayName}</span>
+                  {/* ⚠ THE REASON IS A CHIP, NOT BODY TEXT. It is the one thing
+                      on the row the host scans for.
+                      ⚠ AND IT IS ONLY RED WHEN THE SCANNER ACCUSED SOMEBODY. A
+                      message held because the host asked to see first messages
+                      is a precaution, not a finding, and painting it the same
+                      red as a scam link trains the host to deny newcomers. */}
+                  <span style={{
+                    marginLeft: 'auto', flexShrink: 0, fontSize: 11, fontWeight: 800,
+                    padding: '2px 8px', borderRadius: 999,
+                    ...(h.by === 'scanner'
+                      ? { color: '#ff9d9d', background: 'linear-gradient(180deg, #2a1015 0%, #1a0a0f 100%)', border: '1px solid #5a2230' }
+                      : { color: SHEET.dim, background: SHEET.chip, border: `1px solid ${SHEET.chipEdge}` }),
+                  }}>{h.why}</span>
+                </div>
+                <div style={{ fontSize: 13, color: SHEET.text, lineHeight: 1.5, margin: '8px 0 4px', wordBreak: 'break-word' }}>{h.text}</div>
+                <div style={{ fontSize: 11, marginBottom: 12, color: (Number(who.accountDays) || 0) < 7 ? C.amber : SHEET.muted }}>
+                  Account {accountAgeLabel(who.accountDays)} old
+                  {who.priorTimeouts ? ` · ${who.priorTimeouts} prior timeout${who.priorTimeouts === 1 ? '' : 's'}` : ''}
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button type="button" onClick={() => approve?.(h.id)} style={{ flex: 1, padding: 12, borderRadius: 12, border: 'none', cursor: 'pointer', background: SHEET.cta, color: '#fff', fontSize: 13, fontWeight: 800 }}>Approve</button>
+                  <button type="button" onClick={() => deny?.(h.id)} style={{ flex: 1, padding: 12, borderRadius: 12, cursor: 'pointer', background: SHEET.cancel, border: `1px solid ${SHEET.cancelEdge}`, color: SHEET.text, fontSize: 13, fontWeight: 800 }}>Deny</button>
+                  <button type="button" aria-label={`Time out ${who.displayName}`} title="Time out" onClick={() => onTimeout?.(h.uid)} style={{ flexShrink: 0, width: 44, padding: 12, borderRadius: 12, cursor: 'pointer', background: SHEET.cancel, border: `1px solid ${SHEET.cancelEdge}`, color: '#ff9d9d', display: 'grid', placeItems: 'center' }}>
+                    <Icon name="timer_off" size={16} />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </Sheet>
+  );
+}
+
+/**
+ * Vertical framing — Dual Format without a second encode.
+ *
+ * ⚠⚠ THE HOST CHOOSES THE CROP AND SEES IT BEFORE IT SHIPS. "Never crop the
+ * broadcaster, letterbox instead" is a standing founder rule; the exception
+ * granted on 2026-09-06 was for a crop the host picked and previewed. So this
+ * screen IS the exception's condition, not a nicety attached to it. Leaving it
+ * unset keeps the old behaviour exactly.
+ *
+ * ⚠⚠ ONE ENCODE, AND THE ALTERNATIVE WAS MEASURED RATHER THAN ASSUMED. A
+ * server-side 9:16 transcode benchmarked on box 1 at 2.89x realtime for free
+ * 480p, 1.69x for lite 720p and **0.85x for Pro 1080p** — it cannot keep up with
+ * a single Pro stream, on a 2-vCPU box that also runs the chat relay, ingest,
+ * the SFU and the PayRam node. Framing costs nothing and behaves identically at
+ * every tier, which is why it is the route.
+ *
+ * ⚠ TWO CONTROLS, NOT A VIDEO EDITOR. A 9:16 window at full source height is
+ * 0.3164 of a 16:9 frame's width, so the only real choices are where it sits and
+ * how far it zooms.
+ *
+ * ⚠ THE RESULT PANEL IS THE POINT. A draggable rectangle over a wide frame tells
+ * a host nothing about what a phone shows, so the 9:16 panel sits beside it and
+ * the two always agree.
+ */
+function VerticalFramingSheet({ onClose }) {
+  const { vFrame, setFrameX, setFrameZoom, clearVFrame, setVFrame } = usePreviewSim();
+  const [box, setBox] = useState(null);
+  const on = !!vFrame;
+  const zoom = vFrame?.zoom ?? 1;
+  const winW = FRAME_WINDOW / zoom;
+  const half = winW / 2;
+  const x = Math.min(1 - half, Math.max(half, vFrame?.x ?? 0.5));
+  const L = x - half;
+  const R = x + half;
+
+  // ⚠⚠ THE LINES ARE THE WHOLE CONTROL, INCLUDING THE ZOOM. Founder, 2026-09-06:
+  // *"we should allow them to move lines so that will see what will be visible
+  // and what wont be visible."* A 9:16 window at full source height is exactly
+  // FRAME_WINDOW of a 16:9 frame's width, so a NARROWER gap between the lines
+  // can only be achieved by cropping height too — which IS zooming in. The gap
+  // therefore encodes the zoom and there is nothing left for a slider to do.
+  // Widening past FRAME_WINDOW is refused rather than clamped silently: there is
+  // no more source to show, so the line simply stops.
+  const drag = (which) => (e) => {
+    if (!box) return;
+    e.stopPropagation();
+    const at = (ev) => {
+      const r = box.getBoundingClientRect();
+      return (ev.clientX - r.left) / Math.max(1, r.width);
+    };
+    const start = at(e);
+    const from = { L, R, x };
+    const move = (ev) => {
+      const p = at(ev);
+      if (which === 'pan') { setFrameX(from.x + (p - start)); return; }
+      const w = which === 'left' ? from.R - p : p - from.L;
+      const clamped = Math.min(FRAME_WINDOW, Math.max(FRAME_WINDOW / 2, w));
+      setFrameZoom(FRAME_WINDOW / clamped);
+      setFrameX(which === 'left' ? from.R - clamped / 2 : from.L + clamped / 2);
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  };
+
+  const Handle = ({ side }) => (
+    <div onPointerDown={drag(side)} style={{
+      position: 'absolute', top: 0, bottom: 0, width: 22,
+      [side]: -11, cursor: 'ew-resize', display: 'grid', placeItems: 'center',
+      touchAction: 'none', zIndex: 3,
+    }}>
+      <span style={{ width: 3, height: '100%', background: '#c79bff', borderRadius: 999, boxShadow: '0 0 12px rgba(180,79,255,0.9)' }} />
+      <span style={{
+        position: 'absolute', width: 18, height: 34, borderRadius: 8,
+        background: 'linear-gradient(180deg, #9a4cf5, #7526f5)',
+        display: 'grid', placeItems: 'center', color: '#fff',
+        boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+      }}>
+        <Icon name="drag_indicator" size={14} />
+      </span>
+    </div>
+  );
+
+  return (
+    <Sheet title="Vertical framing"
+      sub="Phones fill the screen. Leave it automatic and it centres, or drag the lines to say exactly what shows. Desktop always gets the whole picture."
+      onClose={onClose}
+      openAt="large"
+      cta={(
+        <button type="button" onClick={onClose} style={sheetCta({ width: '100%' })}>
+          {on ? 'Use this framing' : 'Keep it automatic'}
+        </button>
+      )}
+    >
+      {/* ⚠ OFF IS AN EQUAL CHOICE, not a disabled state. The founder's standing
+          rule is never crop; this feature exists only because he granted an
+          exception for a crop the HOST sets, so refusing it must stay one tap. */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+        {[[false, 'Automatic', 'Fills the screen, centred'], [true, 'Choose what shows', 'You draw the lines']].map(([val, label, hint]) => {
+          const sel = on === val;
+          return (
+            <button key={label} type="button"
+              onClick={() => (val ? setVFrame({ x: 0.5, zoom: 1 }) : clearVFrame())}
+              style={{
+                flex: 1, textAlign: 'left', padding: 13, borderRadius: 16, cursor: 'pointer',
+                background: sel ? SHEET.rowSel : SHEET.card,
+                border: `1px solid ${sel ? SHEET.tabSelEdge : SHEET.cardEdge}`,
+                boxShadow: sel ? '0 6px 20px rgba(124,58,237,0.28), inset 0 1px 0 rgba(255,255,255,0.08)' : SHEET.cardLip,
+              }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: SHEET.text }}>{label}</div>
+              <div style={{ fontSize: 12, color: SHEET.dim, marginTop: 2 }}>{hint}</div>
+            </button>
+          );
+        })}
+      </div>
+
+      <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.06em', color: SHEET.muted, marginBottom: 6 }}>WHAT YOU SEND</div>
+          <div ref={setBox} style={{
+            position: 'relative', width: '100%', aspectRatio: '16 / 9', borderRadius: 12,
+            overflow: 'hidden', background: '#0a0a14', touchAction: 'none',
+          }}>
+            <Scene scene="gameplay" />
+            {on && (
+              <>
+                {/* ⚠ BOTH SIDES ARE LABELLED. "What will be visible and what
+                    wont be" was the ask, and a dimmed area with no words on it
+                    only says "something is different here". */}
+                <div style={{ position: 'absolute', top: 0, bottom: 0, left: 0, width: `${L * 100}%`, background: 'rgba(0,0,0,0.66)' }} />
+                <div style={{ position: 'absolute', top: 0, bottom: 0, right: 0, width: `${(1 - R) * 100}%`, background: 'rgba(0,0,0,0.66)' }} />
+                <div onPointerDown={drag('pan')} style={{
+                  position: 'absolute', top: 0, bottom: 0,
+                  left: `${L * 100}%`, width: `${winW * 100}%`,
+                  cursor: 'grab', touchAction: 'none',
+                }}>
+                  <Handle side="left" />
+                  <Handle side="right" />
+                  {/* ⚠ THE LABEL HIDES WHEN IT NO LONGER FITS INSIDE THE LINES.
+                      At full zoom the window is half its widest and the pill is
+                      wider than the gap, so it spilled across the CUT area and
+                      labelled the wrong region — the exact opposite of what it
+                      is for. The lines and the CUT markers still say everything
+                      it said. */}
+                  {winW > 0.22 && (
+                    <span style={{
+                      position: 'absolute', left: '50%', bottom: 8, transform: 'translateX(-50%)',
+                      whiteSpace: 'nowrap', fontSize: 9, fontWeight: 800, letterSpacing: '0.06em',
+                      color: '#fff', background: 'linear-gradient(180deg, #9a4cf5, #7526f5)',
+                      padding: '2px 8px', borderRadius: 999,
+                    }}>ON PHONES</span>
+                  )}
+                </div>
+                {L > 0.06 && (
+                  <span style={{ position: 'absolute', left: 6, top: 6, fontSize: 9, fontWeight: 800, letterSpacing: '0.06em', color: '#8b8ba7' }}>CUT</span>
+                )}
+                {R < 0.94 && (
+                  <span style={{ position: 'absolute', right: 6, top: 6, fontSize: 9, fontWeight: 800, letterSpacing: '0.06em', color: '#8b8ba7' }}>CUT</span>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+
+        <div style={{ width: 92, flexShrink: 0 }}>
+          <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.06em', color: SHEET.muted, marginBottom: 6 }}>ON A PHONE</div>
+          <div style={{ position: 'relative', width: '100%', aspectRatio: '9 / 16', borderRadius: 12, overflow: 'hidden', background: '#0a0a14' }}>
+            <Scene scene="gameplay" frame={on ? { x, zoom } : null} />
+          </div>
+        </div>
+      </div>
+
+      {on && (
+        <>
+          <div style={{ display: 'flex', gap: 6, marginTop: 12 }}>
+            {[['Left', 0.2], ['Centre', 0.5], ['Right', 0.8]].map(([label, val]) => {
+              const sel = Math.abs(x - val) < 0.03;
+              return (
+                <button key={label} type="button" onClick={() => setFrameX(val)} style={{
+                  flex: 1, padding: '9px 0', borderRadius: 12, cursor: 'pointer', fontSize: 12, fontWeight: 800,
+                  background: sel ? SHEET.sel : SHEET.chip,
+                  border: `1px solid ${sel ? SHEET.selEdge : SHEET.chipEdge}`,
+                  color: SHEET.text,
+                }}>{label}</button>
+              );
+            })}
+          </div>
+          {/* ⚠ SAYS WHAT DESKTOP GETS. The fear this answers is "am I ruining my
+              stream for everyone else", and the answer is no. */}
+          <div style={{ display: 'flex', gap: 12, marginTop: 12, padding: 13, borderRadius: 16, background: SHEET.well, border: `1px solid ${SHEET.cardEdge}` }}>
+            <Icon name="desktop_windows" size={16} style={{ color: SHEET.muted, flexShrink: 0, marginTop: 1 }} />
+            <div style={{ fontSize: 12, color: SHEET.dim, lineHeight: 1.5 }}>
+              Desktop, tablets and anyone who turns their phone sideways still get the full
+              wide picture. You are only choosing what a phone held upright shows.
+            </div>
+          </div>
+        </>
+      )}
     </Sheet>
   );
 }
@@ -915,6 +2007,110 @@ function SlowModeSheet({ onClose }) {
   );
 }
 
+/**
+ * Shield Mode — every chat lever at once, on one control.
+ *
+ * ⚠⚠ THE POINT IS THAT IT IS ONE PRESS. Vergr already has followers-only, slow
+ * mode, subscribers-only and banned words, and a host being raided has to find
+ * four separate sheets and set each one while the thing is happening. Twitch's
+ * Shield Mode is a panic button precisely because the moment you need it is the
+ * moment you cannot be navigating settings.
+ *
+ * ⚠ IT REMEMBERS WHAT IT CHANGED, AND TURNING IT OFF PUTS IT BACK. A blunt
+ * "restore defaults" would silently wipe a host's own slow-mode setting, so the
+ * previous state is captured on the way in and restored on the way out. That is
+ * the difference between a panic button and a foot-gun.
+ *
+ * ⚠ THE LEVERS ARE PICKABLE, WITH A SENSIBLE DEFAULT. Twitch lets a channel
+ * configure what Shield Mode does. A host who never opens this still gets a
+ * working shield; one who has been raided before can tune it.
+ */
+function ShieldSheet({ onClose }) {
+  // ⚠⚠ RAISING IT NOW ACTUALLY MOVES THE CHAT RULES. Until this was wired, the
+  // shield flipped a banner inside its own sheet and changed nothing on the
+  // stream — a panic button that panicked alone. `raiseShield` sets the levers
+  // the host picked and `lowerShield` puts their own settings back, which is
+  // what the copy on this sheet has been promising.
+  const { raiseShield, lowerShield } = usePreviewSim();
+  const [armed, setArmed] = useState(false);
+  const [levers, setLevers] = useState({
+    followersOnly: true, slowMode: true, subsOnly: false, clearChat: true,
+  });
+  const LEVERS = [
+    ['followersOnly', 'Followers only', 'Only people who already follow you can type.'],
+    ['slowMode', 'Slow mode, 30s', 'One message per viewer every 30 seconds.'],
+    ['subsOnly', 'Subscribers only', 'The hardest setting. Your regulars go quiet too.'],
+    ['clearChat', 'Clear what is on screen', 'Removes the messages already posted.'],
+  ];
+  const count = Object.values(levers).filter(Boolean).length;
+  return (
+    <Sheet
+      title={armed ? 'Shield is up' : 'Shield mode'}
+      sub={armed
+        ? 'Chat is locked down. Turning this off puts every setting back the way you had it.'
+        : 'One press when a stream is being raided or brigaded. It sets everything below at once.'}
+      onClose={onClose}
+      cta={(
+        <button type="button" onClick={() => { if (armed) { lowerShield?.(); } else { raiseShield?.(levers); } setArmed((v) => !v); }} style={armed
+          ? { width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 16, borderRadius: 16, cursor: 'pointer', background: 'linear-gradient(180deg, #1c1c3c 0%, #141530 100%)', border: '1px solid #423a5f', color: SHEET.text, fontSize: 14, fontWeight: 800 }
+          : { width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 16, borderRadius: 16, cursor: 'pointer', border: 'none', background: 'linear-gradient(135deg, #ff6b6b 0%, #e0364f 45%, #a3122b 100%)', boxShadow: '0 10px 26px rgba(224,54,79,0.45), inset 0 1px 0 rgba(255,255,255,0.3)', color: '#fff', fontSize: 14, fontWeight: 800 }}>
+          <Icon name={armed ? 'lock_open' : 'shield'} size={17} />
+          {armed ? 'Lower the shield' : `Raise the shield · ${count} setting${count === 1 ? '' : 's'}`}
+        </button>
+      )}
+    >
+      {armed && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 13, borderRadius: 16, background: 'linear-gradient(180deg, #2a1015 0%, #1a0a0f 100%)', border: '1px solid #5a2230', marginBottom: 12 }}>
+          <span style={{ position: 'relative', width: 9, height: 9, flexShrink: 0 }}>
+            <span style={{ position: 'absolute', inset: 0, borderRadius: 999, background: '#ff6b6b' }} />
+            <span style={{ position: 'absolute', inset: -4, borderRadius: 999, border: '1px solid #ff6b6b', opacity: 0.45 }} />
+          </span>
+          <span style={{ fontSize: 13, fontWeight: 800, color: '#ff9d9d' }}>Shield is up</span>
+          <span className="vg-mono" style={{ marginLeft: 'auto', fontSize: 12, color: SHEET.dim }}>{count} active</span>
+        </div>
+      )}
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {LEVERS.map(([key, label, hint]) => {
+          const on = !!levers[key];
+          return (
+            <button key={key} type="button" onClick={() => setLevers((p) => ({ ...p, [key]: !p[key] }))} style={{
+              display: 'flex', alignItems: 'center', gap: 12, width: '100%', textAlign: 'left',
+              padding: 13, borderRadius: 16, cursor: 'pointer',
+              background: on ? SHEET.rowSel : SHEET.card,
+              border: `1px solid ${on ? SHEET.tabSelEdge : SHEET.cardEdge}`,
+              boxShadow: on ? '0 6px 20px rgba(124,58,237,0.28), inset 0 1px 0 rgba(255,255,255,0.08)' : SHEET.cardLip,
+            }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 800, color: SHEET.text }}>{label}</div>
+                <div style={{ fontSize: 12, color: SHEET.dim, marginTop: 2, lineHeight: 1.45 }}>{hint}</div>
+              </div>
+              {/* a switch is a track with a knob, never a pill */}
+              <span aria-hidden style={{
+                flexShrink: 0, width: 40, height: 24, borderRadius: 999, padding: 2,
+                background: on ? 'linear-gradient(180deg, #9a4cf5, #7526f5)' : '#2A2A38',
+                display: 'flex', justifyContent: on ? 'flex-end' : 'flex-start',
+                transition: 'background 200ms cubic-bezier(0.2, 0.6, 0.25, 1)',
+              }}>
+                <span style={{ width: 20, height: 20, borderRadius: 999, background: '#fff' }} />
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* ⚠ SAYS WHAT COMES BACK. The reason a host hesitates over a panic button
+          is not knowing what it will cost them afterwards. */}
+      <div style={{ display: 'flex', gap: 12, marginTop: 12, padding: 13, borderRadius: 16, background: SHEET.well, border: `1px solid ${SHEET.cardEdge}` }}>
+        <Icon name="history" size={16} style={{ color: SHEET.muted, flexShrink: 0, marginTop: 1 }} />
+        <div style={{ fontSize: 12, color: SHEET.dim, lineHeight: 1.5 }}>
+          Your own chat settings are saved when the shield goes up and put back when it comes down. Moderators can raise and lower it too.
+        </div>
+      </div>
+    </Sheet>
+  );
+}
+
 /** Banned words — "which words?" was the missing question. */
 function BannedWordsSheet({ onClose }) {
   const [words, setWords] = useState(['free coins', 'check my bio', 'crypto giveaway']);
@@ -931,17 +2127,17 @@ function BannedWordsSheet({ onClose }) {
         <input value={draft} onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') add(); }}
           placeholder="Add a word or phrase"
-          style={{ flex: 1, background: S.field, border: `1px solid ${C.fieldEdge}`, borderRadius: 10, padding: '11px 13px', color: C.text, fontSize: 13.5, outline: 'none' }} />
-        <button onClick={add} style={{ padding: '0 16px', borderRadius: 10, border: 'none', background: C.purple, color: '#fff', fontSize: 13, fontWeight: 800, cursor: 'pointer' }}>Add</button>
+          style={{ flex: 1, background: S.field, border: `1px solid ${C.fieldEdge}`, borderRadius: 12, padding: '11px 13px', color: C.text, fontSize: 14, outline: 'none' }} />
+        <button onClick={add} style={{ padding: '0 16px', borderRadius: 12, border: 'none', background: C.purple, color: '#fff', fontSize: 13, fontWeight: 800, cursor: 'pointer' }}>Add</button>
       </div>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
         {words.map((w) => (
-          <span key={w} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 10px 7px 12px', borderRadius: 8, background: S.row, fontSize: 12.5 }}>
+          <span key={w} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 10px 7px 12px', borderRadius: 8, background: S.row, fontSize: 13 }}>
             {w}
             <button aria-label={`Remove ${w}`} onClick={() => setWords(words.filter((x) => x !== w))} style={{ background: 'none', border: 'none', color: C.textMuted, cursor: 'pointer', display: 'grid', placeItems: 'center', padding: 0, minWidth: 24, minHeight: 24 }}><Icon name="close" size={14} /></button>
           </span>
         ))}
-        {words.length === 0 && <span style={{ fontSize: 12.5, color: C.textMuted }}>No banned words. Chat is only filtered by the automatic scan.</span>}
+        {words.length === 0 && <span style={{ fontSize: 13, color: C.textMuted }}>No banned words. Chat is only filtered by the automatic scan.</span>}
       </div>
     </Sheet>
   );
@@ -962,7 +2158,7 @@ function PinSheet({ messages = [], onClose }) {
       {recent.length === 0 && <div style={{ fontSize: 13, color: C.textMuted, padding: '20px 0' }}>Nothing in chat to pin yet.</div>}
       {recent.map((m) => (
         <button key={m.id} onClick={() => setPick(m.id)} style={{
-          display: 'flex', gap: 10, width: '100%', textAlign: 'left', marginBottom: 6, padding: 11, borderRadius: 10, cursor: 'pointer',
+          display: 'flex', gap: 12, width: '100%', textAlign: 'left', marginBottom: 6, padding: 11, borderRadius: 12, cursor: 'pointer',
           background: pick === m.id ? C.purple : S.row,
           border: 'none', color: C.text,
         }}>
@@ -983,7 +2179,11 @@ function TimeoutSheet({ person, onClose }) {
   const OPTS = [[1, '1 min'], [5, '5 min'], [10, '10 min'], [60, '1 hour'], [1440, '24 hours']];
   return (
     <Sheet title={`Time out ${person?.displayName || ''}`}
-      sub="They stay in the stream but cannot chat until it expires."
+      // ⚠ IT SAYS WHAT IT DOES, because it now does more. Matching TikTok's
+      // mute (founder decision 2026-09-05) means the person's earlier messages
+      // go too, and a moderation control that silently deletes is worse than
+      // one that says so.
+      sub="They stay in the stream but cannot chat until it expires. Their earlier messages are removed for everyone."
       onClose={onClose}
       cta={<button type="button" onClick={onClose} style={{ width: '100%', marginTop: 6, padding: 14, borderRadius: 12, border: 'none', cursor: 'pointer', background: `linear-gradient(135deg, ${C.purple}, ${C.purpleLight})`, color: '#fff', fontSize: 14, fontWeight: 800 }}>
         Time out for {OPTS.find(([m]) => m === mins)?.[1]}
@@ -1010,7 +2210,7 @@ function TimeoutSheet({ person, onClose }) {
 function ConfirmSheet({ title, body, confirmLabel, danger, onClose }) {
   return (
     <Sheet title={title} sub={body} onClose={onClose}
-      cta={<div style={{ display: 'flex', gap: 9, marginTop: 4 }}>
+      cta={<div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
         <button type="button" onClick={onClose} style={{ flex: 1, padding: 14, borderRadius: 12, border: 'none', background: S.row, color: C.text, fontSize: 14, fontWeight: 800, cursor: 'pointer' }}>Cancel</button>
         <button type="button" onClick={onClose} style={{ flex: 1, padding: 14, borderRadius: 12, border: 'none', background: danger ? C.redFill : `linear-gradient(135deg, ${C.purple}, ${C.purpleLight})`, color: '#fff', fontSize: 14, fontWeight: 800, cursor: 'pointer' }}>{confirmLabel}</button>
       </div>}
@@ -1022,9 +2222,9 @@ function ConfirmSheet({ title, body, confirmLabel, danger, onClose }) {
 function ActionRow({ icon, label, onClick, danger }) {
   return (
     <button type="button" onClick={onClick} style={{
-      display: 'flex', alignItems: 'center', gap: 11, width: '100%', textAlign: 'left',
-      padding: '11px 8px', borderRadius: 10, border: 'none', background: 'transparent',
-      color: danger ? C.red : C.text, fontSize: 13.5, fontWeight: 600, cursor: 'pointer',
+      display: 'flex', alignItems: 'center', gap: 12, width: '100%', textAlign: 'left',
+      padding: '11px 8px', borderRadius: 12, border: 'none', background: 'transparent',
+      color: danger ? C.red : C.text, fontSize: 14, fontWeight: 600, cursor: 'pointer',
     }}>
       <Icon name={icon} size={19} style={{ color: danger ? C.red : C.textDim }} />{label}
     </button>
@@ -1037,15 +2237,14 @@ function GiftersSheet({ gifters = [], hostName, onClose }) {
   const faceOf = useFaces();
   const MEDAL = ['#F5C842', '#C0C0CF', '#CD7F32'];
   return (
-    <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 200, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: 480, maxHeight: '72%', overflowY: 'auto', background: C.card, boxShadow: C.sheetShadow, borderTopLeftRadius: 18, borderTopRightRadius: 18, padding: 20, color: C.text }}>
+    <SheetShell onClose={onClose}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
           <Icon name="leaderboard" size={18} style={{ color: '#F5C842' }} />
-          <div style={{ fontSize: 15, fontWeight: 800 }}>Top supporters{hostName ? ` · ${hostName}` : ''}</div>
+          <div style={{ fontSize: 16, fontWeight: 800 }}>Top supporters{hostName ? ` · ${hostName}` : ''}</div>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 14 }}>
           {gifters.map((g, i) => (
-            <div key={g.uid} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 12, background: S.row }}>
+            <div key={g.uid} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 10px', borderRadius: 12, background: S.row }}>
               <span className="vg-mono" style={{ width: 20, textAlign: 'center', fontSize: 13, fontWeight: 900, color: MEDAL[i] || C.textMuted }}>{i + 1}</span>
               <UserAvatar src={faceOf(g)} size="sm" />
               <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{g.displayName}</span>
@@ -1056,8 +2255,7 @@ function GiftersSheet({ gifters = [], hostName, onClose }) {
           ))}
         </div>
         <button onClick={onClose} style={{ width: '100%', padding: 14, borderRadius: 12, border: 'none', background: `linear-gradient(135deg, ${C.purple}, ${C.purpleLight})`, color: '#fff', fontSize: 13, fontWeight: 800, cursor: 'pointer' }}>Send a tip</button>
-      </div>
-    </div>
+    </SheetShell>
   );
 }
 
@@ -1082,12 +2280,10 @@ function SheetBtn({ icon, label, danger = false, onClick }) {
 // product in a tool whose whole purpose is to show what actually ships.
 function MoreSheet({ onClose }) {
   return (
-    <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 200, display: 'flex', alignItems: 'flex-end' }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', background: C.bg, borderTopLeftRadius: 16, borderTopRightRadius: 16, padding: 14 }}>
+    <SheetShell onClose={onClose}>
         <SheetBtn icon="fullscreen" label="Fullscreen" onClick={onClose} />
         <SheetBtn icon="flag" label="Report stream" danger onClick={onClose} />
-      </div>
-    </div>
+    </SheetShell>
   );
 }
 
@@ -1095,12 +2291,10 @@ function MoreSheet({ onClose }) {
 function ShareSheet({ onClose }) {
   const rows = [['link', 'Copy link'], ['chat', 'Send in a message'], ['group', 'Share to a squad'], ['ios_share', 'More…']];
   return (
-    <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 200, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: 480, background: C.card, boxShadow: C.sheetShadow, borderTopLeftRadius: 18, borderTopRightRadius: 18, padding: 20, color: C.text }}>
-        <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 14 }}>Share this stream</div>
+    <SheetShell onClose={onClose}>
+        <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 14 }}>Share this stream</div>
         {rows.map(([ic, l]) => <SheetBtn key={l} icon={ic} label={l} onClick={onClose} />)}
-      </div>
-    </div>
+    </SheetShell>
   );
 }
 
@@ -1131,34 +2325,32 @@ function TierRow({ t, selected, onPick }) {
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <span style={{ fontSize: 14, fontWeight: 800 }}>{t.name}</span>
-        {t.popular && <span style={{ fontSize: 9.5, fontWeight: 800, padding: '2px 7px', borderRadius: 999, background: C.purple, color: '#fff' }}>POPULAR</span>}
+        {t.popular && <span style={{ fontSize: 9, fontWeight: 800, padding: '2px 7px', borderRadius: 999, background: C.purple, color: '#fff' }}>POPULAR</span>}
         <span style={{ flex: 1 }} />
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 13, fontWeight: 800 }}>
           <CoinIcon size={14} />{t.priceCoins}
           <span style={{ color: selected ? '#fff' : C.textMuted, fontWeight: 600 }}>/mo</span>
         </span>
       </div>
-      <div style={{ marginTop: 6, fontSize: 11.5, color: selected ? '#fff' : C.textDim, lineHeight: 1.6 }}>{t.perks.join(' · ')}</div>
+      <div style={{ marginTop: 6, fontSize: 12, color: selected ? '#fff' : C.textDim, lineHeight: 1.6 }}>{t.perks.join(' · ')}</div>
     </button>
   );
 }
 
-function Sheet({ title, sub, onClose, children, cta }) {
+// The shell most of the small sheets render through, so converting THIS one
+// carried the appeal, report, confirm, slow-mode, banned-words, pin, timeout
+// and stream-settings sheets with it.
+//
+// ⚠ THE CTA MUST BE ON SCREEN. A sheet that scrolls is fine to use and useless
+// to SCREENSHOT — the first capture of this one had "Gift · 100 coins" below
+// the fold. The header and the button are pinned; only the middle scrolls.
+function Sheet({ title, sub, onClose, children, cta, openAt }) {
   return (
-    <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 200, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
-      {/* ⚠ THE CTA MUST BE ON SCREEN. A bottom sheet that scrolls is fine to use
-          and useless to SCREENSHOT — the first capture of this one had "Gift ·
-          100 coins" below the fold. The header and the button are pinned; only
-          the middle scrolls. */}
-      <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: 480, maxHeight: '92%', display: 'flex', flexDirection: 'column', background: C.card, boxShadow: C.sheetShadow, borderTopLeftRadius: 18, borderTopRightRadius: 18, padding: 18, color: C.text }}>
-        <div style={{ flexShrink: 0 }}>
-          <div style={{ fontSize: 16, fontWeight: 800 }}>{title}</div>
-          {sub && <div style={{ fontSize: 12, color: C.textDim, margin: '4px 0 14px' }}>{sub}</div>}
-        </div>
-        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>{children}</div>
-        <div style={{ flexShrink: 0 }}>{cta}</div>
-      </div>
-    </div>
+    <SheetShell onClose={onClose} scroll={false} openAt={openAt}>
+      <SheetHead title={title} sub={sub} onClose={onClose} />
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>{children}</div>
+      {cta && <div style={{ flexShrink: 0, paddingTop: 12 }}>{cta}</div>}
+    </SheetShell>
   );
 }
 
@@ -1237,7 +2429,7 @@ function GiftSubSheet({ host, onClose, balance = 240, onTopUp }) {
           boxShadow: to === RANDOM ? C.selBar : 'none',
         }}>
           <Icon name="casino" size={22} style={{ color: C.purpleLight }} />
-          <div style={{ fontSize: 10.5, fontWeight: 700, marginTop: 4 }}>Someone in chat</div>
+          <div style={{ fontSize: 11, fontWeight: 700, marginTop: 4 }}>Someone in chat</div>
         </button>
         {CAST.slice(0, 6).map((p) => (
           <button key={p.uid} type="button" onClick={() => setTo(p.uid)} style={{
@@ -1246,7 +2438,7 @@ function GiftSubSheet({ host, onClose, balance = 240, onTopUp }) {
             boxShadow: to === p.uid ? C.selBar : 'none',
           }}>
             <UserAvatar src={faceOf(p)} size={34} />
-            <div style={{ fontSize: 10.5, fontWeight: 700, marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.displayName}</div>
+            <div style={{ fontSize: 11, fontWeight: 700, marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.displayName}</div>
           </button>
         ))}
       </div>
@@ -1254,7 +2446,7 @@ function GiftSubSheet({ host, onClose, balance = 240, onTopUp }) {
       <div style={{ display: 'flex', gap: 6, marginBottom: 4 }}>
         {QTY.map((q) => (
           <button key={q} type="button" onClick={() => setQty(q)} style={{
-            flex: 1, padding: '9px 6px', borderRadius: 10, cursor: 'pointer', fontSize: 13, fontWeight: 800,
+            flex: 1, padding: '9px 6px', borderRadius: 12, cursor: 'pointer', fontSize: 13, fontWeight: 800,
             background: qty === q ? C.purple : S.row,
             border: 'none', color: qty === q ? '#fff' : C.textDim,
           }}>{q}</button>
@@ -1293,6 +2485,21 @@ function GiftSubSheet({ host, onClose, balance = 240, onTopUp }) {
  */
 function SheetHost({ children, onClose }) {
   const ref = useRef(null);
+  // ⚠⚠ THIS EFFECT RUNS ONCE PER SHEET, AND THE EMPTY DEPS ARE THE WHOLE POINT.
+  // It depended on [onClose], and all nine call sites pass an inline arrow, so
+  // the identity changed on every render and the effect re-ran on every render.
+  // Its setup MOVES FOCUS to the first control in the sheet.
+  //
+  // Consequence: typing one character into the tip message re-rendered the
+  // sheet, focus was ripped back to the close button, and no text field in any
+  // of the seventeen sheets could take more than one keystroke. The simulator's
+  // own one-second tick did it unprompted as well. Founder, 2026-09-05: "tip
+  // sheet, optional message doesn't work in preview".
+  //
+  // The close handler is read through a ref so a fresh identity can never
+  // restart a mount-only effect.
+  const closeRef = useRef(onClose);
+  useEffect(() => { closeRef.current = onClose; }, [onClose]);
   useEffect(() => {
     const host = ref.current;
     if (!host) return;
@@ -1308,7 +2515,7 @@ function SheetHost({ children, onClose }) {
     // Move focus in, so the first Tab lands inside rather than back at the top.
     const first = host.querySelector('button,[href],input,select,textarea,[tabindex]:not([tabindex="-1"])');
     (first || host).focus?.();
-    const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); onClose?.(); } };
+    const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); closeRef.current?.(); } };
     host.addEventListener('keydown', onKey);
     return () => {
       host.removeEventListener('keydown', onKey);
@@ -1317,7 +2524,7 @@ function SheetHost({ children, onClose }) {
       // next Tab restarts at the top of the page.
       if (prev && document.contains(prev)) prev.focus?.();
     };
-  }, [onClose]);
+  }, []);
   return (
     <div ref={ref} role="dialog" aria-modal="true" tabIndex={-1}
       style={{ position: 'absolute', inset: 0, zIndex: 200, outline: 'none' }}>
@@ -1356,6 +2563,10 @@ function PreviewSheetBody({ openSheet, host, onClose, onOpen }) {
   if (openSheet.kind === 'report') return <ReportSheet person={openSheet.person} onClose={onClose} />;
   if (openSheet.kind === 'timeout') return <TimeoutSheet person={openSheet.person} onClose={onClose} />;
   if (openSheet.kind === 'slowmode') return <SlowModeSheet onClose={onClose} />;
+  if (openSheet.kind === 'shield') return <ShieldSheet onClose={onClose} />;
+  if (openSheet.kind === 'vframe') return <VerticalFramingSheet onClose={onClose} />;
+  if (openSheet.kind === 'automod') return <AutoModSheet onClose={onClose} level={openSheet.level} onLevel={openSheet.onLevel} heldCount={openSheet.heldCount} onOpenHeld={() => onOpen?.({ kind: 'held' })} />;
+  if (openSheet.kind === 'held') return <HeldQueueSheet onClose={onClose} held={openSheet.held} level={openSheet.level} onApprove={openSheet.onApprove} onDeny={openSheet.onDeny} onTimeout={(uid) => onOpen?.({ kind: 'profile', uid })} />;
   if (openSheet.kind === 'bannedwords') return <BannedWordsSheet onClose={onClose} />;
   if (openSheet.kind === 'pin') return <PinSheet messages={sim.messages} onClose={onClose} />;
   if (openSheet.kind === 'confirm') return <ConfirmSheet {...openSheet} onClose={onClose} />;
@@ -1365,6 +2576,7 @@ function PreviewSheetBody({ openSheet, host, onClose, onOpen }) {
         person={openSheet.uid === 'host' ? host : castByUid(openSheet.uid)}
         isHost={openSheet.uid === 'host'}
         role={role}
+        messages={sim.messages || []}
         onClose={onClose}
         // ⚠ EVERY ACTION GOES SOMEWHERE. The previous sheet's two buttons were
         // dead and the ten moderation rows all called onClose — a menu that

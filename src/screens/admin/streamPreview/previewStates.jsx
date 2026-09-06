@@ -25,6 +25,8 @@ import Icon from '../../../components/Icon';
 // it from context also means six call sites cannot each forget it.
 import { useFaces, usePreviewSim } from './previewAssetsContext';
 import { canUseModChannel } from './previewRoles';
+import { castByUid } from './previewCast';
+import UserAvatar from '../../../components/UserAvatar';
 import { ReconnectingOverlay, StreamLoadingCover } from '../../../components/streams/MobileLiveViewer';
 import { RaidBanner } from '../../../components/streams/RaidControls';
 
@@ -223,7 +225,7 @@ export function ModChannelSwitch({ role = 'viewer', channel = 'public', onChanne
       aria-checked={on}
       aria-label="Show the moderators-only room"
       style={{
-        display: 'inline-flex', alignItems: 'center', gap: 7, flexShrink: 0,
+        display: 'inline-flex', alignItems: 'center', gap: 8, flexShrink: 0,
         padding: '4px 8px 4px 10px', borderRadius: 8, cursor: 'pointer', border: 'none',
         // ⚠ See VpEarnedChip: the row that holds this is `pointerEvents: 'none'`
         // so its empty half stops eating taps meant for the chat behind it.
@@ -291,6 +293,81 @@ export function AudioStage(props) {
   return <AudioStageView {...props} avatar={avatar} />;
 }
 
-
-
-
+/**
+ * The hype train — one thing the whole room pushes on together.
+ *
+ * ⚠⚠ THE REWARD IS RECOGNITION AND NOTHING ELSE, PENDING A FOUNDER DECISION.
+ * Paying coins would mint currency out of a celebration; paying VP inflates the
+ * ladder and collides head-on with `GIFT_COINS_PER_VP`, whose own comment says
+ * coins must not buy rank. So the train currently pays the only thing that costs
+ * nothing and is still worth having: the room sees the level, and it names the
+ * people who got it there. Do not add a currency reward here without being told.
+ *
+ * ⚠ IT IS NOT `streams/{id}.hype`. That field already exists and means something
+ * else entirely — a reactions-per-5-seconds excitement meter (functions/streamHype.js).
+ * Two systems on one word is how the theme system died, so this rides `train`.
+ *
+ * ⚠ THE RIDERS ARE THE POINT, not the bar. A progress bar with no faces on it is
+ * a loading spinner; the reason anyone pushes a shared meter is to be one of the
+ * names on it.
+ */
+export function HypeTrain({ style }) {
+  // ⚠ THE TRAIN COMES FROM THE CONTEXT, NOT A PROP. Six surfaces mount this and
+  // eslint no-undef caught all six the moment it was threaded as a prop — which
+  // is the cheap version of the failure that shipped the avatar orbit visible to
+  // nobody but its owner. A prop has to be remembered at every hop; a context
+  // cannot be forgotten.
+  const faceOf = useFaces();
+  const { train } = usePreviewSim();
+  if (!train) return null;
+  const { level = 1, into = 0, goal = 1, maxLevel = 5, endsAtMs = 0, riders = {} } = train;
+  const capped = level >= maxLevel;
+  const pct = capped ? 100 : Math.max(4, Math.min(100, Math.round((into / goal) * 100)));
+  const left = Math.max(0, Math.round((endsAtMs - Date.now()) / 1000));
+  // ⚠ THE HEAT IS THE LEVEL, so a level 5 cannot be mistaken for a level 1 at a
+  // glance. Violet through pink to gold, which is the brand's own ladder; there
+  // is deliberately no cyan anywhere in it.
+  const HEAT = ['#7c3aed', '#8b3ff0', '#b44fff', '#c87fff', '#f0a500'];
+  const hot = HEAT[Math.min(level, HEAT.length) - 1];
+  const top = [...Object.entries(riders)].sort((a, b) => b[1] - a[1]).slice(0, 5);
+  return (
+    <div style={{
+      position: 'absolute', left: 10, right: 10, top: 56, zIndex: 26,
+      padding: 8, borderRadius: 12, pointerEvents: 'none',
+      background: 'linear-gradient(180deg, #1b1030 0%, #120b22 100%)',
+      boxShadow: `inset 0 1px 0 rgba(255,255,255,0.08), 0 6px 20px ${hot}33`,
+      ...style,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span style={{
+          flexShrink: 0, display: 'flex', alignItems: 'center', gap: 4,
+          padding: '2px 8px', borderRadius: 999, background: hot,
+          fontSize: 11, fontWeight: 800, color: '#fff',
+        }}>
+          <Icon name="local_fire_department" size={12} />
+          {capped ? 'MAX' : `LV ${level}`}
+        </span>
+        <span style={{ flex: 1, minWidth: 0, fontSize: 12, fontWeight: 800, color: C.text }}>
+          Hype train
+        </span>
+        {/* ⚠ THE COUNTDOWN IS THE URGENCY. A shared meter with no clock on it is
+            just a total, and nobody hurries for a total. */}
+        <span className="vg-mono" style={{ flexShrink: 0, fontSize: 12, fontWeight: 800, color: left <= 30 ? C.amber : C.textDim }}>
+          {Math.floor(left / 60)}:{String(left % 60).padStart(2, '0')}
+        </span>
+      </div>
+      <div style={{ height: 6, borderRadius: 999, background: S.track, overflow: 'hidden', margin: '6px 0 6px' }}>
+        <div style={{ width: `${pct}%`, height: '100%', borderRadius: 999, background: `linear-gradient(90deg, ${hot}, #f5c842)`, transition: 'width 320ms cubic-bezier(0.2,0.6,0.25,1)' }} />
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        {top.map(([uid]) => {
+          const u = castByUid(uid);
+          return <UserAvatar key={uid} user={u} avatar={faceOf(u)} size={18} showLiftRing={false} />;
+        })}
+        <span style={{ fontSize: 11, fontWeight: 700, color: C.textMuted, marginLeft: 2 }}>
+          {Object.keys(riders).length} on board
+        </span>
+      </div>
+    </div>
+  );
+}

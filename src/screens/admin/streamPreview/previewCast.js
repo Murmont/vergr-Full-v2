@@ -19,17 +19,17 @@ import { faceFor } from './previewFaces';
 const withFace = (c) => ({ ...c, avatar: faceFor(c.uid, c.displayName) });
 
 export const CAST = [
-  { uid: 'c1', displayName: 'ZER0_kade', username: 'zer0kade', vpLevel: 94, rank: 'ascendant', sub: true },
-  { uid: 'c2', displayName: 'Priya_S', username: 'priya_s', vpLevel: 12, rank: 'contender' },
-  { uid: 'c3', displayName: 'tomruns', username: 'tomruns', vpLevel: 38, rank: 'challenger' },
-  { uid: 'c4', displayName: 'nova_kill', username: 'novakill', vpLevel: 77, rank: 'legend', sub: true },
+  { uid: 'c1', displayName: 'ZER0_kade', username: 'zer0kade', vpLevel: 94, rank: 'ascendant', sub: true , followers: 412000, following: 318, likes: 5200000, bio: 'ranked grinder. 3am scrims, zero excuses.' , accountDays: 412, priorTimeouts: 0 },
+  { uid: 'c2', displayName: 'Priya_S', username: 'priya_s', vpLevel: 12, rank: 'contender' , followers: 8400, following: 291, likes: 96000, bio: 'chaos support main. i heal, i die, i heal again.' , accountDays: 16, priorTimeouts: 0 },
+  { uid: 'c3', displayName: 'tomruns', username: 'tomruns', vpLevel: 38, rank: 'challenger' , followers: 61000, following: 140, likes: 740000, bio: 'speedruns and bad decisions.' , accountDays: 903, priorTimeouts: 1 },
+  { uid: 'c4', displayName: 'nova_kill', username: 'novakill', vpLevel: 77, rank: 'legend', sub: true , followers: 1200000, following: 84, likes: 19000000, bio: 'aim is a personality trait.' , accountDays: 1470, priorTimeouts: 0 },
   // ⚠ ONE CAST MEMBER IS A MODERATOR so the Moderators tab and the
   // "Remove as moderator" state are capturable at all. Without it that tab is
   // permanently empty and looks broken rather than filtered.
-  { uid: 'c5', displayName: 'Sable', username: 'sable', vpLevel: 55, rank: 'veteran', isMod: true },
-  { uid: 'c6', displayName: 'Kai', username: 'kaiplays', vpLevel: 23, rank: 'contender' },
-  { uid: 'c7', displayName: 'Emma_Quinn', username: 'emmaq', vpLevel: 66, rank: 'mythic' },
-  { uid: 'c8', displayName: 'Yves_SB', username: 'yvessb', vpLevel: 8, rank: 'rookie' },
+  { uid: 'c5', displayName: 'Sable', username: 'sable', vpLevel: 55, rank: 'veteran', isMod: true , followers: 37000, following: 402, likes: 410000, bio: 'mod by day, silver by night.' , accountDays: 612, priorTimeouts: 0 },
+  { uid: 'c6', displayName: 'Kai', username: 'kaiplays', vpLevel: 23, rank: 'contender' , followers: 2100, following: 512, likes: 24000, bio: 'here for the vibes and the loot.' , accountDays: 3, priorTimeouts: 2 },
+  { uid: 'c7', displayName: 'Emma_Quinn', username: 'emmaq', vpLevel: 66, rank: 'mythic' , followers: 188000, following: 233, likes: 2600000, bio: 'cozy games, unhinged commentary.' , accountDays: 258, priorTimeouts: 0 },
+  { uid: 'c8', displayName: 'Yves_SB', username: 'yvessb', vpLevel: 8, rank: 'rookie' , followers: 340, following: 611, likes: 2900, bio: 'new here. be nice.' , accountDays: 1, priorTimeouts: 0 },
 ].map(withFace);
 
 // ⚠ THE VIEWER IS A PERSON TOO. Tapping the coin used to send { name: 'You' }
@@ -38,6 +38,8 @@ export const CAST = [
 // Listed in the rail beside everyone else.
 export const PREVIEW_VIEWER = withFace({
   uid: 'you', displayName: 'You', username: 'you', vpLevel: 30, rank: 'challenger',
+  followers: 128, following: 96, likes: 1400, bio: 'watching more than i play.',
+  accountDays: 210, priorTimeouts: 0,
 });
 
 // ⚠ PREVIEW_VIEWER IS A PERSON AND MUST RESOLVE HERE TOO. It is exported
@@ -97,6 +99,24 @@ export const SUB_SCRIPT = [
 // Entry ribbons. `rank` decides which of the 11 founder banners is drawn, so
 // firing these previews the REAL art at the REAL 280x70.
 export const JOIN_SCRIPT = ['c4', 'c1', 'c7', 'c5', 'c3'];
+
+// Held-message samples. Each one is held for a DIFFERENT reason, because a
+// queue where every row says the same thing teaches the host nothing about what
+// their dial is doing. `why` is the level that catches it.
+// ⚠ `by` IS NOT DECORATION, IT IS THE DIFFERENCE BETWEEN AN ACCUSATION AND A
+// PRECAUTION. 'scanner' means the moderation verdict said this text is hostile
+// or sexual. 'rule' means the text is fine as far as anyone knows and the host
+// simply asked to see first messages, or links, before they go out. Rendering
+// both in the same red taught the host that a newcomer asking about sensitivity
+// settings is the same kind of problem as a scam link, which is how benign
+// people get denied and never come back.
+export const HELD_SEED = [
+  { id: 'h1', uid: 'c1', text: 'go back to whatever hole you crawled out of, you are actual garbage at this', why: 'hostility', level: 'light', by: 'scanner' },
+  { id: 'h2', uid: 'c3', text: 'free coins here >> vergr-drops.link/claim', why: 'link', level: 'strict', by: 'rule' },
+  { id: 'h3', uid: 'c8', text: 'first time watching, whats your sens', why: 'first message here', level: 'standard', by: 'rule' },
+  { id: 'h4', uid: 'c6', text: 'lmao this guy is dogwater and probably smells too', why: 'hostility', level: 'light', by: 'scanner' },
+];
+
 
 let seq = 0;
 export const nextId = () => `sim_${Date.now()}_${seq++}`;

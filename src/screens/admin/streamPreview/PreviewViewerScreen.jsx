@@ -11,7 +11,7 @@ import Icon from '../../../components/Icon';
 // that shows none of it. Prop-driven, so importing is read-only.
 import UserName from '../../../components/UserName';
 import RankBadge from '../../../components/RankBadge';
-import { PlaybackState, StreamPaywall, ChatStateBanner, TtsStrip, EmptyChat, VpEarnedChip, PreviewLevelUp, AudioStage, ModChannelSwitch, RaidBanner, ComposerPill } from './previewStates';
+import { PlaybackState, StreamPaywall, ChatStateBanner, TtsStrip, EmptyChat, VpEarnedChip, PreviewLevelUp, AudioStage, ModChannelSwitch, RaidBanner, ComposerPill, HypeTrain } from './previewStates';
 import ReactionsFloor from '../../../components/streams/ReactionsFloor';
 import { usePreviewVideos, usePreviewSim, usePreviewRole } from './previewAssetsContext';
 import { PREVIEW_VIEWER } from './previewCast';
@@ -182,8 +182,8 @@ export default function PreviewViewerScreen({
             control has to say what the gesture was, or nobody finds it twice. */}
         {chatHidden && (
           <button type="button" onClick={onToggleChat} style={{
-            position: 'absolute', left: 12, bottom: 14, zIndex: 6, display: 'inline-flex', alignItems: 'center', gap: 7,
-            padding: '9px 14px', borderRadius: 999, cursor: 'pointer', color: '#fff', fontSize: 12.5, fontWeight: 700, ...glassDark,
+            position: 'absolute', left: 12, bottom: 14, zIndex: 6, display: 'inline-flex', alignItems: 'center', gap: 8,
+            padding: '9px 14px', borderRadius: 999, cursor: 'pointer', color: '#fff', fontSize: 13, fontWeight: 700, ...glassDark,
           }}>
             <Icon name="chat_bubble" size={15} /> Show chat
           </button>
@@ -195,7 +195,7 @@ export default function PreviewViewerScreen({
             <UserAvatar src={faceOf(host)} size={38} />
             <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 0 }}>
-                <span style={{ fontSize: 15, fontWeight: 800, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{host?.displayName || 'Live'}</span>
+                <span style={{ fontSize: 16, fontWeight: 800, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{host?.displayName || 'Live'}</span>
                 {host?.isVerified && (
                   <span style={{ flexShrink: 0, width: 15, height: 15, borderRadius: '50%', background: `linear-gradient(135deg, ${C.purple}, ${C.purpleLight})`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     <Icon name="check" size={10} />
@@ -208,7 +208,7 @@ export default function PreviewViewerScreen({
           <div style={{ flex: 1, minWidth: 0 }} />
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
             <GiftersCluster gifters={streamDoc.previewGifters || []} />
-            <button aria-label="Viewers" onClick={() => onOpenSheet({ kind: 'viewers' })} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '4px 8px', borderRadius: 999, fontSize: 11, fontWeight: 800, flexShrink: 0, border: 'none', color: '#fff', cursor: 'pointer', ...glassDark }}>
+            <button aria-label="Viewers" onClick={() => onOpenSheet({ kind: 'viewers' })} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 8px', borderRadius: 999, fontSize: 11, fontWeight: 800, flexShrink: 0, border: 'none', color: '#fff', cursor: 'pointer', ...glassDark }}>
               <Icon name="visibility" size={14} />{compactNum(streamDoc.viewerCount || 0)}
             </button>
             <button aria-label="Leave stream" onClick={() => onOpenSheet?.({ kind: 'confirm', title: 'Leave this stream?', body: 'You can come back any time while the broadcaster is still live. Your place in chat is not saved.', confirmLabel: 'Leave' })} style={{ width: 28, height: 28, borderRadius: '50%', border: 'none', background: 'rgba(10,8,22,0.4)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}><Icon name="close" size={17} /></button>
@@ -225,8 +225,8 @@ export default function PreviewViewerScreen({
             connection) sits between the header and the grid on every stream. */}
         <div style={{ position: 'relative', zIndex: 3, padding: '0 10px 8px', flexShrink: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-              <span dir="auto" style={{ ...glassDark, padding: '4px 10px', borderRadius: 999, fontSize: 11.5, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '62%' }}>{streamDoc.title}</span>
-              {streamDoc.game && <span style={{ ...glassDark, padding: '4px 10px', borderRadius: 999, fontSize: 11.5, fontWeight: 700, color: C.purpleLight, whiteSpace: 'nowrap' }}>{streamDoc.game}</span>}
+              <span dir="auto" style={{ ...glassDark, padding: '4px 10px', borderRadius: 999, fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '62%' }}>{streamDoc.title}</span>
+              {streamDoc.game && <span style={{ ...glassDark, padding: '4px 10px', borderRadius: 999, fontSize: 12, fontWeight: 700, color: C.purpleLight, whiteSpace: 'nowrap' }}>{streamDoc.game}</span>}
             </div>
         </div>
 
@@ -284,8 +284,9 @@ export default function PreviewViewerScreen({
           {/* Chat block wrapped so gift drops anchor directly ABOVE it — never
               over the newest messages, which are the ones being read. */}
           <div style={{ position: 'relative', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+            <HypeTrain />
             <GiftFeed toasts={gifts} style={{ position: 'absolute', bottom: '100%', left: 0, marginBottom: 8, zIndex: 5 }} />
-          <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', gap: 13, paddingTop: 24, height: '100%', maxHeight: '100%', overflow: 'hidden', maskImage: 'linear-gradient(to top, #000 0%, #000 62%, transparent 96%)', WebkitMaskImage: 'linear-gradient(to top, #000 0%, #000 62%, transparent 96%)' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', gap: 12, paddingTop: 24, height: '100%', maxHeight: '100%', overflow: 'hidden', maskImage: 'linear-gradient(to top, #000 0%, #000 62%, transparent 96%)', WebkitMaskImage: 'linear-gradient(to top, #000 0%, #000 62%, transparent 96%)' }}>
 {messages.length === 0 && <EmptyChat />}
             {messages.slice(-12).map((m) => (
               <PreviewChatRow key={m.id} user={m.name} uid={m.uid} vpLevel={m.vpLevel} mod={m.isMod} text={m.text} sub={m.sub} avatar={avatars[m.uid] || m.avatar} />
@@ -359,7 +360,7 @@ export default function PreviewViewerScreen({
               {/* Row 1 — name + verified check inline (TikTok places the badge by the
                   name, not on the avatar). Name truncates; check never shrinks. */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 0 }}>
-                <span style={{ fontSize: 15, fontWeight: 800, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{host?.displayName || 'Live'}</span>
+                <span style={{ fontSize: 16, fontWeight: 800, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{host?.displayName || 'Live'}</span>
                 {host?.isVerified && (
                   <span style={{ flexShrink: 0, width: 15, height: 15, borderRadius: '50%', background: `linear-gradient(135deg, ${C.purple}, ${C.purpleLight})`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     <Icon name="check" size={10} />
@@ -378,7 +379,7 @@ export default function PreviewViewerScreen({
               carries its own soft bubble for contrast over the video. */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
             <GiftersCluster gifters={streamDoc.previewGifters || []} />
-            <button aria-label="Viewers" onClick={() => onOpenSheet({ kind: 'viewers' })} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '4px 8px', borderRadius: 999, fontSize: 11, fontWeight: 800, flexShrink: 0, border: 'none', color: '#fff', cursor: 'pointer', ...glassDark }}>
+            <button aria-label="Viewers" onClick={() => onOpenSheet({ kind: 'viewers' })} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 8px', borderRadius: 999, fontSize: 11, fontWeight: 800, flexShrink: 0, border: 'none', color: '#fff', cursor: 'pointer', ...glassDark }}>
               <Icon name="visibility" size={14} />{compactNum(streamDoc.viewerCount || 0)}
             </button>
             <button aria-label="Leave stream" onClick={() => onOpenSheet?.({ kind: 'confirm', title: 'Leave this stream?', body: 'You can come back any time while the broadcaster is still live. Your place in chat is not saved.', confirmLabel: 'Leave' })} style={{ width: 28, height: 28, borderRadius: '50%', border: 'none', background: 'rgba(10,8,22,0.4)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}><Icon name="close" size={17} /></button>
@@ -404,13 +405,14 @@ export default function PreviewViewerScreen({
           {/* Chat block wrapped so gift drops anchor directly ABOVE it — never
               over the newest messages, which are the ones being read. */}
           <div style={{ position: 'relative', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+            <HypeTrain />
             <GiftFeed toasts={gifts} style={{ position: 'absolute', bottom: '100%', left: 0, marginBottom: 8, zIndex: 5 }} />
 
           {/* Chat — TikTok-style: no box, newest at the bottom, older messages fade
               out at the top via a gradient mask (≈4 lines visible). */}
-          <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', gap: 9, paddingTop: 26, height: 188, maxHeight: 188, overflow: 'hidden', textShadow: '0 1px 3px rgba(0,0,0,0.85)', maskImage: 'linear-gradient(to top, #000 0%, #000 55%, transparent 95%)', WebkitMaskImage: 'linear-gradient(to top, #000 0%, #000 55%, transparent 95%)' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', gap: 8, paddingTop: 26, height: 188, maxHeight: 188, overflow: 'hidden', textShadow: '0 1px 3px rgba(0,0,0,0.85)', maskImage: 'linear-gradient(to top, #000 0%, #000 55%, transparent 95%)', WebkitMaskImage: 'linear-gradient(to top, #000 0%, #000 55%, transparent 95%)' }}>
             {joinEvents.slice(-1).map((ev) => (
-              <div key={ev.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 11, color: 'rgba(255,255,255,0.9)' }}>
+              <div key={ev.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 11, color: 'rgba(255,255,255,0.9)' }}>
                 <img src={ev.kind === 'subscriber' ? waveIcon : watchingIcon} alt="" aria-hidden style={{ width: 22, height: 22, objectFit: 'contain', flexShrink: 0 }} />
                 <span><b style={{ fontWeight: 800 }}>{ev.user?.displayName}</b> {ev.kind === 'subscriber' ? 'joined via share invitation' : 'started watching'}</span>
               </div>
@@ -471,7 +473,7 @@ export default function PreviewViewerScreen({
           {/* hover control bar */}
           <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, padding: '24px 14px 10px', background: 'linear-gradient(0deg, rgba(0,0,0,0.75), transparent)', display: 'flex', alignItems: 'center', gap: 12 }}>
             <Icon name="volume_up" size={18} />
-            <div style={{ width: 110, height: 4, borderRadius: 99, background: '#4A4A58' }} />
+            <div style={{ width: 110, height: 4, borderRadius: 999, background: '#4A4A58' }} />
             <div style={{ flex: 1 }} />
             <Icon name="crop_16_9" size={18} />
             <Icon name="fullscreen" size={18} />
@@ -487,8 +489,8 @@ export default function PreviewViewerScreen({
               <div style={{ fontSize: 14, fontWeight: 800 }}>{host?.displayName || 'Host'}</div>
               {streamDoc.game && <div style={{ fontSize: 12, color: C.purpleLight, fontWeight: 600 }}>{streamDoc.game}</div>}
             </div>
-            <button style={{ padding: '9px 18px', borderRadius: 10, border: 'none', background: `linear-gradient(135deg, ${C.purple}, ${C.purpleLight})`, color: '#fff', fontSize: 13, fontWeight: 800, cursor: 'pointer' }} onClick={() => onOpenSheet?.({ kind: 'profile', uid: 'host' })}>Follow</button>
-            <button style={{ padding: '9px 18px', borderRadius: 10, border: 'none', background: C.cardSoft, color: C.text, fontSize: 13, fontWeight: 800, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }} onClick={() => onOpenSheet?.({ kind: 'subscribe' })}><CoinIcon size={15} /> Tip</button>
+            <button style={{ padding: '9px 18px', borderRadius: 12, border: 'none', background: `linear-gradient(135deg, ${C.purple}, ${C.purpleLight})`, color: '#fff', fontSize: 13, fontWeight: 800, cursor: 'pointer' }} onClick={() => onOpenSheet?.({ kind: 'profile', uid: 'host' })}>Follow</button>
+            <button style={{ padding: '9px 18px', borderRadius: 12, border: 'none', background: C.cardSoft, color: C.text, fontSize: 13, fontWeight: 800, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }} onClick={() => onOpenSheet?.({ kind: 'subscribe' })}><CoinIcon size={15} /> Tip</button>
             <span style={{ marginLeft: 'auto', fontSize: 12, color: C.textDim }}><Icon name="visibility" size={13} /> {(streamDoc.viewerCount || 0).toLocaleString()} watching</span>
           </div>
         </div>
@@ -496,7 +498,7 @@ export default function PreviewViewerScreen({
 
       <div style={{ width: 320, flexShrink: 0, background: C.card, borderRadius: 12, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
         <div style={{ padding: '12px 14px', ...ruleBottom, fontSize: 12, fontWeight: 800, letterSpacing: '0.08em', color: C.textDim }}>LIVE CHAT</div>
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', gap: 7, padding: 12, fontSize: 13 }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', gap: 8, padding: 12, fontSize: 13 }}>
           {messages.slice(-6).map((m) => <div key={m.id}><span style={{ color: C.purpleLight, fontWeight: 700 }}>{m.name}</span> <span>{m.text}</span></div>)}
         </div>
         <div style={{ padding: 12, ...ruleTop }}>
@@ -530,8 +532,8 @@ function GiftersCluster({ gifters }) {
             <UserAvatar src={faceOf(g)} size={24} />
           </span>
           <span style={{
-            marginTop: 2, fontSize: 8.5, fontWeight: 800, color: '#F5C842', fontFamily: 'DM Mono, monospace',
-            background: '#100C1C', borderRadius: 6, padding: '0 4px', lineHeight: '13px',
+            marginTop: 2, fontSize: 9, fontWeight: 800, color: '#F5C842', fontFamily: 'DM Mono, monospace',
+            background: '#100C1C', borderRadius: 8, padding: '0 4px', lineHeight: '13px',
           }}>{compactNum(g.coins)}</span>
         </div>
       ))}
@@ -545,7 +547,7 @@ function ModBadge() {
 }
 function SubPill() {
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, verticalAlign: '-2px', padding: '1px 5px 1px 3px', borderRadius: 6, fontSize: 8.5, fontWeight: 900, letterSpacing: '0.04em', color: '#fff', background: 'linear-gradient(135deg, #7c3aed, #b44fff)' }}>
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, verticalAlign: '-2px', padding: '1px 5px 1px 3px', borderRadius: 8, fontSize: 9, fontWeight: 900, letterSpacing: '0.04em', color: '#fff', background: 'linear-gradient(135deg, #7c3aed, #b44fff)' }}>
       <Icon name="star" size={9} filled style={{ color: '#F5C842' }} />SUB
     </span>
   );
@@ -570,7 +572,7 @@ function PreviewChatRow({ user, text, uid = null, vpLevel = 0, mod = false, sub 
           </>
         ) : (
           <>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap', marginBottom: 2 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 2 }}>
               <span style={{ fontWeight: 800, color: '#fff' }}><UserName user={{ displayName: user, vpLevel }} masked context="chat" fallback="guest" /><RankBadge level={vpLevel} uid={uid} size={12} animated style={{ marginLeft: 4, verticalAlign: '-2px' }} /></span>
               {mod && <ModBadge />}
               {sub && <SubPill />}
