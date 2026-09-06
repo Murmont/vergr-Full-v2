@@ -3157,16 +3157,35 @@ ask for the camera from inside an admin page. Each copy records
 the same `previewAssets` IndexedDB store, so a face uploaded in either tool is
 that person's face in both. Do not add a second store.
 
-🔴 **EIGHT REAL DEFECTS IN THE SHIPPED CALL SCREENS, NONE FIXED.** They render in
-the tool's own "What is broken" panel and guard rule 15 asserts the CallScreen
-ones are still true, so a fix must delete its line in the same commit. The worst
-three: **flip camera has no `onClick` at all** (`CallScreen.jsx:353`, a styled
-div, the most used control on a phone video call); the **speaker button flips a
-state nothing reads** (:346, no `setSinkId`, so audio stays on the earpiece); and
-**every incoming ring claims "Encrypted P2P Call" including a GROUP one**
-(`IncomingCallOverlay.jsx:327`), which is false because a group call routes
-through our own SFU. Also: no call surface reads `getStats()`, so a call degrades
-in silence and then dies.
+✅ **SIX OF THE EIGHT DEFECTS ARE FIXED AT THE SOURCE (2026-09-06).** The panel is
+now **"What is broken · 3"** beside **"Fixed at the source · 6"**, and guard rule
+15 was INVERTED: it used to assert each defect was still present, and now asserts
+each FIX is, so a revert fails the build.
+
+| Fixed | Was |
+|---|---|
+| `CallScreen` flip camera | **No `onClick` at all** for the life of the feature. Now `replaceTrack` on the existing sender, so it needs no renegotiation; the old track is stopped, `videoOff` carries across, and the button only renders where a second camera exists. |
+| `CallScreen` retry | Only action on a failed call was `safeReload()`. Now re-runs the WebRTC setup in place via an attempt key, and the effect teardown finally stops the camera and mic (it only unsubscribed, so a retry left both open). |
+| `IncomingCallOverlay` | Printed "Encrypted P2P Call" under **every** ring including group ones, which route through our own SFU and are decrypted at each hop. Group rings now say Group Call. |
+| `GroupCallScreen` | Head count and no duration. Clock starts when the call goes live, and resets if it drops out of `live`. |
+| `SquadStreamScreen` | The two-camera cap was explained by a toast that a disabled button never fires. Permanent line under the controls. |
+| `VoiceChannelScreen` | Volume slider pushed the roster off a 360px screen: a range input resolves `min-width:auto` to an intrinsic 129px, so `flex-1` could not shrink it. One `min-w-0`. |
+
+🔴 **TWO REMAIN, AND BOTH ARE DELIBERATE.** The **speaker button** still flips a
+state nothing reads (`CallScreen.jsx:346`): `setSinkId` is **unsupported in the
+Android WebView**, so a web-only fix would leave the native app exactly as broken
+while looking done — [[feedback-no-web-only-fixes]]. The real fix is an
+AudioManager route through the Kotlin bridge, which is an APK change and is
+batched. And **no call surface reads `getStats()`**, so a call still degrades in
+silence; the three-bar pill in the preview is a PROPOSAL, so building it is a
+design decision rather than a defect fix.
+
+⚠ **RULE 15 WAS PASSING VACUOUSLY AND ONLY THE FIX EXPOSED IT.** It read the
+production file RAW, so after the fixes `callSrc.includes('safeReload')` was still
+true — satisfied by a COMMENT explaining the removal — and the flip-camera regex
+looked for `onClick` *after* the icon name when the handler sits before it. It now
+runs `codeOnly()` over the production source. A guard a comment can satisfy is not
+a guard.
 
 ⚠ **`IncomingCallManager.jsx` IS DEAD CODE.** AppRouter mounts
 `IncomingCallOverlay` only. It still holds a divergent copy of the accept and

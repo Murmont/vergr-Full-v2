@@ -13,6 +13,51 @@ second session (or a second machine) can pick up without re-auditing.
 
 ---
 
+## CALLS: SIX OF THE EIGHT KNOWN DEFECTS FIXED AT THE SOURCE (2026-09-06): SHIPPED + DEPLOYED
+
+The call preview was built to surface these; this is the half that acts on them. Production
+call screens, not the simulator.
+
+| Screen | Was | Now |
+|---|---|---|
+| `CallScreen` flip camera | **No `onClick` at all.** It rendered, took a press and did nothing, for the life of the feature. | `replaceTrack` on the existing sender: no renegotiation, no ICE restart, no blip for the other side. The old track is stopped (an unstopped one keeps the camera held and the OS indicator lit), `videoOff` carries across, and the button only renders where a second camera exists. |
+| `CallScreen` retry | `safeReload()` on a failed call. | Re-runs the WebRTC setup in place via an attempt key. **The teardown also finally releases the devices**: it only unsubscribed, so a retry left the previous camera and mic open. |
+| `IncomingCallOverlay` | "VERGR - Encrypted P2P Call" under EVERY ring. | Group rings say Group Call. A 1:1 genuinely is raw WebRTC P2P; a group routes through our own Pion SFU, which terminates and re-encrypts each hop. A specific security claim a call does not meet is a bug, not copy. |
+| `GroupCallScreen` | Head count, no duration. | A clock, started when the call goes LIVE rather than on mount, reset if it drops out of `live` so a reconnect cannot report time on a call nobody was on. |
+| `SquadStreamScreen` | The two-camera cap explained by a toast fired from `toggleCam`, which a DISABLED button never fires. | A permanent line under the controls whenever the cap is what is stopping you. |
+| `VoiceChannelScreen` | Volume slider pushed the roster off a 360px screen. | One `min-w-0`. A range input is a replaced element and a flex item defaults to `min-width: auto`, so `flex-1` let it grow but never shrink past its intrinsic 129px. |
+
+🔴 **TWO LEFT, BOTH DELIBERATE.** The **speaker button** still flips a state nothing reads:
+`setSinkId` is unsupported in the Android WebView, so fixing only the web would leave the
+native app exactly as broken while looking done. The real fix is an AudioManager route through
+the Kotlin bridge, an APK change, and native work is batched.
+[[feedback-no-web-only-fixes]] And **nothing reads `getStats()`**, so a call still degrades in
+silence; the three-bar pill in the preview is a proposal, which makes that one a design
+decision rather than a defect fix.
+
+⚠⚠ **RULE 15 WAS PASSING VACUOUSLY, AND ONLY FIXING THE BUGS EXPOSED IT.** It asserted the
+defects were still PRESENT so a fix would force its own line out of the panel, which is a good
+design. But it read the production file RAW: after the fix,
+`callSrc.includes('safeReload')` was still true, satisfied by **a comment explaining the
+removal**, and the flip-camera regex looked for `onClick` AFTER the icon name when the handler
+sits before it. Both reported green against fixed code. It now runs `codeOnly()` over the
+production source and asserts each FIX, so a revert fails the build.
+
+⚠ **THE PANEL IS MEANT TO SHRINK, AND THE GUARD PUNISHED THAT.** `findingFiles.length >= 5`
+failed the moment six were fixed. Replaced with: the list may shrink to nothing, but anything
+still listed must name a tracked file and a `FIXED` record must exist. A defect that quietly
+vanishes is one the next session rediscovers as new, so the six render on screen as
+**"Fixed at the source · 6"** beside **"What is broken · 3"**.
+
+⚠ Caught before shipping: my `enumerateDevices` effect depended on `isVideo`, a const declared
+four lines BELOW it. Third temporal-dead-zone slip of the day, and the only one that did not
+reach a deploy. It reads `callType` instead.
+
+Verified on the deployed page: both panels render with the right counts, the flip-camera
+finding is gone and the speaker one remains. call-preview **110** assertions.
+
+---
+
 ## CALL PREVIEW: A SIMULATOR FOR EVERY CALL SURFACE (2026-09-06): SHIPPED + DEPLOYED
 
 Founder: *"we have a live stream preview in admin so I can see the UI and all the sheets without

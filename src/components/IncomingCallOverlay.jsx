@@ -323,9 +323,17 @@ export default function IncomingCallOverlay() {
           </div>
         </div>
 
-        {/* VERGR branding */}
+        {/* VERGR branding.
+            ⚠⚠ THE P2P CLAIM IS ONLY TRUE OF A 1:1, AND IT USED TO PRINT UNDER
+            EVERY RING INCLUDING A GROUP ONE. A 1:1 really is raw WebRTC
+            peer-to-peer (Google STUN, self-hosted coturn only as a fallback), so
+            the line is accurate there. A GROUP call is routed through our own
+            Pion SFU, which terminates and re-encrypts each hop — so we can see
+            it, and "Encrypted P2P" was a specific security claim the call did
+            not meet. That is a bug, not copy, and it is exactly the kind of
+            sentence a user would reasonably rely on. */}
         <p className="text-text-muted/30 text-[9px] font-dmmono uppercase tracking-[0.3em] mt-12">
-          VERGR · Encrypted P2P Call
+          {incomingCall.isGroup ? 'VERGR · Group Call' : 'VERGR · Encrypted P2P Call'}
         </p>
       </div>
     </div>

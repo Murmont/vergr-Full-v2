@@ -310,10 +310,16 @@ export default function VoiceChannelScreen() {
                     {/* Local playback volume — only affects what YOU hear */}
                     <div className="flex items-center gap-2">
                       <Icon name="volume_down" size={14} className="text-text-muted shrink-0" />
+                      {/* ⚠ `min-w-0` IS LOAD-BEARING, NOT TIDYING. A range input is a
+                          replaced element with an intrinsic width, and a flex item
+                          defaults to `min-width: auto` — so `flex-1` alone lets it grow
+                          but NOT shrink past that intrinsic size. On a 360px phone the
+                          slider plus both icons plus the card padding then pushes the
+                          roster row wider than the screen. */}
                       <input
                         type="range" min="0" max="100" defaultValue={Math.round(getPeerVolume(p.peerId) * 100)}
                         onChange={(e) => setPeerVolume(p.peerId, Number(e.target.value) / 100)}
-                        className="flex-1 h-1 accent-[#B44FFF]"
+                        className="flex-1 min-w-0 h-1 accent-[#B44FFF]"
                         aria-label="Member volume"
                       />
                       <Icon name="volume_up" size={14} className="text-text-muted shrink-0" />

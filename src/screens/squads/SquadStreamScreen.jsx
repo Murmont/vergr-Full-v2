@@ -421,8 +421,20 @@ export default function SquadStreamScreen() {
       {/* Hidden audio sink — every remote audio track plays through here. */}
       <div ref={remoteAudioContainerRef} style={{ display: 'none' }} aria-hidden="true" />
 
-      {/* Bottom controls bar */}
-      <div className="fixed bottom-0 left-0 right-0 bg-surface-1/95 backdrop-blur-md border-t border-white/[0.08] p-4 flex items-center justify-center gap-3">
+      {/* Bottom controls bar.
+          ⚠⚠ THE CAP NEEDS A REASON THAT IS STILL THERE WHEN YOU LOOK BACK. The
+          camera button disables itself at the two-publisher cap and the only
+          explanation was a toast fired from `toggleCam` — which a disabled
+          button never fires, and which has gone by the time anyone wonders why
+          the control is dead. So the line lives under the row, permanently,
+          whenever the cap is what is stopping you. */}
+      <div className="fixed bottom-0 left-0 right-0 bg-surface-1/95 backdrop-blur-md border-t border-white/[0.08] p-4 flex flex-col items-center gap-2">
+        {!camOn && activeVideoPublisherCount >= MAX_VIDEO_PUBLISHERS && (
+          <p className="text-[11px] text-text-muted text-center">
+            {MAX_VIDEO_PUBLISHERS} cameras are already live. Ask one of them to turn off, or wait.
+          </p>
+        )}
+        <div className="flex items-center justify-center gap-3">
         <button
           onClick={toggleMic}
           aria-label={micOn ? 'Mute mic' : 'Unmute mic'}
@@ -449,6 +461,7 @@ export default function SquadStreamScreen() {
         >
           <Icon name="call_end" />
         </button>
+        </div>
       </div>
     </div>
   );

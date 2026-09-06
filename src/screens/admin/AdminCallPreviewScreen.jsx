@@ -136,50 +136,32 @@ function Field({ label, children }) {
  */
 const FINDINGS = [
   {
-    where: 'CallScreen.jsx:353',
-    what: 'Flip camera has no onClick at all. It is a styled div.',
-    why: 'On a phone, front-to-back is the most used control on a video call. It has never worked.',
-  },
-  {
     where: 'CallScreen.jsx:346',
     what: 'The speaker button flips a state nothing reads.',
-    why: 'No setSinkId anywhere in the file, so the button restyles itself and the audio keeps coming out of the earpiece. On native the right fix is an AudioManager route through the Kotlin bridge, not setSinkId.',
-  },
-  {
-    where: 'CallScreen.jsx:357',
-    what: 'The only action on a failed call is a full page reload.',
-    why: 'safeReload() throws away the whole session to retry one call, and on the native build it is a cold boot of the WebView.',
-  },
-  {
-    where: 'IncomingCallOverlay.jsx:327',
-    what: 'Every ring prints "VERGR · Encrypted P2P Call", including a group one.',
-    why: 'A group call routes through our own SFU, which decrypts and re-encrypts each hop. A specific security claim under a call that does not meet it is a bug, not copy.',
+    why: 'No setSinkId anywhere in the file, so the button restyles itself and the audio keeps coming out of the earpiece. NOT fixed with the others on 2026-09-06 on purpose: setSinkId is unsupported in the Android WebView, so a web-only fix would leave the native app exactly as broken while looking done. The real fix is an AudioManager route through the Kotlin bridge, which is an APK change and is batched.',
   },
   {
     where: 'no file',
     what: 'No call surface reads getStats(). There is no connection-quality signal anywhere.',
-    why: 'A call degrades in silence and then dies with "Connection failed". The three-bar pill in this preview is a proposal, not something that ships.',
-  },
-  {
-    where: 'GroupCallScreen.jsx:163',
-    what: 'A group call shows a head count and no duration.',
-    why: 'The 1:1 screen has a running clock and people expect one. The elapsed line in this preview does not exist in the product.',
-  },
-  {
-    where: 'SquadStreamScreen.jsx:229',
-    what: 'The two-camera cap is explained by a toast that has already gone.',
-    why: 'The button stays disabled with no reason attached to it. A line under the control costs nothing and is still there when you look back.',
-  },
-  {
-    where: 'VoiceChannelScreen.jsx:298',
-    what: 'The per-member volume slider pushes the roster off the side of a phone.',
-    why: 'Measured at 393px: input[type=range] resolves min-width:auto to an intrinsic 129px, so flex-1 cannot shrink it. The row computes to 193px inside a 154.5px grid column. One min-w-0 fixes it.',
+    why: 'A call degrades in silence and then dies with "Connection failed". The three-bar pill in this preview is a PROPOSAL, not something that ships, building it is a design decision, not a defect fix.',
   },
   {
     where: 'IncomingCallManager.jsx',
     what: 'A second, older incoming-call ringer that is imported nowhere.',
-    why: 'AppRouter mounts IncomingCallOverlay only. Dead file, and it holds a divergent copy of the accept and decline rules.',
+    why: 'AppRouter mounts IncomingCallOverlay only. Dead file, and it holds a divergent copy of the accept and decline rules, so it is the file a session fixes by mistake. Deleting it needs permission; nothing may be removed without asking.',
   },
+];
+
+// Fixed at the source on 2026-09-06 and kept here as a record, because a defect
+// that quietly disappears from a list teaches nobody anything. Guard rule 15 now
+// asserts each FIX, so a revert fails the build.
+const FIXED = [
+  ['CallScreen.jsx', 'Flip camera had no onClick at all, a dead button for the life of the feature. Now replaceTrack on the existing sender, so it needs no renegotiation.'],
+  ['CallScreen.jsx', 'A failed call offered only a full page reload. Retry now re-runs the WebRTC setup in place, and the teardown finally stops the camera and mic.'],
+  ['IncomingCallOverlay.jsx', 'Every ring printed "Encrypted P2P Call", including group ones that route through our own SFU. Group rings now say Group Call.'],
+  ['GroupCallScreen.jsx', 'A head count with no duration. There is a clock now, started when the call goes live rather than on mount.'],
+  ['SquadStreamScreen.jsx', 'The two-camera cap was explained by a toast a disabled button never fires. The reason is a permanent line under the controls.'],
+  ['VoiceChannelScreen.jsx', 'The volume slider pushed the roster off a 360px screen: a range input resolves min-width:auto to an intrinsic 129px, so flex-1 could not shrink it.'],
 ];
 
 export default function AdminCallPreviewScreen() {
@@ -557,6 +539,21 @@ export default function AdminCallPreviewScreen() {
                     <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 10, color: C.accent2, marginBottom: 4 }}>{f.where}</div>
                     <div style={{ fontSize: 11.5, color: C.text, fontWeight: 600, lineHeight: 1.45 }}>{f.what}</div>
                     <div style={{ fontSize: 11, color: C.textMuted, lineHeight: 1.5, marginTop: 4 }}>{f.why}</div>
+                  </div>
+                ))}
+              </div>
+            </Panel>
+
+            {/* ⚠ THE RECORD STAYS ON SCREEN. A defect that simply vanishes from
+                the list above teaches nobody anything, and the next session
+                rediscovers it as new. Guard rule 15 asserts each of these fixes
+                is still in the real file, so a revert fails the build. */}
+            <Panel title={`Fixed at the source · ${FIXED.length}`}>
+              <div style={{ display: 'grid', gap: 8 }}>
+                {FIXED.map(([file, what]) => (
+                  <div key={file + what} style={{ background: C.card, borderRadius: 8, padding: 10 }}>
+                    <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 10, color: '#4ade80', marginBottom: 4 }}>{file}</div>
+                    <div style={{ fontSize: 11, color: C.textMuted, lineHeight: 1.5 }}>{what}</div>
                   </div>
                 ))}
               </div>

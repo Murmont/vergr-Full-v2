@@ -63,6 +63,9 @@ function Tile({ name, avatar, stream, speaking, muted, isMe, camOn }) {
   );
 }
 
+// Same shape as the 1:1 screen's clock, so the two read identically.
+const fmtElapsed = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+
 export default function GroupCallScreen() {
   const { callId } = useParams();
   const { currentUser } = useAuth();
@@ -72,10 +75,21 @@ export default function GroupCallScreen() {
   const [call, setCall] = useState(null);
   const [cs, setCs] = useState(getGroupCallState());
   const [profiles, setProfiles] = useState({});
+  const [elapsed, setElapsed] = useState(0);
   const joinedRef = useRef(false);
 
   useEffect(() => subscribeGroupCall(setCs), []);
   useKeepAwake(cs.phase === 'live');
+
+  // ⚠ IT COUNTS FROM WHEN THE CALL WENT LIVE, and it resets if the call drops
+  // back out of `live` — a clock that keeps running through a reconnect reports
+  // time on a call nobody was on. One interval, cleared on phase change.
+  useEffect(() => {
+    if (cs.phase !== 'live') { setElapsed(0); return undefined; }
+    const started = Date.now();
+    const id = setInterval(() => setElapsed(Math.floor((Date.now() - started) / 1000)), 1000);
+    return () => clearInterval(id);
+  }, [cs.phase]);
 
   // The call doc: who's invited, who's here, and whether it's over.
   useEffect(() => {
@@ -168,7 +182,12 @@ export default function GroupCallScreen() {
           <p className="text-sm font-bold text-white truncate">{call?.groupName || 'Group call'}</p>
           <p className="text-[11px] text-text-muted">
             {cs.phase === 'connecting' && 'Connecting…'}
-            {cs.phase === 'live' && `${peerList.length + 1} in call`}
+            {/* ⚠ A HEAD COUNT WITH NO CLOCK. The 1:1 screen has run a timer since
+                it shipped and people expect the same thing here — "how long have
+                we been on this?" is the second question anyone asks on a call.
+                The timer starts when the call goes live, not on mount, so it
+                measures the call rather than the screen. */}
+            {cs.phase === 'live' && `${peerList.length + 1} in call · ${fmtElapsed(elapsed)}`}
             {cs.phase === 'error' && (cs.errorMsg || 'Connection error')}
             {cs.phase === 'idle' && 'Not connected'}
           </p>

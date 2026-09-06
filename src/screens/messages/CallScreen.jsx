@@ -5,7 +5,7 @@ import { db, auth } from '../../firebase/config';
 import { getUser, logCallEnd } from '../../firebase/firestore';
 import { createPeerConnection, createOffer, answerCall, endCallCleanup, getMediaStream } from '../../utils/webrtc';
 import Icon from '../../components/Icon';
-import { IS_NATIVE_BUILD, safeReload } from '../../utils/platform';
+import { IS_NATIVE_BUILD } from '../../utils/platform';
 import UserAvatar from '../../components/UserAvatar';
 import UserName from '../../components/UserName';
 
@@ -22,6 +22,17 @@ export default function CallScreen() {
   const [speakerOn, setSpeakerOn] = useState(false);
   const [otherUser, setOtherUser] = useState(null);
   const [showControls, setShowControls] = useState(true);
+  // Camera flip. `hasTwoCameras` gates the button: offering a flip on a laptop
+  // with one camera is a control that can only fail.
+  const [facing, setFacing] = useState('user');
+  const [flipping, setFlipping] = useState(false);
+  const [hasTwoCameras, setHasTwoCameras] = useState(false);
+  // ⚠ RETRY IS A RE-RUN OF SETUP, NOT A PAGE RELOAD. Bumping this re-keys the
+  // WebRTC effect, so the old connection tears down and a fresh one is built —
+  // in place, keeping the route, the thread and the app. `safeReload()` threw
+  // away the whole session to redial one call, and on the native build that is a
+  // cold boot of the WebView.
+  const [attempt, setAttempt] = useState(0);
 
   const pcRef = useRef(null);
   const localStreamRef = useRef(null);
@@ -117,8 +128,15 @@ export default function CallScreen() {
     return () => {
       mounted = false;
       if (cleanupRef.current) cleanupRef.current();
+      // ⚠ RELEASE THE DEVICES, NOT JUST THE SIGNALLING. This teardown only
+      // unsubscribed, so re-running setup (a retry) left the previous camera and
+      // microphone open: the OS indicator stayed lit and the phone held two
+      // capture sessions. `stop()` and `close()` are both idempotent, so the
+      // hangup path calling them first is harmless.
+      try { localStreamRef.current?.getTracks?.().forEach((t) => t.stop()); } catch { /* already stopped */ }
+      try { pcRef.current?.close?.(); } catch { /* already closed */ }
     };
-  }, [chatId, callType, role]);
+  }, [chatId, callType, role, attempt]);
 
   // Listen for status changes (caller hangup, etc)
   useEffect(() => {
@@ -189,6 +207,78 @@ export default function CallScreen() {
       setVideoOff(!videoTrack.enabled);
     }
   };
+
+  /**
+   * Flip between the front and back camera.
+   *
+   * ⚠⚠ THIS BUTTON HAD NO onClick AT ALL. It rendered, it took a press, and
+   * nothing happened — for the life of the feature. On a phone, front-to-back is
+   * the most used control on a video call.
+   *
+   * ⚠ `replaceTrack` ON THE SENDER, NOT A NEW getUserMedia INTO THE PEER
+   * CONNECTION. Swapping the track on the existing sender needs no renegotiation
+   * at all: no new offer, no answer, no ICE restart, and the other side never
+   * sees a blip. Tearing down and re-adding a track would renegotiate mid-call,
+   * which is how a flip turns into a reconnect.
+   *
+   * ⚠ THE OLD TRACK IS STOPPED, AND THAT IS NOT TIDYING. An unstopped camera
+   * track keeps the device held and the OS indicator lit, so on a phone you flip
+   * once and both cameras stay open.
+   *
+   * ⚠ THE `videoOff` STATE IS CARRIED ACROSS. Flipping while your camera is off
+   * must not silently turn it back on and start sending your face.
+   */
+  const flipCamera = async () => {
+    if (flipping) return;
+    const oldTrack = localStreamRef.current?.getVideoTracks()[0];
+    if (!oldTrack) return;
+    const next = facing === 'user' ? 'environment' : 'user';
+    setFlipping(true);
+    try {
+      const fresh = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: next } },
+        audio: false,
+      });
+      const newTrack = fresh.getVideoTracks()[0];
+      if (!newTrack) throw new Error('no video track');
+      newTrack.enabled = oldTrack.enabled;
+
+      const sender = pcRef.current?.getSenders?.().find((s) => s.track?.kind === 'video');
+      if (sender) await sender.replaceTrack(newTrack);
+
+      oldTrack.stop();
+      localStreamRef.current.removeTrack(oldTrack);
+      localStreamRef.current.addTrack(newTrack);
+      if (localVideoRef.current) localVideoRef.current.srcObject = localStreamRef.current;
+      setFacing(next);
+    } catch (err) {
+      // A laptop with one camera, or a denied permission. Say nothing loud: the
+      // old track is still live and still being sent, so the call is unaffected.
+      console.warn('Camera flip failed:', err?.message || err);
+    } finally {
+      setFlipping(false);
+    }
+  };
+
+  // ⚠ ENUMERATE AFTER PERMISSION, NOT BEFORE. Until getUserMedia has resolved,
+  // enumerateDevices returns entries with empty labels and, in some browsers,
+  // a single placeholder — so a check that runs on mount reports one camera on a
+  // phone that has two. This runs off `status`, by which point media is up.
+  //
+  // ⚠ IT READS `callType`, NOT `isVideo`. `isVideo` is a const declared BELOW
+  // this effect, and a dependency array is evaluated at RENDER time — so
+  // depending on it is a temporal-dead-zone crash, not a lint warning. eslint
+  // `no-undef` sees a well-defined binding and says nothing.
+  useEffect(() => {
+    let alive = true;
+    if (callType !== 'video') return undefined;
+    navigator.mediaDevices?.enumerateDevices?.()
+      .then((list) => {
+        if (alive) setHasTwoCameras(list.filter((d) => d.kind === 'videoinput').length > 1);
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [callType, status]);
 
   const formatTime = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 
@@ -342,9 +432,16 @@ export default function CallScreen() {
               </button>
             )}
 
-            {/* Flip camera (video calls only) */}
-            {isVideo && (
-              <button className="w-14 h-14 rounded-full bg-surface-2/80 backdrop-blur flex items-center justify-center">
+            {/* Flip camera (video calls only, and only where there IS a second
+                camera — see hasTwoCameras). */}
+            {isVideo && hasTwoCameras && (
+              <button
+                type="button"
+                onClick={flipCamera}
+                disabled={flipping}
+                aria-label={facing === 'user' ? 'Switch to the back camera' : 'Switch to the front camera'}
+                className={`w-14 h-14 rounded-full bg-surface-2/80 backdrop-blur flex items-center justify-center transition-opacity ${flipping ? 'opacity-50' : ''}`}
+              >
                 <Icon name="flip_camera_ios" size={24} className="text-white" />
               </button>
             )}
@@ -355,7 +452,7 @@ export default function CallScreen() {
       {/* Failed state — retry button */}
       {status === 'failed' && (
         <div className="absolute bottom-32 left-1/2 -translate-x-1/2 z-30">
-          <button onClick={() => safeReload()} className="px-6 py-3 rounded-full bg-brand-violet text-bg-dark font-bold text-sm flex items-center gap-2">
+          <button onClick={() => { setStatus('connecting'); setAttempt((a) => a + 1); }} className="px-6 py-3 rounded-full bg-brand-violet text-bg-dark font-bold text-sm flex items-center gap-2">
             <Icon name="refresh" size={18} /> Retry
           </button>
         </div>

@@ -329,25 +329,61 @@ for (const f of SURFACE_FILES) {
 // existing the finding is stale and must be re-checked rather than left
 // asserting something about a file that is gone.
 const findingFiles = [...harness.matchAll(/where:\s*'([^':]+\.jsx?)(:\d+)?'/g)].map((m) => m[1]);
-check(findingFiles.length >= 5, 'the findings panel should carry the defects found while building this');
+// ⚠ THE LIST IS MEANT TO SHRINK. This asserted `>= 5` and started failing the
+// moment six of the eight were fixed at the source, which is the guard punishing
+// the outcome it exists to produce. What must never happen is the panel being
+// emptied by DELETION rather than by fixing, so: it may shrink to nothing, but
+// anything still listed must name a file this guard tracks, and every fix has to
+// leave a FIXED entry behind so the record survives.
+check(harness.includes('const FIXED = ['),
+  'the fixed-defects record is gone: a defect that quietly disappears from the panel teaches nobody anything, and the next session rediscovers it');
 for (const f of new Set(findingFiles)) {
   const hit = Object.values(PROD).some((p) => p.endsWith('/' + f));
   check(hit, `findings panel names "${f}", which is not one of the call files this guard tracks`);
 }
 // The three CallScreen defects are the load-bearing ones. If any is fixed in
 // the real file, the finding must come out in the same commit.
-const callSrc = readAbs(PROD.call);
+// ⚠⚠ READ THE PRODUCT WITH COMMENTS STRIPPED. These were written against the
+// RAW file, and both defects fixed on 2026-09-06 kept passing afterwards for the
+// wrong reason: `safeReload` still appeared in a comment EXPLAINING its removal,
+// and the flip-camera regex looked for `onClick` AFTER the icon name when the
+// real handler sits before it. A guard a comment can satisfy is not a guard.
+const callSrc = codeOnly(readAbs(PROD.call));
+
+// Fixed 2026-09-06. These assert the FIX, so a revert fails the build rather
+// than quietly restoring the bug.
 check(
-  /flip_camera_ios[\s\S]{0,200}?<\/button>/.test(callSrc) && !/flip_camera[\s\S]{0,300}?onClick/.test(callSrc),
-  'CallScreen flip-camera now has an onClick: remove that finding from the panel',
+  /flip_camera_ios/.test(callSrc) && /onClick=\{flipCamera\}/.test(callSrc),
+  'CallScreen flip-camera lost its onClick again — it was a dead button for the life of the feature, and front-to-back is the most used control on a phone video call',
 );
+check(
+  callSrc.includes('replaceTrack'),
+  'the camera flip no longer uses replaceTrack — swapping the track on the existing sender needs no renegotiation, and tearing it down instead turns a flip into a mid-call reconnect',
+);
+check(
+  !callSrc.includes('safeReload'),
+  'CallScreen reloads the page again on a failed call — that throws away the whole session to redial one call, and on native it is a cold boot of the WebView',
+);
+check(
+  callSrc.includes('setAttempt('),
+  'the retry no longer re-runs the WebRTC setup in place — re-keying the effect is what makes a retry a retry rather than a reload',
+);
+
+// Still broken, deliberately: the speaker button needs an AudioManager route
+// through the Kotlin bridge on native, which is an APK change and is batched.
 check(
   !callSrc.includes('setSinkId'),
-  'CallScreen now sets an audio sink: the speaker-button finding is stale, remove it',
+  'CallScreen now sets an audio sink: the speaker-button finding is stale, remove it from the panel',
+);
+
+// The other screens fixed in the same pass.
+check(
+  codeOnly(readAbs(PROD.ring)).includes("isGroup ? 'VERGR · Group Call'"),
+  'the incoming ring prints one branding line again — it claimed "Encrypted P2P Call" under GROUP calls, which route through our own SFU and are decrypted at every hop',
 );
 check(
-  callSrc.includes('safeReload'),
-  'CallScreen no longer full-page-reloads on failure: remove that finding from the panel',
+  codeOnly(readAbs(PROD.group)).includes('fmtElapsed(elapsed)'),
+  'the group call lost its duration — the 1:1 screen has always had a clock, and a head count alone does not answer "how long have we been on this"',
 );
 
 // ── 16. The group ring must not claim to be peer to peer ─────────────────
