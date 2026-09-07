@@ -37,13 +37,23 @@ import {
 import UserName from '../UserName';
 
 const DISPLAY_MS = 4200;
-const MAX_W = 280;          // the founder rule: TikTok-sized, never full-screen
+// ⚠ NARROWED 2026-08-31 (founder): the ribbon was taking up half the screen and
+// reading as unprofessional next to TikTok's. It was min(280, 70vw), which on a
+// 375px phone is 262px — 70% of the width. TikTok's entry banner sits closer to
+// half, so this is now min(224, 54vw) = 202px on that same phone.
+//
+// ⚠ THE ART AND THE NAME BOTH FOLLOW THIS AUTOMATICALLY, so nothing else needs
+// touching: the banner is object-fit cover at a fixed 4:1, and nameSizeFor()
+// MEASURES the string against the width it is given (rankBanners.js) rather than
+// scaling by a constant. Shrinking the ribbon therefore cannot truncate a name,
+// which is the failure that took three attempts to fix originally.
+const MAX_W = 224;          // the founder rule: TikTok-sized, never full-screen
 const ASPECT = 4;           // measured 3.97 to 4.34 across all 10 reference samples
 
 /** Ribbon width, matching the historical `min(280px, 70vw)`. */
 const ribbonWidth = () => {
   const vw = typeof window !== 'undefined' ? window.innerWidth : 375;
-  return Math.min(MAX_W, Math.round(vw * 0.7));
+  return Math.min(MAX_W, Math.round(vw * 0.54));
 };
 
 export default function JoinAnnouncer({ events = [], side = 'right', maxVisible = 3, sound = true, bottom = 96 }) {

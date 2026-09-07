@@ -18,7 +18,7 @@
 
 import { useState, useEffect } from 'react';
 import Icon from '../../../components/Icon';
-import { PlaybackState, StreamPaywall, ChatStateBanner, TtsStrip, VpEarnedChip, PreviewLevelUp, AudioStage, ModChannelSwitch, RaidBanner, ComposerPill, HypeTrain } from './previewStates';
+import { PlaybackState, StreamPaywall, ChatStateBanner, TtsStrip, VpEarnedChip, PreviewLevelUp, AudioStage, ModChannelSwitch, RaidBanner, ComposerPill, HypeTrain, TrainBonusHost } from './previewStates';
 import { usePreviewVideos, usePreviewSim, usePreviewRole } from './previewAssetsContext';
 import { PREVIEW_VIEWER } from './previewCast';
 import UserAvatar from '../../../components/UserAvatar';
@@ -249,7 +249,7 @@ export default function PreviewMobileViewer({ doc, host, messages, joinEvents, o
           when the same person sends again (previewSoloParts.jsx). The solo views
           always had it; these surfaces never did, so a tip here rendered as the
           generic centred pill instead — the thing that was replaced. */}
-      <HypeTrain />
+      <HypeTrain /><TrainBonusHost />
       <GiftFeed toasts={gifts} style={{ bottom: aboveChat ?? 'calc(30% + 84px)', left: 10 }} />
       <SubAlertOverlay lastSub={doc.lastSub} anchor="bottom" bottom={aboveChat ?? 'calc(30% + 84px)'} />
       <ReactionsFloor events={reactions} position="right" />

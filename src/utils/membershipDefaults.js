@@ -36,7 +36,7 @@ export const DEFAULT_MEMBERSHIP_TIERS = [
   {
     name: 'VIP',
     priceCoins: 500,
-    perks: ['Everything in Supporter', 'Custom emotes (5 slots)', 'Monthly shoutout on stream', 'Discord members channel'],
+    perks: ['Everything in Supporter', 'Members-only stream', 'Monthly shoutout on stream', 'Discord members channel'],
     badge: { color: '#C87FFF', icon: 'star' },
     seatLimit: null,
     communities: [],

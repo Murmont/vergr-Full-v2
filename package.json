@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "check": "npm run lint && node scripts/vp-mirror-check.mjs && node scripts/username-render-check.mjs && node scripts/name-contrast-check.mjs && node scripts/chat-contrast-check.mjs && node scripts/coin-ladder-check.mjs && node scripts/stream-preview-check.mjs && node scripts/call-preview-check.mjs",
+    "prebuild": "npm run check",
     "build": "vite build",
     "postbuild": "node scripts/prerenderHelp.mjs",
     "prerender:help": "node scripts/prerenderHelp.mjs",
@@ -22,7 +24,8 @@
     "android:build": "tauri android build --target aarch64",
     "android:build:store": "node scripts/android-store-build.mjs",
     "android:build:huawei": "node scripts/android-huawei-build.mjs",
-    "android:build:dev": "node scripts/android-dev-build.mjs"
+    "android:build:dev": "node scripts/android-dev-build.mjs",
+    "lint": "eslint ."
   },
   "dependencies": {
     "@ffmpeg/ffmpeg": "^0.12.15",
@@ -42,6 +45,7 @@
     "framer-motion": "^11.18.2",
     "hls.js": "^1.6.16",
     "html2canvas": "^1.4.1",
+    "leaflet": "^1.9.4",
     "lottie-web": "^5.13.0",
     "material-symbols": "^0.44.2",
     "p2p-media-loader-hlsjs": "^2.2.2",
@@ -62,6 +66,10 @@
     "@tauri-apps/cli": "^2.3.0",
     "@vitejs/plugin-react": "^4.7.0",
     "autoprefixer": "^10.4.27",
+    "eslint": "^9.39.5",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.11.0",
     "postcss": "^8.5.6",
     "puppeteer-core": "^25.1.0",
     "sharp": "^0.34.5",

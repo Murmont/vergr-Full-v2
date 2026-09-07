@@ -354,13 +354,13 @@ export default function NativeGoLiveScreen() {
       <div style={{
         position: 'sticky', top: 0, zIndex: 40, display: 'flex', alignItems: 'center', gap: 8,
         paddingTop: 'calc(env(safe-area-inset-top, 0px) + 8px)', paddingLeft: 12, paddingRight: 12, paddingBottom: 10,
-        background: 'rgba(9,9,15,0.86)', backdropFilter: 'blur(12px)', borderBottom: `1px solid ${C.divider}`,
+        background: '#0B0B14', borderBottom: `1px solid ${C.divider}`,
       }}>
         <button type="button" onClick={() => navigate(-1)} aria-label="Back" style={iconBtn}>
           <span className="material-symbols-outlined" style={{ fontSize: 18 }}>arrow_back_ios_new</span>
         </button>
         <div style={{ flex: 1, fontFamily: 'Syne, sans-serif', fontWeight: 800, fontSize: 18 }}>Go Live</div>
-        <button type="button" onClick={() => setScheduleOn((v) => !v)} style={{ ...iconBtn, width: 'auto', padding: '0 12px', gap: 6, color: scheduleOn ? C.purpleLight : C.textDim, borderColor: scheduleOn ? C.purpleLight : C.border }}>
+        <button type="button" onClick={() => setScheduleOn((v) => !v)} style={{ ...iconBtn, width: 'auto', padding: '0 12px', gap: 6, color: scheduleOn ? '#fff' : C.textDim, borderColor: scheduleOn ? C.purpleLight : C.border }}>
           <span className="material-symbols-outlined" style={{ fontSize: 16 }}>{scheduleOn ? 'event_available' : 'schedule'}</span>
           <span style={{ fontSize: 12, fontWeight: 700 }}>{scheduleOn ? 'Later' : 'Later'}</span>
         </button>
@@ -376,7 +376,7 @@ export default function NativeGoLiveScreen() {
           }} />
           {(!previewReady || (!camOn && !screenSharing)) && (
             <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, textAlign: 'center', padding: 24, background: 'radial-gradient(circle at 50% 60%, #1a1030 0%, #0a0a14 70%)' }}>
-              <span className="material-symbols-outlined" style={{ fontSize: 44, color: C.textMuted }}>
+              <span className="material-symbols-outlined" style={{ fontSize: 40, color: C.textMuted }}>
                 {previewError ? 'videocam_off' : !previewStarted ? 'videocam' : !camOn && !screenSharing ? 'videocam_off' : 'hourglass_empty'}
               </span>
               <div style={{ fontSize: 13, color: C.textDim, maxWidth: 300, lineHeight: 1.45 }}>
@@ -411,11 +411,11 @@ export default function NativeGoLiveScreen() {
           ].map((d) => (
             <button key={d.id} type="button" onClick={d.onClick} style={{
               flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, padding: '12px 6px',
-              background: d.on ? C.purpleSoft : 'rgba(255,255,255,0.04)',
-              border: d.on ? `1px solid ${C.purple}` : `1px solid ${C.borderSoft}`,
-              borderRadius: 14, color: d.on ? C.purpleLight : C.textDim, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+              background: d.on ? C.purple : '#191527',
+              border: d.on ? 'none' : `1px solid ${C.borderSoft}`,
+              borderRadius: 14, color: d.on ? '#fff' : C.textDim, fontSize: 12, fontWeight: 700, cursor: 'pointer',
             }}>
-              <span className="material-symbols-outlined" style={{ fontSize: 22 }}>{d.icon}</span>
+              <span className="material-symbols-outlined" style={{ fontSize: 20 }}>{d.icon}</span>
               {d.label}
             </button>
           ))}
@@ -431,12 +431,12 @@ export default function NativeGoLiveScreen() {
         {/* Twitch mirror entry */}
         <button type="button" onClick={() => navigate('/settings/linked-accounts')} style={{
           width: '100%', display: 'flex', alignItems: 'center', gap: 12, padding: '13px 14px', borderRadius: 14,
-          cursor: 'pointer', textAlign: 'left', background: 'rgba(145,70,255,0.10)', border: '1px solid rgba(145,70,255,0.35)',
+          cursor: 'pointer', textAlign: 'left', background: '#1E1436', borderLeft: '3px solid #9146FF',
         }}>
-          <span style={{ width: 34, height: 34, borderRadius: 9, background: '#9146FF', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, flexShrink: 0 }}>T</span>
+          <span style={{ width: 34, height: 34, borderRadius: 8, background: '#9146FF', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, flexShrink: 0 }}>T</span>
           <span style={{ flex: 1, minWidth: 0 }}>
             <span style={{ display: 'block', fontSize: 13, fontWeight: 800, color: C.text }}>Already stream on Twitch?</span>
-            <span style={{ display: 'block', fontSize: 11.5, color: C.textDim, lineHeight: 1.35 }}>Connect once and your Twitch streams appear on VERGR automatically, chat synced.</span>
+            <span style={{ display: 'block', fontSize: 12, color: C.textDim, lineHeight: 1.35 }}>Connect once and your Twitch streams appear on VERGR automatically, chat synced.</span>
           </span>
           <span className="material-symbols-outlined" style={{ fontSize: 20, color: C.purpleLight }}>chevron_right</span>
         </button>
@@ -504,9 +504,9 @@ export default function NativeGoLiveScreen() {
             {[{ id: 'public', label: 'Public', icon: 'public' }, { id: 'followers', label: 'Followers', icon: 'favorite' }, { id: 'friends', label: 'Friends', icon: 'group' }].map((a) => (
               <button key={a.id} type="button" onClick={() => setAudience(a.id)} style={{
                 flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, padding: '12px 6px',
-                background: audience === a.id ? C.purpleSoft : 'rgba(255,255,255,0.04)',
-                border: audience === a.id ? `1px solid ${C.purple}` : `1px solid ${C.border}`,
-                borderRadius: 12, color: audience === a.id ? C.purpleLight : C.textDim, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                background: audience === a.id ? C.purple : '#191527',
+                border: audience === a.id ? 'none' : `1px solid ${C.border}`,
+                borderRadius: 12, color: audience === a.id ? '#fff' : C.textDim, fontSize: 12, fontWeight: 700, cursor: 'pointer',
               }}>
                 <span className="material-symbols-outlined" style={{ fontSize: 18 }}>{a.icon}</span>{a.label}
               </button>
@@ -567,7 +567,7 @@ export default function NativeGoLiveScreen() {
             </div>
           </div>
           {ingestMode === 'rtmp' && (
-            <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${C.divider}`, fontSize: 11.5, color: C.textDim, lineHeight: 1.5 }}>
+            <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${C.divider}`, fontSize: 12, color: C.textDim, lineHeight: 1.5 }}>
               In OBS, set bitrate to <strong style={{ color: '#fff' }}>≤ {rendition.kbps.toLocaleString()} kbps</strong>, keyframe interval <strong style={{ color: '#fff' }}>2s</strong>. Higher is throttled.
             </div>
           )}
@@ -581,7 +581,7 @@ export default function NativeGoLiveScreen() {
         {/* Tips & goal */}
         <Card>
           <SectionHeader>Tips & goal</SectionHeader>
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 11.5, color: C.textDim, lineHeight: 1.45, marginBottom: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 12, color: C.textDim, lineHeight: 1.45, marginBottom: 12 }}>
             <span className="material-symbols-outlined" style={{ fontSize: 16, color: C.purpleLight }}>volunteer_activism</span>
             Viewers tip you in coins while live. Vergr pays you a share of that revenue, 50% to 80%.
           </div>
@@ -594,7 +594,7 @@ export default function NativeGoLiveScreen() {
               <Label>Goal amount</Label>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '11px 14px', background: '#191527', border: `1px solid ${C.border}`, borderRadius: 12 }}>
                 <svg width="15" height="15" viewBox="0 0 16 16" fill={C.purpleLight}><polygon points="8,1 10,6 15,6 11,9.5 12.5,15 8,11.5 3.5,15 5,9.5 1,6 6,6" /></svg>
-                <input type="number" min={0} value={tipGoalCoins} onChange={(e) => setTipGoalCoins(Math.max(0, Number(e.target.value)))} placeholder="0" style={{ flex: 1, background: 'transparent', border: 'none', color: '#fff', fontSize: 15, fontWeight: 700, outline: 'none' }} />
+                <input type="number" min={0} value={tipGoalCoins} onChange={(e) => setTipGoalCoins(Math.max(0, Number(e.target.value)))} placeholder="0" style={{ flex: 1, background: 'transparent', border: 'none', color: '#fff', fontSize: 14, fontWeight: 700, outline: 'none' }} />
                 <span style={{ fontSize: 12, color: C.textDim }}>coins</span>
               </div>
               <Label>What's it for? (optional)</Label>
@@ -622,12 +622,12 @@ export default function NativeGoLiveScreen() {
       {/* Sticky CTA */}
       <div style={{ position: 'fixed', left: 0, right: 0, bottom: 0, padding: '12px 14px calc(env(safe-area-inset-bottom, 0px) + 12px)', background: 'linear-gradient(to top, rgba(9,9,15,1) 65%, rgba(9,9,15,0))', zIndex: 40 }}>
         {followerGated && (
-          <div style={{ marginBottom: 10, padding: '11px 13px', borderRadius: 13, background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.4)' }}>
+          <div style={{ marginBottom: 10, padding: '11px 13px', borderRadius: 12, background: '#2A2008', borderLeft: '3px solid #f59e0b' }}>
             <div style={{ display: 'flex', gap: 9, alignItems: 'center' }}>
-              <span className="material-symbols-outlined" style={{ fontSize: 19, color: '#f59e0b' }}>lock</span>
+              <span className="material-symbols-outlined" style={{ fontSize: 20, color: '#f59e0b' }}>lock</span>
               <div style={{ fontSize: 13, fontWeight: 700, color: '#fff' }}>Public live unlocks at {STREAM_FOLLOWER_GATE} followers</div>
             </div>
-            <div style={{ fontSize: 11.5, color: '#a0a0b8', marginTop: 5, lineHeight: 1.5 }}>
+            <div style={{ fontSize: 12, color: '#a0a0b8', marginTop: 5, lineHeight: 1.5 }}>
               You have <b style={{ color: '#fff' }}>{followerCount}</b>, {followersToGo} to go. Squad streams to your crew are free anytime.
             </div>
             <div style={{ marginTop: 8, height: 5, borderRadius: 999, background: '#2A2A38', overflow: 'hidden' }}>
@@ -636,12 +636,12 @@ export default function NativeGoLiveScreen() {
           </div>
         )}
         {scheduleOn ? (
-          <button type="button" onClick={scheduleStream} disabled={scheduling || followerGated} style={{ ...primaryBtn, width: '100%', justifyContent: 'center', padding: 16, fontSize: 15, opacity: (scheduling || followerGated) ? 0.5 : 1 }}>
+          <button type="button" onClick={scheduleStream} disabled={scheduling || followerGated} style={{ ...primaryBtn, width: '100%', justifyContent: 'center', padding: 16, fontSize: 14, opacity: (scheduling || followerGated) ? 0.5 : 1 }}>
             <span className="material-symbols-outlined" style={{ fontSize: 18 }}>{followerGated ? 'lock' : 'event'}</span>
             {followerGated ? `${followersToGo} followers to go` : (scheduling ? 'Scheduling…' : 'Schedule stream')}
           </button>
         ) : (
-          <button type="button" onClick={goLive} disabled={starting || followerGated} style={{ ...primaryBtn, width: '100%', justifyContent: 'center', padding: 16, fontSize: 15, opacity: (starting || followerGated) ? 0.5 : 1 }}>
+          <button type="button" onClick={goLive} disabled={starting || followerGated} style={{ ...primaryBtn, width: '100%', justifyContent: 'center', padding: 16, fontSize: 14, opacity: (starting || followerGated) ? 0.5 : 1 }}>
             {followerGated
               ? <span className="material-symbols-outlined" style={{ fontSize: 18 }}>lock</span>
               : <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="7" stroke="white" strokeWidth="1.5" /><circle cx="8" cy="8" r="3" fill="white" /></svg>}
@@ -666,11 +666,11 @@ function Label({ children }) {
 function IngestCard({ active, disabled, onClick, icon, title, desc, note }) {
   return (
     <button type="button" onClick={disabled ? undefined : onClick} disabled={disabled} style={{
-      textAlign: 'left', padding: '14px', background: active ? C.purpleSoft : 'rgba(255,255,255,0.04)',
-      border: active ? `1px solid ${C.purple}` : `1px solid ${C.border}`, borderRadius: 14, color: C.text,
+      textAlign: 'left', padding: '14px', background: active ? C.purple : '#191527',
+      border: active ? 'none' : `1px solid ${C.border}`, borderRadius: 14, color: C.text,
       cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.55 : 1, display: 'flex', gap: 12, alignItems: 'flex-start', width: '100%',
     }}>
-      <span className="material-symbols-outlined" style={{ fontSize: 24, color: active ? C.purpleLight : C.textDim, marginTop: 2 }}>{icon}</span>
+      <span className="material-symbols-outlined" style={{ fontSize: 24, color: active ? '#fff' : C.textDim, marginTop: 2 }}>{icon}</span>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 2 }}>{title}</div>
         <div style={{ fontSize: 12, color: C.textDim, lineHeight: 1.4 }}>{desc}</div>
@@ -703,21 +703,24 @@ function MicMeter({ level = 0, muted = false }) {
       {Array.from({ length: bars }).map((_, i) => {
         const on = i < lit;
         const color = i >= 7 ? C.red : i >= 5 ? C.amber : C.green;
-        return <div key={i} style={{ width: 3, height: 4 + i * 1.1, background: on ? color : 'rgba(255,255,255,0.14)', borderRadius: 1, transition: 'background 0.06s linear' }} />;
+        return <div key={i} style={{ width: 3, height: 4 + i * 1.1, background: on ? color : 'rgba(255,255,255,0.14)', borderRadius: 2, transition: 'background 0.06s linear' }} />;
       })}
     </div>
   );
 }
 function Toggle({ checked, onChange }) {
   return (
-    <button type="button" onClick={() => onChange(!checked)} style={{ width: 38, height: 22, borderRadius: 11, position: 'relative', background: checked ? `linear-gradient(135deg,${C.purple},${C.purpleLight})` : 'rgba(255,255,255,0.1)', border: 'none', cursor: 'pointer', flexShrink: 0 }}>
+    <button type="button" onClick={() => onChange(!checked)} style={{ width: 38, height: 22, borderRadius: 12, position: 'relative', background: checked ? `linear-gradient(135deg,${C.purple},${C.purpleLight})` : 'rgba(255,255,255,0.1)', border: 'none', cursor: 'pointer', flexShrink: 0 }}>
       <div style={{ position: 'absolute', top: 2, left: checked ? 18 : 2, width: 18, height: 18, borderRadius: '50%', background: '#fff', transition: 'left 0.15s', boxShadow: '0 1px 2px rgba(0,0,0,0.3)' }} />
     </button>
   );
 }
 
-const iconBtn = { width: 38, height: 38, borderRadius: 12, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.05)', border: `1px solid ${C.border}`, color: C.text, cursor: 'pointer' };
+// A 5% white over the page had no value of its own, so the hairline was doing
+// all the work of making the button visible. Solid #191527 is a real step up
+// from the page and needs no ring.
+const iconBtn = { width: 38, height: 38, borderRadius: 12, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#191527', border: 'none', color: C.text, cursor: 'pointer' };
 const primaryBtn = { display: 'flex', alignItems: 'center', gap: 8, padding: '12px 18px', background: `linear-gradient(135deg, ${C.purple}, ${C.purpleLight})`, border: 'none', borderRadius: 14, color: '#fff', fontSize: 13, fontWeight: 800, cursor: 'pointer', boxShadow: '0 0 16px rgba(123,31,255,0.4)' };
-const input = { width: '100%', boxSizing: 'border-box', background: '#191527', border: `1px solid ${C.border}`, borderRadius: 12, padding: '13px 15px', color: C.text, fontSize: 15, outline: 'none' };
+const input = { width: '100%', boxSizing: 'border-box', background: '#191527', border: `1px solid ${C.border}`, borderRadius: 12, padding: '13px 15px', color: C.text, fontSize: 14, outline: 'none' };
 const coverChip = { width: 30, height: 30, borderRadius: 8, border: 'none', background: 'rgba(0,0,0,0.6)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' };
-const tagPill = { display: 'flex', alignItems: 'center', gap: 5, padding: '4px 10px', background: C.purpleSoft, border: '1px solid rgba(180,79,255,0.3)', borderRadius: 20, fontSize: 12, color: C.purpleLight };
+const tagPill = { display: 'flex', alignItems: 'center', gap: 5, padding: '4px 10px', background: '#241943', border: 'none', borderRadius: 20, fontSize: 12, color: C.purpleLight };

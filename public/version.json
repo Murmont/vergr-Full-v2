@@ -4,7 +4,7 @@
   "apkUrl": "https://cdn.vergr.app/downloads/VERGR.apk?v=1000206",
   "minSupportedVersionCode": 1,
   "notes": "Live streaming got the work this release. If nobody has found your stream yet the screen now says so and gives you the three things that change it, instead of a bare 0. Your upload dropping is called out while you are live, and the tip goal can be dragged and resized so it stops covering your face. You can go live audio only, and choose who is allowed to clip you. Being timed out or banned from a chat is now shown before you type rather than after your message is rejected, with a real appeal. Viewers who lose their connection are told it is their end, not the streamer. You can gift someone a month of a creator membership, and share a replay when a stream ends.",
-  "apkSize": 124365604,
-  "apkSha256": "72e2eac76e1b9f7e72fb13b30cfacb7cd98a93af6358b3eb517a295b15abe3be",
-  "apkPublishedAt": "2026-08-23T21:44:54.729Z"
+  "apkSize": 125987620,
+  "apkSha256": "4f8568a1edcdf65bf90539e1267ecada2779e961269abbced3d1b236513a608b",
+  "apkPublishedAt": "2026-09-05T09:18:07.772Z"
 }

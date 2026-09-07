@@ -17,6 +17,7 @@
 // went wrong" tells a viewer nothing and reads as the app blaming them. Each
 // message below names the cause and the next step.
 
+import { useEffect } from 'react';
 import { motion } from 'framer-motion';
 import Icon from '../../../components/Icon';
 // ⚠ THE FACE COMES FROM THE PROVIDER, NOT A PROP. Passing host?.avatar bypasses
@@ -26,6 +27,7 @@ import Icon from '../../../components/Icon';
 import { useFaces, usePreviewSim } from './previewAssetsContext';
 import { canUseModChannel } from './previewRoles';
 import { castByUid } from './previewCast';
+import { PREVIEW_HOST } from './previewStream';
 import UserAvatar from '../../../components/UserAvatar';
 import { ReconnectingOverlay, StreamLoadingCover } from '../../../components/streams/MobileLiveViewer';
 import { RaidBanner } from '../../../components/streams/RaidControls';
@@ -294,80 +296,208 @@ export function AudioStage(props) {
 }
 
 /**
+ * What the train paid the creator.
+ *
+ * ⚠⚠ THE ROOM SEES IT, AND THAT IS THE POINT. A bonus paid silently is a
+ * private payout that wastes the moment the room just made; telling them what
+ * they earned the creator is what makes the next train more likely.
+ *
+ * ⚠ IT IS NEVER A FIXED AMOUNT. The figure is a percentage of what actually
+ * landed in that train, so it can never exceed the margin those coins already
+ * banked. See docs/HYPE_TRAIN_PLAN.md.
+ */
+// ⚠ THE GOLD RAMP, NOT A FLAT FILL. Founder rule: flat #F0A500 reads as orange
+// paint; real gold is this ramp. Used on the MAX chip and the bonus plate.
+const GOLD_RAMP = 'linear-gradient(180deg, #FCEFB4 0%, #F5C842 38%, #E9A517 72%, #C97F12 100%)';
+
+// The heat of a level. Violet through pink to gold, which is the brand's own
+// ladder, and deliberately no cyan anywhere in it.
+const TRAIN_HEAT = ['#8b3ff0', '#a34cf5', '#b44fff', '#c87fff', '#f0a500'];
+
+const trainClock = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+
+/**
  * The hype train — one thing the whole room pushes on together.
  *
- * ⚠⚠ THE REWARD IS RECOGNITION AND NOTHING ELSE, PENDING A FOUNDER DECISION.
- * Paying coins would mint currency out of a celebration; paying VP inflates the
- * ladder and collides head-on with `GIFT_COINS_PER_VP`, whose own comment says
- * coins must not buy rank. So the train currently pays the only thing that costs
- * nothing and is still worth having: the room sees the level, and it names the
- * people who got it there. Do not add a currency reward here without being told.
+ * ⚠⚠ THE CONDUCTOR IS THE FEATURE, NOT THE BAR. The first version showed five
+ * identical grey silhouettes and the words "5 on board", which is a count, not a
+ * story: nobody pushes a meter to be an anonymous blob. Twitch names the person
+ * carrying it. So the top contributor is first, ringed in gold, and named.
  *
- * ⚠ IT IS NOT `streams/{id}.hype`. That field already exists and means something
- * else entirely — a reactions-per-5-seconds excitement meter (functions/streamHype.js).
- * Two systems on one word is how the theme system died, so this rides `train`.
+ * ⚠ THE BAR CARRIES ITS OWN FIGURES. A progress bar with no numbers on it is a
+ * mood. "9,800 / 22,646" is what tells somebody whether one more tip finishes a
+ * level, which is the entire decision the train is asking them to make.
  *
- * ⚠ THE RIDERS ARE THE POINT, not the bar. A progress bar with no faces on it is
- * a loading spinner; the reason anyone pushes a shared meter is to be one of the
- * names on it.
+ * ⚠ THE CLOCK ESCALATES BY COLOUR, NOT BY MOTION. There are two reduced-motion
+ * switches in this app and the CSS one FAST-FORWARDS an animation to its final
+ * keyframe rather than stopping it, so a pulsing timer is invisible for anyone
+ * who set it. Colour and weight carry the urgency instead and cannot fail.
+ *
+ * ⚠ MAX IS A DIFFERENT STATE, not a recolour. Full gold ramp, its own label, and
+ * the countdown stops mattering because there is nothing left to fill.
+ *
+ * ⚠ IT RIDES `train`, NOT `streams/{id}.hype`. That field is a
+ * reactions-per-5-seconds meter (functions/streamHype.js). Two systems on one
+ * word is how the theme system died.
  */
 export function HypeTrain({ style }) {
-  // ⚠ THE TRAIN COMES FROM THE CONTEXT, NOT A PROP. Six surfaces mount this and
-  // eslint no-undef caught all six the moment it was threaded as a prop — which
-  // is the cheap version of the failure that shipped the avatar orbit visible to
-  // nobody but its owner. A prop has to be remembered at every hop; a context
-  // cannot be forgotten.
   const faceOf = useFaces();
   const { train } = usePreviewSim();
   if (!train) return null;
   const { level = 1, into = 0, goal = 1, maxLevel = 5, endsAtMs = 0, riders = {} } = train;
   const capped = level >= maxLevel;
-  const pct = capped ? 100 : Math.max(4, Math.min(100, Math.round((into / goal) * 100)));
+  const pct = capped ? 100 : Math.max(3, Math.min(100, Math.round((into / goal) * 100)));
   const left = Math.max(0, Math.round((endsAtMs - Date.now()) / 1000));
-  // ⚠ THE HEAT IS THE LEVEL, so a level 5 cannot be mistaken for a level 1 at a
-  // glance. Violet through pink to gold, which is the brand's own ladder; there
-  // is deliberately no cyan anywhere in it.
-  const HEAT = ['#7c3aed', '#8b3ff0', '#b44fff', '#c87fff', '#f0a500'];
-  const hot = HEAT[Math.min(level, HEAT.length) - 1];
-  const top = [...Object.entries(riders)].sort((a, b) => b[1] - a[1]).slice(0, 5);
+  const hot = TRAIN_HEAT[Math.min(level, TRAIN_HEAT.length) - 1];
+
+  const sorted = [...Object.entries(riders)].sort((a, b) => b[1] - a[1]);
+  const conductor = sorted[0] ? castByUid(sorted[0][0]) : null;
+  const rest = sorted.slice(1, 5);
+  const more = Math.max(0, sorted.length - 5);
+
+  // Urgent under 30s, warming under a minute. No animation: see the note above.
+  const urgent = !capped && left <= 30;
+  const warm = !capped && left <= 60;
+
   return (
-    <div style={{
+    <div className="vg-material vg-grain" style={{
       position: 'absolute', left: 10, right: 10, top: 56, zIndex: 26,
-      padding: 8, borderRadius: 12, pointerEvents: 'none',
-      background: 'linear-gradient(180deg, #1b1030 0%, #120b22 100%)',
-      boxShadow: `inset 0 1px 0 rgba(255,255,255,0.08), 0 6px 20px ${hot}33`,
+      padding: 10, borderRadius: 16, pointerEvents: 'none', overflow: 'hidden',
+      boxShadow: capped
+        ? 'inset 0 1px 0 rgba(255,255,255,0.14), 0 8px 26px rgba(240,165,0,0.34)'
+        : `inset 0 1px 0 rgba(255,255,255,0.08), 0 6px 22px ${hot}33`,
       ...style,
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <span style={{
           flexShrink: 0, display: 'flex', alignItems: 'center', gap: 4,
-          padding: '2px 8px', borderRadius: 999, background: hot,
-          fontSize: 11, fontWeight: 800, color: '#fff',
+          padding: '3px 9px', borderRadius: 999,
+          background: capped ? GOLD_RAMP : `linear-gradient(180deg, ${hot}, ${hot}cc)`,
+          fontSize: 11, fontWeight: 900, letterSpacing: '.02em',
+          color: capped ? '#241a05' : '#fff',
+          boxShadow: capped ? '0 2px 10px rgba(240,165,0,0.5)' : 'none',
         }}>
           <Icon name="local_fire_department" size={12} />
           {capped ? 'MAX' : `LV ${level}`}
         </span>
         <span style={{ flex: 1, minWidth: 0, fontSize: 12, fontWeight: 800, color: C.text }}>
-          Hype train
+          {capped ? 'Hype train at full' : 'Hype train'}
         </span>
-        {/* ⚠ THE COUNTDOWN IS THE URGENCY. A shared meter with no clock on it is
-            just a total, and nobody hurries for a total. */}
-        <span className="vg-mono" style={{ flexShrink: 0, fontSize: 12, fontWeight: 800, color: left <= 30 ? C.amber : C.textDim }}>
-          {Math.floor(left / 60)}:{String(left % 60).padStart(2, '0')}
+        <span className="vg-mono" style={{
+          flexShrink: 0, fontSize: 12,
+          fontWeight: urgent ? 900 : 800,
+          color: capped ? '#f5c842' : urgent ? '#ff6b6b' : warm ? '#f59e0b' : C.textDim,
+        }}>
+          {capped ? 'held' : trainClock(left)}
         </span>
       </div>
-      <div style={{ height: 6, borderRadius: 999, background: S.track, overflow: 'hidden', margin: '6px 0 6px' }}>
-        <div style={{ width: `${pct}%`, height: '100%', borderRadius: 999, background: `linear-gradient(90deg, ${hot}, #f5c842)`, transition: 'width 320ms cubic-bezier(0.2,0.6,0.25,1)' }} />
+
+      <div style={{ height: 7, borderRadius: 999, background: '#20232a', overflow: 'hidden', margin: '7px 0 6px' }}>
+        <div style={{
+          width: `${pct}%`, height: '100%', borderRadius: 999,
+          background: capped ? GOLD_RAMP : `linear-gradient(90deg, ${hot}, #f5c842)`,
+          boxShadow: `0 0 10px ${capped ? '#f0a500' : hot}88`,
+          transition: 'width 340ms cubic-bezier(0.2,0.6,0.25,1)',
+        }} />
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-        {top.map(([uid]) => {
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        {conductor && (
+          <span style={{ flexShrink: 0, borderRadius: 999, padding: 1, background: GOLD_RAMP, display: 'flex' }}>
+            <UserAvatar user={conductor} avatar={faceOf(conductor)} size={20} showLiftRing={false} />
+          </span>
+        )}
+        {rest.map(([uid]) => {
           const u = castByUid(uid);
           return <UserAvatar key={uid} user={u} avatar={faceOf(u)} size={18} showLiftRing={false} />;
         })}
-        <span style={{ fontSize: 11, fontWeight: 700, color: C.textMuted, marginLeft: 2 }}>
-          {Object.keys(riders).length} on board
+        {more > 0 && (
+          <span className="vg-mono" style={{ flexShrink: 0, fontSize: 11, fontWeight: 800, color: C.textMuted }}>+{more}</span>
+        )}
+        <span style={{ flex: 1, minWidth: 0, fontSize: 11, fontWeight: 700, color: C.textDim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginLeft: 2 }}>
+          {conductor ? `${conductor.displayName} leading` : ''}
+        </span>
+        <span className="vg-mono" style={{ flexShrink: 0, fontSize: 11, fontWeight: 800, color: capped ? '#f5c842' : C.textDim }}>
+          {capped ? 'top level' : `${into.toLocaleString()} / ${goal.toLocaleString()}`}
         </span>
       </div>
     </div>
+  );
+}
+
+/**
+ * What the train paid the creator.
+ *
+ * ⚠⚠ THE ROOM SEES IT, AND THAT IS THE POINT. A bonus paid silently is a
+ * private payout that wastes the moment the room just made; telling them what
+ * they earned the creator is what makes the next train more likely.
+ *
+ * ⚠ IT IS NEVER A FIXED AMOUNT. The figure is a percentage of what actually
+ * landed in that train, so it can never exceed the margin those coins already
+ * banked. Working: docs/HYPE_TRAIN_PLAN.md.
+ *
+ * ⚠ THE GROUND IS DARK MATERIAL, NOT BROWN. The first version put gold on an
+ * olive-brown gradient and it read as muddy rather than valuable. Gold belongs
+ * on near-black, as a RAMP and never a flat fill, which is the same rule the
+ * earnings gauge already records.
+ */
+export function TrainBonus({ bonus, hostName, onDone, offset = 0 }) {
+  useEffect(() => {
+    if (!bonus) return undefined;
+    const id = setTimeout(() => onDone?.(), 6000);
+    return () => clearTimeout(id);
+  }, [bonus, onDone]);
+  if (!bonus) return null;
+  const isVp = bonus.kind === 'vp';
+  const amount = isVp ? bonus.vp : bonus.coins;
+  return (
+    <div className="vg-material vg-grain" style={{
+      position: 'absolute', left: 10, right: 10, top: 56 + offset, zIndex: 27,
+      padding: 10, borderRadius: 16, pointerEvents: 'none', overflow: 'hidden',
+      boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.14), 0 8px 26px rgba(240,165,0,0.30)',
+      display: 'flex', alignItems: 'center', gap: 8,
+    }}>
+      <span style={{
+        flexShrink: 0, width: 30, height: 30, borderRadius: 12,
+        background: GOLD_RAMP, display: 'grid', placeItems: 'center', color: '#241a05',
+        boxShadow: '0 3px 12px rgba(240,165,0,0.45)',
+      }}>
+        <Icon name={isVp ? 'bolt' : 'toll'} size={16} />
+      </span>
+      <span style={{ flex: 1, minWidth: 0 }}>
+        <span style={{ display: 'block', fontSize: 11, fontWeight: 800, letterSpacing: '.06em', color: C.textMuted }}>
+          {`LEVEL ${bonus.level} TRAIN`}
+        </span>
+        <span style={{ display: 'block', fontSize: 13, fontWeight: 900, color: C.text, marginTop: 1 }}>
+          {`${amount.toLocaleString()} ${isVp ? 'VP' : 'coins'} to ${hostName || 'the host'}`}
+        </span>
+      </span>
+      <span className="vg-mono" style={{ flexShrink: 0, fontSize: 11, fontWeight: 800, color: '#f5c842' }}>
+        {`${bonus.received.toLocaleString()}c raised`}
+      </span>
+    </div>
+  );
+}
+
+// Reads the sim so no call site has to remember to feed it, the same reason
+// HypeTrain does. Nine mount points; a prop would have to be right at all nine.
+//
+// ⚠ IT STEPS BELOW A LIVE TRAIN. Both sat at top:56, so a train starting while
+// the previous one's bonus was still on screen put one exactly on top of the
+// other. If a train is running the bonus drops under it.
+export function TrainBonusHost() {
+  // ⚠ THE HOST HAS A NAME AND THE BONUS MUST USE IT. This read doc.hostName,
+  // which the stream doc does not carry, so every bonus said "to the host" —
+  // an anonymous payout on the one line whose whole job is to tell the room who
+  // they just earned it for.
+  const { trainBonus, clearTrainBonus, train, doc } = usePreviewSim();
+  const host = doc?.hostName || doc?.displayName || PREVIEW_HOST?.displayName;
+  return (
+    <TrainBonus
+      bonus={trainBonus}
+      hostName={host}
+      onDone={clearTrainBonus}
+      offset={train ? 86 : 0}
+    />
   );
 }

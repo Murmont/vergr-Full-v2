@@ -531,6 +531,13 @@
         }
       },
       {
+        "source": "/maptile",
+        "function": {
+          "functionId": "mapThumb",
+          "region": "europe-west1"
+        }
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }
@@ -543,6 +550,16 @@
           {
             "key": "Cache-Control",
             "value": "no-cache, no-store, must-revalidate"
+          }
+        ]
+      },
+      {
+        "comment": "Map thumbnails are immutable per coordinate — let the CDN + browser cache them hard so each location costs at most one Google Static Maps call ever.",
+        "source": "/maptile",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public, max-age=2592000, s-maxage=2592000, immutable"
           }
         ]
       },
@@ -609,6 +626,16 @@
           {
             "key": "Access-Control-Allow-Origin",
             "value": "*"
+          }
+        ]
+      },
+      {
+        "comment": "Rank crest art. Without this it falls through to the catch-all ** rule (no-store) and was re-downloaded in FULL on every page load. Effect 21, doc 21 s5.",
+        "source": "/badges/**",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public, max-age=604800, s-maxage=2592000"
           }
         ]
       },

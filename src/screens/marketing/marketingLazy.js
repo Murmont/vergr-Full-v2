@@ -35,7 +35,11 @@ export const MonetizationScreen = pick('MonetizationScreen');
 export const CreatorsLandingScreen = pick('CreatorsLandingScreen');
 export const StudioToolsScreen = pick('StudioToolsScreen');
 export const PartnerProgramScreen = pick('PartnerProgramScreen');
-export const LearnLiveScreen = pick('LearnLiveScreen');
+// Lives in its own file (it is a full bespoke layout, not the shared
+// Section/Grid/Tile shape). It still imports MarketingShell from
+// PublicMarketingScreens, so Vite keeps it in the same marketing chunk — but
+// it must NOT be re-exported from there, or the two files form an import cycle.
+export const LearnLiveScreen = lazy(() => import('./LearnLiveScreen'));
 // LearnTournamentsScreen removed 2026-08-19 (tournaments retired).
 export const LearnSquadsScreen = pick('LearnSquadsScreen');
 export const LearnClipsScreen = pick('LearnClipsScreen');

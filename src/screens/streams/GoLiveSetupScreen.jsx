@@ -535,7 +535,7 @@ export default function GoLiveSetupScreen() {
         padding: '20px 24px 16px', flexWrap: 'wrap', gap: 12,
       }}>
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 22, fontWeight: 800 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 20, fontWeight: 800 }}>
             <svg width="22" height="22" viewBox="0 0 16 16" fill="none">
               <circle cx="8" cy="8" r="7" stroke={C.purpleLight} strokeWidth="1.5"/>
               <circle cx="8" cy="8" r="3" fill={C.purpleLight}/>
@@ -549,16 +549,22 @@ export default function GoLiveSetupScreen() {
         </div>
         {followerGated && (
           <div style={{
+            // ⚠ SOLID WELL PLUS AN ACCENT EDGE, NOT A 10% WASH INSIDE A RING.
+            // A low-alpha amber over #09090f has no value of its own, so the
+            // card read as a tinted outline rather than a surface. #2A2008 is a
+            // real step up from the #12121e cards around it and carries the hue
+            // on its own. The left edge is directional, which is why it is not
+            // the border soup the ring was.
             margin: '0 0 4px', padding: '14px 16px', borderRadius: 14,
-            background: 'rgba(245,158,11,0.10)', border: `1px solid ${C.amber}55`,
+            background: '#2A2008', borderLeft: `3px solid ${C.amber}`,
             display: 'flex', gap: 12, alignItems: 'flex-start',
           }}>
-            <span className="material-symbols-outlined" style={{ fontSize: 22, color: C.amber, flex: 'none' }}>lock</span>
+            <span className="material-symbols-outlined" style={{ fontSize: 20, color: C.amber, flex: 'none' }}>lock</span>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 14, fontWeight: 700, color: C.text }}>
                 Public live streaming unlocks at {STREAM_FOLLOWER_GATE} followers
               </div>
-              <div style={{ fontSize: 12.5, color: C.textDim, marginTop: 3, lineHeight: 1.5 }}>
+              <div style={{ fontSize: 13, color: C.textDim, marginTop: 3, lineHeight: 1.5 }}>
                 You have <b style={{ color: C.text }}>{followerCount}</b>, {followersToGo} to go. This keeps brand-new
                 accounts from spamming live. In the meantime you can host a <b style={{ color: C.text }}>free Squad stream</b> to your crew.
               </div>
@@ -567,11 +573,11 @@ export default function GoLiveSetupScreen() {
               </div>
               <div style={{ display: 'flex', gap: 8, marginTop: 11, flexWrap: 'wrap' }}>
                 <button type="button" onClick={() => navigate('/squads')}
-                  style={{ background: C.amber, color: '#1a1205', border: 'none', borderRadius: 9, padding: '7px 13px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
+                  style={{ background: C.amber, color: '#1a1205', border: 'none', borderRadius: 8, padding: '7px 13px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
                   Stream to my Squad
                 </button>
                 <button type="button" onClick={() => navigate('/explore')}
-                  style={{ background: 'transparent', color: C.textDim, border: `1px solid ${C.border}`, borderRadius: 9, padding: '7px 13px', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
+                  style={{ background: 'transparent', color: C.textDim, border: `1px solid ${C.border}`, borderRadius: 8, padding: '7px 13px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
                   Find people to follow
                 </button>
               </div>
@@ -591,7 +597,7 @@ export default function GoLiveSetupScreen() {
           <button
             type="button"
             onClick={() => setScheduleOn(v => !v)}
-            style={{ ...btnOutline, borderColor: scheduleOn ? C.purpleLight : C.border, color: scheduleOn ? C.purpleLight : C.textDim }}
+            style={{ ...btnOutline, borderColor: scheduleOn ? '#fff' : C.border, color: scheduleOn ? '#fff' : C.textDim }}
             title="Schedule this stream for later"
           >
             <span className="material-symbols-outlined" style={{ fontSize: 14 }}>{scheduleOn ? 'event_available' : 'schedule'}</span>
@@ -629,7 +635,7 @@ export default function GoLiveSetupScreen() {
               style={{ ...btnPrimary, opacity: (starting || followerGated) ? 0.5 : 1, cursor: followerGated ? 'not-allowed' : (starting ? 'wait' : 'pointer') }}
             >
               {followerGated ? (
-                <span className="material-symbols-outlined" style={{ fontSize: 15 }}>lock</span>
+                <span className="material-symbols-outlined" style={{ fontSize: 14 }}>lock</span>
               ) : (
                 <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
                   <circle cx="8" cy="8" r="7" stroke="white" strokeWidth="1.5"/>
@@ -652,7 +658,7 @@ export default function GoLiveSetupScreen() {
             style={{
               width: '100%', display: 'flex', alignItems: 'center', gap: 12,
               padding: '12px 14px', borderRadius: 12, cursor: 'pointer', textAlign: 'left',
-              background: 'rgba(145,70,255,0.10)', border: '1px solid rgba(145,70,255,0.35)',
+              background: '#1E1436', borderLeft: '3px solid #9146FF',
             }}
           >
             <span style={{
@@ -661,7 +667,7 @@ export default function GoLiveSetupScreen() {
             }}>T</span>
             <span style={{ flex: 1, minWidth: 0 }}>
               <span style={{ display: 'block', fontSize: 13, fontWeight: 700, color: C.text }}>Already stream on Twitch?</span>
-              <span style={{ display: 'block', fontSize: 11.5, color: C.textDim }}>
+              <span style={{ display: 'block', fontSize: 12, color: C.textDim }}>
                 Connect Twitch once and your Twitch streams appear live on VERGR automatically, chat synced. No OBS changes.
               </span>
             </span>
@@ -670,7 +676,7 @@ export default function GoLiveSetupScreen() {
         ) : (
           <div style={{
             borderRadius: 12, padding: '12px 14px',
-            background: 'rgba(145,70,255,0.10)', border: '1px solid rgba(145,70,255,0.35)',
+            background: '#1E1436', borderLeft: '3px solid #9146FF',
           }}>
             <label style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }}>
               <span style={{
@@ -679,7 +685,7 @@ export default function GoLiveSetupScreen() {
               }}>T</span>
               <span style={{ flex: 1, minWidth: 0 }}>
                 <span style={{ display: 'block', fontSize: 13, fontWeight: 700, color: C.text }}>Stream to both</span>
-                <span style={{ display: 'block', fontSize: 11.5, color: C.textDim }}>
+                <span style={{ display: 'block', fontSize: 12, color: C.textDim }}>
                   Relay this broadcast to your Twitch channel too. Your Twitch audience sees no change while your Vergr channel grows.
                   {ingestMode !== 'rtmp' && mirrorToTwitch ? ' Needs the OBS / RTMP source (switch below).' : ''}
                 </span>
@@ -694,7 +700,7 @@ export default function GoLiveSetupScreen() {
                 style={{ width: 18, height: 18, accentColor: '#9146FF', flexShrink: 0 }} />
             </label>
             {mirrorToTwitch && (
-              <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid rgba(145,70,255,0.25)' }}>
+              <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #2E2050' }}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
                   <input type="checkbox" checked={twitchNudgeOn} onChange={(e) => setTwitchNudgeOn(e.target.checked)}
                     style={{ width: 15, height: 15, accentColor: '#9146FF', flexShrink: 0 }} />
@@ -709,11 +715,14 @@ export default function GoLiveSetupScreen() {
                     rows={2}
                     style={{
                       width: '100%', marginTop: 8, borderRadius: 8, padding: '8px 10px',
-                      fontSize: 12, color: C.text, background: 'rgba(0,0,0,0.3)',
-                      border: '1px solid rgba(145,70,255,0.3)', outline: 'none', resize: 'vertical',
+                      // A field is RECESSED: a solid value darker than the well
+                      // it sits in, so the border is saying "type here" rather
+                      // than doing the work of making the box visible at all.
+                      fontSize: 12, color: C.text, background: '#0C0916',
+                      border: '1px solid #2E2050', outline: 'none', resize: 'vertical',
                     }} />
                 )}
-                <p style={{ margin: '8px 0 0', fontSize: 10.5, color: C.textDim }}>
+                <p style={{ margin: '8px 0 0', fontSize: 11, color: C.textDim }}>
                   Posted as YOU, in YOUR channel only. Off by default; keep it friendly.
                 </p>
               </div>
@@ -810,9 +819,9 @@ export default function GoLiveSetupScreen() {
                 style={{
                   display: 'flex', alignItems: 'center', gap: 6,
                   padding: '6px 12px',
-                  background: d.on ? C.purpleSoft : 'rgba(255,255,255,0.04)',
-                  border: d.on ? `1px solid ${C.purple}` : `1px solid ${C.borderSoft}`,
-                  borderRadius: 7, color: d.on ? C.purpleLight : C.textDim,
+                  background: d.on ? C.purple : '#191527',
+                  border: d.on ? 'none' : `1px solid ${C.borderSoft}`,
+                  borderRadius: 8, color: d.on ? '#fff' : C.textDim,
                   fontSize: 12, fontWeight: 600, cursor: 'pointer',
                 }}
               >
@@ -1000,10 +1009,10 @@ export default function GoLiveSetupScreen() {
                     style={{
                       flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
                       padding: '10px 12px',
-                      background: audience === a.id ? C.purpleSoft : 'rgba(255,255,255,0.04)',
-                      border: audience === a.id ? `1px solid ${C.purple}` : `1px solid ${C.border}`,
+                      background: audience === a.id ? C.purple : '#191527',
+                      border: audience === a.id ? 'none' : `1px solid ${C.border}`,
                       borderRadius: 8,
-                      color: audience === a.id ? C.purpleLight : C.textDim,
+                      color: audience === a.id ? '#fff' : C.textDim,
                       fontSize: 12, fontWeight: 600, cursor: 'pointer',
                     }}
                   >
@@ -1076,9 +1085,9 @@ export default function GoLiveSetupScreen() {
               {audience === 'ticketed' && (
                 <button type="button" onClick={() => setShowEventPicker(true)}
                   style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', marginTop: 10, padding: '10px 12px',
-                    background: ticketedEventId ? C.purpleSoft : 'rgba(255,255,255,0.04)',
+                    background: ticketedEventId ? C.purple : '#191527',
                     border: `1px solid ${ticketedEventId ? C.purple : C.border}`, borderRadius: 8,
-                    color: ticketedEventId ? C.purpleLight : C.textDim, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                    color: ticketedEventId ? '#fff' : C.textDim, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
                   <span className="material-symbols-outlined" style={{ fontSize: 16 }}>confirmation_number</span>
                   <span style={{ flex: 1, textAlign: 'left' }}>{ticketedEventId ? ticketedEventName : 'Link this stream to a ticketed event'}</span>
                   <span className="material-symbols-outlined" style={{ fontSize: 16 }}>chevron_right</span>
@@ -1102,9 +1111,9 @@ export default function GoLiveSetupScreen() {
               {audience !== 'ticketed' && (
                 <button type="button" onClick={() => setShowPromotePicker(true)}
                   style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', marginTop: 10, padding: '10px 12px',
-                    background: promotedEventId ? C.purpleSoft : 'rgba(255,255,255,0.04)',
+                    background: promotedEventId ? C.purple : '#191527',
                     border: `1px solid ${promotedEventId ? C.purple : C.border}`, borderRadius: 8,
-                    color: promotedEventId ? C.purpleLight : C.textDim, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                    color: promotedEventId ? '#fff' : C.textDim, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
                   <span className="material-symbols-outlined" style={{ fontSize: 16 }}>sell</span>
                   <span style={{ flex: 1, textAlign: 'left' }}>{promotedEventId ? `Selling tickets: ${promotedEventName}` : 'Sell tickets for an event on this stream (optional)'}</span>
                   {promotedEventId
@@ -1200,7 +1209,7 @@ export default function GoLiveSetupScreen() {
                     type="button"
                     onClick={() => navigate('/settings/subscription')}
                     style={{
-                      marginTop: 10, width: '100%', padding: '8px', borderRadius: 7, border: 'none',
+                      marginTop: 10, width: '100%', padding: '8px', borderRadius: 8, border: 'none',
                       background: `linear-gradient(135deg, ${C.purple}, ${C.purpleLight})`,
                       color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer',
                     }}
@@ -1313,7 +1322,7 @@ export default function GoLiveSetupScreen() {
               style={{
                 display: 'flex', alignItems: 'center', gap: 6,
                 padding: '7px 14px', background: 'transparent',
-                border: `1px solid ${C.border}`, borderRadius: 7,
+                border: `1px solid ${C.border}`, borderRadius: 8,
                 color: C.textMuted, fontSize: 12, cursor: 'pointer',
               }}
             >
@@ -1411,7 +1420,7 @@ export default function GoLiveSetupScreen() {
               style={{
                 width: '100%', padding: '8px 12px',
                 background: `linear-gradient(135deg, ${C.purple}, ${C.purpleLight})`,
-                border: 'none', borderRadius: 7, color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                border: 'none', borderRadius: 8, color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer',
               }}
             >View Plans</button>
           </div>
@@ -1516,8 +1525,8 @@ function IngestCard({ active, disabled, onClick, icon, title, desc, note }) {
       disabled={disabled}
       style={{
         textAlign: 'left', padding: '12px 14px',
-        background: active ? C.purpleSoft : 'rgba(255,255,255,0.04)',
-        border: active ? `1px solid ${C.purple}` : `1px solid ${C.border}`,
+        background: active ? C.purple : '#191527',
+        border: active ? 'none' : `1px solid ${C.border}`,
         borderRadius: 10, color: C.text,
         cursor: disabled ? 'not-allowed' : 'pointer',
         opacity: disabled ? 0.55 : 1,
@@ -1525,7 +1534,7 @@ function IngestCard({ active, disabled, onClick, icon, title, desc, note }) {
       }}
     >
       <span className="material-symbols-outlined" style={{
-        fontSize: 22, color: active ? C.purpleLight : C.textDim, marginTop: 2,
+        fontSize: 20, color: active ? '#fff' : C.textDim, marginTop: 2,
       }}>{icon}</span>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 2 }}>{title}</div>
@@ -1588,7 +1597,7 @@ function MicMeter({ level = 0, muted = false }) {
             // own: it takes whatever is behind it, so the OFF state changed shade from
             // section to section. #2A2A38 is the track token the state layer uses.
             background: on ? color : '#2A2A38',
-            borderRadius: 1, transition: 'background 0.06s linear',
+            borderRadius: 2, transition: 'background 0.06s linear',
           }}/>
         );
       })}
@@ -1602,7 +1611,7 @@ function ToggleSm({ checked, onChange, style }) {
       type="button"
       onClick={() => onChange(!checked)}
       style={{
-        width: 32, height: 18, borderRadius: 9, position: 'relative',
+        width: 32, height: 18, borderRadius: 8, position: 'relative',
         background: checked ? `linear-gradient(135deg,${C.purple},${C.purpleLight})` : 'rgba(255,255,255,0.1)',
         border: 'none', cursor: 'pointer', flexShrink: 0, ...style,
       }}
@@ -1643,7 +1652,7 @@ const coverChip = {
 };
 const tagPill = {
   display: 'flex', alignItems: 'center', gap: 5,
-  padding: '3px 9px', background: C.purpleSoft,
+  padding: '3px 9px', background: '#241943',
   border: '1px solid rgba(180,79,255,0.3)', borderRadius: 20,
   fontSize: 12, color: C.purpleLight,
 };

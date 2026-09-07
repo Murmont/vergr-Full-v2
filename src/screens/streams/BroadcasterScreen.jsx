@@ -21,6 +21,8 @@ import {
   addDoc, Timestamp,
 } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
+import { RaidPicker } from '../../components/streams/RaidControls';
+import { useLiveUsers } from '../../context/LiveUsersContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import { db } from '../../firebase/config';
 import { useAuth } from '../../context/AuthContext';
@@ -36,11 +38,12 @@ import HypeMeter from '../../components/tournament/HypeMeter';
 import JoinAnnouncer from '../../components/streams/JoinAnnouncer';
 import ChatPanel from '../../components/streams/ChatPanel';
 import { StreamGoalBar, TipAlertOverlay, SubAlertOverlay } from '../../components/streams/StreamGoalAndAlerts';
-import { ZeroViewers, VpEarnedChip, HealthWarningView, MovableGoal } from '../../components/streams/states';
+import { ZeroViewers, VpEarnedChip, HealthWarningView, MovableGoal, HypeTrainView } from '../../components/streams/states';
 import { useActiveStreamPoll, StreamPollCard, CreateStreamPollModal } from '../../components/streams/StreamPoll';
 import StreamShareSheet from '../../components/streams/StreamShareSheet';
 import TipCatalogEditor from '../../components/streams/TipCatalogEditor';
 import BannedWordsEditor from '../../components/streams/BannedWordsEditor';
+import CoHostInviteModal from '../../components/streams/CoHostInviteModal';
 import useStreamClipBuffer from '../../hooks/useStreamClipBuffer';
 import { useStreamJoinEvents } from '../../hooks/useStreamJoinEvents';
 import { uploadToR2 } from '../../utils/r2Storage';
@@ -224,6 +227,7 @@ export default function BroadcasterScreen() {
   const [mobileChatOpen, setMobileChatOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
+  const [coHostOpen, setCoHostOpen] = useState(false);
   const [endConfirm, setEndConfirm] = useState(false);
   const [alertsOn] = useState(true);
   const [pollModalOpen, setPollModalOpen] = useState(false);
@@ -973,7 +977,7 @@ export default function BroadcasterScreen() {
           )}
           {isLive ? (
             <div style={{ height: '28vh', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-              <ChatPanel streamId={streamDoc.id} layout="overlay" hostUid={streamDoc.hostUid} slowModeSec={streamDoc.slowModeSec || 0} followersOnly={!!streamDoc.followersOnly} ttsEnabled={!!streamDoc.ttsEnabled} pinnedMessage={streamDoc.pinnedMessage || null} composerExtras={composerExtras} />
+              <ChatPanel streamId={streamDoc.id} layout="overlay" hostUid={streamDoc.hostUid} slowModeSec={streamDoc.slowModeSec || 0} followersOnly={!!streamDoc.followersOnly} subsOnly={!!streamDoc.subsOnly} mutedUids={streamDoc.mutedUids || null} ttsEnabled={!!streamDoc.ttsEnabled} pinnedMessage={streamDoc.pinnedMessage || null} composerExtras={composerExtras} />
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -985,10 +989,10 @@ export default function BroadcasterScreen() {
                 <AudioMeter level={micLevel} compact />
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
-                <button onClick={() => setMobileStudio((v) => !v)} title="Studio: dual camera + scene cards" style={{ padding: '14px 12px', borderRadius: 14, display: 'flex', alignItems: 'center', gap: 6, border: `1px solid ${mobileStudio ? C.purple : C.border}`, background: mobileStudio ? C.purpleSoft : 'rgba(255,255,255,0.06)', color: mobileStudio ? C.purpleLight : '#fff', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
+                <button onClick={() => setMobileStudio((v) => !v)} title="Studio: dual camera + scene cards" style={{ padding: '14px 12px', borderRadius: 14, display: 'flex', alignItems: 'center', gap: 6, border: mobileStudio ? 'none' : `1px solid ${C.border}`, background: mobileStudio ? C.purple : '#191527', color: '#fff', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
                   <Icon name="dashboard_customize" size={16} /> Studio
                 </button>
-                <button onClick={startStream} disabled={starting || (!cameraReady && !screenSharing)} style={{ flex: 1, padding: 15, borderRadius: 14, border: 'none', background: `linear-gradient(135deg, ${C.purple}, ${C.purpleLight})`, color: '#fff', fontSize: 15, fontWeight: 800, cursor: 'pointer', opacity: starting || (!cameraReady && !screenSharing) ? 0.6 : 1 }}>
+                <button onClick={startStream} disabled={starting || (!cameraReady && !screenSharing)} style={{ flex: 1, padding: 15, borderRadius: 14, border: 'none', background: `linear-gradient(135deg, ${C.purple}, ${C.purpleLight})`, color: '#fff', fontSize: 14, fontWeight: 800, cursor: 'pointer', opacity: starting || (!cameraReady && !screenSharing) ? 0.6 : 1 }}>
                   {starting ? 'Starting…' : 'Start Stream'}
                 </button>
               </div>
@@ -996,6 +1000,7 @@ export default function BroadcasterScreen() {
           )}
         </div>
 
+        <HypeTrainView train={streamDoc.hypeTrain} />
         {alertsOn && <TipAlertOverlay lastTip={streamDoc.lastTip} anchor="top" />}
         {alertsOn && <SubAlertOverlay lastSub={streamDoc.lastSub} anchor="bottom" />}
         {pollModalOpen && <CreateStreamPollModal hostUid={streamDoc.hostUid} streamId={streamDoc.id} onClose={() => setPollModalOpen(false)} showToast={showToast} />}
@@ -1030,6 +1035,19 @@ export default function BroadcasterScreen() {
                 <SheetRow icon="content_cut" label="Clip the last moment" onClick={() => { setMoreOpen(false); handleClip(); }} />
                 <SheetRow icon="volunteer_activism" label="Tip catalog" onClick={() => { setMoreOpen(false); setTipCatalogOpen(true); }} />
                 <SheetRow icon="block" label="Banned words" onClick={() => { setMoreOpen(false); setBannedWordsOpen(true); }} />
+                {/* ⚠⚠ CO-HOSTING HAD NO ENTRY POINT ANYWHERE. `CoHostInviteModal`
+                    was mounted in ZERO files, and its own header says it is "the
+                    ONLY co-host entry point now" because the pre-broadcast button
+                    on GoLiveSetupScreen was deliberately removed in favour of it.
+                    So both doors were shut: a deployed `inviteToCoStream`, an SFU
+                    ingest room, the ffmpeg compositor service and a whole
+                    invite-accept screen, with no way for a host to start one.
+                    Founder, on why this matters: co-streaming is free precisely
+                    because "it drives tips on live streams". */}
+                {isLive && (
+                  <SheetRow icon="group_add" label="Invite a co-host"
+                    onClick={() => { setMoreOpen(false); setCoHostOpen(true); }} />
+                )}
                 {/* ⚠ WITHOUT AN ENTRY POINT THE DRAG CAN NEVER BE TURNED ON, and a
                     goal that is always draggable gets moved by accident mid-stream. */}
                 {isLive && streamDoc.goal?.active && (
@@ -1047,7 +1065,7 @@ export default function BroadcasterScreen() {
           {endConfirm && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setEndConfirm(false)} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.65)', zIndex: 70, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
               <motion.div onClick={(e) => e.stopPropagation()} initial={{ scale: 0.92, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} style={{ width: 'min(320px, 100%)', background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: 20, textAlign: 'center' }}>
-                <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 6 }}>End the stream?</div>
+                <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 6 }}>End the stream?</div>
                 <div style={{ fontSize: 12, color: C.textDim, marginBottom: 16 }}>Your viewers will see the stream end immediately.</div>
                 <div style={{ display: 'flex', gap: 8 }}>
                   <button onClick={() => setEndConfirm(false)} style={{ flex: 1, padding: 12, borderRadius: 10, border: `1px solid ${C.border}`, background: 'transparent', color: C.textDim, fontSize: 13, fontWeight: 800, cursor: 'pointer' }}>Keep going</button>
@@ -1061,6 +1079,7 @@ export default function BroadcasterScreen() {
         {shareOpen && <StreamShareSheet streamId={streamDoc.id} streamTitle={streamDoc.title} hostName={profile?.displayName || profile?.username || streamDoc.hostUsername} live={isLive} onClose={() => setShareOpen(false)} />}
         {tipCatalogOpen && <TipCatalogEditor onClose={() => setTipCatalogOpen(false)} />}
         {bannedWordsOpen && <BannedWordsEditor streamId={streamDoc.id} onClose={() => setBannedWordsOpen(false)} />}
+        {coHostOpen && <CoHostInviteModal streamId={streamDoc.id} coHostUids={streamDoc.coHostUids || []} onClose={() => setCoHostOpen(false)} showToast={showToast} />}
         {editInfoOpen && <EditInfoModal title={streamDoc.title} game={streamDoc.game} saving={savingInfo} onSave={saveStreamInfo} onClose={() => setEditInfoOpen(false)} />}
       </div>
     );
@@ -1122,6 +1141,7 @@ export default function BroadcasterScreen() {
                 editable editing={goalEdit} compact={false}
                 fallback={{ xPct: 3, yPct: 22, wPct: 52 }} />
             )}
+            <HypeTrainView train={streamDoc.hypeTrain} />
             {alertsOn && <TipAlertOverlay lastTip={streamDoc.lastTip} anchor="top" />}
             {alertsOn && <SubAlertOverlay lastSub={streamDoc.lastSub} anchor="bottom" />}
           </div>
@@ -1186,7 +1206,7 @@ export default function BroadcasterScreen() {
         <div style={{ width: 340, flexShrink: 0, background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
           <div style={{ padding: '12px 14px', borderBottom: `1px solid ${C.border}`, fontSize: 12, fontWeight: 800, letterSpacing: '0.08em', color: C.textDim }}>LIVE CHAT</div>
           <div style={{ flex: 1, minHeight: 0 }}>
-            <ChatPanel streamId={streamDoc.id} layout="side" hostUid={streamDoc.hostUid} slowModeSec={streamDoc.slowModeSec || 0} followersOnly={!!streamDoc.followersOnly} ttsEnabled={!!streamDoc.ttsEnabled} pinnedMessage={streamDoc.pinnedMessage || null} />
+            <ChatPanel streamId={streamDoc.id} layout="side" hostUid={streamDoc.hostUid} slowModeSec={streamDoc.slowModeSec || 0} followersOnly={!!streamDoc.followersOnly} subsOnly={!!streamDoc.subsOnly} mutedUids={streamDoc.mutedUids || null} ttsEnabled={!!streamDoc.ttsEnabled} pinnedMessage={streamDoc.pinnedMessage || null} />
           </div>
         </div>
       </div>
@@ -1200,7 +1220,7 @@ export default function BroadcasterScreen() {
         {endConfirm && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setEndConfirm(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
             <motion.div onClick={(e) => e.stopPropagation()} initial={{ scale: 0.92, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} style={{ width: 'min(340px, 100%)', background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: 20, textAlign: 'center' }}>
-              <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 6 }}>End the stream?</div>
+              <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 6 }}>End the stream?</div>
               <div style={{ fontSize: 12, color: C.textDim, marginBottom: 16 }}>Your viewers will see the stream end immediately.</div>
               <div style={{ display: 'flex', gap: 8 }}>
                 <button onClick={() => setEndConfirm(false)} style={{ flex: 1, padding: 12, borderRadius: 10, border: `1px solid ${C.border}`, background: 'transparent', color: C.textDim, fontSize: 13, fontWeight: 800, cursor: 'pointer' }}>Keep going</button>
@@ -1214,6 +1234,7 @@ export default function BroadcasterScreen() {
       {shareOpen && <StreamShareSheet streamId={streamDoc.id} streamTitle={streamDoc.title} hostName={profile?.displayName || profile?.username || streamDoc.hostUsername} live={isLive} onClose={() => setShareOpen(false)} />}
       {tipCatalogOpen && <TipCatalogEditor onClose={() => setTipCatalogOpen(false)} />}
       {bannedWordsOpen && <BannedWordsEditor streamId={streamDoc.id} onClose={() => setBannedWordsOpen(false)} />}
+        {coHostOpen && <CoHostInviteModal streamId={streamDoc.id} coHostUids={streamDoc.coHostUids || []} onClose={() => setCoHostOpen(false)} showToast={showToast} />}
       {editInfoOpen && <EditInfoModal title={streamDoc.title} game={streamDoc.game} saving={savingInfo} onSave={saveStreamInfo} onClose={() => setEditInfoOpen(false)} />}
     </div>
   );
@@ -1226,7 +1247,7 @@ function EditInfoModal({ title, game, saving, onSave, onClose }) {
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 210, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
       <div onClick={(e) => e.stopPropagation()} style={{ width: 'min(440px, 100%)', background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: 20, color: C.text, fontFamily: '"DM Sans",system-ui,sans-serif' }}>
-        <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 14 }}>Edit stream info</div>
+        <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 14 }}>Edit stream info</div>
         <label style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.06em', color: C.textDim }}>TITLE</label>
         <input value={t} maxLength={140} onChange={(e) => setT(e.target.value)} placeholder="What are you streaming?"
           style={{ width: '100%', boxSizing: 'border-box', margin: '6px 0 14px', background: C.cardSoft, border: `1px solid ${C.border}`, borderRadius: 10, padding: 12, color: C.text, fontSize: 14, outline: 'none' }} />
@@ -1242,7 +1263,10 @@ function EditInfoModal({ title, game, saving, onSave, onClose }) {
   );
 }
 const roundBtn = { width: 34, height: 34, borderRadius: '50%', border: 'none', background: 'rgba(0,0,0,0.5)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 };
-const warnPill = { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 10px', borderRadius: 999, background: 'rgba(240,165,0,0.92)', color: '#1a1205', fontSize: 11, fontWeight: 800, zIndex: 9 };
+// 0.92 alpha was a wash that only escaped notice by sitting near opaque. Over
+// gameplay it still shifts with the frame behind it, on the one pill whose whole
+// job is to be read instantly mid-broadcast. Solid.
+const warnPill = { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 10px', borderRadius: 999, background: '#F0A500', color: '#1a1205', fontSize: 11, fontWeight: 800, zIndex: 9 };
 
 function statChip(color) {
   return { display: 'inline-flex', alignItems: 'center', gap: 4, flexShrink: 0, padding: '4px 9px', borderRadius: 999, background: 'rgba(0,0,0,0.45)', color, fontSize: 11, fontWeight: 800, fontFamily: 'DM Mono, ui-monospace, monospace' };
@@ -1256,9 +1280,14 @@ function LivePill() {
   );
 }
 
+// The INACTIVE fill stays a black scrim, because this pill floats over gameplay
+// and needs the video darkened behind it to be legible. The ACTIVE one was a 15%
+// violet wash carrying violet type: over a bright frame it washed out entirely,
+// on the one control whose whole job is to show that it is on. Solid accent,
+// white type.
 function ActionPill({ icon, label, onClick, active = false }) {
   return (
-    <button type="button" onClick={onClick} aria-label={label} style={{ width: 46, height: 46, borderRadius: '50%', border: 'none', flexShrink: 0, background: active ? C.purpleSoft : 'rgba(0,0,0,0.45)', color: active ? C.purpleLight : '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+    <button type="button" onClick={onClick} aria-label={label} style={{ width: 46, height: 46, borderRadius: '50%', border: 'none', flexShrink: 0, background: active ? C.purple : 'rgba(0,0,0,0.45)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
       <Icon name={icon} size={21} />
     </button>
   );
@@ -1266,7 +1295,7 @@ function ActionPill({ icon, label, onClick, active = false }) {
 
 function CtrlBtn({ icon, label, onClick, active = false, danger = false }) {
   return (
-    <button type="button" onClick={onClick} title={label} style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: 3, padding: '6px 10px', borderRadius: 10, border: `1px solid ${active ? C.purple : C.border}`, background: danger ? 'rgba(239,68,68,0.18)' : active ? C.purpleSoft : C.cardSoft, color: danger ? C.red : active ? C.purpleLight : C.text, cursor: 'pointer', minWidth: 58 }}>
+    <button type="button" onClick={onClick} title={label} style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: 3, padding: '6px 10px', borderRadius: 10, border: `1px solid ${active ? C.purple : C.border}`, background: danger ? 'rgba(239,68,68,0.18)' : active ? C.purple : C.cardSoft, color: danger ? C.red : active ? C.purpleLight : C.text, cursor: 'pointer', minWidth: 58 }}>
       <Icon name={icon} size={18} />
       <span style={{ fontSize: 10, fontWeight: 700 }}>{label}</span>
     </button>
@@ -1304,7 +1333,7 @@ function LayoutMenu({ layoutMode, pipCorner, scene, camFx, camLook, camMask, onL
         <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.08em', color: C.textMuted, textTransform: 'uppercase', margin: '10px 4px 6px' }}>PiP corner</div>
         <div style={{ display: 'flex', gap: 6, padding: '0 2px' }}>
           {PIP_CORNERS.map((c) => (
-            <button key={c.id} onClick={() => onCorner(c.id)} title={c.label} style={{ flex: 1, padding: '7px 0', borderRadius: 8, border: `1px solid ${pipCorner === c.id ? C.purple : C.border}`, background: pipCorner === c.id ? C.purpleSoft : C.cardSoft, color: pipCorner === c.id ? C.purpleLight : C.textDim, fontSize: 10, fontWeight: 700, cursor: 'pointer' }}>{c.id.toUpperCase()}</button>
+            <button key={c.id} onClick={() => onCorner(c.id)} title={c.label} style={{ flex: 1, padding: '7px 0', borderRadius: 8, border: `1px solid ${pipCorner === c.id ? C.purple : C.border}`, background: pipCorner === c.id ? C.purple : C.cardSoft, color: pipCorner === c.id ? '#fff' : C.textDim, fontSize: 10, fontWeight: 700, cursor: 'pointer' }}>{c.id.toUpperCase()}</button>
           ))}
         </div>
         <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.08em', color: C.textMuted, textTransform: 'uppercase', margin: '10px 4px 6px' }}>Camera effects</div>
@@ -1350,7 +1379,7 @@ function LayoutMenu({ layoutMode, pipCorner, scene, camFx, camLook, camMask, onL
   );
 }
 function menuRow(active) {
-  return { display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '9px 8px', borderRadius: 8, border: 'none', background: active ? C.purpleSoft : 'transparent', color: active ? C.purpleLight : C.text, fontSize: 13, fontWeight: 600, cursor: 'pointer', textAlign: 'left' };
+  return { display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '9px 8px', borderRadius: 8, border: 'none', background: active ? C.purple : 'transparent', color: active ? '#fff' : C.text, fontSize: 13, fontWeight: 600, cursor: 'pointer', textAlign: 'left' };
 }
 
 function AudioMeter({ level, compact = false }) {
@@ -1361,7 +1390,7 @@ function AudioMeter({ level, compact = false }) {
         const threshold = ((i + 1) / bars) * 100;
         const lit = level >= threshold;
         const color = i < bars * 0.6 ? C.green : i < bars * 0.85 ? C.amber : C.red;
-        return <div key={i} style={{ width: 3, height: compact ? 4 + (i / bars) * 8 : 4 + (i / bars) * 10, background: lit ? color : 'rgba(255,255,255,0.08)', borderRadius: 1 }} />;
+        return <div key={i} style={{ width: 3, height: compact ? 4 + (i / bars) * 8 : 4 + (i / bars) * 10, background: lit ? color : 'rgba(255,255,255,0.08)', borderRadius: 2 }} />;
       })}
     </div>
   );
@@ -1398,6 +1427,33 @@ function StreamSummary({ stats, onClose }) {
   const { profile } = useUser();
   const { showToast } = useUI();
   const [postingStory, setPostingStory] = useState(false);
+
+  // Raid state. `useLiveUsers` is already provided app-wide, so this whole
+  // block adds one hook call and no network work.
+  const { liveHosts } = useLiveUsers();
+  const [raidBusy, setRaidBusy] = useState(false);
+  const [raided, setRaided] = useState(null);
+  const [raidSkipped, setRaidSkipped] = useState(false);
+  const raidTargets = useMemo(() => [...(liveHosts?.values?.() || [])]
+    .filter((h) => h.streamId !== stats.streamId
+      && h.discoverable && !h.premium && !h.audioOnly && !h.ticketed)
+    .sort((a, b) => (b.viewerCount || 0) - (a.viewerCount || 0))
+    .slice(0, 5)
+    .map((h) => ({ id: h.streamId, hostName: h.name || 'A creator', viewers: h.viewerCount || 0 })),
+  [liveHosts, stats.streamId]);
+
+  const doRaid = async (toStreamId) => {
+    if (!stats.streamId || raidBusy) return;
+    setRaidBusy(true);
+    try {
+      await httpsCallable(getFunctions(undefined, 'europe-west1'), 'raidStream')({ fromStreamId: stats.streamId, toStreamId });
+      setRaided(raidTargets.find((t) => t.id === toStreamId)?.hostName || 'them');
+    } catch (e) {
+      // The server owns every rule, so its message is the honest one to show.
+      showToast?.(e?.message || 'Could not send the raid', 'error');
+      setRaidSkipped(true);
+    } finally { setRaidBusy(false); }
+  };
   const share = async () => {
     const text = `Just wrapped a stream on VERGR: ${formatDuration(stats.duration)}, ${(stats.peakViewers || 0)} peak viewers, ${stats.tipCoins.toLocaleString()} coins tipped. ⚡`;
     try { if (navigator.share) await navigator.share({ title: 'VERGR stream recap', text, url: 'https://vergr.app' }); else await navigator.clipboard.writeText(text + ' https://vergr.app'); } catch {}
@@ -1442,7 +1498,7 @@ function StreamSummary({ stats, onClose }) {
     <div style={{ minHeight: '100vh', background: `radial-gradient(circle at 50% 0%, #1a1030 0%, ${C.bg} 60%)`, color: C.text, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, fontFamily: '"DM Sans", system-ui, sans-serif' }}>
       <div style={{ width: 'min(540px, 100%)', background: C.card, border: `1px solid ${C.border}`, borderRadius: 18, padding: 24, boxShadow: '0 24px 60px rgba(0,0,0,0.5)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-          <span style={{ width: 36, height: 36, borderRadius: '50%', background: C.purpleSoft, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="live_tv" size={20} /></span>
+          <span style={{ width: 36, height: 36, borderRadius: '50%', background: '#241943', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="live_tv" size={20} /></span>
           <div>
             <div style={{ fontSize: 16, fontWeight: 800 }}>That's a wrap</div>
             <div style={{ fontSize: 11, color: C.textDim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 360 }}>{stats.title}</div>
@@ -1456,14 +1512,14 @@ function StreamSummary({ stats, onClose }) {
         </div>
         <div style={{ fontSize: 11, color: C.textMuted, textAlign: 'right', marginTop: -8, marginBottom: 12 }}>≈ ${usd} from {stats.tipCount} tip{stats.tipCount === 1 ? '' : 's'}</div>
         {stats.mirrored && (
-          <div style={{ padding: '10px 12px', borderRadius: 10, marginBottom: 14, background: 'rgba(145,70,255,0.10)', border: '1px solid rgba(145,70,255,0.35)', display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
+          <div style={{ padding: '10px 12px', borderRadius: 10, marginBottom: 14, background: '#1E1436', borderLeft: '3px solid #9146FF', display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
             <span style={{ width: 22, height: 22, borderRadius: 6, background: '#9146FF', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 12 }}>T</span>
             <span style={{ flex: 1 }}>Streamed to both platforms</span>
             <span style={{ fontWeight: 800 }}>{(stats.peakViewers || 0).toLocaleString()} on Vergr · {(stats.twitchPeakViewers || 0).toLocaleString()} on Twitch (peak)</span>
           </div>
         )}
         {stats.goal && (
-          <div style={{ padding: '10px 12px', borderRadius: 10, marginBottom: 14, background: goalReached ? 'rgba(240,165,0,0.12)' : C.cardSoft, border: `1px solid ${goalReached ? C.amber + '66' : C.borderSoft}`, display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
+          <div style={{ padding: '10px 12px', borderRadius: 10, marginBottom: 14, background: goalReached ? '#2A2008' : C.cardSoft, borderLeft: goalReached ? `3px solid ${C.amber}` : '3px solid transparent', display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
             <Icon name={goalReached ? 'emoji_events' : 'flag'} size={16} />
             <span style={{ flex: 1 }}>{goalReached ? 'Tip goal reached!' : 'Tip goal'}{stats.goal.reason ? ` · ${stats.goal.reason}` : ''}</span>
             <span style={{ fontFamily: 'DM Mono, monospace', fontWeight: 800, color: goalReached ? C.amber : C.text }}>{(stats.goal.currentCoins || 0).toLocaleString()} / {(stats.goal.targetCoins || 0).toLocaleString()}</span>
@@ -1475,12 +1531,41 @@ function StreamSummary({ stats, onClose }) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {stats.topTippers.map((t, i) => (
                 <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', background: C.cardSoft, borderRadius: 8, border: `1px solid ${C.borderSoft}` }}>
-                  <span style={{ fontSize: 15 }}>{medal[i]}</span>
+                  <span style={{ fontSize: 14 }}>{medal[i]}</span>
                   <span style={{ flex: 1, fontSize: 13, fontWeight: 600 }}>{t.name}</span>
                   <span style={{ fontSize: 13, fontWeight: 800, color: C.amber, fontFamily: 'DM Mono, monospace' }}>{t.coins.toLocaleString()}c</span>
                 </div>
               ))}
             </div>
+          </div>
+        )}
+        {/* ⚠⚠ THE RAID HAD NO ENTRY POINT AT ALL AND `raidStream` HAD NEVER BEEN
+            CALLED. `RaidPicker` was mounted in exactly one file,
+            `StreamEndingScreen.jsx`, and NOTHING in the app navigates to
+            `/stream/ended`: the broadcaster renders THIS summary inline instead.
+            So a deployed callable, a Firestore write path and a viewer-side
+            countdown all existed for a control the host could never reach. Same
+            shape as the boost that only drew a badge and the three kill switches
+            that were read by nothing.
+
+            ⚠ IT SITS ABOVE THE SHARE BUTTONS BECAUSE IT IS THE ONLY DECISION
+            HERE WITH A DEADLINE. The audience is dispersing while the host reads
+            this; sharing a recap can happen any time afterwards.
+
+            ⚠ CANDIDATES COME FROM `LiveUsersContext`, NOT A NEW QUERY. That
+            context already holds one shared snapshot of live streams, so this
+            costs zero reads. The filter mirrors `badRaidTarget` in
+            functions/raids.js, because offering a target the server will refuse
+            produces a button that fails. */}
+        {stats.streamId && !raided && !raidSkipped && raidTargets.length > 0 && (
+          <div style={{ marginBottom: 12 }}>
+            <RaidPicker candidates={raidTargets} busy={raidBusy}
+              onRaid={doRaid} onSkip={() => setRaidSkipped(true)} />
+          </div>
+        )}
+        {raided && (
+          <div style={{ marginBottom: 12, padding: '12px 14px', borderRadius: 12, background: '#1a1a2a', color: C.text, fontSize: 13, fontWeight: 700 }}>
+            Your viewers are on their way to {raided}.
           </div>
         )}
         <button onClick={shareToStatus} disabled={postingStory} style={{ width: '100%', padding: 14, borderRadius: 12, border: 'none', background: `linear-gradient(135deg, ${C.purple}, ${C.purpleLight})`, color: '#fff', fontSize: 13, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 10, opacity: postingStory ? 0.7 : 1 }}>

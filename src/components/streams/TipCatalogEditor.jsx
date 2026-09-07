@@ -107,7 +107,7 @@ export default function TipCatalogEditor({ onClose }) {
     <div style={{
       width: 'min(440px, 92vw)', background: C.bg, border: `1px solid ${C.border}`,
       borderRadius: 14, overflow: 'hidden', color: C.text,
-      fontFamily: '"Inter", system-ui, sans-serif',
+      fontFamily: '"DM Sans", system-ui, sans-serif',
     }}>
       <div style={{
         padding: '14px 16px', borderBottom: `1px solid ${C.border}`,

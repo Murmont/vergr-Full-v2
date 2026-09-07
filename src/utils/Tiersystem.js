@@ -24,6 +24,23 @@ export const TIERS = {
     // Keep these three numbers in step with that map.
     maxFileUploadMB: 200,
     imageMaxDim: 1600,
+    // ⚠⚠ DM/CHAT MEDIA SERVER RETENTION, IN DAYS. `null` = KEEP FOREVER, which
+    // is today's live behaviour and the SAFE default. Read by ChatThreadScreen
+    // and SquadChatThreadScreen as `tierConfig.mediaRetentionDays` and enforced
+    // by `_cleanupExpiredMedia` in functions/index.js.
+    //
+    // This key DID NOT EXIST until 2026-09-06, so every caller was passing
+    // `undefined` and no chat media has ever expired. The design is the
+    // WhatsApp one: the phone keeps the permanent copy (src/utils/
+    // fileMediaCache.js, native bridge) and the server copy is transient.
+    //
+    // ⚠ SETTING A NUMBER HERE DELETES USERS' MEDIA. Before you do, note the
+    // device cache is ANDROID-ONLY; desktop and web fall back to Dexie
+    // (deviceMediaCache.js), which the browser may evict at will. So on those
+    // platforms an expired DM photo is gone for good, not re-downloadable.
+    // Founder decision, per tier. Arming also needs
+    // app_config/general.chatMediaExpiryEnabled = true.
+    mediaRetentionDays: null,
     // First 5 are the headline "Top Perks" shown on the subscription screen.
     // Rest follow as additional perks in the full feature list.
     features: [
@@ -46,6 +63,8 @@ export const TIERS = {
     tagline: 'Level up faster',
     maxFileUploadMB: 1024,
     imageMaxDim: 1600,
+    // null = keep forever. See the long note on TIERS.free.mediaRetentionDays.
+    mediaRetentionDays: null,
     // AUDITED 2026-08-19 against the code that enforces each line. Anything
     // that had no tier check was REMOVED rather than gated, on founder
     // instruction: squads, voice messages, post boosts and custom banners are
@@ -72,6 +91,9 @@ export const TIERS = {
     tagline: 'Go all-in',
     maxFileUploadMB: 5120,
     imageMaxDim: 3840,
+    // null = keep forever. See the long note on TIERS.free.mediaRetentionDays.
+    // Pro is the tier most likely to want a LONGER window, not a shorter one.
+    mediaRetentionDays: null,
     // AUDITED 2026-08-19. Co-streaming was removed from this list on founder
     // instruction (it is open to everyone: it drives tips on live streams, so
     // gating it would cost revenue). "Private streaming, IP masked" and

@@ -23,7 +23,18 @@ const ALLOWED_TYPES = [
 // 'announcement' covers channel-message media and channel avatars. Admin-only in
 // practice (the callables that reference it are admin-guarded), but the kind is
 // listed here because getR2UploadUrl validates against this list.
-const ALLOWED_KINDS = ['avatar', 'banner', 'post', 'short', 'clip', 'article', 'squad', 'announcement', 'tournament', 'tournament-proof', 'ambiance'];
+const ALLOWED_KINDS = ['avatar', 'banner', 'post', 'short', 'clip', 'article', 'squad', 'announcement', 'tournament', 'tournament-proof', 'ambiance', 'chat', 'comment'];
+
+// ⚠ 'chat' and 'comment' added 2026-09-06. Until then `uploadMediaFile()` in
+// mediaHelpers.js carried a NO-OP ternary (`folder.startsWith('post') ? 'post'
+// : 'post'`), so every DM photo, video and voice note was written to
+// `post/<uid>/...`, INDISTINGUISHABLE from real feed media. That is why the
+// nightly chat-media expiry sweep could never be repointed at R2: an age-based
+// delete over `post/` would have taken users' actual posts with it.
+//
+// ⚠ EXISTING chat media stays at `post/...` and is NEVER swept. Message docs
+// store the absolute URL, so re-keying old objects would break every DM that
+// already contains one. Only NEW uploads land under `chat/` and `comment/`.
 
 // ⚠ 'ambiance' (profile ambiance audio, docs/effects/09) has its OWN cap, not
 // the plan cap (free 200MB / lite 1GB / pro 5GB, sized for gaming VODs).
@@ -303,13 +314,32 @@ exports.setR2CorsPolicy = functions.https.onCall({
   return report;
 });
 
-// Scheduled weekly — engagement-aware tiering.
-// DORMANT until the platform passes ACTIVATION_THRESHOLD posts. Below that, the
-// R2 bucket lifecycle rule (90-day IA transition) handles cold-tiering by
-// itself, and running this function would cost more in Firestore reads than it
-// saves in storage. Once the platform scales, this function takes over to do
-// engagement-driven tiering: posts viewed in the last 90 days stay hot, the
-// rest go cold. Posts that suddenly start trending while cold get auto-promoted.
+// Scheduled weekly — engagement-aware tiering. DORMANT (totalPosts=0 < 5000).
+//
+// ⚠⚠ DO NOT ARM THIS, AND DO NOT RE-CREATE THE BUCKET LIFECYCLE RULE.
+// The comment that used to sit here said the "R2 bucket lifecycle rule (90-day
+// IA transition) handles cold-tiering by itself", as though that were a saving.
+// It was the opposite. On 2026-08-12 that rule moved the oldest 38 objects
+// (32 MB) into Infrequent Access and produced the first Cloudflare bill this
+// project ever got: $9.92. The rule was DISABLED on 2026-09-06 and the objects
+// were copied back to STANDARD. Measured facts:
+//
+//   * Infrequent Access has NO free tier. Standard's 10 GB / 1M Class A /
+//     10M Class B allowance does not apply to it at all.
+//   * Every IA line item rounds UP to a whole billing unit, so 38 transitions
+//     were billed as a full million operations at $9.00.
+//   * Cost therefore scales with OBJECT COUNT, not bytes. An 11 KB avatar
+//     costs exactly the same transition as a 5 GB video. 13 of those 38 were
+//     2 MB OTA bundles; 5 were avatars under 60 KB.
+//   * Break-even against Standard is ~1.8 TB stored. The bucket is 0.74 GB.
+//
+// If cold tiering is ever wanted it belongs HERE and not in a lifecycle rule,
+// because a lifecycle rule filters on PREFIX ONLY and the keys are
+// `post/<uid>/...`, which cannot express a plan. Founder's stated intent
+// (2026-09-06) is that cold storage apply to PAYING PRO USERS ONLY. This
+// function has NO tier filter today, so arming it as written repeats the bug.
+// Any future version needs BOTH a Pro-tier check AND a minimum object size,
+// since IA only ever pays for few-and-large objects.
 exports.coldStorageDemotion = functions.scheduler.onSchedule({
   schedule: '0 3 * * 0', // Sunday 03:00 UTC
   region: 'europe-west1',

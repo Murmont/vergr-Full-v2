@@ -31,6 +31,31 @@ for (const f of ['functions/engagementVp.js', 'functions/walletActions.js']) {
   check(`rank bonus cap in ${f}`, s.includes(`${VP_BONUS_MAX},`) || s.includes(`min(${VP_BONUS_MAX}`), `expected ${VP_BONUS_MAX}`);
 }
 
+// 1b. The raid reward, which lives in TWO files.
+// ⚠⚠ `ENGAGEMENT_VP.raid_sent` is what actually pays; `RAID_VP` in raids.js is a
+// reference mirror that nothing reads. A mirror nothing reads is exactly the kind
+// that drifts silently and then gets quoted as fact — this repo has a list of them
+// (the "10% platform fee" membership header, the stale HashRouter lines). Either
+// they agree or the build fails.
+{
+  const eng = read('functions/engagementVp.js');
+  const raids = read('functions/raids.js');
+  const m = eng.match(/raid_sent:\s*\{\s*vp:\s*(\d+),\s*dailyCapVp:\s*(\d+)/);
+  check('raid_sent exists in ENGAGEMENT_VP', !!m, 'the raid reward is gone');
+  if (m) {
+    check('RAID_VP mirrors ENGAGEMENT_VP', raids.includes(`const RAID_VP = ${m[1]};`),
+      `engagementVp says ${m[1]}`);
+    check('RAID_VP_DAILY_CAP mirrors ENGAGEMENT_VP', raids.includes(`const RAID_VP_DAILY_CAP = ${m[2]};`),
+      `engagementVp says ${m[2]}`);
+    // ⚠ A RAID MUST OUT-PAY GOING LIVE. It is rarer, it can only happen once per
+    // stream, and it costs the giver their whole audience — if it pays less than
+    // pressing "go live" the incentive is backwards, which is what 40 vs 30 was.
+    const goLive = (eng.match(/go_live:\s*\{\s*vp:\s*(\d+)/) || [])[1];
+    check('a raid out-pays go_live', goLive && Number(m[1]) > Number(goLive),
+      `raid ${m[1]} vs go_live ${goLive}`);
+  }
+}
+
 // 2. Boost token levels: client vs vpLevel.js.
 const boostSrc = read('functions/vpLevel.js').match(/BOOST_TOKEN_LEVELS = \[([^\]]+)\]/);
 const clientBoost = RANK_UNLOCKS.filter((r) => r.kind === 'boost').map((r) => r.level).sort((a, b) => a - b);

@@ -11,7 +11,7 @@ import Icon from '../../../components/Icon';
 // that shows none of it. Prop-driven, so importing is read-only.
 import UserName from '../../../components/UserName';
 import RankBadge from '../../../components/RankBadge';
-import { PlaybackState, StreamPaywall, ChatStateBanner, TtsStrip, EmptyChat, VpEarnedChip, PreviewLevelUp, AudioStage, ModChannelSwitch, RaidBanner, ComposerPill, HypeTrain } from './previewStates';
+import { PlaybackState, StreamPaywall, ChatStateBanner, TtsStrip, EmptyChat, VpEarnedChip, PreviewLevelUp, AudioStage, ModChannelSwitch, RaidBanner, ComposerPill, HypeTrain, TrainBonusHost } from './previewStates';
 import ReactionsFloor from '../../../components/streams/ReactionsFloor';
 import { usePreviewVideos, usePreviewSim, usePreviewRole } from './previewAssetsContext';
 import { PREVIEW_VIEWER } from './previewCast';
@@ -284,7 +284,7 @@ export default function PreviewViewerScreen({
           {/* Chat block wrapped so gift drops anchor directly ABOVE it — never
               over the newest messages, which are the ones being read. */}
           <div style={{ position: 'relative', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-            <HypeTrain />
+            <HypeTrain /><TrainBonusHost />
             <GiftFeed toasts={gifts} style={{ position: 'absolute', bottom: '100%', left: 0, marginBottom: 8, zIndex: 5 }} />
           <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', gap: 12, paddingTop: 24, height: '100%', maxHeight: '100%', overflow: 'hidden', maskImage: 'linear-gradient(to top, #000 0%, #000 62%, transparent 96%)', WebkitMaskImage: 'linear-gradient(to top, #000 0%, #000 62%, transparent 96%)' }}>
 {messages.length === 0 && <EmptyChat />}
@@ -405,7 +405,7 @@ export default function PreviewViewerScreen({
           {/* Chat block wrapped so gift drops anchor directly ABOVE it — never
               over the newest messages, which are the ones being read. */}
           <div style={{ position: 'relative', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-            <HypeTrain />
+            <HypeTrain /><TrainBonusHost />
             <GiftFeed toasts={gifts} style={{ position: 'absolute', bottom: '100%', left: 0, marginBottom: 8, zIndex: 5 }} />
 
           {/* Chat — TikTok-style: no box, newest at the bottom, older messages fade

@@ -32,8 +32,12 @@ import UserName from '../components/UserName';
 // this one URL for a real gameplay clip and everything else stays the same.
 const STREAM_VIDEO = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4';
 
-const glass = { background: 'rgba(255,255,255,0.10)', backdropFilter: 'blur(16px) saturate(140%)', WebkitBackdropFilter: 'blur(16px) saturate(140%)', border: '1px solid rgba(255,255,255,0.18)' };
-const glassDark = { background: 'rgba(10,8,22,0.42)', backdropFilter: 'blur(18px) saturate(140%)', WebkitBackdropFilter: 'blur(18px) saturate(140%)', border: '1px solid rgba(255,255,255,0.12)' };
+// ⚠⚠ THE FIFTH COPY OF A TOKEN REPORTED FIXED TWO WAVES AGO. glass/glassDark were
+// solidified in previewChrome, MobileLiveViewer and previewSoloParts, and the guard was
+// written to read exactly those three — so this one kept the wash. Fourth instance of
+// "a token fixed in some copies and not others" in this project.
+const glass = { background: '#1E1A2E', border: 'none' };
+const glassDark = { background: '#100C1C', border: 'none' };
 const C = { purple: '#7c3aed', purpleLight: '#b44fff', text: '#e8e8f0', textMuted: '#6b7280' };
 const T = { bg: '#0e0e16', panel: '#16161f', panel2: '#1d1d28', input: '#0c0c14', border: 'rgba(255,255,255,0.08)', text: '#efeff1', dim: '#adadb8', muted: '#7a7a85', gold: '#F5C842', green: '#22c55e', red: '#ef4444' };
 const NAME_COLORS = ['#FF7AA2', '#7CE3FF', '#9D7CFF', '#7CFF9D', '#FFC857', '#FF9D7C', '#7C9DFF', '#FF7CE3'];

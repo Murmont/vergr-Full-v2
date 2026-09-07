@@ -219,7 +219,16 @@ export default function UserName({
     : null;
   if (image) {
     return (
+      // ⚠⚠ `dir="auto"` ON USER-GENERATED TEXT. Measured 2026-09-03: NOT ONE element in
+      // the whole app set `dir`, so an Arabic or Hebrew display name renders inside an LTR
+      // box. The glyphs shape correctly, which is why it looks fine at a glance, but the
+      // ellipsis lands on the wrong side of a truncated name and mixed RTL/LTR content
+      // (a handle, a number, punctuation) orders wrongly against it.
+      //
+      // `auto` infers direction from the first strong character, so it costs nothing for the
+      // Latin names that dominate today and is correct the moment one is not.
       <span
+        dir="auto"
         className={`vg-name-sweep ${className}`}
         style={{ backgroundImage: image, ...fontStyle, ...glowStyle, ...style }}
         {...rest}
@@ -231,6 +240,7 @@ export default function UserName({
 
   return (
     <span
+      dir="auto"
       className={className}
       style={(tint || fontStyle || glowStyle)
         ? { ...(tint ? { color: tint } : null), ...fontStyle, ...glowStyle, ...style }

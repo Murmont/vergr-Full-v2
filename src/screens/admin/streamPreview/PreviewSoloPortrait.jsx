@@ -11,7 +11,7 @@
 // sender+gift combos the counter, different senders stack (TikTok-style).
 
 import {SubAlertOverlay, StreamGoalBar} from '../../../components/streams/StreamGoalAndAlerts';
-import { PlaybackState, StreamPaywall, ChatStateBanner, TtsStrip, EmptyChat, VpEarnedChip, PreviewLevelUp, AudioStage, ModChannelSwitch, RaidBanner, HypeTrain } from './previewStates';
+import { PlaybackState, StreamPaywall, ChatStateBanner, TtsStrip, EmptyChat, VpEarnedChip, PreviewLevelUp, AudioStage, ModChannelSwitch, RaidBanner, HypeTrain, TrainBonusHost } from './previewStates';
 import Icon from '../../../components/Icon';
 import ReactionsFloor from '../../../components/streams/ReactionsFloor';
 import { usePreviewVideos, usePreviewSim, usePreviewRole } from './previewAssetsContext';
@@ -173,7 +173,7 @@ export default function PreviewSoloPortrait({ doc, host, scene = 'game',
           {/* Transient gift drops — sit in the empty space ABOVE the chat, never
               over it. Covering the newest messages is exactly what the chat is
               for reading. */}
-          <HypeTrain />
+          <HypeTrain /><TrainBonusHost />
           <GiftFeed toasts={toasts} style={{ position: 'absolute', bottom: '100%', left: 0, marginBottom: 8, zIndex: 5 }} />
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12, paddingTop: 24, overflow: 'hidden', maskImage: 'linear-gradient(to top, #000 0%, #000 62%, transparent 96%)', WebkitMaskImage: 'linear-gradient(to top, #000 0%, #000 62%, transparent 96%)' }}>
           {/* Presentable copy — this preview is what store screenshots are taken

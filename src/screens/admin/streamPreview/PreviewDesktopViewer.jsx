@@ -9,7 +9,7 @@
 // this ports to the live screens.
 
 import { useState } from 'react';
-import { PlaybackState, StreamPaywall, ChatStateBanner, TtsStrip, VpEarnedChip, PreviewLevelUp, AudioStage, ModChannelSwitch, RaidBanner, composerCopy, HypeTrain } from './previewStates';
+import { PlaybackState, StreamPaywall, ChatStateBanner, TtsStrip, VpEarnedChip, PreviewLevelUp, AudioStage, ModChannelSwitch, RaidBanner, composerCopy, HypeTrain, TrainBonusHost } from './previewStates';
 import ReactionsFloor from '../../../components/streams/ReactionsFloor';
 import { usePreviewVideos, usePreviewSim, usePreviewRole } from './previewAssetsContext';
 import { useFaces } from './previewAssetsContext';
@@ -172,7 +172,7 @@ export default function PreviewDesktopViewer({
               when the same person sends again (previewSoloParts.jsx). The solo views
               always had it; these surfaces never did, so a tip here rendered as the
               generic centred pill instead — the thing that was replaced. */}
-          <HypeTrain />
+          <HypeTrain /><TrainBonusHost />
           <GiftFeed toasts={gifts} style={{ bottom: 64 }} />
           <SubAlertOverlay lastSub={d.lastSub} anchor="bottom" />
         </div>

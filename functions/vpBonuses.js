@@ -18,19 +18,33 @@ const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 
 const db = () => getFirestore('vgrdb');
 
-/** MIRROR of VP_BONUS_PACKS in src/utils/vpBonuses.js. */
+// MIRROR of VP_BONUS_PACKS in src/utils/vpBonuses.js.
+//
+// ⚠ TWO PRICES, AND THEY ARE NOT DERIVED FROM EACH OTHER.
+//
+//   coins    what it costs from the wallet
+//   priceUSD what it costs in cash, when the wallet cannot cover it
+//
+// The rule, set 2026-08-28: priceUSD = charmRound(max(2 x coin-equivalent,
+// $0.99)). Paying with coins is therefore always about HALF the cash price,
+// which is what makes coins worth holding.
+//
+// ⚠⚠ NEVER price a pack at its coin count through playPriceFor(). That is the
+// COIN REDEMPTION rate, and using it produced a 75-coin bonus costing $1.09,
+// exactly what 78 coins cost. Nobody would ever buy it. The $0.99 term is
+// Google Play's US minimum, which only binds on the 25-coin items.
 const VP_BONUS_PACKS = [
-  { id: 'happy_hour', name: 'Happy Hour',      mult: 3,    hours: 1,   coins: 25,  scope: 'all' },
-  { id: 'flash',      name: 'Flash Surge',     mult: 3,    hours: 6,   coins: 75,  scope: 'all' },
-  { id: 'half_day',   name: 'Half-Day Surge',  mult: 2.5,  hours: 12,  coins: 120, scope: 'all' },
-  { id: 'day',        name: 'Day Surge',       mult: 2,    hours: 24,  coins: 200, scope: 'all' },
-  { id: 'weekend',    name: 'Weekend Surge',   mult: 1.75, hours: 48,  coins: 350, scope: 'all' },
-  { id: 'long',       name: 'Long Surge',      mult: 1.5,  hours: 168, coins: 900, scope: 'all' },
-  { id: 'creator',    name: 'Creator Surge',   mult: 3,    hours: 24,  coins: 150,
+  { id: 'happy_hour', name: 'Happy Hour',      mult: 3,    hours: 1,   coins: 25,  priceUSD: 0.99,  scope: 'all' },
+  { id: 'flash',      name: 'Flash Surge',     mult: 3,    hours: 6,   coins: 75,  priceUSD: 0.99,  scope: 'all' },
+  { id: 'half_day',   name: 'Half-Day Surge',  mult: 2.5,  hours: 12,  coins: 120, priceUSD: 1.59,  scope: 'all' },
+  { id: 'day',        name: 'Day Surge',       mult: 2,    hours: 24,  coins: 200, priceUSD: 2.59,  scope: 'all' },
+  { id: 'weekend',    name: 'Weekend Surge',   mult: 1.75, hours: 48,  coins: 350, priceUSD: 4.49,  scope: 'all' },
+  { id: 'long',       name: 'Long Surge',      mult: 1.5,  hours: 168, coins: 900, priceUSD: 11.99, scope: 'all' },
+  { id: 'creator',    name: 'Creator Surge',   mult: 3,    hours: 24,  coins: 150, priceUSD: 1.99,
     scope: ['create_post', 'go_live', 'stream_hour'] },
-  { id: 'community',  name: 'Community Surge', mult: 3,    hours: 24,  coins: 150,
+  { id: 'community',  name: 'Community Surge', mult: 3,    hours: 24,  coins: 150, priceUSD: 1.99,
     scope: ['get_like', 'get_comment', 'comment_post', 'like_post'] },
-  { id: 'watcher',    name: 'Watcher Surge',   mult: 3,    hours: 24,  coins: 100,
+  { id: 'watcher',    name: 'Watcher Surge',   mult: 3,    hours: 24,  coins: 100, priceUSD: 1.29,
     scope: ['watch_stream_hour'] },
 ];
 
@@ -192,6 +206,11 @@ const grantBonusPack = async (uid, packId, level) => {
   return true;
 };
 
+// Exported so a CASH purchase (Google Play IAP, or the PayRam card rail) can
+// stamp the very same object a coin purchase stamps, inside the transaction
+// that records the payment. A second grant path would be a second definition of
+// what a bonus is, and the two would drift.
+exports.applyPack = applyPack;
 exports.VP_BONUS_PACKS = VP_BONUS_PACKS;
 exports.VP_BONUS_CEILING = VP_BONUS_CEILING;
 exports.activeBonusMult = activeBonusMult;

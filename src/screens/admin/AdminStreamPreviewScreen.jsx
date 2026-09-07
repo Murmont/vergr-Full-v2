@@ -456,8 +456,18 @@ export default function AdminStreamPreviewScreen() {
             </div>
             <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', color: C.textMuted, margin: '14px 0 8px' }}>HYPE TRAIN</div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-              <button onClick={() => sim.addTrainSupport('c1', 500)} style={chip(false)}>+1 level</button>
+              {/* ⚠ THE GOAL SCALES WITH THE ROOM, so a fixed "+1 level" button stopped
+                  meaning anything: at 1,284 viewers a level is ~11,300 coins, not 500.
+                  These push a share of the ACTUAL current goal instead.
+                  ⚠ AND ONE PERSON CANNOT FINISH A LEVEL. The cap is 40% each, so
+                  "Fill a level" has to spend three different people. That is the
+                  mechanic, not a limitation of the harness. */}
+              <button onClick={() => {
+                const g = sim.train ? sim.train.goal : Math.round(316 * Math.sqrt(Math.max(1, doc.viewerCount || 1)));
+                ['c1', 'c4', 'c6'].forEach((u) => sim.addTrainSupport(u, Math.ceil(g * 0.4)));
+              }} style={chip(false)}>Fill a level (3 people)</button>
               <button onClick={() => sim.addTrainSupport('c4', 250)} style={chip(false)}>+250c</button>
+              <button onClick={() => sim.addTrainSupport('c1', 100000)} style={chip(false)}>Whale 100k (capped)</button>
               <button onClick={sim.endTrain} style={chip(false)}>
                 End{sim.train ? ' (LV ' + sim.train.level + ')' : ''}
               </button>

@@ -289,7 +289,7 @@ users".
       returns one verdict and not category scores — offering them would be §0 all over again.
       A red banner above the composer carries the count, on the surface the host is actually
       watching, and it renders only when something is held.
-- [~] **Subscriber-only chat** — preview done, server half deliberately NOT done.
+- [x] **Subscriber-only chat, done end to end 2026-09-06.** Relay gate (`SubsOnly` in `infra/chat/src/main.go`, rejecting with reason `subscribers-only`, same exemptions as followers-only), `setStreamSubscribersOnly` callable, and the toggle in `ChatSettingsPopover` wired at ALL SIX ChatPanel call sites. **Zero extra reads:** subscriber status was already resolved once per connection for the member gem, so the gate reuses a field we had. Verified in the RUNNING binary on box 1, not from the build log.
       **Done:** the chat rules moved out of `useState` inside the moderation sheet and into
       the sim, so they survive the sheet closing and every surface can read them; a
       **Chat is limited** strip above the composer names every active restriction, because

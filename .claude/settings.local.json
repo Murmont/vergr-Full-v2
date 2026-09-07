@@ -105,7 +105,8 @@
       "WebFetch(domain:www.google.com)",
       "Bash(firebase functions:secrets:set NOWPAYMENTS_API_KEY --data-file=-)",
       "Bash(firebase functions:secrets:set NOWPAYMENTS_IPN_SECRET --data-file=-)",
-      "Bash(firebase functions:secrets:set NOWPAYMENTS_2FA_KEY --data-file=-)"
+      "Bash(firebase functions:secrets:set NOWPAYMENTS_2FA_KEY --data-file=-)",
+      "Bash(grep -n \"^// RULE\\\\|^// ---\\\\|^/\\\\* RULE\\\\|RULE [0-9]\" scripts/stream-preview-check.mjs)"
     ]
   }
 }

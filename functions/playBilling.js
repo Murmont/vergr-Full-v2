@@ -43,15 +43,77 @@ const PACKAGE_NAME = 'com.vergr.desktop';
 // `minSpendUSD` can be evaluated on this rail too. It is not used to charge
 // anything: Play owns the price. Kept on the product rather than in a parallel
 // map, because a second map is exactly how these constants drift apart.
+// ⚠⚠ CORRECTED 2026-08-28. This map held a SECOND, LARGER coin ladder
+// (85/425/1000/2100/…) left over from an abandoned "Play gets different
+// quantities" design. Two things were wrong with it, and both were live:
+//
+//  1. IT DISAGREED WITH THE SHELF. `NativeWalletScreens` renders
+//     `ACTIVE_COIN_PACKS = COIN_PACKS` — 78 coins — and this granted 85. The
+//     displayed-versus-granted mismatch is the exact Play rejection reason
+//     src/utils/storePricing.js warns about.
+//  2. IT MADE VERGR EAT GOOGLE'S CUT AND THEN SOME. At $0.99 for 85 coins the
+//     net was $0.84 against a $0.99 shelf price: short $0.15 on the smallest
+//     pack and short $37.50 on Ascendant. The founder's rule is the opposite —
+//     the buyer pays Google's fee, Vergr nets the shelf price.
+//
+// `coins` here MUST equal COIN_PACKS in src/utils/vpSystem.js. One ladder,
+// everywhere: web, Play and Huawei sell the identical packs.
+//
+// `priceUSD` is the SHELF price (what Vergr nets), NOT what Play charges. Play
+// Console is set to the grossed-up figure so the fee lands on the buyer; see
+// checkoutFees.quoteCheckout('googlePlay') and storePricing.playPriceFor().
 const PLAY_PRODUCTS = {
-  coins_starter:   { coins: 85,     vpBonus: 0,    priceUSD: 0.99 },
-  coins_gamer:     { coins: 425,    vpBonus: 0,    priceUSD: 4.99 },
-  coins_pro:       { coins: 1000,   vpBonus: 0,    priceUSD: 9.99 },
-  coins_elite:     { coins: 2100,   vpBonus: 0,    priceUSD: 19.99 },
-  coins_legend:    { coins: 4250,   vpBonus: 0,    priceUSD: 49.99 },
-  coins_champion:  { coins: 8500,   vpBonus: 0,    priceUSD: 99.99 },
-  coins_titan:     { coins: 12500,  vpBonus: 1500, priceUSD: 149.99 },
-  coins_ascendant: { coins: 21000,  vpBonus: 3000, priceUSD: 249.99 },
+  coins_starter:   { coins: 78,     vpBonus: 0,    priceUSD: 0.99 },
+  coins_gamer:     { coins: 400,    vpBonus: 0,    priceUSD: 4.99 },
+  coins_pro:       { coins: 815,    vpBonus: 0,    priceUSD: 9.99 },
+  coins_elite:     { coins: 1650,   vpBonus: 0,    priceUSD: 19.99 },
+  coins_legend:    { coins: 4180,   vpBonus: 0,    priceUSD: 49.99 },
+  coins_champion:  { coins: 8450,   vpBonus: 0,    priceUSD: 99.99 },
+  coins_titan:     { coins: 12800,  vpBonus: 1500, priceUSD: 149.99 },
+  coins_ascendant: { coins: 21500,  vpBonus: 3000, priceUSD: 249.99 },
+};
+
+// ─────────────────────────────────────────────────────────────────────
+// STORE ITEMS: VP bonus packs and boosts, bought with CASH.
+//
+// FOUNDER, 2026-08-28: a user is only charged COINS for a boost if the wallet
+// covers it, otherwise the boost charges USD. So each of the 16 items carries
+// TWO prices and the buyer takes whichever they can pay.
+//
+// ⚠⚠ THE CASH PRICE IS NOT DERIVED FROM THE COIN PRICE, and getting that wrong
+// once already produced a 75-coin bonus priced at $1.09, exactly what a 78-coin
+// pack costs. Nobody would buy that, and it devalues the coin. The rule is
+// priceUSD = charmRound(max(2 x coin-equivalent, $0.99)): coins are always about
+// half the cash price, which is the whole reason to hold coins.
+//
+// ⚠ `priceUSD` here is the SHELF price, what Vergr nets. Play Console is set
+// to the grossed-up figure so Google takes its cut from the buyer, exactly as
+// the coin packs work. The generator is scripts/playPricing.mjs and the
+// per-market table is docs/play/play-prices-by-market.csv.
+//
+// ⚠ The id is the Play product id and it is vpb_<packId> / boost_<boostId>.
+// Those two prefixes are the only thing separating the namespaces, because
+// stream_boost as a bare id would be indistinguishable from a coin SKU.
+//
+// ⚠ Prices MIRROR functions/vpBonuses.js and functions/boosts.js, which mirror
+// src/utils/. scripts/coin-ladder-check.mjs fails the build on any drift.
+const PLAY_ITEM_PRODUCTS = {
+  vpb_happy_hour:     { kind: 'bonus', id: 'happy_hour',   priceUSD: 0.99 },
+  vpb_flash:          { kind: 'bonus', id: 'flash',        priceUSD: 0.99 },
+  vpb_half_day:       { kind: 'bonus', id: 'half_day',     priceUSD: 1.59 },
+  vpb_day:            { kind: 'bonus', id: 'day',          priceUSD: 2.59 },
+  vpb_weekend:        { kind: 'bonus', id: 'weekend',      priceUSD: 4.49 },
+  vpb_long:           { kind: 'bonus', id: 'long',         priceUSD: 11.99 },
+  vpb_creator:        { kind: 'bonus', id: 'creator',      priceUSD: 1.99 },
+  vpb_community:      { kind: 'bonus', id: 'community',    priceUSD: 1.99 },
+  vpb_watcher:        { kind: 'bonus', id: 'watcher',      priceUSD: 1.29 },
+  boost_post:         { kind: 'boost', id: 'post',         priceUSD: 0.99 },
+  boost_lfg:          { kind: 'boost', id: 'lfg',          priceUSD: 0.99 },
+  boost_profile:      { kind: 'boost', id: 'profile',      priceUSD: 1.29 },
+  boost_squad:        { kind: 'boost', id: 'squad',        priceUSD: 0.99 },
+  boost_stream_boost: { kind: 'boost', id: 'stream_boost', priceUSD: 0.99 },
+  boost_stream_super: { kind: 'boost', id: 'stream_super', priceUSD: 1.99 },
+  boost_stream_mega:  { kind: 'boost', id: 'stream_mega',  priceUSD: 6.99 },
 };
 
 // ─────────────────────────────────────────────────────────────────────
@@ -120,6 +182,8 @@ async function fetchPurchase(productId, purchaseToken) {
 // second call for the same token must return the original result rather than
 // crediting twice.
 // ════════════════════════════════════════════════════════════════════
+exports._PLAY_ITEM_PRODUCTS = PLAY_ITEM_PRODUCTS;
+
 exports.redeemPlayPurchase = functions.https.onCall(
   { region: REGION },
   async (request) => {
@@ -132,7 +196,8 @@ exports.redeemPlayPurchase = functions.https.onCall(
     }
 
     const product = PLAY_PRODUCTS[productId];
-    if (!product) throw new HttpsError('invalid-argument', 'Unknown product.');
+    const item = PLAY_ITEM_PRODUCTS[productId];
+    if (!product && !item) throw new HttpsError('invalid-argument', 'Unknown product.');
 
     // Fast path: already credited. Checked before hitting Google so a restore
     // sweep over several old tokens does not burn API quota.
@@ -144,6 +209,9 @@ exports.redeemPlayPurchase = functions.https.onCall(
         // Someone is replaying another account's token.
         console.warn('playBilling: token replay', { token: purchaseToken.slice(0, 12), owner: d.uid, caller: uid });
         throw new HttpsError('permission-denied', 'This purchase belongs to another account.');
+      }
+      if (d.itemKind) {
+        return { itemKind: d.itemKind, itemId: d.itemId, coins: 0, vpBonus: 0, alreadyCredited: true };
       }
       return { coins: d.coins || 0, vpBonus: d.vpBonus || 0, alreadyCredited: true };
     }
@@ -164,6 +232,83 @@ exports.redeemPlayPurchase = functions.https.onCall(
     if (boundAccount && boundAccount !== uid) {
       console.warn('playBilling: account mismatch', { bound: boundAccount, caller: uid });
       throw new HttpsError('permission-denied', 'This purchase belongs to another account.');
+    }
+
+    // ── STORE ITEM (VP bonus / boost) ────────────────────────────────
+    //
+    // Grants the item itself, not coins. It calls the SAME helpers the coin
+    // purchase calls (applyPack, creditBoosts), inside the same transaction that
+    // writes the idempotency ledger row, so a bonus bought with cash is
+    // byte-identical to one bought with coins and expires the same way.
+    //
+    // No promo resolver here: a coin promo changes how many COINS a pack
+    // delivers, and an item delivers no coins.
+    if (item) {
+      const walletRefI = db.collection('wallets').doc(uid);
+      const userRefI = db.collection('users').doc(uid);
+      let granted = null;
+
+      await db.runTransaction(async (t) => {
+        const fresh = await t.get(ledgerRef);
+        if (fresh.exists) return;
+
+        if (item.kind === 'bonus') {
+          const { applyPack, VP_BONUS_PACKS } = require('./vpBonuses');
+          const pack = VP_BONUS_PACKS.find((p) => p.id === item.id);
+          if (!pack) throw new HttpsError('internal', 'Bonus pack missing from catalogue.');
+          // Read inside the transaction: applyPack prunes the running bonuses
+          // off this snapshot and rewrites the whole array.
+          const userSnap = await t.get(userRefI);
+          if (!userSnap.exists) throw new HttpsError('not-found', 'No account.');
+          const now = Date.now();
+          applyPack(t, userRefI, userSnap.data(), pack, 'play_purchase', now);
+          granted = {
+            kind: 'bonus', id: pack.id, name: pack.name,
+            expiresAt: now + pack.hours * 3600 * 1000,
+          };
+        } else {
+          const { creditBoosts, BOOSTS } = require('./boosts');
+          const boost = BOOSTS.find((b) => b.id === item.id);
+          if (!boost) throw new HttpsError('internal', 'Boost missing from catalogue.');
+          creditBoosts(t, walletRefI, boost.id, 1);
+          granted = { kind: 'boost', id: boost.id, qty: 1 };
+        }
+
+        t.create(ledgerRef, {
+          uid,
+          productId,
+          itemKind: item.kind,
+          itemId: item.id,
+          coins: 0,
+          vpBonus: 0,
+          priceUSD: item.priceUSD,
+          orderId: orderId || purchase.orderId || null,
+          purchaseTimeMillis: purchase.purchaseTimeMillis || null,
+          creditedAt: FieldValue.serverTimestamp(),
+        });
+
+        t.create(db.collection('transactions').doc(), {
+          userId: uid,
+          type: item.kind === 'bonus' ? 'vp_bonus_purchase' : 'boost_purchase',
+          currency: 'usd',
+          amount: 0,
+          priceUSD: item.priceUSD,
+          description: (item.kind === 'bonus' ? 'VP bonus: ' : 'Boost: ') + productId + ' (Google Play)',
+          gateway: 'google_play',
+          playOrderId: orderId || purchase.orderId || null,
+          ...(item.kind === 'bonus' ? { packId: item.id } : { boostId: item.id, qty: 1 }),
+          createdAt: FieldValue.serverTimestamp(),
+        });
+      });
+
+      return {
+        itemKind: item.kind,
+        itemId: item.id,
+        coins: 0,
+        vpBonus: 0,
+        alreadyCredited: !granted,
+        granted,
+      };
     }
 
     // COIN SALE PROMO. Same resolver the web rail uses, deliberately: two pack

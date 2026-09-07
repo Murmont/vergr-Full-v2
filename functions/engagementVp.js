@@ -39,6 +39,23 @@ const ENGAGEMENT_VP = {
   get_comment: { vp: 5,  dailyCapVp: 100 },  // post author, ~20 comments/day
   go_live:     { vp: 30, dailyCapVp: 30 },   // effectively once/day
   stream_hour: { vp: 20, dailyCapVp: 100 },  // ~5 hours/day
+  // ⚠⚠ A RAID IS THE MOST VALUABLE ACT IN THIS TABLE AND IS PRICED THAT WAY.
+  // Founder approved the reward (2026-09-02) “to encourage streamers to be less
+  // competitive and be good natured”, then asked whether 40 was too low. It was:
+  // levels cost 2,000 VP early and 12,000 at the top (648,000 to reach L100), so
+  // 40 was 2% of ONE early level. A host who goes live and streams three hours
+  // already earns 90 from go_live + stream_hour — MORE than the whole old daily
+  // cap — so raiding paid less than an hour of sitting there, for the one act that
+  // costs you your entire audience.
+  //
+  // 150 is 3x win_match and 5x go_live, which is right: a raid is rarer and costs
+  // the giver more than anything else here.
+  //
+  // ⚠ THE REAL ANTI-FARMING CONTROL IS STRUCTURAL, NOT THIS CAP: you may raid ONCE
+  // PER STREAM (functions/raids.js), so farming means completing a whole stream
+  // every time — 4,320 of them to reach L100 on raids alone. The cap exists only to
+  // stop someone going live for 30 seconds on a loop.
+  raid_sent:   { vp: 150, dailyCapVp: 300 },  // 2 rewarded raids/day
 };
 
 const utcDay = (ms = Date.now()) => new Date(ms).toISOString().slice(0, 10);

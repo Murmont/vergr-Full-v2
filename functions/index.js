@@ -443,6 +443,9 @@ exports.purchaseVpBonus = require('./vpBonuses').purchaseVpBonus;
 // Boosts are TOKENS you own: buy adds to wallets/{uid}.boosts, apply spends one
 // onto any target. See functions/boosts.js.
 const boostPacks = require('./boosts');
+// The hype train exports NO cloud function: it rides sendTip and
+// endStreamSession, both already deployed. See the header of hypeTrain.js.
+const hypeTrain = require('./hypeTrain');
 exports.purchaseBoostPack = boostPacks.purchaseBoostPack;
 exports.applyBoost = boostPacks.applyBoost;
 exports.recordBoostImpressions = boostPacks.recordBoostImpressions;
@@ -481,6 +484,7 @@ exports.unbanViewer           = streamChatMod.unbanViewer;
 exports.setStreamBannedWords  = streamChatMod.setStreamBannedWords;
 exports.setStreamSlowMode     = streamChatMod.setStreamSlowMode;
 exports.setStreamFollowersOnly = streamChatMod.setStreamFollowersOnly;
+exports.setStreamSubscribersOnly = streamChatMod.setStreamSubscribersOnly;
 exports.setStreamTts = streamChatMod.setStreamTts;   // effect 13, host-only
 exports.pinStreamMessage      = streamChatMod.pinStreamMessage;
 exports.setStreamModerator    = streamChatMod.setStreamModerator;
@@ -3754,9 +3758,17 @@ exports.sendTip = functions.https.onCall(async (request) => {
     throw new functions.https.HttpsError('failed-precondition', 'Tipping is temporarily paused. Try again shortly.');
   }
 
-  const senderPlan = await getUserPlan(uid);
+  // ONE READ FOR BOTH THINGS THE SENDER IS NEEDED FOR. getUserPlan already
+  // fetches users/{uid}; the stream alert needs this person's name and picture,
+  // so calling it and then reading the same document again would be paying
+  // twice for one doc on every tip.
+  const senderSnap = await db.collection('users').doc(uid).get().catch(() => null);
+  const senderData = senderSnap && senderSnap.exists ? senderSnap.data() : null;
+  const senderPlan = normalizePlan(senderData);
+  const senderName = senderData?.displayName || senderData?.username || 'Someone';
+  const senderAvatar = senderData?.avatar || senderData?.photoURL || null;
 
-  return db.runTransaction(async (tx) => {
+  const tipResult = await db.runTransaction(async (tx) => {
     const senderWalletRef = db.collection('wallets').doc(uid);
     const recipientWalletRef = db.collection('wallets').doc(recipientId);
     // All reads MUST precede writes in a transaction.
@@ -3833,12 +3845,71 @@ exports.sendTip = functions.https.onCall(async (request) => {
     if (streamId && typeof streamId === 'string') {
       tx.set(db.collection('streams').doc(streamId).collection('gifters').doc(uid), {
         uid, coins: admin.firestore.FieldValue.increment(amount),
+        // ⚠ HOW MANY, NOT JUST HOW MUCH. The broadcaster's own tip telemetry
+        // used to query transactions on `recipientUid`/type 'tip', two fields
+        // this callable has never written, so it matched nothing and the host
+        // saw 0 tips and no top tippers for the life of the feature. It reads
+        // this subcollection now, which is server-written and already per-stream.
+        tips: admin.firestore.FieldValue.increment(1),
         lastTipAt: admin.firestore.FieldValue.serverTimestamp(),
       }, { merge: true });
     }
 
     return { tipId: tipRef.id, recipientAmount, platformFee, vpEarned };
   });
+
+  // ⚠⚠ THE ON-SCREEN TIP AND THE TIP GOAL ARE SERVER-WRITTEN, AND THEY HAVE TO
+  // BE. firestore.rules lets only the host or a moderator update streams/{id},
+  // so the viewer-side updateDoc that used to stamp `lastTip` and bump the goal
+  // was DENIED on every real tip and swallowed by a bare catch. Nobody has ever
+  // seen a tip alert on a live stream, and a tip goal has never moved.
+  //
+  // Post-commit and best-effort on purpose: the coins have already changed
+  // hands, and a failed alert must never unwind a paid tip.
+  if (streamId && typeof streamId === 'string') {
+    try {
+      const streamRef = db.collection('streams').doc(streamId);
+      const streamSnap = await streamRef.get();
+      if (streamSnap.exists) {
+        // ⚠ update(), NEVER set(). A dotted key in set() creates a field whose
+        // NAME is the literal string "goal.currentCoins"; only update() resolves
+        // the path. Same trap that cost 50 coins on the boost inventory.
+        const patch = {
+          lastTip: { coins: amount, fromName: senderName, fromUid: uid, fromAvatar: senderAvatar, ts: Date.now() },
+        };
+        const streamData = streamSnap.data() || {};
+        if (streamData.goal?.active) {
+          patch['goal.currentCoins'] = admin.firestore.FieldValue.increment(amount);
+        }
+
+        // ⚠⚠ THE HYPE TRAIN RIDES THIS BLOCK AND COSTS NOTHING. The get and the
+        // update above already happen on every tip, so folding the train into
+        // them adds ZERO reads and ZERO writes. That is the whole reason it is
+        // here rather than in a function of its own: founder, 2026-09-07,
+        // "adding a function costs me money", and a v2 function is a permanent
+        // Artifact Registry line item.
+        //
+        // ⚠ EXPIRY NEEDS NO CRON. A train whose window has closed is returned
+        // by advanceTrain and settled right here, then a fresh one starts. A
+        // stream that simply goes quiet leaves its train to endStreamSession.
+        const prevTrain = streamData.hypeTrain || null;
+        const { train, expired } = hypeTrain.advanceTrain(prevTrain, {
+          uid, coins: amount, viewers: streamData.viewerCount, nowMs: Date.now(),
+          // Already loaded for the tip alert above, so naming the leader on the
+          // bar costs nothing. Resolving it client-side would be a read per
+          // rider, per viewer, per train.
+          name: senderName, avatar: senderAvatar,
+        });
+        if (train) patch.hypeTrain = train;
+        await streamRef.update(patch);
+        if (expired && !expired.settledAt) {
+          await hypeTrain.settleAndGrant(streamId, recipientId, expired).catch(() => {});
+        }
+      }
+    } catch (e) { /* the tip landed; the alert is decoration */ }
+  }
+
+  return tipResult;
 });
 
 exports.purchaseCoins = functions.https.onCall(async (request) => {
@@ -4036,6 +4107,106 @@ async function deleteExpiredFiles(folderPrefix) {
   return { folderPrefix, scanned, deleted };
 }
 
+// ──────────────────────────────────────────────────────────────
+// R2 chat-media expiry.
+//
+// ⚠⚠ THE SWEEP ABOVE HAS BEEN A NO-OP SINCE 2026-05-06. `deleteExpiredFiles`
+// walks `admin.storage().bucket()`, which is FIREBASE STORAGE, and TTL_FOLDERS
+// are the pre-migration folder names. All chat media has gone to Cloudflare R2
+// since the R2 migration, so the nightly job has been scanning an empty backend
+// every night while the real objects were never touched. Kept and still run,
+// because legacy Firebase Storage objects may remain.
+//
+// The design being restored here is the WhatsApp one: the phone keeps the
+// permanent copy (src/utils/fileMediaCache.js) and the server copy is transient.
+//
+// ⚠⚠ SHIPS DISABLED AND MUST STAY DISABLED UNTIL THE FOUNDER SETS RETENTION.
+// Two things are required to arm it, both in app_config/general (no deploy):
+//     chatMediaExpiryEnabled : true
+//     chatMediaRetentionDays : { free: <days>, lite: <days>, pro: <days> }
+// A tier missing from that map, or set to null, is KEPT FOREVER. There is no
+// default number on purpose: a wrong one deletes users' photos.
+//
+// ⚠ THIS DELETES USER CONTENT. The device cache is ANDROID-ONLY; desktop and
+// web fall back to Dexie (deviceMediaCache.js), which the browser can evict. On
+// those platforms an expired DM photo is gone permanently.
+//
+// ⚠ ONLY `chat/` AND `comment/` ARE SWEPT, NEVER `post/`. Before 2026-09-06 a
+// no-op ternary in mediaHelpers.js wrote all chat media into `post/`, mixed in
+// with real feed media. Those legacy objects are deliberately NOT swept and
+// never will be: message docs store absolute URLs, and there is no way to tell
+// an old DM photo from a real post. They stay forever. Do not "improve" this by
+// adding `post/` to the prefix list.
+// ──────────────────────────────────────────────────────────────
+const R2_CHAT_PREFIXES = ['chat/', 'comment/'];
+
+async function deleteExpiredR2ChatMedia() {
+  const cfgSnap = await db.collection('app_config').doc('general').get();
+  const cfg = cfgSnap.exists ? cfgSnap.data() : {};
+  if (cfg.chatMediaExpiryEnabled !== true) {
+    return { r2: 'disabled (app_config/general.chatMediaExpiryEnabled is not true)' };
+  }
+  const retention = cfg.chatMediaRetentionDays || {};
+  if (!Object.values(retention).some((v) => Number(v) > 0)) {
+    return { r2: 'enabled but no positive retention set — nothing swept' };
+  }
+
+  const { S3Client, ListObjectsV2Command, DeleteObjectsCommand } = require('@aws-sdk/client-s3');
+  const t = (s) => String(s || '').trim();   // secrets have carried trailing newlines before
+  const bucket = t(process.env.R2_BUCKET);
+  const s3 = new S3Client({
+    region: 'auto',
+    endpoint: `https://${t(process.env.R2_ACCOUNT_ID)}.r2.cloudflarestorage.com`,
+    credentials: {
+      accessKeyId: t(process.env.R2_ACCESS_KEY_ID),
+      secretAccessKey: t(process.env.R2_SECRET_ACCESS_KEY),
+    },
+    requestChecksumCalculation: 'WHEN_REQUIRED',
+  });
+
+  const now = Date.now();
+  const tierCache = new Map();   // uid -> retention days (or null). One read per uid, not per object.
+  const doomed = [];
+  let scanned = 0;
+
+  for (const prefix of R2_CHAT_PREFIXES) {
+    let token;
+    do {
+      const page = await s3.send(new ListObjectsV2Command({
+        Bucket: bucket, Prefix: prefix, MaxKeys: 1000, ContinuationToken: token,
+      }));
+      for (const obj of (page.Contents || [])) {
+        scanned++;
+        const uid = String(obj.Key).split('/')[1];
+        if (!uid) continue;
+        if (!tierCache.has(uid)) {
+          let days = null;
+          try {
+            const u = await db.collection('users').doc(uid).get();
+            const plan = u.exists ? (u.data()?.subscription?.tier || 'free') : 'free';
+            const d = Number(retention[plan]);
+            days = Number.isFinite(d) && d > 0 ? d : null;
+          } catch { days = null; }     // fail CLOSED: unreadable user means keep the media
+          tierCache.set(uid, days);
+        }
+        const days = tierCache.get(uid);
+        if (!days) continue;
+        const age = now - new Date(obj.LastModified).getTime();
+        if (age > days * 86400000) doomed.push({ Key: obj.Key });
+      }
+      token = page.IsTruncated ? page.NextContinuationToken : undefined;
+    } while (token);
+  }
+
+  let deleted = 0;
+  for (let i = 0; i < doomed.length; i += 1000) {
+    const batch = doomed.slice(i, i + 1000);
+    await s3.send(new DeleteObjectsCommand({ Bucket: bucket, Delete: { Objects: batch, Quiet: true } }));
+    deleted += batch.length;
+  }
+  return { r2: { scanned, deleted } };
+}
+
 const _cleanupExpiredMedia = defer({ schedule: '0 3 * * *', timeZone: 'Etc/UTC' }, async () => {
     const results = [];
     for (const folder of TTL_FOLDERS) {
@@ -4044,6 +4215,14 @@ const _cleanupExpiredMedia = defer({ schedule: '0 3 * * *', timeZone: 'Etc/UTC' 
       } catch (err) {
         console.error(`Cleanup failed for ${folder}:`, err.message);
       }
+    }
+    // R2 is where chat media actually lives. Never let a failure here take the
+    // legacy sweep (or the rest of cronDaily) down with it.
+    try {
+      results.push(await deleteExpiredR2ChatMedia());
+    } catch (err) {
+      console.error('R2 chat-media cleanup failed:', err.message);
+      results.push({ r2: `error: ${err.message}` });
     }
     console.log('Storage cleanup complete:', JSON.stringify(results));
   });
@@ -5001,7 +5180,13 @@ const newsSeoRewrite = require('./newsSeoRewrite');
 exports.cronDaily = functions.scheduler.onSchedule(
   {
     schedule: '0 3 * * *', timeZone: 'UTC', region: 'europe-west1',
-    timeoutSeconds: 540, secrets: [newsSeoRewrite.GEMINI_POST_TEXT_KEY],
+    // R2_* added 2026-09-06 for the chat-media expiry sweep inside
+    // _cleanupExpiredMedia. Additive; the sweep is off until app_config says on.
+    timeoutSeconds: 540,
+    secrets: [
+      newsSeoRewrite.GEMINI_POST_TEXT_KEY,
+      'R2_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET',
+    ],
   },
   async () => _runJobs('cronDaily', [
     ['cleanupExpiredMedia', _cleanupExpiredMedia],

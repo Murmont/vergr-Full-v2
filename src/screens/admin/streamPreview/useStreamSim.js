@@ -16,6 +16,10 @@ import {
   CHAT_SCRIPT, TIP_SCRIPT, SUB_SCRIPT, JOIN_SCRIPT,
   makeMessage, makeJoinEvent, castByUid, nextId, HELD_SEED,
 } from './previewCast';
+import {
+  TRAIN_MAX_LEVEL, TRAIN_SOLO_CAP, TRAIN_WINDOW_MS, TRAIN_EXTEND_MS, TRAIN_MAX_MS,
+  trainBaseGoal, trainLevelGoal, settleTrain as settleTrainBonus,
+} from '../../../utils/hypeTrain';
 
 const MAX_MESSAGES = 40;
 // JoinAnnouncer keeps its own display timer; this only bounds the array we pass.
@@ -300,51 +304,132 @@ export default function useStreamSim(initialDoc) {
   // ── Hype train ───────────────────────────────────────────────────────────
   // A shared support moment: when support lands close together the whole room
   // gets one escalating thing to push on, instead of each tip scrolling past
-  // alone. Twitch's version is the reference; this is the mechanic, not a copy
-  // of their rewards.
+  // alone. Full reasoning and the cost proof: docs/HYPE_TRAIN_PLAN.md.
   //
-  // ⚠⚠ THE REWARD IS RECOGNITION, AND NOTHING ELSE, UNTIL THE FOUNDER SAYS
-  // OTHERWISE. Every currency answer is an economy decision that is not mine:
-  // paying COINS mints currency out of a celebration; paying VP inflates the
-  // ladder and walks straight into `GIFT_COINS_PER_VP`, whose own comment says
-  // coins must not buy rank. So a train currently pays what it costs nothing to
-  // pay — the room sees the level, and it names who got it there.
+  // ⚠⚠ THE BONUS GOES TO THE CREATOR, NOT THE PEOPLE WHO TIPPED. Paying the
+  // tippers turns the train into a rebate on tipping, lets rewarded coins feed
+  // the next train, and makes the VP branch worthless — a tipper has already
+  // earned VP from the tip itself (GIFT_COINS_PER_VP). The creator earns NO VP
+  // from receiving a tip, so a VP bonus to them is entirely new value.
   //
-  // ⚠⚠ EVERY NUMBER BELOW IS MINE, NOT THE FOUNDER'S. They are one-line
-  // constants precisely so they can be replaced with his once he decides.
-  const TRAIN_LEVEL_COINS = 500;      // support needed per level
-  const TRAIN_MAX_LEVEL = 5;
-  const TRAIN_WINDOW_MS = 300_000;    // 5 min, pushed out by each contribution
-  // ⚠ A SUB'S WORTH IS A REAL UNKNOWN, NOT A ROUNDING. A creator sets their own
-  // membership price, so what one contributes to a train cannot be derived here.
-  // Placeholder, flagged, single use.
+  // ⚠⚠ IT CANNOT LOSE MONEY, BY CONSTRUCTION. Every coin in a train was bought
+  // first, netting $0.011628 (TARGET_NET_USD_PER_COIN, the ladder floor), and we
+  // owe the creator share x $0.01 of it. Margin is $0.003628 (80% creator) to
+  // $0.006628 (50%). A 20% bonus costs at most 0.20 x $0.008 = $0.0016 per coin,
+  // so we retain 56% of margin at the tightest point. Break-even is ~45%.
+  //
+  // ⚠ THE GOAL SCALES WITH THE ROOM, SUB-LINEARLY. Founder anchor: 10 viewers,
+  // ~1,000 coins. Linear would put a 1,000-viewer stream at 100,000 coins, which
+  // no room reaches, so the feature would exist only for small streams. The goal
+  // tracks LIKELY TIPPERS rather than heads, and participation falls as a room
+  // grows, so it is a square root.
+  // ⚠⚠ EVERY TRAIN RULE NOW LIVES IN src/utils/hypeTrain.js AND IS IMPORTED, NOT
+  // RESTATED. This block used to hold its own copy of the goal curve, the solo
+  // cap, the bonus percentage and a `Math.random()` coin-or-VP flip, which meant
+  // the simulator could show the founder one economy while the server ran
+  // another the moment one got built. The shared module is also what carries the
+  // profit clamp, so a number changed here alone could not quietly break it.
+
+  // ⚠ A SUB'S WORTH IS A REAL UNKNOWN. A creator sets their own membership
+  // price, so what one contributes cannot be derived here. Placeholder, flagged.
   const TRAIN_SUB_COINS = 250;
 
-  const [train, setTrain] = useState(null);   // { level, into, endsAtMs, riders }
+  const levelGoal = trainLevelGoal;
+
+  // Mirror of the stream doc, so the frozen viewer count can be read without
+  // making every tip handler depend on the doc.
+  const docRef = useRef(doc);
+  docRef.current = doc;
+
+  const [train, setTrain] = useState(null);
+  const [trainBonus, setTrainBonus] = useState(null);   // last completed train's bonus
+
   const addTrainSupport = useCallback((uid, coins) => {
     const amount = Math.max(0, Math.floor(Number(coins) || 0));
     if (!amount) return;
     setTrain((prev) => {
       const live = prev && prev.endsAtMs > Date.now() ? prev : null;
-      const base = live || { level: 1, into: 0, riders: {} };
-      let into = base.into + amount;
+      // ⚠ THE VIEWER COUNT IS FROZEN AT THE START. If the goal tracked live
+      // numbers it would move while people were pushing at it, and a bar that
+      // recedes as you fill it is a broken promise.
+      const viewers = Math.max(1, Number(docRef.current?.viewerCount) || 1);
+      const base = live || {
+        level: 1,
+        into: 0,
+        riders: {},
+        received: 0,
+        perLevel: {},
+        startedAtMs: Date.now(),
+        endsAtMs: Date.now() + TRAIN_WINDOW_MS,
+        baseGoal: trainBaseGoal(viewers),
+        viewers,
+        // ⚠⚠ THE SEED IS MINTED HERE, BEFORE THE FIRST COIN LANDS, and never
+        // changes for the life of the train. That is what makes the outcome
+        // impossible to influence by spending, and what makes settling
+        // idempotent: a double-fire recomputes the same result instead of
+        // producing a second, different one.
+        //
+        // ⚠ IN PRODUCTION THIS IS NOT Math.random(). It is
+        // HMAC_SHA256(SERVER_SECRET, streamId + ':' + trainId), computed
+        // server-side and never sent to the client, because the mapping from
+        // seed to branch is public and a visible seed would let a creator read
+        // the result the moment a train starts.
+        seed: `preview:${Date.now()}:${Math.random().toString(36).slice(2)}`,
+      };
+
+      // ⚠ ONE PERSON CANNOT MAKE A TRAIN. Above the cap the tip still lands in
+      // full and the creator still receives all of it; only what it adds to the
+      // METER is limited. 40% is the largest cap that still forces three people,
+      // and three is the smallest number that reads as a group.
       let level = base.level;
-      while (into >= TRAIN_LEVEL_COINS && level < TRAIN_MAX_LEVEL) {
-        into -= TRAIN_LEVEL_COINS;
+      let goal = levelGoal(base.baseGoal, level);
+      let perLevel = { ...base.perLevel };
+      const cap = Math.max(1, Math.round(goal * TRAIN_SOLO_CAP));
+      const counts = Math.max(0, Math.min(amount, cap - (perLevel[uid] || 0)));
+      perLevel[uid] = (perLevel[uid] || 0) + counts;
+
+      let into = base.into + counts;
+      while (into >= goal && level < TRAIN_MAX_LEVEL) {
+        into -= goal;
         level += 1;
+        goal = levelGoal(base.baseGoal, level);
+        // The cap is per LEVEL, so a new level is a clean slate. Otherwise one
+        // person is locked out of a train they helped start.
+        perLevel = {};
       }
-      if (level >= TRAIN_MAX_LEVEL) into = Math.min(into, TRAIN_LEVEL_COINS);
+      if (level >= TRAIN_MAX_LEVEL) into = Math.min(into, goal);
+
       return {
+        ...base,
         level,
         into,
-        goal: TRAIN_LEVEL_COINS,
+        goal,
         maxLevel: TRAIN_MAX_LEVEL,
-        endsAtMs: Date.now() + TRAIN_WINDOW_MS,
+        received: base.received + amount,
+        perLevel,
+        // The full tip is what the creator got, so it is what the bonus is a
+        // percentage of. The cap only ever limited the meter.
         riders: { ...base.riders, [uid]: (base.riders[uid] || 0) + amount },
+        endsAtMs: Math.min(base.startedAtMs + TRAIN_MAX_MS, Date.now() + TRAIN_EXTEND_MS),
       };
     });
   }, []);
-  const endTrain = useCallback(() => setTrain(null), []);
+
+  // ⚠ THE BONUS IS SETTLED WHEN THE TRAIN ENDS, ONCE, and it is coins OR VP.
+  // Which one varies; it is not a fixed payout. Both branches are funded from
+  // margin already banked on the coins that fed the train, so neither can put
+  // the platform behind.
+  const settleTrain = useCallback((t) => {
+    if (!t || !t.received) return;
+    // ⚠ ONE FUNCTION DECIDES THIS, AND IT IS NOT IN THIS FILE. `settleTrain` in
+    // utils/hypeTrain.js owns the branch, the amounts and the profit clamp, so
+    // the preview cannot drift from what a server would pay.
+    const bonus = settleTrainBonus({ received: t.received, level: t.level, seed: t.seed });
+    if (bonus) setTrainBonus({ ...bonus, at: Date.now() });
+  }, []);
+
+  const endTrain = useCallback(() => setTrain((t) => { settleTrain(t); return null; }), [settleTrain]);
+  const clearTrainBonus = useCallback(() => setTrainBonus(null), []);
 
   // ── Vertical framing (Dual Format, route C) ──────────────────────────────
   // ⚠⚠ ONE ENCODE. The host publishes 16:9 exactly as today; this is a rect the
@@ -375,10 +460,13 @@ export default function useStreamSim(initialDoc) {
   useEffect(() => {
     if (!train) return undefined;
     const id = setInterval(() => {
-      setTrain((t) => (t && t.endsAtMs <= Date.now() ? null : t && { ...t }));
+      setTrain((t) => {
+        if (t && t.endsAtMs <= Date.now()) { settleTrain(t); return null; }
+        return t && { ...t };
+      });
     }, 1000);
     return () => clearInterval(id);
-  }, [train]);
+  }, [train, settleTrain]);
 
   // Rolling chat. Cycles the script rather than stopping, so the feed keeps
   // moving for as long as the screen is open.
@@ -611,7 +699,7 @@ export default function useStreamSim(initialDoc) {
     chatChannel, setChatChannel, modMessages, dismissPoll,
     raiding, setRaiding,
     autoMod, setAutoMod, held, approveHeld, denyHeld, fireHeld, clearHeld,
-    train, addTrainSupport, endTrain,
+    train, addTrainSupport, endTrain, trainBonus, clearTrainBonus,
     vFrame, setVFrame, clearVFrame, setFrameX, setFrameZoom,
     chatRules, setChatRule, raiseShield, lowerShield,
     firePoll, fireReaction, fireBoost,

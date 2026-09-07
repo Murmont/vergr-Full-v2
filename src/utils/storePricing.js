@@ -211,6 +211,42 @@ export function playPriceFor(coins, countryCode, {
  * Same rule as everywhere else in this file: the figure is for typing into Play
  * Console. At runtime, display Play's own string from `fetchPlaySubPrices()`.
  */
+/**
+ * Play price for a BOOST or VP BONUS PACK.
+ *
+ * ⚠⚠ ANCHORED ON THE ITEM'S OWN `priceUSD`, NEVER ON ITS COIN COST. This is the
+ * single most important line in this function and it exists because the first
+ * attempt got it wrong: pricing a boost with `playPriceFor(item.coins)` used the
+ * COIN REDEMPTION rate, which made a 75-coin boost cost $1.09 — exactly what 78
+ * coins cost. Nobody would ever buy that: for the same money you take the coin
+ * pack, buy the boost anyway, and keep the change. It also devalues coins, by
+ * implying a coin is worth nothing beyond its face value.
+ *
+ * A boost is a PRODUCT with its own price. Its coin price is a separate,
+ * alternative payment that only applies when the wallet already covers it.
+ *
+ * ## The pricing rule the catalogue follows
+ *
+ *   priceUSD = charmRound( max( 2 x coinEquivalent, MIN_STORE_PRICE_USD ) )
+ *
+ * where coinEquivalent = coins x TARGET_NET_USD_PER_COIN / (1 - fee).
+ *
+ * Paying with coins is therefore always about half the price of paying cash.
+ * That is deliberate: it is what keeps coins worth holding and stops the cash
+ * price cannibalising the coin economy. The floor is Google's US minimum, which
+ * only binds on the two 25-coin items.
+ *
+ * Same shape as playSubPriceFor: gross up for the store fee, and for the VAT
+ * Google collects and remits before paying us in tax-inclusive markets.
+ */
+export function playItemPriceFor(priceUSD, countryCode, { fee = PLAY_SERVICE_FEE } = {}) {
+  const vat = taxRateFor(countryCode);
+  return charmRound((Number(priceUSD) || 0) * (1 + vat) / (1 - fee));
+}
+
+/** Google Play's practical minimum price in the US and most major markets. */
+export const MIN_STORE_PRICE_USD = 0.99;
+
 export function playSubPriceFor(webPriceEUR, countryCode, { fee = PLAY_SERVICE_FEE } = {}) {
   const vat = taxRateFor(countryCode);
   return charmRound(webPriceEUR * (1 + vat) / (1 - fee));

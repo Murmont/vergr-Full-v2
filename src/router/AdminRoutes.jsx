@@ -29,6 +29,7 @@ import AdminAuditScreen from '../screens/admin/AdminAuditScreen';
 import AdminSubscriptionsScreen from '../screens/admin/AdminSubscriptionsScreen';
 import AdminStatsScreen from '../screens/admin/AdminStatsScreen';
 import AdminStreamPreviewScreen from '../screens/admin/AdminStreamPreviewScreen';
+import AdminCallPreviewScreen from '../screens/admin/AdminCallPreviewScreen';
 // AdminTournamentsScreen and CheatSignaturesScreen unmounted 2026-08-17 (founder).
 // Files stay on disk per the no-deletion rule; nothing imports them, so they are
 // no longer in the admin chunk and their callables are undeployed.
@@ -53,6 +54,7 @@ export default function AdminRoutes() {
       <Route path="subscriptions" element={<AdminSubscriptionsScreen />} />
       <Route path="stats" element={<AdminStatsScreen />} />
       <Route path="stream-preview" element={<AdminStreamPreviewScreen />} />
+      <Route path="call-preview" element={<AdminCallPreviewScreen />} />
     </Routes>
   );
 }

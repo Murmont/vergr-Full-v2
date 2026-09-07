@@ -235,7 +235,7 @@ export default function CoStreamingScreen() {
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
                 <div style={{ fontSize: 14, fontWeight: 800 }}>{stream.title || title}</div>
                 <span style={{
-                  padding: '2px 8px', borderRadius: 99, background: C.purpleSoft,
+                  padding: '2px 8px', borderRadius: 999, background: C.purpleSoft,
                   color: C.purpleLight, fontSize: 10, fontWeight: 800, letterSpacing: '0.06em',
                 }}>STAGED</span>
               </div>

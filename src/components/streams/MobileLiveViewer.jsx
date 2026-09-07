@@ -15,7 +15,7 @@
 //     no title/tags strip (those live on shorts slides + desktop).
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ReconnectingOverlay, StreamLoadingCover, PlaybackStateView, AudioStageView } from './states';
+import { ReconnectingOverlay, StreamLoadingCover, PlaybackStateView, AudioStageView, HypeTrainView } from './states';
 import { RaidCountdown } from './RaidControls';
 import { CoinIcon } from '../CoinIcon';
 import { useKeepAwake } from '../../utils/keepAwake';
@@ -161,6 +161,7 @@ export default function MobileLiveViewer() {
   const [fsUiHidden, setFsUiHidden] = useState(false); // landscape focus mode
   const [replayOpen, setReplayOpen] = useState(false);
   const [stalled, setStalled] = useState(false);
+  const [hostDropped, setHostDropped] = useState(false);
   // ⚠⚠ A VIEWER WHOSE OWN NETWORK DROPS SAW "Reconnecting..." FOREVER. Nothing in
   // this file read navigator.onLine, so losing wifi looked identical to the
   // BROADCASTER having trouble: same spinner, no explanation, nothing to act on.
@@ -199,6 +200,7 @@ export default function MobileLiveViewer() {
   const [reportOpen, setReportOpen] = useState(false);
   const [appealKind, setAppealKind] = useState(null);
   const [giftTo, setGiftTo] = useState(null);
+
 
   // ⚠ HOW LONG THIS VIEWER ACTUALLY WATCHED, measured here because only the
   // client knows it. It accumulates ONLY while the stream is live, so arriving
@@ -257,8 +259,25 @@ export default function MobileLiveViewer() {
     const v = videoElRef.current;
     if (!v) return;
     let stallTimer = 0;
+    // ⚠⚠ HOST DROPPED IS DERIVED HERE AND COSTS NOTHING. `PlaybackStateView`
+    // has always been able to render `hostdropped`; what did not exist was a
+    // SIGNAL. The obvious one, a heartbeat field on the stream doc, is a
+    // Firestore write per stream per interval, which is spending money to learn
+    // something the viewer's own video element already knows: `lastFrameAt` is
+    // READ by one retired tournament file and WRITTEN by nothing, which is why
+    // it looked available and is not.
+    //
+    // A stall that has lasted this long while the doc still says `live` is not
+    // buffering, it is the host's uplink being gone. This adds NO listeners and
+    // NO writes: it is a second timer on the events already bound below, the
+    // same reuse that made post view counts affordable.
+    //
+    // ⚠ THE `playbackStalls` WRITE IS UNTOUCHED, still throttled to 30s. Nothing
+    // here may raise the rate at which that fires.
+    let dropTimer = 0;
     const onWaiting = () => {
       clearTimeout(stallTimer);
+      clearTimeout(dropTimer);
       stallTimer = setTimeout(() => {
         setStalled(true);
         const now = Date.now();
@@ -267,8 +286,9 @@ export default function MobileLiveViewer() {
           updateDoc(doc(db, 'streams', streamId), { playbackStalls: fsIncrement(1) }).catch(() => {});
         }
       }, 3500);
+      dropTimer = setTimeout(() => setHostDropped(true), 20_000);
     };
-    const onResume = () => { clearTimeout(stallTimer); setStalled(false); };
+    const onResume = () => { clearTimeout(stallTimer); clearTimeout(dropTimer); setStalled(false); setHostDropped(false); };
     v.addEventListener('waiting', onWaiting);
     v.addEventListener('stalled', onWaiting);
     v.addEventListener('playing', onResume);
@@ -276,6 +296,7 @@ export default function MobileLiveViewer() {
     v.addEventListener('canplay', onResume);
     return () => {
       clearTimeout(stallTimer);
+      clearTimeout(dropTimer);
       v.removeEventListener('waiting', onWaiting);
       v.removeEventListener('stalled', onWaiting);
       v.removeEventListener('playing', onResume);
@@ -517,6 +538,31 @@ export default function MobileLiveViewer() {
     user: { uid: e.uid, displayName: e.displayName, avatar: e.avatar },
   })), [rawJoinEvents]);
 
+  // ⚠ ZERO-READ CANDIDATE POOL FOR BULK GIFTING. `topGifters` and the recent
+  // join events are already in memory on this screen, so offering "gift to the
+  // top 10" costs nothing. The tempting alternative, a user search inside the
+  // sheet, is a Firestore query per keystroke to find people who are already on
+  // screen, which is money spent on data we hold.
+  //
+  // Gifters come first because they are ordered by support, which is what makes
+  // the quick picks deterministic rather than a draw.
+  const giftCandidates = useMemo(() => {
+    const seen = new Set();
+    const out = [];
+    for (const g of topGifters || []) {
+      if (!g?.uid || seen.has(g.uid)) continue;
+      seen.add(g.uid);
+      out.push({ uid: g.uid, displayName: g.displayName, avatar: g.avatar });
+    }
+    for (const e of joinEvents || []) {
+      const u = e?.user;
+      if (!u?.uid || seen.has(u.uid)) continue;
+      seen.add(u.uid);
+      out.push({ uid: u.uid, displayName: u.displayName, avatar: u.avatar });
+    }
+    return out;
+  }, [topGifters, joinEvents]);
+
   const toggleFollow = async () => {
     if (followBusy || !currentUser?.uid || !streamDoc?.hostUid) return;
     setFollowBusy(true);
@@ -714,17 +760,31 @@ export default function MobileLiveViewer() {
       <div style={{ minHeight: '100vh', background: `radial-gradient(circle at 50% 0%, #1a1030 0%, ${C.bg} 60%)`, color: C.text, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, fontFamily: '"DM Sans", system-ui, sans-serif' }}>
         <div style={{ width: 'min(420px, 100%)', background: C.card, border: `1px solid ${C.border}`, borderRadius: 18, padding: 24, textAlign: 'center' }}>
           <UserAvatar src={hostInfo?.avatar} size="lg" />
-          <div style={{ fontSize: 17, fontWeight: 800, marginTop: 12 }}><UserName user={hostInfo} masked fallback={'The stream'} /> has ended</div>
+          <div style={{ fontSize: 16, fontWeight: 800, marginTop: 12 }}><UserName user={hostInfo} masked fallback={'The stream'} /> has ended</div>
           <div style={{ fontSize: 12, color: C.textDim, marginTop: 4, marginBottom: 18 }}>
             {replayUrl ? 'Catch the replay or follow for the next one.'
               : streamDoc.vodPending ? 'The replay is still processing. Check back in a few minutes.'
                 : streamDoc.vodExpired ? 'The replay for this stream is no longer available.'
                   : 'Follow to get notified when they go live again.'}
           </div>
-          {/* only when they were actually here for it */}
-          {watchedMin > 0 && (
-            <div style={{ fontSize: 12, color: C.textDim, marginBottom: 14 }}>
-              You watched <b style={{ color: C.text }}>{watchedMin}m</b> of this stream.
+          {/* ⚠ PEAK IS A REAL FIELD, WRITTEN BY THE RELAY, NOT A NEW COST.
+              `startPresence` in infra/chat/src/main.go already resolves the
+              existing peak once per room and appends `peakViewers` to the SAME
+              viewerCount update it was going to send anyway, so reading it here
+              adds no write and no read. A grep of src/ and functions/ says
+              nothing writes it, which is how it looked like a dead field: the
+              writer is in Go.
+              Both figures are guarded, because a room nobody watched should not
+              be told it peaked at 0. */}
+          {(watchedMin > 0 || streamDoc.peakViewers > 0) && (
+            <div style={{ fontSize: 12, color: C.textDim, marginBottom: 14, display: 'flex', gap: 6, justifyContent: 'center', flexWrap: 'wrap' }}>
+              {streamDoc.peakViewers > 0 && (
+                <span>Peaked at <b style={{ color: C.text }}>{streamDoc.peakViewers}</b> watching</span>
+              )}
+              {watchedMin > 0 && streamDoc.peakViewers > 0 && <span style={{ opacity: 0.5 }}>·</span>}
+              {watchedMin > 0 && (
+                <span>You watched <b style={{ color: C.text }}>{watchedMin}m</b></span>
+              )}
             </div>
           )}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -750,6 +810,53 @@ export default function MobileLiveViewer() {
             )}
             <button onClick={() => navigate('/')} style={{ padding: 14, borderRadius: 12, border: `1px solid ${C.border}`, background: 'transparent', color: C.text, fontSize: 14, fontWeight: 800, cursor: 'pointer' }}>Browse live</button>
           </div>
+
+          {/* ⚠⚠ UP NEXT COSTS ZERO READS, AND THAT IS WHY IT IS BUILT THIS WAY.
+              `LiveUsersContext` already holds one shared onSnapshot on
+              `streams where status == live` (capped at 300) to light up avatars
+              across the app, and this component already destructures
+              `liveHosts` from it. Querying for somewhere-to-go-next here would
+              have been a Firestore read per viewer per ended stream, which is a
+              spending decision and not one to take quietly.
+
+              ⚠ IT EXCLUDES THE HOST WHOSE STREAM JUST ENDED. Their own doc can
+              still be in the snapshot for a few seconds, and offering the room
+              a link back to the thing that just finished is worse than showing
+              nothing. Premium and undiscoverable rooms are filtered too: the
+              context already carries both flags. */}
+          {(() => {
+            const upNext = [...(liveHosts?.values?.() || [])]
+              .filter((h) => h.discoverable && !h.premium && h.hostUid !== streamDoc.hostUid && h.streamId !== streamDoc.id)
+              .sort((a, b) => (b.viewerCount || 0) - (a.viewerCount || 0))
+              .slice(0, 3);
+            if (!upNext.length) return null;
+            return (
+              <div style={{ marginTop: 20, textAlign: 'left' }}>
+                <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', color: C.textMuted, marginBottom: 8 }}>UP NEXT</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {upNext.map((h) => (
+                    <button key={h.streamId} onClick={() => navigate(`/watch/${h.streamId}`)}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 10, width: '100%',
+                        padding: 8, borderRadius: 12, border: 'none', cursor: 'pointer',
+                        background: '#1A1A2A', color: C.text, textAlign: 'left',
+                      }}>
+                      <UserAvatar src={h.avatar} size="sm" />
+                      <span style={{ flex: 1, minWidth: 0 }}>
+                        <span style={{ display: 'block', fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {h.title || h.name || 'Live now'}
+                        </span>
+                        <span style={{ display: 'block', fontSize: 11, color: C.textDim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {h.name}{h.viewerCount ? ` · ${h.viewerCount} watching` : ''}
+                        </span>
+                      </span>
+                      <span style={{ flexShrink: 0, padding: '2px 7px', borderRadius: 4, fontSize: 9, fontWeight: 800, letterSpacing: '0.08em', background: C.red, color: '#fff' }}>LIVE</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
         </div>
         {/* ⚠⚠ THE SHEET MUST BE MOUNTED IN THIS BRANCH. The ended screen RETURNS
             EARLY, so the StreamShareSheet in the main return below is unreachable
@@ -791,7 +898,7 @@ export default function MobileLiveViewer() {
       <div style={{ minHeight: '100vh', background: `radial-gradient(circle at 50% 0%, #1a1030 0%, ${C.bg} 60%)`, color: C.text, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, fontFamily: '"DM Sans", system-ui, sans-serif' }}>
         <div style={{ width: 'min(420px, 100%)', background: C.card, border: `1px solid ${C.border}`, borderRadius: 18, padding: 24, textAlign: 'center' }}>
           <UserAvatar src={hostInfo?.avatar} size="lg" />
-          <div style={{ fontSize: 17, fontWeight: 800, marginTop: 12 }}>This stream is for followers</div>
+          <div style={{ fontSize: 16, fontWeight: 800, marginTop: 12 }}>This stream is for followers</div>
           <div style={{ fontSize: 12, color: C.textDim, marginTop: 4, marginBottom: 18 }}>
             <UserName user={hostInfo} masked fallback={'The host'} /> made this stream {streamDoc.audience === 'friends' ? 'friends-only' : 'followers-only'}. Follow to watch.
           </div>
@@ -895,7 +1002,9 @@ export default function MobileLiveViewer() {
                 connection is the thing that is down. */}
             {!online
             ? <PlaybackStateView state="offline" onRetry={() => safeReload()} onLeave={() => navigate(-1)} />
-            : (stalled && streamDoc.status === 'live' && <ReconnectingOverlay />)}
+            : hostDropped && streamDoc.status === 'live'
+              ? <PlaybackStateView state="hostdropped" onRetry={() => safeReload()} onLeave={() => navigate(-1)} />
+              : (stalled && streamDoc.status === 'live' && <ReconnectingOverlay />)}
         </div>
 
         {!fsUiHidden && (
@@ -913,7 +1022,7 @@ export default function MobileLiveViewer() {
             <div style={{ position: 'absolute', right: 10, top: 'calc(env(safe-area-inset-top,0px) + 52px)', bottom: 'calc(env(safe-area-inset-bottom,0px) + 10px)', width: 'min(42%, 360px)', display: 'flex', flexDirection: 'column', minHeight: 0, zIndex: 5 }}>
               <ChatPanel
                 streamId={streamDoc.id} layout="overlay" hostUid={streamDoc.hostUid}
-                slowModeSec={streamDoc.slowModeSec || 0} followersOnly={!!streamDoc.followersOnly} ttsEnabled={!!streamDoc.ttsEnabled}
+                slowModeSec={streamDoc.slowModeSec || 0} followersOnly={!!streamDoc.followersOnly} subsOnly={!!streamDoc.subsOnly} mutedUids={streamDoc.mutedUids || null} ttsEnabled={!!streamDoc.ttsEnabled}
                 onAppeal={(kind) => setAppealKind(kind)}
                 pinnedMessage={streamDoc.pinnedMessage || null}
                 composerExtras={fsComposerExtras}
@@ -1028,7 +1137,9 @@ export default function MobileLiveViewer() {
                 connection is the thing that is down. */}
             {!online
             ? <PlaybackStateView state="offline" onRetry={() => safeReload()} onLeave={() => navigate(-1)} />
-            : (stalled && streamDoc.status === 'live' && <ReconnectingOverlay />)}
+            : hostDropped && streamDoc.status === 'live'
+              ? <PlaybackStateView state="hostdropped" onRetry={() => safeReload()} onLeave={() => navigate(-1)} />
+              : (stalled && streamDoc.status === 'live' && <ReconnectingOverlay />)}
         {/* ⚠⚠ AUDIO-ONLY REPLACES THE VIDEO, so it renders at the MEDIA layer and not in
             a blocking-state ternary. In the preview it once sat there as an opaque
             inset:0 layer mounted last and buried the chrome on six of seven surfaces:
@@ -1115,7 +1226,7 @@ export default function MobileLiveViewer() {
                 </span>
               )}
             </div>
-            <div style={{ fontSize: 9.5, color: 'rgba(255,255,255,0.8)', display: 'flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}>
+            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.8)', display: 'flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
                 <Icon name="favorite" size={9} filled className="" style={{ color: C.red }} />
                 {compactNum(heartsDisplay)} Likes
@@ -1218,7 +1329,7 @@ export default function MobileLiveViewer() {
         <div style={{ height: kb > 0 ? 96 : CHAT_FEED_HEIGHT, display: 'flex', flexDirection: 'column', minHeight: 0, transition: 'height 0.18s ease-out' }}>
           <ChatPanel
             streamId={streamDoc.id} layout="overlay" hostUid={streamDoc.hostUid}
-            slowModeSec={streamDoc.slowModeSec || 0} followersOnly={!!streamDoc.followersOnly} ttsEnabled={!!streamDoc.ttsEnabled}
+            slowModeSec={streamDoc.slowModeSec || 0} followersOnly={!!streamDoc.followersOnly} subsOnly={!!streamDoc.subsOnly} mutedUids={streamDoc.mutedUids || null} ttsEnabled={!!streamDoc.ttsEnabled}
             onAppeal={(kind) => setAppealKind(kind)}
             pinnedMessage={streamDoc.pinnedMessage || null}
             composerExtras={composerExtras}
@@ -1226,6 +1337,7 @@ export default function MobileLiveViewer() {
         </div>
       </div>
 
+      <HypeTrainView train={streamDoc.hypeTrain} />
       {!pipActive && <TipAlertOverlay lastTip={streamDoc.lastTip} anchor="top" />}
       {!pipActive && <SubAlertOverlay lastSub={streamDoc.lastSub} anchor="bottom" bottom="calc(30vh + 84px)" />}
 
@@ -1248,7 +1360,12 @@ export default function MobileLiveViewer() {
       )}
       <UserQuickSheet onGiftSub={(u) => { setQuickSheet(null); setGiftTo(u); }} open={!!quickSheet} uid={quickSheet?.uid} watchLiveStreamId={quickSheet?.streamId} onClose={() => setQuickSheet(null)} />
       {giftTo && (
+        // ⚠ CANDIDATES ARE WHAT THIS SCREEN ALREADY HOLDS, NOT A QUERY.
+        // `topGifters` and the join events are both in memory, so bulk gifting
+        // costs zero reads. A search box here would be a Firestore query per
+        // keystroke to find people already on screen.
         <GiftSubSheet creatorId={streamDoc.hostUid} recipient={giftTo}
+          candidates={giftCandidates}
           onClose={() => setGiftTo(null)} showToast={showToast} />
       )}
       <VanguardPresence parentPath={`streams/${streamDoc.id}`} />
@@ -1419,7 +1536,7 @@ export function AppealSheet({ streamId, kind, onClose, showToast }) {
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 120, display: 'flex', alignItems: 'flex-end' }}>
       <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', background: C.card, borderTopLeftRadius: 18, borderTopRightRadius: 18, padding: 18, paddingBottom: 'calc(18px + env(safe-area-inset-bottom))' }}>
-        <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 6 }}>{timeout ? 'Appeal this timeout' : 'Appeal this ban'}</div>
+        <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 6 }}>{timeout ? 'Appeal this timeout' : 'Appeal this ban'}</div>
         <div style={{ fontSize: 12, color: C.textDim, lineHeight: 1.5, marginBottom: 12 }}>
           {timeout
             ? 'A timeout ends by itself. If you think it was a mistake, the channel moderators see this.'
@@ -1460,11 +1577,11 @@ function ReportStreamSheet({ streamId, onClose, showToast }) {
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 210, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
       <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: 480, background: C.card, border: `1px solid ${C.border}`, borderTopLeftRadius: 18, borderTopRightRadius: 18, padding: 20, paddingBottom: 'calc(env(safe-area-inset-bottom,0px) + 20px)', color: C.text, fontFamily: '"DM Sans", system-ui, sans-serif' }}>
-        <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 12 }}>Report this stream</div>
+        <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 12 }}>Report this stream</div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
           {REPORT_REASONS.map((r) => (
             <button key={r.id} onClick={() => setReason(r.id)} style={{
-              padding: '8px 12px', borderRadius: 99, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+              padding: '8px 12px', borderRadius: 999, fontSize: 12, fontWeight: 700, cursor: 'pointer',
               background: reason === r.id ? C.dangerDim : C.row,
               border: `1px solid ${reason === r.id ? C.red : C.border}`,
               color: reason === r.id ? C.red : C.textDim,
@@ -1483,7 +1600,7 @@ function ReportStreamSheet({ streamId, onClose, showToast }) {
             Opens in a new tab on purpose: a viewer reporting a live stream should
             not lose the stream to read the policy. */}
         <a href="/platform/acceptable-use" target="_blank" rel="noopener noreferrer"
-          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11.5,
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12,
             color: C.textDim, textDecoration: 'none', marginBottom: 12 }}>
           <Icon name="gavel" size={13} />
           Read the community guidelines
@@ -1531,7 +1648,7 @@ function ExploreDrawer({ liveHosts, currentStreamId, onClose, onGo }) {
         style={{ width: '100%', maxWidth: 480, maxHeight: '64vh', overflowY: 'auto', background: C.card, border: `1px solid ${C.border}`, borderTopLeftRadius: 18, borderTopRightRadius: 18, padding: 16, paddingBottom: 'calc(env(safe-area-inset-bottom,0px) + 16px)', color: C.text, fontFamily: '"DM Sans", system-ui, sans-serif' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
           <Icon name="explore" size={18} style={{ color: C.purpleLight }} />
-          <div style={{ fontSize: 15, fontWeight: 800 }}>More live now</div>
+          <div style={{ fontSize: 14, fontWeight: 800 }}>More live now</div>
           <button onClick={onClose} aria-label="Close" style={{ marginLeft: 'auto', width: 30, height: 30, borderRadius: '50%', border: 'none', background: C.rowHi, color: C.text, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}><Icon name="close" size={16} /></button>
         </div>
         {items.length === 0 ? (
@@ -1573,7 +1690,7 @@ function TopGiftersCluster({ gifters, onClick }) {
             <UserAvatar src={g.avatar} size="xs" />
           </span>
           <span style={{
-            marginTop: 2, fontSize: 8.5, fontWeight: 800, color: '#F5C842', fontFamily: 'DM Mono, monospace',
+            marginTop: 2, fontSize: 9, fontWeight: 800, color: '#F5C842', fontFamily: 'DM Mono, monospace',
             background: 'rgba(0,0,0,0.55)', borderRadius: 6, padding: '0 4px', lineHeight: '13px',
           }}>{compactNum(g.coins)}</span>
         </div>
@@ -1589,7 +1706,7 @@ function GiftersSheet({ gifters, hostName, onClose, onTip }) {
       <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: 480, maxHeight: '72vh', overflowY: 'auto', background: C.card, border: `1px solid ${C.border}`, borderTopLeftRadius: 18, borderTopRightRadius: 18, padding: 20, paddingBottom: 'calc(env(safe-area-inset-bottom,0px) + 20px)', color: C.text, fontFamily: '"DM Sans", system-ui, sans-serif' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
           <Icon name="leaderboard" size={18} style={{ color: '#F5C842' }} />
-          <div style={{ fontSize: 15, fontWeight: 800 }}>Top supporters{hostName ? ` · ${hostName}` : ''}</div>
+          <div style={{ fontSize: 14, fontWeight: 800 }}>Top supporters{hostName ? ` · ${hostName}` : ''}</div>
         </div>
         {gifters.length === 0 ? (
           <div style={{ fontSize: 13, color: C.textDim, padding: '8px 0 16px' }}>No tips yet. Be the first to support the stream.</div>
@@ -1620,8 +1737,8 @@ function GiftSoonSheet({ onClose, onTip }) {
         <div style={{ width: 56, height: 56, margin: '0 auto 12px', borderRadius: 16, background: 'linear-gradient(135deg, rgba(124,58,237,0.3), rgba(180,79,255,0.3))', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <Icon name="redeem" size={28} style={{ color: C.purpleLight }} />
         </div>
-        <div style={{ fontSize: 17, fontWeight: 800 }}>Gift Box is coming soon</div>
-        <div style={{ fontSize: 12.5, color: C.textDim, marginTop: 6, marginBottom: 18, lineHeight: 1.5 }}>
+        <div style={{ fontSize: 16, fontWeight: 800 }}>Gift Box is coming soon</div>
+        <div style={{ fontSize: 13, color: C.textDim, marginTop: 6, marginBottom: 18, lineHeight: 1.5 }}>
           Animated gifts that pop on the broadcaster's stream are on the way. For now, you can show love with a coin tip, which still earns you VP.
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -1634,8 +1751,8 @@ function GiftSoonSheet({ onClose, onTip }) {
 }
 
 const iconBtn = { width: 34, height: 34, borderRadius: '50%', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0, ...glassDark };
-const pillBtn = { padding: '8px 14px', borderRadius: 99, border: 'none', background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 };
-function pillSm(extra = {}) { return { padding: '2px 8px', borderRadius: 99, fontSize: 10, fontWeight: 800, letterSpacing: '0.06em', color: '#fff', ...extra }; }
+const pillBtn = { padding: '8px 14px', borderRadius: 999, border: 'none', background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 };
+function pillSm(extra = {}) { return { padding: '2px 8px', borderRadius: 999, fontSize: 10, fontWeight: 800, letterSpacing: '0.06em', color: '#fff', ...extra }; }
 function TipModal({ amount, setAmount, message, setMessage, onClose, onSend, sending, host, tipCatalog, streamId, stream }) {
   // ⚠ TIP AND BOOST ARE THE SAME GESTURE — giving something to the person
   // streaming — so they share one surface. Founder, 2026-08-27: boost sits in
@@ -1649,15 +1766,15 @@ function TipModal({ amount, setAmount, message, setMessage, onClose, onSend, sen
       <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: 480, background: C.card, border: `1px solid ${C.border}`, borderTopLeftRadius: 18, borderTopRightRadius: 18, padding: 20, paddingBottom: 'calc(env(safe-area-inset-bottom,0px) + 20px)', color: C.text, fontFamily: '"DM Sans", system-ui, sans-serif' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
           <UserAvatar src={host?.avatar} size="md" />
-          <div><div style={{ fontSize: 12, color: C.textDim }}>{giftTab === 'boost' ? 'Boost' : 'Tip'}</div><div style={{ fontSize: 15, fontWeight: 800 }}><UserName user={host} masked fallback={'host'} /></div></div>
+          <div><div style={{ fontSize: 12, color: C.textDim }}>{giftTab === 'boost' ? 'Boost' : 'Tip'}</div><div style={{ fontSize: 14, fontWeight: 800 }}><UserName user={host} masked fallback={'host'} /></div></div>
         </div>        <div style={{ display: 'flex', gap: 6, marginBottom: 14 }}>
           {[['tip', 'Tip'], ['boost', 'Boost']].map(([id, label]) => (
             <button key={id} type="button" onClick={() => setGiftTab(id)}
               style={{
-                flex: 1, padding: '8px 10px', borderRadius: 9, cursor: 'pointer',
+                flex: 1, padding: '8px 10px', borderRadius: 8, cursor: 'pointer',
                 border: 'none', fontSize: 13, fontWeight: 800,
-                background: giftTab === id ? C.purpleSoft : C.row,
-                color: giftTab === id ? C.purpleLight : C.textDim,
+                background: giftTab === id ? C.purple : C.row,
+                color: giftTab === id ? '#fff' : C.textDim,
                 boxShadow: giftTab === id ? 'inset 0 0 0 1px ' + C.purple : 'none',
               }}>{label}</button>
           ))}
@@ -1677,7 +1794,7 @@ function TipModal({ amount, setAmount, message, setMessage, onClose, onSend, sen
             <button key={p} onClick={() => setAmount(p)} style={{ padding: '8px 14px', borderRadius: 10, background: amount === p ? C.purple : C.row, border: 'none', color: amount === p ? '#fff' : C.textDim, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>{p}c</button>
           ))}
         </div>
-        <input type="number" min={1} value={amount} onChange={(e) => setAmount(Math.max(1, parseInt(e.target.value || '0', 10)))} style={{ width: '100%', boxSizing: 'border-box', background: C.field, border: `1px solid ${C.border}`, borderRadius: 12, padding: 13, color: C.text, fontSize: 15, outline: 'none', marginBottom: 10 }} />
+        <input type="number" min={1} value={amount} onChange={(e) => setAmount(Math.max(1, parseInt(e.target.value || '0', 10)))} style={{ width: '100%', boxSizing: 'border-box', background: C.field, border: `1px solid ${C.border}`, borderRadius: 12, padding: 13, color: C.text, fontSize: 14, outline: 'none', marginBottom: 10 }} />
         <input type="text" value={message} maxLength={80} onChange={(e) => setMessage(e.target.value)} placeholder={suggested ? `Optional message (default: "${suggested.message}")` : 'Optional message (up to 80 chars)'} style={{ width: '100%', boxSizing: 'border-box', background: C.field, border: `1px solid ${C.border}`, borderRadius: 12, padding: 13, color: C.text, fontSize: 14, outline: 'none', marginBottom: 6 }} />
         <div style={{ fontSize: 11, color: C.textMuted, marginBottom: 14, lineHeight: 1.4 }}>Every message is moderated before broadcast. Vergr pays the host their revenue share of this tip.</div>
         <div style={{ display: 'flex', gap: 10 }}>
@@ -1688,7 +1805,7 @@ function TipModal({ amount, setAmount, message, setMessage, onClose, onSend, sen
       </div>
     </div>
   );
-}
+}
 
 // ⚠ RE-EXPORTED, NOT REDEFINED. These two moved to ./states so the state layer
 // owns them and MobileLiveViewer can import PlaybackStateView from there without a

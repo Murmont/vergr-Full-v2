@@ -8,7 +8,7 @@
 // Production BroadcasterScreen.jsx is never touched.
 
 import { useState } from 'react';
-import { PlaybackState, StreamPaywall, HealthWarning, ZeroViewers, VpEarnedChip, AudioStage, ModChannelSwitch, S, HypeTrain } from './previewStates';
+import { PlaybackState, StreamPaywall, HealthWarning, ZeroViewers, VpEarnedChip, AudioStage, ModChannelSwitch, S, HypeTrain, TrainBonusHost } from './previewStates';
 import ReactionsFloor from '../../../components/streams/ReactionsFloor';
 import { usePreviewVideos, usePreviewSim } from './previewAssetsContext';
 import { GiftFeed, useGiftFeed, useAboveChat, MovableGoal } from './previewSoloParts';
@@ -284,7 +284,7 @@ export default function PreviewBroadcasterScreen({
           <DockBtn icon="more_horiz" onClick={() => setMoreOpen(true)} label="More" />
         </div>
 
-        <HypeTrain />
+        <HypeTrain /><TrainBonusHost />
         <GiftFeed toasts={gifts} style={{ bottom: aboveChat ?? 76, left: 10 }} />
         <SubAlertOverlay lastSub={streamDoc.lastSub} anchor="bottom" bottom={aboveChat ?? 90} />
         <ReactionsFloor events={reactions} position="right" />
@@ -441,7 +441,7 @@ export default function PreviewBroadcasterScreen({
           when the same person sends again (previewSoloParts.jsx). The solo views
           always had it; these surfaces never did, so a tip here rendered as the
           generic centred pill instead — the thing that was replaced. */}
-        <HypeTrain />
+        <HypeTrain /><TrainBonusHost />
         <GiftFeed toasts={gifts} style={{ bottom: aboveChat ?? 76, left: 10 }} />
         <SubAlertOverlay lastSub={streamDoc.lastSub} anchor="bottom" bottom={aboveChat ?? 90} />
         {/* side="left" and the chat-height offset match the mobile viewer, which
@@ -537,7 +537,7 @@ export default function PreviewBroadcasterScreen({
           when the same person sends again (previewSoloParts.jsx). The solo views
           always had it; these surfaces never did, so a tip here rendered as the
           generic centred pill instead — the thing that was replaced. */}
-        <HypeTrain />
+        <HypeTrain /><TrainBonusHost />
         <GiftFeed toasts={gifts} style={{ bottom: 76 }} />
         <SubAlertOverlay lastSub={streamDoc.lastSub} anchor="bottom" />
           </div>

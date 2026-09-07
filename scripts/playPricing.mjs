@@ -17,10 +17,24 @@ import {
   TARGET_NET_USD_PER_COIN,
   playPriceFor,
   playSubPriceFor,
+  playItemPriceFor,
   playNetFor,
   playNetPerCoin,
   taxRateFor,
 } from '../src/utils/storePricing.js';
+import { VP_BONUS_PACKS } from '../src/utils/vpBonuses.js';
+import { BOOSTS } from '../src/utils/boosts.js';
+
+// ⚠ BOOSTS AND VP BONUS PACKS ARE PRODUCTS, NOT COIN PACKS. Their Play price is
+// grossed up from their OWN priceUSD via playItemPriceFor(), never from their
+// coin cost — pricing them at the coin rate made a 75-coin boost cost the same
+// as a 78-coin pack. See docs/play/BOOST_BONUS_PRICING_PLAN.md.
+const STORE_ITEMS = [
+  ...VP_BONUS_PACKS.map((b) => ({ sku: `vpb_${b.id}`, name: b.name, priceUSD: b.priceUSD, coins: b.coins,
+    desc: `${b.mult}x VP for ${b.hours >= 24 ? `${b.hours / 24} day` : `${b.hours} hour`}${(b.hours === 1 || b.hours === 24) ? '' : 's'}. Starts the moment you buy it.` })),
+  ...BOOSTS.map((b) => ({ sku: `boost_${b.id}`, name: b.name, priceUSD: b.priceUSD, coins: b.coins,
+    desc: `${b.short}. Kept in your wallet until you use it.` })),
+];
 
 // Platform subscriptions. Hard-coded here rather than imported from
 // tierSystem.js because that module pulls in browser-only dependencies; these
@@ -188,6 +202,31 @@ if (asCsv) {
       'en-US',
       `Vergr ${t.name}, billed monthly. Cancel any time.`,
     ])),
+    // ── BOOSTS AND VP BONUS PACKS ──────────────────────────────────
+    // Consumable one-time products, like the coin packs: a user buys the same
+    // boost repeatedly. `coins` is recorded for reference only — it is the
+    // ALTERNATIVE payment when the wallet covers it, never the basis of the
+    // Play price. base_price_usd comes from the item's own priceUSD.
+    ...STORE_ITEMS.map((i) => ([
+      i.sku,
+      i.name,
+      'one-time product',
+      'buy',
+      'Buy',
+      'yes',
+      'no',
+      'Digital content',
+      'Digital app sales',
+      '18+',
+      BLOCKED,
+      '', '',
+      i.coins,
+      0,
+      out(playItemPriceFor(i.priceUSD, 'US', { fee })).toFixed(2),
+      '',
+      'en-US',
+      i.desc,
+    ])),
   ];
 
   // ── FILE 2: per-market VERIFICATION table ─────────────────────────
@@ -284,7 +323,8 @@ if (asCsv) {
   const marketRows = [
     ['country', 'iso', 'currency', 'vat_pct',
       ...STORE_COIN_PACKS.map((p) => `coins_${p.id}`),
-      ...SUB_TIERS.map((t) => `sub_${t.id}`)],
+      ...SUB_TIERS.map((t) => `sub_${t.id}`),
+      ...STORE_ITEMS.map((i) => i.sku)],
     ...MARKETS.map(([cc]) => {
       const cur = CURRENCY[cc] || 'USD';
       return [
@@ -294,6 +334,7 @@ if (asCsv) {
         (taxRateFor(cc) * 100).toFixed(1),
         ...STORE_COIN_PACKS.map((p) => fmtLocal(localPrice(playPriceFor(p.coins, cc, { fee }), cc), cur)),
         ...SUB_TIERS.map((t) => fmtLocal(localPrice(playSubPriceFor(t.webPriceEUR, cc, { fee }), cc), cur)),
+        ...STORE_ITEMS.map((i) => fmtLocal(localPrice(playItemPriceFor(i.priceUSD, cc, { fee }), cc), cur)),
       ];
     }),
   ];
@@ -314,6 +355,22 @@ if (asCsv) {
       }
     }
   }
+  // Items are checked against their OWN priceUSD, not the per-coin floor: a
+  // boost is a product, so the invariant is "never net less than the product's
+  // USD price", the same rule subscriptions follow.
+  for (const [cc] of MARKETS) {
+    const cur = CURRENCY[cc] || 'USD';
+    const rate = cur === 'USD' ? 1 : RATES[cur];
+    for (const it of STORE_ITEMS) {
+      const local = localPrice(playItemPriceFor(it.priceUSD, cc, { fee }), cc);
+      if (local == null) continue;
+      const net = ((local / rate) / (1 + taxRateFor(cc))) * (1 - fee);
+      if (net < it.priceUSD - 0.005) {
+        breaches.push(`${cc} ${it.sku}: ${cur} ${fmtLocal(local, cur)} -> nets ${net.toFixed(2)} vs ${it.priceUSD}`);
+      }
+    }
+  }
+
   if (breaches.length) {
     console.error('✗ FLOOR BREACH — refusing to write:');
     breaches.slice(0, 10).forEach((b) => console.error('  ' + b));
@@ -341,7 +398,7 @@ if (asCsv) {
 
   console.log('');
   console.log('Wrote:');
-  console.log(`  ${f1}              <- the 10 products to create`);
+  console.log(`  ${f1}              <- the ${productRows.length - 1} products to create`);
   console.log(`  ${f2}   <- per-market check (${MARKETS.length} markets)`);
   console.log(`  ${OUT_DIR}/play-blocked-countries.csv    <- ${BLOCKED_LIST.length} to mark unavailable`);
   console.log('');

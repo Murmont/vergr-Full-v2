@@ -50,7 +50,7 @@ import ChatPanel from '../../components/streams/ChatPanel';
 import { BoostTimer } from '../../components/streams/BoostStreamSheet';
 import BoostSheet from '../../components/boost/BoostSheet';
 import MobileLiveViewer, { ReconnectingOverlay, StreamLoadingCover, AppealSheet } from '../../components/streams/MobileLiveViewer';
-import { PlaybackStateView, AudioStageView } from '../../components/streams/states';
+import { PlaybackStateView, AudioStageView, HypeTrainView } from '../../components/streams/states';
 import TwitchMirrorPlayer from '../../components/streams/TwitchMirrorPlayer';
 import InStreamTicketWidget from '../../components/streams/InStreamTicketWidget';
 import EventTicketCard from '../../components/tournament/EventTicketCard';
@@ -129,8 +129,10 @@ function DesktopViewerStreamScreen() {
   const [ticketStatus, setTicketStatus] = useState(null); // ticketed-stream gate
   const [followChecked, setFollowChecked] = useState(false);
   const [stalled, setStalled] = useState(false);
+  const [hostDropped, setHostDropped] = useState(false);
   const [appealKind, setAppealKind] = useState(null);
   const [giftTo, setGiftTo] = useState(null);
+
 
   // ⚠⚠ SAME GAP AS THE MOBILE VIEWER: nothing here read navigator.onLine, so a
   // desktop viewer who lost their connection saw "Reconnecting..." indefinitely,
@@ -360,6 +362,31 @@ function DesktopViewerStreamScreen() {
     user: { uid: e.uid, displayName: e.displayName, avatar: e.avatar },
   })), [rawJoinEvents]);
 
+  // ⚠ ZERO-READ CANDIDATE POOL FOR BULK GIFTING. `topGifters` and the recent
+  // join events are already in memory on this screen, so offering "gift to the
+  // top 10" costs nothing. The tempting alternative, a user search inside the
+  // sheet, is a Firestore query per keystroke to find people who are already on
+  // screen, which is money spent on data we hold.
+  //
+  // Gifters come first because they are ordered by support, which is what makes
+  // the quick picks deterministic rather than a draw.
+  const giftCandidates = useMemo(() => {
+    const seen = new Set();
+    const out = [];
+    for (const g of topGifters || []) {
+      if (!g?.uid || seen.has(g.uid)) continue;
+      seen.add(g.uid);
+      out.push({ uid: g.uid, displayName: g.displayName, avatar: g.avatar });
+    }
+    for (const e of joinEvents || []) {
+      const u = e?.user;
+      if (!u?.uid || seen.has(u.uid)) continue;
+      seen.add(u.uid);
+      out.push({ uid: u.uid, displayName: u.displayName, avatar: u.avatar });
+    }
+    return out;
+  }, [topGifters, joinEvents]);
+
   const toggleFollow = async () => {
     if (followBusy || !currentUser?.uid || !streamDoc?.hostUid) return;
     setFollowBusy(true);
@@ -556,8 +583,17 @@ function DesktopViewerStreamScreen() {
     const v = videoElRef.current;
     if (!v) return;
     let stallTimer = 0;
+    // ⚠⚠ HOST DROPPED, DERIVED, AT ZERO COST. Same reasoning as the mobile
+    // viewer: `PlaybackStateView` could always render `hostdropped` and there
+    // was no signal for it. A heartbeat field on the stream doc is a Firestore
+    // write per stream per interval to learn what this video element already
+    // knows, and `lastFrameAt` is read by one retired tournament file and
+    // written by nothing. A stall past 20s while the doc still says live is the
+    // host being gone, not buffering. No new listeners, no writes.
+    let dropTimer = 0;
     const onWaiting = () => {
       clearTimeout(stallTimer);
+      clearTimeout(dropTimer);
       stallTimer = setTimeout(() => {
         setStalled(true);
         const now = Date.now();
@@ -566,8 +602,9 @@ function DesktopViewerStreamScreen() {
           updateDoc(doc(db, 'streams', streamId), { playbackStalls: fsIncrement(1) }).catch(() => {});
         }
       }, 3500);
+      dropTimer = setTimeout(() => setHostDropped(true), 20_000);
     };
-    const onResume = () => { clearTimeout(stallTimer); setStalled(false); };
+    const onResume = () => { clearTimeout(stallTimer); clearTimeout(dropTimer); setStalled(false); setHostDropped(false); };
     v.addEventListener('waiting', onWaiting);
     v.addEventListener('stalled', onWaiting);
     v.addEventListener('playing', onResume);
@@ -575,6 +612,7 @@ function DesktopViewerStreamScreen() {
     v.addEventListener('canplay', onResume);
     return () => {
       clearTimeout(stallTimer);
+      clearTimeout(dropTimer);
       v.removeEventListener('waiting', onWaiting);
       v.removeEventListener('stalled', onWaiting);
       v.removeEventListener('playing', onResume);
@@ -678,7 +716,7 @@ function DesktopViewerStreamScreen() {
       <div style={{ minHeight: '100vh', background: `radial-gradient(circle at 50% 0%, #1a1030 0%, ${C.bg} 60%)`, color: C.text, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, fontFamily: '"DM Sans", system-ui, sans-serif' }}>
         <div style={{ width: 'min(420px, 100%)', background: C.card, border: `1px solid ${C.border}`, borderRadius: 18, padding: 24, textAlign: 'center' }}>
           <UserAvatar src={hostInfo?.avatar} size="lg" />
-          <div style={{ fontSize: 17, fontWeight: 800, marginTop: 12 }}><UserName user={hostInfo} masked fallback={'The stream'} /> has ended</div>
+          <div style={{ fontSize: 16, fontWeight: 800, marginTop: 12 }}><UserName user={hostInfo} masked fallback={'The stream'} /> has ended</div>
           <div style={{ fontSize: 12, color: C.textDim, marginTop: 4, marginBottom: 18 }}>
             {replayUrl ? 'Catch the replay or follow for the next one.'
               : streamDoc.vodPending ? 'The replay is still processing. Check back in a few minutes.'
@@ -715,7 +753,7 @@ function DesktopViewerStreamScreen() {
       <div style={{ minHeight: '100vh', background: `radial-gradient(circle at 50% 0%, #1a1030 0%, ${C.bg} 60%)`, color: C.text, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, fontFamily: '"DM Sans", system-ui, sans-serif' }}>
         <div style={{ width: 'min(420px, 100%)', background: C.card, border: `1px solid ${C.border}`, borderRadius: 18, padding: 24, textAlign: 'center' }}>
           <UserAvatar src={hostInfo?.avatar} size="lg" />
-          <div style={{ fontSize: 17, fontWeight: 800, marginTop: 12 }}>This stream is for followers</div>
+          <div style={{ fontSize: 16, fontWeight: 800, marginTop: 12 }}>This stream is for followers</div>
           <div style={{ fontSize: 12, color: C.textDim, marginTop: 4, marginBottom: 18 }}>
             <UserName user={hostInfo} masked fallback={'The host'} /> made this stream {streamDoc.audience === 'friends' ? 'friends-only' : 'followers-only'}. Follow to watch.
           </div>
@@ -794,6 +832,7 @@ function DesktopViewerStreamScreen() {
               partners={linkedStreamDocs}
               currentStreamId={streamDoc.id}
               compositeOwner={streamDoc.compositeOwner}
+                selfHost={hostInfo}
               onSwitch={(targetId) => navigate(`/watch/${targetId}`)}
               onInspect={(partner) => setQuickSheet({ uid: partner.hostUid, streamId: partner.id })}
             />
@@ -832,7 +871,7 @@ function DesktopViewerStreamScreen() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <button onClick={() => navigate(-1)} style={{
               display: 'inline-flex', alignItems: 'center', gap: 6,
-              padding: '6px 12px', borderRadius: 99, border: `1px solid ${C.border}`,
+              padding: '6px 12px', borderRadius: 999, border: `1px solid ${C.border}`,
               background: 'transparent', color: C.textDim,
               fontSize: 12, fontWeight: 700, cursor: 'pointer',
             }}>
@@ -888,7 +927,7 @@ function DesktopViewerStreamScreen() {
                   padding: '6px 10px', borderRadius: 999,
                   background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(6px)',
                   border: '1px solid rgba(255,255,255,0.16)',
-                  color: 'rgba(255,255,255,0.85)', fontSize: 11.5, fontWeight: 600,
+                  color: 'rgba(255,255,255,0.85)', fontSize: 12, fontWeight: 600,
                   cursor: 'pointer',
                 }}
               >
@@ -900,7 +939,9 @@ function DesktopViewerStreamScreen() {
                 own connection is the thing that is down. */}
             {!online
               ? <PlaybackStateView state="offline" onRetry={() => window.location.reload()} onLeave={() => navigate(-1)} />
-              : (stalled && streamDoc.status === 'live' && <ReconnectingOverlay />)}
+              : hostDropped && streamDoc.status === 'live'
+                ? <PlaybackStateView state="hostdropped" onRetry={() => window.location.reload()} onLeave={() => navigate(-1)} />
+                : (stalled && streamDoc.status === 'live' && <ReconnectingOverlay />)}
             {/* ⚠⚠ AUDIO-ONLY REPLACES THE VIDEO, so it renders at the MEDIA layer and not in
                 a blocking-state ternary. In the preview it once sat there as an opaque
                 inset:0 layer mounted last and buried the chrome on six of seven surfaces:
@@ -923,6 +964,7 @@ function DesktopViewerStreamScreen() {
                 partners={linkedStreamDocs}
                 currentStreamId={streamDoc.id}
                 compositeOwner={streamDoc.compositeOwner}
+                selfHost={hostInfo}
                 onSwitch={(targetId) => navigate(`/watch/${targetId}`)}
                 onInspect={(partner) => setQuickSheet({ uid: partner.hostUid, streamId: partner.id })}
               />
@@ -939,6 +981,7 @@ function DesktopViewerStreamScreen() {
                 <StreamGoalBar goal={streamDoc.goal} compact />
               </div>
             )}
+            <HypeTrainView train={streamDoc.hypeTrain} />
             <TipAlertOverlay lastTip={streamDoc.lastTip} anchor="top" />
             <SubAlertOverlay lastSub={streamDoc.lastSub} anchor="bottom" />
             {/* ⚠ A RAID ARRIVES THROUGH THE STREAM DOC. `functions/raids.js` writes
@@ -964,7 +1007,7 @@ function DesktopViewerStreamScreen() {
             <div style={{
               position: 'absolute', top: 12, right: 12,
               display: 'flex', alignItems: 'center', gap: 6,
-              padding: '3px 10px', background: 'rgba(0,0,0,0.55)', borderRadius: 99,
+              padding: '3px 10px', background: 'rgba(0,0,0,0.55)', borderRadius: 999,
               fontSize: 11, fontWeight: 700, color: '#fff',
               opacity: barVisible ? 1 : 0, transition: 'opacity 0.22s ease',
             }}>
@@ -996,7 +1039,7 @@ function DesktopViewerStreamScreen() {
                     title={u.switchToStreamId ? 'Watch their stream' : 'View profile'}
                     style={{
                       display: 'flex', alignItems: 'center', gap: 6,
-                      padding: '4px 10px', borderRadius: 99,
+                      padding: '4px 10px', borderRadius: 999,
                       background: C.cardSoft, border: `1px solid ${C.border}`,
                       color: C.text, cursor: 'pointer', fontSize: 12,
                     }}>
@@ -1004,9 +1047,12 @@ function DesktopViewerStreamScreen() {
                     <UserName user={u} masked />
                     {u.switchToStreamId && (
                       <span style={{
+                        // Solid well, no ring. A 15% green over the card had no
+                        // value of its own and needed the hairline to be visible
+                        // at all, which is the fake-glass shape the founder
+                        // rejected. #0E2C18 reads green on its own.
                         fontSize: 9, fontWeight: 800, color: C.green,
-                        padding: '1px 6px', background: 'rgba(34,197,94,0.15)',
-                        border: `1px solid rgba(34,197,94,0.4)`, borderRadius: 99,
+                        padding: '1px 6px', background: '#0E2C18', borderRadius: 999,
                       }}>● LIVE</span>
                     )}
                   </button>
@@ -1025,7 +1071,7 @@ function DesktopViewerStreamScreen() {
                 </div>
                 <div style={{ minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                    <span style={{ fontSize: 17, fontWeight: 800 }}><UserName user={hostInfo} masked fallback={'Host'} /></span>
+                    <span style={{ fontSize: 16, fontWeight: 800 }}><UserName user={hostInfo} masked fallback={'Host'} /></span>
                     {hostInfo?.isVerified && <Icon name="verified" size={15} filled style={{ color: C.purpleLight }} className=""/>}
                   </div>
                   <div style={{ fontSize: 12, color: C.textDim }}>Open profile</div>
@@ -1067,7 +1113,7 @@ function DesktopViewerStreamScreen() {
                 )}
               </div>
             </div>
-            <div dir="auto" style={{ fontSize: 15, fontWeight: 700, lineHeight: 1.4 }}>{streamDoc.title || 'Live stream'}</div>
+            <div dir="auto" style={{ fontSize: 14, fontWeight: 700, lineHeight: 1.4 }}>{streamDoc.title || 'Live stream'}</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               {streamDoc.game && <span style={{ fontSize: 13, color: C.purpleLight, fontWeight: 700 }}>{streamDoc.game}</span>}
               {(streamDoc.tags || []).slice(0, 4).map((t) => (
@@ -1085,10 +1131,10 @@ function DesktopViewerStreamScreen() {
           {(hostInfo?.bio || hostInfo?.followerCount != null) && (
             <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 10 }}>
-                <span style={{ fontSize: 15, fontWeight: 800 }}>About <UserName user={hostInfo} masked fallback={'the host'} /></span>
+                <span style={{ fontSize: 14, fontWeight: 800 }}>About <UserName user={hostInfo} masked fallback={'the host'} /></span>
                 {hostInfo?.isVerified && <Icon name="verified" size={14} filled style={{ color: C.purpleLight }} className=""/>}
               </div>
-              <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 4 }}>{compactNum(hostInfo?.followerCount || 0)} followers</div>
+              <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 4 }}>{compactNum(hostInfo?.followerCount || 0)} followers</div>
               {hostInfo?.bio && <div style={{ fontSize: 13, color: C.textDim, lineHeight: 1.5 }}>{hostInfo.bio}</div>}
             </div>
           )}
@@ -1100,7 +1146,7 @@ function DesktopViewerStreamScreen() {
           {topGifters.length > 0 && (
             <div style={{ display: 'flex', gap: 8, padding: '8px 12px', borderBottom: `1px solid ${C.border}`, overflowX: 'auto', flexShrink: 0 }}>
               {topGifters.slice(0, 3).map((g, i) => (
-                <span key={g.uid} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 8px', borderRadius: 999, background: C.card, fontSize: 11.5, fontWeight: 700, whiteSpace: 'nowrap' }}>
+                <span key={g.uid} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 8px', borderRadius: 999, background: C.card, fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap' }}>
                   <Icon name={i === 0 ? 'emoji_events' : 'paid'} size={13} filled={i === 0} style={{ color: C.amber }} className=""/>
                   <span style={{ maxWidth: 72, overflow: 'hidden', textOverflow: 'ellipsis' }}><UserName user={g} masked /></span>
                   <span style={{ color: C.amber }}>{compactNum(g.coins)}</span>
@@ -1112,7 +1158,7 @@ function DesktopViewerStreamScreen() {
             <ChatPanel
               onAppeal={(kind) => setAppealKind(kind)}
               streamId={streamDoc.id} layout="side" hostUid={streamDoc.hostUid}
-              slowModeSec={streamDoc.slowModeSec || 0} followersOnly={!!streamDoc.followersOnly}
+              slowModeSec={streamDoc.slowModeSec || 0} followersOnly={!!streamDoc.followersOnly} subsOnly={!!streamDoc.subsOnly} mutedUids={streamDoc.mutedUids || null}
               pinnedMessage={streamDoc.pinnedMessage || null}
             />
           </div>
@@ -1130,6 +1176,7 @@ function DesktopViewerStreamScreen() {
       />
       {giftTo && (
         <GiftSubSheet creatorId={streamDoc.hostUid} recipient={giftTo}
+          candidates={giftCandidates}
           onClose={() => setGiftTo(null)} showToast={showToast} />
       )}
 
@@ -1209,7 +1256,7 @@ function DesktopViewerStreamScreen() {
        n=3: [0_0 | w0_0 | w0+w1_0]  → three columns (padded centered to 1280)
        n=4: 2×2                      → slot 0 TL, 1 TR, 2 BL, 3 BR
     Slot 0 is the composite owner (their stream initiated the merge). */
-function MultiGuestOverlay({ partners, currentStreamId, compositeOwner, onSwitch, onInspect }) {
+function MultiGuestOverlay({ partners, currentStreamId, compositeOwner, selfHost, onSwitch, onInspect }) {
   // Resolve slot order. Slot 0 = compositeOwner. Remaining slots fill from
   // partners[] in their linkedStreamIds order (deterministic insertion).
   const slots = [];
@@ -1261,6 +1308,10 @@ function MultiGuestOverlay({ partners, currentStreamId, compositeOwner, onSwitch
             isSelf={slot.isSelf}
             rect={r}
             partner={slot.partner}
+            // Slot 0 IS the composite owner by construction above, so the role
+            // needs no extra lookup and cannot disagree with the video.
+            role={i === 0 ? 'HOST' : 'CO-HOST'}
+            selfHost={selfHost}
             onTap={() => !slot.isSelf && onSwitch(slot.streamId)}
             onLongPress={() => !slot.isSelf && onInspect?.(slot.partner)}
           />
@@ -1270,7 +1321,7 @@ function MultiGuestOverlay({ partners, currentStreamId, compositeOwner, onSwitch
   );
 }
 
-function SlotTapZone({ isSelf, rect, partner, onTap, onLongPress }) {
+function SlotTapZone({ isSelf, rect, partner, role, selfHost, onTap, onLongPress }) {
   const [host, setHost] = useState(null);
   const [hover, setHover] = useState(false);
   const pressTimerRef = useRef(null);
@@ -1318,20 +1369,43 @@ function SlotTapZone({ isSelf, rect, partner, onTap, onLongPress }) {
         transition: 'box-shadow 0.18s ease-out',
       }}
     >
-      {/* Bottom-left name label (no chrome). Hidden on the self slot. */}
-      {!isSelf && host && (
+      {/* ⚠⚠ THE ROLE SITS WITH THE NAME AT THE BOTTOM, NEVER AT THE TOP-LEFT.
+          That corner is where every stream surface puts its own chrome, and the
+          preview measured the consequence: HOST was covered by the LIVE pill at
+          29x9, and a hit-test at the label's own centre returned the pill.
+          Putting the role with the name it labels cannot collide by construction.
+
+          ⚠ THE SELF SLOT IS LABELLED TOO. It rendered nothing at all, so in a
+          four-way composite a viewer saw names on three tiles and a blank on the
+          one they were actually watching, with no way to tell which person was
+          the host.
+
+          ⚠ THE FILLS ARE SOLID. The hover state was rgba(124,58,237,0.85) over a
+          rgba(0,0,0,0.55) plate with a 6px backdrop blur, which is the fake-glass
+          treatment the founder has rejected twice; over live video a wash also
+          changes value shot to shot, so the name went unreadable on a bright
+          frame. */}
+      {(host || (isSelf && selfHost)) && (
         <div style={{
           position: 'absolute', left: 10, bottom: 10,
-          display: 'flex', alignItems: 'center', gap: 6,
-          padding: '4px 10px 4px 4px', borderRadius: 99,
-          background: hover ? 'rgba(124,58,237,0.85)' : 'rgba(0,0,0,0.55)',
-          color: '#fff', fontSize: 11, fontWeight: 700,
-          backdropFilter: 'blur(6px)',
-          transition: 'background 0.18s ease-out',
+          display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 3,
           pointerEvents: 'none',
         }}>
-          <UserAvatar src={host.avatar} size="xs"/>
-          <UserName user={host} masked />
+          <span style={{
+            padding: '2px 7px', borderRadius: 4,
+            fontSize: 9, fontWeight: 800, letterSpacing: '0.08em',
+            background: role === 'HOST' ? '#7c3aed' : '#100C1C', color: '#fff',
+          }}>{role}</span>
+          <span style={{
+            display: 'flex', alignItems: 'center', gap: 6,
+            padding: '4px 10px 4px 4px', borderRadius: 999,
+            background: hover && !isSelf ? '#7c3aed' : '#100C1C',
+            color: '#fff', fontSize: 11, fontWeight: 700,
+            transition: 'background 0.18s ease-out',
+          }}>
+            <UserAvatar src={(host || selfHost)?.avatar} size="xs"/>
+            <UserName user={host || selfHost} masked />
+          </span>
         </div>
       )}
     </div>
@@ -1392,14 +1466,14 @@ const iconBtn = {
 };
 
 const pillBtn = {
-  padding: '6px 12px', borderRadius: 99, border: 'none',
+  padding: '6px 12px', borderRadius: 999, border: 'none',
   background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: 12, fontWeight: 700,
   cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
 };
 
 function pillSm(extra = {}) {
   return {
-    padding: '2px 8px', borderRadius: 99, fontSize: 10, fontWeight: 800,
+    padding: '2px 8px', borderRadius: 999, fontSize: 10, fontWeight: 800,
     letterSpacing: '0.06em', color: '#fff', ...extra,
   };
 }
@@ -1541,11 +1615,13 @@ function TipModal({ amount, setAmount, message, setMessage, onClose, onSend, sen
           {[['tip', 'Tip'], ['boost', 'Boost']].map(([id, label]) => (
             <button key={id} type="button" onClick={() => setGiftTab(id)}
               style={{
-                flex: 1, padding: '8px 10px', borderRadius: 9, cursor: 'pointer',
+                flex: 1, padding: '8px 10px', borderRadius: 8, cursor: 'pointer',
                 border: 'none', fontSize: 13, fontWeight: 800,
-                background: giftTab === id ? C.purpleSoft : 'rgba(255,255,255,0.04)',
-                color: giftTab === id ? C.purpleLight : C.textDim,
-                boxShadow: giftTab === id ? 'inset 0 0 0 1px ' + C.purple : 'none',
+                // Selected is a SOLID accent fill with white type. It was a 15%
+                // violet wash carrying violet type, about 1.5:1, propped up by an
+                // inset ring doing the work the fill should have been doing.
+                background: giftTab === id ? C.purple : '#191527',
+                color: giftTab === id ? '#fff' : C.textDim,
               }}>{label}</button>
           ))}
         </div>
@@ -1563,9 +1639,9 @@ function TipModal({ amount, setAmount, message, setMessage, onClose, onSend, sen
           {PRESETS.map((p) => (
             <button key={p} onClick={() => setAmount(p)} style={{
               padding: '6px 12px', borderRadius: 6,
-              background: amount === p ? C.purpleSoft : 'rgba(255,255,255,0.04)',
+              background: amount === p ? C.purple : '#191527',
               border: `1px solid ${amount === p ? C.purple : C.border}`,
-              color: amount === p ? C.purpleLight : C.textDim,
+              color: amount === p ? '#fff' : C.textDim,
               fontSize: 12, fontWeight: 700, cursor: 'pointer',
             }}>{p}c</button>
           ))}

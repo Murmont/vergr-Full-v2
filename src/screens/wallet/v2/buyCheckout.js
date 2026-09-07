@@ -161,6 +161,7 @@ export function useBuyCheckout(showToast, opts = {}) {
  */
 export async function checkoutCartViaPlay(lines, uid, showToast) {
   const { buyCoinPack, playProductIdFor } = await import('../../../utils/nativeBilling');
+  const { isStoreItemSku } = await import('../../../utils/storeItems');
 
   const total = lines.reduce((n, l) => n + l.qty, 0);
   let bought = 0;
@@ -168,7 +169,14 @@ export async function checkoutCartViaPlay(lines, uid, showToast) {
   for (const line of lines) {
     for (let i = 0; i < line.qty; i += 1) {
       try {
-        await buyCoinPack(playProductIdFor(line.sku), uid);
+        // ⚠ A store item's SKU IS its Play product id (`vpb_flash`,
+        // `boost_post`). Running it through playProductIdFor() would ask Play
+        // for `coins_vpb_flash`, which does not exist, and the sheet reports
+        // "product not loaded" rather than failing usefully.
+        await buyCoinPack(
+          isStoreItemSku(line.sku) ? line.sku : playProductIdFor(line.sku),
+          uid,
+        );
         bought += 1;
       } catch (err) {
         const code = err?.code;

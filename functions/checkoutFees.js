@@ -62,6 +62,16 @@ const VAT_RATES = {
 /** PayRam's own published settlement band is 1-5%; 3% is the midpoint. */
 const PAYRAM_SETTLEMENT_DEFAULT = 0.03;
 
+// Google Play's cut, added to the buyer at checkout so Vergr nets the shelf
+// price. Overridable live via `app_config/general.playServiceFeePct`.
+//
+// ⚠ 15% = Google's 10% service fee + the 5% billing fee that applies in the US,
+// UK and EEA when the transaction uses Google Play's billing system (Play
+// Console Help 11131145 / 16954621, structure effective 30 June 2026). Markets
+// outside that set are 10%, so this is the WORST case and never under-recovers.
+// MIRRORS PLAY_SERVICE_FEE in src/utils/storePricing.js — change both together.
+const PLAY_SERVICE_FEE_DEFAULT = 0.15;
+
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
 function vatFor(country) {
@@ -103,9 +113,35 @@ async function quoteCheckout({ subtotalUsd, method, uid }) {
     cfg = snap.exists ? (snap.data() || {}) : {};
   } catch { /* defaults below */ }
 
-  // Play is charged and taxed entirely by Google. We never restate its price and
-  // never add to it: an itemised fee here would imply a charge we do not make,
-  // and surcharging an IAP is a policy violation on top of that.
+  // ── GOOGLE PLAY ──────────────────────────────────────────────────
+  //
+  // FOUNDER DECISION 2026-08-28, stated three times: **Vergr does not pay
+  // Google's cut.** It is added at the checkout, exactly like the PayRam
+  // settlement fee below, so the shelf price is what Vergr NETS.
+  //
+  // This replaces "we never add to it, the Play sheet is final", which had the
+  // effect of Vergr absorbing 15% of every Play sale. The economy and the
+  // creator revenue share are both computed off the shelf price, so absorbing
+  // the fee silently underfunds both.
+  //
+  // ⚠⚠ THE FEE IS ADDED IN THE PLAY CONSOLE PRICE, NOT AS A LINE HERE, AND THAT
+  // IS NOT A SOFTENING OF THE RULE — IT IS THE ONLY PLACE IT CAN GO.
+  //
+  // An earlier pass added a "Google Play fee" line to this quote. That was
+  // wrong and would have shipped the exact defect the founder warned about:
+  // the Play purchase sheet charges EXACTLY the Console price and nothing can
+  // be appended at runtime, so an itemised fee here would print a total the
+  // buyer is never charged. `fetchPlayPrices()` (src/utils/nativeBilling.js)
+  // already reads Play's own localised string for display, precisely so the
+  // shelf and the sheet cannot disagree.
+  //
+  // So: the Console price is SET to the grossed-up figure. The buyer pays
+  // Google's cut at Google's checkout, Vergr nets the shelf price, and nothing
+  // in this app restates it.
+  //
+  //   Console price = shelf ÷ (1 − fee), charm-rounded UP
+  //   scripts/coin-ladder-check.mjs prints the required figure per pack and
+  //   fails the build if any of them would net less than the shelf price.
   if (method === 'googlePlay') {
     return {
       method, currency: 'USD', subtotal,

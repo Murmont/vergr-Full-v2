@@ -63,6 +63,14 @@ export function LiveUsersProvider({ children }) {
             viewerCount: data.viewerCount || 0,
             orientation: data.orientation || null,
             boosted: !!data.boosted,
+            // ⚠ CARRIED SO A RAID PICKER COSTS NOTHING. `functions/raids.js`
+            // refuses an audio-only or gated target, so any surface offering
+            // raid candidates must filter the same way or it renders buttons
+            // the server will reject. Reading it here is free: it rides the one
+            // snapshot this context already holds, and the alternative was a
+            // fresh getDocs every time a host ended a stream.
+            audioOnly: data.audioOnly === true,
+            ticketed: data.audience === 'ticketed',
             coverUrl: data.coverUrl || data.thumbnailUrl || null,
             // Only publicly-discoverable streams belong on discovery rails.
             discoverable: data.discoverable !== false && data.unlisted !== true,

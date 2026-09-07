@@ -181,6 +181,52 @@ const CUSTOM_COIN_PRICE_USD = 0.0127;
 // conservative local guard rather than a mirrored constant.
 const CUSTOM_MIN_USD        = 10;
 
+// STORE ITEMS on the CARD rail: VP bonus packs and boosts, paid for in cash.
+//
+// FOUNDER, 2026-08-28: a boost is charged in COINS only when the wallet covers
+// it; otherwise it charges USD. On the Play build that USD charge is an IAP
+// (functions/playBilling.js PLAY_ITEM_PRODUCTS). On the web there is no Play
+// Billing at all, so it comes through here.
+//
+// ⚠⚠ THE CASH PRICE IS NOT DERIVED FROM THE COIN PRICE. Pricing an item at
+// playPriceFor(its coin count) put a 75-coin bonus at $1.09, which is what 78
+// coins cost: nobody buys that, and it devalues the coin. The rule is
+// priceUSD = charmRound(max(2 x coin-equivalent, $0.99)), so paying with coins
+// is always about half the cash price.
+//
+// ⚠ SKUs are the SAME strings as the Play product ids, on purpose. One
+// namespace across both rails means a cart line, a Play IAP and a ledger row
+// all name the item identically, and the prefixes keep them from colliding
+// with a coin SKU.
+//
+// ⚠ No regional multiplier, and that is not an oversight. A boost is CONSUMED,
+// so it is not the arbitrage a discounted coin would be, but it is bought with
+// the same money as coins on the same screen, and two different geo rules on
+// one checkout is how a price stops being explainable.
+//
+// ⚠ MIRRORS functions/vpBonuses.js and functions/boosts.js.
+// scripts/coin-ladder-check.mjs fails the build on any drift.
+const STORE_ITEMS = {
+  vpb_happy_hour:     { kind: 'bonus', id: 'happy_hour',   name: 'Happy Hour',            priceUSD: 0.99 },
+  vpb_flash:          { kind: 'bonus', id: 'flash',        name: 'Flash Surge',           priceUSD: 0.99 },
+  vpb_half_day:       { kind: 'bonus', id: 'half_day',     name: 'Half-Day Surge',        priceUSD: 1.59 },
+  vpb_day:            { kind: 'bonus', id: 'day',          name: 'Day Surge',             priceUSD: 2.59 },
+  vpb_weekend:        { kind: 'bonus', id: 'weekend',      name: 'Weekend Surge',         priceUSD: 4.49 },
+  vpb_long:           { kind: 'bonus', id: 'long',         name: 'Long Surge',            priceUSD: 11.99 },
+  vpb_creator:        { kind: 'bonus', id: 'creator',      name: 'Creator Surge',         priceUSD: 1.99 },
+  vpb_community:      { kind: 'bonus', id: 'community',    name: 'Community Surge',       priceUSD: 1.99 },
+  vpb_watcher:        { kind: 'bonus', id: 'watcher',      name: 'Watcher Surge',         priceUSD: 1.29 },
+  boost_post:         { kind: 'boost', id: 'post',         name: 'Post Boost',            priceUSD: 0.99 },
+  boost_lfg:          { kind: 'boost', id: 'lfg',          name: 'Teammate Search Boost', priceUSD: 0.99 },
+  boost_profile:      { kind: 'boost', id: 'profile',      name: 'Profile Boost',         priceUSD: 1.29 },
+  boost_squad:        { kind: 'boost', id: 'squad',        name: 'Squad Boost',           priceUSD: 0.99 },
+  boost_stream_boost: { kind: 'boost', id: 'stream_boost', name: 'Stream Boost',          priceUSD: 0.99 },
+  boost_stream_super: { kind: 'boost', id: 'stream_super', name: 'Super Boost',           priceUSD: 1.99 },
+  boost_stream_mega:  { kind: 'boost', id: 'stream_mega',  name: 'Mega Boost',            priceUSD: 6.99 },
+};
+
+exports._STORE_ITEMS = STORE_ITEMS;
+
 // Subscription card payments (mirror functions/subscriptions.js TIER_EUR_PRICE).
 const TIER_EUR_PRICE = { lite: 4.99, pro: 9.99 };
 const SUB_PERIOD_MS  = 30 * 24 * 3600 * 1000;
@@ -201,7 +247,7 @@ exports.createPayramPayment = onCall({ region: REGION, secrets: SECRETS }, async
   // `gemQuoteId` and the whole buy-and-send branch were removed on 2026-08-16.
   // It let a buyer pay by card to mint value directly into another user's
   // wallet, which is the clearest money-transmission shape the product had.
-  const { packSku, customCoins, subscriptionTier, cart } = request.data || {};
+  const { packSku, customCoins, subscriptionTier, cart, itemSku } = request.data || {};
   let order; // { kind, sku, coins, vpBonus, priceEUR, tier? }
   if (Array.isArray(cart) && cart.length) {
     // CART CHECKOUT. The client sends WHAT, never HOW MUCH: a list of
@@ -216,20 +262,42 @@ exports.createPayramPayment = onCall({ region: REGION, secrets: SECRETS }, async
     let vpBonus = 0;
     let priceUSD = 0;
     const lines = [];
+    const items = [];
     for (const raw of cart.slice(0, 20)) {
       const sku = String(raw?.sku || '');
       const qty = Math.min(99, Math.max(1, Math.floor(Number(raw?.qty) || 0)));
       const pack = COIN_PACKS[sku];
-      if (!pack) throw new HttpsError('invalid-argument', `Unknown pack: ${sku}`);
-      coins    += pack.coins   * qty;
-      vpBonus  += pack.vpBonus * qty;
-      priceUSD += pack.priceUSD * qty;
-      lines.push({ sku, qty, coins: pack.coins * qty, priceUSD: +(pack.priceUSD * qty).toFixed(2) });
+      if (pack) {
+        coins    += pack.coins   * qty;
+        vpBonus  += pack.vpBonus * qty;
+        priceUSD += pack.priceUSD * qty;
+        lines.push({ sku, qty, coins: pack.coins * qty, priceUSD: +(pack.priceUSD * qty).toFixed(2) });
+        continue;
+      }
+      // A basket may mix coins and store items. One invoice for the lot, because
+      // three redirects to buy three things is not a checkout.
+      const it = STORE_ITEMS[sku];
+      if (!it) throw new HttpsError('invalid-argument', `Unknown pack: ${sku}`);
+      priceUSD += it.priceUSD * qty;
+      lines.push({ sku, qty, coins: 0, priceUSD: +(it.priceUSD * qty).toFixed(2) });
+      items.push({ sku, kind: it.kind, id: it.id, qty });
     }
-    if (!coins) throw new HttpsError('invalid-argument', 'Cart is empty.');
+    if (!coins && !items.length) throw new HttpsError('invalid-argument', 'Cart is empty.');
     order = {
       kind: 'coins', sku: 'cart', coins, vpBonus,
-      priceUSD: +priceUSD.toFixed(2), lines,
+      priceUSD: +priceUSD.toFixed(2), lines, items,
+    };
+  } else if (itemSku) {
+    // QUICK BUY. The boost sheet on a live stream must not send the buyer to a
+    // basket: founder, 2026-08-28, *"if I am on a stream I will not want to
+    // leave the stream in order to purchase more coins"*.
+    const it = STORE_ITEMS[String(itemSku)];
+    if (!it) throw new HttpsError('invalid-argument', 'Unknown item');
+    const qty = Math.min(99, Math.max(1, Math.floor(Number(request.data?.qty) || 1)));
+    order = {
+      kind: 'coins', sku: String(itemSku), coins: 0, vpBonus: 0,
+      priceUSD: +(it.priceUSD * qty).toFixed(2),
+      items: [{ sku: String(itemSku), kind: it.kind, id: it.id, qty }],
     };
   } else if (subscriptionTier) {
     const priceEUR = TIER_EUR_PRICE[subscriptionTier];
@@ -493,8 +561,62 @@ async function settlePayramOrder(referenceId, ctx = {}) {
     }
 
 
+    // ── STORE ITEMS (VP bonuses / boosts) ──
+    //
+    // Granted through the SAME helpers a coin purchase uses, so a bonus bought
+    // with a card is the identical object to one bought with coins and expires
+    // the same way. Reads come first because Firestore forbids a read after a
+    // write inside a transaction, and applyPack needs the user snapshot.
+    const orderItems = Array.isArray(order.items) ? order.items : [];
+    let userSnapForItems = null;
+    if (orderItems.some((i) => i && i.kind === 'bonus')) {
+      userSnapForItems = await t.get(db.collection('users').doc(order.uid));
+    }
+
     // ── Coin purchase ──
-    if (typeof order.coinsToCredit !== 'number') return { credited: false, reason: 'order-malformed' };
+    if (typeof order.coinsToCredit !== 'number' && !orderItems.length) {
+      return { credited: false, reason: 'order-malformed' };
+    }
+    if (orderItems.length) {
+      const { applyPack, VP_BONUS_PACKS } = require('./vpBonuses');
+      const { creditBoosts, BOOSTS } = require('./boosts');
+      const itemWalletRef = db.collection('wallets').doc(order.uid);
+      const itemUserRef = db.collection('users').doc(order.uid);
+      const now = Date.now();
+      for (const line of orderItems) {
+        const qty = Math.min(99, Math.max(1, Math.floor(Number(line?.qty) || 1)));
+        if (line?.kind === 'bonus') {
+          const pack = VP_BONUS_PACKS.find((p) => p.id === line.id);
+          // A missing pack must not strand a paid order: skip the line, settle
+          // the rest, and leave the row in the transactions ledger to correct.
+          if (!pack || !userSnapForItems || !userSnapForItems.exists) continue;
+          // qty is ignored for a bonus on purpose. Stacking is additive on the
+          // excess with a hard 3.0 ceiling, so a second copy of the same pack
+          // buys almost nothing and would read as a bug on the receipt.
+          applyPack(t, itemUserRef, userSnapForItems.data(), pack, 'card_purchase', now);
+        } else if (line?.kind === 'boost') {
+          const boost = BOOSTS.find((b) => b.id === line.id);
+          if (!boost) continue;
+          creditBoosts(t, itemWalletRef, boost.id, qty);
+        }
+        t.create(db.collection('transactions').doc(), {
+          userId: order.uid,
+          type: line.kind === 'bonus' ? 'vp_bonus_purchase' : 'boost_purchase',
+          currency: 'usd',
+          amount: 0,
+          description: (line.kind === 'bonus' ? 'VP bonus: ' : 'Boost: ') + line.sku + ' (card)',
+          gateway: 'payram',
+          payramReferenceId: referenceId,
+          ...(line.kind === 'bonus' ? { packId: line.id } : { boostId: line.id, qty }),
+          createdAt: FieldValue.serverTimestamp(),
+        });
+      }
+      // An items-only order has no coins to credit and is finished here.
+      if (!order.coinsToCredit) {
+        t.update(orderRef, settleStamp);
+        return { credited: true, uid: order.uid, kind: 'items', items: orderItems };
+      }
+    }
     const walletRef = db.collection('wallets').doc(order.uid);
     t.set(walletRef, {
       balance: FieldValue.increment(order.coinsToCredit),
@@ -802,7 +924,7 @@ exports.getCoinPriceQuote = onCall(
     const uid = request.auth?.uid;
     if (!uid) throw new HttpsError('unauthenticated', 'Sign in required.');
 
-    const { packSku, customCoins, subscriptionTier, all, cart, method } = request.data || {};
+    const { packSku, customCoins, subscriptionTier, all, cart, method, itemSku } = request.data || {};
 
     // Fees and tax are quoted by the SERVER, on the same call that prices the
     // basket, so the breakdown and the total can never come from two different
@@ -845,17 +967,30 @@ exports.getCoinPriceQuote = onCall(
     if (Array.isArray(cart) && cart.length) {
       let coinsTotal = 0;
       let usdTotal = 0;
+      let itemCount = 0;
       const lines = [];
       for (const raw of cart.slice(0, 20)) {
         const sku = String(raw?.sku || '');
         const qty = Math.min(99, Math.max(1, Math.floor(Number(raw?.qty) || 0)));
         const pack = COIN_PACKS[sku];
-        if (!pack) continue;
-        coinsTotal += pack.coins * qty;
-        usdTotal   += pack.priceUSD * qty;
-        lines.push({ sku, qty, coins: pack.coins * qty, priceUSD: +(pack.priceUSD * qty).toFixed(2) });
+        if (pack) {
+          coinsTotal += pack.coins * qty;
+          usdTotal   += pack.priceUSD * qty;
+          lines.push({ sku, qty, coins: pack.coins * qty, priceUSD: +(pack.priceUSD * qty).toFixed(2) });
+          continue;
+        }
+        // Store items (VP bonuses, boosts) price off their own USD price, NEVER
+        // off their coin cost. See the STORE_ITEMS header.
+        const it = STORE_ITEMS[sku];
+        if (!it) continue;
+        itemCount += qty;
+        usdTotal += it.priceUSD * qty;
+        lines.push({
+          sku, qty, coins: 0, kind: it.kind, name: it.name,
+          priceUSD: +(it.priceUSD * qty).toFixed(2),
+        });
       }
-      if (!coinsTotal) throw new HttpsError('invalid-argument', 'Cart is empty.');
+      if (!coinsTotal && !itemCount) throw new HttpsError('invalid-argument', 'Cart is empty.');
       const usd = +usdTotal.toFixed(2);
       return {
         coins: coinsTotal, priceUSD: usd, amountUSD: usd,
@@ -867,6 +1002,20 @@ exports.getCoinPriceQuote = onCall(
     // COINS: native USD, no conversion. SUBSCRIPTIONS: still EUR, because they
     // carry regional multipliers and those are safe only on something consumed
     // rather than redeemed.
+    // A single store item, for the Quick Buy sheet: it needs the fee lines
+    // without building a basket first.
+    if (itemSku) {
+      const it = STORE_ITEMS[String(itemSku)];
+      if (!it) throw new HttpsError('invalid-argument', 'Unknown item');
+      const qty = Math.min(99, Math.max(1, Math.floor(Number(request.data?.qty) || 1)));
+      const usd = +(it.priceUSD * qty).toFixed(2);
+      return {
+        coins: 0, priceUSD: usd, amountUSD: usd, currency: 'USD', fxRate: null,
+        item: { sku: String(itemSku), kind: it.kind, id: it.id, name: it.name, qty },
+        checkout: await feesFor(usd),
+      };
+    }
+
     if (!subscriptionTier) {
       let coins = 0;
       let priceUSD = 0;

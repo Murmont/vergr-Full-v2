@@ -241,6 +241,25 @@ func handleStreamWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// ── The moderators-only room ──────────────────────────────────────────
+	// ⚠⚠ THIS ROOM IS THE BROADCASTER'S OWN MODERATION TEAM, not Vergr staff.
+	// It exists so the people running THIS stream can coordinate ("timeout him,
+	// he did it last stream too") without the person being actioned reading it.
+	//
+	// ⚠ VERGR'S OWN MODERATORS (Vanguard) CAN READ IT, AND THAT IS DELIBERATE.
+	// A private room the platform cannot see is a moderation blind spot, and this
+	// is the room where it matters most: small, private, and occupied by people
+	// with power over other users. If a mod team coordinates harassment, this is
+	// the evidence. They are SILENT (see room.add) and every read is audited.
+	//
+	// ⚠ THE GATE IS HERE, ON THE JOIN, AND NOWHERE ELSE. A client-side filter is
+	// not a private channel: whatever the server sends, the client can read.
+	modChannel := r.URL.Query().Get("channel") == "mods"
+	roomID := streamID
+	if modChannel {
+		roomID = streamID + ":mods"
+	}
+
 	ctx := r.Context()
 	t, err := authClient.VerifyIDToken(ctx, token)
 	if err != nil {
@@ -274,13 +293,29 @@ func handleStreamWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Mod-room gate — see canJoinModRoom for the rule and why it is a function.
+	isStreamMod := uid == stream.HostUID || stream.IsModerator(uid)
+	isVanguard := user.VanguardRank != ""
+	if modChannel && !canJoinModRoom(isStreamMod, isVanguard) {
+		http.Error(w, "moderators only", http.StatusForbidden)
+		return
+	}
+
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		return
 	}
 	conn.SetReadLimit(64 << 10)
 
-	room := hub.GetOrCreateRoom(streamID)
+	room := hub.GetOrCreateRoom(roomID)
+
+	// ⚠ SILENT TO THE ROOM, NEVER SILENT IN THE LOG. A Vanguard reading a
+	// creator's private room is a real power and needs a record, or the answer to
+	// "who read my mod channel" is nobody knows. Same audit collection every other
+	// Vanguard action writes to.
+	if modChannel && isVanguard && !isStreamMod {
+		go auditModChannelRead(streamID, uid, user.VanguardRank)
+	}
 
 	// Twitch mirror: if this stream is a Twitch mirror, start the chat bridge
 	// (once per room). Vergr viewers see Twitch chat; their messages go back.
@@ -312,6 +347,11 @@ func handleStreamWS(w http.ResponseWriter, r *http.Request) {
 
 	p := newPeer(uid, user, conn, room)
 	p.streamMod = stream
+	// ⚠ A NAMED VANGUARD IN A THREE-PERSON ROOM DE-ANONYMISES THEM BY ELIMINATION,
+	// which is exactly what the identity mask exists to prevent. The product already
+	// decided this shape: <VanguardPresence> lets Overseers join streams silently.
+	// Reading is silent; if they SPEAK they have chosen to reveal themselves.
+	p.silent = modChannel && isVanguard && !isStreamMod
 	// Resolve follower status once (cheap, one read) for followers-only mode.
 	// Host is always treated as a follower of their own room.
 	if uid == stream.HostUID {
@@ -351,9 +391,62 @@ func handleStreamWS(w http.ResponseWriter, r *http.Request) {
 
 	// Send room hello. Mod flags whether YOU are a host-designated moderator
 	// (or the host) so the client can surface the moderation menu.
-	_ = p.write(Msg{Type: "hello", StreamID: streamID, You: uid, Mod: uid == stream.HostUID || stream.IsModerator(uid)})
+	_ = p.write(Msg{Type: "hello", StreamID: streamID, You: uid, Mod: isStreamMod})
 
 	p.run(ctx)
+}
+
+// canJoinModRoom decides who may open a broadcaster's moderators-only room.
+//
+// ⚠⚠ THIS IS A FUNCTION SO IT CAN BE TESTED. It is the whole privacy model of the
+// feature in one line, it is inline in an HTTP handler that needs a live stream and
+// a real Firebase token to exercise, and "the gate works" is exactly the claim that
+// must never rest on reading the code. main_test.go covers all four cases.
+//
+// ⚠ TWO KINDS OF MODERATOR AND THEY ARE NOT THE SAME THING:
+//
+//   isStreamMod — the HOST, or someone the host put in streams/{id}.moderatorUids.
+//     This room is THEIR tool; they coordinate their own room in it.
+//
+//   isVanguard  — Vergr's own platform-wide moderators. They get in because a
+//     private room the platform cannot see is a moderation blind spot, and this is
+//     the room where that matters most: small, private, and occupied by people with
+//     power over other users. They are SILENT (Peer.silent) and audited on join.
+//
+// ⚠ EVERYONE ELSE IS REFUSED HERE, ON THE JOIN. A client-side filter is not a
+// private channel — whatever the server sends, the client can read.
+func canJoinModRoom(isStreamMod, isVanguard bool) bool {
+	return isStreamMod || isVanguard
+}
+
+// auditModChannelRead records that a platform moderator opened a broadcaster's
+// private mod room.
+//
+// ⚠⚠ SILENT TO THE ROOM, NEVER SILENT IN THE LOG. Reading someone's private
+// channel is a real power; without a record the answer to "who read my mod
+// channel" is nobody knows. This is the accountability half of giving Vanguard
+// access at all, and it is not optional.
+//
+// ⚠ ONE ROW PER JOIN, NOT PER MESSAGE. A row per message would be a write per
+// line of someone else's conversation — unaffordable and useless. The join is the
+// event that matters: it is the moment the power was used.
+//
+// ⚠ FIRE AND FORGET. This must never delay or block the socket; a failed audit
+// write is logged, and the read still happens. Refusing the join on an audit
+// failure would let a Firestore blip lock moderators out of an incident.
+func auditModChannelRead(streamID, uid, rank string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, err := fsClient.Collection("vanguard_actions").NewDoc().Set(ctx, map[string]interface{}{
+		"kind":      "mod_channel_read",
+		"actorUid":  uid,
+		"rank":      rank,
+		"streamId":  streamID,
+		"createdAt": firestore.ServerTimestamp,
+	})
+	if err != nil {
+		log.Printf("audit mod_channel_read %s/%s: %v", streamID, uid, err)
+	}
 }
 
 // ============================================================
@@ -375,7 +468,14 @@ func (h *Hub) GetOrCreateRoom(id string) *Room {
 	}
 	r := &Room{ID: id, Peers: map[string]*Peer{}, hub: h, stopPresence: make(chan struct{})}
 	h.rooms[id] = r
-	r.startPresence()
+	// ⚠ THE MODS ROOM HAS NO PRESENCE. startPresence writes
+	// streams/{r.ID}.viewerCount every 10s, and r.ID here would be "<id>:mods" —
+	// a doc that does not exist. That is a failing Firestore write and a log line
+	// every ten seconds, forever, for every stream anyone opens the mod room on.
+	// The mods room is also not an audience; its headcount means nothing.
+	if !strings.HasSuffix(id, ":mods") {
+		r.startPresence()
+	}
 	return r
 }
 
@@ -455,7 +555,9 @@ func (r *Room) viewerCount(hostUID string) int {
 	defer r.mu.RUnlock()
 	seen := make(map[string]bool, len(r.Peers))
 	for _, p := range r.Peers {
-		if p.uid == "" || p.uid == hostUID {
+		// A silent observer is not an audience member and must never move a
+		// public number that the host (and everyone else) can see.
+		if p.uid == "" || p.uid == hostUID || p.silent {
 			continue
 		}
 		seen[p.uid] = true
@@ -554,6 +656,7 @@ type StreamMod struct {
 	BannedWords   []string         // already lowercased on save
 	SlowModeSec   int64            // per-uid send cooldown; 0 = off
 	FollowersOnly bool             // only host's followers (+ host + vanguard) may send
+	SubsOnly      bool             // only the host's active members (+ host + vanguard) may send
 	// Effect 13 (TTS on stream). OFF BY DEFAULT and host-controlled: letting a
 	// viewer's words be spoken aloud to a whole audience is the host's call, not
 	// ours. A missing field is false, which is the safe direction.
@@ -609,6 +712,7 @@ func parseStreamModFields(d map[string]interface{}) *StreamMod {
 	case float64: m.SlowModeSec = int64(n)
 	}
 	if v, ok := d["followersOnly"].(bool); ok { m.FollowersOnly = v }
+	if v, ok := d["subsOnly"].(bool); ok { m.SubsOnly = v }
 	if v, ok := d["ttsEnabled"].(bool); ok { m.TtsEnabled = v }
 	return m
 }
@@ -688,6 +792,12 @@ type Peer struct {
 	lastSendMs atomic.Int64  // last successful send, for slow-mode cooldown
 	lastHeartMs atomic.Int64 // last heart fan-out, for heart throttle
 	memberBadge *ChatBadge   // subscriber gem for THIS host, resolved once at connect
+	// ⚠ A SILENT PEER IS PRESENT BUT NOT VISIBLE. Set only for a Vanguard reading
+	// the broadcaster’s mods room. They are excluded from viewerCount and from the
+	// room’s peer announcements; a named platform moderator in a three-person room
+	// de-anonymises them by elimination, which is what the identity mask exists to
+	// prevent. Speaking is a deliberate act that reveals them.
+	silent bool
 }
 
 var peerCounter atomic.Int64
@@ -974,6 +1084,22 @@ func (p *Peer) handleSend(ctx context.Context, in Msg) {
 		// Followers-only: host's followers + Vanguard moderators exempt.
 		if p.streamMod.FollowersOnly && !p.isFollower && p.user.VanguardRank == "" {
 			_ = p.write(Msg{Type: "reject", Reason: "followers-only"})
+			return
+		}
+		// Subscribers-only. Until now this was a toggle the host could switch on
+		// and the relay had never heard of, so chat carried on exactly as before:
+		// an inert control, the same class as the boost that bought a badge.
+		//
+		// ⚠ IT COSTS NO EXTRA READ. Subscriber status is ALREADY resolved once at
+		// connect for the member gem (member_subscriptions/{host}_{uid}), and
+		// memberBadge is non-nil only when that doc says status == "active". So
+		// this is a field we already have, not a new lookup per message.
+		//
+		// ⚠ SAME EXEMPTIONS AS FOLLOWERS-ONLY, deliberately: the host is already
+		// excluded by the enclosing check, and a Vanguard moderator must be able
+		// to speak in a locked room or moderation stops when it is needed most.
+		if p.streamMod.SubsOnly && p.memberBadge == nil && p.user.VanguardRank == "" {
+			_ = p.write(Msg{Type: "reject", Reason: "subscribers-only"})
 			return
 		}
 		// Slow mode: enforce per-uid cooldown between successful sends.

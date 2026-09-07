@@ -2097,7 +2097,22 @@ service cloud.firestore {
         request.resource.data.streamerId == request.auth.uid ||
         request.resource.data.hostUid == request.auth.uid
       );
-      allow update: if isOwner(resource.data.streamerId) || isOwner(resource.data.hostUid) || isModerator();
+      // ⚠⚠ `hypeTrain` IS SERVER-ONLY, AND WITHOUT THIS IT IS A COIN PRINTER.
+      // The branch below grants the host write on ANY field of their own stream
+      // doc, and the bonus is computed from `hypeTrain.received`: a host could
+      // stamp `{received: 25000, level: 5}` on their own stream, end it, and
+      // collect the capped 5,000 coins for a train nobody rode. Written only by
+      // sendTip and endStreamSession, both of which derive it from tips that
+      // were actually paid.
+      //
+      // `peakViewers` and `viewerCount` join it for the same reason at a
+      // smaller scale: they are written by the Go relay's presence loop and are
+      // shown to viewers as fact.
+      //
+      // Same lock, same reasoning, as boostExpiresAt on posts and squads.
+      allow update: if (isOwner(resource.data.streamerId) || isOwner(resource.data.hostUid) || isModerator())
+        && !request.resource.data.diff(resource.data).affectedKeys()
+              .hasAny(['hypeTrain', 'peakViewers', 'viewerCount']);
       allow delete: if isOwner(resource.data.streamerId) || isOwner(resource.data.hostUid) || isModerator();
 
       match /chat/{messageId} {

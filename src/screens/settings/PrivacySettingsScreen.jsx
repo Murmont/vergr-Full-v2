@@ -9,6 +9,7 @@ import { useLayout } from '../../context/LayoutContext';
 import { updateUserSettings, getBlockedUsers, saveFeedPrefs, getFeedPrefs } from '../../firebase/firestore';
 import TopBar from '../../components/TopBar';
 import useResponsive from '../../hooks/useResponsive';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { C, Toggle, SelectDropdown, SectionLabel, PageShell } from './_settingsUI';
 import { PRIVACY_DEFAULTS } from '../../utils/privacy';
 import { getLocalNsfwPref, setLocalNsfwPref, isAgeVerified, platformAllowsNsfw } from '../../utils/nsfw';
@@ -65,6 +66,44 @@ export default function PrivacySettingsScreen() {
     if (!currentUser) return;
     getBlockedUsers(currentUser.uid).then(list => setBlockedCount(list?.length || 0)).catch(() => {});
   }, [currentUser]);
+
+  // ── Who may raid me ───────────────────────────────────────────────────
+  // ⚠ NOT PART OF `vals`. Everything else on this screen is saved into a nested
+  // `privacy` object by updateUserSettings; `raidPolicy` is a TOP-LEVEL field that
+  // only `setRaidPolicy` may write, because the server reads it to decide whether
+  // to move a stranger's whole audience into your room. Binding it to `vals` would
+  // write it to the wrong path and the setting would silently never apply.
+  //
+  // ⚠⚠ THIS IS THE CONTROL THAT PREVENTS HATE RAIDS, which is why it defaults to
+  // "following" rather than "anyone": a raid from someone you already follow is a
+  // raid from someone you chose.
+  const [raidPolicy, setRaidPolicyLocal] = useState('following');
+  const [raidSaving, setRaidSaving] = useState(false);
+  useEffect(() => {
+    const p2 = profile?.raidPolicy;
+    if (p2 === 'anyone' || p2 === 'following' || p2 === 'off') setRaidPolicyLocal(p2);
+  }, [profile?.raidPolicy]);
+
+  const RAID_LABEL = {
+    anyone: 'Anyone',
+    following: 'People I follow',
+    off: 'Nobody',
+  };
+  const saveRaidPolicy = async (label) => {
+    const next = Object.keys(RAID_LABEL).find((k) => RAID_LABEL[k] === label) || 'following';
+    const prev = raidPolicy;
+    setRaidPolicyLocal(next);
+    setRaidSaving(true);
+    try {
+      await httpsCallable(getFunctions(undefined, 'europe-west1'), 'setRaidPolicy')({ policy: next });
+    } catch (err) {
+      // ⚠ PUT IT BACK ON FAILURE. A safety control that LOOKS saved and is not is
+      // worse than one that visibly failed — the creator believes they are closed
+      // to raids and is not.
+      setRaidPolicyLocal(prev);
+      showToast('Could not save that', 'error');
+    } finally { setRaidSaving(false); }
+  };
 
   const set = (k, v) => {
     setVals(prev => {
@@ -153,6 +192,25 @@ export default function PrivacySettingsScreen() {
               <RowToggle label="Message requests" desc="Allow messages from people you don't follow." k="msgReq" icon="person"/>
               <RowSelect label="Who can tag me" desc="Choose who can tag you in content." k="tagMe"/>
               <RowToggle label="Read receipts" desc="Show others when you've read their messages." k="readReceipts" icon="done_all"/>
+            </Section>
+
+            <Section>
+              <SectionLabel>Live streaming</SectionLabel>
+              <div style={rowStyle}>
+                <div style={{ flex: 1 }}>
+                  <div style={lblStyle}>Who can raid me</div>
+                  <div style={descStyle}>
+                    When a stream ends its host can send their viewers to someone else.
+                    This decides who may send theirs to you.
+                  </div>
+                </div>
+                <SelectDropdown
+                  value={RAID_LABEL[raidPolicy]}
+                  options={[RAID_LABEL.anyone, RAID_LABEL.following, RAID_LABEL.off]}
+                  onChange={saveRaidPolicy}
+                  disabled={raidSaving}
+                />
+              </div>
             </Section>
 
             <Section>

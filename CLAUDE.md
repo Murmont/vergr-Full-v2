@@ -3240,6 +3240,223 @@ the **mod-only channel**.
 | Gift-a-sub | ✅ no gifter gate, no renewal, bulk at qty × price **with no discount** |
 | Raid / host | ✅ **BUILT + DEPLOYED** — `functions/raids.js` + `RaidControls.jsx`. Target controls who may raid them; countdown + Stay here; VP capped daily. Host mode dropped. |
 
+### 🔌 TWO WHOLE FEATURES HAD NO ENTRY POINT (2026-09-07, SHIPPED + DEPLOYED)
+
+Found while porting the preview onto the real screens. Both are the shape this
+file already records three times over (the boost that drew a badge, the three
+inert kill switches, the avatar orbit only its owner could see).
+
+⚠⚠ **CO-HOSTING WAS UNREACHABLE ON EVERY PLATFORM.** `CoHostInviteModal.jsx`
+was mounted in **ZERO files**, while its own header declares it "the ONLY
+co-host entry point now (the pre-broadcast GoLiveSetupScreen no longer carries a
+co-stream button)". So both doors were shut at once: a deployed
+`inviteToCoStream`, the SFU `ingest_<streamId>` room, the `vergr-cohost` ffmpeg
+compositor and the whole `CoStreamInviteScreen` accept flow, with no way for a
+host to start one. Now in the More sheet of **both** broadcasters, live-only.
+**Co-streaming is free precisely because it drives tips**, so an unreachable one
+cost revenue directly.
+
+⚠⚠ **`raidStream` HAD NEVER BEEN CALLED BY ANYBODY.** `RaidPicker` was mounted
+in exactly one file, `StreamEndingScreen.jsx`, at route `/stream/ended` — and
+**nothing in the app navigates there.** Both broadcasters render their own
+inline `StreamSummary` instead. `RaidCountdown` on the viewer side, the
+`functions/raids.js` write path and the VP award were all live and waiting on a
+button that did not exist. Now in both `StreamSummary` components, above the
+share buttons because it is the only decision there with a deadline.
+
+⚠ **CANDIDATES COME FROM `LiveUsersContext`, NEVER A QUERY.** That context
+already holds one shared `onSnapshot` on live streams, so both the raid picker
+and the new UP NEXT block cost **zero reads**. `StreamEndingScreen`'s own
+`getDocs` was the tempting pattern to copy and would have been a Firestore read
+every time any host ended a stream. `audioOnly` and `ticketed` were added to the
+context's host record (free, same snapshot) so the filter can mirror
+`badRaidTarget` without a second fetch.
+
+⚠ **`/stream/ended` AND `CoStreamingScreen` ARE LEFT ON DISK, UNROUTED.** Both
+are superseded, not broken, and the no-deletion rule applies. Do not "fix" them
+by adding buttons back.
+
+### 🎁 GIFT A SUB IS FINISHED: BULK SHIPPED (2026-09-07, SHIPPED + DEPLOYED)
+
+⚠ **`giftMembership` HAS ALWAYS ACCEPTED 25 AND THE SHEET SENT ONE**, so the
+bulk gifting the founder approved on 2026-09-02 lived on the server with nowhere
+to reach it. `GiftSubSheet` now multi-selects, quick-picks Top 5 / Top 10,
+states `n x price` with "no bulk discount", and reports what the SERVER granted
+rather than what was picked (it drops existing members and does not charge for
+them, so echoing the basket would claim gifts nobody received).
+
+⚠ **CANDIDATES ARE A PROP, NOT A SEARCH, AND THAT IS A COST DECISION.** Both
+viewers already hold `topGifters` and the join events in memory, so the pool
+costs **zero reads**. A search box in the sheet would be a Firestore query per
+keystroke to find people already on screen.
+
+⚠ **NO "RANDOM" ANYWHERE.** Twitch gifts to random viewers; the quick picks take
+the TOP N of a list ordered by support. Deterministic, reads as generosity, and
+keeps a paid feature away from anything that could be called a chance mechanic.
+A guard bans the words.
+
+⚠⚠ **THE TDZ CRASH SHIPPED AGAIN AND ONLY A DELIBERATE CHECK CAUGHT IT.**
+`giftCandidates` was inserted beside `giftTo` and read `joinEvents`, declared
+**200+ lines below** in both viewers. `no-undef` sees a defined binding, the
+build is green, and the viewer goes to ErrorBoundary on first render. Fourth
+instance of this exact shape (`myVpLevel`, `accentHex`, `tsMs`). A guard now
+asserts the memo sits below every const it reads, negative-tested.
+
+### 💸 A NEW CLOUD FUNCTION IS NOT FREE, AND THE HYPE TRAIN NEEDS NONE
+
+Founder asked, 2026-09-07. Verified against Google's own pricing, not memory:
+invocations are effectively free here (2M/month, 400k GB-sec, 200k CPU-sec), but
+**Cloud Functions v2 stores a container image in Artifact Registry per function**,
+free only to 0.5 GB, then $0.10/GB/month — and this project already has ~335
+functions. New secrets (Secret Manager) and new Cloud Scheduler jobs are the
+other real per-item costs, and memory `reference_gcp_cost_drivers` already
+records those two as this project's actual bill drivers.
+
+**So the train adds NOTHING billable:**
+- progress rides **`sendTip`**, already deployed and already running on every tip
+- settlement rides **`endStreamSession`**, already deployed
+- **no cron**: expiry is evaluated at read time, exactly as boosts and VP bonuses
+  already do
+- **no new secret**: the seed is `crypto.randomBytes` generated server-side at
+  train start and stored in a client-denied doc, which keeps determinism, keeps
+  idempotency and keeps auditability without Secret Manager
+- redeploying two existing functions replaces their images rather than adding new
+  ones
+
+### 🎨 THE REAL STREAM SCREENS: A TOKEN CAN HIDE A WASH FROM A SOURCE SCAN
+
+⚠⚠ **MEASURING THE RENDERED PAGE FOUND WHAT GREP COULD NOT.** A literal
+`rgba(` scan called `GoLiveSetupScreen` clean while **every selected control on
+it** — Mic, Camera, Screen and the whole audience row — was painting
+`C.purpleSoft`, i.e. `rgba(123,31,255,0.15)`, with `C.purpleLight` type on top
+(violet on violet, about **1.5:1**). The wash was wearing a token name.
+
+The guard now parses each file's own `const C = {...}`, finds every key whose
+value is a translucent COLOURED rgba, and bans it from a background.
+⚠ Its first version used `background:[^;\n]*C\.tok`, whose greedy tail ran past
+the value into a sibling `border: 1px solid ${C.border}` on the same line and
+failed two correct files. It extracts the value to the next top-level comma now.
+
+Measured live after the fix: selected is solid `rgb(123,31,255)` with white type
+and **no border** (6.03:1); unselected is solid `rgb(25,21,39)`. Zero translucent
+coloured backgrounds anywhere on the page.
+
+Also done across all eight stream files: type and radius snapped to the scale,
+and those rules now cover the **shipped screens**, not just the simulator.
+
+⚠ **HOST DROPPED IS DERIVED, NOT POLLED.** `PlaybackStateView` could always
+render `hostdropped`; there was no signal. `lastFrameAt` is READ by one retired
+tournament file and **written by nothing**, which is why it looked available. A
+heartbeat field would be a Firestore write per stream per interval to learn what
+the viewer's own `<video>` already knows, so it is a stall past 20s while the doc
+still says live — no new listeners, no writes. A guard asserts the stall effect
+still performs exactly ONE write (the pre-existing throttled `playbackStalls`).
+
+⚠ **`peakViewers` IS WRITTEN BY THE GO RELAY**, not by `functions/`. A grep of
+`src/` and `functions/` says nothing writes it. `startPresence` in
+`infra/chat/src/main.go` resolves the existing peak once per room and appends the
+field to the SAME `viewerCount` update it was already sending, so reading it on
+the ended card is free.
+
+`npm run check` is **1,575**, and the guard now covers production files.
+
+### 🚂 HYPE TRAIN IS LIVE, AND IT ADDED NO CLOUD FUNCTION (2026-09-07, SHIPPED + DEPLOYED)
+
+`functions/hypeTrain.js` is a MODULE, not a function. **It exports no callable,
+no trigger and no schedule**, and `npm run check` fails the build if one appears.
+
+| | |
+|---|---|
+| Progress | rides **`sendTip`**, which already did a `streams/{id}` get + update post-commit, so the train costs **zero extra reads and zero extra writes** |
+| Settlement | rides **`endStreamSession`**, inside the transaction that already reads and updates the same doc |
+| Expiry | evaluated at read time; the next tip closes a stale window, and the host ending the stream closes a quiet one. **NO CRON** |
+| Seed | `crypto.randomBytes` at settle time. **No Secret Manager entry, nothing stored** |
+| Leader name/avatar | denormalised by `sendTip`, which had already loaded them for the tip alert |
+
+⚠⚠ **`hypeTrain` IS SERVER-ONLY IN firestore.rules AND WITHOUT THAT IT IS A COIN
+PRINTER.** `allow update` grants the host write on ANY field of their own stream
+doc, and the bonus is computed from `hypeTrain.received`: stamp
+`{received: 25000, level: 5}`, end the stream, collect the capped 5,000 coins.
+`peakViewers` and `viewerCount` are locked beside it (relay-written, shown as
+fact). Verified first that no client write touches any of the three.
+
+⚠ **IDEMPOTENCY IS A MARKER, NOT THE SEED.** `settledAt` is written on the train
+in the same transaction that credits the wallet, so a retry, a reconnect or both
+callers racing pay exactly one bonus. Same shape as `settleEarnedShare`.
+
+⚠ **VP IS CREDITED FLAT, NO PLAN OR RANK MULTIPLIER.** Every other VP award
+multiplies by plan (Pro 2x), rank and any active pack. Stacking those on a reward
+that is ITSELF a bonus compounds them: a Pro host on a 3x pack would take 250 VP
+to 1,500, six times a figure priced to sit beside "host a live event, 150".
+
+⚠ **COINS GO TO `balance`, NOT through `earnedShareCredit`.** They are minted out
+of margin already banked, not revenue a viewer paid, so routing them through the
+earnings path would inflate lifetime gross and move the creator up the payout
+ladder on money nobody spent.
+
+⚠ **THE BONUS CLAMP ASSUMES THE WORST TIER (80%) RATHER THAN READING THE WALLET.**
+A higher creator share means less margin means a tighter clamp, so assuming the
+top of the ladder is both conservative and one read cheaper.
+
+**Measured on the server module:** 10 viewers reach level 1 at ~1,000 coins as
+anchored; one person tipping **400,000 coins alone reaches level 1** (the 40%
+solo cap holds); expiry rolls with no cron; 400 seeds split 63.5% VP against a
+65% weight with zero both-branch and zero no-branch settlements; and the profit
+guarantee holds across all 35 share x size combinations, worst case **+$0.2028**.
+
+⚠ `HypeTrainView` in `components/streams/states/` is the ONE renderer, mounted on
+**both** broadcaster layout branches, both viewers, and re-used by the preview.
+It is deliberately NOT behind the `alertsOn` toggle: that governs tip and sub
+POPUPS, and the train is persistent state.
+
+`npm run check` is **1,626**.
+
+#### The client half: `src/utils/hypeTrain.js` (2026-09-07)
+
+Plan and every derivation: `docs/HYPE_TRAIN_PLAN.md`. Guard: 55 assertions inside
+`stream-preview-check.mjs` (**1,492 total**), each one negative-tested.
+
+⚠⚠ **THE REWARD IS ONE OR THE OTHER, NEVER BOTH.** Founder, 2026-09-07: *"we NEVER
+give both ... either coin or VP but not both"*. `settleTrain()` returns the unused
+branch as `0`; the guard settles 20,000 trains and fails if one pays two or none.
+
+⚠⚠ **"WHEN GIVING COINS, THE RULE IS THAT I SHOULD ALWAYS MAKE MONEY AND NEVER LOSE
+MONEY."** Founder, 2026-09-07, and it is enforced by `maxSafeCoinBonus()`, not by
+the 20% happening to be small. `TRAIN_MARGIN_FLOOR = 0.50` means we keep at least
+half the banked margin on every train even if the rate is raised to 90%. Swept
+across all 7 share tiers x 5 train sizes in `npm run check`.
+
+⚠⚠ **VP IS PRICED OFF THE LEVEL REACHED (50/level), NEVER OFF THE COIN COUNT.** The
+first build paid 20% of coins as VP: a 13,590-coin train paid **2,718 VP**, five
+times what that entire tipping event generated for every tipper combined
+(`GIFT_COINS_PER_VP = 25`, sender only) and ~18x the largest single award in the
+product (host a live event, **150**, `creatorQuests.js:94`). Coins and VP are not
+the same unit and must never share a number.
+
+⚠⚠ **A MARGINAL-SPLIT TEST CANNOT SEE A BROKEN HASH, AND THIS WAS MEASURED.**
+Deleting the murmur3 finaliser from `trainRoll` leaves FNV-1a, which scored **64.92%
+VP against a 65% weight (passing)** while emitting **runs of 211 identical
+outcomes** — twenty coins then twenty VP across the first forty seeds. Consecutive
+train ids are adjacent inputs and FNV-1a maps adjacent inputs to adjacent hashes.
+The guard now also asserts serial-correlation and longest-run.
+
+⚠ **THE SEED IS MINTED AT TRAIN START, NOT AT SETTLE.** So spending cannot influence
+the branch, settling is idempotent, and the result is auditable after the fact. **In
+production it is `HMAC_SHA256(SERVER_SECRET, streamId + ':' + trainId)` and must
+never reach the client** — the seed-to-branch mapping is public, so a visible seed
+lets a creator read the outcome and decide whether to promote the train.
+
+⚠ **VP IS NOT FREE, BUT IT IS CHEAP, AND IT DOES NOT TOUCH THE PAYOUT LADDER.**
+`shareForEarnings()` keys the 50-80% share to **lifetime gross coins earned**, never
+to VP (`commissionForVP` is deprecated, zero callers). VP costs only what it brings
+forward on the level ladder: 47 boost tokens at 50c + 14 VP packs across a full
+648,000 VP run = **5,270 coins, i.e. 0.0081 coins per VP**. A 250 VP bonus costs ~2c.
+
+⚠ **NOTHING SERVER-SIDE EXISTS YET.** The module is shared so the future Cloud
+Function settles through the same `settleTrain()`; do not write a second copy.
+`TRAIN_COIN_CAP` 5,000, `TRAIN_VP_PER_LEVEL` 50 and `TRAIN_VP_WEIGHT` 0.65 are
+**awaiting explicit founder sign-off**.
+
 ✅ **THE MOD CHANNEL IS LIVE END TO END** — relay gate, client, and the switch in the real
 `ChatPanel` (which both viewers render). The composer names the room, because the one
 failure mode is a mod typing something private into public chat.

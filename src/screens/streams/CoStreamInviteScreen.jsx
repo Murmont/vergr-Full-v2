@@ -76,7 +76,7 @@ export default function CoStreamInviteScreen() {
   const wrap = (children) => (
     <div style={{
       background: C.bg, minHeight: '100%', color: C.text,
-      fontFamily: '"Inter", system-ui, sans-serif',
+      fontFamily: '"DM Sans", system-ui, sans-serif',
     }}>
       <TopBar title="Co-Stream Invitation" showBack />
       <div style={{ maxWidth: 480, margin: '0 auto', padding: '20px 16px' }}>{children}</div>

@@ -7,7 +7,7 @@
 //       as viewers tip; celebratory pulse when the goal is reached. Renders
 //       nothing when no active goal.
 //
-//   <TipAlertOverlay lastTip={streamDoc.lastTip} anchor="top" />
+//   <TipAlertOverlay lastTip={streamDoc.lastTip} anchor="bottom" />
 //       Animated "NAME tipped N coins" card. Driven entirely by
 //       streams/{id}.lastTip = { coins, fromName, ts } — which the viewer
 //       tip path stamps on every successful tip. Both screens already
@@ -17,6 +17,7 @@
 // Palette matches BroadcasterScreen / ViewerStreamScreen inline tokens.
 
 import { useEffect, useRef, useState } from 'react';
+import { CoinIcon } from '../CoinIcon';
 import { motion, AnimatePresence } from 'framer-motion';
 import Icon from '../Icon';
 
@@ -31,11 +32,11 @@ const C = {
   amberLight: '#F5C842',
 };
 
-const CoinGem = ({ size = 14, color = C.amber }) => (
-  <svg width={size} height={size} viewBox="0 0 16 16" fill={color} aria-hidden>
-    <polygon points="8,1 10,6 15,6 11,9.5 12.5,15 8,11.5 3.5,15 5,9.5 1,6 6,6" />
-  </svg>
-);
+// ⚠ COINS ARE DRAWN WITH THE BRAND COIN. This was `CoinGem`, a hand-drawn
+// five-point STAR polygon standing in for a coin on the goal bar and the tip
+// alert — so a 250-coin tip read "★ 250". Same defect as the Material "paid"
+// glyph: a currency rendered as something that is not the currency.
+const CoinGem = ({ size = 14 }) => <CoinIcon size={size} />;
 
 // ─────────────────────────────────────────────────────────────
 // StreamGoalBar
@@ -51,10 +52,13 @@ export function StreamGoalBar({ goal, compact = false, style }) {
     <div
       style={{
         width: '100%',
-        background: 'rgba(10,10,20,0.66)',
-        backdropFilter: 'blur(10px)',
-        WebkitBackdropFilter: 'blur(10px)',
-        border: `1px solid ${reached ? C.amber + '88' : C.border}`,
+        // ⚠ SOLID, AND THE BORDER ONLY WHEN IT MEANS SOMETHING. At 0.66 over live
+        // gameplay this bar changed colour with the frame behind it, and its hairline
+        // was brighter than its own fill — the stroke separating it instead of a real
+        // value step. The amber edge stays, because THAT one carries information (the
+        // goal is reached); the neutral one is gone.
+        background: '#100C1C',
+        border: reached ? `1px solid ${C.amber}` : 'none',
         borderRadius: compact ? 10 : 12,
         padding: compact ? '7px 10px' : '9px 12px',
         boxShadow: reached ? `0 0 18px ${C.amber}44` : 'none',
@@ -62,7 +66,7 @@ export function StreamGoalBar({ goal, compact = false, style }) {
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-        <CoinGem size={compact ? 12 : 14} color={reached ? C.amberLight : C.amber} />
+        <CoinGem size={compact ? 12 : 14} />
         <span style={{ fontSize: compact ? 10 : 11, fontWeight: 800, letterSpacing: '0.04em', color: C.text }}>
           {reached ? 'GOAL REACHED' : 'TIP GOAL'}
         </span>
@@ -81,7 +85,9 @@ export function StreamGoalBar({ goal, compact = false, style }) {
       </div>
       <div style={{
         position: 'relative', height: compact ? 6 : 8, borderRadius: 99,
-        background: 'rgba(255,255,255,0.10)', overflow: 'hidden',
+        // ⚠ A SOLID GROOVE. The bar around it is opaque now, so a white wash for the
+        // track just picked up whatever was behind the panel and read as haze.
+        background: '#2A2A38', overflow: 'hidden',
       }}>
         <motion.div
           initial={false}
@@ -116,7 +122,12 @@ export function StreamGoalBar({ goal, compact = false, style }) {
 // ─────────────────────────────────────────────────────────────
 // `lastTip` = { coins, fromName, ts } | null. We render a card whenever `ts`
 // advances past the last one we showed, then auto-dismiss after `holdMs`.
-export function TipAlertOverlay({ lastTip, anchor = 'top', holdMs = 4500 }) {
+// ⚠ ANCHORED AT THE BOTTOM BY DEFAULT NOW. At the top it landed on the host
+// capsule and the viewer/close controls — the founder saw a tip pill sitting
+// across Riven's name. `bottom` mirrors JoinAnnouncer's prop of the same name
+// so a surface with a 30vh chat dock can lift the alert clear of the messages
+// instead of covering the newest ones.
+export function TipAlertOverlay({ lastTip, anchor = 'top', holdMs = 4500, bottom = 90 }) {
   const [shown, setShown] = useState(null);
   const seenTsRef = useRef(0);
   const timerRef = useRef(0);
@@ -137,7 +148,7 @@ export function TipAlertOverlay({ lastTip, anchor = 'top', holdMs = 4500 }) {
 
   const pos = anchor === 'top'
     ? { top: 14, left: '50%', transform: 'translateX(-50%)' }
-    : { bottom: 90, left: '50%', transform: 'translateX(-50%)' };
+    : { bottom, left: '50%', transform: 'translateX(-50%)' };
 
   const big = (shown?.coins || 0) >= 500;
 
@@ -162,7 +173,7 @@ export function TipAlertOverlay({ lastTip, anchor = 'top', holdMs = 4500 }) {
               border: `1px solid ${big ? '#fff6' : C.amber + '88'}`,
               boxShadow: big ? `0 0 26px ${C.amber}88` : `0 4px 18px rgba(0,0,0,0.4)`,
               color: big ? '#1a1205' : C.text,
-              fontFamily: '"Inter", system-ui, sans-serif',
+              fontFamily: '"DM Sans", system-ui, sans-serif',
               whiteSpace: 'nowrap', maxWidth: '88vw',
             }}
           >
@@ -182,7 +193,7 @@ export function TipAlertOverlay({ lastTip, anchor = 'top', holdMs = 4500 }) {
               fontFamily: 'DM Mono, ui-monospace, monospace',
               color: big ? '#1a1205' : C.amberLight,
             }}>
-              <CoinGem size={big ? 15 : 12} color={big ? '#1a1205' : C.amber} />
+              <CoinGem size={big ? 15 : 12} />
               {(shown.coins || 0).toLocaleString()}
             </span>
           </motion.div>
@@ -198,7 +209,7 @@ export function TipAlertOverlay({ lastTip, anchor = 'top', holdMs = 4500 }) {
 // stamped server-side by subscribeMembership when the creator is live. Same
 // zero-extra-reads model as TipAlertOverlay (screens already watch the stream doc).
 // ─────────────────────────────────────────────────────────────
-export function SubAlertOverlay({ lastSub, anchor = 'bottom', holdMs = 5200 }) {
+export function SubAlertOverlay({ lastSub, anchor = 'bottom', holdMs = 5200, bottom = 90 }) {
   const [shown, setShown] = useState(null);
   const seenTsRef = useRef(0);
   const timerRef = useRef(0);
@@ -218,7 +229,7 @@ export function SubAlertOverlay({ lastSub, anchor = 'bottom', holdMs = 5200 }) {
   const color = shown?.badge?.color || C.purpleLight;
   const pos = anchor === 'top'
     ? { top: 16, left: 16 }
-    : { bottom: 88, left: 16 };
+    : { bottom, left: 16 };
 
   return (
     <div style={{ position: 'absolute', zIndex: 41, pointerEvents: 'none', ...pos }}>
@@ -233,10 +244,10 @@ export function SubAlertOverlay({ lastSub, anchor = 'bottom', holdMs = 5200 }) {
             style={{
               position: 'relative', overflow: 'hidden',
               display: 'flex', alignItems: 'center', gap: 12,
-              padding: '11px 18px 11px 12px', borderRadius: 16,
+              padding: '8px 14px 8px 9px', borderRadius: 13,
               background: `linear-gradient(100deg, ${C.purple}, ${color})`,
               boxShadow: `0 12px 34px ${color}88`,
-              fontFamily: '"Inter", system-ui, sans-serif', maxWidth: '86vw',
+              fontFamily: '"DM Sans", system-ui, sans-serif', maxWidth: '86vw',
             }}
           >
             {/* sheen sweep */}
@@ -246,16 +257,16 @@ export function SubAlertOverlay({ lastSub, anchor = 'bottom', holdMs = 5200 }) {
               style={{ position: 'absolute', inset: 0, background: 'linear-gradient(100deg,transparent 35%,rgba(255,255,255,0.32) 50%,transparent 65%)', pointerEvents: 'none' }}
             />
             <span style={{
-              position: 'relative', zIndex: 1, width: 40, height: 40, flex: 'none',
+              position: 'relative', zIndex: 1, width: 30, height: 30, flex: 'none',
               borderRadius: '36%', display: 'flex', alignItems: 'center', justifyContent: 'center',
               background: `radial-gradient(125% 125% at 30% 22%, #fff, ${color})`,
               border: '2px solid rgba(255,255,255,0.85)', boxShadow: 'inset 0 2px 3px rgba(255,255,255,0.6)',
             }}>
-              <Icon name={shown.badge?.icon || 'star'} filled size={20} style={{ color: '#fff', textShadow: '0 1px 2px rgba(0,0,0,0.3)' }} />
+              <Icon name={shown.badge?.icon || 'star'} filled size={16} style={{ color: '#fff', textShadow: '0 1px 2px rgba(0,0,0,0.3)' }} />
             </span>
             <div style={{ position: 'relative', zIndex: 1, color: '#fff' }}>
-              <div style={{ fontWeight: 800, fontSize: 15 }}>{shown.fromName || 'Someone'}</div>
-              <div style={{ fontSize: 12.5, opacity: 0.94 }}>just subscribed · <strong>{shown.tierName || 'Member'}</strong></div>
+              <div style={{ fontWeight: 800, fontSize: 13 }}>{shown.fromName || 'Someone'}</div>
+              <div style={{ fontSize: 11, opacity: 0.94 }}>just subscribed · <strong>{shown.tierName || 'Member'}</strong></div>
             </div>
           </motion.div>
         )}

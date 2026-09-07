@@ -122,7 +122,7 @@ export default function StreamPaywall({
           {hostName || 'Private session'}
         </div>
         {title && (
-          <div className="text-[12.5px] text-white/55 mt-0.5 truncate">{title}</div>
+          <div dir="auto" className="text-[12.5px] text-white/55 mt-0.5 truncate">{title}</div>
         )}
 
         {/* The state line. The only thing that differs between the two

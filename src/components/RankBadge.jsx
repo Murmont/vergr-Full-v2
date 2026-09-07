@@ -45,6 +45,18 @@ export default function RankBadge({
   onOpen,
   animated = false,
   isSelf = false,
+  // ⚠⚠ IN A MESSAGE FEED THE CREST MUST NOT BE ITS OWN TAB STOP. Measured on the live
+  // preview 2026-09-03: **35 of 45 tab stops on the stream were chat crests**, 21 of them
+  // scrolled out of view, and a real chat holds far more rows than that sample. A keyboard
+  // user would tab through every historic crest before reaching the dock or the composer.
+  //
+  // `tabIndex={-1}` keeps it clickable and programmatically focusable — it only leaves
+  // SEQUENTIAL navigation. Nothing is lost, because the same rank information is on the
+  // profile and the username beside it is still a tab stop that opens it.
+  //
+  // ⚠ DEFAULT IS FALSE. Everywhere else — profile, lists, search — there is one crest per
+  // screen, not one per row, and it stays fully keyboard reachable.
+  feed = false,
 }) {
   // ⚠ HOOKS FIRST, ABOVE EVERY EARLY RETURN. This component returns null below
   // MIN_BADGE_LEVEL, so a hook placed after that return changes the hook count
@@ -91,7 +103,12 @@ export default function RankBadge({
 
   return (
     <span
-      className={`inline-flex items-center gap-1 shrink-0 align-middle ${className}`}
+      // ⚠ `vg-crest-hit` WIDENS THE TAP TARGET TO 24x24 WITHOUT MOVING ANYTHING.
+      // This span is the button (see the note below) and it sizes to the 13px art,
+      // which is under the WCAG 2.2 AA target minimum and, in a scrolling chat on a
+      // phone, is a scroll rather than a tap. The extra reach is a pseudo-element,
+      // so layout is untouched; see surface.css for the clearance measurements.
+      className={`vg-crest-hit inline-flex items-center gap-1 shrink-0 align-middle ${className}`}
       title={`${rank.name} · Level ${lvl}`}
       style={{ ...style, cursor: 'pointer' }}
       // ⚠ THE HIT TARGET IS THIS OUTER SPAN, NOT THE CREST WRAPPER. `.vg-crest`
@@ -112,7 +129,7 @@ export default function RankBadge({
         }
       }}
       role="button"
-      tabIndex={0}
+      tabIndex={feed ? -1 : 0}
       aria-label={`${rank.name}, level ${lvl}. Open rank details`}
     >
       {/* Effect 21. The wrapper exists ONLY when the crest is living, so a

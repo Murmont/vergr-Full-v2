@@ -41,6 +41,15 @@ export async function connectChat({
   onTts    = () => {},
   onState = () => {},
   baseUrl = DEFAULT_BASE,
+  // ⚠ THE BROADCASTER’S MODERATORS-ONLY ROOM. `mods` opens a SECOND socket to a
+  // SECOND room (`<streamId>:mods`) whose join the relay refuses for anyone who is
+  // not the host, someone in `streams/{id}.moderatorUids`, or Vanguard.
+  //
+  // ⚠⚠ DO NOT “SIMPLIFY” THIS INTO ONE SOCKET WITH A CLIENT-SIDE FILTER. Whatever
+  // the server sends, the client can read — a filter is not a private channel. The
+  // whole privacy model is that the relay refuses the JOIN (`canJoinModRoom` in
+  // infra/chat/src/main.go, covered by modroom_test.go).
+  channel = 'public',   // public | mods
 }) {
   let ws = null;
   let closed = false;
@@ -58,7 +67,10 @@ export async function connectChat({
       backoff = Math.min(MAX_BACKOFF_MS, backoff * 1.6);
       return;
     }
-    const url = `${baseUrl.replace(/\/$/, '')}/stream/${encodeURIComponent(streamId)}?token=${encodeURIComponent(token)}`;
+    // ⚠ THE CLIENT NEVER NAMES A ROOM. It asks for a channel and the SERVER derives
+    // the room id, so a client cannot request someone else’s room by editing a string.
+    const suffix = channel === 'mods' ? '&channel=mods' : '';
+    const url = `${baseUrl.replace(/\/$/, '')}/stream/${encodeURIComponent(streamId)}?token=${encodeURIComponent(token)}${suffix}`;
     ws = new WebSocket(url);
 
     ws.addEventListener('open', () => {

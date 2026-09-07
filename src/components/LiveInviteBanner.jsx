@@ -120,7 +120,7 @@ export default function LiveInviteBanner() {
         padding: '10px 12px',
         background: `linear-gradient(180deg, rgba(124,58,237,0.95), rgba(180,79,255,0.9))`,
         boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
-        fontFamily: '"Inter", system-ui, sans-serif', color: '#fff',
+        fontFamily: '"DM Sans", system-ui, sans-serif', color: '#fff',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <Icon name="group_add" size={18} className="" />
@@ -156,7 +156,7 @@ export default function LiveInviteBanner() {
       position: 'fixed', bottom: 20, right: 20, zIndex: 9998,
       width: 340, background: C.card, border: `1px solid ${C.border}`,
       borderRadius: 14, padding: 14, boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
-      fontFamily: '"Inter", system-ui, sans-serif', color: C.text,
+      fontFamily: '"DM Sans", system-ui, sans-serif', color: C.text,
       animation: 'vergr-banner-in 0.25s ease-out',
     }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 12 }}>

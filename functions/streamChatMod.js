@@ -173,6 +173,32 @@ exports.setStreamFollowersOnly = functions.https.onCall({ region: REGION }, asyn
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// setStreamSubscribersOnly — when true, only the host's ACTIVE members (+ host
+// + Vanguard) may send.
+//
+// ⚠⚠ THE TOGGLE EXISTED BEFORE THIS DID. "Subscribers-only" has been offered in
+// the moderation menu while the relay had never heard of it and this file wrote
+// no such field, so switching it on changed nothing at all: an inert control,
+// the same class as the boost that bought a badge and the three kill switches.
+//
+// ⚠ IT COSTS NO EXTRA READ AT THE RELAY. Subscriber status is already resolved
+// once per connection for the member gem (member_subscriptions/{host}_{uid}),
+// and that badge is only set when the doc says status === 'active'. The relay
+// gate reuses it rather than looking anything up per message.
+//
+// ⚠ HOST-ONLY, like every other chat RULE. loadStream is host-only on purpose;
+// loadStreamForMod (host OR moderator) is for the per-viewer actions. A
+// moderator may mute somebody, not re-write who is allowed to speak.
+// ─────────────────────────────────────────────────────────────────────────────
+exports.setStreamSubscribersOnly = functions.https.onCall({ region: REGION }, async (req) => {
+  if (!req.auth) throw new functions.https.HttpsError('unauthenticated', 'Sign in required.');
+  const { streamId, enabled = false } = req.data || {};
+  const { ref } = await loadStream(streamId, req.auth.uid);
+  await ref.update({ subsOnly: !!enabled });
+  return { ok: true, enabled: !!enabled };
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // setStreamTts — effect 13. When true, viewers who have earned the unlock (or
 // hold Pro) may send a message that EVERY VIEWER'S CLIENT SPEAKS ALOUD.
 //

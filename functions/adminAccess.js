@@ -53,6 +53,10 @@ const ADMIN_SCREENS = [
   // sub-admin still carrying the old grant has it dropped by normalizeScreens().
   'config',
   'stream-preview',
+  // The call simulator. Its own grant rather than riding 'stream-preview':
+  // normalizeScreens() drops anything not listed here, which is exactly how
+  // 'creators' sat in the sidebar for months and could never be granted.
+  'call-preview',
   'stats',
   'audit',
   'security',     // admin security settings (self-only by default)

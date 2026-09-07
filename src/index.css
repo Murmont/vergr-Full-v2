@@ -9,7 +9,16 @@
 
 /* Reduced Motion (Settings → Appearance). Applied via the data-reduced-motion
    attribute on <html> by DisplaySettingsApplier. Kills CSS transitions/animations
-   app-wide; framer-motion respects the same flag through usePrefersReducedMotion. */
+   app-wide.
+
+   ⚠⚠ THIS RULE DOES NOT REACH framer-motion, AND THIS COMMENT USED TO CLAIM IT DID
+   ("framer-motion respects the same flag through usePrefersReducedMotion"). Measured
+   2026-09-03: that hook appeared in the codebase exactly ONCE — in this sentence. It was
+   used nowhere. Capping animation-duration only affects CSS animations; framer-motion
+   writes inline styles from rAF and never sees it.
+
+   Motion components are handled by <MotionPrefs> (DisplaySettingsApplier.jsx), which
+   wraps the app in a MotionConfig driven by BOTH this setting and the OS query. */
 html[data-reduced-motion="true"] *,
 html[data-reduced-motion="true"] *::before,
 html[data-reduced-motion="true"] *::after {
@@ -420,3 +429,55 @@ img {
   /* Respect the OS setting: content still appears, it just does not move. */
   [style*="vsc-"] { animation: vsc-fade 200ms both !important }
 }
+
+
+/* --- GLOBAL KEYBOARD FOCUS ---
+   ⚠⚠ THERE WAS NO GLOBAL FOCUS STYLE, AND THE UA DEFAULT IS INVISIBLE HERE.
+   Measured on a live stream control 2026-09-03: `outline: auto 1px rgb(16,16,16)`
+   — a near-black ring on a near-black UI. 51 focusable controls on one surface and
+   not one of them showed where the keyboard was. All 33 focus rules in the app were
+   component-scoped (.cmp, .vg-artbtn, .input-with-icon), so everything else fell
+   through to that default.
+
+   WCAG 2.4.7, and a Play review item for an app carrying live UGC.
+
+   :focus-visible, not :focus — so a mouse click never draws a ring and the look is
+   unchanged for everyone else. The offset is what makes it read on a solid fill and
+   on video alike; the dark companion ring keeps it visible if the violet lands on a
+   bright frame. */
+*:focus-visible {
+  outline: 2px solid #b44fff;
+  outline-offset: 2px;
+  border-radius: inherit;
+  box-shadow: 0 0 0 4px rgba(6, 6, 14, 0.85);
+}
+/* An element that already draws its own focus treatment keeps it. */
+.cmp button:focus-visible,
+.vg-artbtn:focus-visible {
+  box-shadow: none;
+}
+
+/* A TEXT FIELD INSIDE ITS OWN BORDERED BOX MUST NOT TAKE THE COMPANION RING.
+   The 4px rgba(6,6,14,0.85) above is there so a control floating over VIDEO
+   stays visible, and on a bare <textarea> sitting inside a card it paints a
+   near-black slab around the field. Founder, 2026-09-05: "Why is there a
+   fucking black box when i click on the add a message".
+
+   Focus is not dropped, it MOVES to the box, which is the thing a person sees
+   as the field: the wrapper lights its own edge violet with a soft outer glow.
+   That is a stronger indicator than a 2px ring, and WCAG 2.4.7 is still met. */
+.vg-field { transition: border-color .16s ease, box-shadow .16s ease; }
+.vg-field:focus-within {
+  border-color: #8f45de !important;
+  box-shadow: 0 0 0 3px rgba(143, 69, 222, 0.22), 0 0 18px rgba(143, 69, 222, 0.18);
+}
+.vg-field :is(input, textarea):focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+/* Tab content arriving from the side it came from. The last keyframe is the
+   resting pose, so the reduced-motion fast-forward lands on a visible element
+   rather than hiding it. */
+@keyframes vgSlideFromRight { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: none; } }
+@keyframes vgSlideFromLeft  { from { opacity: 0; transform: translateX(-16px); } to { opacity: 1; transform: none; } }

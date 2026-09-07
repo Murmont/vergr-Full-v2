@@ -15,7 +15,7 @@ import UserName from '../../components/UserName';
 const MAX_TIERS = 5;
 const SUGGESTED_PERKS = [
   'Subscriber badge in chat & profile', 'Exclusive posts & behind-the-scenes', 'Priority chat',
-  'Members-only stream', 'Custom emotes', 'Monthly shoutout on stream', 'Discord access', 'Merch discount',
+  'Members-only stream', 'Monthly shoutout on stream', 'Discord access', 'Merch discount',
 ];
 const COMMUNITY_TYPES = [
   { type: 'vergr_group', label: 'Private VERGR group', icon: 'groups', hint: 'Native space, no external app', accent: '#B44FFF' },

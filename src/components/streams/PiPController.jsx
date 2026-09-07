@@ -42,7 +42,7 @@ export default function PiPController({ videoElRef, enabled = true, title = 'Liv
         docPipRef.current = pip;
         // Style the PiP body identically to ours.
         pip.document.head.innerHTML = `<style>
-          html, body { margin: 0; background: #000; overflow: hidden; height: 100%; font-family: 'Inter', system-ui, sans-serif; }
+          html, body { margin: 0; background: #000; overflow: hidden; height: 100%; font-family: 'DM Sans', system-ui, sans-serif; }
           video { width: 100%; height: 100%; object-fit: contain; background: #000; }
           .vergr-pip-strap {
             position: absolute; left: 0; right: 0; bottom: 0;

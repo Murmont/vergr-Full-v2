@@ -143,7 +143,7 @@ export default function CoHostInviteModal({ streamId, coHostUids = [], onClose, 
             background: C.bg, border: `1px solid ${C.border}`,
             borderRadius: '16px 16px 0 0', padding: 18,
             display: 'flex', flexDirection: 'column', gap: 14,
-            color: C.text, fontFamily: '"Inter", "DM Sans", system-ui, sans-serif',
+            color: C.text, fontFamily: '"DM Sans", system-ui, sans-serif',
           }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div>

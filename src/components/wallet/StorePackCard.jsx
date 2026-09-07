@@ -108,13 +108,14 @@ function PackArt({ src, srcSet, fallback, tone }) {
  * @param {string}  props.name         the quiet line under it
  * @param {string}  [props.badge]      ribbon across the top
  * @param {string}  [props.pill]       small tinted chip (e.g. "6 hours")
- * @param {node}    props.price        footer shelf content
- * @param {boolean} [props.disabled]
+ * @param {node}    props.price        footer shelf content, the payable price
+ * @param {node}    [props.secondary]  the OTHER price, quiet, under it
+ * @param {boolean} [props.disabled]   genuinely unavailable. NOT "cannot afford"
  * @param {string}  [props.note]       one line under the price
  */
 export default function StorePackCard({
   toneId = 'violet', art, artSrcSet, fallback, headline, name, badge, pill,
-  price, note, disabled, busy, onClick, ariaLabel,
+  price, secondary, note, disabled, busy, onClick, ariaLabel,
 }) {
   const tone = { ...(STORE_TONES[toneId] || STORE_TONES.violet), ramp: RAMPS[toneId] || RAMPS.violet };
   const dead = disabled || busy;
@@ -138,6 +139,13 @@ export default function StorePackCard({
         border: `1px solid ${tone.border}`,
         boxShadow: '0 10px 28px rgba(0,0,0,0.42)',
         paddingTop: badge ? 20 : 14,
+        // ⚠ NO AFFORDABILITY DIMMING. Founder, 2026-08-28: *"we cant create a
+        // design that prevents the user from checking out if they are already
+        // there and willing to pay"*. A card greyed out because the wallet is
+        // short reads as broken, and it refused the sale to the one person who
+        // had already decided to buy. Every item now carries a cash price too,
+        // so there is nothing a card can be dimmed FOR. `disabled` survives only
+        // for a genuinely unavailable product.
         opacity: disabled ? 0.55 : 1,
       }}
     >
@@ -201,6 +209,19 @@ export default function StorePackCard({
         }}>
           {busy ? <Icon name="progress_activity" size={16} /> : price}
         </span>
+        {/* The other way to pay. Quiet, because only one of the two is the
+            price this buyer is actually about to be charged, but always
+            present: a shelf that shows one price and charges in a currency the
+            buyer did not expect is the surprise this whole footer exists to
+            avoid. */}
+        {!busy && secondary && (
+          <span className="font-dmmono tabular-nums" style={{
+            fontSize: 11.5, fontWeight: 700, color: 'rgba(255,255,255,0.42)',
+            display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: -2,
+          }}>
+            {secondary}
+          </span>
+        )}
         {note && (
           <span style={{ fontSize: 10.5, color: 'rgba(255,255,255,0.45)', textAlign: 'center' }}>
             {note}

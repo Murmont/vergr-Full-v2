@@ -44,6 +44,12 @@ export const ADMIN_NAV = [
   // 2026-08; the admin screen was the last surface still asserting they exist.
   { id: 'config',        label: 'App Config',        path: '/admin/config',       icon: 'tune' },
   { id: 'stream-preview',label: 'Stream Preview',    path: '/admin/stream-preview', icon: 'cast' },
+  // The same idea, a different feature. Calls get their own simulator because
+  // the surfaces are wholly different (a peer connection and an SFU roster, not
+  // a broadcast) and because they are the hardest screens in the product to
+  // see: an incoming ring needs a second account on a second device and is gone
+  // in 30 seconds.
+  { id: 'call-preview',  label: 'Call Preview',      path: '/admin/call-preview', icon: 'videocam' },
   { id: 'stats',         label: 'Live Stats',        path: '/admin/stats',        icon: 'monitoring' },
   { id: 'audit',         label: 'Audit Log',         path: '/admin/audit',        icon: 'history' },
 ];

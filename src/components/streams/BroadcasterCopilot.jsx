@@ -122,7 +122,7 @@ export default function BroadcasterCopilot({
             borderRadius: 14,
             boxShadow: '0 8px 28px rgba(0,0,0,0.45)',
             color: C.text,
-            fontFamily: '"Inter", system-ui, sans-serif',
+            fontFamily: '"DM Sans", system-ui, sans-serif',
             zIndex: 80,
             backdropFilter: 'blur(8px)',
           }}

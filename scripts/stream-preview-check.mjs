@@ -2754,8 +2754,14 @@ check(stSrc.includes('ReconnectingOverlay') && stSrc.includes('StreamLoadingCove
   const vs = stripComments(readFileSync("src/screens/streams/ViewerStreamScreen.jsx", "utf8"));
   check(vs.includes("navigator.onLine"),
     "the desktop viewer no longer detects the viewer being offline, so losing a connection looks like the broadcaster reconnecting");
-  check(countTag(vs, "PlaybackStateView") === 1,
+  // ⚠ THIS USED TO ASSERT EXACTLY ONE `PlaybackStateView`, which was right while
+  // `offline` was the only state this screen drove. Adding `hostdropped`
+  // (2026-09-07) made a correct file fail. Count is the wrong test; the states
+  // themselves are the thing worth guarding.
+  check(vs.includes('state="offline"'),
     "the desktop viewer no longer renders the offline playback state");
+  check(countTag(vs, "PlaybackStateView") >= 1,
+    "the desktop viewer renders no playback state at all");
   check(vs.includes("onAppeal={(kind) => setAppealKind(kind)}"),
     "the desktop viewer lost its appeal route, so a muted viewer on desktop sees the banner CTA with nowhere to go");
   check(countTag(vs, "AppealSheet") === 1,
@@ -3122,10 +3128,232 @@ check(stSrc.includes('ReconnectingOverlay') && stSrc.includes('StreamLoadingCove
     'HypeTrain takes the train as a prop again — six surfaces mount it, and a prop has to be remembered at every one of them');
 
   const sim = codeOnly(read('useStreamSim.js'));
-  const block = sim.slice(sim.indexOf('const TRAIN_LEVEL_COINS'), sim.indexOf('const endTrain'));
-  for (const banned of ['balance', 'vp:', 'setBalance', 'awardVp']) {
-    check(!block.includes(banned),
-      `the hype train pays out "${banned}" — it pays recognition only until the founder decides otherwise, because coins mint currency and VP inflates the ladder`);
+  // ⚠⚠ THE TRAIN NOW PAYS A BONUS, AUTHORISED BY THE FOUNDER 2026-09-06, so the
+  // old "recognition only" rule is gone. What replaces it are the properties
+  // that make the bonus impossible to lose money on. Full working:
+  // docs/HYPE_TRAIN_PLAN.md.
+  //
+  // ⚠ THE OLD RULE WAS PASSING VACUOUSLY WHEN IT WAS REPLACED. It sliced from
+  // `const TRAIN_LEVEL_COINS`, a constant that had been renamed, so indexOf
+  // returned -1 and the banned-word scan ran over nothing. Every slice below is
+  // asserted to be non-empty first, so a rename fails the build instead of
+  // silently switching the rule off.
+  const block = sim.slice(sim.indexOf('const addTrainSupport'), sim.indexOf('const clearTrainBonus'));
+  check(block.length > 400,
+    'the hype-train block could not be located in useStreamSim — a constant was renamed and every rule below this line just stopped checking anything');
+
+  // ⚠⚠ THE SIM MUST NOT OWN ANY TRAIN RULE. It used to hold its own goal curve,
+  // solo cap, bonus percentage and a bare `Math.random()` coin-or-VP flip, so the
+  // preview could show the founder one economy while a server ran another.
+  check(sim.includes("from '../../../utils/hypeTrain'"),
+    'useStreamSim no longer imports the shared train module — a second copy of the reward rules is how the preview and the server drift apart');
+  check(!block.includes('Math.random() < ') && !/TRAIN_BONUS_PCT\s*=/.test(sim),
+    'a train rule has been restated inside useStreamSim — the percentage, the branch and the clamp live in utils/hypeTrain.js and nowhere else');
+  check(block.includes('settleTrainBonus({'),
+    'the sim settles a train itself instead of calling settleTrain() from the shared module, so the preview can pay something the profit clamp never saw');
+
+  // The goal must scale with the room and freeze, or it is either unreachable in
+  // a big room or a bar that recedes while people fill it.
+  check(block.includes('trainBaseGoal(viewers)'),
+    'the train goal no longer scales with the room — linear scaling puts a 1,000-viewer stream at 100,000 coins, so only small streams could ever have one');
+  check(/baseGoal: trainBaseGoal/.test(block) && block.includes('const viewers ='),
+    'the goal is no longer frozen at the start of the train — a goal that tracks live viewers moves while the room is pushing at it');
+
+  // One person must not be able to make a train.
+  check(block.includes('TRAIN_SOLO_CAP') && block.includes('cap - (perLevel[uid] || 0)'),
+    'the per-person meter cap is gone — without it one tip starts and finishes a train, which is a purchase with an animation on it, not a room event');
+
+  // The seed must exist and must be minted with the train, not at settle time.
+  check(/seed: `preview:/.test(block),
+    'the train no longer carries a seed — without one the branch is decided at settle time, so a retry can pay a different reward and the result becomes a function of when the train ended');
+  check(block.indexOf('seed:') < block.indexOf('settleTrainBonus'),
+    'the seed is minted after the train has run — it has to be fixed before the first coin lands, or what somebody spends can influence which reward comes up');
+}
+
+// ── 57. THE TRAIN CANNOT PAY BOTH, AND CANNOT LOSE MONEY ───────────────────
+//
+// ⚠⚠ FOUNDER RULES, 2026-09-07, BOTH VERBATIM: "we NEVER give both ... either
+// coin or VP but not both", and "when giving coins, the rule is that i should
+// ALWAYS make money and never lose money."
+//
+// ⚠ THIS RULE RUNS THE MODULE INSTEAD OF READING IT. A substring test over
+// hypeTrain.js would be satisfied by the comment that explains the clamp, which
+// is exactly how rule 15 and the first boost-bucket guard both passed while the
+// thing they guarded was broken. Everything below executes the real function.
+{
+  const t = await import('../src/utils/hypeTrain.js');
+
+  // Exclusivity, over enough seeds that both branches are certainly exercised.
+  let vp = 0, both = 0, neither = 0;
+  const N = 20000;
+  for (let i = 0; i < N; i++) {
+    const r = t.settleTrain({ received: 12000, level: 4, seed: `guard:${i}` });
+    if (r.kind === 'vp') vp++;
+    if (r.coins > 0 && r.vp > 0) both++;
+    if (r.coins === 0 && r.vp === 0) neither++;
+  }
+  check(both === 0, `a completed train paid coins AND VP in ${both} of ${N} settlements — it is one or the other, never both`);
+  check(neither === 0, `a completed train paid nothing at all in ${neither} of ${N} settlements — a train that reached its goal must pay one of the two`);
+
+  // The randomiser must actually be random, and that takes THREE measurements,
+  // not one.
+  //
+  // ⚠⚠ THE MARGINAL SPLIT ALONE IS A VACUOUS TEST AND THIS WAS PROVEN, NOT
+  // ASSUMED. Deleting the murmur3 finaliser from trainRoll leaves FNV-1a, which
+  // measured a 64.92% VP share against a 65% weight, passing the split
+  // assertion perfectly, while emitting the first 40 seeds as twenty coins in a
+  // row followed by twenty VP in a row, with a longest run of 211. FNV-1a maps
+  // adjacent inputs to adjacent hashes and consecutive train ids are adjacent
+  // inputs. A creator would have seen the same reward for two hundred trains.
+  //
+  // So the split is necessary and nowhere near sufficient. Serial correlation
+  // and run length are what actually catch it.
+  const share = vp / N;
+  check(Math.abs(share - t.TRAIN_VP_WEIGHT) < 0.015,
+    `the coin/VP split measured ${(share * 100).toFixed(2)}% VP against a ${(t.TRAIN_VP_WEIGHT * 100).toFixed(0)}% weight — the randomiser is biased`);
+
+  const bits = [];
+  for (let i = 0; i < N; i++) bits.push(t.trainOutcome(`guard:${i}`) === 'vp' ? 1 : 0);
+  let same = 0, run = 1, longest = 1;
+  for (let i = 1; i < N; i++) {
+    if (bits[i] === bits[i - 1]) { same++; run++; longest = Math.max(longest, run); } else run = 1;
+  }
+  const w = t.TRAIN_VP_WEIGHT;
+  const independent = w * w + (1 - w) * (1 - w);
+  const repeat = same / (N - 1);
+  check(Math.abs(repeat - independent) < 0.03,
+    `consecutive trains repeated the same reward ${(repeat * 100).toFixed(1)}% of the time against ${(independent * 100).toFixed(1)}% expected — the outcome of one train predicts the next, so the avalanche step is missing or the seed is sequential`);
+  check(longest <= 60,
+    `the same reward came up ${longest} times in a row across ${N} trains — a run that long is a pattern a creator can read, not a random result`);
+
+  // Same seed, same answer. This is what makes settling idempotent.
+  const a1 = t.settleTrain({ received: 12000, level: 4, seed: 'guard:fixed' });
+  const a2 = t.settleTrain({ received: 12000, level: 4, seed: 'guard:fixed' });
+  check(a1.kind === a2.kind && a1.coins === a2.coins && a1.vp === a2.vp,
+    'settling the same train twice produced different rewards — a retry, a reconnect or a double-fire would pay a second, different bonus');
+
+  // THE PROFIT GUARANTEE. Swept across the whole revenue-share ladder and every
+  // train size, including sizes far past anything the cap allows.
+  for (const s of [0.50, 0.55, 0.60, 0.65, 0.70, 0.75, 0.80]) {
+    for (const T of [100, 1000, 10_000, 100_000, 1_000_000]) {
+      const paid = t.coinBonusFor(T, s);
+      const kept = t.trainMarginUsd(T, s) - paid * t.OWED_USD_PER_COIN * t.WORST_ONWARD_SHARE;
+      check(kept > 0,
+        `a ${T}-coin train at a ${(s * 100).toFixed(0)}% creator share pays ${paid} coins and leaves $${kept.toFixed(4)} — the platform must never be behind on a train`);
+    }
+  }
+
+  // And it must still hold if somebody raises the rate. The clamp, not the
+  // percentage, is what carries the guarantee.
+  const raised = t.maxSafeCoinBonus(10_000, 0.80);
+  check(raised < 10_000 * 0.90 && (t.trainMarginUsd(10_000, 0.80) - raised * 0.008) > 0,
+    'the margin clamp no longer bounds the payout — with it gone the guarantee depends on TRAIN_BONUS_PCT staying small, which is a comment, not a control');
+
+  // VP must not be priced off the coin count. That error paid 2,718 VP on a
+  // 13,590-coin train, five times what the whole tipping event generated.
+  const small = t.settleTrain({ received: 500, level: 3, seed: 'guard:vp-a' });
+  const huge = t.settleTrain({ received: 5_000_000, level: 3, seed: 'guard:vp-b' });
+  check(t.vpBonusFor(3) === t.TRAIN_VP_PER_LEVEL * 3 && small.level === huge.level,
+    'the VP branch reads the coin total — VP must be priced off the level reached, or a whale mints levels');
+  check(t.vpBonusFor(t.TRAIN_MAX_LEVEL) <= 500,
+    `a max train pays ${t.vpBonusFor(t.TRAIN_MAX_LEVEL)} VP against a product whose largest single award is 150 (host a live event) — that devalues the whole ladder`);
+
+  // A coin result too small to be worth having pays VP instead, and is still one
+  // reward rather than a consolation added to it.
+  const tiny = t.settleTrain({ received: 60, level: 1, seed: 'guard:tiny' });
+  check(tiny.kind === 'vp' && tiny.coins === 0,
+    'a train too small to produce a worthwhile coin bonus still pays coins — being handed 4 coins reads as being fobbed off, and it is worth less than the branch it beat');
+
+  // ⚠⚠ THE SERVER MIRROR. src/utils/hypeTrain.js is what the room is PROMISED;
+  // functions/hypeTrain.js is what actually pays. A disagreement is a lie to a
+  // creator, which is why boosts.js and vpBonuses.js carry the same guard.
+  {
+    const srv = readFileSync('functions/hypeTrain.js', 'utf8');
+    const cli = readFileSync('src/utils/hypeTrain.js', 'utf8');
+    const numOf = (text, name) => {
+      const m = text.match(new RegExp('\\b' + name + ' = ([0-9_.]+)'));
+      return m ? Number(m[1].replace(/_/g, '')) : null;
+    };
+    for (const name of [
+      'TRAIN_GOAL_COEFF', 'TRAIN_MAX_LEVEL', 'TRAIN_LEVEL_STEP', 'TRAIN_SOLO_CAP',
+      'TRAIN_WINDOW_MS', 'TRAIN_EXTEND_MS', 'TRAIN_MAX_MS',
+      'TRAIN_BONUS_PCT', 'TRAIN_COIN_CAP', 'TRAIN_VP_PER_LEVEL', 'TRAIN_VP_WEIGHT',
+      'TRAIN_MIN_COIN_BONUS', 'TRAIN_MARGIN_FLOOR', 'OWED_USD_PER_COIN',
+      'WORST_ONWARD_SHARE',
+    ]) {
+      const a = numOf(cli, name);
+      const b = numOf(srv, name);
+      check(a !== null && b !== null && a === b,
+        `hype train ${name} is ${a} on the client and ${b} on the server — the client promises what the server pays, so drift here is a lie to a creator`);
+    }
+    // The one number that is imported rather than restated on the client.
+    check(numOf(srv, 'TARGET_NET_USD_PER_COIN') === 0.011628,
+      'the server mirror of TARGET_NET_USD_PER_COIN drifted from storePricing.js, so the profit clamp is computing against the wrong margin');
+
+    // ⚠ IT MUST EXPORT NO CLOUD FUNCTION. Founder, 2026-09-07: a new v2 function
+    // is a permanent Artifact Registry line item, so the train rides sendTip and
+    // endStreamSession, both already deployed.
+    check(!/exports\.\w+\s*=\s*functions\./.test(srv) && !srv.includes('onCall(') && !srv.includes('onSchedule('),
+      'functions/hypeTrain.js now exports a Cloud Function or a scheduled job — the train was built to ride sendTip and endStreamSession precisely so it adds no billable line item');
+    check(!srv.includes('onSchedule'),
+      'the hype train added a scheduler job — expiry is evaluated at read time, and a Cloud Scheduler job is one of the few things here that actually costs money');
+
+    // Idempotency and the profit guarantee, on the SERVER path.
+    check(srv.includes('live.settledAt') && srv.includes("'hypeTrain.settledAt'"),
+      'the server settlement lost its settled marker — a retry, a reconnect or both callers racing would pay a second bonus');
+    check(srv.includes('coinBonusFor') && srv.includes('maxSafeCoinBonus'),
+      'the server pays a bonus without the margin clamp, so the profit guarantee exists only on the client');
+    check(srv.includes("'hypeTrain.settledAt'") && !/set\([^)]*'hypeTrain\.settledAt'/.test(srv),
+      "the settled marker is written with set(), which creates a field NAMED 'hypeTrain.settledAt'; only update() resolves a dotted path");
+
+    // The two entry points must actually call it.
+    const idx = readFileSync('functions/index.js', 'utf8');
+    check(idx.includes("require('./hypeTrain')") && idx.includes('hypeTrain.advanceTrain('),
+      'sendTip no longer advances the hype train, so tips stop feeding it');
+    check(idx.includes('hypeTrain.settleAndGrant('),
+      'sendTip no longer settles an expired train, and there is no cron to do it instead');
+    const strm = readFileSync('functions/streaming.js', 'utf8');
+    check(strm.includes('settleAndGrant'),
+      'endStreamSession no longer settles a running train — a stream that goes quiet and then ends would strand a bonus the room had earned');
+
+    // ⚠⚠ AND THE FIELD MUST BE SERVER-ONLY. The host may write any field of
+    // their own stream doc, and the bonus is computed from hypeTrain.received,
+    // so an unlocked field is a coin printer: stamp a fake train, end the
+    // stream, collect the capped 5,000 coins.
+    const rules = readFileSync('firestore.rules', 'utf8');
+    const streams = rules.slice(rules.indexOf('match /streams/{streamId}'));
+    check(/hasAny\(\[[^\]]*'hypeTrain'/.test(streams),
+      'hypeTrain is no longer server-only in firestore.rules — a host can stamp a fake train on their own stream and collect the bonus for it');
+
+    // ⚠⚠ EVERY SURFACE A TIP LANDS ON MUST DRAW THE TRAIN, AND BOTH LAYOUT
+    // BRANCHES OF THE WEB BROADCASTER COUNT. The tip alert is the anchor because
+    // it is the other thing a tip puts on screen, so a branch that renders one
+    // and not the other shows a viewer nothing while the room pushes a meter.
+    // This project has shipped 1-of-3 and 2-of-6 before.
+    for (const f of [
+      'src/components/streams/MobileLiveViewer.jsx',
+      'src/screens/streams/ViewerStreamScreen.jsx',
+      'src/screens/streams/BroadcasterScreen.jsx',
+      'src/screens/streams/native/NativeBroadcasterScreen.jsx',
+    ]) {
+      const s = codeOnly(readFileSync(f, 'utf8'));
+      const tips = (s.match(/<TipAlertOverlay /g) || []).length;
+      const trains = (s.match(/<HypeTrainView /g) || []).length;
+      check(trains >= tips,
+        `${f}: renders the tip alert in ${tips} branch(es) but the hype train in ${trains} — a branch without it leaves the room pushing a meter nobody can see`);
+      check(s.includes('train={streamDoc.hypeTrain}'),
+        `${f}: the train is fed from something other than the stream doc, so it cannot be the server's train`);
+      // The bar is persistent state, not an alert popup.
+      check(!/&& <HypeTrainView /.test(s),
+        `${f}: the hype train sits behind a conditional it does not belong to (the alerts toggle governs tip and sub POPUPS, not a persistent progress bar)`);
+    }
+  }
+
+  // No chance-mechanic vocabulary anywhere near this feature.
+  const src = readFileSync('src/utils/hypeTrain.js', 'utf8') + readState();
+  for (const word of ['jackpot', 'gamble', 'wager', 'odds of', 'prize wheel', 'lottery', 'spin to']) {
+    check(!src.toLowerCase().includes(word),
+      `the hype train copy uses "${word}" — the reward is not a chance mechanic and must never be described as one`);
   }
 }
 
@@ -3196,6 +3424,243 @@ check(stSrc.includes('ReconnectingOverlay') && stSrc.includes('StreamLoadingCove
 
   check(chrome.includes('316.0494'),
     'the wide-fallback constant changed — it is (16/9)^2 as a percentage, and the drawn fallback is the path that actually renders because /brand/live/preview-scene.webp does not exist');
+}
+
+// ── 58. THE REAL SCREENS: A CONTROL MUST BE WHERE THE USER LANDS ───────────
+//
+// ⚠⚠ THE RAID HAD NO ENTRY POINT FOR ITS ENTIRE LIFE. `functions/raids.js` was
+// deployed, `RaidCountdown` was mounted on both viewers, and `RaidPicker` was
+// mounted in exactly ONE file: `StreamEndingScreen.jsx`, at route
+// `/stream/ended`, which NOTHING in the app navigates to. Both broadcasters
+// render their own `StreamSummary` inline instead. So `raidStream` had never
+// been called by anybody.
+//
+// This is the same class as the boost that only drew a badge, the three kill
+// switches that were read by nothing, and the avatar orbit that only its owner
+// could see. The guard is therefore about the MOUNT, not the component.
+{
+  const prod = (f) => readFileSync(f, 'utf8');
+  const broadcasters = [
+    'src/screens/streams/BroadcasterScreen.jsx',
+    'src/screens/streams/native/NativeBroadcasterScreen.jsx',
+  ];
+  for (const f of broadcasters) {
+    const src = prod(f);
+    const summary = src.slice(src.indexOf('function StreamSummary'));
+    check(summary.length > 400, `${f}: StreamSummary could not be located, so every rule below stopped checking anything`);
+    // ⚠ `includes('<RaidPicker')` IS NOT ENOUGH AND THE NEGATIVE TEST PROVED IT:
+    // it matches `<RaidPickerXX` too, so renaming the component away would have
+    // left the rule green. The trailing space is the cheapest exact test, and it
+    // carries no backslash for a template literal to eat, which is the OTHER way
+    // three guards in this repo have silently stopped checking anything.
+    check(summary.includes('<RaidPicker '),
+      `${f}: the host's own end-of-stream summary has no raid picker, and /stream/ended is unrouted, so raidStream has no caller on this platform`);
+    check(summary.includes('raidStream'),
+      `${f}: the raid picker renders but never calls raidStream, which is a control that leads nowhere`);
+    // ⚠ THE CANDIDATES MUST NOT COST A QUERY. A getDocs here is one Firestore
+    // read every time any host ends a stream, and LiveUsersContext already holds
+    // a shared snapshot of live streams for free.
+    check(summary.includes('liveHosts') && !/getDocs\(/.test(summary),
+      `${f}: the raid picker runs its own query for candidates instead of reading LiveUsersContext, which spends money for data already loaded`);
+    // The server refuses these targets, so offering them makes a failing button.
+    for (const flag of ['audioOnly', 'ticketed', 'premium', 'discoverable']) {
+      check(summary.includes(flag),
+        `${f}: the raid candidate filter dropped ${flag} — functions/raids.js refuses that target, so the picker would offer a button the server rejects`);
+    }
+  }
+
+  // UP NEXT on the viewer's ended card, same cost rule.
+  const mlv = prod('src/components/streams/MobileLiveViewer.jsx');
+  const ended = mlv.slice(mlv.indexOf("streamDoc.status === 'ended'"), mlv.indexOf("streamDoc.status === 'created'"));
+  check(ended.length > 400, 'the viewer ended branch could not be located in MobileLiveViewer');
+  check(ended.includes('UP NEXT') && ended.includes('liveHosts'),
+    'the ended card has no UP NEXT, or builds one from its own query — a viewer who just finished needs somewhere to go, and LiveUsersContext already has it for free');
+  check(ended.includes('h.hostUid !== streamDoc.hostUid'),
+    'UP NEXT can offer the stream that just ended — the host doc lingers in the live snapshot for seconds after status flips');
+  check(ended.includes('peakViewers'),
+    'the ended card dropped peak viewers — the relay already writes it on the viewerCount update it was sending anyway, so it is a free stat');
+
+  // ⚠⚠ THE CO-HOST ROLE LABEL, MEASURED. On the desktop viewer the slot label
+  // showed a NAME and no role, so in a four-way nobody could tell who the host
+  // was, and the self slot rendered nothing at all.
+  const vs = prod('src/screens/streams/ViewerStreamScreen.jsx');
+  const slot = vs.slice(vs.indexOf('function SlotTapZone'));
+  check(slot.length > 400, 'SlotTapZone could not be located in ViewerStreamScreen');
+  check(slot.includes("role === 'HOST'") && slot.includes('{role}'),
+    'the co-host slot label lost its role — a viewer in a four-way composite cannot otherwise tell which tile is the host');
+  check(slot.includes('bottom: 10') && !/top:\s*10,\s*$/m.test(slot),
+    'the co-host role label moved to the top-left, which is where every stream surface puts its own chrome; the preview measured HOST covered by the LIVE pill at 29x9');
+  check(slot.includes('isSelf && selfHost'),
+    'the self slot is unlabelled again — the tile the viewer is actually watching rendered a blank while every other tile carried a name');
+
+  // ⚠⚠ CO-HOSTING HAD NO ENTRY POINT ON ANY PLATFORM. `CoHostInviteModal` was
+  // mounted in ZERO files while its own header declares itself "the ONLY co-host
+  // entry point now", because the pre-broadcast button on GoLiveSetupScreen was
+  // deliberately removed in its favour. Both doors were shut at once: a deployed
+  // `inviteToCoStream`, an SFU ingest room, the ffmpeg compositor service and a
+  // whole invite-accept screen, with no way for a host to start one.
+  //
+  // Co-streaming is FREE on purpose, founder 2026-08-19, "it drives tips on live
+  // streams", so an unreachable one costs revenue directly.
+  for (const f of broadcasters) {
+    const src = codeOnly(prod(f));
+    check(src.includes('<CoHostInviteModal '),
+      `${f}: the co-host invite modal is not mounted, and Go Live no longer carries a co-stream button, so co-hosting is unreachable on this platform`);
+    check(src.includes('setCoHostOpen(true)'),
+      `${f}: the co-host modal is mounted but nothing opens it, which is a control that leads nowhere`);
+  }
+  // ⚠ THE WEB FILE RETURNS FROM TWO LAYOUT BRANCHES AND EACH CARRIES ITS OWN
+  // MODALS. Wiring one branch is the failure this project keeps repeating: the
+  // tip feed shipped in 1 of 3, the boost delivery in 2 of 6. Count against the
+  // sibling modal that is already correct in both.
+  {
+    const web = codeOnly(prod('src/screens/streams/BroadcasterScreen.jsx'));
+    const banned = (web.match(/<BannedWordsEditor /g) || []).length;
+    const cohost = (web.match(/<CoHostInviteModal /g) || []).length;
+    check(cohost >= banned,
+      `BroadcasterScreen mounts BannedWordsEditor in ${banned} layout branch(es) but CoHostInviteModal in ${cohost} — the branch without it opens nothing`);
+  }
+
+  // ⚠⚠ GIFT A SUB WAS HALF BUILT FOR FIVE DAYS. `giftMembership` has always
+  // accepted up to 25 recipients and the sheet sent exactly one, so the bulk
+  // gifting the founder approved existed on the server and nowhere a person
+  // could reach it.
+  {
+    const sheet = codeOnly(prod('src/components/streams/GiftSubSheet.jsx'));
+    check(sheet.includes('recipients: picked'),
+      'GiftSubSheet sends a single recipient again — the callable takes up to 25 and the sheet is the only thing that can offer them');
+    check(sheet.includes('MAX_GIFTS = 25'),
+      'the sheet no longer mirrors the server ceiling, so it can build a basket the callable refuses');
+    check(sheet.includes('no bulk discount'),
+      'the bulk total no longer states that there is no discount — the price is per gift and hiding that is a surprise on a receipt');
+    check(sheet.includes('res?.data?.granted'),
+      'the toast reports what was PICKED rather than what the server GRANTED — the callable drops people who are already members and does not charge for them, so echoing the basket claims gifts nobody received');
+    check(sheet.includes('uid === creatorId'),
+      'the creator is selectable as a gift recipient again — the callable rejects the WHOLE batch if they are in it, so a good basket fails with a confusing message');
+    // No chance-mechanic framing anywhere near a paid feature.
+    for (const w of ['random', 'lucky', 'draw ']) {
+      check(!sheet.toLowerCase().includes(w),
+        `GiftSubSheet copy uses "${w}" — gifting is not a chance mechanic and the quick picks are deterministic top-N, deliberately`);
+    }
+  }
+
+  // ⚠⚠ A CONST READ ABOVE ITS OWN DECLARATION IS A MOUNT CRASH THAT NOTHING
+  // ELSE CATCHES. eslint `no-undef` sees a defined binding, the build is green,
+  // and the screen goes to ErrorBoundary on first render. This repo has shipped
+  // that exact shape three times (myVpLevel, accentHex, tsMs) and it happened
+  // AGAIN here: `giftCandidates` was inserted beside `giftTo`, 200+ lines above
+  // the `joinEvents` it reads, in both viewers.
+  for (const f of ['src/components/streams/MobileLiveViewer.jsx', 'src/screens/streams/ViewerStreamScreen.jsx']) {
+    const src = prod(f);
+    const memo = src.indexOf('const giftCandidates = useMemo');
+    check(memo > 0, `${f}: giftCandidates is gone, so the gift sheet has no candidates and bulk gifting is unreachable here`);
+    for (const dep of ['const joinEvents = useMemo', 'const [topGifters']) {
+      const at = src.indexOf(dep);
+      check(at > 0 && at < memo,
+        `${f}: giftCandidates reads ${dep.replace(/const |\[|= useMemo/g, '').trim()} before it is declared — a temporal dead zone, which builds green and crashes the viewer on mount`);
+    }
+  }
+
+  // ⚠⚠ HOST DROPPED MUST BE DERIVED, NEVER POLLED. `PlaybackStateView` has
+  // always rendered `hostdropped`; the signal did not exist. The tempting fix is
+  // a heartbeat field on the stream doc, which is a Firestore write per stream
+  // per interval to learn something the viewer's own video element already
+  // knows. Both viewers derive it from the stall timer that was already running.
+  for (const f of ['src/components/streams/MobileLiveViewer.jsx', 'src/screens/streams/ViewerStreamScreen.jsx']) {
+    const src = codeOnly(prod(f));
+    check(src.includes('state="hostdropped"'),
+      `${f}: a stalled viewer is told "Reconnecting" forever when the host's uplink is gone — PlaybackStateView can render hostdropped and nothing drives it`);
+    check(src.includes('setHostDropped(true)') && src.includes('setHostDropped(false)'),
+      `${f}: host-dropped is set but never cleared, or never set — a viewer whose stream recovers would be stuck on the dropped screen`);
+    check(src.includes('clearTimeout(dropTimer)'),
+      `${f}: the host-dropped timer is not cleared on resume or unmount, so it fires against a stream that recovered`);
+    // ⚠⚠ THE ONE THING THAT MUST NOT HAVE HAPPENED WHILE ADDING IT, AND THE
+    // FIRST VERSION OF THIS RULE MEASURED THE WRONG THING. It counted every
+    // `updateDoc(doc(db, 'streams'` in the WHOLE FILE and reported 4 and 3
+    // against correct code, because both viewers legitimately write to the
+    // stream doc from tips, polls and moderation. Scoped to the stall effect,
+    // which is the only place a heartbeat would have been tempting.
+    // ⚠ THE END MARKER MUST BE SEARCHED FROM THE START MARKER. Both files have
+    // several effects closing on `}, [streamDoc?.id`, and a bare indexOf found
+    // an EARLIER one, so the slice came back empty and the rule reported 0
+    // writes against correct code in both files. A guard that fails on a healthy
+    // repo gets switched off, which is worse than one that never fires.
+    const start = src.indexOf('let stallTimer = 0;');
+    const end = start >= 0 ? src.indexOf('}, [streamDoc?.id', start) : -1;
+    const effect = start >= 0 && end > start ? src.slice(start, end) : '';
+    check(effect.length > 200, `${f}: the stall effect could not be located, so the write rule below stopped checking anything`);
+    const writes = (effect.match(/updateDoc\(/g) || []).length;
+    check(writes === 1,
+      `${f}: the playback stall effect performs ${writes} writes — host-dropped detection must add none, and the throttled playbackStalls counter is the only one allowed`);
+  }
+
+  // ⚠⚠ NO TINTED WASHES ON ANY STREAM SURFACE. Founder, twice: the
+  // semi-transparent pill background is the treatment he rejected. A BLACK
+  // scrim over video is exempt and required, because type over gameplay needs
+  // it; a COLOURED wash is not a surface, it has no value of its own and it
+  // changes from shot to shot.
+  const SURFACES = [
+    'src/screens/streams/GoLiveSetupScreen.jsx',
+    'src/screens/streams/native/NativeGoLiveScreen.jsx',
+    'src/screens/streams/ViewerStreamScreen.jsx',
+    'src/components/streams/MobileLiveViewer.jsx',
+    'src/screens/streams/BroadcasterScreen.jsx',
+    'src/screens/streams/native/NativeBroadcasterScreen.jsx',
+  ];
+  for (const f of SURFACES) {
+    const src = codeOnly(prod(f));
+    const tinted = [...src.matchAll(/(?:background|backgroundColor):\s*['"`]?\s*rgba\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*([\d.]+)\s*\)/g)]
+      .filter((m) => {
+        const a = parseFloat(m[4]);
+        const black = m[1] === '0' && m[2] === '0' && m[3] === '0';
+        return !black && a > 0.02 && a < 0.98;
+      })
+      .map((m) => m[0]);
+    check(tinted.length === 0,
+      `${f}: ${tinted.length} coloured wash background(s) are back (${tinted.slice(0, 2).join(', ')}) — a tinted rgba fill is the fake-glass treatment the founder has rejected twice; use a solid value with a real step`);
+
+    // ⚠⚠ A WASH HIDDEN BEHIND A PALETTE TOKEN IS STILL A WASH, AND THE LITERAL
+    // SCAN ABOVE CANNOT SEE IT. Measured on the live page, not grepped: every
+    // selected control on Go Live (Mic, Camera, Screen, and the whole audience
+    // row) was painting `C.purpleSoft`, which is `rgba(123,31,255,0.15)`, so the
+    // screen's most-used controls carried the exact treatment the founder
+    // rejected while the source scan reported the file clean.
+    //
+    // So the token table is parsed out of the file itself and any key whose
+    // value is a translucent COLOURED rgba is banned from a background.
+    const palette = src.slice(src.indexOf('const C = {'), src.indexOf('};', src.indexOf('const C = {')));
+    const washTokens = [...palette.matchAll(/(\w+):\s*'rgba\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*([\d.]+)\)'/g)]
+      .filter((m) => {
+        const a = parseFloat(m[5]);
+        const black = m[2] === '0' && m[3] === '0' && m[4] === '0';
+        return !black && a > 0.02 && a < 0.98;
+      })
+      .map((m) => m[1]);
+    // ⚠ THE VALUE MUST BE EXTRACTED, NOT MATCHED WITH A GREEDY TAIL. The first
+    // version used `background:[^;\n]*C\.tok`, which ran straight past the
+    // background value into a sibling `border: 1px solid ${C.border}` on the
+    // same line and reported C.border and C.borderSoft as wash backgrounds in
+    // two correct files. Take the value up to the next TOP-LEVEL comma, so
+    // rgba(...) and gradients survive but the next property does not.
+    const bgValues = [...src.matchAll(/(?:background|backgroundColor):\s*((?:[^,(\n]|\([^)]*\))*)/g)].map((m) => m[1]);
+    for (const tok of washTokens) {
+      const hit = bgValues.find((v) => new RegExp('C\\.' + tok + '\\b').test(v));
+      check(!hit,
+        `${f}: C.${tok} is a translucent coloured value being painted as a background (${(hit || '').trim().slice(0, 60)}) — that is the fake-glass wash wearing a token name, which is why a literal rgba scan called this file clean`);
+    }
+  }
+
+  // Type and radius stay on the scale on the shipped screens, not just in the
+  // simulator. Rule 50 has always covered the preview only.
+  const TYPE = new Set([9, 10, 11, 12, 13, 14, 16, 18, 20, 24, 28, 32, 40]);
+  const RADIUS = new Set([0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 28, 999, 9999]);
+  for (const f of [...SURFACES, 'src/screens/streams/StreamEndingScreen.jsx', 'src/screens/streams/CoStreamingScreen.jsx']) {
+    const src = codeOnly(prod(f));
+    const offType = [...new Set([...src.matchAll(/fontSize:\s*(\d+(?:\.\d+)?)/g)].map((m) => +m[1]).filter((v) => !TYPE.has(v)))];
+    const offRad = [...new Set([...src.matchAll(/borderRadius:\s*(\d+)[,\s}]/g)].map((m) => +m[1]).filter((v) => !RADIUS.has(v)))];
+    check(offType.length === 0, `${f}: off-scale font sizes ${offType.join(', ')} — a half-pixel type ladder is how a screen stops looking designed`);
+    check(offRad.length === 0, `${f}: off-scale radii ${offRad.join(', ')}`);
+  }
 }
 
 if (fails.length) {

@@ -61,6 +61,12 @@ const FIELD_WHITELIST = {
     'tosUrl', 'privacyUrl', 'refundUrl', 'guidelinesUrl', 'supportPageUrl',
     'dataRetentionPeriod', 'deleteInactiveAccountsAfter',
     'anonymizeDataAfterRetention', 'allowUserDataExport', 'logRetentionPeriod',
+    // DM/chat media expiry on R2. Both OFF/empty by default and deliberately so:
+    // arming this DELETES users' photos and voice notes from the server, and the
+    // on-device fallback is Android-only. `chatMediaRetentionDays` is a map
+    // { free, lite, pro } in DAYS; a tier that is absent or null is kept forever.
+    // Enforced by _cleanupExpiredMedia in functions/index.js.
+    'chatMediaExpiryEnabled', 'chatMediaRetentionDays',
   ]),
   features: new Set([
     'liveStreamingPaused', 'tournamentsEnabled', 'squadsEnabled', 'newsBotsEnabled',

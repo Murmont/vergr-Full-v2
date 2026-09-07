@@ -22,7 +22,9 @@ const C = {
   red: '#ef4444',
 };
 
-const MAX_WORDS = 100;
+// ⚠ 500, matching what TikTok LIVE allows on its own keyword filter. Founder
+// decision 2026-09-05 after that was measured against ours, which was 100.
+const MAX_WORDS = 500;
 const MAX_LEN = 32;
 
 export default function BannedWordsEditor({ streamId, onClose }) {
@@ -79,7 +81,7 @@ export default function BannedWordsEditor({ streamId, onClose }) {
     <div style={{
       width: 'min(420px, 92vw)', background: C.bg, border: `1px solid ${C.border}`,
       borderRadius: 14, overflow: 'hidden', color: C.text,
-      fontFamily: '"Inter", system-ui, sans-serif',
+      fontFamily: '"DM Sans", system-ui, sans-serif',
     }}>
       <div style={{
         padding: '14px 16px', borderBottom: `1px solid ${C.border}`,

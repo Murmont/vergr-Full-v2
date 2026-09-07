@@ -28,6 +28,7 @@ import { useUser } from '../../context/UserContext';
 import { getCoinPriceQuote } from '../../firebase/firestore';
 import { hasLocalEstimate } from '../../utils/currency';
 import { COIN_PACKS } from '../../utils/vpSystem';
+import { storeItemBySku, isStoreItemSku } from '../../utils/storeItems';
 import { isPlayBillingSupported, fetchPlayPrices, playProductIdFor } from '../../utils/nativeBilling';
 import PaymentMethodPicker from './PaymentMethodPicker';
 import { WALLET_TOKENS, CoinGlyph, fmtNum } from './primitives';
@@ -37,6 +38,45 @@ import { WALLET_TOKENS, CoinGlyph, fmtNum } from './primitives';
 import { OPERATOR } from '../../screens/marketing/legal/legalContent';
 
 const packById = (sku) => COIN_PACKS.find((p) => p.id === sku);
+
+/**
+ * A basket may hold coin packs AND store items (VP bonuses, boosts).
+ *
+ * ⚠ A store item's SKU IS its Play product id (`vpb_flash`, `boost_post`).
+ * Running one through playProductIdFor() asks Play for `coins_vpb_flash`, which
+ * does not exist, and the sheet reports "product not loaded" instead of failing
+ * usefully. This is the ONE place that mapping happens.
+ */
+const playIdForSku = (sku) => (isStoreItemSku(sku) ? sku : playProductIdFor(sku));
+
+/**
+ * One basket row, whatever the SKU is. Returns null for a SKU we do not sell.
+ *
+ * ⚠ This is the ONLY place a cart line is resolved. Everything the row renderer
+ * needs comes back non-null, so no field below it can dereference an absent
+ * pack, which is exactly how adding a boost to the basket crashed the drawer.
+ */
+function rowFor(sku) {
+  const pack = packById(sku);
+  if (pack) {
+    return {
+      name: pack.name,
+      detail: `${fmtNum(pack.coins)} coins${pack.vpBonus > 0 ? ` · +${fmtNum(pack.vpBonus)} VP` : ''}`,
+      unitUSD: pack.priceUSD,
+      tint: 'rgba(240,165,0,0.12)',
+      art: null,
+    };
+  }
+  const item = storeItemBySku(sku);
+  if (!item) return null;
+  return {
+    name: item.name,
+    detail: item.detail,
+    unitUSD: item.priceUSD,
+    tint: item.kind === 'bonus' ? 'rgba(180,79,255,0.14)' : 'rgba(240,64,96,0.14)',
+    art: item.art,
+  };
+}
 
 /**
  * "Taxes / Fees ⓘ" — collapsed by default, itemised on tap.
@@ -194,7 +234,7 @@ export default function CartContents({ onCheckout, busy, onClose, variant = 'dra
     if (!playAvailable || lines.length !== 1 || lines[0].qty !== 1) { setPlayPrices(null); return undefined; }
     let alive = true;
     setPlayPrices(null);
-    fetchPlayPrices(lines.map((l) => playProductIdFor(l.sku)))
+    fetchPlayPrices(lines.map((l) => playIdForSku(l.sku)))
       .then((map) => { if (alive) setPlayPrices(map || {}); })
       // An empty map is the honest answer: the picker then disables the row
       // rather than inventing a price.
@@ -224,7 +264,7 @@ export default function CartContents({ onCheckout, busy, onClose, variant = 'dra
   const singleLine = lines.length === 1 && lines[0].qty === 1;
   const playPriceLoading = playAvailable && singleLine && playPrices === null;
   const playPrice = singleLine
-    ? (playPrices?.[playProductIdFor(lines[0].sku)]?.price || '')
+    ? (playPrices?.[playIdForSku(lines[0].sku)]?.price || '')
     : '';
   const playUnavailableReason = !playAvailable
     ? 'Only available in the Android app'
@@ -280,8 +320,22 @@ export default function CartContents({ onCheckout, busy, onClose, variant = 'dra
         }}
       >
         {lines.map((line) => {
-          const pack = packById(line.sku);
-          if (!pack) return null;
+          // A coin pack or a store item, flattened into ONE row object.
+          //
+          // ⚠⚠ `pack` AND `item` ARE DELIBERATELY NOT IN SCOPE BELOW THIS BLOCK.
+          // The first version kept both and branched at each field, and one
+          // survivor forty lines down (`pack.priceUSD * line.qty` in the line
+          // total) dereferenced null the moment a boost was added and took the
+          // whole basket to the ErrorBoundary. A single non-null row has nothing
+          // to deref through, so the bug cannot recur by omission.
+          //
+          // One row shape rather than two components, too: the fields line up
+          // (name, what you get, unit price, quantity), and a basket that looked
+          // like two different products depending on the line would be the
+          // "second visual language" problem in a smaller box.
+          const row = rowFor(line.sku);
+          if (!row) return null;
+          const { name: rowName, detail: rowDetail, unitUSD: rowUnitUSD, tint: rowTint, art: rowArt } = row;
           const lineQuote = quote?.lines?.find((l) => l.sku === line.sku);
           return (
             <div
@@ -293,21 +347,30 @@ export default function CartContents({ onCheckout, busy, onClose, variant = 'dra
             >
               <div style={{
                 width: 40, height: 40, borderRadius: 10, flexShrink: 0,
-                display: 'grid', placeItems: 'center', background: 'rgba(240,165,0,0.12)',
+                display: 'grid', placeItems: 'center', background: rowTint,
+                overflow: 'hidden',
               }}>
-                <CoinGlyph size={20} />
+                {/* The item's own art, so a basket looks like what was clicked
+                    in the shop. Falls back to the coin glyph rather than an
+                    empty square when the render has not shipped yet. */}
+                {rowArt ? (
+                  <img
+                    src={rowArt} alt="" width={40} height={40} draggable={false}
+                    style={{ objectFit: 'contain' }}
+                    onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                  />
+                ) : <CoinGlyph size={20} />}
               </div>
 
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 700, fontSize: 14 }}>{pack.name}</div>
+                <div style={{ fontWeight: 700, fontSize: 14 }}>{rowName}</div>
                 <div style={{ fontSize: 12, color: WALLET_TOKENS.textMuted, marginTop: 1 }}>
-                  {fmtNum(pack.coins)} coins
-                  {pack.vpBonus > 0 && ` · +${fmtNum(pack.vpBonus)} VP`}
+                  {rowDetail}
                 </div>
                 {/* Unit price, so the line total is checkable rather than
                     asserted. */}
                 <div style={{ fontSize: 11.5, color: WALLET_TOKENS.textMuted, marginTop: 3 }}>
-                  ${pack.priceUSD.toFixed(2)} each
+                  ${rowUnitUSD.toFixed(2)} each
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8 }}>
@@ -337,7 +400,11 @@ export default function CartContents({ onCheckout, busy, onClose, variant = 'dra
               </div>
 
               <div className="font-dmmono tabular-nums" style={{ fontWeight: 700, fontSize: 14, whiteSpace: 'nowrap' }}>
-                ${(lineQuote ? lineQuote.priceUSD : pack.priceUSD * line.qty).toFixed(2)}
+                {/* ⚠ `rowUnitUSD`, never `pack.priceUSD`. A store-item line has
+                    no pack, and reading through the null here crashed the whole
+                    basket to the ErrorBoundary the first time a boost was added.
+                    Every field below the resolve must use a row* variable. */}
+                ${(lineQuote ? lineQuote.priceUSD : rowUnitUSD * line.qty).toFixed(2)}
               </div>
             </div>
           );
@@ -379,7 +446,15 @@ export default function CartContents({ onCheckout, busy, onClose, variant = 'dra
           playUnavailableReason={playUnavailableReason}
         />
 
-        <Row label={`Coins (${count} item${count === 1 ? '' : 's'})`} value={`${fmtNum(coins)} coins`} />
+        {/* A basket of boosts and bonuses yields no coins, so this row would read
+            "Coins (2 items) — 0 coins", which looks like a fault rather than a
+            fact. It states what the basket is instead. */}
+        <Row
+          label={coins > 0
+            ? `Coins (${count} item${count === 1 ? '' : 's'})`
+            : `${count} item${count === 1 ? '' : 's'}`}
+          value={coins > 0 ? `${fmtNum(coins)} coins` : 'Applied on purchase'}
+        />
 
         {/* THE STICKER PRICE, and only the sticker price.
             The shelf says $0.99, the picker row says $0.99, and this says

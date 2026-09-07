@@ -94,7 +94,17 @@ const EMOTES = [
 
 export default function ChatPanel({
   streamId, layout = 'side', hostUid = null,
-  slowModeSec = 0, followersOnly = false, ttsEnabled = false, pinnedMessage = null,
+  slowModeSec = 0, followersOnly = false, subsOnly = false, ttsEnabled = false, pinnedMessage = null,
+  // ⚠⚠ A MUTE TAKES THE PERSON'S MESSAGES WITH IT. Founder decision 2026-09-05,
+  // matching TikTok LIVE, whose own help says muting "will not allow them to
+  // comment for the duration you set and will also remove all of their past
+  // comments". Ours only stopped the next message, so the thing that got them
+  // muted stayed on screen for the whole room to keep reading.
+  //
+  // ⚠ IT COSTS NOTHING. `mutedUids` is already on the stream doc every one of
+  // these screens subscribes to, so no read, no write and no relay verb is
+  // added — the client drops what it is already holding.
+  mutedUids = null,
   composerExtras = null,
   // Optional. When absent the banner renders WITHOUT a CTA rather than drawing a
   // dead one, so a surface that has no sheet plumbing can still mount this safely.
@@ -290,6 +300,22 @@ export default function ChatPanel({
   // worse, leave private lines on screen after switching back.
   useEffect(() => { setMessages([]); }, [channel]);
 
+  // ⚠ SPLICED OUT, NOT HIDDEN AT RENDER. A filter would put the messages back
+  // the moment the mute expired, and TikTok's does not come back. Dropping them
+  // from the list is also what makes this free: no extra state, no second pass
+  // over the feed on every render.
+  //
+  // ⚠ KEYED ON THE MUTE MAP, so it fires the moment the host mutes someone and
+  // the stream doc updates — every viewer's copy of those lines goes at once.
+  const mutedKey = mutedUids ? Object.keys(mutedUids).sort().join(',') : '';
+  useEffect(() => {
+    if (!mutedKey) return;
+    const gone = new Set(mutedKey.split(','));
+    setMessages((prev) => (prev.some((m) => gone.has(m.uid || m.senderUid))
+      ? prev.filter((m) => !gone.has(m.uid || m.senderUid))
+      : prev));
+  }, [mutedKey]);
+
   // Auto-scroll to bottom unless user scrolled up.
   useEffect(() => {
     if (!autoScrollRef.current) return;
@@ -479,9 +505,10 @@ export default function ChatPanel({
         </div>
         {isHost && settingsOpen && (
           <ChatSettingsPopover
-            slowModeSec={slowModeSec} followersOnly={followersOnly} ttsEnabled={ttsEnabled} saving={savingMod}
+            slowModeSec={slowModeSec} followersOnly={followersOnly} subsOnly={subsOnly} ttsEnabled={ttsEnabled} saving={savingMod}
             onSlowMode={(s) => applyMod('setStreamSlowMode', { seconds: s }, s ? `Slow mode: ${s}s` : 'Slow mode off')}
             onFollowersOnly={(en) => applyMod('setStreamFollowersOnly', { enabled: en }, en ? 'Followers-only on' : 'Followers-only off')}
+            onSubsOnly={(en) => applyMod('setStreamSubscribersOnly', { enabled: en }, en ? 'Subscribers-only on' : 'Subscribers-only off')}
             onTtsEnabled={(en) => applyMod('setStreamTts', { enabled: en }, en ? 'Spoken messages on' : 'Spoken messages off')}
             onClose={() => setSettingsOpen(false)}
           />
@@ -777,7 +804,7 @@ function modChip(color) {
   };
 }
 
-function ChatSettingsPopover({ slowModeSec, followersOnly, ttsEnabled, saving, onSlowMode, onFollowersOnly, onTtsEnabled, onClose }) {
+function ChatSettingsPopover({ slowModeSec, followersOnly, subsOnly, ttsEnabled, saving, onSlowMode, onFollowersOnly, onSubsOnly, onTtsEnabled, onClose }) {
   const SLOW = [0, 5, 15, 30, 60];
   return (
     <>
@@ -805,6 +832,33 @@ function ChatSettingsPopover({ slowModeSec, followersOnly, ttsEnabled, saving, o
           >
             <span style={{
               position: 'absolute', top: 2, left: followersOnly ? 18 : 2,
+              width: 18, height: 18, borderRadius: '50%', background: '#fff', transition: 'left 0.15s',
+            }} />
+          </button>
+        </div>
+
+        {/* Subscribers-only.
+            ⚠⚠ THIS TOGGLE EXISTED IN THE PREVIEW BEFORE ANYTHING HONOURED IT.
+            The relay knew only followersOnly and slowModeSec, and nothing wrote a
+            subscriber field, so switching it on changed nothing whatsoever. The
+            relay gate landed 2026-09-06 and costs no extra read: subscriber
+            status is already resolved once per connection for the member gem. */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+          <Icon name="workspace_premium" size={14} className="" />
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 12, color: C.text, fontWeight: 600 }}>Subscribers-only</div>
+            <div style={{ fontSize: 10, color: C.textMuted }}>Only your members can chat</div>
+          </div>
+          <button
+            onClick={() => onSubsOnly(!subsOnly)} disabled={saving}
+            style={{
+              width: 38, height: 22, borderRadius: 11, border: 'none', position: 'relative',
+              background: subsOnly ? C.purpleLight : 'rgba(255,255,255,0.14)',
+              cursor: saving ? 'wait' : 'pointer', flexShrink: 0,
+            }}
+          >
+            <span style={{
+              position: 'absolute', top: 2, left: subsOnly ? 18 : 2,
               width: 18, height: 18, borderRadius: '50%', background: '#fff', transition: 'left 0.15s',
             }} />
           </button>

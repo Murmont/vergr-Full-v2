@@ -23,14 +23,28 @@ const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const db = () => getFirestore('vgrdb');
 
 /** MIRROR of BOOSTS in src/utils/boosts.js. */
+//
+// ⚠ TWO PRICES, AND THEY ARE NOT DERIVED FROM EACH OTHER.
+//
+//   coins    what it costs from the wallet
+//   priceUSD what it costs in cash, when the wallet cannot cover it
+//
+// The rule, set 2026-08-28: priceUSD = charmRound(max(2 x coin-equivalent,
+// $0.99)). Paying with coins is therefore always about HALF the cash price,
+// which is what makes coins worth holding.
+//
+// ⚠⚠ NEVER price a boost at its coin count through playPriceFor(). That is the
+// COIN REDEMPTION rate, and it priced a 75-coin boost at $1.09, exactly what a
+// 78-coin pack costs. Nobody would ever buy that. The $0.99 term is Google
+// Play's US minimum and only binds on the two 25-coin items.
 const BOOSTS = [
-  { id: 'post',          target: 'post',   minutes: 1440, coins: 50,  reach: 3 },
-  { id: 'lfg',           target: 'post',   minutes: 720,  coins: 25,  reach: 3, postType: 'lfg' },
-  { id: 'profile',       target: 'user',   minutes: 2880, coins: 100 },
-  { id: 'squad',         target: 'squad',  minutes: 2880, coins: 75 },
-  { id: 'stream_boost',  target: 'stream', minutes: 15,   coins: 50,  reach: 1.5 },
-  { id: 'stream_super',  target: 'stream', minutes: 30,   coins: 150, reach: 2.5 },
-  { id: 'stream_mega',   target: 'stream', minutes: 60,   coins: 500, reach: 4 },
+  { id: 'post',          target: 'post',   minutes: 1440, coins: 50,  priceUSD: 0.99,  reach: 3 },
+  { id: 'lfg',           target: 'post',   minutes: 720,  coins: 25,  priceUSD: 0.99,  reach: 3, postType: 'lfg' },
+  { id: 'profile',       target: 'user',   minutes: 2880, coins: 100, priceUSD: 1.29 },
+  { id: 'squad',         target: 'squad',  minutes: 2880, coins: 75,  priceUSD: 0.99 },
+  { id: 'stream_boost',  target: 'stream', minutes: 15,   coins: 50,  priceUSD: 0.99,  reach: 1.5 },
+  { id: 'stream_super',  target: 'stream', minutes: 30,   coins: 150, priceUSD: 1.99,  reach: 2.5 },
+  { id: 'stream_mega',   target: 'stream', minutes: 60,   coins: 500, priceUSD: 6.99, reach: 4 },
 ];
 
 const boostById = (id) => BOOSTS.find((b) => b.id === id) || null;
@@ -291,5 +305,24 @@ exports.recordBoostImpressions = functions.https.onCall(
   },
 );
 
+/**
+ * Add boosts to inventory INSIDE a caller's transaction.
+ *
+ * Exported so a CASH purchase (Google Play IAP, or the PayRam card rail) writes
+ * the identical inventory shape a coin purchase writes. A second grant path
+ * would be a second definition of what owning a boost means.
+ *
+ * ⚠ The map is NESTED, never a dotted key. `set()` with `'boosts.post'`
+ * creates a top-level field whose NAME is that string and the real map never
+ * changes. That bug cost 50 coins and produced an invisible inventory.
+ */
+const creditBoosts = (tx, walletRef, boostId, qty) => {
+  tx.set(walletRef, {
+    boosts: { [boostId]: FieldValue.increment(qty) },
+    updatedAt: FieldValue.serverTimestamp(),
+  }, { merge: true });
+};
+
+exports.creditBoosts = creditBoosts;
 exports.BOOSTS = BOOSTS;
 exports.boostById = boostById;

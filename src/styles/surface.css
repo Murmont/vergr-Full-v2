@@ -611,6 +611,34 @@ html[data-reduced-motion="true"] .vg-thread path {
    layers in the busiest surface in the app. Doc §3.3, with sources.
    Nothing in this block animates filter, box-shadow, or background-position. */
 
+/* ⚠⚠ THE CREST IS A 13px BUTTON IN A SCROLLING CHAT, AND 13px IS NOT TAPPABLE.
+   It opens the rank card, so it is a real control, but its hit box was the art
+   itself: measured 13x13 on every mobile surface and 12x12 in split view, against
+   the WCAG 2.2 AA minimum of 24x24 (2.5.8). On a phone that is a miss or, worse, a
+   scroll — the list moves and the card never opens.
+
+   The target is widened with a pseudo-element rather than padding so NOTHING in
+   the layout moves: the crest still occupies exactly 13px beside the username, and
+   the extra reach is invisible. Measured gap between adjacent crest centres is
+   33px at the tightest, so a 24px target keeps 9px of clearance and cannot steal
+   the row above. It extends ~5.5px past the art horizontally, against a 4px gap to
+   the username — an overlap of about 1.5px into a target that is far larger.
+
+   ⚠ A pseudo-element hit-tests as part of its originating element, so this
+   widens the button without adding a node or a stacking context. Verify it by
+   probing a point ABOVE the art and checking elementFromPoint returns the crest;
+   getBoundingClientRect still reports 13x13 and always will. */
+.vg-crest-hit { position: relative; }
+.vg-crest-hit::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 24px;
+  height: 24px;
+  transform: translate(-50%, -50%);
+}
+
 .vg-crest {
   position: relative;
   display: inline-flex;

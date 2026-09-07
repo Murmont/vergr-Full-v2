@@ -421,6 +421,12 @@ async function processInboundDeposit(tx, ctx = {}) {
         payram.data().status === 'awaiting_settlement' &&
         payram.data().uid &&
         payram.data().kind !== 'subscription' &&   // subs settle only via PayRam webhook/poll
+        // ⚠ AN ORDER CARRYING STORE ITEMS SETTLES ONLY VIA settlePayramOrder,
+        // for the same reason a subscription does: this branch knows how to
+        // credit coins and nothing else. Without the guard a mixed basket would
+        // be marked settled here with the coins credited and the VP bonus or
+        // boost silently dropped, and the order can only be settled once.
+        !(Array.isArray(payram.data().items) && payram.data().items.length) &&
         typeof payram.data().coinsToCredit === 'number' &&
         payram.data().coinsToCredit > 0
       ) {

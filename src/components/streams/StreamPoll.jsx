@@ -15,9 +15,28 @@ import { db } from '../../firebase/config';
 import { createPoll, voteOnPoll } from '../../firebase/firestore';
 import Icon from '../Icon';
 
+// ⚠⚠ SOLID VALUES, NOT WASHES, AND NO OUTLINE BRIGHTER THAN ITS FILL.
+// Founder, 2026-09-03: *"there are still pills and other things using the fake glass.
+// and there are still buttons and ui using the gross outline that is lighter than the
+// componenet/button background"*. This card was the worst offender in the product:
+// measured on the live page, each option was `rgba(255,255,255,0.04)` inside a
+// `rgba(255,255,255,0.10)` border — the SAME white, with the stroke 2.5x more opaque
+// than the fill, so a 1px hairline was doing all of the separating. That is the
+// border-soup CLAUDE.md bans, in its purest form.
+//
+// Now: the row is a real value step off the card (#0F0F1A -> #1C1C2C, ~9 levels) and
+// carries NO border at all. A chosen option is a SOLID accent fill, never a tint plus
+// a ring.
 const C = {
-  bg: '#12121e', bgSoft: '#0f0f1a', border: 'rgba(255,255,255,0.10)',
-  text: '#e8e8f0', textDim: '#a0a0b8', textMuted: '#6b7280',
+  bg: '#12121e', bgSoft: '#0f0f1a',
+  card: '#0F0F1A',      // the card itself
+  row: '#1C1C2C',       // an option, lifted off the card by value
+  rowHot: '#7c3aed',    // the option you picked — solid, not a tint
+  fill: '#2A2440',      // the result bar behind an unchosen option
+  fillHot: '#8B44E0',   // the result bar behind YOUR option
+  field: '#191527',     // a text input
+  border: 'rgba(255,255,255,0.10)',   // inputs only — never a button
+  text: '#e8e8f0', textDim: '#a0a0b8', textMuted: '#8A8A9E',   // 4.5:1+ on #0F0F1A; #6b7280 measured 3.95:1
   purple: '#7c3aed', purpleLight: '#b44fff', amber: '#F0A500',
 };
 
@@ -90,10 +109,10 @@ export function StreamPollCard({ poll, myVote, closed, uid, onClose, compact = f
       exit={{ opacity: 0, scale: 0.96 }}
       style={{
         width: compact ? '100%' : 'min(320px, 86vw)',
-        background: 'rgba(15,15,26,0.92)', backdropFilter: 'blur(12px)',
-        WebkitBackdropFilter: 'blur(12px)', border: `1px solid ${C.border}`,
+        background: C.card,
+        border: 'none',
         borderRadius: 14, padding: 14, color: C.text,
-        fontFamily: '"Inter", system-ui, sans-serif',
+        fontFamily: '"DM Sans", system-ui, sans-serif',
         boxShadow: '0 10px 30px rgba(0,0,0,0.45)',
       }}
     >
@@ -107,13 +126,18 @@ export function StreamPollCard({ poll, myVote, closed, uid, onClose, compact = f
             {remain}s
           </span>
         )}
+        {/* ⚠ MEASURED 14x21 WITH NO ACCESSIBLE NAME. `padding: 0` sized it to the
+            14px glyph, under the WCAG 2.2 AA 24x24 floor, and since <Icon> is
+            aria-hidden the ligature never became a name either — a screen reader
+            announced it as nothing. It is the only way to dismiss a poll that sits
+            over live gameplay. */}
         {onClose && (
-          <button onClick={onClose} style={{ marginLeft: closed ? 'auto' : 8, background: 'transparent', border: 'none', color: C.textMuted, cursor: 'pointer', padding: 0 }}>
+          <button onClick={onClose} aria-label="Dismiss poll" style={{ marginLeft: closed ? 'auto' : 8, background: 'transparent', border: 'none', color: C.textMuted, cursor: 'pointer', padding: 0, minWidth: 24, minHeight: 24, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
             <Icon name="close" size={14} className="" />
           </button>
         )}
       </div>
-      <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>{poll.question || poll.title}</div>
+      <div dir="auto" style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>{poll.question || poll.title}</div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         {options.map((opt, i) => {
           const count = votes[i] || 0;
@@ -127,21 +151,21 @@ export function StreamPollCard({ poll, myVote, closed, uid, onClose, compact = f
               style={{
                 position: 'relative', textAlign: 'left', padding: '9px 12px',
                 borderRadius: 9, overflow: 'hidden', cursor: showResults ? 'default' : 'pointer',
-                background: 'rgba(255,255,255,0.04)',
-                border: `1px solid ${mine ? C.purpleLight : C.border}`,
+                background: mine ? C.rowHot : C.row,
+                border: 'none',
                 color: C.text, fontSize: 12.5, fontWeight: 600,
               }}
             >
               {showResults && (
                 <div style={{
                   position: 'absolute', inset: 0, width: `${pct}%`,
-                  background: mine ? 'rgba(180,79,255,0.30)' : 'rgba(124,58,237,0.18)',
+                  background: mine ? C.fillHot : C.fill,
                   transition: 'width 0.4s',
                 }} />
               )}
               <span style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 6 }}>
                 {mine && <Icon name="check_circle" size={13} className="" />}
-                <span style={{ flex: 1 }}>{opt}</span>
+                <span dir="auto" style={{ flex: 1 }}>{opt}</span>
                 {showResults && <span style={{ fontFamily: 'DM Mono, monospace', fontWeight: 800 }}>{pct}%</span>}
               </span>
             </button>
@@ -192,8 +216,8 @@ export function CreateStreamPollModal({ hostUid, streamId, onClose, showToast })
       display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
     }}>
       <div onClick={(e) => e.stopPropagation()} style={{
-        width: 'min(400px, 100%)', background: C.bg, border: `1px solid ${C.border}`,
-        borderRadius: 16, padding: 20, color: C.text, fontFamily: '"Inter", system-ui, sans-serif',
+        width: 'min(400px, 100%)', background: C.bg, border: 'none',
+        borderRadius: 16, padding: 20, color: C.text, fontFamily: '"DM Sans", system-ui, sans-serif',
       }}>
         <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 14 }}>Start a poll</div>
         <input
@@ -207,7 +231,7 @@ export function CreateStreamPollModal({ hostUid, streamId, onClose, showToast })
               <input value={o} onChange={(e) => setOpt(i, e.target.value.slice(0, 60))}
                 placeholder={`Option ${i + 1}`} style={{ ...inp, margin: 0 }} />
               {options.length > 2 && (
-                <button onClick={() => removeOpt(i)} style={iconBtn}><Icon name="close" size={14} className="" /></button>
+                <button onClick={() => removeOpt(i)} aria-label={`Remove option ${i + 1}`} style={iconBtn}><Icon name="close" size={14} className="" /></button>
               )}
             </div>
           ))}
@@ -223,8 +247,8 @@ export function CreateStreamPollModal({ hostUid, streamId, onClose, showToast })
           {DURATIONS.map((d) => (
             <button key={d} onClick={() => setDuration(d)} style={{
               padding: '6px 12px', borderRadius: 7, cursor: 'pointer',
-              background: duration === d ? 'rgba(124,58,237,0.28)' : 'rgba(255,255,255,0.04)',
-              border: `1px solid ${duration === d ? C.purpleLight : C.border}`,
+              background: duration === d ? C.rowHot : C.row,
+              border: 'none',
               color: duration === d ? '#fff' : C.textDim, fontSize: 12, fontWeight: 700,
             }}>{d < 60 ? `${d}s` : `${d / 60}m`}</button>
           ))}
@@ -246,7 +270,7 @@ export function CreateStreamPollModal({ hostUid, streamId, onClose, showToast })
 }
 
 const inp = {
-  width: '100%', boxSizing: 'border-box', background: 'rgba(255,255,255,0.04)',
+  width: '100%', boxSizing: 'border-box', background: C.field,
   border: `1px solid ${C.border}`, borderRadius: 8, padding: '10px 12px',
   color: C.text, fontSize: 13, outline: 'none',
 };

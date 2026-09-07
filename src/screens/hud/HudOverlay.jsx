@@ -95,7 +95,7 @@ export default function HudOverlay() {
       onMouseLeave={handleMouseLeave}
       style={{
         position: 'fixed', inset: 0, padding: 8,
-        fontFamily: 'Inter, system-ui, sans-serif',
+        fontFamily: '"DM Sans", system-ui, sans-serif',
         userSelect: 'none', cursor: 'default',
       }}>
       {!matchPath && (

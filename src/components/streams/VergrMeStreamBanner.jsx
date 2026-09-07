@@ -17,12 +17,11 @@ import { db } from '../../firebase/config';
 import Icon from '../Icon';
 import { vergrMeDisplayUrl } from '../../utils/vergrMeUrl';
 
-const glassDark = {
-  background: 'rgba(10,8,22,0.42)',
-  backdropFilter: 'blur(18px) saturate(140%)',
-  WebkitBackdropFilter: 'blur(18px) saturate(140%)',
-  border: '1px solid rgba(255,255,255,0.12)',
-};
+// ⚠⚠ A SHIPPED COMPONENT, AND THE FOURTH COPY OF A TOKEN REPORTED FIXED TWO WAVES AGO.
+// glass/glassDark were solidified in previewChrome, MobileLiveViewer and previewSoloParts,
+// and the guard was written to read exactly those three — so this one, which renders on a
+// REAL stream, kept the wash: rgba(10,8,22,0.42) under a brighter rgba(255,255,255,0.12).
+const glassDark = { background: '#100C1C', border: 'none' };
 
 /** Presentational half — no data access, so the admin Stream Preview can use it. */
 export function VergrMeBannerCard({ username, onClick, style }) {

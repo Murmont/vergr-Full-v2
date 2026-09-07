@@ -58,6 +58,14 @@ export default function UserAvatar({
   // user doc is available; an expiry in the past renders nothing.
   championFrame = false,
   championUntilMs = null,
+  // ⚠⚠ THE NEUTRAL LIFT RING IS NOT ALWAYS WANTED, AND UNTIL NOW THERE WAS NO
+  // WAY OFF IT. `finalRing` always resolves to at least LIFT_RING, so an avatar
+  // placed inside SOMEONE ELSE'S ring came out as two rings with a dark band
+  // between them — a caller then "fixed" that by shrinking the portrait, which
+  // is how the tip sheet ended up with a photo floating inside its own ring.
+  // Pass false when the surrounding element is already drawing the ring. Live,
+  // story and tier rings are SIGNALS and are deliberately unaffected.
+  showLiftRing = true,
   className = '',
 }) {
   // Normalize size to pixels. Callsites pass either a number (px) or a legacy
@@ -105,7 +113,7 @@ export default function UserAvatar({
   const LIFT_RING = 'rgba(255,255,255,0.10)';
   const finalRing = showLiveRing
     ? (livePremium ? '#B44FFF' : '#F04060')
-    : (hasStory ? '#B44FFF' : (ringColor || LIFT_RING));
+    : (hasStory ? '#B44FFF' : (ringColor || (showLiftRing ? LIFT_RING : null)));
 
   // Resolve through the on-device media cache: the first sighting shows the
   // remote url + persists the bytes on the phone (hidden app dir); every later
@@ -223,19 +231,22 @@ export default function UserAvatar({
         </div>
       )}
 
-      <style
-        dangerouslySetInnerHTML={{
-          __html: `
-            @keyframes spin-slow {
-              from { transform: rotate(0deg); }
-              to { transform: rotate(360deg); }
-            }
-            .animate-spin-slow {
-              animation: spin-slow 3s linear infinite;
-            }
-          `,
-        }}
-      />
+      {/* ⚠⚠ THE PER-INSTANCE <style> IS GONE, AND IT WAS THREE BUGS AT ONCE.
+          `animate-spin-slow` is ALREADY a Tailwind utility (tailwind.config.js:101,
+          `spin 3s linear infinite`), so this block only ever redefined it — later in
+          the cascade, so it also overrode the real one.
+
+          1. It shipped ONE COPY PER AVATAR. Measured on the live preview: 53 inline
+             <style> tags on a single page, each 258 characters of identical CSS.
+          2. It POISONED ACCESSIBLE NAMES. A button wrapping an avatar with no
+             aria-label takes its name from text content, and the CSS is text content —
+             so a screen reader announced the gift-sub buttons as
+             "@keyframes spin-slow from transform rotate 0deg...". Found by measuring
+             those buttons, not by reading this file.
+          3. It is the same trap CLAUDE.md already records for innerText: anything
+             reading textContent off a container holding an avatar picked up CSS.
+
+          Nothing replaces it — the Tailwind utility was always doing the work. */}
     </div>
   );
 }

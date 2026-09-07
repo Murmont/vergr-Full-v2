@@ -16,6 +16,8 @@ import { useKeepAwake } from '../../../utils/keepAwake';
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
 import { doc, onSnapshot, updateDoc, serverTimestamp, collection, query, where, orderBy, limit, addDoc, Timestamp } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
+import { RaidPicker } from '../../../components/streams/RaidControls';
+import { useLiveUsers } from '../../../context/LiveUsersContext';
 import { db } from '../../../firebase/config';
 import { useAuth } from '../../../context/AuthContext';
 import { useUser } from '../../../context/UserContext';
@@ -32,7 +34,8 @@ import { uploadToR2 } from '../../../utils/r2Storage';
 import { renderShareCard } from '../../../utils/shareCard';
 import { createPost, getStreamIngest, markStatusPosted } from '../../../firebase/firestore';
 import StreamShareSheet from '../../../components/streams/StreamShareSheet';
-import { ZeroViewers, VpEarnedChip, MovableGoal, HealthWarningView } from '../../../components/streams/states';
+import CoHostInviteModal from '../../../components/streams/CoHostInviteModal';
+import { ZeroViewers, VpEarnedChip, MovableGoal, HealthWarningView, HypeTrainView } from '../../../components/streams/states';
 import { motion, AnimatePresence } from 'framer-motion';
 import { spring } from '../../../components/primitives/springs';
 import { useStreamJoinEvents } from '../../../hooks/useStreamJoinEvents';
@@ -107,6 +110,7 @@ export default function NativeBroadcasterScreen() {
 
   const [endedStats, setEndedStats] = useState(null);
   const [moreOpen, setMoreOpen] = useState(false);
+  const [coHostOpen, setCoHostOpen] = useState(false);
   const [endConfirm, setEndConfirm] = useState(false);
   const [alertsOn] = useState(true);
   const [pollModalOpen, setPollModalOpen] = useState(false);
@@ -499,7 +503,7 @@ export default function NativeBroadcasterScreen() {
           <div style={{ height: '28vh', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
             <ChatPanel
               streamId={streamDoc.id} layout="overlay" hostUid={streamDoc.hostUid}
-              slowModeSec={streamDoc.slowModeSec || 0} followersOnly={!!streamDoc.followersOnly} ttsEnabled={!!streamDoc.ttsEnabled}
+              slowModeSec={streamDoc.slowModeSec || 0} followersOnly={!!streamDoc.followersOnly} subsOnly={!!streamDoc.subsOnly} mutedUids={streamDoc.mutedUids || null} ttsEnabled={!!streamDoc.ttsEnabled}
               pinnedMessage={streamDoc.pinnedMessage || null}
               composerExtras={composerExtras}
             />
@@ -513,13 +517,14 @@ export default function NativeBroadcasterScreen() {
               <div style={{ flex: 1 }} />
               <AudioMeter level={micLevel} compact />
             </div>
-            <button onClick={startStream} disabled={starting || !cameraReady} style={{ width: '100%', padding: 15, borderRadius: 14, border: 'none', background: `linear-gradient(135deg, ${C.purple}, ${C.purpleLight})`, color: '#fff', fontSize: 15, fontWeight: 800, cursor: 'pointer', opacity: starting || !cameraReady ? 0.6 : 1 }}>
+            <button onClick={startStream} disabled={starting || !cameraReady} style={{ width: '100%', padding: 15, borderRadius: 14, border: 'none', background: `linear-gradient(135deg, ${C.purple}, ${C.purpleLight})`, color: '#fff', fontSize: 14, fontWeight: 800, cursor: 'pointer', opacity: starting || !cameraReady ? 0.6 : 1 }}>
               {starting ? 'Starting…' : 'Start Stream'}
             </button>
           </div>
         )}
       </div>
 
+      <HypeTrainView train={streamDoc.hypeTrain} />
       {alertsOn && <TipAlertOverlay lastTip={streamDoc.lastTip} anchor="top" />}
       {alertsOn && <SubAlertOverlay lastSub={streamDoc.lastSub} anchor="bottom" />}
       {pollModalOpen && <CreateStreamPollModal hostUid={streamDoc.hostUid} streamId={streamDoc.id} onClose={() => setPollModalOpen(false)} showToast={showToast} />}
@@ -540,6 +545,15 @@ export default function NativeBroadcasterScreen() {
                 <SheetBtn icon="open_with" label={goalEdit ? 'Done moving the tip goal' : 'Move the tip goal'}
                   onClick={() => { setMoreOpen(false); setGoalEdit((v) => !v); }} />
               )}
+              {/* ⚠⚠ SAME GAP AS THE WEB BROADCASTER: `CoHostInviteModal` was
+                  mounted in ZERO files while its own header calls itself "the
+                  ONLY co-host entry point now", because the pre-broadcast button
+                  on Go Live was deliberately removed in its favour. Both doors
+                  were shut, so co-hosting was unreachable on every platform. */}
+              {isLive && (
+                <SheetBtn icon="group_add" label="Invite a co-host"
+                  onClick={() => { setMoreOpen(false); setCoHostOpen(true); }} />
+              )}
               <SheetBtn icon="share" label="Share stream" onClick={() => { setMoreOpen(false); setShareOpen(true); }} />
             </motion.div>
           </motion.div>
@@ -552,7 +566,7 @@ export default function NativeBroadcasterScreen() {
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setEndConfirm(false)} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.65)', zIndex: 70, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
             <motion.div onClick={(e) => e.stopPropagation()} initial={{ scale: 0.92, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={spring.gentle}
               style={{ width: 'min(320px, 100%)', background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: 20, textAlign: 'center' }}>
-              <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 6 }}>End the stream?</div>
+              <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 6 }}>End the stream?</div>
               <div style={{ fontSize: 12, color: C.textDim, marginBottom: 16 }}>Your viewers will see the stream end immediately.</div>
               <div style={{ display: 'flex', gap: 8 }}>
                 <button onClick={() => setEndConfirm(false)} style={{ flex: 1, padding: 12, borderRadius: 10, border: `1px solid ${C.border}`, background: 'transparent', color: C.textDim, fontSize: 13, fontWeight: 800, cursor: 'pointer' }}>Keep going</button>
@@ -567,6 +581,7 @@ export default function NativeBroadcasterScreen() {
         <StreamShareSheet streamId={streamDoc.id} streamTitle={streamDoc.title} hostName={profile?.displayName || profile?.username || streamDoc.hostUsername} live={isLive} onClose={() => setShareOpen(false)} />
       )}
       {editInfoOpen && <EditInfoModal title={streamDoc.title} game={streamDoc.game} saving={savingInfo} onSave={saveStreamInfo} onClose={() => setEditInfoOpen(false)} />}
+      {coHostOpen && <CoHostInviteModal streamId={streamDoc.id} coHostUids={streamDoc.coHostUids || []} onClose={() => setCoHostOpen(false)} showToast={showToast} />}
     </div>
   );
 }
@@ -578,7 +593,7 @@ function EditInfoModal({ title, game, saving, onSave, onClose }) {
   return (
     <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 80, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
       <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: 480, background: C.card, border: `1px solid ${C.border}`, borderTopLeftRadius: 18, borderTopRightRadius: 18, padding: 20, paddingBottom: 'calc(env(safe-area-inset-bottom,0px) + 20px)', color: C.text, fontFamily: '"DM Sans", system-ui, sans-serif' }}>
-        <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 14 }}>Edit stream info</div>
+        <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 14 }}>Edit stream info</div>
         <label style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.06em', color: C.textDim }}>TITLE</label>
         <input value={t} maxLength={140} onChange={(e) => setT(e.target.value)} placeholder="What are you streaming?"
           style={{ width: '100%', boxSizing: 'border-box', margin: '6px 0 14px', background: '#191527', border: `1px solid ${C.border}`, borderRadius: 10, padding: 12, color: C.text, fontSize: 14, outline: 'none' }} />
@@ -617,7 +632,7 @@ function AudioMeter({ level, compact = false }) {
         const threshold = ((i + 1) / bars) * 100;
         const lit = level >= threshold;
         const color = i < bars * 0.6 ? C.green : i < bars * 0.85 ? C.amber : C.red;
-        return <div key={i} style={{ width: 3, height: compact ? 4 + (i / bars) * 8 : 4 + (i / bars) * 10, background: lit ? color : 'rgba(255,255,255,0.08)', borderRadius: 1 }} />;
+        return <div key={i} style={{ width: 3, height: compact ? 4 + (i / bars) * 8 : 4 + (i / bars) * 10, background: lit ? color : 'rgba(255,255,255,0.08)', borderRadius: 2 }} />;
       })}
     </div>
   );
@@ -675,6 +690,39 @@ function StreamSummary({ stats, onClose }) {
   const { profile } = useUser();
   const { showToast } = useUI();
   const [postingStory, setPostingStory] = useState(false);
+
+  // ⚠⚠ SAME GAP AS THE WEB BROADCASTER. `RaidPicker` was mounted only in
+  // StreamEndingScreen.jsx and nothing in the app routes to /stream/ended, so on
+  // native the raid was equally unreachable and `raidStream` had never been
+  // called from either platform. Candidates come from LiveUsersContext, which
+  // already holds one shared snapshot of live streams, so this costs zero reads;
+  // the filter mirrors `badRaidTarget` in functions/raids.js so the picker
+  // cannot offer a target the server will refuse.
+  const { liveHosts } = useLiveUsers();
+  const [raidBusy, setRaidBusy] = useState(false);
+  const [raided, setRaided] = useState(null);
+  const [raidSkipped, setRaidSkipped] = useState(false);
+  const raidTargets = useMemo(() => [...(liveHosts?.values?.() || [])]
+    .filter((h) => h.streamId !== stats.streamId
+      && h.discoverable && !h.premium && !h.audioOnly && !h.ticketed)
+    .sort((a, b) => (b.viewerCount || 0) - (a.viewerCount || 0))
+    .slice(0, 5)
+    .map((h) => ({ id: h.streamId, hostName: h.name || 'A creator', viewers: h.viewerCount || 0 })),
+  [liveHosts, stats.streamId]);
+
+  const doRaid = async (toStreamId) => {
+    if (!stats.streamId || raidBusy) return;
+    setRaidBusy(true);
+    try {
+      await httpsCallable(getFunctions(undefined, 'europe-west1'), 'raidStream')({ fromStreamId: stats.streamId, toStreamId });
+      setRaided(raidTargets.find((t) => t.id === toStreamId)?.hostName || 'them');
+    } catch (e) {
+      // The server owns every rule, so its message is the honest one to show.
+      showToast?.(e?.message || 'Could not send the raid', 'error');
+      setRaidSkipped(true);
+    } finally { setRaidBusy(false); }
+  };
+
   const share = async () => {
     const text = `Just wrapped a stream on VERGR: ${formatDuration(stats.duration)}, ${(stats.peakViewers || 0)} peak viewers, ${stats.tipCoins.toLocaleString()} coins tipped. ⚡`;
     try { if (navigator.share) await navigator.share({ title: 'VERGR stream recap', text, url: 'https://vergr.app' }); else await navigator.clipboard.writeText(text + ' https://vergr.app'); } catch {}
@@ -717,7 +765,7 @@ function StreamSummary({ stats, onClose }) {
     <div style={{ minHeight: '100vh', background: `radial-gradient(circle at 50% 0%, #1a1030 0%, ${C.bg} 60%)`, color: C.text, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, paddingTop: 'calc(env(safe-area-inset-top,0px) + 24px)', fontFamily: '"DM Sans", system-ui, sans-serif' }}>
       <div style={{ width: 'min(540px, 100%)', background: C.card, border: `1px solid ${C.border}`, borderRadius: 18, padding: 24, boxShadow: '0 24px 60px rgba(0,0,0,0.5)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-          <span style={{ width: 36, height: 36, borderRadius: '50%', background: C.purpleSoft, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="live_tv" size={20} /></span>
+          <span style={{ width: 36, height: 36, borderRadius: '50%', background: '#241943', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="live_tv" size={20} /></span>
           <div>
             <div style={{ fontSize: 16, fontWeight: 800 }}>That's a wrap</div>
             <div style={{ fontSize: 11, color: C.textDim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 360 }}>{stats.title}</div>
@@ -731,7 +779,7 @@ function StreamSummary({ stats, onClose }) {
         </div>
         <div style={{ fontSize: 11, color: C.textMuted, textAlign: 'right', marginTop: -8, marginBottom: 12 }}>≈ ${usd} from {stats.tipCount} tip{stats.tipCount === 1 ? '' : 's'}</div>
         {stats.goal && (
-          <div style={{ padding: '10px 12px', borderRadius: 10, marginBottom: 14, background: goalReached ? 'rgba(240,165,0,0.12)' : C.cardSoft, border: `1px solid ${goalReached ? C.amber + '66' : C.borderSoft}`, display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
+          <div style={{ padding: '10px 12px', borderRadius: 10, marginBottom: 14, background: goalReached ? '#2A2008' : C.cardSoft, borderLeft: goalReached ? `3px solid ${C.amber}` : '3px solid transparent', display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
             <Icon name={goalReached ? 'emoji_events' : 'flag'} size={16} />
             <span style={{ flex: 1 }}>{goalReached ? 'Tip goal reached!' : 'Tip goal'}{stats.goal.reason ? ` · ${stats.goal.reason}` : ''}</span>
             <span style={{ fontFamily: 'DM Mono, monospace', fontWeight: 800, color: goalReached ? C.amber : C.text }}>{(stats.goal.currentCoins || 0).toLocaleString()} / {(stats.goal.targetCoins || 0).toLocaleString()}</span>
@@ -743,12 +791,25 @@ function StreamSummary({ stats, onClose }) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {stats.topTippers.map((t, i) => (
                 <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', background: C.cardSoft, borderRadius: 8, border: `1px solid ${C.borderSoft}` }}>
-                  <span style={{ fontSize: 15 }}>{medal[i]}</span>
+                  <span style={{ fontSize: 14 }}>{medal[i]}</span>
                   <span style={{ flex: 1, fontSize: 13, fontWeight: 600 }}>{t.name}</span>
                   <span style={{ fontSize: 13, fontWeight: 800, color: C.amber, fontFamily: 'DM Mono, monospace' }}>{t.coins.toLocaleString()}c</span>
                 </div>
               ))}
             </div>
+          </div>
+        )}
+        {/* ⚠ ABOVE THE SHARE BUTTONS BECAUSE IT IS THE ONLY DECISION HERE WITH A
+            DEADLINE. The audience is dispersing while the host reads this. */}
+        {stats.streamId && !raided && !raidSkipped && raidTargets.length > 0 && (
+          <div style={{ marginBottom: 12 }}>
+            <RaidPicker candidates={raidTargets} busy={raidBusy}
+              onRaid={doRaid} onSkip={() => setRaidSkipped(true)} />
+          </div>
+        )}
+        {raided && (
+          <div style={{ marginBottom: 12, padding: '12px 14px', borderRadius: 12, background: '#1a1a2a', color: C.text, fontSize: 13, fontWeight: 700 }}>
+            Your viewers are on their way to {raided}.
           </div>
         )}
         <button onClick={shareToStatus} disabled={postingStory} style={{ width: '100%', padding: 14, borderRadius: 12, border: 'none', background: `linear-gradient(135deg, ${C.purple}, ${C.purpleLight})`, color: '#fff', fontSize: 13, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 10, opacity: postingStory ? 0.7 : 1 }}>

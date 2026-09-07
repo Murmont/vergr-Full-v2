@@ -284,9 +284,14 @@ async function main() {
     { path: '/platform/monetization', h1: 'Make Money Gaming',
       title: 'Make Money Gaming — VERGR Creator Monetisation',
       description: 'Ways to earn on VERGR: tips, memberships, paid streams, and Stream Boost amplification. You keep 50% of what you generate from day one, rising to 80% as your lifetime earnings grow.' },
-    { path: '/platform/learn/live', h1: 'Stream Gameplay & Earn',
-      title: 'Stream Gameplay & Earn — Live Streaming on VERGR',
-      description: 'Go live in 30 seconds from your browser, no install. Earn real tips while you play, build memberships, and co-stream with a guest at 720p60 (Lite) or 1080p60 (Pro). The Twitch alternative built for gamer monetisation.' },
+    // ⚠ h1/title/description MUST match LearnLiveScreen.jsx's own useSeo call and
+    // its rendered <h1>. The previous entry here still sold "co-stream with a
+    // guest at 720p60 (Lite) or 1080p60 (Pro)" long after co-streaming became
+    // free on every plan, so the prerendered shell Googlebot saw disagreed with
+    // the page a human got. Change both files together.
+    { path: '/platform/learn/live', h1: 'Go live from your phone or your PC',
+      title: 'Live Streaming on VERGR | Go Live From Your Phone or PC',
+      description: 'Go live from the Vergr app on Android or Windows, or straight from a browser tab. No follower gate and no application. Tips, members and paid streams work from your first broadcast.' },
     { path: '/platform/learn/squads', h1: 'Squads — Gaming Crews with Shared Treasuries',
       title: 'Squads — Gaming Crews with Shared Treasuries | VERGR',
       description: 'Up to 100 members. Voice + video hangouts built in. Monthly elections, real roles (President, Vice President, Treasury), and a shared squad treasury. Discord meets gaming crew.' },

@@ -142,6 +142,28 @@ export async function restorePurchases() {
  */
 export const playProductIdFor = (packId) => `coins_${packId}`;
 
+/**
+ * Play product id for a VP bonus pack or a boost.
+ *
+ * ⚠ The prefix is load-bearing. `stream_boost` as a bare id is indistinguishable
+ * from a coin SKU, and `PLAY_ITEM_PRODUCTS` in functions/playBilling.js is keyed
+ * on exactly these strings. They must also match docs/play/play-products.csv, or
+ * queryProductDetails returns nothing and the card reports "not loaded".
+ */
+export const playItemIdFor = (kind, id) => (kind === 'bonus' ? `vpb_${id}` : `boost_${id}`);
+
+/**
+ * Buy a VP bonus pack or a boost with CASH, through Play Billing.
+ *
+ * Identical machinery to `buyCoinPack` (buy → server-verify → consume), and
+ * deliberately so: the redeem call is the same callable and the same
+ * idempotency ledger, it just grants the item rather than coins. Resolves with
+ * `{ itemKind, itemId, granted }`.
+ */
+export async function buyStoreItem(productId, uid) {
+  return buyCoinPack(productId, uid);
+}
+
 // ─────────────────────────────────────────────────────────────────────
 // Subscriptions (platform Lite/Pro).
 //

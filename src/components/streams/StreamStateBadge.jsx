@@ -15,6 +15,7 @@
 // drew their own LIVE pill. Six pills means six chances for one to keep saying
 // LIVE on a paid stream, so they all use this instead.
 import Icon from '../Icon';
+import { CoinIcon } from '../CoinIcon';
 
 /**
  * @param {boolean} isPremium   from `streamPremium(stream)`
@@ -43,7 +44,7 @@ export default function StreamStateBadge({ isPremium, priceCoins = 0, size = 'md
       PREMIUM
       {priceCoins > 0 && (
         <>
-          <Icon name="paid" size={sm ? 10 : 11} className="text-brand-gold-light" />
+          <CoinIcon size={sm ? 10 : 11} />
           <span className="font-dmmono tabular-nums">{priceCoins.toLocaleString()}</span>
         </>
       )}

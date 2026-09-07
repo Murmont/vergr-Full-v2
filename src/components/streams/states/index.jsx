@@ -814,3 +814,106 @@ export function AudioStageView({ avatar, hostName, title, live = true, z = 4 }) 
     </div>
   );
 }
+
+// ── HYPE TRAIN ──────────────────────────────────────────────────────────────
+//
+// The PURE renderer, shared by the real stream surfaces and the admin
+// simulator, so the design cannot drift between what the founder reviews and
+// what a viewer sees. The preview's own `HypeTrain` is a thin wrapper that
+// reads the sim and calls this.
+//
+// ⚠⚠ IT READS ONLY WHAT THE STREAM DOC CARRIES. `topName` and `topAvatar` are
+// denormalised by the server in `sendTip`, which had already loaded them for
+// the tip alert. Resolving the leader here instead would be a Firestore read
+// per rider, per viewer, per train.
+//
+// ⚠ THE CONDUCTOR IS THE FEATURE, NOT THE BAR. The first version showed grey
+// silhouettes and "5 on board", which is a count, not a story. Twitch names the
+// person carrying it, so the leader is ringed in gold and named.
+//
+// ⚠ THE BAR CARRIES ITS OWN FIGURES. A progress bar with no numbers is a mood.
+// "9,800 / 22,646" is what tells somebody whether one more tip finishes a level,
+// which is the entire decision the train is asking them to make.
+//
+// ⚠ THE CLOCK ESCALATES BY COLOUR, NOT BY MOTION. There are two reduced-motion
+// switches in this app and the CSS one FAST-FORWARDS an animation to its final
+// keyframe rather than stopping it, so a pulsing timer is invisible for anyone
+// who set it. Colour and weight cannot fail that way.
+//
+// ⚠ IT RIDES `hypeTrain`, NOT `streams/{id}.hype`. That field is a
+// reactions-per-5-seconds meter (functions/streamHype.js). Two systems on one
+// word is how the theme system died.
+const TRAIN_GOLD = 'linear-gradient(180deg, #FCEFB4 0%, #F5C842 38%, #E9A517 72%, #C97F12 100%)';
+const TRAIN_HEAT = ['#8b3ff0', '#a34cf5', '#b44fff', '#c87fff', '#f0a500'];
+const trainClock = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+
+export function HypeTrainView({ train, style }) {
+  if (!train || !train.received) return null;
+  const { level = 1, into = 0, goal = 1, maxLevel = 5, endsAtMs = 0 } = train;
+  const capped = level >= maxLevel;
+  const pct = capped ? 100 : Math.max(3, Math.min(100, Math.round((into / goal) * 100)));
+  const left = Math.max(0, Math.round((endsAtMs - Date.now()) / 1000));
+  const hot = TRAIN_HEAT[Math.min(level, TRAIN_HEAT.length) - 1];
+  const urgent = !capped && left <= 30;
+  const warm = !capped && left <= 60;
+  const others = Math.max(0, (train.riderCount || 0) - 1);
+
+  return (
+    <div className="vg-material vg-grain" style={{
+      position: 'absolute', left: 10, right: 10, top: 56, zIndex: 26,
+      padding: 10, borderRadius: 16, pointerEvents: 'none', overflow: 'hidden',
+      boxShadow: capped
+        ? 'inset 0 1px 0 rgba(255,255,255,0.14), 0 8px 26px rgba(240,165,0,0.34)'
+        : `inset 0 1px 0 rgba(255,255,255,0.08), 0 6px 22px ${hot}33`,
+      ...style,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span style={{
+          flexShrink: 0, display: 'flex', alignItems: 'center', gap: 4,
+          padding: '3px 9px', borderRadius: 999,
+          background: capped ? TRAIN_GOLD : `linear-gradient(180deg, ${hot}, ${hot}cc)`,
+          fontSize: 11, fontWeight: 900, letterSpacing: '0.02em',
+          color: capped ? '#241a05' : '#fff',
+          boxShadow: capped ? '0 2px 10px rgba(240,165,0,0.5)' : 'none',
+        }}>
+          <Icon name="local_fire_department" size={12} />
+          {capped ? 'MAX' : `LV ${level}`}
+        </span>
+        <span style={{ flex: 1, minWidth: 0, fontSize: 12, fontWeight: 800, color: '#e8e8f0' }}>
+          {capped ? 'Hype train at full' : 'Hype train'}
+        </span>
+        <span className="vg-mono" style={{
+          flexShrink: 0, fontSize: 12, fontWeight: urgent ? 900 : 800,
+          color: capped ? '#f5c842' : urgent ? '#ff6b6b' : warm ? '#f59e0b' : '#a0a0b8',
+        }}>
+          {capped ? 'held' : trainClock(left)}
+        </span>
+      </div>
+
+      <div style={{ height: 7, borderRadius: 999, background: '#20232a', overflow: 'hidden', margin: '7px 0 6px' }}>
+        <div style={{
+          width: `${pct}%`, height: '100%', borderRadius: 999,
+          background: capped ? TRAIN_GOLD : `linear-gradient(90deg, ${hot}, #f5c842)`,
+          boxShadow: `0 0 10px ${capped ? '#f0a500' : hot}88`,
+          transition: 'width 340ms cubic-bezier(0.2,0.6,0.25,1)',
+        }} />
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        {train.topAvatar && (
+          <span style={{ flexShrink: 0, borderRadius: 999, padding: 1, background: TRAIN_GOLD, display: 'flex' }}>
+            <img src={train.topAvatar} alt="" width={20} height={20}
+              style={{ width: 20, height: 20, borderRadius: 999, objectFit: 'cover', display: 'block' }} />
+          </span>
+        )}
+        <span style={{ flex: 1, minWidth: 0, fontSize: 11, fontWeight: 700, color: '#a0a0b8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {train.topName ? `${train.topName} leading` : ''}
+          {others > 0 ? ` · +${others}` : ''}
+        </span>
+        <span className="vg-mono" style={{ flexShrink: 0, fontSize: 11, fontWeight: 800, color: capped ? '#f5c842' : '#a0a0b8' }}>
+          {capped ? 'top level' : `${into.toLocaleString()} / ${goal.toLocaleString()}`}
+        </span>
+      </div>
+    </div>
+  );
+}

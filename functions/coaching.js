@@ -1,6 +1,6 @@
 // GR6 — Coaching marketplace. Players list paid coaching slots; learners book
-// and pay in coins (rides the coin economy with the standard 10% platform fee,
-// so it's NOT a new revenue category — coach receives floor(price*0.9)).
+// and pay in coins (10% platform fee taken at book time — an exception to the
+// revenue-share model, see FEE_RATE below — coach receives floor(price*0.9)).
 //
 //   coaching_listings/{uid} = { coachUid, active, game, title, pricePerSlot,
 //     durationMin, blurb, coachName, coachUsername, coachAvatar, updatedAt }
@@ -15,7 +15,22 @@ const REGION = 'europe-west1';
 const db = getFirestore('vgrdb');
 
 const MAX_PRICE = 100000;
-const FEE_RATE = 0.10; // platform fee, same as tips
+// ⚠⚠ COACHING DOES NOT EXIST ON VERGR. This whole file is DEAD CODE from the
+// retired tournaments build (it was GR6 in that punchlist). Verified 2026-09-02:
+//   • `/coaching` is NOT routed in AppRouter
+//   • `CoachingScreen` is imported by nothing
+//   • none of these callables are exported from functions/index.js, so NOTHING
+//     here is deployed — the 10% is charged to nobody because it never runs
+//
+// ⚠ SO THIS RATE IS NOT AN EXCEPTION TO THE REVENUE-SHARE MODEL AND MUST NOT BE
+// CITED AS ONE. A previous session (mine, 2026-09-02) raised it to the founder as a
+// live pricing decision; it is not one, and the evidence that it was dead was
+// already on screen. **Check whether a thing is routed AND exported before calling
+// its rate a policy.** The file stays on disk under the no-deletion rule.
+//
+// The comment that used to sit here also said “same as tips”, which was false
+// independently: tips have no fee, `entitlements.feePctFor()` returns 0.
+const FEE_RATE = 0.10;
 
 exports.upsertCoachingListing = functions.https.onCall(async (request) => {
   const uid = request.auth?.uid;

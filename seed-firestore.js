@@ -138,8 +138,6 @@ async function seed() {
   });
   console.log("   ✓ banned_words/default (edit in console to add real words)\n");
 
-  // ─────────────────────────────────────────
-  }
   console.log("");
 
   console.log("=== SEED COMPLETE ===");

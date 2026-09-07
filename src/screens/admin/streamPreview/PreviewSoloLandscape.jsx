@@ -13,7 +13,7 @@
 // the counter, different senders stack (TikTok-style).
 
 import { useState } from 'react';
-import { PlaybackState, StreamPaywall, ChatStateBanner, TtsStrip, EmptyChat, VpEarnedChip, PreviewLevelUp, AudioStage, ModChannelSwitch, RaidBanner, HypeTrain } from './previewStates';
+import { PlaybackState, StreamPaywall, ChatStateBanner, TtsStrip, EmptyChat, VpEarnedChip, PreviewLevelUp, AudioStage, ModChannelSwitch, RaidBanner, HypeTrain, TrainBonusHost } from './previewStates';
 import ReactionsFloor from '../../../components/streams/ReactionsFloor';
 import { usePreviewVideos, usePreviewSim, usePreviewRole } from './previewAssetsContext';
 import { PREVIEW_VIEWER } from './previewCast';
@@ -110,7 +110,7 @@ export default function PreviewSoloLandscape({ doc, host, scene = 'game',
           </div>
 
           {/* Transient gift drops — float above the dock on the left. */}
-          <HypeTrain />
+          <HypeTrain /><TrainBonusHost />
           <GiftFeed toasts={toasts} style={{ position: 'absolute', left: 12, bottom: 64, zIndex: 5 }} />
 
           {/* Composer dock — across the bottom. Tips & VC fires a gift drop. */}

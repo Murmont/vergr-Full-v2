@@ -4453,128 +4453,23 @@ export function StudioToolsScreen() {
   );
 }
 
-export function LearnLiveScreen() {
-  useSeo({
-    title: 'Stream Gameplay & Earn — Live Streaming on VERGR',
-    description: 'Go live in 30 seconds from your browser, no install. Earn real tips while you stream, sell memberships and paid access, and stream at 720p60 (Lite) or 1080p60 (Pro). The Twitch alternative built for creator monetisation.',
-    canonical: 'https://vergr.app/platform/learn/live',
-  });
-  return (
-    <MarketingShell>
-      <PageHero
-        title="Go Live. Earn From Day One."
-        subtitle="Go live straight from your browser, no install and no studio. Get paid in real tips while you stream. Build a following on a platform built by creators."
-        accent="ember"
-        centered
-      />
-
-      <Section>
-        <H2>Three ways to earn the moment you go live</H2>
-        <Grid cols={3} min={260}>
-          <Tile icon="payments" accent={C.gold}
-            title="Tips in coins, instantly"
-            body="Viewers send tips during your stream — your name and amount pop in your overlay live. Your revenue share lands in your earnings instantly, and you are paid on your schedule." />
-          <Tile icon="card_membership" accent={C.violet}
-            title="Paid memberships"
-            body="Your top fans subscribe monthly for perks you set — exclusive emotes, sub-only chat, private squad channels. Recurring revenue every month." />
-          <Tile icon="rocket_launch" accent={C.cyan}
-            title="Stream Boost amplification"
-            body="Spend 50 coins to boost a stream's reach in the discovery feed. The first 50 coins of tips you earn refund the boost — one good tip and it pays for itself." />
-        </Grid>
-      </Section>
-
-      <Section bordered>
-        <H2>Go live in 30 seconds — no install</H2>
-        <Grid cols={3} min={260}>
-          <Tile icon="language" accent={C.cyan}
-            title="Browser broadcast"
-            body="Click Go Live, share your screen and webcam, and you're streaming. Works on any laptop. No software to install, no scene config to wrestle with." />
-          <Tile icon="desktop_windows" accent={C.violet}
-            title="OBS power-mode (Lite & Pro)"
-            body="Plug OBS into our RTMP ingest for custom scenes, transitions, alerts, and overlays. Same RTMP workflow you already know from Twitch and YouTube." />
-          <Tile icon="shield" accent={C.gold}
-            title="Built-in moderation"
-            body="Block-word lists, slow-chat, follower-only mode, timeouts, instant bans. Invite a Vanguard mod per stream if you want backup. Tools shipped, not promised." />
-        </Grid>
-      </Section>
-
-      <Section bordered>
-        <H2>Resolution + framerate per tier</H2>
-        <P max={680}>
-          We stream at your source quality with no transcoding ladder, so viewers see exactly what you push. Free tier is sharper per pixel than most non-partner Twitch streams at the same bitrate.
-        </P>
-        <Grid cols={3} min={260}>
-          <Tile icon="hd" accent={C.cyan}
-            title="Free — 480p · 30 fps"
-            body="3 Mbps source bitrate. Stream from your browser, share screen + webcam, watch your audience build. Upgrade to Lite for 720p60 once you outgrow it." />
-          <Tile icon="hd" accent={C.violet}
-            title="Lite ($4.99/mo) — 720p · 60 fps"
-            body="4.5 Mbps. 60 fps makes fast-action games look smooth. OBS supported, four hours a day, scheduled posts, ad-free. The proper streamer tier." />
-          <Tile icon="4k" accent={C.gold}
-            title="Pro ($9.99/mo) — 1080p · 60 fps"
-            body="6.5 Mbps. Highest quality on the platform, no daily limit, and every broadcast saved as a 90-day replay." />
-        </Grid>
-      </Section>
-
-      <Section bordered>
-        <H2>For viewers — watch, tip, follow</H2>
-        <Grid cols={3} min={260}>
-          <Tile icon="visibility" accent={C.cyan}
-            title="HD playback at every tier"
-            body="Free viewers watch at 480p, Lite at 720p, Pro at 1080p — capped at the streamer's source quality. No buffering, no pre-roll ads, no mid-stream ad breaks. Ever." />
-          <Tile icon="forum" accent={C.violet}
-            title="Real-time chat"
-            body="Reply, react with emotes, and tag the streamer. Big streams get threaded chat so the conversation stays readable instead of scrolling past in a blur." />
-          <Tile icon="favorite" accent={C.ember}
-            title="Follow + push when live"
-            body="Hit follow and we push you a notification the moment they go live. Stop checking 'is anyone streaming right now' and just be there when it counts." />
-        </Grid>
-      </Section>
-
-      <Section bordered>
-        <H2>Squad streams — Discord-style hangouts</H2>
-        <Grid cols={2} min={300}>
-          <Tile icon="groups" accent={C.cyan}
-            title="Voice + video with your squad"
-            body="Squad members hop into a voice hangout with up to 100 people, optional video for up to 2 at a time. Same place you organise, scrim, and post-game review — built in." />
-          <Tile icon="cast_for_education" accent={C.violet}
-            title="Co-stream as a team"
-            body="Stream together — two broadcasters in one composited feed, side-by-side. Run a collab or a co-commentary session without any third-party software." />
-        </Grid>
-      </Section>
-
-      <Section bordered>
-        <H2>Paid streams, when you want them</H2>
-        <P max={680}>
-          Any broadcast can be free or paid. Set a price and viewers buy a one-off pass for that stream, or
-          their creator membership covers it automatically. You keep your revenue share of every sale.
-          The same content rules apply either way — paying for access does not create a private room with
-          different rules.
-        </P>
-      </Section>
-
-      <Section bordered>
-        <H2>Public streaming unlocks at 100 followers (free) or instantly (Lite/Pro)</H2>
-        <P max={680}>
-          Free creators unlock public streaming at 100 followers, then start each public session with a
-          50-coin Stream Boost that <em>actually amplifies your reach</em> in the discovery feed. The Boost
-          refunds itself from the first 50 coins of tips you earn during that stream — meaning a single
-          decent tip makes the boost free and your reach has already grown. Lite and Pro skip the follower
-          gate and can boost any stream optionally.
-        </P>
-      </Section>
-
-      <Section bordered>
-        <div style={{ textAlign: 'center', padding: '24px 0' }}>
-          <H2>Start streaming. Start earning.</H2>
-          <Link to="/signup" className="vg-btn-primary" style={{ textDecoration: 'none' }}>
-            Create my account →
-          </Link>
-        </div>
-      </Section>
-    </MarketingShell>
-  );
-}
+// LearnLiveScreen MOVED 2026-08-30 to ./LearnLiveScreen.jsx.
+//
+// It was six identical "H2 + Grid + Tile x3" sections, the same shape every
+// other /learn/* page uses, and nine of its factual claims had gone stale:
+// the follower gate + 50-coin ignition fee (both waived by
+// app_config/general.streamFollowerGateEnabled), OBS sold as a Lite/Pro perk
+// (it is not tier-gated), a per-plan viewer rendition cap that nothing
+// enforces, no mention anywhere of the 30-minute free daily cap, membership
+// emotes and sub-only chat that do not exist, "invite a Vanguard mod per
+// stream" which was never a feature, two co-host guests instead of four, and
+// "you are paid on your schedule" (it is Vergr's schedule, and the wording
+// matters: see docs/REVENUE_SHARE_PLAN.md 1.4).
+//
+// The replacement is a bespoke per-section layout, so it lives in its own file
+// and is lazy-loaded directly by marketingLazy.js. It imports MarketingShell
+// and C from HERE, so do NOT re-export it from this file: that would make an
+// import cycle between the two modules.
 
 // LearnTournamentsScreen REMOVED 2026-08-19 (founder instruction: tournaments,
 // and anything indicating them, come out). It was a full marketing page titled

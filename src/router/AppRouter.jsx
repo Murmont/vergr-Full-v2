@@ -11,6 +11,7 @@ import { pruneNavOrigin } from '../utils/navOrigin';
 import ProtectedRoute from '../components/ProtectedRoute';
 import ErrorBoundary from '../components/ErrorBoundary';
 import DisplaySettingsApplier from '../components/DisplaySettingsApplier';
+import { MotionPrefs } from '../components/DisplaySettingsApplier';
 import KycGate from '../components/KycGate';
 import RegionGate from '../components/RegionGate';
 import GuestRouteGate from '../components/GuestRouteGate';
@@ -757,6 +758,10 @@ export default function AppRouter() {
               <LayoutProvider>
                 <CartProvider>
                 <LiveUsersProvider>
+                {/* ⚠ EVERY framer-motion ANIMATION IN THE APP HANGS OFF THIS. Without it
+                    neither reduced-motion switch reached motion components — see the note
+                    on MotionPrefs. */}
+                <MotionPrefs>
                 <div className="app-container mx-auto min-h-screen bg-bg-dark text-text-primary relative">
                   <NavOriginTracker />
                   {/* The basket, on every page. CartProvider was already global
@@ -1290,6 +1295,7 @@ export default function AppRouter() {
                   </Suspense>
                   </ErrorBoundary>
                 </div>
+                </MotionPrefs>
                 </LiveUsersProvider>
                 </CartProvider>
               </LayoutProvider>

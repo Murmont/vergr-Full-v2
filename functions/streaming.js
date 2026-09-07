@@ -666,8 +666,27 @@ exports.endStreamSession = functions.https.onCall({ region: REGION }, async (req
     // ended broadcast, and the lookup collection would grow without bound.
     if (stream.streamKey) tx.delete(db.collection('stream_keys').doc(stream.streamKey));
 
-    return { ok: true, refunded, alreadyEnded: false };
+    return { ok: true, refunded, alreadyEnded: false, hypeTrain: stream.hypeTrain || null };
   });
+
+  // ⚠⚠ A TRAIN LEFT RUNNING WHEN THE STREAM ENDS MUST STILL PAY. Expiry is
+  // evaluated at read time and the next TIP is what normally closes a window,
+  // so a stream that goes quiet and then ends would strand the bonus for a room
+  // that had already earned it. There is deliberately NO CRON for this: a Cloud
+  // Scheduler job is one of the few things here that genuinely costs money, and
+  // the host ending their own stream is the event we already have.
+  //
+  // ⚠ POST-COMMIT AND BEST-EFFORT, like the boost re-accrual below. The stream
+  // has already ended; a failed bonus must never unwind that. `settleAndGrant`
+  // is idempotent on its own marker, so a retry cannot double-pay.
+  if (endResult && !endResult.alreadyEnded && endResult.hypeTrain
+      && endResult.hypeTrain.received > 0 && !endResult.hypeTrain.settledAt) {
+    try {
+      await require('./hypeTrain').settleAndGrant(streamId, uid, endResult.hypeTrain);
+    } catch (e) {
+      console.error('[endStreamSession] hype train settle failed', streamId, e);
+    }
+  }
 
   // The boost sink is REVERSIBLE: a stream that takes 50 coins of tips gets its
   // boost fee back, so those coins never actually stayed with the platform and

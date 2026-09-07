@@ -43,6 +43,10 @@ export default [
       'dist/**', 'node_modules/**', 'src-tauri/**', 'infra/**', 'vlink/**',
       'android/**', 'functions/node_modules/**', 'chat-pattern-tiles/**',
       'public/**', 'docs/**', '**/*.min.js',
+      // Gitignored scratch: the measuring harnesses that render a component in
+      // isolation and screenshot it. A half-written probe in there stopped a
+      // production build once, which is the wrong thing to be able to happen.
+      '.preview/**',
     ],
   },
   // Pre-existing `eslint-disable` comments all over the repo were written for a

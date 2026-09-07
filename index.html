@@ -270,8 +270,8 @@
          after the OS icon splash). Load it async (media=print → all onload) so
          the splash paints immediately; fonts swap in when ready (already
          display=swap). <noscript> keeps it blocking where JS is off. -->
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap" media="print" onload="this.media='all'" />
-    <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap" /></noscript>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Baloo+2:wght@700;800&display=swap" media="print" onload="this.media='all'" />
+    <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Baloo+2:wght@700;800&display=swap" /></noscript>
     <!-- Material Symbols is SELF-HOSTED only (see @font-face below). The gstatic
          css2 <link> was REMOVED 2026-05-31: it declared a competing variable
          face (weight 100..700) that the cascade selected over the self-hosted
@@ -282,14 +282,44 @@
          ligature text (offline, CSP, CDN-404, or slow network). The bundled
          /fonts file ships inside the desktop app; the CDN URL is a secondary
          source only. font-display:block hides glyphs until the font is ready
-         instead of flashing the ligature names. */
+         instead of flashing the ligature names.
+
+         SIZE: 3,948,768 -> 458,288 bytes (8.6x smaller), audit A2. The file was
+         the FULL FOUR-AXIS VARIABLE font: opsz 20..48, wght 100..700, FILL 0..1,
+         GRAD -50..200. Almost all of that weight paid for axes this app never
+         moves. Icon.jsx sets ONLY `font-variation-settings: 'FILL' 0|1`, and
+         .material-symbols-outlined below pins font-weight, so opsz, wght and
+         GRAD are now requested at their single used values (24, 400, 0) and
+         only FILL stays variable.
+
+         font-display: block is CORRECT for an icon font and stays. `swap` would
+         show the raw ligature words immediately, which is worse. The 3s block
+         window was the problem only because a 3.9MB file could not make it;
+         458KB comfortably does.
+
+         WHY NOT NAME-SUBSET TOO (the ~40KB the audit hoped for): 429 distinct
+         icon names are reachable, counting lookup tables and the interpolated
+         `format_align_*` family. Google's css2 `icon_names=` is capped by URL
+         length at roughly 360 names, and there is no local subsetter available
+         here (no Python/fonttools). Splitting across two faces does NOT work:
+         ligature lookup happens inside ONE font, and CSS src fallback only
+         applies when a file fails to LOAD, never per missing glyph — so a
+         subset that misses a name renders that icon as its literal word, which
+         is precisely the bug being fixed. Full icon set = that cannot happen.
+         If fonttools ever becomes available, `pyftsubset --glyphs=` against
+         this list is the way to reach ~40KB.
+
+         The CDN fallback was pinned to v341, which the "icons render as text"
+         note further down records as having started 404ing. It now points at
+         the SAME pinned-axis v367 subset, so the fallback is both live and
+         small rather than a 3.9MB stranger. */
       @font-face {
         font-family: 'Material Symbols Outlined';
         font-style: normal;
         font-weight: 400;
         font-display: block;
         src: url(/fonts/material-symbols-outlined.woff2) format('woff2'),
-             url(https://fonts.gstatic.com/s/materialsymbolsoutlined/v341/kJEhBvYX7BgnkSrUwT8OhrdQw4oELdPIeeII9v6oFsI.woff2) format('woff2');
+             url(https://fonts.gstatic.com/s/materialsymbolsoutlined/v367/kJF4BvYX7BgnkSrUwT8OhrdQw4oELdPIeeII9v6oDMzBwG-RpA6RzaxHMPdY40KH8nGzv3fzfVJU22ZZLsYEpzC_1ver5Y0.woff2) format('woff2');
       }
       /* NUMBER FONT: every monospace font (DM Mono included) deliberately marks
          its zero with a slash or centre dot to tell 0 from O. There is NO
