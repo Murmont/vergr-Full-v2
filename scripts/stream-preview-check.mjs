@@ -2575,7 +2575,16 @@ check(stSrc.includes('ReconnectingOverlay') && stSrc.includes('StreamLoadingCove
   // ⚠ TAG BOUNDARY, NOT A BARE SUBSTRING. <ChatStateBannerX still contains
   // <ChatStateBanner, so the first version of this passed with the component renamed
   // out of existence. Fourth time this exact shape has bitten a guard here.
-  check(cp.includes('<ChatStateBanner' + String.fromCharCode(10)) || cp.includes('<ChatStateBanner '),
+  //
+  // ⚠⚠ THE BOUNDARY IS A CHARACTER CLASS BECAUSE THIS REPO MIXES LINE ENDINGS.
+  // The previous version accepted only a bare newline or a space, and ChatPanel.jsx
+  // is CRLF, so the real tag `<ChatStateBanner\r\n` failed a guard whose whole job
+  // is to prove that tag is there. It broke `npm run build` on this branch for
+  // everyone while the component was rendering perfectly well. Match any
+  // whitespace or a closing angle instead: still a boundary, so <ChatStateBannerX
+  // is still caught, but no longer a bet on which line ending the file happens to
+  // have this week.
+  check(/<ChatStateBanner[\s>]/.test(cp),
     'ChatPanel no longer renders ChatStateBanner. Being muted or banned then goes back to being discoverable only by typing a message and having it rejected');
   check(cp.includes('setChatBlock(r)'),
     'ChatPanel stopped remembering a muted/banned rejection, so the banner can never appear: those two are facts about this viewer that the client cannot learn any other way');

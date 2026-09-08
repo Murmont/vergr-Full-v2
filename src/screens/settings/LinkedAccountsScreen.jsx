@@ -14,7 +14,7 @@ import { useLayout } from '../../context/LayoutContext';
 import {
   updateLinkedAccount, removeLinkedAccount,
   linkSteam, unlinkSteam, getSteamGsiConfig,
-  getOAuthStartUrl, getSteamSignInUrl, twitchChannelImport,
+  getOAuthStartUrl, twitchChannelImport,
 } from '../../firebase/firestore';
 import { installGsiConfig, detectGsiMethod, GSI_METHOD } from '../../utils/gsiInstaller';
 import TopBar from '../../components/TopBar';
@@ -33,7 +33,22 @@ import { openExternalUrl } from '../../utils/externalBrowser';
 // here (it's identity/cosmetic only — unlike Twitch's mirror, Discord's server
 // clone, or Steam's GSI, which genuinely need a real token). So we just store
 // the typed Epic handle, no API key / approval to maintain.
-const OAUTH_PLATFORMS = new Set(['twitch', 'youtube', 'discord', 'battlenet', 'steam', 'openxbl']);
+//
+// 2026-09-08: that reasoning now covers everything except Twitch and Discord.
+// Founder decision: every other row is a DISPLAY LINK, not a real connection.
+// The user types their handle and we show it on their profile, which is all
+// these rows ever did for anyone looking at them.
+//
+// Only two platforms still need a real token, because something actually reads
+// it afterwards: Twitch drives the stream mirror and its chat bridge, and
+// Discord drives the server clone and role rewards. The rest were an OAuth app,
+// a client secret and an approval process maintained to store a username.
+//
+// ⚠ REMOVING A PLATFORM FROM THIS SET IS HALF THE CHANGE. The other half is
+// `functions/oauth.js`: its PROVIDERS table and ALL_SECRETS must drop the same
+// platform, or the callable keeps binding a secret nothing uses. The two lists
+// are meant to stay in step.
+const OAUTH_PLATFORMS = new Set(['twitch', 'discord']);
 
 // Real brand logos (24x24 single-path glyphs, fill=currentColor so the tile's
 // textColor drives the colour). Paths from the public Simple Icons set, keyed
@@ -129,25 +144,17 @@ export default function LinkedAccountsScreen() {
   const startOAuth = async (platformId) => {
     setBusyId(platformId);
     try {
-      // Steam uses OpenID 2.0; everything else uses generic OAuth2.
-      const result = platformId === 'steam'
-        ? await getSteamSignInUrl()
-        : await getOAuthStartUrl(platformId);
-      const { url, state } = result || {};
+      // Only Twitch and Discord reach here now: the Steam OpenID branch and the
+      // OpenXBL cookie dance went with the display-link change, along with the
+      // functions and secrets behind them.
+      const { url } = (await getOAuthStartUrl(platformId)) || {};
       if (!url) throw new Error('No auth URL returned');
-      // OpenXBL strips state from its redirect, so we stash it in a cookie
-      // for the callback to read. 10-min TTL matches the server-side state.
-      if (platformId === 'openxbl' && state) {
-        document.cookie = `vergr_oauth_state=${encodeURIComponent(state)}; Path=/; Max-Age=600; SameSite=Lax; Secure`;
-      }
       // On native, run OAuth in the SYSTEM browser, not this WebView. An
       // in-WebView redirect ends on the web origin (vergr.app) with no native
       // Firebase session, so the link "looks connected but never shows". Opening
       // externally keeps the app + its live linkedAccounts listener alive, and
-      // the verified vergr.app App Link returns the user when done. OpenXBL stays
-      // in-WebView (its CSRF state rides a cookie set on THIS origin that an
-      // external browser wouldn't carry).
-      if (platformId !== 'openxbl' && openExternalUrl(url)) {
+      // the verified vergr.app App Link returns the user when done.
+      if (openExternalUrl(url)) {
         showToast('Continue in your browser, then come back to VERGR.', 'info');
         setBusyId(null);
         return;

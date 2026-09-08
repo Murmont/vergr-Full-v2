@@ -4115,14 +4115,11 @@ export const linkSteam = ({ steamId64 }) =>
 
 // OAuth start URL fetcher — backend mints a state token and returns the
 // provider's authorize URL. Frontend then sets window.location.href = url.
-// Supported platforms: twitch, youtube, discord, battlenet, epicgames.
+// Supported platforms: twitch and discord ONLY. Everything else on the Linked
+// accounts screen is a display link the user types in, so it never reaches a
+// provider. Passing any other platform returns "Unsupported platform".
 export const getOAuthStartUrl = (platform) =>
   callTournamentFn('getOAuthStartUrl', { platform });
-
-// Steam uses OpenID 2.0 (different protocol) so it has its own start URL
-// callable. The frontend treats both the same: get URL → redirect.
-export const getSteamSignInUrl = () =>
-  callTournamentFn('getSteamSignInUrl', {});
 
 export const unlinkSteam = () =>
   callTournamentFn('unlinkSteamAccount', {});

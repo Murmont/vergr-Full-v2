@@ -830,10 +830,15 @@ const oauth = require('./oauth');
 exports.getOAuthStartUrl = oauth.getOAuthStartUrl;
 exports.oauthCallback    = oauth.oauthCallback;
 
-// Steam OpenID 2.0 sign-in — replaces the manual Steam64 paste flow.
-const steamAuth = require('./steamAuth');
-exports.getSteamSignInUrl   = steamAuth.getSteamSignInUrl;
-exports.steamOpenIdCallback = steamAuth.steamOpenIdCallback;
+// Steam OpenID 2.0 sign-in: RETIRED 2026-09-08.
+//
+// Steam is a display link now, so the manual Steam64 paste flow it replaced is
+// the flow again, and it still runs through `linkSteam` (which also mints the
+// GSI token, so Game State Integration is untouched). `getSteamSignInUrl` and
+// `steamOpenIdCallback` were deleted from the deployment and `STEAM_API_KEY`
+// disabled with them. `functions/steamAuth.js` is left in the tree rather than
+// deleted: it is the whole OpenID implementation and re-exporting these two
+// lines is all it would take to bring it back.
 
 // ── PLAN ECONOMY (mirrors src/utils/tierSystem.js + vpSystem.js) ──
 const PLAN_VP_MULT = { free: 1, lite: 1.5, pro: 2 };
