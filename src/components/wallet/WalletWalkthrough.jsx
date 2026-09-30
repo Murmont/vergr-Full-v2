@@ -171,7 +171,7 @@ const Beat2 = memo(function Beat2() {
               You buy these. You spend them inside VERGR.
             </div>
             <div style={{ fontFamily: FONT_MONO, fontSize: 13, marginTop: 16, color: WALLET_TOKENS.textMuted, letterSpacing: '0.06em' }}>
-              TIPS · MEMBERSHIPS · TOURNAMENT ENTRY
+              TIPS · MEMBERSHIPS · UNLOCKS
             </div>
           </Animated>
 
@@ -596,7 +596,6 @@ const Beat7 = memo(function Beat7() {
   const items = [
     { label: 'Custody',  value: 'Circle MPC',     sub: 'USDC issuer infrastructure' },
     { label: 'Reserves', value: 'Cold reserve',   sub: 'Separated from operating funds' },
-    { label: 'Proof',    value: 'On-chain PoR',   sub: 'Reserves match liabilities, publicly' },
     { label: 'Chain',    value: 'Base · USDC',    sub: 'Regulated stablecoin, low gas' },
   ];
   return (
@@ -606,11 +605,10 @@ const Beat7 = memo(function Beat7() {
           WHO'S BEHIND THIS
         </div>
         <div style={{ fontFamily: FONT_DISPLAY, fontSize: 44, color: WALLET_TOKENS.text, fontWeight: 700 }}>Real custody.</div>
-        <div style={{ fontFamily: FONT_DISPLAY, fontSize: 44, color: WALLET_TOKENS.textSecondary, fontWeight: 700 }}>Real audit trail.</div>
       </div>
       <div style={{
         position: 'absolute', left: '50%', top: '54%', transform: 'translate(-50%, -50%)',
-        display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 18,
+        display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 18,
         width: 'min(1000px, 92vw)',
       }}>
         {items.map((it, i) => (

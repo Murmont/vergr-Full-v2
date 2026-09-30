@@ -5,12 +5,12 @@
 // PRICE CHARGED. Nothing in checkout, tax or settlement moves.
 //
 // The cost of a promo is shown BEFORE it is switched on, and the cap is a
-// required field for a coin promo, because bonus coins can be tipped and a tip
-// becomes real money Vergr owes a creator.
+// required field for a coin promo. Since 2026-09-27 promo bonus coins are BOOST
+// coins (boosts and VP packs only, never tips), so they cost Vergr no revenue
+// share; the cap still bounds how many are handed out.
 
 import { useState, useEffect, useCallback } from 'react';
 import { useUI } from '../../context/UIContext';
-import Icon from '../../components/Icon';
 import { ADMIN_COLORS as C } from './AdminShell';
 import { call, fmtNumber, fmtRelative, useGuardedCall } from './_adminGuarded';
 import { Toggle, PillToggle } from './channelControls';
@@ -18,12 +18,12 @@ import { COIN_PACKS } from '../../utils/vpSystem';
 
 const KINDS = [
   {
-    id: 'coins_pct', label: 'Extra coins, as a percentage', unit: '%',
-    desc: 'Buy any pack, get this much on top. 20% on a 815-coin pack is 163 extra coins.',
+    id: 'coins_pct', label: 'Extra boost coins, as a percentage', unit: '%',
+    desc: 'Buy any pack, get this much on top as boost coins. 20% on a 815-coin pack is 163 boost coins.',
   },
   {
-    id: 'coins_flat', label: 'Extra coins, a fixed number', unit: 'coins',
-    desc: 'The same number of extra coins on every qualifying purchase.',
+    id: 'coins_flat', label: 'Extra boost coins, a fixed number', unit: 'boost coins',
+    desc: 'The same number of boost coins on every qualifying purchase.',
   },
   {
     id: 'vp_pct', label: 'Extra VP, as a percentage', unit: '%',
@@ -277,9 +277,9 @@ function PromoEditor({ draft, onCancel, onSaved, guarded }) {
               style={{ ...input, marginBottom: 0 }} />
             <H>
               The promo stops giving bonuses once it has handed out this many coins,
-              whatever the dates say. Required, and it is the number that bounds what
-              this can cost you: bonus coins can be tipped, and a tip becomes real
-              money owed to a creator.
+              whatever the dates say. Required. Bonus coins arrive as boost coins: they
+              buy boosts and VP packs and can never be tipped, so they create nothing
+              owed to a creator.
             </H>
           </>
         )}
@@ -322,7 +322,7 @@ function PromoEditor({ draft, onCancel, onSaved, guarded }) {
                 Per purchase, you give away between{' '}
                 <b style={{ color: C.text }}>{fmtNumber(projection.min)}</b> and{' '}
                 <b style={{ color: C.text }}>{fmtNumber(projection.max)}</b>{' '}
-                {isCoins ? 'coins' : 'VP'}, averaging{' '}
+                {isCoins ? 'boost coins' : 'VP'}, averaging{' '}
                 <b style={{ color: C.text }}>{fmtNumber(projection.avg)}</b>.
               </div>
               {isCoins && Number(d.totalBonusCoinsCap) > 0 && (
@@ -336,10 +336,9 @@ function PromoEditor({ draft, onCancel, onSaved, guarded }) {
                     {fmtNumber(Math.floor(Number(d.totalBonusCoinsCap) / Math.max(1, projection.avg)))}
                   </b>{' '}
                   purchases.
-                  <div style={{ marginTop: 8, color: '#f5c542' }}>
-                    <Icon name="info" size={12} style={{ verticalAlign: '-2px', marginRight: 4 }} />
-                    Worst case, if every bonus coin is tipped, that is about
-                    {' '}${(Number(d.totalBonusCoinsCap) * 0.01 * 0.8).toFixed(2)} owed to creators.
+                  <div style={{ marginTop: 8, color: '#22C55E' }}>
+                    Boost coins buy boosts and VP packs and can never be tipped, so this
+                    creates nothing owed to creators.
                   </div>
                 </div>
               )}

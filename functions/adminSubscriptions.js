@@ -1,24 +1,27 @@
-// adminSubscriptions.js — Admin → Subscriptions screen callables (pass 1).
+// adminSubscriptions.js — Admin → Subscriptions screen callables.
 //
-// Pass 1 covers: Overview / All Subscriptions / Billing & Invoices.
-// Pass 2 (Plans & Pricing, Comp & Overrides, Settings, Logs) lands later.
+// Data model (functions/subscriptions.js, payram.js, playBilling.js, huaweiBilling.js):
+//   users/{uid}.subscription                ∈ 'free'|'lite'|'pro'
+//   users/{uid}.subscriptionPeriodStart     millis
+//   users/{uid}.subscriptionPeriodEnd       millis
+//   users/{uid}.subscriptionAutoRenew       bool
+//   users/{uid}.subscriptionPreferredMethod 'coins'|'card'|'google_play'|'huawei_iap'|'comp'
+//   subscriptions/{uid}_{ts}                one row per period granted, by every rail
+//                                            { userId, tier, method, coinsCharged?, amountUSD?,
+//                                              periodStart, periodEnd, createdAt }
 //
-// Data model — recall from CLAUDE.md + functions/subscriptions.js:
-//   users/{uid}.subscription              ∈ 'free'|'lite'|'pro'
-//   users/{uid}.subscriptionPeriodStart   millis
-//   users/{uid}.subscriptionPeriodEnd     millis
-//   users/{uid}.subscriptionAutoRenew     bool
-//   subscriptions/{uid}_{ts}              audit trail per period
-//                                          { userId, tier, method, coinsCharged?,
-//                                            periodStart, periodEnd, createdAt }
-//   invoices/{id}                          placeholder until Cryptomus wires
-//                                          inbound — fields read defensively
-//
-// Tier B (coin-funded) subscriptions have method='coins' on the audit row;
-// Tier A (card via Cryptomus/Tebex when live) will have method='card'.
+// ⚠ 2026-09-21: everything here that did nothing was removed or made real.
+// The "invoices" tab read a collection nothing writes; it is now the payments
+// ledger built from subscriptions/. The Plans editor saved prices nothing
+// charges (the real prices are tierSystem.js, payram.js and the store consoles),
+// so Plans is read-only in the app and its callables are gone. The discount
+// override was never applied at renewal while telling the user it would be;
+// gone. Settings now holds only switches that are enforced
+// (functions/subscriptionSettings.js).
 
 const functions = require('firebase-functions/v2');
 const { getFirestore, AggregateField, FieldValue } = require('firebase-admin/firestore');
+const { authEmailsFor } = require('./authEmails');
 const { requireAdminScreen } = require('./adminAccess');
 const { requireFreshStepUp, adminRateLimit, auditAdminAction } = require('./adminSecurity');
 
@@ -26,29 +29,21 @@ const db = getFirestore('vgrdb');
 const REGION = 'europe-west1';
 const HttpsError = functions.https.HttpsError;
 
-// NOTE: these are the FALLBACK prices used when plans/{id} doc is absent.
-// Once Plans & Pricing tab is used, the plans collection becomes source of
-// truth and these values are only consulted as a backstop.
-const PRICE_EUR = { lite: 4.99, pro: 9.99 };
+// LIST prices in USD, as printed on the plan cards (src/utils/tierSystem.js).
+// What a buyer pays depends on the rail: coins (PRICE_COINS), the card checkout
+// (a regional EUR base converted to USD, functions/payram.js), or the per-market
+// store price in Play Console / AppGallery. So every money figure built from
+// these is shown as "at list price", never as revenue.
+const PRICE_USD = { lite: 4.99, pro: 9.99 };
 const PRICE_COINS = { lite: 500, pro: 1000 };
 
-const KNOWN_PLAN_IDS = ['lite', 'pro'];
+// Rails that take money. 'comp' and 'cancellation' rows are admin actions.
+const PAYMENT_METHODS = ['coins', 'card', 'google_play', 'huawei_iap'];
 
-async function readPlanPrices() {
-  try {
-    const snap = await db.collection('plans').get();
-    const out = { eur: { ...PRICE_EUR }, coins: { ...PRICE_COINS } };
-    snap.docs.forEach(d => {
-      const p = d.data();
-      if (!p.active) return;
-      if (typeof p.priceEUR === 'number')   out.eur[d.id]   = p.priceEUR;
-      if (typeof p.priceCoins === 'number') out.coins[d.id] = p.priceCoins;
-    });
-    return out;
-  } catch {
-    return { eur: { ...PRICE_EUR }, coins: { ...PRICE_COINS } };
-  }
-}
+// createdAt on subscriptions/ is a server Timestamp. A range filter against a
+// plain number matches NOTHING (Firestore ranges never cross types), which is
+// why "New (7d)" and the trend chart could only ever read 0.
+const tsFrom = (ms) => new Date(ms);
 
 async function guardCaller(uid) {
   return await requireAdminScreen(uid, 'subscriptions');
@@ -87,22 +82,32 @@ exports.adminGetSubscriptionStats = functions.https.onCall(
       safeAgg(users.where('subscription', '==', 'pro'),  { count: AggregateField.count() }),
       safeAgg(users.where('subscription', '==', 'free'), { count: AggregateField.count() }),
       // New subscriptions in the last 7 days (audit collection)
-      db.collection('subscriptions').where('createdAt', '>=', weekAgo).count().get()
+      db.collection('subscriptions').where('createdAt', '>=', tsFrom(weekAgo)).count().get()
         .then(r => r.data().count).catch(() => 0),
       // New subscriptions in last 30 days
-      db.collection('subscriptions').where('createdAt', '>=', monthAgo).count().get()
+      db.collection('subscriptions').where('createdAt', '>=', tsFrom(monthAgo)).count().get()
         .then(r => r.data().count).catch(() => 0),
       // Cancelled last 30 days = users with subscription=free who had a sub row in the last month
       // (approximation; full churn calc needs status field on the audit row)
-      db.collection('subscriptions').where('createdAt', '>=', monthAgo).where('method', '==', 'cancellation').count().get()
+      db.collection('subscriptions').where('createdAt', '>=', tsFrom(monthAgo)).where('method', '==', 'cancellation').count().get()
         .then(r => r.data().count).catch(() => 0),
     ]);
 
     const lite = liteCount?.count ?? 0;
     const pro  = proCount?.count  ?? 0;
     const active = lite + pro;
-    const mrrEUR = lite * PRICE_EUR.lite + pro * PRICE_EUR.pro;
-    const arrEUR = mrrEUR * 12;
+    // At LIST price. See PRICE_USD: store and card buyers pay other amounts.
+    const mrrUSD = +(lite * PRICE_USD.lite + pro * PRICE_USD.pro).toFixed(2);
+    const arrUSD = +(mrrUSD * 12).toFixed(2);
+
+    // Who pays how. subscriptionPreferredMethod is the canonical rail field;
+    // count queries cost one read per 1,000 matches.
+    const railCount = (m) => users.where('subscription', 'in', ['lite', 'pro'])
+      .where('subscriptionPreferredMethod', '==', m).count().get()
+      .then(r => r.data().count).catch(() => 0);
+    const railIds = [...PAYMENT_METHODS, 'comp'];
+    const railCounts = await Promise.all(railIds.map(railCount));
+    const byRail = Object.fromEntries(railIds.map((m, i) => [m, railCounts[i]]));
 
     return {
       activeSubscriptions: active,
@@ -112,9 +117,9 @@ exports.adminGetSubscriptionStats = functions.https.onCall(
       newWeek,
       newMonth,
       cancelledMonth,
-      mrrEUR,
-      arrEUR,
-      monthlyRevenueEUR: mrrEUR,   // proxy: assumes everyone billed monthly
+      mrrUSD,
+      arrUSD,
+      byRail,
       asOf: now,
     };
   }
@@ -131,7 +136,7 @@ exports.adminGetSubscriptionTrend = functions.https.onCall(
     const startMs = Date.now() - safeDays * 24 * 3600 * 1000;
 
     const snap = await db.collection('subscriptions')
-      .where('createdAt', '>=', startMs)
+      .where('createdAt', '>=', tsFrom(startMs))
       .orderBy('createdAt', 'asc')
       .limit(2000)
       .get()
@@ -141,6 +146,7 @@ exports.adminGetSubscriptionTrend = functions.https.onCall(
     const buckets = {};
     snap.docs.forEach(d => {
       const data = d.data();
+      if (data.method === 'cancellation') return; // a cancellation is not a new plan
       const ms = toMs(data.createdAt) || data.createdAt;
       if (!ms) return;
       const day = new Date(ms).toISOString().slice(0, 10);
@@ -187,7 +193,10 @@ exports.adminGetRecentSubscriptionEvents = functions.https.onCall(
     const uids = [...new Set(rows.map(r => r.userId).filter(Boolean))];
     const profiles = {};
     if (uids.length > 0) {
-      const snaps = await Promise.all(uids.map(u => db.collection('users').doc(u).get()));
+      const [snaps, emails] = await Promise.all([
+        Promise.all(uids.map(u => db.collection('users').doc(u).get())),
+        authEmailsFor(uids), // sign-up emails live in Auth, not on the profile doc
+      ]);
       snaps.forEach((s, i) => {
         if (s.exists) {
           const p = s.data();
@@ -195,7 +204,7 @@ exports.adminGetRecentSubscriptionEvents = functions.https.onCall(
             displayName: p.displayName || null,
             username: p.username || null,
             avatar: p.avatar || null,
-            email: p.email || null,
+            email: emails[uids[i]] || null,
           };
         }
       });
@@ -226,11 +235,12 @@ exports.adminGetUpcomingRenewals = functions.https.onCall(
     const [today, week, month] = await Promise.all([countBy(dayEnd), countBy(weekEnd), countBy(monthEnd)]);
 
     // Estimate revenue per bucket using avg tier price
-    const avg = (PRICE_EUR.lite + PRICE_EUR.pro) / 2;
+    // At list price, averaged across plans: an estimate, labelled as one.
+    const avg = (PRICE_USD.lite + PRICE_USD.pro) / 2;
     return {
-      today:        { count: today, estimatedEUR: today * avg },
-      thisWeek:     { count: week,  estimatedEUR: week  * avg },
-      thisMonth:    { count: month, estimatedEUR: month * avg },
+      today:        { count: today, estimatedUSD: +(today * avg).toFixed(2) },
+      thisWeek:     { count: week,  estimatedUSD: +(week  * avg).toFixed(2) },
+      thisMonth:    { count: month, estimatedUSD: +(month * avg).toFixed(2) },
     };
   }
 );
@@ -262,6 +272,7 @@ exports.adminListSubscriptions = functions.https.onCall(
     }
 
     const snap = await q.limit(limit).get().catch(() => ({ docs: [] }));
+    const emails = await authEmailsFor(snap.docs.map(d => d.id));
     const rows = snap.docs
       .filter(d => {
         if (!search) return true;
@@ -269,7 +280,7 @@ exports.adminListSubscriptions = functions.https.onCall(
         const s = search.toLowerCase();
         return (data.username || '').toLowerCase().includes(s) ||
                (data.displayName || '').toLowerCase().includes(s) ||
-               (data.email || '').toLowerCase().includes(s);
+               (emails[d.id] || '').toLowerCase().includes(s);
       })
       .map(d => {
         const u = d.data();
@@ -277,15 +288,15 @@ exports.adminListSubscriptions = functions.https.onCall(
           id: d.id,
           username: u.username || null,
           displayName: u.displayName || null,
-          email: u.email || null,
+          email: emails[d.id] || null,
           avatar: u.avatar || null,
           tier: u.subscription,
           periodStart: toMs(u.subscriptionPeriodStart),
           periodEnd: toMs(u.subscriptionPeriodEnd),
           autoRenew: !!u.subscriptionAutoRenew,
-          method: u.subscriptionMethod || null,
+          method: u.subscriptionPreferredMethod || u.subscriptionMethod || null,
           status: u.subscriptionStatus || 'active',
-          priceEUR: PRICE_EUR[u.subscription] || 0,
+          listPriceUSD: PRICE_USD[u.subscription] || 0,
           // Convenience: derive a UI-friendly status pill
           uiStatus: deriveUiStatus(u),
         };
@@ -306,8 +317,60 @@ function deriveUiStatus(u) {
 }
 
 // ════════════════════════════════════════════════════════════════════
-// BILLING & INVOICES
+// PAYMENTS (the tab once called "Billing & Invoices")
 // ════════════════════════════════════════════════════════════════════
+//
+// ⚠ Vergr issues no invoices, and nothing ever wrote the `invoices` collection
+// this tab used to read, so it was permanently empty. The real record of a
+// subscription payment is the subscriptions/{uid}_{ts} row every rail writes
+// when it grants a period:
+//   coins        subscriptions.js   subscribeWithCoins + coin auto-renewals
+//   card         payram.js          settled PayRam order (amountUSD from 2026-09-21)
+//   google_play  playBilling.js     redeemPlaySubscription
+//   huawei_iap   huaweiBilling.js   redeemHuaweiSubscription (from 2026-09-21)
+// The stores never tell us the price a buyer paid (it is set per market), so a
+// store row carries the plan and the rail and NEVER an invented amount.
+// Callable names are unchanged on purpose: a renamed callable is a new Cloud
+// Function, and a new function is a new container image, i.e. money.
+
+async function hydrateUsers(uids) {
+  const out = {};
+  const ids = [...new Set(uids.filter(Boolean))];
+  if (!ids.length) return out;
+  const [snaps, emails] = await Promise.all([
+    Promise.all(ids.map(u => db.collection('users').doc(u).get())),
+    authEmailsFor(ids), // sign-up emails live in Auth, not on the profile doc
+  ]);
+  snaps.forEach((snap, i) => {
+    const p = snap.exists ? snap.data() : {};
+    out[ids[i]] = {
+      displayName: p.displayName || null,
+      username: p.username || null,
+      avatar: p.avatar || null,
+      email: emails[ids[i]] || null,
+    };
+  });
+  return out;
+}
+
+function paymentRow(id, d) {
+  const method = d.method || null;
+  let amount = null;
+  if (method === 'coins') amount = { kind: 'coins', value: Number(d.coinsCharged) || 0 };
+  else if (method === 'card' && typeof d.amountUSD === 'number') amount = { kind: 'usd', value: d.amountUSD };
+  else if (method === 'google_play' || method === 'huawei_iap') amount = { kind: 'store' };
+  return {
+    id,
+    userId: d.userId || null,
+    tier: d.tier || null,
+    method,
+    amount,
+    renewal: !!d.renewal,
+    periodStart: toMs(d.periodStart),
+    periodEnd: toMs(d.periodEnd),
+    createdAt: toMs(d.createdAt),
+  };
+}
 
 exports.adminGetBillingStats = functions.https.onCall(
   { region: REGION, cors: true },
@@ -316,30 +379,32 @@ exports.adminGetBillingStats = functions.https.onCall(
     await guardCaller(uid);
 
     const now = Date.now();
-    const monthStart = new Date();
-    monthStart.setUTCDate(1); monthStart.setUTCHours(0, 0, 0, 0);
-    const monthStartMs = monthStart.getTime();
+    const m = new Date(now);
+    const monthStartMs = Date.UTC(m.getUTCFullYear(), m.getUTCMonth(), 1);
 
-    const invoices = db.collection('invoices');
-    const safeCount = (q) => q.count().get().then(r => r.data().count).catch(() => 0);
-    const safeSum = (q, f) => safeAgg(q, { total: AggregateField.sum(f) });
+    // One range, no composite index: this month's rows, grouped in memory.
+    // Reads scale with payments made this month, which is the thing counted.
+    const snap = await db.collection('subscriptions')
+      .where('createdAt', '>=', tsFrom(monthStartMs))
+      .limit(5000)
+      .get()
+      .catch(() => ({ docs: [] }));
 
-    const [totalBilled, collected, pending, overdue, refunded] = await Promise.all([
-      safeSum(invoices.where('issueDate', '>=', monthStartMs), 'amount'),
-      safeSum(invoices.where('status', '==', 'paid').where('paidAt', '>=', monthStartMs), 'amount'),
-      safeSum(invoices.where('status', '==', 'pending'), 'amount'),
-      safeSum(invoices.where('status', '==', 'overdue'), 'amount'),
-      safeSum(invoices.where('status', '==', 'refunded').where('refundedAt', '>=', monthStartMs), 'amount'),
-    ]);
+    const byMethod = Object.fromEntries(PAYMENT_METHODS.map((k) => [k, { count: 0 }]));
+    byMethod.coins.coins = 0;
+    byMethod.card.usd = 0;
+    let payments = 0;
+    for (const doc of snap.docs) {
+      const d = doc.data();
+      if (!PAYMENT_METHODS.includes(d.method)) continue;
+      payments += 1;
+      byMethod[d.method].count += 1;
+      if (d.method === 'coins') byMethod.coins.coins += Number(d.coinsCharged) || 0;
+      if (d.method === 'card' && typeof d.amountUSD === 'number') byMethod.card.usd += d.amountUSD;
+    }
+    byMethod.card.usd = +byMethod.card.usd.toFixed(2);
 
-    return {
-      totalBilledEUR: totalBilled?.total ?? 0,
-      collectedEUR:   collected?.total   ?? 0,
-      pendingEUR:     pending?.total     ?? 0,
-      overdueEUR:     overdue?.total     ?? 0,
-      refundedEUR:    refunded?.total    ?? 0,
-      asOf: now,
-    };
+    return { monthStartMs, payments, byMethod, capped: snap.docs.length >= 5000, asOf: now };
   }
 );
 
@@ -350,307 +415,49 @@ exports.adminListInvoices = functions.https.onCall(
     await guardCaller(uid);
     const { filters = {}, cursor = null, pageSize = 25 } = request.data || {};
     const limit = Math.min(100, Math.max(1, pageSize));
+    const method = PAYMENT_METHODS.includes(filters.method) ? filters.method : null;
+    const tier = ['lite', 'pro'].includes(filters.tier) ? filters.tier : null;
 
-    let q = db.collection('invoices').orderBy('issueDate', 'desc');
-    if (filters.status) q = q.where('status', '==', filters.status);
-    if (filters.tier)   q = q.where('plan', '==', filters.tier);
-
+    // Filtered in memory rather than by a composite index: over-fetch in pages
+    // until the page is full or the collection runs out. Admin-only, small.
+    const rows = [];
+    let after = null;
     if (cursor) {
-      const cs = await db.collection('invoices').doc(cursor).get();
-      if (cs.exists) q = q.startAfter(cs);
+      const cs = await db.collection('subscriptions').doc(cursor).get();
+      if (cs.exists) after = cs;
+    }
+    let exhausted = false;
+    for (let round = 0; round < 6 && rows.length < limit && !exhausted; round += 1) {
+      let q = db.collection('subscriptions').orderBy('createdAt', 'desc').limit(limit * 2);
+      if (after) q = q.startAfter(after);
+      const snap = await q.get().catch(() => ({ docs: [] }));
+      if (snap.docs.length < limit * 2) exhausted = true;
+      for (const doc of snap.docs) {
+        after = doc;
+        const d = doc.data();
+        if (!PAYMENT_METHODS.includes(d.method)) continue;
+        if (method && d.method !== method) continue;
+        if (tier && d.tier !== tier) continue;
+        rows.push(paymentRow(doc.id, d));
+        if (rows.length >= limit) break;
+      }
     }
 
-    const snap = await q.limit(limit).get().catch(() => ({ docs: [] }));
-    const rows = snap.docs.map(d => {
-      const data = d.data();
-      return {
-        id: d.id,
-        invoiceNumber: data.invoiceNumber || d.id,
-        userId: data.userId || null,
-        plan: data.plan || null,
-        billingCycle: data.billingCycle || 'monthly',
-        amount: data.amount ?? 0,
-        currency: data.currency || 'EUR',
-        status: data.status || 'pending',
-        paymentMethod: data.paymentMethod || null,
-        issueDate: toMs(data.issueDate),
-        dueDate: toMs(data.dueDate),
-        paidAt: toMs(data.paidAt),
-        txRef: data.txRef || null,
-      };
-    });
-
-    // Hydrate user info
-    const uids = [...new Set(rows.map(r => r.userId).filter(Boolean))];
-    const profiles = {};
-    if (uids.length > 0) {
-      const snaps = await Promise.all(uids.map(u => db.collection('users').doc(u).get()));
-      snaps.forEach((s, i) => {
-        if (s.exists) {
-          const p = s.data();
-          profiles[uids[i]] = {
-            displayName: p.displayName || null,
-            username: p.username || null,
-            avatar: p.avatar || null,
-            email: p.email || null,
-          };
-        }
-      });
-    }
-
-    const nextCursor = snap.docs.length === limit ? snap.docs[snap.docs.length - 1].id : null;
+    const users = await hydrateUsers(rows.map(r => r.userId));
+    const nextCursor = rows.length >= limit && after ? after.id : null;
     return {
-      rows: rows.map(r => ({ ...r, user: profiles[r.userId] || null })),
+      rows: rows.map(r => ({ ...r, user: users[r.userId] || null })),
       nextCursor,
     };
   }
 );
 
-// ════════════════════════════════════════════════════════════════════
-// PLANS & PRICING (Pass 2)
-// ════════════════════════════════════════════════════════════════════
-//
-// plans/{planId} schema:
-//   { id, name, displayName, priceEUR, priceCoins, periodDays, features[],
-//     color, tagline, active, billingCycle: 'monthly',
-//     scheduledPrice: { effectiveAt, priceEUR, priceCoins } | null,
-//     updatedAt, updatedBy }
-//
-// First read seeds 'lite' + 'pro' from the in-code defaults if they don't exist
-// yet so the UI always has rows to render.
-
-const DEFAULT_PLAN_SEEDS = {
-  lite: {
-    id: 'lite', name: 'lite', displayName: 'VERGR Lite',
-    priceEUR: 4.99, priceCoins: 500, periodDays: 30,
-    billingCycle: 'monthly', color: '#7B6FFF', tagline: 'Level up faster',
-    features: ['No ads', 'Stream publicly (720p)', '1.5× VP', '1GB uploads', 'Scheduled posts'],
-    active: true, scheduledPrice: null,
-  },
-  pro: {
-    id: 'pro', name: 'pro', displayName: 'VERGR Pro',
-    priceEUR: 9.99, priceCoins: 1000, periodDays: 30,
-    billingCycle: 'monthly', color: '#F5C542', tagline: 'Go all-in',
-    // Keep in sync with TIERS.pro.features in src/utils/tierSystem.js. No
-    // tournaments (retired) and no co-streaming (open to every plan).
-    features: ['1080p, no daily limit', '2× VP', '90-day replays', '5GB uploads', 'Custom vergr.me domain'],
-    active: true, scheduledPrice: null,
-  },
-};
-
-exports.adminListPlans = functions.https.onCall(
-  { region: REGION, cors: true },
-  async (request) => {
-    const uid = request.auth?.uid;
-    await guardCaller(uid);
-
-    const snap = await db.collection('plans').get();
-    const found = new Map(snap.docs.map(d => [d.id, { id: d.id, ...d.data() }]));
-
-    // Lazy-seed defaults so a fresh project shows lite + pro out of the box.
-    for (const id of KNOWN_PLAN_IDS) {
-      if (!found.has(id)) {
-        const seed = DEFAULT_PLAN_SEEDS[id];
-        await db.collection('plans').doc(id).set({
-          ...seed, updatedAt: FieldValue.serverTimestamp(), updatedBy: 'system_seed',
-        });
-        found.set(id, seed);
-      }
-    }
-
-    const rows = Array.from(found.values()).map(p => ({
-      ...p,
-      updatedAt: toMs(p.updatedAt),
-      scheduledPrice: p.scheduledPrice ? {
-        ...p.scheduledPrice, effectiveAt: toMs(p.scheduledPrice.effectiveAt),
-      } : null,
-    }));
-    return { rows };
-  }
-);
-
-exports.adminUpsertPlan = functions.https.onCall(
-  { region: REGION, cors: true },
-  async (request) => {
-    const uid = request.auth?.uid;
-    await guardCaller(uid);
-    await requireFreshStepUp(uid);
-    await adminRateLimit(uid, 'admin_upsert_plan', { perHour: 20, perDay: 60 });
-
-    const data = request.data || {};
-    const id = String(data.id || '').trim().toLowerCase();
-    if (!/^[a-z0-9_-]{2,32}$/.test(id)) {
-      throw new HttpsError('invalid-argument', 'Plan id must be 2-32 chars, lowercase letters/digits/_/-.');
-    }
-    const priceEUR = Number(data.priceEUR);
-    const priceCoins = Number(data.priceCoins);
-    const periodDays = Number(data.periodDays || 30);
-    if (!isFinite(priceEUR) || priceEUR < 0 || priceEUR > 9999) {
-      throw new HttpsError('invalid-argument', 'priceEUR must be 0..9999');
-    }
-    if (!isFinite(priceCoins) || priceCoins < 0 || priceCoins > 1_000_000) {
-      throw new HttpsError('invalid-argument', 'priceCoins must be 0..1,000,000');
-    }
-    if (!isFinite(periodDays) || periodDays < 1 || periodDays > 365) {
-      throw new HttpsError('invalid-argument', 'periodDays must be 1..365');
-    }
-
-    const ref = db.collection('plans').doc(id);
-    const before = (await ref.get()).data() || null;
-
-    const payload = {
-      id,
-      name: String(data.name || id),
-      displayName: String(data.displayName || data.name || id).slice(0, 80),
-      priceEUR, priceCoins, periodDays,
-      billingCycle: String(data.billingCycle || 'monthly'),
-      color: String(data.color || '#7B6FFF').slice(0, 16),
-      tagline: String(data.tagline || '').slice(0, 120),
-      features: Array.isArray(data.features) ? data.features.slice(0, 24).map(f => String(f).slice(0, 120)) : [],
-      active: data.active !== false,
-      updatedAt: FieldValue.serverTimestamp(),
-      updatedBy: uid,
-    };
-    await ref.set(payload, { merge: true });
-
-    await auditAdminAction({
-      actor: uid, action: before ? 'admin_update_plan' : 'admin_create_plan',
-      target: { type: 'plan', id },
-      before, after: payload,
-      stepUpEnforced: true, stepUpFresh: true,
-    });
-
-    return { ok: true, id };
-  }
-);
-
-exports.adminDeletePlan = functions.https.onCall(
-  { region: REGION, cors: true },
-  async (request) => {
-    const uid = request.auth?.uid;
-    await guardCaller(uid);
-    await requireFreshStepUp(uid);
-    await adminRateLimit(uid, 'admin_delete_plan', { perHour: 5, perDay: 10 });
-    const id = String(request.data?.id || '').trim().toLowerCase();
-    if (!id) throw new HttpsError('invalid-argument', 'id required');
-    if (KNOWN_PLAN_IDS.includes(id)) {
-      // We don't hard-delete lite/pro — that would orphan every paid user.
-      // Deactivate instead.
-      await db.collection('plans').doc(id).set({
-        active: false, updatedAt: FieldValue.serverTimestamp(), updatedBy: uid,
-      }, { merge: true });
-      await auditAdminAction({
-        actor: uid, action: 'admin_deactivate_plan',
-        target: { type: 'plan', id },
-        reason: 'Built-in plan; deactivated rather than deleted.',
-        stepUpEnforced: true, stepUpFresh: true,
-      });
-      return { ok: true, deactivated: true };
-    }
-    const ref = db.collection('plans').doc(id);
-    const before = (await ref.get()).data() || null;
-    if (!before) throw new HttpsError('not-found', 'Plan not found');
-    await ref.delete();
-    await auditAdminAction({
-      actor: uid, action: 'admin_delete_plan',
-      target: { type: 'plan', id }, before, after: null,
-      stepUpEnforced: true, stepUpFresh: true,
-    });
-    return { ok: true, deleted: true };
-  }
-);
-
-exports.adminSchedulePriceChange = functions.https.onCall(
-  { region: REGION, cors: true },
-  async (request) => {
-    const uid = request.auth?.uid;
-    await guardCaller(uid);
-    await requireFreshStepUp(uid);
-    await adminRateLimit(uid, 'admin_schedule_price_change', { perHour: 10, perDay: 30 });
-
-    const { planId, priceEUR, priceCoins, effectiveAt } = request.data || {};
-    const id = String(planId || '').trim().toLowerCase();
-    const effMs = Number(effectiveAt);
-    if (!id) throw new HttpsError('invalid-argument', 'planId required');
-    if (!isFinite(effMs) || effMs < Date.now() + 60_000) {
-      throw new HttpsError('invalid-argument', 'effectiveAt must be at least 1 minute in the future.');
-    }
-    if (priceEUR != null && (!isFinite(Number(priceEUR)) || priceEUR < 0)) {
-      throw new HttpsError('invalid-argument', 'priceEUR invalid');
-    }
-    if (priceCoins != null && (!isFinite(Number(priceCoins)) || priceCoins < 0)) {
-      throw new HttpsError('invalid-argument', 'priceCoins invalid');
-    }
-
-    const ref = db.collection('plans').doc(id);
-    const before = (await ref.get()).data() || null;
-    if (!before) throw new HttpsError('not-found', 'Plan not found');
-
-    const scheduled = {
-      effectiveAt: effMs,
-      priceEUR: priceEUR != null ? Number(priceEUR) : null,
-      priceCoins: priceCoins != null ? Number(priceCoins) : null,
-      scheduledAt: Date.now(),
-      scheduledBy: uid,
-    };
-    await ref.set({ scheduledPrice: scheduled, updatedAt: FieldValue.serverTimestamp(), updatedBy: uid }, { merge: true });
-
-    await auditAdminAction({
-      actor: uid, action: 'admin_schedule_price_change',
-      target: { type: 'plan', id },
-      before: { scheduledPrice: before.scheduledPrice || null },
-      after:  { scheduledPrice: scheduled },
-      stepUpEnforced: true, stepUpFresh: true,
-    });
-    return { ok: true, scheduled };
-  }
-);
-
-exports.adminCancelScheduledPriceChange = functions.https.onCall(
-  { region: REGION, cors: true },
-  async (request) => {
-    const uid = request.auth?.uid;
-    await guardCaller(uid);
-    const id = String(request.data?.planId || '').trim().toLowerCase();
-    if (!id) throw new HttpsError('invalid-argument', 'planId required');
-    const ref = db.collection('plans').doc(id);
-    const before = (await ref.get()).data() || null;
-    if (!before?.scheduledPrice) return { ok: true, noop: true };
-    await ref.set({ scheduledPrice: null, updatedAt: FieldValue.serverTimestamp(), updatedBy: uid }, { merge: true });
-    await auditAdminAction({
-      actor: uid, action: 'admin_cancel_scheduled_price_change',
-      target: { type: 'plan', id },
-      before: { scheduledPrice: before.scheduledPrice },
-      after:  { scheduledPrice: null },
-    });
-    return { ok: true };
-  }
-);
-
-// Daily cron: apply any scheduled price changes whose effectiveAt has passed.
-const defer = (_opts, fn) => fn; // cron-consolidation shim (see index.js cronDaily)
-exports.applyScheduledPriceChanges = defer(
-  { schedule: 'every day 02:00', timeZone: 'UTC', region: REGION },
-  async () => {
-    const now = Date.now();
-    const snap = await db.collection('plans').get();
-    const batch = db.batch();
-    let touched = 0;
-    snap.docs.forEach(d => {
-      const p = d.data();
-      const sp = p.scheduledPrice;
-      const effMs = toMs(sp?.effectiveAt);
-      if (!sp || !effMs || effMs > now) return;
-      const update = { scheduledPrice: null, updatedAt: FieldValue.serverTimestamp(), updatedBy: 'cron_apply_price' };
-      if (typeof sp.priceEUR === 'number')   update.priceEUR = sp.priceEUR;
-      if (typeof sp.priceCoins === 'number') update.priceCoins = sp.priceCoins;
-      batch.set(d.ref, update, { merge: true });
-      touched += 1;
-    });
-    if (touched > 0) await batch.commit();
-    return null;
-  }
-);
+// PLANS & PRICING callables (adminListPlans, adminUpsertPlan, adminDeletePlan,
+// adminSchedulePriceChange, adminCancelScheduledPriceChange) and the daily
+// applyScheduledPriceChanges job were DELETED 2026-09-21. They edited a
+// plans/ collection that no checkout ever read, so a "price change" changed
+// nothing a buyer paid. The Plans tab now renders the real prices straight
+// from src/utils/tierSystem.js.
 
 // ════════════════════════════════════════════════════════════════════
 // COMP & OVERRIDES (Pass 2)
@@ -713,7 +520,10 @@ exports.adminListOverrides = functions.https.onCall(
     const uids = [...new Set(rows.map(r => r.userId).filter(Boolean))];
     const profiles = {};
     if (uids.length > 0) {
-      const snaps = await Promise.all(uids.map(u => db.collection('users').doc(u).get()));
+      const [snaps, emails] = await Promise.all([
+        Promise.all(uids.map(u => db.collection('users').doc(u).get())),
+        authEmailsFor(uids), // sign-up emails live in Auth, not on the profile doc
+      ]);
       snaps.forEach((s, i) => {
         if (s.exists) {
           const p = s.data();
@@ -721,7 +531,7 @@ exports.adminListOverrides = functions.https.onCall(
             displayName: p.displayName || null,
             username: p.username || null,
             avatar: p.avatar || null,
-            email: p.email || null,
+            email: emails[uids[i]] || null,
           };
         }
       });
@@ -771,6 +581,11 @@ exports.adminCompUser = functions.https.onCall(
         subscriptionPeriodEnd: periodEnd,
         subscriptionAutoRenew: false,                // comps don't auto-renew
         subscriptionMethod: 'comp',
+        // The CANONICAL rail field. Without it a comp given to someone whose
+        // last plan came from Google Play keeps 'google_play' here, and the
+        // daily Play sync then applies the lapsed Play subscription and ends
+        // the comp.
+        subscriptionPreferredMethod: 'comp',
         subscriptionCompOverrideId: overrideRef.id,
       });
       tx.set(overrideRef, {
@@ -793,6 +608,9 @@ exports.adminCompUser = functions.https.onCall(
       });
     });
 
+    // Plan bonus for the comped period, now (functions/planBonus.js).
+    await require('./planBonus').grantPlanBonus(db, userId, tier, periodEnd, 'comp');
+
     await auditAdminAction({
       actor: uid, action: 'admin_comp_user',
       target: { type: 'user', id: userId },
@@ -806,60 +624,10 @@ exports.adminCompUser = functions.https.onCall(
   }
 );
 
-// Apply a recurring discount — used at renewal time. Server reads remainingUses
-// and discountPercent off the override at the next renewal event.
-exports.adminApplyOverride = functions.https.onCall(
-  { region: REGION, cors: true },
-  async (request) => {
-    const uid = request.auth?.uid;
-    await guardCaller(uid);
-    await requireFreshStepUp(uid);
-    await adminRateLimit(uid, 'admin_apply_override', { perHour: 30, perDay: 100 });
-
-    const { userId, tier, discountPercent, applyToCount, reason } = request.data || {};
-    if (!userId) throw new HttpsError('invalid-argument', 'userId required');
-    if (!['lite', 'pro'].includes(tier)) throw new HttpsError('invalid-argument', 'tier must be lite or pro');
-    const pct = Number(discountPercent);
-    if (!isFinite(pct) || pct < 1 || pct > 100) {
-      throw new HttpsError('invalid-argument', 'discountPercent must be 1..100');
-    }
-    const count = Math.max(1, Math.min(36, Number(applyToCount || 1)));
-    if (!reason || String(reason).trim().length < 4) {
-      throw new HttpsError('invalid-argument', 'reason is required (min 4 chars)');
-    }
-
-    const userSnap = await db.collection('users').doc(userId).get();
-    if (!userSnap.exists) throw new HttpsError('not-found', 'User not found');
-
-    const overrideRef = db.collection('subscription_overrides').doc();
-    const expiresAt = Date.now() + count * 31 * 24 * 3600 * 1000; // safety expiry
-    await overrideRef.set({
-      userId, type: 'discount', tier,
-      discountPercent: pct, applyToCount: count, remainingUses: count,
-      expiresAt, reason: String(reason).slice(0, 500),
-      status: 'active',
-      createdBy: uid, createdAt: FieldValue.serverTimestamp(),
-    });
-
-    await db.collection('notifications').doc().set({
-      recipientId: userId, type: 'subscription',
-      title: 'Discount applied',
-      body: `${pct}% off ${tier === 'lite' ? 'Lite' : 'Pro'} for your next ${count} renewal${count === 1 ? '' : 's'}.`,
-      read: false, data: { tier, discountPercent: pct, applyToCount: count },
-      createdAt: FieldValue.serverTimestamp(),
-    });
-
-    await auditAdminAction({
-      actor: uid, action: 'admin_apply_override',
-      target: { type: 'user', id: userId },
-      after: { overrideId: overrideRef.id, tier, discountPercent: pct, applyToCount: count },
-      reason,
-      stepUpEnforced: true, stepUpFresh: true,
-    });
-
-    return { ok: true, overrideId: overrideRef.id };
-  }
-);
+// adminApplyOverride (per-user renewal discount) DELETED 2026-09-21. No renewal
+// path ever read the override, yet the user was notified of a discount, so it
+// promised money off that never came. A discount on a Play or AppGallery plan
+// is not ours to give anyway: the store sets that price.
 
 exports.adminRevokeOverride = functions.https.onCall(
   { region: REGION, cors: true },
@@ -895,6 +663,7 @@ exports.adminRevokeOverride = functions.https.onCall(
           subscription: 'free',
           subscriptionPeriodEnd: Date.now(),
           subscriptionMethod: null,
+          subscriptionPreferredMethod: null,
           subscriptionCompOverrideId: null,
         });
         tx.set(db.collection('notifications').doc(), {
@@ -922,28 +691,16 @@ exports.adminRevokeOverride = functions.https.onCall(
 // SETTINGS (Pass 2) — subscription-system flags on app_config/general
 // ════════════════════════════════════════════════════════════════════
 //
-// All flags live under app_config/general.subscriptions = { ... } so we
-// don't pollute the root with 8 separate fields. App Config screen still
-// edits the kill-switches (which are at root level intentionally).
+// Only switches that something enforces live here now: see
+// functions/subscriptionSettings.js for what reads each one.
 
-const SUB_SETTINGS_DEFAULTS = {
-  enabled: true,
-  allowFreeSignup: true,
-  requirePaymentMethod: false,
-  currency: 'EUR',
-  trialDays: 0,
-  gracePeriodDays: 3,
-  checkoutMode: 'cryptomus', // 'cryptomus' | 'coins_only' | 'disabled'
-};
+const {
+  SUBSCRIPTION_SETTINGS_DEFAULTS, MAX_GRACE_DAYS, normaliseSubscriptionSettings,
+} = require('./subscriptionSettings');
 
 const SUB_SETTING_VALIDATORS = {
-  enabled: v => typeof v === 'boolean',
-  allowFreeSignup: v => typeof v === 'boolean',
-  requirePaymentMethod: v => typeof v === 'boolean',
-  currency: v => typeof v === 'string' && /^[A-Z]{3}$/.test(v),
-  trialDays: v => Number.isInteger(v) && v >= 0 && v <= 365,
-  gracePeriodDays: v => Number.isInteger(v) && v >= 0 && v <= 60,
-  checkoutMode: v => ['cryptomus', 'coins_only', 'disabled'].includes(v),
+  newSubscriptionsPaused: v => typeof v === 'boolean',
+  gracePeriodDays: v => Number.isInteger(v) && v >= 0 && v <= MAX_GRACE_DAYS,
 };
 
 exports.adminGetSubscriptionSettings = functions.https.onCall(
@@ -952,8 +709,7 @@ exports.adminGetSubscriptionSettings = functions.https.onCall(
     const uid = request.auth?.uid;
     await guardCaller(uid);
     const snap = await db.collection('app_config').doc('general').get();
-    const stored = (snap.exists ? snap.data() : {}).subscriptions || {};
-    return { settings: { ...SUB_SETTINGS_DEFAULTS, ...stored } };
+    return { settings: normaliseSubscriptionSettings((snap.exists ? snap.data() : {}).subscriptions) };
   }
 );
 
@@ -977,9 +733,10 @@ exports.adminSetSubscriptionSettings = functions.https.onCall(
 
     const ref = db.collection('app_config').doc('general');
     const before = (await ref.get()).data()?.subscriptions || {};
-    // Build the new full subscriptions object (merge defaults + before + next)
-    const after = { ...SUB_SETTINGS_DEFAULTS, ...before, ...next };
-    await ref.set({ subscriptions: after, _updatedAt: FieldValue.serverTimestamp(), _updatedBy: uid }, { merge: true });
+    const after = { ...SUBSCRIPTION_SETTINGS_DEFAULTS, ...normaliseSubscriptionSettings(before), ...next };
+    // update(), not set(merge): it REPLACES the map, which is what drops the
+    // seven retired flags (EUR, Cryptomus, trials...) still sitting in it.
+    await ref.update({ subscriptions: after, _updatedAt: FieldValue.serverTimestamp(), _updatedBy: uid });
 
     await auditAdminAction({
       actor: uid, action: 'admin_set_subscription_settings',
@@ -1195,6 +952,7 @@ exports.adminBulkCompSubscriptions = functions.https.onCall(
           subscriptionPeriodEnd: periodEnd,
           subscriptionAutoRenew: false,
           subscriptionMethod: 'comp',
+          subscriptionPreferredMethod: 'comp', // canonical rail field, see adminCompUser
           subscriptionCompOverrideId: overrideRef.id,
         });
         tx.set(overrideRef, {
@@ -1214,6 +972,7 @@ exports.adminBulkCompSubscriptions = functions.https.onCall(
           read: false, createdAt: FieldValue.serverTimestamp(),
         });
       });
+      await require('./planBonus').grantPlanBonus(db, userId, tier, periodEnd, 'comp');
       return { userId, overrideId: overrideRef.id };
     }));
 

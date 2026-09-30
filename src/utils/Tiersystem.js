@@ -7,6 +7,8 @@
 // bonuses, and feature unlocks. Nothing that lets a creator earn, see earnings
 // or get paid may sit behind a paid tier.
 
+import { TRANSLATION_ENABLED } from './translationSwitch.js';
+
 export const TIERS = {
   free: {
     id: 'free',
@@ -73,12 +75,19 @@ export const TIERS = {
       'No ads',
       'Stream publicly from day one, 720p',
       '4 hours of streaming a day',
-      '1.5× VP, plus 1,000 VP and 50 coins every month',
+      '1.5× VP, plus 1,000 VP and 50 boost coins every month',
       '1GB uploads',
       'Scheduled posts and scheduled DMs',
-      'Auto-translate any conversation',
+      // Hidden while the translator's server is off (translationSwitch.js).
+      ...(TRANSLATION_ENABLED ? ['Auto-translate any conversation'] : []),
       'Creator analytics and content calendar',
       'Hide Vergr branding on your vergr.me page',
+      // Added 2026-09-27 (founder): perks that already worked but were never
+      // listed. Each is enforced: CLIP_LIMITS (mediaCompression.js), CLIP_TIER
+      // (functions/streamClips.js), announceStreamJoin (functions/streamJoins.js).
+      'Clips in 720p',
+      'Clip live streams: 5 clips of up to 60s per stream',
+      'An entrance card on every stream you join, at any rank',
     ],
   },
   pro: {
@@ -102,7 +111,7 @@ export const TIERS = {
     features: [
       '1080p streaming with no daily limit',
       'Past broadcasts saved as 90-day replays',
-      '2× VP, plus 3,000 VP and 150 coins every month',
+      '2× VP, plus 3,000 VP and 150 boost coins every month',
       '5GB uploads, 4K photos',
       // "Your own domain on vergr.me" was REMOVED 2026-08-20 (founder decision).
       // Delivering it needs Cloudflare for SaaS custom hostnames, which the API
@@ -115,6 +124,13 @@ export const TIERS = {
       'Lead capture, tracking pixels and webhooks',
       'Advanced analytics',
       'Animated avatar and Pro badge',
+      // Added 2026-09-27 (founder), each enforced: CLIP_LIMITS, CLIP_TIER,
+      // announceStreamJoin, and the full_history_pro_only check in
+      // functions/discordClone.js + whatsappImport.js (others get 90 days).
+      'Clips in 1080p',
+      'Unlimited live-stream clips of up to 90s',
+      'An entrance card on every stream you join, at any rank',
+      'Full message history when you bring a Discord server or WhatsApp chat',
     ],
   },
 };
@@ -287,15 +303,19 @@ export const TIER_COMPARISON = [
   { section: 'Streaming',     feature: 'Daily stream cap',    free: '30 min',   lite: '4 hours',   pro: 'Unlimited' },
   { section: 'Streaming',     feature: 'Past broadcasts',     free: 'No',       lite: 'No',        pro: '90-day replays' },
   { section: 'Messaging',     feature: 'Scheduled DMs',       free: 'No',       lite: 'Yes',       pro: 'Yes' },
-  { section: 'Messaging',     feature: 'Chat auto-translate', free: 'No',       lite: 'Yes',       pro: 'Yes' },
+  ...(TRANSLATION_ENABLED ? [{ section: 'Messaging', feature: 'Chat auto-translate', free: 'No', lite: 'Yes', pro: 'Yes' }] : []),
   { section: 'Economy',       feature: 'VP multiplier',       free: '1×',       lite: '1.5×',      pro: '2×' },
   { section: 'Economy',       feature: 'Monthly VP',          free: '0',        lite: '1,000',     pro: '3,000' },
-  { section: 'Economy',       feature: 'Monthly coins',       free: '0',        lite: '50',        pro: '150' },
+  { section: 'Economy',       feature: 'Monthly boost coins', free: '0',        lite: '50',        pro: '150' },
   { section: 'Vergr.me',      feature: 'Hide Vergr branding', free: 'No',       lite: 'Yes',       pro: 'Yes' },
   { section: 'Vergr.me',      feature: 'Design kit',          free: 'Basic themes', lite: 'Basic themes', pro: 'Custom themes, colours, video backgrounds, CSS' },
   { section: 'Vergr.me',      feature: 'Leads & tracking',    free: 'No',       lite: 'No',        pro: 'Capture, export, pixels, webhooks' },
   { section: 'Vergr.me',      feature: 'Page analytics',      free: 'Views & clicks', lite: 'Views & clicks', pro: '+ engagement, devices, sources' },
   { section: 'Content',       feature: 'Scheduled posts',     free: 'No',       lite: 'Yes',       pro: 'Yes' },
+  { section: 'Content',       feature: 'Clip quality',        free: '480p',     lite: '720p',      pro: '1080p' },
+  { section: 'Content',       feature: 'Clips from live streams', free: '3 × 30s per stream', lite: '5 × 60s per stream', pro: 'Unlimited, 90s' },
+  { section: 'Streaming',     feature: 'Entrance card when you join', free: 'From level 31, or as a follower', lite: 'Always', pro: 'Always' },
+  { section: 'Tools',         feature: 'Discord / WhatsApp import', free: 'Last 90 days', lite: 'Last 90 days', pro: 'Full history' },
   { section: 'Profile',       feature: 'Animated avatar',     free: 'No',       lite: 'No',        pro: 'Yes' },
   { section: 'Profile',       feature: 'Plan badge',          free: '—',        lite: 'Lite',      pro: 'Pro' },
   { section: 'Tools',         feature: 'Creator analytics',   free: 'No',       lite: 'Yes',       pro: 'Yes' },

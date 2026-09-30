@@ -39,7 +39,8 @@ export default function BoostScreen() {
     return () => { setRightPanel(null); setContentAlign('center'); };
   }, [setRightPanel, setContentAlign, isDesktop]);
 
-  const balance = wallet?.balance || 0;
+  // Boost coins (rewarded ads) spend here first, server-side: functions/boostCoins.js.
+  const balance = (Number(wallet?.balance) || 0) + (Number(wallet?.boostCoins) || 0);
 
   // ⚠ WHICH BOOSTS NEED A TARGET. `profile` boosts the buyer, so it needs none.
   // The rest promote ONE post or squad, and the server now refuses a null id —
@@ -194,7 +195,7 @@ export default function BoostScreen() {
           <div
             onClick={(e) => e.stopPropagation()}
             className="w-full sm:max-w-md bg-surface-1 rounded-t-2xl sm:rounded-2xl p-5"
-            style={{ paddingBottom: 'calc(env(safe-area-inset-bottom,0px) + 20px)' }}
+            style={{ paddingBottom: 'calc(var(--vg-safe-b, 0px) + 20px)' }}
           >
             <p className="text-text-primary font-bold text-sm">
               {picker.kind === 'squad' ? 'Which squad?' : 'Which post?'}

@@ -49,10 +49,9 @@ export default {
         "Public streaming from day one at 720p, with no follower gate and no Stream Boost needed.",
         "Four hours of streaming a day, up from 30 minutes.",
         "No ads anywhere in the app.",
-        "1.5× VP on every action, plus 1,000 VP and 50 coins on the 1st of each month.",
+        "1.5× VP on every action, plus 1,000 VP and 50 boost coins the moment you pay, and again with every monthly renewal. Boost coins buy boosts and VP packs.",
         "1GB uploads.",
         "Scheduled posts and scheduled direct messages.",
-        "Auto-translate any conversation into your language.",
         "Creator analytics and the content calendar in Creator Studio.",
         "Hide Vergr branding on your vergr.me page."
       ]
@@ -67,7 +66,7 @@ export default {
       list: [
         "1080p streaming with no daily limit.",
         "Past broadcasts saved as replays for 90 days.",
-        "2× VP on every action, plus 3,000 VP and 150 coins on the 1st of each month.",
+        "2× VP on every action, plus 3,000 VP and 150 boost coins the moment you pay, and again with every monthly renewal. Boost coins buy boosts and VP packs.",
         "5GB uploads, and photos kept at full 4K instead of being resized.",
         "The full vergr.me design kit: custom themes, per-element colours, video and animated backgrounds, and custom CSS.",
         "Lead capture with export and webhooks, plus tracking pixels on your vergr.me page.",

@@ -28,6 +28,7 @@ import CachedImg from '../../components/CachedImg';
 import ReactorsSheet from '../../components/messages/ReactorsSheet';
 import ScheduleMessageSheet from '../../components/messages/ScheduleMessageSheet';
 import TranslationSheet from '../../components/TranslationSheet';
+import { TRANSLATION_ENABLED } from '../../utils/translationSwitch';
 import UserAvatar from '../../components/UserAvatar';
 import VanguardBadge from '../../components/VanguardBadge';
 import { applyVanguardMask } from '../../utils/vanguard';
@@ -43,6 +44,7 @@ import useResponsive from '../../hooks/useResponsive';
 import useTyping from '../../hooks/useTyping';
 import useMessages from '../../hooks/useChatMessages';
 import useChatRelayFlag from '../../hooks/useChatRelayFlag';
+import useAppGate from '../../hooks/useAppGate';
 import useTier from '../../hooks/useTier';
 import useOnlineStatus from '../../hooks/useOnlineStatus';
 import UpgradeModal from '../../components/UpgradeModal';
@@ -1083,6 +1085,9 @@ export default function ChatThreadScreen() {
   };
   const { messages, rawMessages, loading, sendMessage: hookSend, removeLocalMessage, syncPreviewToLatest, editMessage: relayEditMessage, clearLocalMessages, loadOlderMessages, hasMoreHistory, mediaBlocked: strangerMediaBlocked } = useMessages(chatId);
   const { tier, tierConfig, checkFeature, checkFileSize } = useTier();
+  // Admin → App Config → "Allow direct messages". The relay enforces it too
+  // (infra/chat/src/appconfig.go); this only explains the locked composer.
+  const { dmsOpen } = useAppGate();
   // Always-fresh view of the message list for async loops (jump-to-date pages
   // history and must read the post-render array, not the stale closure copy).
   const messagesRef = useRef(messages);
@@ -1360,7 +1365,7 @@ export default function ChatThreadScreen() {
   // translation cache so a new chat starts clean.
   useEffect(() => {
     setTranslations({});
-    try { setAutoTranslate(localStorage.getItem(`vergr_autotranslate_${chatId}`) === '1'); }
+    try { setAutoTranslate(TRANSLATION_ENABLED && localStorage.getItem(`vergr_autotranslate_${chatId}`) === '1'); }
     catch { setAutoTranslate(false); }
   }, [chatId]);
 
@@ -3526,7 +3531,7 @@ export default function ChatThreadScreen() {
               isChatMutedFor(chatInfo, auth.currentUser?.uid)
                 ? { icon: 'notifications_active', label: 'Unmute', action: async () => { try { await setChatMuted(chatId, false); } catch {} setShowHeaderMenu(false); setShowMuteOptions(false); } }
                 : { icon: 'notifications_off', label: 'Mute…', action: () => setShowMuteOptions(s => !s) },
-              { icon: 'translate', label: autoTranslate ? 'Auto-translate: On' : 'Auto-translate', action: toggleAutoTranslate },
+              TRANSLATION_ENABLED && { icon: 'translate', label: autoTranslate ? 'Auto-translate: On' : 'Auto-translate', action: toggleAutoTranslate },
               { icon: 'event', label: 'Jump to date', action: openJumpToDate },
               // Not on a support ticket: it would let the user set their own
               // support record to self-destruct (audit A4).
@@ -3784,7 +3789,7 @@ export default function ChatThreadScreen() {
                       <MessageContextMenu chatId={chatId} messageId={m.id} message={m} isMe={isMe}
                         anchorX={contextMenuPos.x} anchorY={contextMenuPos.y}
                         onClose={closeContextMenu}
-                        onTranslate={m.text ? (msg) => setTranslateMsg(msg) : undefined}
+                        onTranslate={TRANSLATION_ENABLED && m.text ? (msg) => setTranslateMsg(msg) : undefined}
                         onReact={relayEnabled ? (emoji) => toggleReaction(chatId, m.id, emoji, m.reactions) : undefined}
                         onReply={handleReply} onEdit={handleEdit} onPin={handlePin} onForward={setForwardMsg} onDelete={handleDelete}
                         onSelect={(msg) => setSelectedIds(new Set([msg.id]))}
@@ -3869,7 +3874,7 @@ export default function ChatThreadScreen() {
       {showEmoji && <EmojiPicker onSelect={(emoji) => setInput(prev => prev + emoji)} onClose={() => setShowEmoji(false)} />}
 
       {/* Input Footer */}
-      <footer className="relative z-10 px-2 pb-2 pt-1.5 lg:px-3 lg:pb-3 lg:pt-2" style={{ paddingBottom: 'calc(8px + env(safe-area-inset-bottom, 0px))', background: 'rgba(7,8,13,0.45)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)' }}>
+      <footer className="relative z-10 px-2 pb-2 pt-1.5 lg:px-3 lg:pb-3 lg:pt-2" style={{ paddingBottom: 'calc(8px + var(--vg-safe-b, 0px))', background: 'rgba(7,8,13,0.45)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)' }}>
         {/* Multi-select action bar — replaces the composer while selecting */}
         {selectedIds && (() => {
           const selMsgs = displayMessages.filter(m => m._type !== 'separator' && selectedIds.has(m.id));
@@ -3928,6 +3933,13 @@ export default function ChatThreadScreen() {
             </div>
           );
         })()}
+        {/* Platform-wide DM pause (Admin → App Config). Reading still works. */}
+        {!dmsOpen && (
+          <div className="absolute inset-0 z-20 flex items-center justify-center gap-2 bg-bg-dark">
+            <Icon name="pause_circle" size={15} className="text-text-muted" />
+            <span className="text-sm text-text-muted">Direct messages are paused for a short while. You can still read.</span>
+          </div>
+        )}
         {/* Only-admins-post lock (members keep reading, composer blocked) */}
         {postingLocked && (
           <div className="absolute inset-0 z-20 flex items-center justify-center gap-2" style={{ background: 'rgba(7,8,13,0.97)' }}>
@@ -4240,7 +4252,7 @@ export default function ChatThreadScreen() {
             initial={{ y: '100%' }} animate={{ y: 0 }}
             transition={{ type: 'spring', stiffness: 380, damping: 38 }}
             className="w-full sm:max-w-sm bg-surface-1 border border-white/[0.08] rounded-t-2xl sm:rounded-2xl overflow-hidden"
-            style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
+            style={{ paddingBottom: 'var(--vg-safe-b, 0px)' }}
           >
             <div className="flex items-center gap-2 px-4 pt-4 pb-2">
               <Icon name="timer" size={18} className="text-brand-violet-light" />

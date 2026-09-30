@@ -106,7 +106,7 @@ export default function SquadsHub() {
         ) : squads.length === 0 ? (
           <div className="mx-2 p-3 rounded-xl bg-white/[0.03] border border-white/[0.06]">
             <p className="text-[12px] text-text-secondary font-medium mb-1">Not in a squad yet</p>
-            <p className="text-[11px] text-text-muted leading-snug mb-2.5">Team up, compete together, and share clips with your crew.</p>
+            <p className="text-[11px] text-text-muted leading-snug mb-2.5">Team up, stream together, and share clips with your crew.</p>
             <div className="flex gap-2">
               <button onClick={() => openSquads('/squads')} className="flex-1 py-1.5 rounded-lg bg-white/[0.06] hover:bg-white/[0.1] text-text-primary text-[11px] font-bold">Browse</button>
               <button onClick={() => openSquads('/squads/create')} className="flex-1 py-1.5 rounded-lg bg-gradient-to-r from-brand-violet to-brand-pink text-white text-[11px] font-bold">Create</button>
@@ -167,7 +167,7 @@ export default function SquadsHub() {
         </div>
         <h1 className="font-syne text-3xl font-extrabold tracking-tight text-text-primary mb-2">SQUADS</h1>
         <p className="text-text-muted text-sm max-w-xs">
-          {squads.length ? 'Pick a squad to open its hub, chat, and roster.' : 'Join or create a squad to team up and compete together.'}
+          {squads.length ? 'Pick a squad to open its hub, chat, and roster.' : 'Join or create a squad to team up and hang out together.'}
         </p>
       </div>
     </div>

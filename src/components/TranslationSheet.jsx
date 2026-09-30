@@ -51,7 +51,7 @@ export default function TranslationSheet({ text, kind = 'message', refId = null,
         <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
         <motion.div
           className="relative w-full max-w-lg bg-surface-1 border-t border-white/10 rounded-t-3xl p-5"
-          style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 20px)' }}
+          style={{ paddingBottom: 'calc(var(--vg-safe-b, 0px) + 20px)' }}
           initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
           transition={{ type: 'spring', stiffness: 400, damping: 36 }}
           onClick={(e) => e.stopPropagation()}

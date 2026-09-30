@@ -23,17 +23,24 @@ import {
   taxRateFor,
 } from '../src/utils/storePricing.js';
 import { VP_BONUS_PACKS } from '../src/utils/vpBonuses.js';
-import { BOOSTS } from '../src/utils/boosts.js';
+import { BOOSTS, formatBoostDuration } from '../src/utils/boosts.js';
 
 // ⚠ BOOSTS AND VP BONUS PACKS ARE PRODUCTS, NOT COIN PACKS. Their Play price is
 // grossed up from their OWN priceUSD via playItemPriceFor(), never from their
 // coin cost — pricing them at the coin rate made a 75-coin boost cost the same
 // as a 78-coin pack. See docs/play/BOOST_BONUS_PRICING_PLAN.md.
+const BOOST_TARGET_WORD = { post: 'post', user: 'profile', squad: 'squad', stream: 'live stream' };
 const STORE_ITEMS = [
   ...VP_BONUS_PACKS.map((b) => ({ sku: `vpb_${b.id}`, name: b.name, priceUSD: b.priceUSD, coins: b.coins,
-    desc: `${b.mult}x VP for ${b.hours >= 24 ? `${b.hours / 24} day` : `${b.hours} hour`}${(b.hours === 1 || b.hours === 24) ? '' : 's'}. Starts the moment you buy it.` })),
+    // ⚠ USE THE AUTHORED `desc`, NOT mult+hours. Synthesising it from the
+    // multiplier and duration produced THE SAME SENTENCE for creator, community
+    // and watcher (all 3x for 24h) — two of them at the same price and coin cost
+    // too, so the three focused packs were indistinguishable in Play Console, in
+    // the purchase sheet and to a reviewer. `scope` is what separates them, and
+    // only the authored copy mentions it.
+    desc: `${b.desc} Starts the moment you buy it.` })),
   ...BOOSTS.map((b) => ({ sku: `boost_${b.id}`, name: b.name, priceUSD: b.priceUSD, coins: b.coins,
-    desc: `${b.short}. Kept in your wallet until you use it.` })),
+    desc: `${b.short}. Apply it to any ${b.postType === 'lfg' ? 'teammate-search post' : BOOST_TARGET_WORD[b.target]} for ${formatBoostDuration(b.minutes)}. Kept in your wallet until you use it.` })),
 ];
 
 // Platform subscriptions. Hard-coded here rather than imported from
@@ -122,10 +129,10 @@ if (asCsv) {
   // MENA (SA AE QA KW IQ) removed 2026-08-12: it existed for the gambling
   // prohibition, and there are no prize competitions on the platform any more.
   //
-  // These eight are SANCTIONS or licensing, not product policy. They do not move
-  // when the product changes and are not a founder preference.
+  // SANCTIONED COUNTRIES ONLY (founder rule). China was removed 2026-09-18: it
+  // is not sanctioned. Play does not operate there anyway, which is Google's
+  // decision, not a Vergr block, so it does not belong on this list.
   const BLOCKED_LIST = [
-    ['CN', 'China', 'Google Play does not operate in China; also ICP licensing'],
     ['KP', 'North Korea', 'Sanctioned'],
     ['IR', 'Iran', 'Sanctioned'],
     ['SY', 'Syria', 'Sanctioned'],
@@ -235,6 +242,10 @@ if (asCsv) {
   // lands under the floor loses money in that market silently.
   // Full country names, spelled as Play Console lists them. The picker is
   // searched by NAME; an ISO column means looking up 40 codes by hand.
+  // ⚠ SPELL THESE EXACTLY AS PLAY CONSOLE DOES, DIACRITICS INCLUDED. The
+  // picker is searched by NAME, so a near-miss means hunting for the row by
+  // hand on every one of the 26 products. Türkiye is the one that bites:
+  // Google renamed it from Turkey, and 'Turkey' does not find it.
   const COUNTRY_NAME = {
     US: 'United States', AT: 'Austria', BE: 'Belgium', BG: 'Bulgaria',
     HR: 'Croatia', CY: 'Cyprus', CZ: 'Czechia', DK: 'Denmark',
@@ -245,7 +256,7 @@ if (asCsv) {
     SK: 'Slovakia', SI: 'Slovenia', ES: 'Spain', SE: 'Sweden',
     GB: 'United Kingdom', NO: 'Norway', CH: 'Switzerland',
     AU: 'Australia', NZ: 'New Zealand', JP: 'Japan', KR: 'South Korea',
-    ZA: 'South Africa', SG: 'Singapore', IN: 'India', TR: 'Turkey',
+    ZA: 'South Africa', SG: 'Singapore', IN: 'India', TR: 'Türkiye',
     MX: 'Mexico',
   };
 
@@ -271,7 +282,7 @@ if (asCsv) {
     AT: 'EUR', BE: 'EUR', CY: 'EUR', DE: 'EUR', EE: 'EUR', ES: 'EUR',
     FI: 'EUR', FR: 'EUR', GR: 'EUR', IE: 'EUR', IT: 'EUR', LT: 'EUR',
     LU: 'EUR', LV: 'EUR', MT: 'EUR', NL: 'EUR', PT: 'EUR', SI: 'EUR',
-    SK: 'EUR', HR: 'EUR', BG: 'BGN',
+    SK: 'EUR', HR: 'EUR', BG: 'EUR' /* euro from 2026-01-01; Play rejects BGN at regionsVersion 2025/03 */,
     CZ: 'CZK', DK: 'DKK', HU: 'HUF', PL: 'PLN', RO: 'RON', SE: 'SEK',
     GB: 'GBP', NO: 'NOK', CH: 'CHF',
     AU: 'AUD', NZ: 'NZD', JP: 'JPY', KR: 'KRW', ZA: 'ZAR', SG: 'SGD',

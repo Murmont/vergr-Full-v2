@@ -32,6 +32,9 @@ export default function TosVersionGate() {
   // Don't show the modal for never-accepted users — signup handles that.
   if (accepted === 0) return null;
   if (accepted >= CURRENT_LEGAL_VERSION) return null;
+  // An account with no date of birth sees AgeTermsGate, whose save records the
+  // CURRENT Terms too. Showing this as well stacked two blocking modals.
+  if (!currentUser.isAnonymous && !profile.dob) return null;
 
   const handleAccept = async () => {
     setSaving(true);

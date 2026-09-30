@@ -96,7 +96,7 @@ export default function VanguardRankScreen() {
           <div style={{ height: 14, background: C.card2, borderRadius: 999, overflow: 'hidden', border: `1px solid ${C.border}` }}>
             <div style={{ width: `${pct}%`, height: '100%', background: `linear-gradient(90deg, ${C.violet}, ${C.violetLt}, ${C.gold})` }} />
           </div>
-          <div style={{ marginTop: 10, padding: 10, background: 'rgba(245,200,66,.06)', border: `1px solid rgba(245,200,66,.2)`, borderRadius: 8, fontFamily: 'DM Sans', fontSize: 12, color: C.gold, lineHeight: 1.5 }}>
+          <div style={{ marginTop: 10, padding: 10, background: C.goldFill, border: 0, borderRadius: 8, fontFamily: 'DM Sans', fontSize: 12, color: C.gold, lineHeight: 1.5 }}>
             <Icon name="info" size={14} style={{ marginRight: 6, verticalAlign: 'middle' }} />
             {nextRank.label} requires founder approval and {fmt(threshold)} lifetime VP.
           </div>

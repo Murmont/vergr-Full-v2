@@ -1702,6 +1702,7 @@ function AutoModSheet({ onClose, level, onLevel, heldCount = 0, onOpenHeld }) {
  * auto-DQ this repo already refused for cheat flags.
  */
 function HeldQueueSheet({ onClose, held = [], onApprove, onDeny, onTimeout, level }) {
+  const faceOf = useFaces();
   // ⚠⚠ THE LIVE LIST, NOT THE SNAPSHOT IT WAS OPENED WITH. Measured on the
   // deployed preview: approving a message dropped the banner from 4 to 3 and
   // left all four rows sitting in the open sheet, because the array arrived
@@ -1741,7 +1742,7 @@ function HeldQueueSheet({ onClose, held = [], onApprove, onDeny, onTimeout, leve
             return (
               <div key={h.id} style={{ padding: 13, borderRadius: 16, background: SHEET.card, border: `1px solid ${SHEET.cardEdge}`, boxShadow: SHEET.cardLip }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <UserAvatar user={who} size={24} showLiftRing={false} />
+                  <UserAvatar src={faceOf(who)} size={24} showLiftRing={false} />
                   <span style={{ fontSize: 13, fontWeight: 800, color: SHEET.text, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{who.displayName}</span>
                   {/* ⚠ THE REASON IS A CHIP, NOT BODY TEXT. It is the one thing
                       on the row the host scans for.

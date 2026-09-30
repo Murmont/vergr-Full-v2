@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- VERGR ADMIN — the operator console, built as its OWN app.
+         =====================================================================
+         This shell is NOT part of vergr.app. It is the entry point for the
+         Vergr Admin desktop build (`npm run build:admin`, packaged by
+         src-tauri/tauri.admin.conf.json), and it is never deployed to hosting.
+
+         Founder, 2026-09-19: "the admin shouldn't be available from the web
+         anyway, it should be a desktop app separate from the actual app ...
+         so that if someone with bad intent looks there will actually be
+         nothing to find."
+
+         So: no service worker, no manifest, no analytics, no AdSense, no
+         marketing chrome, nothing indexable, and no link between this and any
+         Vergr user account. The person who signs in here has no profile, no
+         username and no presence anywhere in the product. -->
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Vergr Admin</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=Syne:wght@600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0&display=block"
+      rel="stylesheet"
+    />
+    <style>
+      html, body, #admin-root { height: 100%; }
+      body { margin: 0; background: #09090f; color: #e0e0f0; font-family: 'DM Sans', system-ui, sans-serif; }
+    </style>
+  </head>
+  <body>
+    <div id="admin-root"></div>
+    <script type="module" src="/src/admin/main.jsx"></script>
+  </body>
+</html>

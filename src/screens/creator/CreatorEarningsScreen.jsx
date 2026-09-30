@@ -1231,7 +1231,33 @@ function NextPayoutCard({ account, navigate }) {
       payout_account_required: ['Connect a payout account', '/creator/earnings/setup'],
       frozen: ['Contact support', '/help'],
       account_too_new: [null, null],
+      sanctioned_country: ['Contact support', '/help'],
     }[blocked] || ['Finish setup', '/creator/earnings/setup'];
+
+    // Sanctions, not setup: there is nothing for the creator to finish, so the
+    // generic "finish setup" card would be untrue here.
+    if (blocked === 'sanctioned_country') {
+      return (
+        <Card className="p-5">
+          <div className="flex items-start gap-3">
+            <Icon name="block" className="text-brand-ember text-2xl shrink-0" />
+            <div className="min-w-0 flex-1">
+              <div className="font-bold text-text-primary">Payouts are not available in your country</div>
+              <p className="text-sm text-text-secondary mt-1">
+                International sanctions stop us from sending payouts to the country on your account.
+                If that is wrong, contact support.
+              </p>
+              <button
+                onClick={() => navigate('/help')}
+                className="mt-3 px-4 py-2 rounded-lg bg-brand-violet text-white text-sm font-bold hover:brightness-110"
+              >
+                Contact support
+              </button>
+            </div>
+          </div>
+        </Card>
+      );
+    }
 
     // Nothing to finish here: the only thing missing is time. Saying "finish
     // setup" to someone with nothing left to do is the worst version of this.

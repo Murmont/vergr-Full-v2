@@ -18,6 +18,7 @@ import { useState, useCallback } from 'react';
 import { useUser } from '../context/UserContext';
 import { translateContent } from '../firebase/firestore';
 import { translateTarget, looksForeign } from '../utils/localePrefs';
+import { TRANSLATION_ENABLED } from '../utils/translationSwitch';
 
 export default function useTranslate(text, { kind = 'post', refId = null, knownLang = null } = {}) {
   const { profile } = useUser();
@@ -32,7 +33,7 @@ export default function useTranslate(text, { kind = 'post', refId = null, knownL
   // Show the translate control on every surface (native app AND web) whenever the
   // content is likely in a different language than the viewer's. (Previously gated
   // to the native app only; enabled on web too so the feature works everywhere.)
-  const canTranslate = looksForeign(text, target, knownLang);
+  const canTranslate = TRANSLATION_ENABLED && looksForeign(text, target, knownLang);
 
   const toggle = useCallback(async () => {
     if (showing) { setShowing(false); return; }       // revert to original

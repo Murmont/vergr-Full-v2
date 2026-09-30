@@ -323,7 +323,7 @@ export default function CreatorDashboardScreen() {
               sparkColor={PALETTE.gold}
               delta={delta(earnedBuckets)}
               deltaLabel="vs prev"
-              tooltip="Tips + memberships + gifts + prizes"
+              tooltip="Tips + memberships + gifts"
             />
             <KpiCard
               label="Followers"

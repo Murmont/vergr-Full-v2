@@ -1,9 +1,8 @@
 import { useState, useEffect } from 'react';
 import BoostSheet from '../../components/boost/BoostSheet';
 import { useParams, useNavigate } from 'react-router-dom';
-import { doc, onSnapshot, collection, query, where, limit } from 'firebase/firestore';
+import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../../firebase/config';
-import { SquadChampionVoteEntry } from '../../components/tournament/SquadChampionVote';
 import { StackSkeleton } from '../../components/skeletons/GlassSkeletons';
 import { useAuth } from '../../context/AuthContext';
 import { useUI } from '../../context/UIContext';
@@ -31,7 +30,6 @@ export default function SquadDetailScreen() {
   const [inflows, setInflows] = useState([]); // MP3 treasury line-items
   const [rivals, setRivals] = useState([]); // GR3 squad-vs-squad rivalries
   const [announcements, setAnnouncements] = useState([]);
-  const [pendingTournaments, setPendingTournaments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showJoinRequestModal, setShowJoinRequestModal] = useState(false);
   const [joinRequestMessage, setJoinRequestMessage] = useState('');
@@ -44,27 +42,6 @@ export default function SquadDetailScreen() {
     return () => unsub();
   }, [squadId]);
 
-  // Active squad-tournament entries where champions aren't locked yet.
-  // First query prints index deep-link in function logs — click + confirm.
-  useEffect(() => {
-    if (!squadId) return;
-    try {
-      const q = query(
-        collection(db, 'tournaments'),
-        where('mode', '==', 'squad'),
-        where('participants', 'array-contains', squadId),
-        where('status', 'in', ['open', 'in_progress']),
-        limit(10),
-      );
-      return onSnapshot(q, (snap) => {
-        const rows = snap.docs
-          .map((d) => ({ id: d.id, ...d.data() }))
-          // Hide tournaments where champions are already finalized for this squad.
-          .filter((t) => !(t.squadChampions?.[squadId]?.length > 0));
-        setPendingTournaments(rows);
-      }, (err) => console.warn('pending tournaments sub error', err?.message));
-    } catch (e) { console.warn(e); }
-  }, [squadId]);
 
   useEffect(() => {
     if (!squadId || !currentUser) return;
@@ -214,7 +191,7 @@ export default function SquadDetailScreen() {
         </div>
         <p className="font-dmmono text-xl font-bold text-brand-gold">{(wallet.balance || 0).toLocaleString()}</p>
 
-        {/* MP3 — treasury inflow line-items: which tournament added what. */}
+        {/* Treasury inflow line-items: which contribution or credit added what. */}
         {inflows.length > 0 && (
           <div className="mt-3 pt-3 border-t border-white/[0.06]">
             <p className="text-[10px] text-text-muted uppercase tracking-wider mb-2">Recent inflows</p>
@@ -223,7 +200,7 @@ export default function SquadDetailScreen() {
                 <div key={tx.id} className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2 min-w-0">
                     <Icon
-                      name={tx.type === 'squad_tournament_prize' || tx.type === 'squad_treasury_credit' ? 'emoji_events' : 'add_circle'}
+                      name={tx.type === 'squad_tournament_prize' || tx.type === 'squad_treasury_credit' ? 'savings' : 'add_circle'}
                       size={14}
                       className={tx.type?.includes('tournament') || tx.type?.includes('treasury') ? 'text-brand-gold' : 'text-brand-violet'}
                     />
@@ -300,41 +277,6 @@ export default function SquadDetailScreen() {
         )}
       </div>
 
-      {/* Active tournament entries — champion voting per entry. Only shown
-          when the squad is entered in a tournament and champions aren't
-          finalized yet. */}
-      {pendingTournaments.length > 0 && (
-        <div className="px-4 mt-6">
-          <h3 className="font-syne font-bold text-base mb-3">Pending squad votes</h3>
-          <div className="space-y-2">
-            {pendingTournaments.map((t) => (
-              <div key={t.id} className="p-3 rounded-xl bg-surface-1 border border-white/[0.06]">
-                <div className="flex items-start justify-between gap-3 mb-2">
-                  <div className="min-w-0 flex-1">
-                    <button
-                      onClick={() => navigate(`/tournaments/${t.id}`)}
-                      className="text-sm font-bold text-text-primary truncate hover:text-brand-violet text-left w-full"
-                    >{t.name}</button>
-                    <div className="font-dmmono text-[10px] text-text-muted mt-0.5">
-                      {t.game || '—'} · {t.squadSize || t.teamSize || 5}v{t.squadSize || t.teamSize || 5} · {t.status === 'open' ? 'Open' : 'Starting'}
-                    </div>
-                  </div>
-                </div>
-                <SquadChampionVoteEntry
-                  tournamentId={t.id}
-                  squadId={squadId}
-                  tournamentName={t.name}
-                  slotsNeeded={t.squadSize || t.teamSize}
-                  currentUid={currentUser?.uid}
-                  isOwner={myRole === 'president'}
-                  members={members}
-                  onToast={showToast}
-                />
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* Squad Management — President/VP only */}
       {(myRole === 'president' || myRole === 'vice_president') && (

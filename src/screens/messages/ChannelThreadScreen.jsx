@@ -178,7 +178,7 @@ export default function ChannelThreadScreen() {
       {oneWay ? (
         <div
           className="shrink-0 px-4 py-3 border-t border-white/[0.06] text-center text-[12px] text-text-muted"
-          style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 12px)' }}
+          style={{ paddingBottom: 'max(var(--vg-safe-b, 0px), 12px)' }}
         >
           <Icon name="lock" size={13} className="align-[-2px] mr-1" />
           You cannot reply to this channel
@@ -186,7 +186,7 @@ export default function ChannelThreadScreen() {
       ) : (
         <div
           className="shrink-0 px-4 py-3 border-t border-white/[0.06] text-center text-[12px] text-text-muted"
-          style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 12px)' }}
+          style={{ paddingBottom: 'max(var(--vg-safe-b, 0px), 12px)' }}
         >
           Support replies are coming in the next update.
         </div>

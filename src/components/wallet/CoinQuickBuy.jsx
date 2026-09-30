@@ -26,6 +26,7 @@ import Icon from '../Icon';
 import LocalPrice from '../LocalPrice';
 import { COIN_PACKS, packValueBonusPct, MIN_SHOWN_VALUE_BONUS_PCT } from '../../utils/vpSystem';
 import { useUser } from '../../context/UserContext';
+import { useCart } from '../../context/CartContext';
 import { WALLET_TOKENS, CoinGlyph, fmtNum, fmtUsd } from './primitives';
 
 /**
@@ -62,8 +63,10 @@ export function CoinBalancePill({ size = 'full', onOpen }) {
           display: 'inline-flex', alignItems: 'center', gap: 6,
           padding: compact ? '4px 6px 4px 8px' : '5px 6px 5px 10px',
           borderRadius: 999, cursor: 'pointer',
-          background: 'rgba(240,165,0,0.12)',
-          border: '1px solid rgba(240,165,0,0.28)',
+          // Solid, no ring: a translucent gold wash with an outline read as a
+          // see-through pill against the sidebar and header behind it.
+          background: '#2A2210',
+          border: 'none',
           color: WALLET_TOKENS.text, font: 'inherit',
         }}
       >
@@ -91,6 +94,7 @@ export function CoinQuickBuySheet({ onClose }) {
   const navigate = useNavigate();
   const { wallet } = useUser();
   const packs = useMemo(quickPicks, []);
+  const cart = useCart();
   const [busy, setBusy] = useState('');
 
   // Escape closes it, and the page behind must not scroll while it is open.
@@ -105,14 +109,14 @@ export function CoinQuickBuySheet({ onClose }) {
     };
   }, [onClose]);
 
-  const buy = async (pack) => {
+  const buy = (pack) => {
     if (busy) return;
-    setBusy(pack.id);
-    // Checkout lives on the wallet screen, which owns the PayRam popup and the
-    // settlement polling. Duplicating that here would mean two implementations
-    // of the one flow that must never disagree, so this hands off with the pack
-    // preselected instead.
-    navigate(`/wallet/buy?pack=${encodeURIComponent(pack.id)}`);
+    // Into the basket, which opens OVER THIS PAGE (GlobalCartDrawer), so a viewer
+    // buys coins without leaving the stream they are watching (founder,
+    // 2026-08-28). This used to navigate to /wallet/buy?pack=, which did leave
+    // the page, and the app's buy screen ignored the pack anyway (2026-09-11).
+    cart.add(pack.id, 1);
+    cart.setOpen(true);
     onClose?.();
   };
 
@@ -133,7 +137,7 @@ export function CoinQuickBuySheet({ onClose }) {
           background: WALLET_TOKENS.bg,
           borderTop: `1px solid ${WALLET_TOKENS.hairlineStrong}`,
           borderRadius: '20px 20px 0 0',
-          padding: '16px 16px calc(20px + env(safe-area-inset-bottom, 0px))',
+          padding: '16px 16px calc(20px + var(--vg-safe-b, 0px))',
           color: WALLET_TOKENS.text,
         }}
       >

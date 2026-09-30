@@ -42,7 +42,7 @@ export default function RegionGate({ children, feature = 'this feature' }) {
           </div>
           <h2 className="font-syne text-xl font-bold mb-2">Not available in {regionDisplayName(status)}</h2>
           <p className="text-text-muted text-sm leading-relaxed">
-            VERGR's skill-based competitive gaming and virtual-currency features
+            VERGR's virtual-currency features
             are not currently available in {regionDisplayName(status)} due to
             local regulations. You can still browse social content, but {feature}
             {' '}is restricted.

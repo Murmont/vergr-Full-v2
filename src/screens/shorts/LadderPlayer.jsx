@@ -18,13 +18,32 @@
 //
 // Falls back to native HLS on Safari/iOS, which plays .m3u8 directly and does
 // its own adaptation.
+//
+// Taps, seeking, buffering and the letterbox fill are shared with VideoPlayer
+// through playerParts.jsx, so the two paths feel identical to the finger.
 
 import { useEffect, useRef, useState } from 'react';
 import Hls from 'hls.js';
-import Icon from '../../components/Icon';
+import { usePlayerControls, AmbientFill, PausedGlyph, useTopAnchor, useLayeredSound } from './playerParts';
+import EditOverlays, { useContentRect } from '../../components/clips/EditOverlays';
 
-export default function LadderPlayer({ src, poster, active = true, muted = false, speed = 1, onProgress }) {
+export default function LadderPlayer({
+  src, poster, active = true, muted = false, speed = 1, onProgress,
+  controlsRef, onBuffering, tapToToggle = true, sound = null, edits = null,
+}) {
   const ref = useRef(null);
+  const boxRef = useRef(null);
+  const videoMuted = muted || (!!sound && !sound.keepOriginal);
+  const objectPosition = useTopAnchor(ref, src, poster);
+  // The creator's edits, exactly as VideoPlayer applies them.
+  const baseSpeed = edits?.speed || 1;
+  const overlays = edits?.overlays || [];
+  const rect = useContentRect(boxRef, ref, objectPosition === 'center top', overlays.length > 0);
+  useLayeredSound({ ref, active, muted, sound, volume: edits?.soundVolume ?? 1, timeScale: baseSpeed });
+  useEffect(() => {
+    const v = ref.current;
+    if (v) v.volume = edits?.originalVolume ?? 1;
+  }, [edits?.originalVolume]);
   const hlsRef = useRef(null);
   const rafRef = useRef(0);
   const userPaused = useRef(false);
@@ -36,21 +55,21 @@ export default function LadderPlayer({ src, poster, active = true, muted = false
   // the network is worse than it is and all three picking too low.
   useEffect(() => {
     const video = ref.current;
-    if (!video || !src) return;
+    if (!video || !src) return undefined;
 
     if (!active) {
       // Neighbour: no engine, just the poster. The swipe-in cost is one manifest
       // fetch, which is small and parallel-friendly, unlike a video body.
       if (hlsRef.current) { try { hlsRef.current.destroy(); } catch { /* ignore */ } hlsRef.current = null; }
       try { video.pause(); } catch { /* ignore */ }
-      return;
+      return undefined;
     }
 
     if (video.canPlayType('application/vnd.apple.mpegurl')) {
       video.src = src;
       return () => { try { video.removeAttribute('src'); video.load(); } catch { /* ignore */ } };
     }
-    if (!Hls.isSupported()) { video.src = src; return; }
+    if (!Hls.isSupported()) { video.src = src; return undefined; }
 
     const hls = new Hls({
       // Start soft, climb. See the note at the top.
@@ -91,7 +110,7 @@ export default function LadderPlayer({ src, poster, active = true, muted = false
     const v = ref.current;
     if (!v) return;
     if (active) {
-      v.muted = muted;
+      v.muted = videoMuted;
       if (!wasActive.current) {
         try { v.currentTime = 0; } catch { /* ignore */ }
         userPaused.current = false;
@@ -103,16 +122,18 @@ export default function LadderPlayer({ src, poster, active = true, muted = false
       try { v.pause(); } catch { /* ignore */ }
     }
     wasActive.current = active;
-  }, [active, muted]);
+  }, [active, videoMuted]);
 
   useEffect(() => {
     const v = ref.current;
-    if (v) v.playbackRate = active ? speed : 1;
-  }, [speed, active]);
+    if (!v) return;
+    v.defaultPlaybackRate = baseSpeed;
+    v.playbackRate = (active ? speed : 1) * baseSpeed;
+  }, [speed, active, baseSpeed]);
 
   useEffect(() => {
     const v = ref.current;
-    if (!v || !active || !onProgress) return;
+    if (!v || !active || !onProgress) return undefined;
     const onTime = () => {
       if (rafRef.current) return;
       rafRef.current = requestAnimationFrame(() => {
@@ -139,30 +160,29 @@ export default function LadderPlayer({ src, poster, active = true, muted = false
     return () => document.removeEventListener('visibilitychange', onVis);
   }, [active]);
 
+  usePlayerControls({ ref, active, controlsRef, onBuffering, userPaused, setPaused });
+
   const toggle = () => {
     const v = ref.current;
     if (!v || !active) return;
-    if (v.paused) { v.play(); userPaused.current = false; setPaused(false); }
+    if (v.paused) { v.play().catch(() => {}); userPaused.current = false; setPaused(false); }
     else { v.pause(); userPaused.current = true; setPaused(true); }
   };
 
   return (
-    <div className="absolute inset-0 flex items-center justify-center bg-black" onClick={toggle}>
+    <div ref={boxRef} className="absolute inset-0 flex items-center justify-center bg-black overflow-hidden" onClick={tapToToggle ? toggle : undefined}>
+      <AmbientFill videoRef={ref} active={active} />
       <video
         ref={ref}
         poster={poster}
         loop
         playsInline
-        muted={active ? muted : true}
-        className="w-full h-full object-contain"
+        muted={active ? videoMuted : true}
+        className="relative z-[1] w-full h-full object-contain"
+        style={{ objectPosition }}
       />
-      {active && paused && (
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <div className="w-16 h-16 rounded-full bg-black/40 backdrop-blur-sm flex items-center justify-center">
-            <Icon name="play_arrow" size={40} className="text-white" />
-          </div>
-        </div>
-      )}
+      <EditOverlays overlays={overlays} rect={rect} />
+      {active && paused && <PausedGlyph />}
     </div>
   );
 }

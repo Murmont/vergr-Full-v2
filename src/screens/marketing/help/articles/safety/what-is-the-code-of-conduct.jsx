@@ -1,21 +1,21 @@
 // Help center article: What is the Code of Conduct?
 
 export default {
-  summary: "The short version of every rule on VERGR: compete honestly, keep public content legal and decent, do not harass people, and do not game the economy. It is published in full at vergr.app/platform/code-of-conduct, and agreeing to it is part of creating an account.",
+  summary: "The short version of every rule on VERGR: play fair, keep public content legal and decent, do not harass people, and do not game the economy. It is published in full at vergr.app/platform/code-of-conduct, and agreeing to it is part of creating an account.",
   updated: "2026-07-02",
   body: [
     {
       h2: "The spirit of it"
     },
     {
-      p: "VERGR is built around real money and real competition, which only works if everyone can trust the results and the community. The Code of Conduct exists to protect that trust. Most of it is what you would expect from basic decency, the rest protects competitive integrity and the economy."
+      p: "VERGR is built around creators, their communities and real purchases, which only works if everyone can trust each other. The Code of Conduct exists to protect that trust. Most of it is what you would expect from basic decency, the rest protects the community and the economy."
     },
     {
       h2: "The pillars"
     },
     {
       list: [
-        "Play fair: no cheating, no unauthorised software or scripts, no colluding to fix matches, no false result reporting.",
+        "Play fair: no cheating, no unauthorised software or scripts, no faking stats, views or achievements.",
         "Be decent in public: no harassment, hate speech, threats, or illegal content anywhere public.",
         "One person, one account: no multi-accounting to dodge bans, farm promotions, or manipulate the economy.",
         "Respect the money: no selling Coins, VP, or accounts outside the platform, no laundering, no fraud.",

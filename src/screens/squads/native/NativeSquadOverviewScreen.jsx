@@ -75,7 +75,7 @@ export default function NativeSquadOverviewScreen() {
                 <div className="hero-meta">
                   <div className="hero-name">{squad?.name || 'Squad'}{squad?.verified && <span className="material-symbols-outlined verified-tick">verified</span>}</div>
                   <div className="hero-tags">
-                    <span>{squad?.game || 'Gaming'}</span><span className="pip" />
+                    <span>{squad?.game || 'Community'}</span><span className="pip" />
                     <span style={{ color: squad?.isPublic === false ? 'var(--violet-light)' : 'var(--cyan)' }}>{squad?.isPublic === false ? 'Private' : 'Public'}</span><span className="pip" />
                     <span>{memberCount} members</span>
                     {myMeta && myRole && (<span className={`role-pill ${myMeta.pill} role`}>{myMeta.icon && <span className="material-symbols-outlined">{myMeta.icon}</span>}You're the {myMeta.label}</span>)}

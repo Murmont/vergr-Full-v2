@@ -165,7 +165,7 @@ export default function AttachmentMenu({
           className="w-full max-w-md bg-surface-1 rounded-t-3xl border-t border-white/[0.06] lg:rounded-2xl lg:border lg:max-w-[280px] lg:shadow-2xl overflow-hidden"
           // Clears the Android gesture/nav bar — the sheet is bottom-anchored,
           // so without this the last row sits underneath the system bar.
-          style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 10px)' }}
+          style={{ paddingBottom: 'calc(var(--vg-safe-b, 0px) + 10px)' }}
         >
           <div className="flex justify-center pt-2.5 pb-1 lg:hidden">
             <div className="w-9 h-1 rounded-full bg-white/[0.10]" />

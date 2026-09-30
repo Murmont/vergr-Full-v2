@@ -5,7 +5,7 @@
 // Top-level: summary (1-2 sentences, answer-first), updated (YYYY-MM-DD), body [].
 
 export default {
-  summary: "The Vanguard is VERGR's moderator program, a trusted group that keeps competition fair and the community healthy. Moderators review reports, act on flagged content, and settle disputes. Their real identity is hidden behind a Vanguard rank, and they are paid for their work. It is invite-only.",
+  summary: "The Vanguard is VERGR's moderator program, a trusted group that keeps the community safe and healthy. Moderators review reports, act on flagged content, and settle disputes. Their real identity is hidden behind a Vanguard rank, and they are paid for their work. It is invite-only.",
   updated: "2026-06-06",
   body: [
     {
@@ -18,7 +18,7 @@ export default {
       list: [
         "Review reports of rule-breaking and act on them.",
         "Act on flagged streams, posts, and profiles, and settle disputes between users.",
-        "Watch for cheating and help keep high-stakes competition honest.",
+        "Watch live streams for rule-breaking and step in quickly.",
         "Help keep chat and the wider community within the Code of Conduct."
       ]
     },
@@ -32,7 +32,7 @@ export default {
       h2: "They get paid"
     },
     {
-      p: "Moderating is real work, so the Vanguard is rewarded, not volunteer-only. A share of platform moderation revenue flows to the Vanguard, split by rank and activity, and active moderators get perks like a waived conversion fee."
+      p: "Moderating is real work, so the Vanguard is rewarded, not volunteer-only. A share of platform moderation revenue flows to the Vanguard, split by rank and activity."
     },
     {
       note: "The Vanguard is invite-only and email-bound. It is built for trusted, experienced players, not something you can simply switch on."

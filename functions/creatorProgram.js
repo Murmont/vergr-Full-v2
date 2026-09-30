@@ -13,8 +13,13 @@
 
 const functions = require('firebase-functions/v2');
 const admin = require('firebase-admin');
+const { getFirestore } = require('firebase-admin/firestore');
 
-const db = admin.firestore();
+// ⚠ The NAMED database. admin.firestore() opens (default), which holds no users,
+// wallets or applications, so until 2026-09-19 every eligibility check read an
+// empty profile and every application landed where the admin screen never looks.
+// raids.js had the same bug.
+const db = getFirestore('vgrdb');
 const { FieldValue } = admin.firestore;
 const REGION = 'europe-west1';
 

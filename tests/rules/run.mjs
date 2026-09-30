@@ -96,12 +96,12 @@ await env.withSecurityRulesDisabled(async (ctx) => {
   await setDoc(doc(d, 'squads', 'sq_fresh'), { isPublic: true, ownerId: OWNER, memberIds: [OWNER], memberCount: 1 });
 });
 
-const alice = env.authenticatedContext(A).firestore();
-const bob = env.authenticatedContext(B).firestore();
-const carol = env.authenticatedContext(C).firestore();   // outsider, in nothing
-const owner = env.authenticatedContext(OWNER).firestore();
+const alice = env.authenticatedContext(A, { email_verified: true }).firestore();
+const bob = env.authenticatedContext(B, { email_verified: true }).firestore();
+const carol = env.authenticatedContext(C, { email_verified: true }).firestore();   // outsider, in nothing
+const owner = env.authenticatedContext(OWNER, { email_verified: true }).firestore();
 const guest = env.authenticatedContext(GUEST, { firebase: { sign_in_provider: 'anonymous' } }).firestore();
-const dave = env.authenticatedContext(DAVE).firestore();  // never joins anything
+const dave = env.authenticatedContext(DAVE, { email_verified: true }).firestore();  // never joins anything
 
 // ══ A37 — conversations ════════════════════════════════════════════════
 await check('A37', 'participant CAN get their own DM', () =>

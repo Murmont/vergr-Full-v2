@@ -20,10 +20,10 @@ export default function AboutScreen() {
     <div className={isDesktop ? "min-h-screen pb-8" : "screen-container min-h-screen pb-8"}>
       <TopBar title="About VERGR" showBack />
       <div className="px-4 py-8 flex flex-col items-center">
-        <VergrLogo size="lg" showText />
+        <VergrLogo size={72} showText className="flex-col" />
         <p className="text-text-muted text-sm mt-2 font-dmmono">v{APP_VERSION} ({APP_VERSION_CODE}) · {getPlatform()}</p>
         <p className="text-text-secondary text-center text-sm mt-4 leading-relaxed max-w-xs">
-          Play. Stream. Earn. Compete, create, earn, and shop in the ultimate gaming social platform.
+          Vergr is where you go live, share clips and hang out with your people in voice chats and DMs, all in one app.
         </p>
 
         <div className="w-full mt-8 space-y-2">

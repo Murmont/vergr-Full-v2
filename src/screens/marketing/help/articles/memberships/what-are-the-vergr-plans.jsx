@@ -21,7 +21,7 @@ export default {
       h2: "Lite, $4.99 per month"
     },
     {
-      p: "Lite is for people who want to stream and post seriously. It removes the streaming follower gate completely, so you go live from day one at 720p with no Stream Boost needed, and your daily allowance goes from 30 minutes to four hours. Ads disappear, VP earns at 1.5× with a monthly VP and coin bonus, uploads jump to 1GB, and you unlock scheduled posts, scheduled DMs, chat auto-translate and the Creator Studio analytics and calendar. If streaming is your main thing, this is usually the upgrade that pays for itself."
+      p: "Lite is for people who want to stream and post seriously. It removes the streaming follower gate completely, so you go live from day one at 720p with no Stream Boost needed, and your daily allowance goes from 30 minutes to four hours. Ads disappear, VP earns at 1.5× with a monthly VP and coin bonus, uploads jump to 1GB, and you unlock scheduled posts, scheduled DMs and the Creator Studio analytics and calendar. If streaming is your main thing, this is usually the upgrade that pays for itself."
     },
     {
       h2: "Pro, $9.99 per month"

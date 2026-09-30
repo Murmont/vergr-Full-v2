@@ -571,7 +571,7 @@ function ClipsTab({ navigate, search }) {
   const shown = search ? clips.filter((c) => (c.text || '').toLowerCase().includes(search)) : clips;
   useEffect(() => {
     setLoading(true);
-    getDocs(query(collection(db, 'posts'), where('type', '==', 'clip'), orderBy('createdAt', 'desc'), limit(24)))
+    getDocs(query(collection(db, 'posts'), where('type', 'in', ['clip', 'short']), orderBy('createdAt', 'desc'), limit(24)))
       // Clips = native, user-uploaded vertical video ONLY (mirrors web ExploreScreen
       // + ShortsScreen). YouTube-embed posts (news/shorts bots) can't play in this
       // grid and render as dead tiles, so exclude any embed-backed or bot-author post.
@@ -585,7 +585,7 @@ function ClipsTab({ navigate, search }) {
   return (
     <div className="grid grid-cols-2 gap-3">
       {shown.map((c) => (
-        <div key={c.id} onClick={() => navigate(`/post/${c.id}`)} className="cursor-pointer">
+        <div key={c.id} onClick={() => navigate(`/clip/${c.id}`)} className="cursor-pointer">
           <div className="aspect-[9/16] rounded-xl overflow-hidden bg-surface-2 relative">
             {c.thumbnailUrl ? <img src={c.thumbnailUrl} alt="" className="w-full h-full object-cover" />
               : <div className="w-full h-full flex items-center justify-center"><Icon name="movie" size={32} className="text-text-muted/30" /></div>}

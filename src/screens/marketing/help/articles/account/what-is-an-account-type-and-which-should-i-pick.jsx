@@ -1,21 +1,24 @@
 export default {
-  summary: "During sign-up you choose between a Player account (for gaming and watching) and a Creator account (for streaming, content, and the Creator Studio). You can switch later, so pick whichever feels right to start.",
-  updated: "2026-06-06",
+  summary: "Vergr has no account types. Every account can watch, post, go live, join squads and message people, so there is nothing to pick when you sign up and nothing to switch later.",
+  updated: "2026-09-19",
   body: [
-    { p: "Your account type affects which features are highlighted in your experience, but both types get full access to the app. It is not a lock-in." },
-    { h2: "Player" },
-    { p: "Pick Player if you mainly want to watch streams, chat, hang out in squads, and support the creators you like. Your home screen focuses on live streams, squads, and discovering other players." },
-    { h2: "Creator" },
-    { p: "Pick Creator if you plan to go live, post content regularly, or build an audience. You get quick access to the Creator Studio, stream setup, and your earnings overview from day one." },
-    { h2: "Which should you pick?" },
+    { p: "Some apps make you choose between a viewer account and a creator account. Vergr does not. One account does everything, from the day you sign up." },
+    { h2: "What every account can do" },
     { list: [
-      "Go with Player if you are not sure. You can switch to Creator in Settings any time.",
-      "Go with Creator if streaming or posting content is your main goal.",
-      "Both types can stream, join squads, tip, and earn money."
+      "Watch live streams, chat, and support the people you follow.",
+      "Post clips, shorts, photos, articles, polls and tier lists.",
+      "Go live from your phone, your browser or OBS.",
+      "Join or create a squad, and message or call your friends.",
+      "Open Creator Studio to see your earnings and your content."
     ]},
-    { note: "Your account type does not affect your plan (Free, Lite, Pro) or your VP rank. Those are separate." },
+    { h2: "What does differ between accounts" },
+    { list: [
+      "Your plan. Free, Lite and Pro change things like stream quality, upload size and ads. A few Creator Studio tools, such as analytics and scheduling, need Lite or Pro.",
+      "Your VP rank. It rises as you post, stream and watch, and each rank unlocks cosmetics like name colours, fonts and chat themes."
+    ]},
+    { note: "Getting paid is not tied to a plan. Any account whose content brings in revenue is paid a share of it once verified." },
     { cta: [
-      { to: "/platform/help/what-is-the-difference-between-a-player-a-creator-and-a-streamer-on-vergr", label: "Players vs creators vs streamers" },
+      { to: "/platform/help/what-is-the-difference-between-a-player-a-creator-and-a-streamer-on-vergr", label: "Viewers, creators and streamers" },
       { to: "/platform/help/how-do-i-get-started-on-vergr", label: "First hour walkthrough" }
     ]}
   ]

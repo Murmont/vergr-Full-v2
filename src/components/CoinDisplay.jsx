@@ -40,7 +40,7 @@ export default function CoinDisplay({ amount = 0, size = 'md', className = '', c
       <button
         onClick={() => setBuyOpen(true)}
         aria-label="Coins. Tap to buy more."
-        className="inline-flex items-center gap-1.5 bg-surface-2/60 pl-2.5 pr-1.5 py-1.5 rounded-full border border-white/[0.06] hover:bg-surface-2 transition-colors active:scale-95"
+        className="inline-flex items-center gap-1.5 bg-surface-2 pl-2.5 pr-1.5 py-1.5 rounded-full hover:bg-surface-3 transition-colors active:scale-95"
       >
         {content}
         {/* The + is what turns a readout into a shop. Without it people read the

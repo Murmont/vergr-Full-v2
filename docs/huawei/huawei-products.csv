@@ -1,0 +1,27 @@
+product_id,type,name,description,coins,web_usd,play_usd,huawei_usd
+coins_starter,Consumable,Starter Pack,"78 Vergr coins, added to your wallet instantly. Spend them anywhere on Vergr. Coins do not expire.",78,0.99,1.09,1.39
+coins_gamer,Consumable,Gamer Pack,"400 Vergr coins, added to your wallet instantly. Spend them anywhere on Vergr. Coins do not expire.",400,4.99,5.99,6.99
+coins_pro,Consumable,Pro Pack,"815 Vergr coins, added to your wallet instantly. Spend them anywhere on Vergr. Coins do not expire.",815,9.99,11.99,13.99
+coins_elite,Consumable,Elite Pack,"1,650 Vergr coins, added to your wallet instantly. Spend them anywhere on Vergr.",1650,19.99,22.99,27.99
+coins_legend,Consumable,Legend Pack,"4,180 Vergr coins, added to your wallet instantly. Spend them anywhere on Vergr.",4180,49.99,57.99,69.99
+coins_champion,Consumable,Champion Pack,"8,450 Vergr coins, added to your wallet instantly. Spend them anywhere on Vergr.",8450,99.99,119.99,149.99
+coins_titan,Consumable,Titan Pack,"12,800 Vergr coins, added to your wallet instantly. Spend them anywhere on Vergr.",12800,149.99,179.99,219.99
+coins_ascendant,Consumable,Ascendant Pack,"21,500 Vergr coins, added to your wallet instantly. Spend them anywhere on Vergr.",21500,249.99,299.99,359.99
+vpb_happy_hour,Consumable,Happy Hour,Triple VP for one hour. Everything you do counts three times. Starts the moment you buy it.,25,0.99,1.19,1.49
+vpb_flash,Consumable,Flash Surge,Triple VP for six hours. Built for one long stretch of streaming or watching.,75,0.99,1.19,1.49
+vpb_half_day,Consumable,Half-Day Surge,Two and a half times VP for half a day. Starts the moment you buy it.,120,1.59,1.89,2.29
+vpb_day,Consumable,Day Surge,"Double VP for a full day of posting, streaming and watching. Starts the moment you buy it.",200,2.59,3.09,3.79
+vpb_weekend,Consumable,Weekend Surge,Extra VP across two days. Enough to cover a whole weekend. Starts the moment you buy it.,350,4.49,5.99,6.99
+vpb_long,Consumable,Long Surge,Extra VP for a full week. The one you set and forget. Starts the moment you buy it.,900,11.99,14.99,17.99
+vpb_creator,Consumable,Creator Surge,"Triple VP for a day on posting, going live and hours streamed. Starts the moment you buy it.",150,1.99,2.39,2.89
+vpb_community,Consumable,Community Surge,"Triple VP for a day on likes and comments, given and received. Starts the moment you buy it.",150,1.99,2.39,2.89
+vpb_watcher,Consumable,Watcher Surge,Triple VP for a day on time spent watching live streams. Starts the moment you buy it.,100,1.29,1.59,1.89
+boost_post,Consumable,Post Boost,Reaches 3x further. Apply it to any post for 24 hours. Kept in your wallet until you use it.,50,0.99,1.19,1.49
+boost_lfg,Consumable,Teammate Search Boost,Fill a squad faster. Apply it to any teammate-search post for 12 hours.,25,0.99,1.19,1.49
+boost_profile,Consumable,Profile Boost,Get suggested to new people. Apply it to any profile for 2 days.,100,1.29,1.59,1.89
+boost_squad,Consumable,Squad Boost,Get found by new members. Apply it to any squad for 2 days. Kept in your wallet until you use it.,75,0.99,1.19,1.49
+boost_stream_boost,Consumable,Stream Boost,Reaches 1.5x further. Apply it to any live stream for 15 minutes.,50,0.99,1.19,1.49
+boost_stream_super,Consumable,Super Boost,Reaches 2.5x further. Apply it to any live stream for 30 minutes.,150,1.99,2.39,2.89
+boost_stream_mega,Consumable,Mega Boost,Reaches 4x further. Apply it to any live stream for 1 hour. Kept in your wallet until you use it.,500,6.99,8.99,9.99
+sub_lite,Auto-renewable subscription,Vergr Lite,"Vergr Lite, billed monthly. Cancel any time in AppGallery.",,4.99,5.99,7.99
+sub_pro,Auto-renewable subscription,Vergr Pro,"Vergr Pro, billed monthly. Cancel any time in AppGallery.",,9.99,11.99,14.99

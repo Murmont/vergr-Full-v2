@@ -67,7 +67,7 @@ export default function ConsentSheet() {
 
   return (
     <div className="fixed inset-0 z-[80] bg-black/70 backdrop-blur-sm flex items-end md:items-center justify-center p-0 md:p-6">
-      <div className="w-full md:max-w-lg bg-[#0b0e15] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden shadow-[0_20px_80px_-10px_rgba(0,0,0,0.8)]">
+      <div className="w-full md:max-w-lg bg-[#0b0e15] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden shadow-[0_20px_80px_-10px_rgba(0,0,0,0.8)] sheet-safe">
         <div className="p-6 md:p-8">
           <div className="w-12 h-12 rounded-2xl bg-brand-violet/10 border border-brand-violet/30 flex items-center justify-center mb-4">
             <Icon name="privacy_tip" size={24} filled className="text-brand-violet-light" />

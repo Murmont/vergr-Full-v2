@@ -322,6 +322,26 @@ export function MarketingStyles() {
         }
         .vg-h1 { font-size: 44px !important; }
       }
+      /* ⚠⚠ THE PHONE APP COLLAPSES THE NAV ON THE BUILD FLAG, NOT ON A WIDTH.
+         Measured on the emulator 2026-09-11 (1.0.209, /platform/help/<slug>
+         opened in-app): the full desktop nav rendered on a 411px screen, so
+         "VERGR" collided with "Home" and the links ran under the wifi and
+         battery icons. The width queries below are correct on the web and did
+         not match in the WebView, and a marketing page is reachable in-app from
+         every help link, which is a surface a Play reviewer opens. The build
+         flag cannot be wrong about being a phone, so it decides here.
+         The vergr-native class is set on html by main.jsx from IS_NATIVE_BUILD.
+         NOTE: this whole block is a template literal, so no backticks here. */
+      html.vergr-native .vg-nav-bar {
+        padding: 12px 18px !important;
+        grid-template-columns: 1fr auto !important;
+      }
+      html.vergr-native .vg-nav-links,
+      html.vergr-native .vg-nav-auth { display: none !important; }
+      html.vergr-native .vg-nav-burger { display: inline-flex !important; }
+      html.vergr-native .vg-brand-logo { width: 30px !important; height: 30px !important; }
+      html.vergr-native .vg-brand-text { font-size: 17px !important; letter-spacing: 0.12em !important; }
+
       /* Mobile: hamburger, smaller chrome, 2-up card grids, compact footer. */
       @media (max-width: 720px) {
         .vg-h1 { font-size: 34px !important; }
@@ -405,6 +425,13 @@ function Nav() {
       backdropFilter: 'blur(14px)', WebkitBackdropFilter: 'blur(14px)',
       background: 'rgba(7,8,13,0.65)',
       borderBottom: `1px solid ${C.borderSoft}`,
+      // ⚠ THE APP DRAWS EDGE TO EDGE, SO THIS BAR SITS UNDER THE STATUS BAR
+      // WITHOUT THIS LINE. Measured on the emulator 2026-09-11 (1.0.209, in-app
+      // help article): the logo rendered behind the clock and the Play Protect
+      // icon. The blurred bar still runs under the status bar, which is what we
+      // want; only its CONTENT is pushed clear. Harmless on web, where the inset
+      // resolves to 0.
+      paddingTop: 'env(safe-area-inset-top, 0px)',
     }}>
       <div className="vg-nav-bar" style={{
         maxWidth: 1280, margin: '0 auto',
@@ -506,7 +533,7 @@ function MobileDrawer({ open, onClose, currentUser }) {
           transform: open ? 'translateX(0)' : 'translateX(100%)',
           transition: 'transform 0.3s cubic-bezier(0.4,0,0.2,1)',
           display: 'flex', flexDirection: 'column',
-          padding: 'calc(16px + env(safe-area-inset-top)) 18px calc(20px + env(safe-area-inset-bottom))',
+          padding: 'calc(16px + env(safe-area-inset-top)) 18px calc(20px + var(--vg-safe-b, 0px))',
           overflowY: 'auto',
         }}
       >
@@ -987,7 +1014,7 @@ function DesktopMock() {
                 </div>
               </div>
               <div style={{ display: 'flex', gap: 6 }}>
-                {['Competitive', 'EN'].map(t => (
+                {['Chill', 'EN'].map(t => (
                   <span key={t} style={{ padding: '3px 7px', borderRadius: 6, fontSize: 9, color: '#fff', background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}>{t}</span>
                 ))}
               </div>
@@ -1360,7 +1387,7 @@ const SLIDE_DATA = [
     intro: 'Bring a guest on screen without leaving your own channel. Both audiences watch one show, in one chat room.',
     bullets: [
       ['diversity_3', 'Guest on screen', 'Invite another creator and go two-up in seconds.'],
-      ['picture_in_picture', 'Gameplay in PiP', 'Keep the game running in picture-in-picture while you talk.'],
+      ['picture_in_picture', 'Screen in PiP', 'Share your screen, a game or a canvas in picture-in-picture while you talk.'],
       ['forum', 'One chat room', 'Both audiences land in the same chat, moderated together.'],
       ['groups', 'Squad or solo', 'Go live alone, or bring the squad in for a hangout.'],
     ],
@@ -1541,7 +1568,7 @@ function LandingEconomy() {
             fontSize: 40, lineHeight: 1.05,
             fontWeight: 800, letterSpacing: '-0.03em', margin: 0,
           }}>
-            Earn while you <span className="vg-grad-text">play, create, and compete.</span>
+            Earn while you <span className="vg-grad-text">play, create, and stream.</span>
           </h2>
           <p style={{
             marginTop: 18, fontSize: 16, color: C.text2, lineHeight: 1.6, maxWidth: 460,
@@ -3911,7 +3938,7 @@ export function DeleteAccountScreen() {
         <H2>What gets deleted</H2>
         <Grid cols={2} min={300}>
           <Tile icon="person_remove" accent={C.violet} title="Your account and profile"
-            body="Username, display name, email, avatar and banner images, bio, linked gaming accounts, and your settings." />
+            body="Username, display name, email, avatar and banner images, bio, connected accounts, and your settings." />
           <Tile icon="delete_sweep" accent={C.pink} title="Your content"
             body="Posts, clips, comments, uploaded media, your vergr.me page, and your direct messages are removed from the platform." />
           <Tile icon="groups" accent={C.cyan} title="Social connections"
@@ -4067,7 +4094,7 @@ export function AboutScreen() {
     <MarketingShell>
       <PageHero
         title="About VERGR"
-        subtitle="Where creators converge to share, compete, and grow, on a platform that gives the economy back to the people who build it."
+        subtitle="Where creators converge to share, stream, and grow, on a platform that gives the economy back to the people who build it."
         centered
       />
       <Section>
@@ -4091,7 +4118,7 @@ export function AboutScreen() {
           <Tile icon="live_tv"               accent={C.gold}   title="Live comes first"
             body="Everything is built around going live: fast chat, low-friction broadcasting from the browser, and clips that carry the moment onwards." />
           <Tile icon="groups"                accent={C.cyan}   title="Squads matter as much as solo"
-            body="Most great gaming moments happen with a crew. Squads are first-class on VERGR — shared streams, shared hangouts, a shared wallet." />
+            body="The best moments happen with a crew. Squads are first-class on VERGR: shared streams, shared hangouts, a shared wallet." />
           <Tile icon="payments"              accent={C.violet} title="Creators keep more"
             body="Your revenue share is set by what you have earned, not by what you pay us. A subscription changes what you can produce, never what you keep." />
           <Tile icon="rocket_launch"         accent={C.ember}  title="Reach is investment, not paywall"
@@ -4262,7 +4289,7 @@ export function BecomeStreamerScreen() {
 
 export function MonetizationScreen() {
   useSeo({
-    title: 'Make Money Gaming — VERGR Creator Monetisation',
+    title: 'Make Money as a Creator | VERGR',
     description: 'Five ways to earn on VERGR: tips, creator memberships, paid stream access, Stream Boost amplification, and squad treasury shares. You keep 50% to 80% of the revenue you generate, rising as you earn, with no other fees.',
     canonical: 'https://vergr.app/platform/monetization',
   });
@@ -4483,15 +4510,15 @@ export function StudioToolsScreen() {
 
 export function LearnSquadsScreen() {
   useSeo({
-    title: 'Squads — Gaming Crews with Shared Treasuries | VERGR',
-    description: 'Up to 100 members. Voice + video hangouts built in. Monthly elections, real roles (President, Vice President, Treasury), and a shared treasury the squad funds together. Discord meets esports team.',
+    title: 'Squads: Your Crew, Voice Hangouts and a Shared Treasury | VERGR',
+    description: 'Up to 100 members. Voice + video hangouts built in. Monthly elections, real roles (President, Vice President, Treasury), and a shared treasury the squad funds together. Discord meets your crew.',
     canonical: 'https://vergr.app/platform/learn/squads',
   });
   return (
     <MarketingShell>
       <PageHero
-        title="Squads — Your Gaming Crew, Your Own Org"
-        subtitle="Up to 100 members. Voice + video hangouts built in. A shared treasury the squad builds together. Monthly elections, real roles, real responsibilities. It's a Discord, an esports team, and a co-op savings account, all in one."
+        title="Squads: Your Crew, Your Own Org"
+        subtitle="Up to 100 members. Voice + video hangouts built in. A shared treasury the squad builds together. Monthly elections, real roles, real responsibilities. It's a Discord, a crew, and a co-op savings account, all in one."
         accent="cyan"
         centered
       />
@@ -4499,10 +4526,10 @@ export function LearnSquadsScreen() {
       <Section>
         <H2>What a squad actually is</H2>
         <P max={720}>
-          A squad on VERGR is your persistent gaming crew — a private space with shared chat, voice + video
+          A squad on VERGR is your persistent crew: a private space with shared chat, voice + video
           hangouts, scheduled events, a squad leaderboard, and a treasury that funds what the squad does
-          for the team. Six friends running ranked, or a 100-strong competitive org — the squad is the unit
-          that holds it together.
+          for the team. Six friends who hang out every night, or a 100-strong community: the squad is the
+          unit that holds it together.
         </P>
       </Section>
 
@@ -4592,8 +4619,8 @@ export function LearnSquadsScreen() {
 
 export function LearnClipsScreen() {
   useSeo({
-    title: 'Gaming Clips — Upload, Share, Earn | VERGR',
-    description: 'Upload your clutch moments or embed YouTube/Twitch clips. Up to 60s (Free), 3min (Lite), or 10min (Pro). Earn VP from views and tips. Discover clips from squads and the global feed.',
+    title: 'Clips: Upload, Share, Earn | VERGR',
+    description: 'Upload your best moments or embed YouTube/Twitch clips. Up to 60s (Free), 3min (Lite), or 10min (Pro). Earn VP from views and tips. Discover clips from squads and the global feed.',
     canonical: 'https://vergr.app/platform/learn/clips',
   });
   return (
@@ -4668,7 +4695,7 @@ export function LearnCoinsScreen() {
       />
 
       <Section>
-        <H2>How the in-game currency works</H2>
+        <H2>How Coins work</H2>
         <Grid cols={4} min={220}>
           <Tile icon="shopping_cart" accent={C.gold}
             title="Buy coins"

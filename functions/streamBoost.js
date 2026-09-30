@@ -12,6 +12,7 @@
 // `scripts/vp-mirror-check.mjs` fails the build if they disagree.
 const functions = require('firebase-functions/v2');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
+const { planSpend, debitFields } = require('./boostCoins');
 
 const REGION = 'europe-west1';
 const db = getFirestore('vgrdb');
@@ -83,15 +84,12 @@ exports.boostStream = functions.https.onCall({ region: REGION }, async (req) => 
       tx.update(walletRef, { boostTokens: FieldValue.increment(-1) });
       paidWith = 'token';
     } else {
-      const balance = Number(w.balance) || 0;
-      if (balance < tier.coins) {
+      const plan = planSpend(w, tier.coins);
+      if (!plan.ok) {
         throw new functions.https.HttpsError('failed-precondition',
-          `${tier.name} costs ${tier.coins} coins. You have ${balance}.`);
+          `${tier.name} costs ${tier.coins} coins. You have ${plan.total}.`);
       }
-      tx.update(walletRef, {
-        balance: FieldValue.increment(-tier.coins),
-        totalSpent: FieldValue.increment(tier.coins),
-      });
+      tx.update(walletRef, debitFields(plan));
       paidWith = 'coins';
     }
 

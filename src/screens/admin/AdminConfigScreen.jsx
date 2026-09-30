@@ -1,10 +1,17 @@
-// AdminConfigScreen — /admin/config
+// AdminConfigScreen — App Config.
 //
-// 9 sub-tabs that all read+write a single Firestore doc: app_config/general.
-// Whitelist enforced server-side in functions/adminConfig.js (FIELD_WHITELIST).
+// Reads and writes one Firestore doc, app_config/general, through
+// functions/adminConfig.js (FIELD_WHITELIST). "Sensitive" switches trigger an
+// authenticator step-up via useGuardedCall().
 //
-// "Sensitive" fields (maintenance mode, kill switches, custom CSS) trigger an
-// automatic TOTP step-up via useGuardedCall().
+// ⚠⚠ EVERY CONTROL ON THIS SCREEN MUST DO SOMETHING. Until 2026-09-21 it
+// offered ~50 settings across nine tabs and nothing in the app, the functions
+// or the servers read them: Maintenance Mode, Allow New Registrations, an admin
+// IP allowlist, a failed-login lockout, a minimum password length, Custom CSS,
+// quiet hours, retention periods, languages. Saving them changed nothing. The
+// three that matter were wired (maintenance, registrations, DMs) and the rest
+// were removed here and from the server allow-list.
+// `scripts/admin-config-check.mjs` fails the build if a saved key has no reader.
 
 import { useState, useEffect, useCallback } from 'react';
 import { useUI } from '../../context/UIContext';
@@ -13,19 +20,15 @@ import AdminShell, { ADMIN_COLORS as C } from './AdminShell';
 import { call, fmtRelative, useGuardedCall, Tabs } from './_adminGuarded';
 
 const TABS = [
-  { id: 'general',       label: 'General' },
-  { id: 'features',      label: 'Features & Modules' },
-  { id: 'security',      label: 'Security' },
-  { id: 'payments',      label: 'Payments' },
-  { id: 'integrations',  label: 'Integrations' },
-  { id: 'notifications', label: 'Notifications' },
-  { id: 'appearance',    label: 'Appearance' },
-  { id: 'localization',  label: 'Localization' },
-  { id: 'system',        label: 'System' },
+  { id: 'platform',     label: 'Platform' },
+  { id: 'features',     label: 'Features' },
+  { id: 'payments',     label: 'Payments' },
+  { id: 'integrations', label: 'Integrations' },
+  { id: 'system',       label: 'System' },
 ];
 
 export default function AdminConfigScreen() {
-  const [tab, setTab] = useState('general');
+  const [tab, setTab] = useState('platform');
   const { guarded, overlay } = useGuardedCall();
   const { showToast } = useUI();
 
@@ -75,7 +78,7 @@ export default function AdminConfigScreen() {
     <AdminShell
       screen="config"
       title="App Config"
-      subtitle="Manage global app configuration, features, and system preferences."
+      subtitle="Platform switches. Every one here takes effect for real."
       topBarRight={
         <button
           onClick={saveDraft}
@@ -83,9 +86,8 @@ export default function AdminConfigScreen() {
           style={{
             padding: '8px 16px', borderRadius: 8, border: 0,
             background: dirty ? C.accent : '#2a2a3e',
-            color: '#fff', fontSize: 13, fontWeight: 700,
+            color: dirty ? '#fff' : C.textMuted, fontSize: 13, fontWeight: 700,
             cursor: dirty ? 'pointer' : 'not-allowed',
-            opacity: dirty ? 1 : 0.5,
           }}
         >
           {dirty ? `Save Changes (${Object.keys(draft).length})` : 'No Changes'}
@@ -96,15 +98,11 @@ export default function AdminConfigScreen() {
         <div style={{ minWidth: 0 }}>
           <Tabs tabs={TABS} active={tab} onChange={setTab} />
           {loading && <div style={{ color: C.textDim, padding: 24 }}>Loading…</div>}
-          {!loading && tab === 'general'       && <GeneralTab get={get} setField={setField} />}
-          {!loading && tab === 'features'      && <FeaturesTab get={get} setField={setField} />}
-          {!loading && tab === 'security'      && <SecurityTab get={get} setField={setField} />}
-          {!loading && tab === 'payments'      && <PaymentsTab get={get} setField={setField} />}
-          {!loading && tab === 'integrations'  && <IntegrationsTab />}
-          {!loading && tab === 'notifications' && <NotificationsTab get={get} setField={setField} />}
-          {!loading && tab === 'appearance'    && <AppearanceTab get={get} setField={setField} />}
-          {!loading && tab === 'localization'  && <LocalizationTab get={get} setField={setField} />}
-          {!loading && tab === 'system'        && <SystemTab cfg={cfg} />}
+          {!loading && tab === 'platform'     && <PlatformTab get={get} setField={setField} />}
+          {!loading && tab === 'features'     && <FeaturesTab get={get} setField={setField} />}
+          {!loading && tab === 'payments'     && <PaymentsTab get={get} setField={setField} />}
+          {!loading && tab === 'integrations' && <IntegrationsTab />}
+          {!loading && tab === 'system'       && <SystemTab cfg={cfg} />}
         </div>
         <RightRail cfg={cfg} dirty={dirty} />
       </div>
@@ -119,15 +117,11 @@ export default function AdminConfigScreen() {
 
 function Group({ title, icon, color = C.accent, children }) {
   return (
-    <div style={{
-      background: C.card, border: `1px solid ${C.border}`, borderRadius: 12,
-      padding: 16, marginBottom: 14,
-    }}>
+    <div style={{ background: C.card, borderRadius: 12, padding: 16, marginBottom: 14 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
         {icon && (
           <div style={{
-            width: 32, height: 32, borderRadius: 8,
-            background: `${color}20`, border: `1px solid ${color}30`, color,
+            width: 32, height: 32, borderRadius: 8, background: '#1c1c2c', color,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>
             <Icon name={icon} size={17} />
@@ -140,47 +134,21 @@ function Group({ title, icon, color = C.accent, children }) {
   );
 }
 
-function Field({ label, hint, children }) {
+function Choice({ label, hint, value, onChange, options, sensitive }) {
   return (
-    <div>
-      <div style={{ fontSize: 12, fontWeight: 600, color: C.textDim, marginBottom: 6 }}>{label}</div>
-      {children}
-      {hint && <div style={{ fontSize: 11, color: C.textMuted, marginTop: 4 }}>{hint}</div>}
+    <div style={{ padding: '10px 12px', background: '#0a0a14', borderRadius: 8 }}>
+      <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{label}{sensitive && (<span title="Needs a fresh authenticator code" style={{ fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: '#3a2c0c', color: '#f0a500', marginLeft: 8 }}>2FA</span>)}</div>
+      {hint && <div style={{ fontSize: 11, color: C.textMuted, marginTop: 2, lineHeight: 1.5 }}>{hint}</div>}
+      <div className="flex gap-2 mt-2">
+        {options.map(([v, l]) => (
+          <button key={v} type="button" onClick={() => v !== value && onChange(v)}
+            className="rounded-lg px-3 py-1.5 text-xs font-bold"
+            style={v === value ? { background: '#7c3aed', color: '#fff' } : { background: '#1C1B26', color: '#9CA3AF' }}>
+            {l}
+          </button>
+        ))}
+      </div>
     </div>
-  );
-}
-
-function TextInput({ value, onChange, placeholder, type = 'text' }) {
-  return (
-    <input
-      type={type}
-      value={value ?? ''}
-      onChange={e => onChange(type === 'number' ? Number(e.target.value) : e.target.value)}
-      placeholder={placeholder}
-      style={{
-        width: '100%', padding: '10px 12px',
-        background: '#0a0a14', border: `1px solid ${C.border}`, borderRadius: 8,
-        color: C.text, fontSize: 13,
-      }}
-    />
-  );
-}
-
-function Select({ value, onChange, options }) {
-  return (
-    <select
-      value={value ?? ''}
-      onChange={e => onChange(e.target.value)}
-      style={{
-        width: '100%', padding: '10px 12px',
-        background: '#0a0a14', border: `1px solid ${C.border}`, borderRadius: 8,
-        color: C.text, fontSize: 13,
-      }}
-    >
-      {options.map(o => (
-        <option key={o.value} value={o.value}>{o.label}</option>
-      ))}
-    </select>
   );
 }
 
@@ -189,22 +157,24 @@ function Toggle({ label, hint, value, onChange, sensitive }) {
   return (
     <div style={{
       display: 'flex', alignItems: 'center', gap: 12,
-      padding: '10px 12px', background: '#0a0a14',
-      border: `1px solid ${C.border}`, borderRadius: 8,
+      padding: '10px 12px', background: '#0a0a14', borderRadius: 8,
     }}>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 13, fontWeight: 600, color: C.text, display: 'flex', alignItems: 'center', gap: 8 }}>
           {label}
           {sensitive && (
-            <span title="Requires TOTP step-up"
+            <span title="Needs a fresh authenticator code"
               style={{ fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 4,
-                background: '#f0a50020', color: '#f0a500' }}>TOTP</span>
+                background: '#3a2c0c', color: '#f0a500' }}>2FA</span>
           )}
         </div>
-        {hint && <div style={{ fontSize: 11, color: C.textMuted, marginTop: 2 }}>{hint}</div>}
+        {hint && <div style={{ fontSize: 11, color: C.textMuted, marginTop: 2, lineHeight: 1.5 }}>{hint}</div>}
       </div>
       <button
         type="button"
+        role="switch"
+        aria-checked={on}
+        aria-label={label}
         onClick={() => onChange(!on)}
         style={{
           flexShrink: 0, width: 42, height: 24, borderRadius: 999,
@@ -223,370 +193,147 @@ function Toggle({ label, hint, value, onChange, sensitive }) {
   );
 }
 
+function Note({ children }) {
+  return <div style={{ fontSize: 12, color: C.textDim, lineHeight: 1.6 }}>{children}</div>;
+}
+
 // ───────────────────────────────────────────────────────────
 // Sub-tabs
 // ───────────────────────────────────────────────────────────
 
-function GeneralTab({ get, setField }) {
+function PlatformTab({ get, setField }) {
   return (
-    <>
-      <Group title="Application Settings" icon="apps" color="#7c3aed">
-        <Field label="App Name"><TextInput value={get('appName', 'VERGR')} onChange={v => setField('appName', v)} /></Field>
-        <Field label="App Tagline"><TextInput value={get('appTagline', '')} onChange={v => setField('appTagline', v)} placeholder="The Gaming Social Platform" /></Field>
-        <Field label="Support Email"><TextInput value={get('supportEmail', 'support@vergr.app')} onChange={v => setField('supportEmail', v)} /></Field>
-        <Field label="Default Timezone">
-          <Select value={get('defaultTimezone', 'UTC')} onChange={v => setField('defaultTimezone', v)}
-            options={[
-              { value: 'UTC', label: 'UTC' },
-              { value: 'Europe/London', label: 'Europe/London' },
-              { value: 'America/New_York', label: 'America/New_York' },
-              { value: 'Asia/Tokyo', label: 'Asia/Tokyo' },
-            ]} />
-        </Field>
-        <Field label="Items Per Page">
-          <TextInput type="number" value={get('itemsPerPage', 10)} onChange={v => setField('itemsPerPage', v)} />
-        </Field>
-      </Group>
-
-      <Group title="Platform Settings" icon="settings" color="#3b82f6">
-        <Toggle label="Maintenance Mode" hint="Show platform-wide maintenance banner" sensitive
-          value={get('maintenanceMode', false)} onChange={v => setField('maintenanceMode', v)} />
-        <Toggle label="Allow New Registrations" hint="Permit new signups" sensitive
-          value={get('allowNewRegistrations', true)} onChange={v => setField('allowNewRegistrations', v)} />
-        <Toggle label="Allow Guest Browsing" hint="Logged-out users may browse public surfaces"
-          value={get('allowGuestBrowsing', true)} onChange={v => setField('allowGuestBrowsing', v)} />
-        <Toggle label="Require Email Verification"
-          value={get('requireEmailVerification', true)} onChange={v => setField('requireEmailVerification', v)} />
-        <Toggle label="Enforce Terms Acceptance"
-          value={get('enforceTermsAcceptance', true)} onChange={v => setField('enforceTermsAcceptance', v)} />
-        <Field label="Session Timeout (minutes)">
-          <TextInput type="number" value={get('sessionTimeoutMin', 60)} onChange={v => setField('sessionTimeoutMin', v)} />
-        </Field>
-      </Group>
-
-      <Group title="Content & Communication" icon="chat" color="#22c55e">
-        <Toggle label="Allow Direct Messages" value={get('allowDirectMessages', true)} onChange={v => setField('allowDirectMessages', v)} />
-        <Toggle label="Enable User Mentions" value={get('enableUserMentions', true)} onChange={v => setField('enableUserMentions', v)} />
-        <Toggle label="Content Auto-Moderation"
-          hint="Run Gemini classifier on every post and message before publishing"
-          value={get('contentAutoModerate', true)} onChange={v => setField('contentAutoModerate', v)} />
-        <Field label="Max Message Length">
-          <TextInput type="number" value={get('maxMessageLength', 1000)} onChange={v => setField('maxMessageLength', v)} />
-        </Field>
-      </Group>
-
-      <Group title="Links & Legal" icon="gavel" color="#f0a500">
-        <Field label="Terms of Service URL"><TextInput value={get('tosUrl', '/terms')} onChange={v => setField('tosUrl', v)} /></Field>
-        <Field label="Privacy Policy URL"><TextInput value={get('privacyUrl', '/privacy')} onChange={v => setField('privacyUrl', v)} /></Field>
-        <Field label="Refund Policy URL"><TextInput value={get('refundUrl', '/refund-policy')} onChange={v => setField('refundUrl', v)} /></Field>
-        <Field label="Community Guidelines URL"><TextInput value={get('guidelinesUrl', '/code-of-conduct')} onChange={v => setField('guidelinesUrl', v)} /></Field>
-      </Group>
-
-      <Group title="Data & Retention" icon="storage" color="#b44fff">
-        <Field label="Data Retention Period">
-          <Select value={get('dataRetentionPeriod', '2yr')} onChange={v => setField('dataRetentionPeriod', v)}
-            options={[
-              { value: '6mo', label: '6 months' },
-              { value: '1yr', label: '1 year' },
-              { value: '2yr', label: '2 years' },
-              { value: 'forever', label: 'Forever' },
-            ]} />
-        </Field>
-        <Field label="Log Retention Period">
-          <Select value={get('logRetentionPeriod', '365d')} onChange={v => setField('logRetentionPeriod', v)}
-            options={[
-              { value: '90d', label: '90 days' },
-              { value: '180d', label: '180 days' },
-              { value: '365d', label: '365 days' },
-            ]} />
-        </Field>
-        <Toggle label="Allow Data Export by Users"
-          value={get('allowUserDataExport', true)} onChange={v => setField('allowUserDataExport', v)} />
-        <Toggle label="Anonymize Data After Retention"
-          value={get('anonymizeDataAfterRetention', true)} onChange={v => setField('anonymizeDataAfterRetention', v)} />
-      </Group>
-    </>
-  );
-}
-
-function FeaturesTab({ get, setField }) {
-  const features = [
-    { key: 'liveStreamingPaused', label: 'Live Streaming', invert: true, hint: 'Master switch for HLS + browser ingest. ON = streaming allowed.', sensitive: true },
-    // 'tournamentsEnabled' removed 2026-08-17: there is nothing left for it to
-    // switch, and a toggle that reads ON for a retired feature is worse than no
-    // toggle. Ticketed events are separate and have no kill switch of their own.
-    { key: 'squadsEnabled', label: 'Squads', defaultOn: true, hint: 'Group / guild surfaces + voice hangouts.' },
-    { key: 'newsBotsEnabled', label: 'News Bots', defaultOn: true, hint: 'Auto-syndicated gaming news posts.' },
-    { key: 'verificationEnabled', label: 'Account Verification', defaultOn: true, hint: 'KYC + creator verification surfaces.' },
-    { key: 'vergrMeEnabled', label: 'Vergr.me Public Profiles', defaultOn: true, hint: 'Pro-only Linktree-style profile page.' },
-    { key: 'streamBoostsEnabled', label: 'Stream Boosts', defaultOn: true, hint: 'Pay 50c to amplify discovery.' },
-    { key: 'cohostEnabled', label: 'Co-Host Streams', defaultOn: true, hint: 'Two broadcasters in one HLS stream (Pro).' },
-    { key: 'streamFollowerGateEnabled', label: 'Min-Follower Requirement (Go Live)', defaultOn: true, hint: 'ON = free users need 100 followers to stream public. OFF = anyone can go live.' },
-    { key: 'giftingEnabled', label: 'Live Gifting', defaultOn: false, hint: 'TikTok-style animated gifts (deferred until profit-positive).' },
-  ];
-
-  return (
-    <Group title="Features & Modules" icon="extension" color="#7c3aed">
-      <div style={{ fontSize: 12, color: C.textDim, marginBottom: 8 }}>
-        Each toggle controls a single feature surface. Disabling a feature hides
-        its UI surfaces and rejects its server callables.
-      </div>
-      {features.map(f => {
-        // For inverted fields (e.g. liveStreamingPaused) the toggle ON state
-        // means "feature enabled" i.e. !paused.
-        const raw = get(f.key, f.invert ? false : f.defaultOn);
-        const on = f.invert ? !raw : !!raw;
-        return (
-          <Toggle
-            key={f.key}
-            label={f.label}
-            hint={f.hint}
-            sensitive={f.sensitive}
-            value={on}
-            onChange={v => setField(f.key, f.invert ? !v : v)}
-          />
-        );
-      })}
+    <Group title="Platform switches" icon="settings" color="#3b82f6">
+      <Toggle label="Maintenance mode" sensitive
+        hint="Replaces every app screen with the maintenance page. The public site (Terms, help, downloads) and sign-in stay open. Staff accounts keep using the app, under a banner."
+        value={get('maintenanceMode', false)} onChange={v => setField('maintenanceMode', v)} />
+      <Toggle label="Allow new registrations" sensitive
+        hint="Off stops new accounts from email sign-up, guest conversion and first-time Google sign-in. Existing accounts and guest browsing are unaffected."
+        value={get('allowNewRegistrations', true)} onChange={v => setField('allowNewRegistrations', v)} />
+      <Toggle label="Allow direct messages" sensitive
+        hint="Off pauses sending in DMs and group chats, for everyone. People can still read. The chat server enforces it, not just the app. Squad chat and live-stream chat are not affected."
+        value={get('allowDirectMessages', true)} onChange={v => setField('allowDirectMessages', v)} />
     </Group>
   );
 }
 
-function SecurityTab({ get, setField }) {
+function FeaturesTab({ get, setField }) {
+  const streamingOn = !get('liveStreamingPaused', false);
   return (
-    <>
-      <Group title="Authentication" icon="lock" color="#7c3aed">
-        <Field label="Failed Login Threshold" hint="Number of attempts before lockout">
-          <TextInput type="number" value={get('failedLoginThreshold', 5)} onChange={v => setField('failedLoginThreshold', v)} />
-        </Field>
-        <Field label="Failed Login Lockout (minutes)">
-          <TextInput type="number" value={get('failedLoginLockoutMin', 15)} onChange={v => setField('failedLoginLockoutMin', v)} />
-        </Field>
-        <Field label="Min Password Length">
-          <TextInput type="number" value={get('minPasswordLength', 8)} onChange={v => setField('minPasswordLength', v)} />
-        </Field>
-      </Group>
-
-      <Group title="Access Control" icon="vpn_key" color="#f04060">
-        <Field label="Admin Step-Up Window (seconds)" hint="How long a TOTP verification stays fresh">
-          <TextInput type="number" value={get('stepUpWindowSec', 300)} onChange={v => setField('stepUpWindowSec', v)} />
-        </Field>
-        <Toggle label="Auto-Revoke Tokens on Suspicious Activity"
-          hint="Force re-auth when an account triggers anomaly detection"
-          value={get('suspiciousAutoRevoke', false)} onChange={v => setField('suspiciousAutoRevoke', v)} />
-        <Field label="Admin IP Allowlist (CIDR, comma-separated)" hint="Empty = no IP restriction">
-          <TextInput value={get('ipAllowlist', '')} onChange={v => setField('ipAllowlist', v)} placeholder="0.0.0.0/0" />
-        </Field>
-      </Group>
-    </>
+    <Group title="Features" icon="extension" color="#7c3aed">
+      <Toggle label="Live streaming" sensitive
+        hint="Master switch. Off refuses every new stream, from the phone, the browser and OBS. Streams already live carry on."
+        value={streamingOn} onChange={v => setField('liveStreamingPaused', !v)} />
+      <Toggle label="Follower minimum to go live publicly"
+        hint="On: a free account needs 100 followers and a 50-coin Stream Boost to stream in public. Off: anyone can go live in public, free."
+        value={get('streamFollowerGateEnabled', true)} onChange={v => setField('streamFollowerGateEnabled', v)} />
+    </Group>
   );
 }
 
 function PaymentsTab({ get, setField }) {
   return (
     <>
-      <Group title="Kill Switches" icon="power_settings_new" color="#f04060">
-        {/* These two labels described coin→gem conversion and a withdrawal
-            queue, neither of which exists any more, and BOTH disagreed with
-            what /admin/economy calls the very same flags. An operator reading
-            this screen would have thought "Pause Coin → Gem Conversions"
-            stopped a dead feature when the flag now gates creator revenue
-            accrual. Wording matches AdminEconomyScreen exactly. */}
+      <Group title="Kill switches" icon="power_settings_new" color="#f04060">
         <Toggle label="Pause revenue-share accrual" sensitive
           hint="Stops earned coins accruing a creator share. For use during an economy investigation."
           value={get('conversionsPaused', false)} onChange={v => setField('conversionsPaused', v)} />
         <Toggle label="Pause creator payouts" sensitive
           hint="The scheduled payout run skips everyone. Accrual continues, so nothing is lost; creators are paid on the next run after this is resumed."
           value={get('payoutsPaused', false)} onChange={v => setField('payoutsPaused', v)} />
-        <Toggle label="Pause Tipping" sensitive
-          hint="Disables coin tipping platform-wide"
+        <Toggle label="Pause tipping" sensitive
+          hint="Refuses every coin tip platform-wide."
           value={get('tipsPaused', false)} onChange={v => setField('tipsPaused', v)} />
       </Group>
 
-      <Group title="Settings" icon="payments" color="#f5c542">
-        <Field label="Min Payout (Gems)" hint="Floor below which users cannot request a withdrawal">
-          <TextInput type="number" value={get('minPayoutGems', 1000)} onChange={v => setField('minPayoutGems', v)} />
-        </Field>
-        <Field label="Default Payout Currency">
-          <Select value={get('defaultPayoutCurrency', 'USDT-TRX')} onChange={v => setField('defaultPayoutCurrency', v)}
-            options={[
-              { value: 'USDT-TRX', label: 'USDT (TRON)' },
-              { value: 'USDT-ETH', label: 'USDT (Ethereum)' },
-              { value: 'USDC-POL', label: 'USDC (Polygon)' },
-              { value: 'BTC',      label: 'BTC' },
-            ]} />
-        </Field>
+      <Group title="Coda checkout (browser)" icon="credit_card" color="#7c3aed">
+        <Note>
+          Codapay, the second browser card rail beside PayRam. The buyer pays the
+          normal price: the Coda agreement (clause 4.1) forbids adding Coda's fee.
+          While Coda is in sandbox only staff can pay, because a test payment would
+          otherwise credit real coins. It opens to everyone once the production key
+          is installed. Coda reports: {get('codaEnv', 'sandbox') === 'production' ? 'production' : 'sandbox'}.
+        </Note>
+        <Choice label="Who can pay with Coda" sensitive
+          value={get('codaCheckout', 'on')} onChange={v => setField('codaCheckout', v)}
+          options={[['on', 'Everyone'], ['staff', 'Staff only'], ['off', 'Off']]} />
+        <Toggle label="Saved cards" sensitive
+          hint="Shows Coda's 'save card for next time' and the buyer's saved cards. Turn on only after Coda has enabled saved cards for Vergr."
+          value={get('codaSaveCards', false)} onChange={v => setField('codaSaveCards', v)} />
+        <Toggle label="Google Play user choice billing" sensitive
+          hint="In the Play app, lets Google's choice screen offer Vergr's own checkout where Google runs user choice billing. Turn on only after Google approves the program. Billing choice and alternative billing switch on by themselves once Google allows them."
+          value={get('playUserChoiceBilling', false)} onChange={v => setField('playUserChoiceBilling', v)} />
       </Group>
 
-      <Group title="Processor Status (read-only)" icon="vpn_lock" color="#7c3aed">
-        <div style={{ fontSize: 12, color: C.textDim }}>
-          Cryptomus is the sole inbound + outbound processor. Approval pending —
-          when keys flip from placeholder to live, payments activate automatically.
-          Rotate via Firebase Secrets ( <code>CRYPTOMUS_*</code> ); do not store
-          processor credentials here.
-        </div>
+      <Group title="Creator payouts (read-only)" icon="payments" color="#f5c542">
+        <Note>
+          Nobody can withdraw. Vergr pays creators their revenue share on its own
+          schedule. The minimum payout is $100 (<code>MIN_PAYOUT_MICRO_USD</code> in
+          functions/creatorPayouts.js), and a creator's first payout also waits
+          until the account is 30 days old.
+        </Note>
+      </Group>
+
+      <Group title="How people pay (read-only)" icon="credit_card" color="#7c3aed">
+        <Note>
+          Web and desktop take card and crypto through PayRam (self-hosted,
+          settles in USDC on Base). The Google Play build sells through Google
+          Play Billing only, and the AppGallery build through HUAWEI IAP only.
+          Rotate credentials in Firebase Secrets; never store them here.
+        </Note>
       </Group>
     </>
   );
 }
 
+// What the platform actually talks to. Listed from the code, not from a wish
+// list: until 2026-09-21 this showed Battle.net, Steam, Xbox, Apex Legends,
+// Riot and Epic as "configured" long after those integrations were removed.
+// No status pill: this screen does not check them, so it does not claim to.
+const INTEGRATIONS = [
+  { name: 'PayRam',              cat: 'Payments', note: 'Card and crypto on web and desktop' },
+  { name: 'Google Play Billing', cat: 'Payments', note: 'Google Play build only' },
+  { name: 'HUAWEI IAP',          cat: 'Payments', note: 'AppGallery build only' },
+  { name: 'Circle',              cat: 'Payments', note: 'USDC wallet on Base (deposit reconciliation)' },
+  { name: 'Didit',               cat: 'Identity', note: 'Creator identity checks before payouts' },
+  { name: 'Gemini',              cat: 'AI',       note: 'Post, image and chat moderation' },
+  { name: 'Cloudflare R2 + CDN', cat: 'Media',    note: 'Every upload, served from cdn.vergr.app' },
+  { name: 'Twitch',              cat: 'Sign-in',  note: 'Account linking and the stream mirror' },
+  { name: 'Discord',             cat: 'Sign-in',  note: 'Account linking and server import into Groups' },
+  { name: 'Shopify',             cat: 'Commerce', note: 'VLink app and shop sync' },
+];
+
 function IntegrationsTab() {
-  // Read-only display; secret rotation lives in Firebase Secrets, not here.
-  const providers = [
-    { name: 'Twitch',       status: 'configured', cat: 'OAuth' },
-    { name: 'YouTube',      status: 'configured', cat: 'OAuth' },
-    { name: 'Discord',      status: 'configured', cat: 'OAuth' },
-    { name: 'Battle.net',   status: 'configured', cat: 'OAuth' },
-    { name: 'Steam',        status: 'configured', cat: 'OpenID' },
-    { name: 'xbl.io (Xbox)',status: 'configured', cat: 'API' },
-    { name: 'Apex Legends', status: 'configured', cat: 'API' },
-    { name: 'Riot Games',   status: 'pending',    cat: 'OAuth', note: 'Production key in review' },
-    { name: 'Epic Games',   status: 'unconfigured', cat: 'OAuth' },
-    { name: 'Cryptomus',    status: 'pending',    cat: 'Payments', note: 'Underwriting in progress' },
-    { name: 'Gemini AI',    status: 'configured', cat: 'AI' },
-  ];
-  const color = (s) => s === 'configured' ? '#22c55e' : s === 'pending' ? '#f0a500' : '#f04060';
   return (
-    <Group title="External Integrations" icon="hub" color="#7c3aed">
-      <div style={{ fontSize: 12, color: C.textDim, marginBottom: 8 }}>
-        Read-only view. Rotate credentials via{' '}
-        <code style={{ background: '#0a0a14', padding: '1px 6px', borderRadius: 4 }}>
-          firebase functions:secrets:set
-        </code>{' '}— never store secrets in app_config.
-      </div>
-      {providers.map(p => (
+    <Group title="Integrations in use" icon="hub" color="#7c3aed">
+      <Note>
+        Read-only. Rotate credentials with{' '}
+        <code style={{ background: '#0a0a14', padding: '1px 6px', borderRadius: 4 }}>firebase functions:secrets:set</code>.
+        Live health for the services Vergr runs itself is in the System Status panel on the right.
+      </Note>
+      {INTEGRATIONS.map(p => (
         <div key={p.name} style={{
           display: 'flex', alignItems: 'center', gap: 12,
-          padding: '10px 12px', background: '#0a0a14',
-          border: `1px solid ${C.border}`, borderRadius: 8,
+          padding: '10px 12px', background: '#0a0a14', borderRadius: 8,
         }}>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{p.name}</div>
-            <div style={{ fontSize: 11, color: C.textMuted, marginTop: 2 }}>{p.cat}{p.note ? ` · ${p.note}` : ''}</div>
+            <div style={{ fontSize: 11, color: C.textMuted, marginTop: 2 }}>{p.note}</div>
           </div>
-          <span style={{
-            fontSize: 10, fontWeight: 700, padding: '4px 8px', borderRadius: 999,
-            background: `${color(p.status)}20`, color: color(p.status),
-            border: `1px solid ${color(p.status)}50`, textTransform: 'uppercase',
-          }}>{p.status}</span>
+          <span style={{ fontSize: 10, fontWeight: 700, color: C.textDim, textTransform: 'uppercase', letterSpacing: '.06em' }}>{p.cat}</span>
         </div>
       ))}
     </Group>
   );
 }
 
-function NotificationsTab({ get, setField }) {
-  return (
-    <>
-      <Group title="Delivery Settings" icon="notifications" color="#7c3aed">
-        <Field label="Quiet Hours Start (HH:MM, user-local)">
-          <TextInput value={get('quietHoursStart', '22:00')} onChange={v => setField('quietHoursStart', v)} />
-        </Field>
-        <Field label="Quiet Hours End (HH:MM, user-local)">
-          <TextInput value={get('quietHoursEnd', '08:00')} onChange={v => setField('quietHoursEnd', v)} />
-        </Field>
-        <Field label="Max Notifications Per User Per Day">
-          <TextInput type="number" value={get('maxNotificationsPerDay', 50)} onChange={v => setField('maxNotificationsPerDay', v)} />
-        </Field>
-      </Group>
-
-      <Group title="Email" icon="mail" color="#3b82f6">
-        <Field label="Email Sender Name">
-          <TextInput value={get('emailSenderName', 'VERGR')} onChange={v => setField('emailSenderName', v)} />
-        </Field>
-        <Field label="Reply-To Address">
-          <TextInput value={get('emailReplyTo', 'noreply@vergr.app')} onChange={v => setField('emailReplyTo', v)} />
-        </Field>
-        <div style={{ fontSize: 11, color: C.textMuted }}>
-          Per-template / per-channel toggles (e.g. "send event reminders by email")
-          will land in a follow-up pass once an email provider is wired.
-        </div>
-      </Group>
-    </>
-  );
-}
-
-function AppearanceTab({ get, setField }) {
-  return (
-    <>
-      <Group title="Theme" icon="palette" color="#7c3aed">
-        <Field label="Theme" hint="Dark theme only at this time">
-          <Select value={get('theme', 'dark')} onChange={() => {}}
-            options={[{ value: 'dark', label: 'Dark (locked)' }]} />
-        </Field>
-        <Field label="Accent Color (hex)">
-          <TextInput value={get('accentColor', '#7c3aed')} onChange={v => setField('accentColor', v)} />
-        </Field>
-      </Group>
-
-      <Group title="Custom CSS" icon="code" color="#f04060">
-        <Field label="Custom CSS"
-          hint="DANGEROUS. Any string here renders on every page. Test in staging first.">
-          <textarea
-            value={get('customCss', '') ?? ''}
-            onChange={e => setField('customCss', e.target.value)}
-            rows={6}
-            style={{
-              width: '100%', padding: '10px 12px',
-              background: '#0a0a14', border: `1px solid ${C.border}`, borderRadius: 8,
-              color: C.text, fontSize: 12, fontFamily: 'ui-monospace, monospace',
-              resize: 'vertical',
-            }}
-            placeholder="/* /* CSS overrides */"
-          />
-        </Field>
-      </Group>
-    </>
-  );
-}
-
-function LocalizationTab({ get, setField }) {
-  const langs = ['en', 'es', 'fr', 'de', 'pt', 'ja', 'ko', 'zh'];
-  const selected = new Set(get('supportedLanguages', ['en']) || ['en']);
-  return (
-    <Group title="Supported Languages" icon="language" color="#7c3aed">
-      <div style={{ fontSize: 12, color: C.textDim, marginBottom: 8 }}>
-        Languages that show in the user language picker. English is always
-        available regardless of this setting.
-      </div>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-        {langs.map(code => {
-          const on = selected.has(code);
-          return (
-            <button
-              key={code}
-              type="button"
-              onClick={() => {
-                const next = new Set(selected);
-                if (on) next.delete(code); else next.add(code);
-                if (!next.has('en')) next.add('en');
-                setField('supportedLanguages', Array.from(next));
-              }}
-              style={{
-                padding: '6px 14px', borderRadius: 999,
-                background: on ? `${C.accent}30` : '#0a0a14',
-                border: `1px solid ${on ? C.accent : C.border}`,
-                color: on ? '#fff' : C.textDim,
-                fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                textTransform: 'uppercase',
-              }}
-            >{code}</button>
-          );
-        })}
-      </div>
-    </Group>
-  );
-}
-
 function SystemTab({ cfg }) {
   return (
-    <Group title="System Info" icon="info" color="#7c3aed">
-      <Row label="Environment" value={cfg?.environment || 'production'} />
-      <Row label="Firebase Region" value="europe-west1" />
-      <Row label="Last Config Update" value={cfg?._updatedAt ? fmtRelative(cfg._updatedAt) : '—'} />
-      <div style={{ fontSize: 12, color: C.textDim, marginTop: 12 }}>
-        Cache purge, search reindex, and config import/export will land in a
-        follow-up pass once we wire the Cloudflare API.
-      </div>
+    <Group title="System info" icon="info" color="#7c3aed">
+      <Row label="Firebase project" value="vergr-44494" />
+      <Row label="Functions region" value="europe-west1" />
+      <Row label="Firestore database" value="vgrdb" />
+      <Row label="Last config update" value={cfg?._updatedAt ? fmtRelative(cfg._updatedAt) : '—'} />
     </Group>
   );
 }
@@ -595,8 +342,7 @@ function Row({ label, value }) {
   return (
     <div style={{
       display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-      padding: '10px 12px', background: '#0a0a14',
-      border: `1px solid ${C.border}`, borderRadius: 8,
+      padding: '10px 12px', background: '#0a0a14', borderRadius: 8,
     }}>
       <span style={{ fontSize: 12, color: C.textDim }}>{label}</span>
       <span style={{ fontSize: 13, color: C.text, fontWeight: 600 }}>{value}</span>
@@ -605,7 +351,7 @@ function Row({ label, value }) {
 }
 
 // ───────────────────────────────────────────────────────────
-// Right rail — summary + system status + quick actions
+// Right rail: summary + live system status
 // ───────────────────────────────────────────────────────────
 
 function RightRail({ cfg, dirty }) {
@@ -618,35 +364,29 @@ function RightRail({ cfg, dirty }) {
 
   return (
     <aside style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16 }}>
-        <h3 style={{ margin: 0, fontSize: 13, fontWeight: 700, color: C.text, marginBottom: 12 }}>Configuration Summary</h3>
-        <Row label="Last Updated" value={cfg?._updatedAt ? fmtRelative(cfg._updatedAt) : '—'} />
+      <div style={{ background: C.card, borderRadius: 12, padding: 16 }}>
+        <h3 style={{ margin: 0, fontSize: 13, fontWeight: 700, color: C.text, marginBottom: 12 }}>Configuration</h3>
+        <Row label="Last updated" value={cfg?._updatedAt ? fmtRelative(cfg._updatedAt) : '—'} />
         <div style={{ height: 8 }} />
-        <Row label="Dirty Fields" value={dirty ? 'Yes — save pending' : 'No'} />
+        <Row label="Unsaved changes" value={dirty ? 'Yes' : 'No'} />
       </div>
 
-      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16 }}>
-        <h3 style={{ margin: 0, fontSize: 13, fontWeight: 700, color: C.text, marginBottom: 12 }}>System Status</h3>
-        {!health && <div style={{ fontSize: 12, color: C.textDim }}>Loading…</div>}
-        {health?.services?.map(s => (
-          <div key={s.name} style={{
-            display: 'flex', alignItems: 'center', gap: 10,
-            padding: '8px 4px', borderBottom: `1px dashed ${C.border}`,
-          }}>
-            <span style={{
-              width: 8, height: 8, borderRadius: '50%',
-              background: s.status === 'healthy' ? '#22c55e' : s.status === 'down' ? '#f04060' : '#f0a500',
-              flexShrink: 0,
-            }} />
-            <span style={{ fontSize: 12, color: C.text, flex: 1 }}>{s.name}</span>
-            <span style={{
-              fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 999,
-              color: s.status === 'healthy' ? '#22c55e' : '#f04060',
-              background: s.status === 'healthy' ? '#22c55e20' : '#f0406020',
-              textTransform: 'uppercase',
-            }}>{s.status}</span>
-          </div>
-        ))}
+      <div style={{ background: C.card, borderRadius: 12, padding: 16 }}>
+        <h3 style={{ margin: 0, fontSize: 13, fontWeight: 700, color: C.text, marginBottom: 4 }}>System status</h3>
+        <div style={{ fontSize: 11, color: C.textMuted, marginBottom: 10 }}>Checked live when this screen opens.</div>
+        {!health && <div style={{ fontSize: 12, color: C.textDim }}>Checking…</div>}
+        {health?.services?.map(s => {
+          const ok = s.status === 'healthy';
+          return (
+            <div key={s.name} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 4px' }}>
+              <span style={{ width: 8, height: 8, borderRadius: '50%', background: ok ? '#22c55e' : '#f04060', flexShrink: 0 }} />
+              <span style={{ fontSize: 12, color: C.text, flex: 1 }}>{s.name}</span>
+              <span style={{ fontSize: 10, fontWeight: 700, color: ok ? '#22c55e' : '#f04060', textTransform: 'uppercase' }}>
+                {ok ? 'OK' : 'Down'}
+              </span>
+            </div>
+          );
+        })}
       </div>
     </aside>
   );

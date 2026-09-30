@@ -66,33 +66,10 @@ const dedupeByUid = (rows) => {
   });
 };
 
-// ── Mock fallbacks (only used when Firestore returns nothing) ─────────
-const MOCK_CREATORS = [
-  { name: 'NightHawk',    followers: '142K',  tags: ['FPS','Valorant'],     live: true,  verified: true },
-  { name: 'PhoenixRise',  followers: '98.7K', tags: ['VALORANT','IRL'],     live: true,  verified: true },
-  { name: 'ShadowSlayer', followers: '250K',  tags: ['Apex Legends','FPS'], live: false, verified: true },
-  { name: 'ViperX',       followers: '74.2K', tags: ['Fortnite','BR'],      live: true,  verified: true },
-  { name: 'RazeMain',     followers: '61.3K', tags: ['VALORANT','FPS'],     live: false, verified: true },
-];
-const MOCK_SQUADS = [
-  { name: 'Phoenix Rising', members: '1,245', online: 312, tags: ['VALORANT','Comp'], verified: true },
-  { name: 'Wolves Den',     members: '987',   online: 215, tags: ['Warzone','FPS'],   verified: true },
-  { name: 'Apex Predators', members: '2,341', online: 478, tags: ['Apex','Comp'],     verified: true },
-  { name: 'Royalty Esports',members: '1,876', online: 289, tags: ['Multi','Social'],  verified: true },
-];
-const MOCK_STREAMS = [
-  { title: 'RANK PUSH TO RADIANT',     creator: 'NightHawk',    game: 'VALORANT',      viewers: '12.4K' },
-  { title: 'WARZONE VIBES',             creator: 'ShadowSlayer', game: 'Warzone',       viewers: '8.7K'  },
-  { title: 'CHILL LATE NIGHT STREAM',   creator: 'AceKnight',    game: 'Just Chatting', viewers: '5.2K'  },
-  { title: 'APEX PRED LOBBIES',         creator: 'ViperX',       game: 'Apex Legends',  viewers: '3.2K'  },
-];
-const MOCK_NEWS = [
-  { category: 'Streaming',   title: 'Co-streaming is now live for Pro creators',                    time: '2h ago', tag: 'VERGR',    hot: true },
-  { category: 'Game Update', title: 'Apex Legends Season 23 drops new map and legend today',        time: '4h ago', tag: 'Apex',     hot: false },
-  { category: 'Community',   title: 'Weekly squad challenge results — Phoenix Rising takes the crown', time: '6h ago', tag: 'VERGR', hot: false },
-  { category: 'Esports',     title: 'CS2 Major qualifiers open registration — team size 5v5',       time: '8h ago', tag: 'CS2',      hot: true },
-  { category: 'Platform',    title: 'VERGR drops VP boost weekend — earn 2x VP on all activities',  time: '1d ago', tag: 'VERGR',    hot: true },
-];
+// The MOCK_CREATORS / MOCK_SQUADS / MOCK_STREAMS / MOCK_NEWS fallbacks that sat
+// here were DELETED 2026-09-21: nothing rendered them any more, and they were
+// invented gaming data (fake squads, fake streams, "CS2 Major qualifiers").
+
 const HASHTAGS = [
   { tag: '#Clutch', clips: '12.4K' }, { tag: '#1v5', clips: '8.7K' },
   { tag: '#ApexMovement', clips: '6.2K' }, { tag: '#Warzone', clips: '5.1K' },
@@ -139,7 +116,6 @@ export default function ExploreScreen() {
   const [filters, setFilters] = useState({ verifiedOnly: false, liveOnly: false });
   const [filtersOpen, setFiltersOpen] = useState(false);
   // Real live streams, sorted by boost + viewerCount + recent-likes signal.
-  // Falls back to MOCK_STREAMS if Firestore returns nothing.
   const [realStreams, setRealStreams] = useState([]);
   useEffect(() => {
     let cancelled = false;
@@ -1132,7 +1108,8 @@ function ClipsTab({ navigate, search }) {
     setLoading(true);
     getDocs(query(
       collection(db, 'posts'),
-      where('type', '==', 'clip'),
+      // A legacy 'short' is a clip. Same (type, createdAt) index serves `in`.
+      where('type', 'in', ['clip', 'short']),
       orderBy('createdAt', 'desc'),
       limit(24),
     )).then(async (snap) => {
@@ -1172,7 +1149,7 @@ function ClipsTab({ navigate, search }) {
         const author = authors[c.authorId] || {};
         const isOwn = c.authorId === currentUser?.uid;
         return (
-          <div key={c.id} onClick={() => navigate(`/post/${c.id}`)} className="group cursor-pointer relative aspect-[9/16] rounded-xl overflow-hidden bg-surface-2">
+          <div key={c.id} onClick={() => navigate(`/clip/${c.id}`)} className="group cursor-pointer relative aspect-[9/16] rounded-xl overflow-hidden bg-surface-2">
             {c.thumbnailUrl
               ? <img src={c.thumbnailUrl} alt="" className="absolute inset-0 w-full h-full object-cover" />
               : <div className="absolute inset-0 flex items-center justify-center"><Icon name="movie" size={32} className="text-text-muted/30" /></div>}

@@ -76,7 +76,8 @@ export function BoostPanel({ streamId, stream, onClose, onBoosted }) {
   const { showToast } = useUI();
   const [busy, setBusy] = useState(null);
 
-  const coins = Number(wallet?.balance) || 0;
+  // Boost coins (rewarded ads) spend here first, server-side: functions/boostCoins.js.
+  const coins = (Number(wallet?.balance) || 0) + (Number(wallet?.boostCoins) || 0);
   const tokens = Number(wallet?.boostTokens) || 0;
   const reach = boostReach(stream);
   const atCeiling = reach >= BOOST_REACH_CEILING;

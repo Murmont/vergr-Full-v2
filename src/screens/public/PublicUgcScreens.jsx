@@ -213,7 +213,8 @@ export function PublicPostScreen() {
         let comments = [];
         try {
           const cq = await getDocs(query(collection(db, 'posts', postId, 'comments'), orderBy('createdAt', 'desc'), limit(8)));
-          comments = await Promise.all(cq.docs.map(async (d) => {
+          // A moderator-hidden comment never shows on the public page.
+          comments = await Promise.all(cq.docs.filter((d) => d.data().hidden !== true).map(async (d) => {
             const c = d.data();
             const cw = await loadMaskedUser(c.authorId || c.userId);
             return { ...c, who: cw?.hidden ? null : cw };
@@ -335,7 +336,7 @@ export function PublicUserScreen() {
   const { who, raw, posts, loading, missing } = state;
   useSeo(who ? {
     title: who.username ? `${who.displayName} (@${who.username}) on VERGR` : `${who.displayName} on VERGR`,
-    description: (raw?.bio || `${who.displayName} competes, streams, and earns on VERGR.`).slice(0, 200),
+    description: (raw?.bio || `${who.displayName} creates, streams, and earns on VERGR.`).slice(0, 200),
     canonical: `https://vergr.app/user/${id}`,
   } : {});
 

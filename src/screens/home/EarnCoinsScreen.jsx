@@ -28,26 +28,26 @@ import { resolveTier } from '../../utils/tierSystem';
 const QUEST_DEFS = {
   daily: [
     { id: 'daily_post', title: 'Create a Post', description: 'Share something with the community', reward: 15, currency: 'vp', target: 1 },
-    { id: 'daily_like', title: 'Like 5 Posts', description: 'Engage with the community', reward: 5, currency: 'vp', target: 5 },
-    { id: 'daily_squad_msg', title: 'Squad Activity', description: 'Send a message in any squad', reward: 10, currency: 'vp', target: 1 },
+    { id: 'daily_like', title: 'Like 5 Posts', description: 'Engage with the community', reward: 5, currency: 'vp', target: 5, serverVerified: true },
+    { id: 'daily_squad_msg', title: 'Squad Activity', description: 'Send a message in any squad', reward: 10, currency: 'vp', target: 1, serverVerified: true },
   ],
   weekly: [
     { id: 'weekly_posts', title: 'Content Creator', description: 'Create 3 posts this week', reward: 50, currency: 'vp', target: 3 },
     { id: 'weekly_follow', title: 'Social Butterfly', description: 'Follow 10 new people this week', reward: 50, currency: 'vp', target: 10 },
   ],
   special: [
-    { id: 'creator_content', title: 'Creator Content', description: 'Post 10 times with 5+ likes and 5+ comments each', reward: 100, currency: 'vp', target: 10, oneTime: true },
-    { id: 'first_squad', title: 'Join a Squad', description: 'Join or create your first squad', reward: 50, currency: 'vp', target: 1, oneTime: true },
-    { id: 'first_stream', title: 'Go Live', description: 'Broadcast your first live stream', reward: 100, currency: 'vp', target: 1, oneTime: true },
+    { id: 'creator_content', title: 'Creator Content', description: 'Post 10 times with 5+ likes and 5+ comments each', reward: 100, currency: 'vp', target: 10, oneTime: true, serverVerified: true },
+    { id: 'first_squad', title: 'Join a Squad', description: 'Join or create your first squad', reward: 50, currency: 'vp', target: 1, oneTime: true, serverVerified: true },
+    { id: 'first_stream', title: 'Go Live', description: 'Broadcast your first live stream', reward: 100, currency: 'vp', target: 1, oneTime: true, serverVerified: true },
     // Profile-completion rewards (founder-approved 2026-07-09). Server
     // verifies the data exists (avatar set, bio length, etc.) and locks the
     // amount — claiming without the data returns a friendly error toast.
-    { id: 'profile_avatar', title: 'Add a Profile Picture', description: 'Upload an avatar so gamers recognise you', reward: 500, currency: 'vp', target: 1, oneTime: true },
-    { id: 'profile_banner', title: 'Add a Profile Banner', description: 'Give your profile header some art', reward: 300, currency: 'vp', target: 1, oneTime: true },
-    { id: 'profile_bio', title: 'Write Your Bio', description: 'At least 20 characters about you', reward: 200, currency: 'vp', target: 1, oneTime: true },
-    { id: 'profile_interests', title: 'Pick Your Interests', description: 'Choose 3+ game genres in onboarding or Edit Profile', reward: 200, currency: 'vp', target: 1, oneTime: true },
-    { id: 'first_follow_5', title: 'Follow 5 Gamers', description: 'Fill your feed with people worth watching', reward: 300, currency: 'vp', target: 1, oneTime: true },
-    { id: 'profile_gaming_link', title: 'Connect a Gaming Account', description: 'Link Twitch, Discord or Steam (Settings → Linked accounts), then claim', reward: 500, currency: 'vp', target: 1, oneTime: true },
+    { id: 'profile_avatar', title: 'Add a Profile Picture', description: 'Upload an avatar so people recognise you', reward: 500, currency: 'vp', target: 1, oneTime: true, serverVerified: true },
+    { id: 'profile_banner', title: 'Add a Profile Banner', description: 'Give your profile header some art', reward: 300, currency: 'vp', target: 1, oneTime: true, serverVerified: true },
+    { id: 'profile_bio', title: 'Write Your Bio', description: 'At least 20 characters about you', reward: 200, currency: 'vp', target: 1, oneTime: true, serverVerified: true },
+    { id: 'profile_interests', title: 'Pick Your Interests', description: 'Choose 3 or more interests in onboarding or Edit Profile', reward: 200, currency: 'vp', target: 1, oneTime: true, serverVerified: true },
+    { id: 'first_follow_5', title: 'Follow 5 People', description: 'Fill your feed with people worth watching', reward: 300, currency: 'vp', target: 1, oneTime: true, serverVerified: true },
+    { id: 'profile_gaming_link', title: 'Connect an Account', description: 'Add Twitch, Discord, YouTube or another account in Settings, Connected accounts, then claim', reward: 500, currency: 'vp', target: 1, oneTime: true, serverVerified: true },
     // Refer-a-Friend: reward is 5000 VP to the referrer, 3000 VP to the
     // invitee. Unlocks when the invitee (a) signed up via the referrer's
     // link, (b) added their phone number, and (c) either joined a squad or
@@ -179,7 +179,7 @@ export default function EarnCoinsScreen() {
     { img: '/brand/earn/quest-daily.webp', bg: '/brand/earn/bg-daily.webp', icon: 'star', title: 'Daily Quests', desc: 'Complete tasks for VP', reward: '15-30 VP/day', color: 'text-brand-violet', action: () => setActiveTab('daily') },
     { img: '/brand/earn/quest-streak.webp', bg: '/brand/earn/bg-streak.webp', icon: 'login', title: '5-Day Streak', desc: 'Log in 5 days straight', reward: '5 coins + 50 VP', color: 'text-brand-gold', action: () => navigate('/') },
     { img: '/brand/earn/quest-phone.webp', bg: '/brand/earn/bg-phone.webp', icon: 'phone', title: 'Add Phone Number', desc: 'Unlock contact invites', reward: '1000 VP', color: 'text-brand-violet-light', action: () => navigate('/messages/new') },
-    { img: '/brand/earn/quest-tournaments.webp', bg: '/brand/earn/bg-tournaments.webp', icon: 'live_tv', title: 'Go Live', desc: 'Stream and receive tips from viewers', reward: 'Coins + VP', color: 'text-brand-ember', action: () => navigate('/go-live') },
+    { icon: 'live_tv', title: 'Go Live', desc: 'Stream and receive tips from viewers', reward: 'Coins + VP', color: 'text-brand-ember', action: () => navigate('/go-live') },
     { img: '/brand/earn/quest-refer.webp', bg: '/brand/earn/bg-refer.webp', icon: 'person_add', title: 'Refer Friends', desc: 'Invite a friend who sets up properly', reward: '5000 VP (+3000 VP for them)', color: 'text-brand-pink', action: () => setActiveTab('special') },
     { img: '/brand/earn/quest-levelup.webp', bg: '/brand/earn/bg-levelup.webp', icon: 'trending_up', title: 'Level Up', desc: 'Rings, badges and standing as you rank up', reward: 'Ranks 1–100', color: 'text-brand-gold', action: () => navigate('/settings/ranks') },
     { bg: '/brand/earn/bg-liteplans.webp', icon: 'workspace_premium', title: 'Lite / Pro Plans', desc: '1.5×/2× VP + monthly VP & coins', reward: '+1k–3k VP / mo', color: 'text-brand-violet', action: () => navigate('/settings/subscription') },
@@ -275,7 +275,7 @@ export default function EarnCoinsScreen() {
               {EARN_METHODS.map((method, i) => (
                 <button key={i} onClick={method.action}
                   className="relative overflow-hidden p-3 rounded-2xl border border-white/[0.08] bg-surface-1 text-left hover:border-white/[0.16] transition-colors"
-                  style={{ backgroundImage: `url('${method.bg}')`, backgroundSize: 'auto 100%', backgroundPosition: 'right center', backgroundRepeat: 'no-repeat' }}>
+                  style={method.bg ? { backgroundImage: `url('${method.bg}')`, backgroundSize: 'auto 100%', backgroundPosition: 'right center', backgroundRepeat: 'no-repeat' } : undefined}>
                   <div className="absolute inset-0 bg-gradient-to-t from-[#0B0B14]/95 via-[#0B0B14]/70 to-[#0B0B14]/35" />
                   <div className="relative z-10">
                     {method.img
@@ -320,7 +320,7 @@ export default function EarnCoinsScreen() {
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-semibold text-text-primary">{quest.title}</p>
                         <p className="text-xs text-text-muted">{quest.description}</p>
-                        {!completed && (
+                        {!completed && !quest.serverVerified && (
                           <>
                             <div className="w-full h-1.5 bg-surface-3 rounded-full mt-2 overflow-hidden">
                               <div className="h-full bg-brand-violet rounded-full transition-all" style={{ width: `${Math.min((progress / quest.target) * 100, 100)}%` }} />
@@ -331,7 +331,7 @@ export default function EarnCoinsScreen() {
                       </div>
                       <div className="text-right shrink-0">
                         <p className={`text-xs font-dmmono font-bold ${quest.currency === "coins" ? "text-brand-gold" : "text-brand-violet"}`}>{quest.currency === "coins" ? "●" : "★"} {quest.reward} {quest.currency === "coins" ? "" : "VP"}</p>
-                        {completed && !claimed && (
+                        {(completed || quest.serverVerified) && !claimed && !quest.external && (
                           <button
                             onClick={() => handleClaim(quest)}
                             disabled={claiming === quest.id}
@@ -359,7 +359,7 @@ export default function EarnCoinsScreen() {
               {EARN_METHODS.map((method, i) => (
                 <button key={i} onClick={method.action}
                   className="w-full flex-1 min-h-[84px] relative overflow-hidden px-4 py-3 rounded-2xl border border-white/[0.08] bg-surface-1 text-left hover:border-white/[0.16] transition-colors"
-                  style={{ backgroundImage: `url('${method.bg}')`, backgroundSize: 'auto 100%', backgroundPosition: 'right center', backgroundRepeat: 'no-repeat' }}>
+                  style={method.bg ? { backgroundImage: `url('${method.bg}')`, backgroundSize: 'auto 100%', backgroundPosition: 'right center', backgroundRepeat: 'no-repeat' } : undefined}>
                   <div className="absolute inset-0 bg-gradient-to-r from-[#0B0B14]/95 via-[#0B0B14]/60 to-[#0B0B14]/10" />
                   <div className="relative z-10 flex items-center gap-3 h-full">
                     {method.img
@@ -407,7 +407,7 @@ export default function EarnCoinsScreen() {
                       <div className="flex-1 min-w-0">
                         <p className="text-base font-semibold text-text-primary">{quest.title}</p>
                         <p className="text-sm text-text-muted">{quest.description}</p>
-                        {!completed && (
+                        {!completed && !quest.serverVerified && (
                           <>
                             <div className="w-full h-2 bg-surface-3 rounded-full mt-3 overflow-hidden">
                               <div className="h-full bg-brand-violet rounded-full transition-all" style={{ width: `${Math.min((progress / quest.target) * 100, 100)}%` }} />
@@ -425,7 +425,7 @@ export default function EarnCoinsScreen() {
                             {quest.externalLabel || 'Open'}
                           </button>
                         )}
-                        {!quest.external && completed && !claimed && (
+                        {!quest.external && (completed || quest.serverVerified) && !claimed && (
                           <button
                             onClick={() => handleClaim(quest)}
                             disabled={claiming === quest.id}

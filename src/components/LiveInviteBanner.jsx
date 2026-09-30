@@ -117,8 +117,10 @@ export default function LiveInviteBanner() {
     return (
       <div style={{
         position: 'fixed', top: 0, left: 0, right: 0, zIndex: 9998,
+        // The strip's colour runs up behind the status bar; its text starts below it.
         padding: '10px 12px',
-        background: `linear-gradient(180deg, rgba(124,58,237,0.95), rgba(180,79,255,0.9))`,
+        paddingTop: 'calc(env(safe-area-inset-top, 0px) + 10px)',
+        background: 'linear-gradient(180deg, #6D2FE0, #9A45F2)',
         boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
         fontFamily: '"DM Sans", system-ui, sans-serif', color: '#fff',
       }}>

@@ -22,7 +22,7 @@ export default {
         "Stream plans: we are going live Friday, here is the lineup and the time.",
         "Events: game night Saturday 8pm, RSVP on the events screen.",
         "Decisions: treasury spends, role changes, rule updates.",
-        "Wins: celebrate loudly. A trophy announcement is recruitment material."
+        "Milestones: celebrate loudly. A squad hitting a goal is recruitment material."
       ]
     },
     {

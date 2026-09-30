@@ -34,6 +34,7 @@ const safeCount = (q) => q.count().get().then(r => r.data().count).catch(() => 0
 const toMs = (t) => t && typeof t.toMillis === 'function' ? t.toMillis() : (typeof t === 'number' ? t : null);
 
 let overviewCache = { at: 0, data: null };
+let liveNowCache = { at: 0, data: null };
 let geoCache = { at: 0, data: null };
 
 async function guardCaller(uid) { return await requireAdminScreen(uid, 'stats'); }
@@ -49,7 +50,7 @@ exports.adminGetLiveStatsOverview = functions.https.onCall(
     await guardCaller(uid);
     const now = Date.now();
     if (overviewCache.data && (now - overviewCache.at) < 10_000) {
-      return { ...overviewCache.data, cached: true };
+      return withLiveNow(request, { ...overviewCache.data, cached: true }, now);
     }
 
     const users = db.collection('users');
@@ -104,9 +105,39 @@ exports.adminGetLiveStatsOverview = functions.https.onCall(
       asOf: now,
     };
     overviewCache = { at: now, data };
-    return data;
+    return withLiveNow(request, data, now);
   }
 );
+
+// What is live right now, so an admin can watch it or end it (Live Stats → Live
+// now). No admin screen listed live streams before, only a count, so there was
+// nowhere to act from.
+// ⚠ The overview polls every 10s. The list is read only when the admin has it
+// OPEN (`liveList: true`), only when something is live, capped at 25, and
+// cached for 30s: never on the plain KPI refresh.
+async function withLiveNow(request, data, now) {
+  if (request.data?.liveList !== true) return data;
+  if (!data.liveStreams) return { ...data, liveNow: [] };
+  if (liveNowCache.data && (now - liveNowCache.at) < 30_000) return { ...data, liveNow: liveNowCache.data };
+  let liveNow = [];
+  try {
+    const ls = await db.collection('streams').where('status', '==', 'live').limit(25).get();
+    liveNow = ls.docs.map((d) => {
+      const s = d.data() || {};
+      return {
+        id: d.id,
+        title: s.title || '',
+        hostUid: s.hostUid || null,
+        hostUsername: s.hostUsername || null,
+        viewerCount: Number(s.viewerCount) || 0,
+        startedAt: toMs(s.startedAt) || toMs(s.createdAt) || 0,
+        ingestType: s.ingestType || null,
+      };
+    }).sort((a, b) => b.viewerCount - a.viewerCount);
+    liveNowCache = { at: now, data: liveNow };
+  } catch { /* the count still shows if the list fails */ }
+  return { ...data, liveNow };
+}
 
 // ════════════════════════════════════════════════════════════════════
 // EVENT LOAD — committed concurrent-viewer load from ticketed events.
@@ -404,7 +435,10 @@ exports.adminGetEngagementStats = functions.https.onCall(
       safeCount(db.collection('streams').where('createdAt', '>=', dayAgo)),
       safeCount(db.collection('streams').where('createdAt', '>=', weekAgo)),
       safeCount(db.collection('tournaments').where('createdAt', '>=', weekAgo)),
-      safeCount(db.collection('platform_commissions').where('createdAt', '>=', dayAgo)),
+      // Was platform_commissions, the ledger of a 10% tip fee that no longer
+      // exists, so this tile read 0 whatever happened. A tip writes exactly one
+      // `tip_sent` row (sendTip), indexed on (type, createdAt).
+      safeCount(db.collection('transactions').where('type', '==', 'tip_sent').where('createdAt', '>=', dayAgo)),
       safeCount(db.collection('reports').where('status', '==', 'pending')),
     ]);
 
@@ -418,8 +452,6 @@ exports.adminGetEngagementStats = functions.https.onCall(
           date: m.date,
           signups: m.signups?.total || 0,
           newPaid: (m.subscriptions?.newLite || 0) + (m.subscriptions?.newPro || 0),
-          revenueEUR: m.revenue?.subscriptionEUR || 0,
-          platformCoins: m.revenue?.totalPlatformCoins || 0,
         };
       }).reverse();
     } catch { /* rollup may not have run yet */ }
@@ -664,7 +696,8 @@ async function fetchR2Usage(accountId, H) {
 // cloud.google.com/secret-manager/pricing + /scheduler/pricing if a bill ever
 // disagrees. Labelled 'estimate' in the UI — never call it a bill.
 const GCP_PROJECT = process.env.GCLOUD_PROJECT || 'vergr-44494';
-const SECRET_VERSION_USD = 0.06;   // per ACTIVE version per month
+const SECRET_VERSION_USD = 0.06;   // per ACTIVE (enabled OR disabled) version per month
+const SECRET_FREE_VERSIONS = 6;    // per billing account
 const SCHEDULER_JOB_USD = 0.10;    // per job per month
 const SCHEDULER_FREE_JOBS = 3;
 
@@ -705,10 +738,15 @@ async function fetchGcpCosts() {
     const r = await axios.get(`https://secretmanager.googleapis.com/v1/${s.name}/versions?pageSize=100`,
       { ...H, validateStatus: () => true });
     if (r.status >= 400) continue;
-    const enabled = (r.data?.versions || []).filter((v) => v.state === 'ENABLED');
-    versions += enabled.length;
-    // >1 enabled version = older ones still billing for nothing.
-    if (enabled.length > 1) stale.push({ name: s.name.split('/').pop(), versions: enabled.length });
+    // ⚠ DISABLED IS BILLED TOO. Google: a version is "active" when it is in
+    // any of these states: Enabled and Disabled. Only DESTROYED is free. This
+    // used to count ENABLED alone, so the panel under-reported the bill by
+    // every version someone had switched off to "stop paying" for it.
+    const active = (r.data?.versions || []).filter((v) => v.state === 'ENABLED' || v.state === 'DISABLED');
+    versions += active.length;
+    // >1 active version = older ones still billing. Destroy them (after
+    // checking no deployed function pins one); disabling does not help.
+    if (active.length > 1) stale.push({ name: s.name.split('/').pop(), versions: active.length });
   }
   stale.sort((a, b) => b.versions - a.versions);
 
@@ -718,7 +756,8 @@ async function fetchGcpCosts() {
   );
   const jobs = jr.status < 400 ? (jr.data?.jobs || []).length : null;
 
-  const secretsUsd = versions * SECRET_VERSION_USD;
+  // The first 6 active versions per billing account are free.
+  const secretsUsd = Math.max(0, versions - SECRET_FREE_VERSIONS) * SECRET_VERSION_USD;
   const schedulerUsd = jobs == null ? 0 : Math.max(0, jobs - SCHEDULER_FREE_JOBS) * SCHEDULER_JOB_USD;
   const wastedVersions = stale.reduce((a, s) => a + (s.versions - 1), 0);
 
@@ -785,7 +824,7 @@ exports.adminGetCostSnapshot = functions.https.onCall(
     // build lacks fields this UI now renders (e.g. hetzner.accruedEur), which
     // would paint a confident €0.00 until the 6h TTL lapsed. Bump SNAPSHOT_V
     // whenever the returned shape changes.
-    const SNAPSHOT_V = 3;
+    const SNAPSHOT_V = 4; // 4: disabled secret versions are counted (Google bills them)
     const fresh = now - (cached?.latest?.asOf || 0) < 6 * 3600 * 1000;
     if (cached?.latest && !force && fresh && cached.latest.v === SNAPSHOT_V) {
       return { ...cached.latest, history: cached.history || [], cached: true };

@@ -442,7 +442,7 @@ export default function BlockForm({ block, patch }) {
       return (
         <div className="flex flex-col gap-2">
           <DigitalProductPicker uid={uid} value={block.productId} onChange={(p) => patch({ productId: p?.id || '' })} />
-          <Hint>Sells one of your products (digital download or physical item) right on the page. Buyers pay with coins and you keep 92%, credited to your earnings straight away. Create and manage products in Vergr Shop.</Hint>
+          <Hint>Shows a product from your connected Shopify store. Buyers check out on your store. Selling for Coins is turned off.</Hint>
         </div>
       );
 
@@ -534,13 +534,14 @@ function ShopCatalogForm({ block, patch, showToast }) {
 function DigitalProductPicker({ uid, value, onChange }) {
   const [products, setProducts] = useState(null);
   useEffect(() => {
-    if (uid) getVergrMeProducts(uid).then(setProducts).catch(() => setProducts([]));
+    // Store-synced products only: selling for Coins is switched off (2026-09-22).
+    if (uid) getVergrMeProducts(uid).then((all) => setProducts(all.filter((p) => p.checkoutMode === 'permalink'))).catch(() => setProducts([]));
   }, [uid]);
   if (products === null) return <p className="text-[11px] text-text-muted">Loading your products…</p>;
   if (products.length === 0) {
     return (
       <p className="text-[11px] text-text-muted">
-        No products yet — create one in the <span className="text-brand-violet-light font-semibold">Products</span> tab first.
+        No store products yet. Connect your Shopify store in Vergr Shop to show its products here.
       </p>
     );
   }
@@ -553,7 +554,7 @@ function DigitalProductPicker({ uid, value, onChange }) {
       <option value="">Pick a product…</option>
       {products.map((p) => (
         <option key={p.id} value={p.id}>
-          {p.name || 'Untitled'} · {Number(p.priceCoins || 0).toLocaleString()}c{p.published === false ? ' (hidden)' : ''}
+          {p.name || 'Untitled'}{(p.variants?.[0]?.storePrice || p.storePrice) ? ` · ${p.variants?.[0]?.storePrice || p.storePrice} ${p.storeCurrency || ''}` : ''}{p.published === false ? ' (hidden)' : ''}
         </option>
       ))}
     </select>

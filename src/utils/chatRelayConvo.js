@@ -1,3 +1,4 @@
+import { dispatchVerifyPrompt } from './emailGate';
 // chatRelayConvo — WebSocket client for the vergr-chat relay's DM + group
 // endpoints (see infra/chat/dm.go).
 //
@@ -72,7 +73,9 @@ export async function connectConversation({
       switch (m.type) {
         case 'hello':  onHello(m); onPolicy(m); break;
         case 'msg':    onMessage(m); break;
-        case 'reject': onReject(m); break;
+        // An unverified email may read but not speak: explain it once, here, for
+        // every chat surface, then let the screen mark the message as failed.
+        case 'reject': if (m.reason === 'verify-email') dispatchVerifyPrompt('send messages'); onReject(m); break;
         // Sent when a gate changes mid-session — currently only the stranger-DM
         // media block lifting because the other person followed back.
         case 'policy': onPolicy(m); break;

@@ -9,19 +9,10 @@ import Icon from '../../components/Icon';
 import AuthShell from '../../components/auth/AuthShell';
 import { authErrorMessage } from '../../utils/authErrors';
 
-// Read a pending referrer id from (in order): the current URL's ?ref= param,
-// localStorage (set when the user first landed on any page via an invite),
-// or null. The invite link is `https://vergr.app/reflink?ref=<uid>` — the
-// AppRouter root handler stashes the value into localStorage on mount so it
-// survives the multi-step signup flow.
-function getPendingReferrerId() {
-  try {
-    const urlRef = new URLSearchParams(window.location.search).get('ref')
-      || new URLSearchParams(window.location.hash.split('?')[1] || '').get('ref');
-    if (urlRef) return urlRef;
-    return localStorage.getItem('vergr_ref') || null;
-  } catch { return null; }
-}
+// The pending referrer: the URL's ?ref=, a stashed value, or the Play install
+// referrer. One definition, shared with onboarding (Google signups) so no path
+// reads it differently.
+import { getPendingReferrerId } from '../../utils/referral';
 
 // Suggest a handle from a display name (TikTok-style): sanitize to the username
 // charset. Returns '' if nothing usable, so we never force a bad handle.
@@ -123,7 +114,7 @@ export default function SignUpStep2() {
       <div className="w-full">
         <div className="flex justify-center mb-8 lg:hidden"><VergrLogo size={44} /></div>
         <h1 className="font-syne text-2xl font-bold text-center mb-1">Choose Your Identity</h1>
-        <p className="text-text-secondary text-center mb-8">This is how gamers will find you</p>
+        <p className="text-text-secondary text-center mb-8">This is how people will find you</p>
 
         <div className="flex flex-col gap-5">
           {/* Display name first — typing it auto-suggests a handle (TikTok-style),

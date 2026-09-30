@@ -19,10 +19,10 @@ import { useUI } from '../../context/UIContext';
 import { useLayout } from '../../context/LayoutContext';
 import useResponsive from '../../hooks/useResponsive';
 import { IS_NATIVE_BUILD } from '../../utils/platform';
-import { getUserPosts, getBookmarks, getFollowers, getFollowing, getLikedPosts, getUserSquads, getTaggedPosts, getPost } from '../../firebase/firestore';
+import { getUserPosts, getBookmarks, countFollowers, countFollowing, getLikedPosts, getUserSquads, getTaggedPosts, getPost } from '../../firebase/firestore';
 import NameAudioButton from '../../components/profile/NameAudioButton';
 import useHeaderCollapse from '../../hooks/useHeaderCollapse';
-import { bannerGradient, CountUpNumber, MiniDockHeader } from '../../components/profile/profilePolish';
+import { bannerGradient, CountUpNumber, MiniDockHeader, ACCENT_CHIP, SOLID_CHIP } from '../../components/profile/profilePolish';
 import { themeStyle, themeTokens, fieldStyle, headerLightStyle } from '../../utils/profileThemes';
 import '../../styles/surface.css';
 import { accentFor } from '../../utils/rankUnlocks';
@@ -32,7 +32,11 @@ import BadgesShowcase from '../../components/BadgesShowcase';
 import UserName from '../../components/UserName';
 import RankBadge from '../../components/RankBadge';
 import MilestoneCase from '../../components/profile/MilestoneCase';
-import { Ambilight, AvatarOrbit, useEffectEnabled } from '../../components/effects';
+import { Ambilight, useEffectEnabled } from '../../components/effects';
+import { useLiveUsers } from '../../context/LiveUsersContext';
+import { isShortFormat, sharesToFeed, isMediaPost } from '../../utils/helpers';
+import { withRef } from '../../utils/shareRef';
+import { vergrMeUrl } from '../../utils/vergrMeUrl';
 import TwitchMirrorPlayer from '../../components/streams/TwitchMirrorPlayer';
 import UserAvatar from '../../components/UserAvatar';
 import CachedImg from '../../components/CachedImg';
@@ -40,11 +44,13 @@ import ProfileBanner from '../../components/profile/ProfileBanner';
 import Icon from '../../components/Icon';
 import MyQrModal from '../../components/messages/MyQrModal';
 import { presenceVisible } from '../../utils/presence';
-import PostCard from '../../components/PostCard';
+import { ProfilePostList, TopClipsList } from '../../components/profile/ProfileGrid';
 import { VPIcon } from '../../components/CoinIcon';
 import CreateComposer from '../../components/composer/CreateComposer';
 import ProfileCompletionCard from '../../components/profile/ProfileCompletionCard';
 import { shareImOnVergrCard } from '../../utils/shareCard';
+import { socialsToList, socialIcon, socialLabel, openSocialLink } from '../../utils/profileSocials';
+import LinkedHandles from '../../components/profile/LinkedHandles';
 
 const PROFILE_TABS = ['Posts', 'Media', 'Clips', 'Likes', 'Bookmarks', 'Tagged'];
 
@@ -59,6 +65,9 @@ export default function ProfileScreen() {
   const [activeTab, setActiveTab] = useState('Posts');
   const [posts, setPosts] = useState([]);
   const [loadingPosts, setLoadingPosts] = useState(false);
+  // False until the first posts request settles, so the rail draws placeholders
+  // instead of "0" and "No clips yet" for an account that has clips.
+  const [postsLoaded, setPostsLoaded] = useState(false);
   const [bookmarks, setBookmarks] = useState([]);
   const [likedPosts, setLikedPosts] = useState([]);
   const [taggedPosts, setTaggedPosts] = useState([]);
@@ -84,8 +93,10 @@ export default function ProfileScreen() {
   const themed   = themeId !== 'default';
   // Unlockable effects. The hook takes the profile of whoever the effect
   // BELONGS TO — here that is you, because this screen is your own profile.
-  const orbitOn     = useEffectEnabled('orbit', profile);
   const ambilightOn = useEffectEnabled('ambilight', profile);
+  // Live is the one ring an avatar carries, on your own profile too.
+  const { isUserLive, liveStreamFor } = useLiveUsers();
+  const ownLive = !!(currentUser?.uid && isUserLive?.(currentUser.uid));
   const [followerCount, setFollowerCount] = useState(0);
   const [followingCount, setFollowingCount] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -105,7 +116,7 @@ export default function ProfileScreen() {
 
   // Right panel
   useEffect(() => {
-    setRightPanel(<OwnerRightPanel posts={posts} navigate={navigate} profile={profile} squads={mySquads} />);
+    setRightPanel(<OwnerRightPanel posts={posts} loaded={postsLoaded} navigate={navigate} profile={profile} squads={mySquads} onViewClips={() => setActiveTab('Clips')} />);
     setContentAlign('left');
     // Profile pages are black, shell included. Removing the class on unmount
     // restores #0B0B14 everywhere else, so this cannot leak into other routes.
@@ -114,7 +125,7 @@ export default function ProfileScreen() {
       setRightPanel(null); setContentAlign('center');
       document.body.classList.remove('vg-black-shell');
     };
-  }, [setRightPanel, setContentAlign, posts, navigate, profile, mySquads]);
+  }, [setRightPanel, setContentAlign, posts, postsLoaded, navigate, profile, mySquads]);
 
   useEffect(() => {
     if (!currentUser?.uid) return;
@@ -122,9 +133,9 @@ export default function ProfileScreen() {
     getUserPosts(currentUser.uid, 30)
       .then(setPosts)
       .catch(console.error)
-      .finally(() => setLoadingPosts(false));
-    getFollowers(currentUser.uid).then(r => setFollowerCount(r?.length || 0)).catch(() => {});
-    getFollowing(currentUser.uid).then(r => setFollowingCount(r?.length || 0)).catch(() => {});
+      .finally(() => { setLoadingPosts(false); setPostsLoaded(true); });
+    countFollowers(currentUser.uid).then(n => setFollowerCount(n || 0)).catch(() => {});
+    countFollowing(currentUser.uid).then(n => setFollowingCount(n || 0)).catch(() => {});
     getBookmarks(currentUser.uid).then(setBookmarks).catch(() => {});
     getLikedPosts(currentUser.uid, 40).then(setLikedPosts).catch(() => {});
     getTaggedPosts(currentUser.uid, 30).then(setTaggedPosts).catch(() => {});
@@ -154,15 +165,15 @@ export default function ProfileScreen() {
 
   const filteredPosts = useMemo(() => {
     let list;
-    if (activeTab === 'Media') list = posts.filter(p => p.imageUrl || p.videoUrl);
-    else if (activeTab === 'Clips') list = posts.filter(p => p.type === 'clip');
+    if (activeTab === 'Media') list = posts.filter(isMediaPost);
+    else if (activeTab === 'Clips') list = posts.filter(p => isShortFormat(p.type));
     else if (activeTab === 'Likes') list = likedPosts;       // posts the user liked (any author)
     else if (activeTab === 'Bookmarks') list = bookmarks;
     else if (activeTab === 'Tagged') list = taggedPosts;     // posts where you were @mentioned (any author)
     else {
       // Posts tab: pinned render in their own row above, so drop them here.
       const pinnedIds = new Set(pinnedPosts.map(p => p.id));
-      list = posts.filter(p => !pinnedIds.has(p.id));
+      list = posts.filter(p => !pinnedIds.has(p.id) && sharesToFeed(p));
     }
     const sorted = [...list];
     if (sortBy === 'likes') sorted.sort((a, b) => (b.likeCount || 0) - (a.likeCount || 0));
@@ -198,17 +209,14 @@ export default function ProfileScreen() {
           black, which is what the founder asked for and is also just correct:
           a pale wash over black is grey, so a page-wide wash makes a black page
           grey. The light lives where it falls onto something. */}
-      {/* AMBILIGHT sits OUTSIDE the banner block, not inside it: the banner is
-          overflow-hidden (it has to be, for the parallax), so light drawn
-          within it would be clipped at exactly the edges it needs to cross.
-
-          This box is 400px tall against a 220px banner — it OWNS the 180px
-          below, which is the only direction a full-bleed banner leaves free.
-          Ambilight fills whatever box it is given and never reaches outside it,
-          so the area it can light is decided here, once, and cannot creep. */}
+      {/* AMBILIGHT fills the banner + header + stats block and fades out at the
+          bottom of it (Ambilight `fade="bottom"`). A fixed 400px box with a black
+          feather used to decide where the light stopped, and on the phone that
+          fixed edge cut through the stats numbers. The block now decides. */}
+      <div className="relative">
       {ambilightOn && profile?.banner && (
-        <div className="absolute inset-x-0 top-0 h-[400px] pointer-events-none" style={{ zIndex: -1 }}>
-          <Ambilight src={profile.banner} videoRef={bannerVideoRef} enabled spread={180} intensity={0.72} feather="#000000" />
+        <div className="absolute inset-0 pointer-events-none" style={{ zIndex: -1 }}>
+          <Ambilight src={profile.banner} videoRef={bannerVideoRef} enabled intensity={0.72} fade="bottom" />
         </div>
       )}
       <div className="relative h-[220px] overflow-hidden"
@@ -269,11 +277,13 @@ export default function ProfileScreen() {
             as a flat coloured rectangle with hard edges. */}
           <button
             onClick={() => {
-              if (navigator.share) navigator.share({ title: displayName, url: window.location.href });
-              else navigator.clipboard?.writeText(window.location.href).then(() => showToast?.('Profile link copied', 'success'));
+              // The public profile page, never this window's own address.
+              const url = withRef(vergrMeUrl(profile?.username || currentUser?.uid));
+              if (navigator.share) navigator.share({ title: displayName, url }).catch(() => {});
+              else navigator.clipboard?.writeText(url).then(() => showToast?.('Profile link copied', 'success'));
             }}
             className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-[12px] font-semibold text-white transition-colors hover:brightness-125"
-            style={{ background: 'rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.15)', backdropFilter: 'blur(8px)' }}
+            style={{ background: '#15151F' }}
           >
             <Icon name="share" size={13} /> Share Profile
           </button>
@@ -283,7 +293,7 @@ export default function ProfileScreen() {
             onClick={() => navigate('/settings')}
             aria-label="Settings"
             className="w-[34px] h-[34px] flex items-center justify-center rounded-lg text-white"
-            style={{ background: 'rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.15)', backdropFilter: 'blur(8px)' }}
+            style={{ background: '#15151F' }}
           >
             <Icon name="settings" size={16} />
           </button>
@@ -291,7 +301,7 @@ export default function ProfileScreen() {
             <button
               onClick={(e) => { e.stopPropagation(); setMenuOpen(o => !o); }}
               className="w-[34px] h-[34px] flex items-center justify-center rounded-lg text-white"
-              style={{ background: 'rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.15)', backdropFilter: 'blur(8px)' }}
+              style={{ background: '#15151F' }}
             >
               <Icon name="more_vert" size={16} />
             </button>
@@ -305,7 +315,7 @@ export default function ProfileScreen() {
                 <DropdownItem icon="edit" label="Edit Profile" onClick={() => { setMenuOpen(false); navigate('/edit-profile'); }} />
                 <DropdownItem icon="qr_code_2" label="My QR code" onClick={() => { setMenuOpen(false); setShowQr(true); }} />
                 <DropdownItem icon="rocket_launch" label="Boost my profile" onClick={() => { setMenuOpen(false); setShowBoost(true); }} />
-                <DropdownItem icon="share" label="Share Profile" onClick={() => { setMenuOpen(false); navigator.clipboard?.writeText(window.location.href); showToast?.('Link copied', 'success'); }} />
+                <DropdownItem icon="share" label="Share Profile" onClick={() => { setMenuOpen(false); navigator.clipboard?.writeText(withRef(vergrMeUrl(profile?.username || currentUser?.uid))); showToast?.('Link copied', 'success'); }} />
                 <DropdownItem icon="campaign" label={'Share "I\'m on Vergr" card'} onClick={async () => {
                   setMenuOpen(false);
                   const r = await shareImOnVergrCard({ profile, uid: currentUser?.uid });
@@ -340,20 +350,22 @@ export default function ProfileScreen() {
 
       {/* PROFILE HEADER — relative z-10 so the avatar/username/rank paint ABOVE
           the positioned banner in the -mt-11 overlap zone (without this the
-          banner renders on top and hides them). Mirrors PublicProfileScreen. */}
+          banner renders on top and hides them). Mirrors PublicProfileScreen.
+
+          ⚠ ONLY THE AVATAR OVERLAPS THE BANNER. With -mt-11 on the ROW and
+          items-end, the taller text column rose further than the avatar, so the
+          name and rank tag sat on the banner art while the avatar sat below it
+          (measured 2026-09-14: name at y=172 over a banner ending at y=192 on a
+          phone). */}
       <div className="px-5 relative z-10">
-        <div className="flex items-end gap-4 -mt-11 mb-3">
+        <div className="flex items-start gap-4 mb-3 pt-1">
           <div
-            className={`${orbitOn ? 'vg-orbit ' : ''}w-[88px] h-[88px] rounded-full flex items-center justify-center font-syne font-black text-[30px] relative shrink-0`}
+            className="w-[88px] h-[88px] -mt-11 rounded-full flex items-center justify-center font-syne font-black text-[30px] relative shrink-0"
             style={{
-              background: 'linear-gradient(135deg,#241a3d,#101a30)',
-              // NO accent stroke and NO coloured glow here. A ring is the STATE
-              // channel (live, unseen status) and an accent ring is unreadable
-              // beside it because it is the same form. Identity moved to the
-              // travelling light on .vg-orbit, which is a different BEHAVIOUR
-              // and therefore never competes. The stroke below is a neutral
-              // separator against the banner, nothing more.
-              boxShadow: '0 0 0 3px var(--vg-seam)',
+              // ⚠ ONE RING, AND IT IS THE LIVE RING (founder, 2026-09-14). No
+              // orbit and no separator ring. The fill paints only with no photo.
+              background: profile?.avatar ? 'transparent' : 'linear-gradient(135deg,#241a3d,#101a30)',
+              ...(ownLive ? { boxShadow: '0 0 0 3px #000000, 0 0 0 6px #F04060, 0 0 22px #F0406088' } : {}),
             }}
           >
             {/* overflow-hidden lives on the inner image wrapper, NOT the
@@ -363,6 +375,15 @@ export default function ProfileScreen() {
                 ? <img src={profile.avatar} alt={displayName} className="w-full h-full object-cover" />
                 : initial}
             </div>
+            {ownLive && (
+              <button
+                onClick={(e) => { e.stopPropagation(); const sid = liveStreamFor(currentUser.uid); if (sid) navigate(`/watch/${sid}`); }}
+                className="absolute -bottom-2 left-1/2 -translate-x-1/2 z-30 bg-brand-ember px-2 py-0.5 rounded text-[9px] font-bold text-white uppercase tracking-wider"
+                style={{ whiteSpace: 'nowrap' }}
+              >
+                Live
+              </button>
+            )}
             {/* Presence dot. The user viewing their own profile is
                 definitionally online — but if they've turned off "Show
                 online status" in privacy settings, we hide the dot so
@@ -391,7 +412,7 @@ export default function ProfileScreen() {
                 </div>
               )}
               <span className="px-2 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase shrink-0"
-                    style={{ background: 'var(--vg-accent-chip)', color: 'var(--vg-accent)', border: '1px solid var(--vg-accent-dim)' }}>
+                    style={ACCENT_CHIP}>
                 {vpLevel?.name || 'Rookie'}
               </span>
             </div>
@@ -402,10 +423,11 @@ export default function ProfileScreen() {
               </p>
             )}
             <div className="flex items-center gap-2.5">
-              {socialsToList(profile?.socials, profile?.socialEnabled).slice(0, 5).map((s, i) => (
-                <a key={i} href={s.url} target="_blank" rel="noreferrer"
+              {socialsToList(profile?.socials, profile?.socialEnabled).map((s, i) => (
+                <a key={i} href={s.href} target="_blank" rel="noreferrer" aria-label={socialLabel(s.platform)}
+                   onClick={(e) => openSocialLink(e, s.href)}
                    className="w-7 h-7 rounded-md flex items-center justify-center text-text-muted hover:text-white hover:bg-purple-700/20 transition-colors"
-                   style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                   style={SOLID_CHIP}>
                   <Icon name={socialIcon(s.platform)} size={13} />
                 </a>
               ))}
@@ -415,12 +437,13 @@ export default function ProfileScreen() {
                 </span>
               )}
             </div>
+            <LinkedHandles linkedAccounts={profile?.linkedAccounts} platforms={profile?.platforms} className="mt-2" />
           </div>
         </div>
       </div>
 
       {/* STATS BAR */}
-      <div className="flex flex-wrap items-center gap-y-2 px-5 py-2.5 border-b" style={{ borderColor: '#1E1E2E' }}>
+      <div className="flex flex-wrap items-center gap-y-2 px-5 py-2.5">
         <Stat icon="person" label="Followers" value={<CountUpNumber value={followerCount} format={compactNum} />} onClick={() => navigate(`/connections/${currentUser.uid}/followers`)} />
         <div className="border-r mr-6 self-stretch" style={{ borderColor: 'transparent', backgroundImage: 'linear-gradient(180deg, transparent, var(--vg-rim) 30%, var(--vg-rim) 70%, transparent)', backgroundSize: '1px 100%', backgroundRepeat: 'no-repeat', backgroundPosition: 'right' }} />
         <Stat icon="group" label="Following" value={<CountUpNumber value={followingCount} format={compactNum} />} onClick={() => navigate(`/connections/${currentUser.uid}/following`)} />
@@ -451,6 +474,7 @@ export default function ProfileScreen() {
           </div>
         </button>
       </div>
+      </div>
 
       {/* Complete-your-profile checklist (hides itself when everything is
           done + claimed; pays the founder-approved profile-completion VP). */}
@@ -463,15 +487,9 @@ export default function ProfileScreen() {
       </div>
 
       {/* TABS */}
-      {/* The tab rule is drawn as a FADED gradient, not `border-b`.
-          Measured: the old border ran the full 1049px content width and
-          terminated at full strength against the nav's own 0.8px right border,
-          so two hard rules met at a bare corner with nothing joining them. That
-          is the "cage edge" CLAUDE.md warns about, and it is what made the row
-          read as an unfinished box. It now ramps in and out at both ends. */}
-      <div className="flex items-center justify-between gap-2 px-5 relative"
-           style={{ backgroundImage: 'linear-gradient(90deg, transparent 0%, #1E1E2E 6%, #1E1E2E 94%, transparent 100%)',
-                    backgroundSize: '100% 1px', backgroundPosition: 'bottom left', backgroundRepeat: 'no-repeat' }}>
+      {/* No rule under the tabs at all (founder, 2026-09-14: the thin divider
+          lines go). The active tab's own underline marks the row. */}
+      <div className="flex items-center justify-between gap-2 px-5 relative">
         <div className="flex flex-1 overflow-x-auto no-scrollbar">
           {PROFILE_TABS.map(t => (
             <button key={t}
@@ -487,7 +505,7 @@ export default function ProfileScreen() {
         <div className={`${IS_NATIVE_BUILD ? 'hidden' : 'hidden md:flex'} items-center gap-2.5 relative`}>
           <button onClick={(e) => { e.stopPropagation(); setSortOpen(o => !o); }}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] font-semibold text-text-muted hover:text-white"
-                  style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid #1E1E2E' }}>
+                  style={{ background: '#1A1A26' }}>
             {sortBy === 'likes' ? 'Most liked' : sortBy === 'views' ? 'Most viewed' : 'Latest'} <Icon name="expand_more" size={12} />
           </button>
           {sortOpen && (
@@ -508,16 +526,18 @@ export default function ProfileScreen() {
         </div>
       </div>
 
-      {/* POSTS GRID — responsive: 1 column on mobile, 2 columns on desktop */}
-      <div className="px-5 py-4">
+      {/* POSTS: one timeline column (X). CLIPS and MEDIA: uniform grids (TikTok,
+          Instagram). This was a two-column grid of feed cards, and two cards side
+          by side can never line up because each is as tall as its own text: a
+          clip with no caption pushed its like / comment / repost row up out of
+          line with the card beside it (founder, 2026-09-14). */}
+      <div className="py-3 md:px-5">
         {activeTab === 'Posts' && pinnedPosts.length > 0 && (
-          <div className="mb-4">
-            <p className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-text-secondary mb-2.5">
+          <div className="mb-2">
+            <p className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-text-secondary px-4 md:px-0 pt-1 pb-2">
               <Icon name="push_pin" size={13} style={{ color: 'var(--vg-accent)' }} /> Pinned
             </p>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-              {pinnedPosts.map(p => <PostCard key={`pin-${p.id}`} post={p} compact />)}
-            </div>
+            <ProfilePostList tab="Posts" posts={pinnedPosts} />
           </div>
         )}
         {loadingPosts ? (
@@ -529,15 +549,17 @@ export default function ProfileScreen() {
             {activeTab === 'Posts' && (
               <button onClick={openCreate}
                       className="mt-4 px-5 py-2 rounded-lg text-[13px] font-bold"
-                      style={{ background: 'var(--vg-accent-chip)', color: 'var(--vg-accent)', border: '1px solid var(--vg-accent-dim)' }}>
+                      style={ACCENT_CHIP}>
                 Create your first post
               </button>
             )}
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-            {filteredPosts.map(p => <PostCard key={p.id} post={p} compact />)}
-          </div>
+          <ProfilePostList
+            tab={activeTab}
+            posts={filteredPosts}
+            onDeleted={(id) => setPosts(prev => prev.filter(p => p.id !== id))}
+          />
         )}
       </div>
       {showCreateModal && <CreateComposer onClose={() => setShowCreateModal(false)} originRect={createOrigin} />}
@@ -569,7 +591,7 @@ function Stat({ icon, label, value, onClick }) {
   return (
     <button onClick={onClick} className="flex items-center gap-2.5 pr-6 transition-colors hover:brightness-125">
       <div className="w-[34px] h-[34px] rounded-lg flex items-center justify-center"
-           style={{ background: 'rgba(255,255,255,0.045)', color: 'var(--vg-accent)' }}>
+           style={{ ...SOLID_CHIP, color: 'var(--vg-accent)' }}>
         <Icon name={icon} size={16} />
       </div>
       <div className="text-left">
@@ -580,35 +602,19 @@ function Stat({ icon, label, value, onClick }) {
   );
 }
 
-// EditProfileScreen stores socials as a map ({ twitter: 'url', ... }) but
-// older accounts may have an array. Normalise here so the renderer can
-// just .map() across the result without runtime checks.
-function socialsToList(socials, enabled = {}) {
-  if (!socials) return [];
-  if (Array.isArray(socials)) {
-    return socials.filter(s => s && s.url);
-  }
-  if (typeof socials === 'object') {
-    return Object.entries(socials)
-      .filter(([platform, url]) => url && enabled?.[platform] !== false)
-      .map(([platform, url]) => ({ platform, url }));
-  }
-  return [];
-}
-
-function socialIcon(platform) {
-  const map = { twitter: 'public', x: 'public', youtube: 'play_circle', instagram: 'photo_camera',
-                tiktok: 'music_note', discord: 'chat', twitch: 'live_tv', website: 'language' };
-  return map[(platform || '').toLowerCase()] || 'link';
-}
 
 // ─── Right rail ────────────────────────────────────────────────────
 
-function OwnerRightPanel({ posts, navigate, profile, squads = [] }) {
+// ⚠ THE RAIL RENDERS OUTSIDE `.vg-profile`, so `var(--vg-accent)` and `.vg-card`
+// resolve to nothing here. Links use the brand class and cards a solid value.
+const RAIL_CARD = { background: '#14141F' };
+
+function OwnerRightPanel({ posts, loaded = true, navigate, profile, squads = [], onViewClips }) {
+  const shown = (v) => (loaded ? compactNum(v) : '–');
   const totalLikes  = posts.reduce((s, p) => s + (p.likeCount || 0), 0);
   const totalViews  = posts.reduce((s, p) => s + (p.viewCount || 0), 0);
-  const totalClips  = posts.filter(p => p.type === 'clip').length;
-  const topClips    = [...posts].filter(p => p.type === 'clip')
+  const totalClips  = posts.filter(p => isShortFormat(p.type)).length;
+  const topClips    = [...posts].filter(p => isShortFormat(p.type))
                         .sort((a, b) => (b.likeCount || 0) - (a.likeCount || 0))
                         .slice(0, 3);
   const twitchRaw = profile?.linkedAccounts?.twitch;
@@ -616,7 +622,7 @@ function OwnerRightPanel({ posts, navigate, profile, squads = [] }) {
   return (
     <div className="w-full px-3 py-4 space-y-4">
       {twitchUser && (
-        <div className="vg-card rounded-xl p-3">
+        <div className="rounded-xl p-3" style={RAIL_CARD}>
           <div className="flex items-center justify-between mb-2">
             <p className="text-[13px] font-bold text-text-primary">Your Twitch</p>
             <a href={`https://twitch.tv/${twitchUser}`} target="_blank" rel="noreferrer"
@@ -626,67 +632,53 @@ function OwnerRightPanel({ posts, navigate, profile, squads = [] }) {
         </div>
       )}
 
-      {/* Profile Overview */}
-      <div className="vg-card rounded-xl p-3">
+      {/* Profile Overview. "Streams" was a hardcoded 0 that never counted
+          anything, so it is Posts, the same four figures the public rail shows. */}
+      <div className="rounded-xl p-3" style={RAIL_CARD}>
         <div className="flex items-center justify-between mb-2.5">
           <p className="text-[13px] font-bold text-text-primary">Profile Overview</p>
-          <button onClick={() => navigate('/creator/dashboard')} className="text-[11px] font-semibold" style={{ color: 'var(--vg-accent)' }}>
+          <button onClick={() => navigate('/creator/dashboard')} className="text-[11px] font-semibold text-brand-violet-light">
             View Analytics
           </button>
         </div>
         <div className="grid grid-cols-2 gap-2">
-          <OvCard icon="visibility"        label="Total Views" value={compactNum(totalViews)} />
-          <OvCard icon="movie"             label="Total Clips" value={compactNum(totalClips)} />
-          <OvCard icon="cell_tower"        label="Streams"     value={compactNum(0)} />
-          <OvCard icon="favorite"          label="Total Likes" value={compactNum(totalLikes)} />
+          <OvCard icon="visibility"        label="Total Views" value={shown(totalViews)} />
+          <OvCard icon="movie"             label="Total Clips" value={shown(totalClips)} />
+          <OvCard icon="favorite"          label="Total Likes" value={shown(totalLikes)} />
+          <OvCard icon="forum"             label="Posts"       value={profile?.postCount ? compactNum(profile.postCount) : shown(posts.length)} />
         </div>
       </div>
 
-      {/* Top Clips */}
-      <div className="vg-card rounded-xl p-3">
+      {/* Top Clips. The thumbnail was a gradient box that never loaded a picture,
+          the title read `c.text` (posts store `content`, so every row said
+          "Clip"), the rows had no tap target and View All did nothing (founder,
+          2026-09-14: "clips on desktop side bar of the profile page show blank
+          image"). */}
+      <div className="rounded-xl p-3" style={RAIL_CARD}>
         <div className="flex items-center justify-between mb-2">
           <p className="text-[13px] font-bold text-text-primary">Top Clips</p>
-          <button onClick={() => {}} className="text-[11px] font-semibold" style={{ color: 'var(--vg-accent)' }}>View All</button>
+          {topClips.length > 0 && (
+            <button onClick={onViewClips} className="text-[11px] font-semibold text-brand-violet-light">View All</button>
+          )}
         </div>
-        {topClips.length === 0 ? (
-          <p className="text-[11px] text-text-muted">No clips yet</p>
-        ) : (
-          topClips.map(c => (
-            <button key={c.id} className="flex items-center gap-2 py-2 w-full text-left border-b last:border-0" style={{ borderColor: '#1E1E2E' }}>
-              <div className="w-[52px] h-[34px] rounded-md shrink-0"
-                   style={{ background: 'linear-gradient(135deg,#1a0a2e,#0a1a3e)' }} />
-              <div className="flex-1 min-w-0">
-                <p className="text-[11px] font-semibold text-text-primary truncate">{c.text || 'Clip'}</p>
-                <p className="text-[10px] text-text-muted">♥ {(c.likeCount || 0).toLocaleString()}</p>
-              </div>
-            </button>
-          ))
-        )}
-      </div>
-
-      {/* Achievements */}
-      <div className="vg-card rounded-xl p-3">
-        <div className="flex items-center justify-between mb-2">
-          <p className="text-[13px] font-bold text-text-primary">Achievements</p>
-        </div>
-        <p className="text-[11px] text-text-muted">Coming soon</p>
+        <TopClipsList clips={topClips} loading={!loaded} />
       </div>
 
       {/* Squads */}
-      <div className="vg-card rounded-xl p-3">
+      <div className="rounded-xl p-3" style={RAIL_CARD}>
         <div className="flex items-center justify-between mb-2">
           <p className="text-[13px] font-bold text-text-primary">Your Squads</p>
-          <button onClick={() => navigate('/squads')} className="text-[11px] font-semibold" style={{ color: 'var(--vg-accent)' }}>View All</button>
+          <button onClick={() => navigate('/squads')} className="text-[11px] font-semibold text-brand-violet-light">View All</button>
         </div>
         {squads.length === 0 ? (
           <p className="text-[11px] text-text-muted">No squads yet</p>
         ) : (
           squads.slice(0, 4).map(sq => (
             <button key={sq.id} onClick={() => navigate(`/squads/${sq.id}`)}
-              className="flex items-center gap-2.5 py-2 w-full text-left border-b last:border-0" style={{ borderColor: '#1E1E2E' }}>
+              className="flex items-center gap-2.5 py-2 w-full text-left">
               {sq.avatar
                 ? <img src={sq.avatar} alt="" className="w-8 h-8 rounded-lg object-cover shrink-0" />
-                : <div className="w-8 h-8 rounded-lg shrink-0 flex items-center justify-center" style={{ background: 'var(--vg-accent-chip)' }}>
+                : <div className="w-8 h-8 rounded-lg shrink-0 flex items-center justify-center" style={{ backgroundColor: ACCENT_CHIP.backgroundColor, backgroundImage: ACCENT_CHIP.backgroundImage }}>
                     <Icon name="shield" size={15} className="text-brand-violet-light" />
                   </div>}
               <div className="flex-1 min-w-0">
@@ -703,7 +695,7 @@ function OwnerRightPanel({ posts, navigate, profile, squads = [] }) {
 
 function OvCard({ icon, label, value }) {
   return (
-    <div className="rounded-[10px] p-2.5" style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.07)' }}>
+    <div className="rounded-[10px] p-2.5" style={{ background: '#1C1C29' }}>
       <div className="flex items-center gap-1 text-[10px] text-text-muted mb-1">
         <Icon name={icon} size={11} /> {label}
       </div>

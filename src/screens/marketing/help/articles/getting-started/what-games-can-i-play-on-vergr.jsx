@@ -5,42 +5,42 @@
 // Top-level: summary (1-2 sentences, answer-first), updated (YYYY-MM-DD), body [].
 
 export default {
-  summary: "Any of them. VERGR does not restrict what you can stream, clip, or post about, so whether it is FC, CS2, NBA 2K, Warzone, Apex Legends, Rocket League, a single-player campaign, or something nobody has heard of, it belongs here.",
-  updated: "2026-08-09",
+  summary: "Vergr does not host games, so there is nothing to play on it. If you stream a game, any game works: there is no approved list, and plenty of streams have no game at all.",
+  updated: "2026-09-19",
   body: [
     {
-      p: "There is no approved-games list on VERGR. Streaming, clips, posts, and squads work with every title, so the honest answer to what you can play is: whatever you actually play."
+      p: "When people ask what games they can play on Vergr, they usually mean what they can stream. The answer is anything, and a game is optional."
     },
     {
       h2: "Streaming and clips"
     },
     {
-      p: "Go live with any game, on PC or console. Tag the game so it shows in the right part of Explore and reaches people browsing for it. Shooters, sports titles, MMOs, indie games, retro, single-player story games, all of it works the same way."
+      p: "Go live with any game, on PC or console, or with no game at all. Tag what you are streaming so it shows in the right part of Explore and reaches people browsing for it."
     },
     {
       h2: "Finding your audience"
     },
     {
-      p: "Tagging matters more than the game itself. A stream tagged with the right title, language, and vibe gets surfaced to people browsing for exactly that, and a smaller game with an engaged audience often out-earns a huge one you are lost inside."
+      p: "Tagging matters more than the topic itself. A stream tagged with the right title, language and vibe gets shown to people browsing for exactly that, and a smaller topic with an engaged audience often builds a following faster than a huge one you are lost inside."
     },
     {
       h2: "Not just games"
     },
     {
-      p: "Plenty of VERGR streams are not gameplay at all: just chatting, watch-alongs, music, creative work, or a squad hanging out in voice. The platform is built around gamers, but it does not require a game to be on screen."
+      p: "Plenty of Vergr streams are not gameplay at all: just chatting, watch-alongs, music, creative work, or a squad hanging out in voice. Nothing requires a game to be on screen."
     },
     {
-      note: "The one thing that does not change per game is the rules. Whatever you play, the Acceptable Use Policy applies to what appears on your stream."
+      note: "The rules are the same whatever you stream. The Acceptable Use Policy applies to everything that appears on your stream."
     },
     {
       cta: [
         {
           to: "/platform/help/how-do-i-go-live-on-vergr",
-          label: "Stream any game"
+          label: "How to go live"
         },
         {
           to: "/platform/help/how-do-i-add-a-title-game-and-tags-to-my-stream",
-          label: "Titles, games and tags"
+          label: "Titles and tags"
         }
       ]
     }

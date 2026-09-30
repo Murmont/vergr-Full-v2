@@ -30,7 +30,6 @@ export default {
         "Buy them in the Shop with a card or crypto.",
         "Earn them from paid streams and memberships.",
         "Get tipped while you stream or post.",
-        "Earn your share of squad winnings."
       ]
     },
     {

@@ -23,6 +23,7 @@
 // was locked.
 
 const functions = require('firebase-functions/v2');
+const { planOf } = require('./plan');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 
 const db = getFirestore('vgrdb');
@@ -48,6 +49,7 @@ const ACTION_VP = {
 };
 
 const { activeBonusMult } = require('./vpBonuses');
+const { planSpend, debitFields } = require('./boostCoins');
 
 /** MIRROR of rankVpBonus() in src/utils/rankUnlocks.js. +0.5%/level, cap 1.5x. */
 const rankVpBonus = (level) =>
@@ -64,7 +66,7 @@ const rankVpBonus = (level) =>
 async function planMultiplier(uid, action = 'all') {
   const snap = await db.collection('users').doc(uid).get();
   const d = snap.data() || {};
-  const tier = String(d.subscription?.tier || 'free').toLowerCase();
+  const tier = planOf(d);
   // VP bonus packs come off the SAME snapshot, so they cost no extra read.
   // `action` is passed because a scoped pack must not pay on an action it
   // does not name — a Watcher Surge is not a posting bonus.
@@ -296,17 +298,16 @@ exports.purchaseBoost = functions.https.onCall(
           throw new HttpsError('permission-denied', 'You can only boost your own.');
         }
       }
-      const balance = Math.floor(wSnap.exists ? (wSnap.data().balance || 0) : 0);
+      const plan = planSpend(wSnap.exists ? wSnap.data() : {}, boost.coins);
       // Say WHY, with the numbers. The old screen's generic "Boost failed" gave
       // the user nothing to act on.
-      if (balance < boost.coins) {
+      if (!plan.ok) {
         throw new HttpsError('failed-precondition',
-          `Not enough coins. This boost costs ${boost.coins} and you have ${balance}.`);
+          `Not enough coins. This boost costs ${boost.coins} and you have ${plan.total}.`);
       }
 
       tx.update(walletRef, {
-        balance: FieldValue.increment(-boost.coins),
-        totalSpent: FieldValue.increment(boost.coins),
+        ...debitFields(plan),
         updatedAt: FieldValue.serverTimestamp(),
       });
       // ⚠ EXTEND, never shorten. Buying a second boost while one is running

@@ -23,6 +23,7 @@
 // inside other callables, so it is a plain async helper, not an onCall.
 
 const { FieldValue } = require('firebase-admin/firestore');
+const { planOf } = require('./plan');
 
 const { activeBonusMult } = require('./vpBonuses');
 
@@ -83,7 +84,7 @@ async function creditEngagementVp(db, uid, action, units = 1) {
       const capSnap = await tx.get(capRef);
       const userSnap = await tx.get(userRef);
       const already = capSnap.exists ? (capSnap.data().vp || 0) : 0;
-      const tier = String(userSnap.data()?.subscription?.tier || 'free').toLowerCase();
+      const tier = planOf(userSnap.data());
       // Rank bonus rides the SAME userSnap this transaction already read, so
       // it adds no read. MIRROR of rankVpBonus() in src/utils/rankUnlocks.js.
       const lvl = Math.max(1, Number(userSnap.data()?.vpLevel) || 1);

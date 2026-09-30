@@ -46,6 +46,32 @@ export const IS_HUAWEI_BUILD =
   typeof __VERGR_HUAWEI_BUILD__ !== 'undefined' ? __VERGR_HUAWEI_BUILD__ : false;
 
 /**
+ * The Google PLAY build (store build that is not Huawei; the dev channel counts,
+ * on purpose, so the playground behaves like Play). It sells through Google Play
+ * Billing ONLY: our own card/crypto checkout is not offered inside it until Vergr
+ * enrolls in Google's alternative-billing programs (founder, 2026-09-11, once the
+ * EIN arrives). See the header of components/wallet/PaymentMethodPicker.jsx.
+ */
+export const IS_PLAY_BUILD = IS_STORE_BUILD && !IS_HUAWEI_BUILD;
+
+/**
+ * The name of the store whose OWN billing this build must sell through, or null
+ * when we are the merchant (web, desktop, sideload).
+ *
+ * ⚠⚠ USE `IS_STORE_BUILD` — NOT `IS_PLAY_BUILD` — TO DECIDE WHETHER TO OFFER
+ * OUR OWN CARD CHECKOUT. Until 2026-09-17 every such gate read `IS_PLAY_BUILD`,
+ * which was correct only while the Huawei build had no IAP: `IS_PLAY_BUILD` is
+ * false on Huawei, so the AppGallery build rendered the "Card or crypto" row and
+ * would have gone to review selling premium content outside HUAWEI IAP. That is
+ * AppGallery Review Guideline 6.2, and it is a rejection.
+ *
+ * `IS_PLAY_BUILD` still has legitimate uses: anything that is true of GOOGLE
+ * specifically (the Play prism asset, the Play-only help articles, copy naming
+ * Google). Ask which question you mean.
+ */
+export const STORE_NAME = IS_STORE_BUILD ? (IS_HUAWEI_BUILD ? 'AppGallery' : 'Google Play') : null;
+
+/**
  * DEV-CHANNEL build (`vite build --mode native-dev`): the founder's private
  * playground APK. Never published to /platform, never uploaded to a store.
  *

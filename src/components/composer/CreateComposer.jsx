@@ -1,13 +1,15 @@
 import { useState, useRef, useMemo, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { setClipDraft } from '../../utils/clipDraft';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useUser } from '../../context/UserContext';
+import { isMuted, muteNotice } from '../../utils/moderationState';
 import { useUI } from '../../context/UIContext';
 import { auth } from '../../firebase/config';
-import { createPost, createPoll, getAudienceActivity, searchUsers, getFollowing, getTrendingHashtags, searchHashtags, editPost } from '../../firebase/firestore';
+import { createPost, createFeedPoll, getAudienceActivity, searchUsers, getFollowing, getTrendingHashtags, searchHashtags, editPost } from '../../firebase/firestore';
 import { getLockedUploadUrl, createLockedPost, putSignedUpload, makeBlurredPreview } from '../../firebase/firestore';
 import PriceSheet from '../monetization/PriceSheet';
-import { compressVideo, compressMedia, getMediaDimensions } from '../../utils/mediaCompression';
+import { compressVideo, compressMedia, getMediaDimensions, posterFromVideo } from '../../utils/mediaCompression';
 import { uploadToR2 } from '../../utils/r2Storage';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../../firebase/config';
@@ -21,6 +23,7 @@ import RichTextArea from './RichTextArea';
 import { stripPostFormatting } from '../PostRichText';
 import '../../styles/composer.css';
 import { resolveTier } from '../../utils/tierSystem';
+import { blockUnverified } from '../../utils/emailGate';
 import UserName from '../UserName';
 
 // A real mention only ever comes from this list — followed accounts who
@@ -568,9 +571,15 @@ const ScheduleView = ({ name, avatar, user, onBack, onConfirm, isPoll, pollState
 };
 
 export default function CreateComposer({ onClose, originRect, editingPost = null, onEdited }) {
+  // Cover frame URL for a clip, filled during upload and read at write time.
+  const posterUrlRef = useRef(null);
   const isEditing = !!editingPost;
   const isStdEdit = !isEditing || STD_EDIT_TYPES.includes(editingPost.type);
   const { profile } = useUser();
+  // A mute is enforced in firestore.rules off a token claim, which can take up
+  // to an hour to refresh. This is the immediate, honest half: it costs no
+  // reads (the profile snapshot is already here) and it tells them WHY.
+  const muted = isMuted(profile);
   const { showToast } = useUI();
   const navigate = useNavigate();
   const fileRef = useRef(null);
@@ -662,7 +671,7 @@ export default function CreateComposer({ onClose, originRect, editingPost = null
   const vis = VIS_OPTIONS.find(v => v.id === visibility) || VIS_OPTIONS[0];
   // Scheduling is a Lite/Pro perk; free users see it but get an upgrade prompt.
   // Admins (founder/ops) bypass every paywall.
-  const isAdmin = profile?.role === 'admin' || (profile?.email || '').toLowerCase() === 'vergenerd@gmail.com';
+  const isAdmin = profile?.staff === true || profile?.role === 'admin';
   const tier = isAdmin ? 'pro' : resolveTier(profile);
   const isPaid = tier === 'lite' || tier === 'pro';
   // Only the official @Vergr account (or an admin) can post platform
@@ -737,8 +746,21 @@ export default function CreateComposer({ onClose, originRect, editingPost = null
   const oy = originRect ? originRect.top + originRect.height / 2 : (typeof window !== 'undefined' ? window.innerHeight : 0);
   const fly = { opacity: 0, scale: 0.12, x: ox - cx, y: oy - cy };
 
+  // A video is made in the clip editor, not attached here (founder, 2026-09-13):
+  // the composer stays for text, photos and polls. What was typed rides along as
+  // the clip's caption. Editing an existing post keeps attaching, because that
+  // post already exists and cannot become a new clip.
+  const openClipFlow = (file) => {
+    const typed = (richRef.current?.getMarkup?.() ?? text) || '';
+    setClipDraft(file, { caption: typed.replace(/@\[([^\]]+)\]\([^)]+\)/g, '@$1') });
+    branch('/create/clip');
+  };
   const addFiles = (fileList, kind) => {
     const files = Array.from(fileList || []);
+    if (!isEditing) {
+      const video = files.find(f => kind === 'clip' || f.type?.startsWith('video/'));
+      if (video) { openClipFlow(video); return; }
+    }
     const items = files.map(file => ({ id: Math.random().toString(36).slice(2), file, preview: URL.createObjectURL(file), type: kind === 'clip' || file.type.startsWith('video/') ? 'video' : 'image' }));
     if (items.length) setMedia(prev => [...prev, ...items]);
   };
@@ -833,6 +855,13 @@ export default function CreateComposer({ onClose, originRect, editingPost = null
       );
       setItemProgress(m.id, 'uploading', 0);
       ({ url } = await uploadToR2(optimized, 'clip', (pct) => setItemProgress(m.id, 'uploading', pct)));
+      // Cover frame for the clip. Every clip surface reads post.thumbnailUrl as
+      // its <video poster>; with none the WebView paints its own grey
+      // broken-media placeholder, which is the "grey play button".
+      try {
+        const poster = await posterFromVideo(optimized);
+        if (poster) posterUrlRef.current = (await uploadToR2(poster, 'post')).url;
+      } catch { /* a missing cover must never fail the post */ }
     } else {
       const blob = m.file.type?.startsWith('image/') ? await compressMedia(m.file, tier, 'post') : m.file;
       // Capture the compressed image's dimensions so the card can reserve the
@@ -856,7 +885,12 @@ export default function CreateComposer({ onClose, originRect, editingPost = null
     } catch (err) {
       setUploads(u => {
         const n = { ...u };
-        snapMedia.forEach(m => { if (m.file && !uploadedRef.current[m.id]) n[m.id] = { phase: 'error', pct: 0 }; });
+        // Carry the REASON onto the tile. The toast that says why is transient,
+        // so a user who looked away sees a Retry chip with no explanation and
+        // retries the same doomed file. Measured on the emulator 2026-09-12:
+        // a 38MB clip failed in the re-encode step and the tile said nothing.
+        const why = friendlyUploadError(err);
+        snapMedia.forEach(m => { if (m.file && !uploadedRef.current[m.id]) n[m.id] = { phase: 'error', pct: 0, msg: why }; });
         return n;
       });
       throw err;
@@ -934,7 +968,11 @@ export default function CreateComposer({ onClose, originRect, editingPost = null
   };
 
   const handlePostNow = async () => {
+    // Clear the cover frame from any previous attempt: a second post with no
+    // clip would otherwise inherit the last clip's poster.
+    posterUrlRef.current = null;
     if (loading) return;
+    if (blockUnverified('post')) return;
     if (lockPrice > 0) { handlePostLocked(); return; }
     const trimmed = (richRef.current?.getMarkup() ?? text).trim();
     if (!trimmed && media.length === 0) { showToast('Add some text or media first', 'error'); return; }
@@ -968,6 +1006,7 @@ export default function CreateComposer({ onClose, originRect, editingPost = null
       const announce = canAnnounce && asAnnouncement && !scheduled;
       const postId = await createPost(uid, {
         content: trimmed, type, mediaUrls: urls, hashtags: snapTags, mentionedUids, visibility,
+        thumbnailUrl: posterUrlRef.current || undefined,
         mediaMeta: hasMeta ? mediaMeta : undefined,
         scheduledFor: scheduled ? new Date(schedule.ms) : null,
         scheduleOptions: scheduled ? schedOpts : null,
@@ -988,6 +1027,7 @@ export default function CreateComposer({ onClose, originRect, editingPost = null
           id: postId, authorId: uid,
           author: { id: uid, displayName: name, username: profile?.username, avatar, isVerified: profile?.isVerified, tier: resolveTier(profile) },
           content: trimmed, type, mediaUrls: urls, hashtags: snapTags, mentionedUids, visibility,
+        thumbnailUrl: posterUrlRef.current || undefined,
           mediaMeta: hasMeta ? mediaMeta : undefined,
           likeCount: 0, commentCount: 0, shareCount: 0, saveCount: 0, viewCount: 0,
           status: 'published', createdAt: new Date(), isAnnouncement: announce, topic,
@@ -1084,12 +1124,11 @@ export default function CreateComposer({ onClose, originRect, editingPost = null
     if (opts.length < 2) { showToast('Add at least 2 options', 'error'); return; }
     setLoading(true);
     try {
-      await createPoll(auth.currentUser.uid, {
+      await createFeedPoll(auth.currentUser.uid, {
         question: pollQ.trim(), options: opts, duration: pollDuration,
         multiSelect: pollMulti, anonymous: pollAnon, caption: (richRef.current?.getMarkup() ?? text).trim(), visibility,
         scheduledFor: schedule ? new Date(schedule.ms) : null,
         scheduleOptions: schedule ? schedOpts : null,
-        status: schedule ? 'scheduled' : 'active',
       });
       showToast(schedule ? 'Poll scheduled!' : 'Poll created!', 'success');
       setOpen(false);
@@ -1113,18 +1152,11 @@ export default function CreateComposer({ onClose, originRect, editingPost = null
         <div className="modal-title">{isEditing ? 'Edit post' : `Create ${isPoll ? 'poll' : 'post'}`} <CIcon name="sparkle" size={18} className="sparkle" /></div>
         <div className="modal-sub">{isEditing ? 'Update your post — likes and comments are kept' : 'Share with the VERGR community'}</div>
       </div>
-      <div className="right">
-        {isEditing ? (
-          <button className="btn btn-primary" onClick={handleSaveEdit} disabled={loading}><CIcon name="send" size={16} /> {loading ? 'Saving…' : 'Save changes'}</button>
-        ) : (
-          <>
-            <button className="btn btn-outline-violet icon-l" onClick={openSchedule}><CIcon name="calendar" size={16} /> Schedule{!isPaid && <span className="up-pill">PRO</span>}</button>
-            {isPoll
-              ? <button className="btn btn-primary" onClick={handlePostPoll} disabled={loading}><CIcon name="poll" size={16} /> {loading ? 'Posting…' : 'Post poll'}</button>
-              : <button className="btn btn-primary" onClick={handlePostNow} disabled={loading}><CIcon name="send" size={16} /> {loading ? 'Posting…' : (schedule ? 'Schedule' : 'Post now')}</button>}
-          </>
-        )}
-      </div>
+      {/* NO post button up here. The toolbar at the bottom of the compose view
+          already carries Schedule and Post (or Save / Post poll), so the two
+          sat on screen together as two "Post now" buttons (founder,
+          2026-09-11). The toolbar keeps them: it is where the thumb is. */}
+      <div className="right" />
     </div>
   );
 
@@ -1389,15 +1421,27 @@ export default function CreateComposer({ onClose, originRect, editingPost = null
                                 {m.type === 'video' ? <video src={m.preview} muted /> : <img src={m.preview} alt="" draggable={false} />}
                                 <span className="grip"><CIcon name="grip" size={13} /></span>
                                 {i === 0 && media.length > 1 && <span className="cover-tag">Cover</span>}
-                                <button className="x" onClick={() => removeMedia(m.id)} onPointerDown={(e) => e.stopPropagation()}><CIcon name="x" size={12} /></button>
+                                {/* ⚠ z-index 5 BEATS THE PROGRESS/ERROR OVERLAY BELOW (z 4), WHICH IS
+                                    `inset: 0` AND WAS COVERING THIS BUTTON. Measured on the emulator
+                                    2026-09-12: a clip whose upload failed showed only "Retry", could
+                                    not be removed, and blocked "Post now" — the only way out was to
+                                    close the composer and lose everything typed. */}
+                                <button className="x" style={{ zIndex: 5 }} onClick={() => removeMedia(m.id)} onPointerDown={(e) => e.stopPropagation()}><CIcon name="x" size={12} /></button>
                                 {uploads[m.id] && (
                                   <div onPointerDown={(e) => e.stopPropagation()} draggable={false}
                                     style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, padding: 8, background: 'rgba(0,0,0,0.58)', backdropFilter: 'blur(2px)', borderRadius: 'inherit', zIndex: 4 }}>
                                     {uploads[m.id].phase === 'error' ? (
-                                      <button onClick={() => (isEditing ? handleSaveEdit() : handlePostNow())}
-                                        style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 999, background: 'var(--brand-ember, #F04060)', color: '#fff', fontSize: 12, fontWeight: 700 }}>
-                                        <CIcon name="refresh" size={14} /> Retry
-                                      </button>
+                                      <>
+                                        <button onClick={() => (isEditing ? handleSaveEdit() : handlePostNow())}
+                                          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 999, background: 'var(--brand-ember, #F04060)', color: '#fff', fontSize: 12, fontWeight: 700 }}>
+                                          <CIcon name="refresh" size={14} /> Retry
+                                        </button>
+                                        {uploads[m.id].msg && (
+                                          <div style={{ color: '#fff', fontSize: 10, lineHeight: 1.3, textAlign: 'center', opacity: 0.9 }}>
+                                            {uploads[m.id].msg}
+                                          </div>
+                                        )}
+                                      </>
                                     ) : (
                                       <>
                                         <div style={{ color: '#fff', fontSize: 11, fontWeight: 700, letterSpacing: 0.2 }}>
@@ -1425,9 +1469,9 @@ export default function CreateComposer({ onClose, originRect, editingPost = null
                             <div><div className="t">Go Live</div><div className="d">Stream to the world</div></div>
                             <span className="live-tag">LIVE</span>
                           </button>
-                          <button className="action-card ac-cyan" onClick={() => videoRef.current?.click()}>
+                          <button className="action-card ac-cyan" onClick={() => branch('/create/clip')}>
                             <div className="icon-wrap"><CIcon name="film" size={20} /></div>
-                            <div><div className="t">Share Clip</div><div className="d">Upload gameplay clip</div></div>
+                            <div><div className="t">Share Clip</div><div className="d">Record, edit and post</div></div>
                           </button>
                           <button className="action-card ac-magenta" onClick={() => setView('poll')}>
                             <div className="icon-wrap"><CIcon name="poll" size={20} /></div>
@@ -1466,7 +1510,7 @@ export default function CreateComposer({ onClose, originRect, editingPost = null
                             if (t.id === 'poll') setView(isPoll ? 'compose' : 'poll');
                             else if (t.id === 'media') fileRef.current?.click();
                             else if (t.id === 'gif') setShowMediaPanel('gifs');
-                            else if (t.id === 'clip') videoRef.current?.click();
+                            else if (t.id === 'clip') { if (isEditing) videoRef.current?.click(); else branch('/create/clip'); }
                             else { if (t.id === 'tag') richRef.current?.saveSelection(); toggleTool(t.id); }
                           }}>
                             <span className="ic"><CIcon name={t.icon} size={20} /></span>
@@ -1544,11 +1588,24 @@ export default function CreateComposer({ onClose, originRect, editingPost = null
                         {!isPaid && <span className="up-pill">PRO</span>}
                       </button>
                     ))}
+                    {muted && (
+                      <div style={{
+                        padding: '10px 12px', borderRadius: 10, marginBottom: 10,
+                        background: '#2a1219', color: '#f47a90', fontSize: 13, lineHeight: 1.45,
+                        display: 'flex', alignItems: 'center', gap: 10,
+                      }}>
+                        <span style={{ flex: 1 }}>{muteNotice(profile)}</span>
+                        <button type="button" onClick={() => { onClose?.(); navigate('/appeal?type=mute'); }}
+                          style={{ flexShrink: 0, padding: '6px 12px', borderRadius: 8, border: 0, background: '#f04060', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                          Appeal
+                        </button>
+                      </div>
+                    )}
                     {isEditing
                       ? <button className="btn btn-primary" onClick={handleSaveEdit} disabled={loading}><CIcon name="send" size={16} /> {loading ? 'Saving…' : 'Save changes'}</button>
                       : isPoll
-                        ? <button className="btn btn-primary" onClick={handlePostPoll} disabled={loading}><CIcon name="poll" size={16} /> {loading ? 'Posting…' : (schedule ? 'Schedule poll' : 'Post poll')}</button>
-                        : <button className="btn btn-primary" onClick={handlePostNow} disabled={loading}><CIcon name="send" size={16} /> {loading ? 'Posting…' : (schedule ? 'Schedule' : 'Post now')}</button>}
+                        ? <button className="btn btn-primary" onClick={handlePostPoll} disabled={loading || muted}><CIcon name="poll" size={16} /> {loading ? 'Posting…' : (schedule ? 'Schedule poll' : 'Post poll')}</button>
+                        : <button className="btn btn-primary" onClick={handlePostNow} disabled={loading || muted}><CIcon name="send" size={16} /> {loading ? 'Posting…' : (schedule ? 'Schedule' : 'Post now')}</button>}
                   </div>
                 </>
               )}

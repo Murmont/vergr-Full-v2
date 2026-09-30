@@ -407,7 +407,7 @@ export function NativeMessagesInboxScreen() {
 
       <button onClick={() => navigate('/messages/new')} aria-label="Start new chat"
         className="fixed right-5 w-14 h-14 rounded-full bg-brand-violet text-white flex items-center justify-center z-30 shadow-lg shadow-brand-violet/30 active:scale-95"
-        style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 88px)' }}>
+        style={{ bottom: 'calc(var(--vg-safe-b, 0px) + 88px)' }}>
         <Icon name="edit" size={22} />
       </button>
     </div>

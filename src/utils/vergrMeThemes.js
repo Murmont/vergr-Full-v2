@@ -745,7 +745,7 @@ export const BLOCK_REGISTRY = {
   music:   { label: 'Music',         icon: 'music_note',          tier: 'free', cat: 'media',  make: () => ({ provider: 'spotify', url: '' }) },
   map:     { label: 'Map / location', icon: 'location_on',        tier: 'free', cat: 'media',  make: () => ({ address: '', zoom: 14, height: 220, caption: '' }) },
   product: { label: 'Product',       icon: 'storefront',          tier: 'free', cat: 'commerce', make: () => ({ title: '', url: '', price: '', imageUrl: '', desc: '' }) },
-  digital_product: { label: 'Sell a product', icon: 'download_for_offline', tier: 'free', cat: 'commerce', make: () => ({ productId: '', layout: 'card' }) },
+  digital_product: { label: 'Store product', icon: 'download_for_offline', tier: 'free', cat: 'commerce', make: () => ({ productId: '', layout: 'card' }) },
   shop_catalog: { label: 'Shop catalog', icon: 'store', tier: 'free', cat: 'commerce', make: () => ({ title: '', shopUrl: '', source: '', currency: '', items: [] }) },
   embed:   { label: 'Embed',         icon: 'code',                tier: 'pro',  cat: 'media',  make: () => ({ url: '', height: 320 }) },
   email:   { label: 'Email contact', icon: 'mail',                tier: 'free', cat: 'contact',make: () => ({ email: '', label: 'Connect with me' }) },
@@ -884,6 +884,38 @@ export const VERGRME_TIER_GATES = {
   premiumBg:      'pro', // particle/canvas animated backgrounds
   customCss:      'pro', // sandboxed custom CSS escape hatch
 };
+
+/**
+ * The page a visitor may see for the OWNER's plan. The editor only stops a free
+ * owner from CHOOSING a paid option; the page doc is client-written, so until
+ * 2026-09-27 the public page drew whatever was saved: a lapsed Pro kept the
+ * design kit, custom CSS and tracking pixels forever, and any account could
+ * write them directly. Free because the page already loads the owner's profile.
+ * Lead webhooks are gated server-side in functions/vergrMe.js.
+ * @param {object} page  users/{uid}/vergrMe/page
+ * @param {'free'|'lite'|'pro'} plan  the OWNER's plan (staff count as pro)
+ */
+export function pageForPlan(page, plan) {
+  if (!page || plan === 'pro') return page;
+  const out = { ...page };
+  if (plan === 'free') out.hideBranding = false;
+  if (out.theme && !FREE_THEMES.includes(out.theme)) out.theme = 'dark';
+  if (out.colors && Object.keys(out.colors).length) out.colors = {};
+  const bg = out.background;
+  if (bg && ['video', 'gif', 'particles'].includes(bg.type)) out.background = { ...bg, type: 'gradient' };
+  const hs = out.headerStyle;
+  if (hs && (hs.variant === 'animated' || hs.avatarSize === 'hero')) {
+    out.headerStyle = {
+      ...hs,
+      ...(hs.variant === 'animated' ? { variant: 'banner' } : {}),
+      ...(hs.avatarSize === 'hero' ? { avatarSize: 'standard' } : {}),
+    };
+  }
+  out.customCss = '';
+  out.pixels = null;
+  if (Array.isArray(out.blocks)) out.blocks = out.blocks.filter((b) => BLOCK_REGISTRY[b?.type]?.tier !== 'pro');
+  return out;
+}
 
 export const ACCENT_PRESETS = [
   '#4DFFD4', '#7B1FFF', '#B44FFF', '#C87FFF',

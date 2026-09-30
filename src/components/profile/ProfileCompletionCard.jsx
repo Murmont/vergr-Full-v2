@@ -57,8 +57,8 @@ export default function ProfileCompletionCard() {
       { id: 'profile_banner', label: 'Profile banner', vp: 300, done: !!profile.banner, cta: () => navigate('/edit-profile') },
       { id: 'profile_bio', label: 'Bio (20+ characters)', vp: 200, done: String(profile.bio || '').trim().length >= 20, cta: () => navigate('/edit-profile') },
       { id: 'profile_interests', label: 'Pick 3+ interests', vp: 200, done: (profile.gameTags || []).length >= 3, cta: () => navigate('/edit-profile') },
-      { id: 'first_follow_5', label: 'Follow 5 gamers', vp: 300, done: (profile.followingCount || 0) >= 5, cta: () => navigate('/explore') },
-      { id: 'profile_gaming_link', label: 'Connect a gaming account', vp: 500, done: !!(profile.linkedAccounts && Object.keys(profile.linkedAccounts).length > 0), cta: () => navigate('/settings/linked-accounts') },
+      { id: 'first_follow_5', label: 'Follow 5 people', vp: 300, done: (profile.followingCount || 0) >= 5, cta: () => navigate('/explore') },
+      { id: 'profile_gaming_link', label: 'Connect an account', vp: 500, done: !!(profile.linkedAccounts && Object.keys(profile.linkedAccounts).length > 0), cta: () => navigate('/settings/linked-accounts') },
     ];
   }, [profile, navigate]);
 

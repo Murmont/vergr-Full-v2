@@ -361,23 +361,27 @@ async function resolveOne(callerUid, reportId, decision, reason, meta) {
     resolutionReason: String(reason || '').slice(0, 400),
   });
 
-  // Auto-hide posts when an admin approves the report.
+  // Hide the post and tell its author (postModeration.js).
   if (decision === 'approve' && r.targetType === 'post' && r.targetId) {
-    await db.collection('posts').doc(r.targetId).update({
-      status: 'hidden',
-      hiddenReason: 'admin_approved_report',
-      hiddenAt: FieldValue.serverTimestamp(),
-      hiddenBy: callerUid,
-    }).catch(() => null);
+    const { hidePost } = require('./postModeration');
+    await hidePost({ postId: r.targetId, reasonCode: 'admin_approved_report', byUid: callerUid }).catch(() => null);
   }
-  // Mark streams ended when approving stream reports.
+  // A comment report carries its postId (firestore.js reportComment).
+  if (decision === 'approve' && r.targetType === 'comment' && r.targetId && r.postId) {
+    const { hideComment } = require('./postModeration');
+    await hideComment({ postId: r.postId, commentId: r.targetId, reasonCode: 'admin_approved_report', byUid: callerUid }).catch(() => null);
+  }
+  // End the stream for real. This used to write status 'ended_by_admin', which
+  // no viewer, broadcaster or ingest server recognised, so the stream carried
+  // on. streamTakedown.js explains the whole path.
   if (decision === 'approve' && r.targetType === 'stream' && r.targetId) {
-    await db.collection('streams').doc(r.targetId).update({
-      status: 'ended_by_admin',
-      endedReason: 'admin_approved_report',
-      endedAt: FieldValue.serverTimestamp(),
-      endedBy: callerUid,
-    }).catch(() => null);
+    const { takedownStream } = require('./streamTakedown');
+    await takedownStream({
+      streamId: r.targetId,
+      byUid: callerUid,
+      reason: `Upheld report: ${String(r.reason || 'breaks the rules').replace(/_/g, ' ')}`,
+      source: 'admin_report',
+    }).catch((e) => console.error('takedownStream (report) failed', r.targetId, e?.message || e));
   }
 
   // Audit.
@@ -765,6 +769,17 @@ exports.adminGetAppealDetail = functions.https.onCall(
 );
 
 const APPEAL_DECISIONS = ['upheld', 'overturned', 'dismissed'];
+// What a user may appeal. 'stream_chat' is the live-chat ban appeal
+// (MobileLiveViewer AppealSheet); the rest are checked for ownership below.
+const APPEALABLE = new Set(['post', 'comment', 'stream', 'account', 'mute', 'stream_chat']);
+
+// A comment appeal's targetId is "<postId>:<commentId>" (the link hideComment
+// sends). Returns the comment's ref, or null for a malformed id.
+function commentRefFor(targetId) {
+  const [postId, commentId] = String(targetId || '').split(':');
+  if (!postId || !commentId) return null;
+  return db.collection('posts').doc(postId).collection('comments').doc(commentId);
+}
 
 exports.adminResolveAppeal = functions.https.onCall(
   { region: REGION, cors: true },
@@ -803,11 +818,26 @@ exports.adminResolveAppeal = functions.https.onCall(
       try {
         if (a.targetType === 'post' && a.targetId) {
           await db.collection('posts').doc(a.targetId).update({
-            status: 'visible',
+            // 'published' is what every feed queries. This wrote 'visible', a
+            // status no query matches, so a restored post never came back.
+            status: 'published',
+            // The AI path hides with `hidden: true`, not status; clearing only
+            // status left an AI-hidden post hidden after its appeal was granted.
+            hidden: false,
             hiddenReason: null,
             restoredAt: FieldValue.serverTimestamp(),
             restoredBy: uid,
           });
+        } else if (a.targetType === 'comment' && a.targetId) {
+          const cref = commentRefFor(a.targetId);
+          if (cref) {
+            await cref.update({
+              hidden: false,
+              hiddenReason: null,
+              restoredAt: FieldValue.serverTimestamp(),
+              restoredBy: uid,
+            });
+          }
         } else if (a.targetType === 'stream' && a.targetId) {
           // Streams can't really be un-ended; mark only.
           await db.collection('streams').doc(a.targetId).update({
@@ -879,6 +909,49 @@ exports.submitAppeal = functions.https.onCall(
     }
     if (!appealText || String(appealText).trim().length < 20) {
       throw new HttpsError('invalid-argument', 'appealText required (min 20 chars)');
+    }
+    if (!APPEALABLE.has(targetType)) {
+      throw new HttpsError('invalid-argument', `Cannot appeal a ${targetType}.`);
+    }
+
+    // ⚠ Until 2026-09-21 this checked nothing: anyone could file an appeal
+    // about anyone's post, stream or account. Now you may only appeal a
+    // decision about YOUR OWN content or account, and only inside the appeal
+    // window Admin → Moderation → Settings sets (appealWindowDays, which
+    // nothing read before). One read of the target, one of the config; appeals
+    // are rare and user-initiated.
+    let actionAtMs = 0;
+    if (targetType === 'account' || targetType === 'mute') {
+      if (targetId !== uid) throw new HttpsError('permission-denied', 'You can only appeal your own account.');
+      const u = (await db.collection('users').doc(uid).get()).data() || {};
+      actionAtMs = toMs(targetType === 'account' ? u.bannedAt : u.mutedAt) || 0;
+    } else if (targetType === 'post') {
+      const p = await db.collection('posts').doc(String(targetId)).get();
+      if (!p.exists) throw new HttpsError('not-found', 'Post not found');
+      const d = p.data() || {};
+      if ((d.userId || d.authorId) !== uid) throw new HttpsError('permission-denied', 'You can only appeal your own post.');
+      actionAtMs = toMs(d.hiddenAt) || 0;
+    } else if (targetType === 'comment') {
+      const cref = commentRefFor(targetId);
+      if (!cref) throw new HttpsError('invalid-argument', 'Bad comment reference.');
+      const c = await cref.get();
+      if (!c.exists) throw new HttpsError('not-found', 'Comment not found');
+      const d = c.data() || {};
+      if ((d.authorId || d.userId) !== uid) throw new HttpsError('permission-denied', 'You can only appeal your own comment.');
+      actionAtMs = toMs(d.hiddenAt) || 0;
+    } else if (targetType === 'stream') {
+      const s = await db.collection('streams').doc(String(targetId)).get();
+      if (!s.exists) throw new HttpsError('not-found', 'Stream not found');
+      const d = s.data() || {};
+      if (d.hostUid !== uid) throw new HttpsError('permission-denied', 'You can only appeal your own stream.');
+      actionAtMs = toMs(d.takenDownAt) || 0;
+    }
+    if (actionAtMs) {
+      const cfg = (await db.collection('app_config').doc('general').get()).data() || {};
+      const days = Number(cfg.moderation?.appealWindowDays) || MOD_POLICY_DEFAULTS.appealWindowDays;
+      if (Date.now() - actionAtMs > days * 86_400_000) {
+        throw new HttpsError('failed-precondition', `Appeals must be sent within ${days} days of the decision.`);
+      }
     }
 
     // Dedupe: one pending appeal per (userId, reportId or targetId).

@@ -11,6 +11,7 @@
 // get, never cropped). Top/bottom overlays respect the status-bar safe area.
 
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import TakedownNotice from '../../../components/streams/TakedownNotice';
 import { CoinIcon } from '../../../components/CoinIcon';
 import { useKeepAwake } from '../../../utils/keepAwake';
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
@@ -27,7 +28,8 @@ import { startBrowserIngest, browserCanIngest } from '../../../utils/streamInges
 import HypeMeter from '../../../components/tournament/HypeMeter';
 import JoinAnnouncer from '../../../components/streams/JoinAnnouncer';
 import ChatPanel from '../../../components/streams/ChatPanel';
-import { StreamGoalBar, TipAlertOverlay, SubAlertOverlay } from '../../../components/streams/StreamGoalAndAlerts';
+import { StreamGoalBar, SubAlertOverlay } from '../../../components/streams/StreamGoalAndAlerts';
+import { TipComboFeed, useLastTipCombo, useAboveChat } from '../../../components/streams/TipComboFeed';
 import { useActiveStreamPoll, StreamPollCard, CreateStreamPollModal } from '../../../components/streams/StreamPoll';
 import useStreamClipBuffer from '../../../hooks/useStreamClipBuffer';
 import { uploadToR2 } from '../../../utils/r2Storage';
@@ -35,7 +37,7 @@ import { renderShareCard } from '../../../utils/shareCard';
 import { createPost, getStreamIngest, markStatusPosted } from '../../../firebase/firestore';
 import StreamShareSheet from '../../../components/streams/StreamShareSheet';
 import CoHostInviteModal from '../../../components/streams/CoHostInviteModal';
-import { ZeroViewers, VpEarnedChip, MovableGoal, HealthWarningView, HypeTrainView } from '../../../components/streams/states';
+import { ZeroViewers, VpEarnedChip, MovableGoal, HealthWarningView, HypeTrainView, LiveTrainBonus, trainPayTotals, trainPayLine } from '../../../components/streams/states';
 import { motion, AnimatePresence } from 'framer-motion';
 import { spring } from '../../../components/primitives/springs';
 import { useStreamJoinEvents } from '../../../hooks/useStreamJoinEvents';
@@ -74,6 +76,8 @@ export default function NativeBroadcasterScreen() {
   const meterRafRef = useRef(0);
 
   const [streamDoc, setStreamDoc] = useState(null);
+  // Set when Vergr ends this stream (functions/streamTakedown.js); the reason.
+  const [takenDown, setTakenDown] = useState(null);
   const ingestFetchedRef = useRef(false);
   const [streamLoading, setStreamLoading] = useState(true);
 
@@ -107,6 +111,16 @@ export default function NativeBroadcasterScreen() {
   const [tipEvents, setTipEvents] = useState([]);
   const [startingFollowers, setStartingFollowers] = useState(null);
   const [currentFollowers, setCurrentFollowers] = useState(0);
+
+  // Every hype train this stream paid, from the stream doc the screen already
+  // listens to (no read), for the end-of-stream summary. Keyed by the train, so
+  // the final payout returned by endStreamSession is never counted twice.
+  const trainPaysRef = useRef(new Map());
+  const trainBonusAt = streamDoc?.hypeTrainBonus?.at || 0;
+  useEffect(() => {
+    const b = streamDoc?.hypeTrainBonus;
+    if (b?.at) trainPaysRef.current.set(b.trainStartedAtMs || b.at, b);
+  }, [trainBonusAt]);
 
   const [endedStats, setEndedStats] = useState(null);
   const [moreOpen, setMoreOpen] = useState(false);
@@ -167,6 +181,7 @@ export default function NativeBroadcasterScreen() {
       }
       if (data.status === 'live' && !isLive) setIsLive(true);
       if (data.status === 'ended' && isLive) setIsLive(false);
+      if (data.takenDownAt) setTakenDown(data.takedownReason || '');
     }, (err) => { console.warn('stream doc subscribe error:', err); setStreamLoading(false); });
   }, [streamId, isLive]);
 
@@ -332,6 +347,8 @@ export default function NativeBroadcasterScreen() {
         const fn = httpsCallable(getFunctions(undefined, 'europe-west1'), 'endStreamSession');
         const r = await fn({ streamId: streamDoc.id });
         if (r.data?.refunded) showToast('Boost refunded. Your tips covered the fee!', 'success');
+        const tb = r.data?.trainBonus;
+        if (tb) trainPaysRef.current.set(tb.trainStartedAtMs || tb.at || 'end', tb);
       }
       const tipCoins = tipEvents.reduce((s, t) => s + (t.coins || 0), 0);
       const tipperMap = {};
@@ -343,6 +360,7 @@ export default function NativeBroadcasterScreen() {
         goal: streamDoc?.goal?.active ? streamDoc.goal : null,
         newFollowers: Math.max(0, currentFollowers - (startingFollowers || currentFollowers)),
         boosted: !!streamDoc?.boosted,
+        trainPays: trainPayTotals([...trainPaysRef.current.values()]),
       });
       setIsLive(false);
     } catch (err) { showToast(err?.message || 'End-stream failed', 'error'); } finally { setEnding(false); }
@@ -401,9 +419,16 @@ export default function NativeBroadcasterScreen() {
   }, [clipping, currentUser?.uid, isLive, clipsUsed, clipCfg, hostPlan, browserIngest, clipSupported, grabClip, streamDoc?.id, publishClip, showToast]);
 
   // ── Guards ──
+  // Tips draw as the designed combo feed from the server-written lastTip, the
+  // same as the viewers, directly above the newest chat row. Declared above the
+  // early returns so the hook order never changes.
+  const { tips: tipDrops } = useLastTipCombo(streamDoc?.lastTip);
+  const { setList: setChatList, setAnchor: setChatFrame, bottom: aboveChat } = useAboveChat(null);
+
   if (streamLoading) return <FullCenter label="Loading stream…" />;
   if (!streamDoc) return <FullCenter label="This stream doesn't exist." action={{ label: 'Back to Go Live', onClick: () => navigate('/go-live') }} />;
   if (streamDoc.hostUid !== currentUser?.uid) return <FullCenter label="You're not the host of this stream." action={{ label: 'Watch instead', onClick: () => navigate(`/watch/${streamDoc.id}`) }} />;
+  if (takenDown !== null) return <TakedownNotice streamId={streamId} reason={takenDown} onClose={() => navigate('/')} />;
   if (endedStats) return <StreamSummary stats={endedStats} onClose={() => navigate('/')} />;
 
   const composerExtras = (
@@ -415,7 +440,7 @@ export default function NativeBroadcasterScreen() {
   );
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: '#000', overflow: 'hidden', color: C.text, fontFamily: '"DM Sans",system-ui,sans-serif', zIndex: 90 }}>
+    <div ref={setChatFrame} style={{ position: 'fixed', inset: 0, background: '#000', overflow: 'hidden', color: C.text, fontFamily: '"DM Sans",system-ui,sans-serif', zIndex: 90 }}>
       {/* WYSIWYG preview — contain, never cropped. */}
       <video ref={videoRef} autoPlay muted playsInline style={{ width: '100%', height: '100%', objectFit: 'contain', background: '#000' }} />
 
@@ -474,7 +499,7 @@ export default function NativeBroadcasterScreen() {
           the streamer reads chat while live, no sheet to open). */}
       <div style={{
         position: 'absolute', left: 10, right: 10,
-        bottom: 'calc(env(safe-area-inset-bottom, 0px) + 10px)',
+        bottom: 'calc(var(--vg-safe-b, 0px) + 10px)',
         display: 'flex', flexDirection: 'column', gap: 8, zIndex: 8,
       }}>
         {streamPoll && (
@@ -506,6 +531,7 @@ export default function NativeBroadcasterScreen() {
               slowModeSec={streamDoc.slowModeSec || 0} followersOnly={!!streamDoc.followersOnly} subsOnly={!!streamDoc.subsOnly} mutedUids={streamDoc.mutedUids || null} ttsEnabled={!!streamDoc.ttsEnabled}
               pinnedMessage={streamDoc.pinnedMessage || null}
               composerExtras={composerExtras}
+              onListRef={setChatList}
             />
           </div>
         ) : (
@@ -525,17 +551,18 @@ export default function NativeBroadcasterScreen() {
       </div>
 
       <HypeTrainView train={streamDoc.hypeTrain} />
-      {alertsOn && <TipAlertOverlay lastTip={streamDoc.lastTip} anchor="top" />}
+      <LiveTrainBonus bonus={streamDoc.hypeTrainBonus} train={streamDoc.hypeTrain} hostName="you" />
+      {alertsOn && <TipComboFeed tips={tipDrops} style={{ bottom: aboveChat ?? 'calc(var(--vg-safe-b, 0px) + 28vh + 24px)', left: 10, zIndex: 9 }} />}
       {alertsOn && <SubAlertOverlay lastSub={streamDoc.lastSub} anchor="bottom" />}
       {pollModalOpen && <CreateStreamPollModal hostUid={streamDoc.hostUid} streamId={streamDoc.id} onClose={() => setPollModalOpen(false)} showToast={showToast} />}
-      <JoinAnnouncer events={joinEvents} side="left" bottom="calc(env(safe-area-inset-bottom, 0px) + 28vh + 24px)" />
+      <JoinAnnouncer events={joinEvents} side="left" bottom="calc(var(--vg-safe-b, 0px) + 28vh + 24px)" />
 
       {/* "More" tool sheet: poll / clip / share */}
       <AnimatePresence>
         {moreOpen && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setMoreOpen(false)} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 60 }}>
             <motion.div onClick={(e) => e.stopPropagation()} initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} transition={spring.gentle}
-              style={{ position: 'absolute', left: 0, right: 0, bottom: 0, background: C.bg, borderTopLeftRadius: 16, borderTopRightRadius: 16, padding: '14px 14px calc(env(safe-area-inset-bottom,0px) + 14px)' }}>
+              style={{ position: 'absolute', left: 0, right: 0, bottom: 0, background: C.bg, borderTopLeftRadius: 16, borderTopRightRadius: 16, padding: '14px 14px calc(var(--vg-safe-b, 0px) + 14px)' }}>
               <SheetBtn icon="edit" label="Edit title / category" onClick={() => { setMoreOpen(false); setEditInfoOpen(true); }} />
               <SheetBtn icon="poll" label={streamPoll && !streamPollClosed ? 'Poll running' : 'Start a poll'} onClick={() => { setMoreOpen(false); if (!isLive) { showToast('Go live first to start a poll.', 'info'); return; } setPollModalOpen(true); }} />
               <SheetBtn icon="content_cut" label="Clip the last moment" onClick={() => { setMoreOpen(false); handleClip(); }} />
@@ -592,7 +619,7 @@ function EditInfoModal({ title, game, saving, onSave, onClose }) {
   const [g, setG] = useState(game || '');
   return (
     <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 80, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: 480, background: C.card, border: `1px solid ${C.border}`, borderTopLeftRadius: 18, borderTopRightRadius: 18, padding: 20, paddingBottom: 'calc(env(safe-area-inset-bottom,0px) + 20px)', color: C.text, fontFamily: '"DM Sans", system-ui, sans-serif' }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: 480, background: C.card, border: `1px solid ${C.border}`, borderTopLeftRadius: 18, borderTopRightRadius: 18, padding: 20, paddingBottom: 'calc(var(--vg-safe-b, 0px) + 20px)', color: C.text, fontFamily: '"DM Sans", system-ui, sans-serif' }}>
         <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 14 }}>Edit stream info</div>
         <label style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.06em', color: C.textDim }}>TITLE</label>
         <input value={t} maxLength={140} onChange={(e) => setT(e.target.value)} placeholder="What are you streaming?"
@@ -783,6 +810,13 @@ function StreamSummary({ stats, onClose }) {
             <Icon name={goalReached ? 'emoji_events' : 'flag'} size={16} />
             <span style={{ flex: 1 }}>{goalReached ? 'Tip goal reached!' : 'Tip goal'}{stats.goal.reason ? ` · ${stats.goal.reason}` : ''}</span>
             <span style={{ fontFamily: 'DM Mono, monospace', fontWeight: 800, color: goalReached ? C.amber : C.text }}>{(stats.goal.currentCoins || 0).toLocaleString()} / {(stats.goal.targetCoins || 0).toLocaleString()}</span>
+          </div>
+        )}
+        {stats.trainPays?.count > 0 && (
+          <div style={{ padding: '10px 12px', borderRadius: 10, marginBottom: 14, background: '#2A2008', borderLeft: `3px solid ${C.amber}`, display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
+            <Icon name="local_fire_department" size={16} />
+            <span style={{ flex: 1 }}>{stats.trainPays.count === 1 ? 'Hype train paid you' : `${stats.trainPays.count} hype trains paid you`}</span>
+            <span style={{ fontFamily: 'DM Mono, monospace', fontWeight: 800, color: C.amber }}>{trainPayLine(stats.trainPays)}</span>
           </div>
         )}
         {stats.topTippers?.length > 0 && (

@@ -15,17 +15,10 @@
 import { useCallback } from 'react';
 import { useUser } from '../context/UserContext';
 
-// Event name used to bubble the prompt up to <GuestSignupPrompt /> at
-// the app root. Using a custom-event channel avoids coupling every
-// action site to a portal/modal context.
-export const GUEST_PROMPT_EVENT = 'vergr-guest-prompt';
-
-export function dispatchGuestPrompt(actionLabel) {
-  if (typeof window === 'undefined') return;
-  window.dispatchEvent(new CustomEvent(GUEST_PROMPT_EVENT, {
-    detail: { actionLabel: actionLabel || 'do that' },
-  }));
-}
+// The event channel lives in utils/guestPrompt.js so non-React code (the
+// cart, native billing, web checkout) can raise the same prompt.
+import { GUEST_PROMPT_EVENT, dispatchGuestPrompt } from '../utils/guestPrompt';
+export { GUEST_PROMPT_EVENT, dispatchGuestPrompt };
 
 export default function useGuestGate() {
   const { isGuest } = useUser();

@@ -21,7 +21,7 @@ const FAQS = [
   ['What can I put on my page?',
     'Over 18 block types: links, image galleries, video, music players (Spotify, Apple Music, SoundCloud), products, contact forms, email collection, tips, and live Vergr content like your stream, ticketed events and squad.'],
   ['How is Vergr.me different from Linktree?',
-    'Vergr.me is built into a gaming platform: your page can show your live stream, ticketed events and community in real time, fans can tip or message you directly, and the generous free tier includes analytics and full design systems instead of a single button list.'],
+    'Vergr.me is built into a live streaming platform: your page can show your live stream, ticketed events and community in real time, fans can tip or message you directly, and the generous free tier includes analytics and full design systems instead of a single button list.'],
   ['Can I collect emails or sell things?',
     'Yes, contact form and email pop-up blocks capture leads you can export to CSV, and support/product blocks link out to your storefronts. Tips arrive as VC Coins, and Vergr pays you a share of that revenue: 50% to start, up to 80%.'],
   ['Does it work on TikTok, Instagram and YouTube?',
@@ -70,7 +70,7 @@ export default function LinkInBioScreen() {
       </Section>
 
       <Section bordered>
-        <H2>Made for creators and gamers</H2>
+        <H2>Built into your Vergr profile</H2>
         <P max={720}>
           Your vergr.me page is wired into the Vergr platform: linking your Twitch prefills a starter page with
           your VODs and clips, your live stream appears on your page the second you go live, and visitors can

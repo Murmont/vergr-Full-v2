@@ -82,7 +82,7 @@ export default function NativeCreateGroupChatScreen() {
     : [...selected.filter(s => !friends.some(f => f.uid === s.uid)), ...friends];
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--bg-dark)', paddingBottom: 'calc(88px + env(safe-area-inset-bottom, 0px))' }}
+    <div style={{ minHeight: '100vh', background: 'var(--bg-dark)', paddingBottom: 'calc(88px + var(--vg-safe-b, 0px))' }}
       className="flex flex-col">
       <header className="flex items-center gap-3 px-4 pb-3 border-b border-white/[0.04]"
         style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 14px)' }}>

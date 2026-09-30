@@ -15,7 +15,7 @@ const slides = [
     icon: 'live_tv',
     title: 'Watch',
     subtitle: 'Always Something Live',
-    description: 'Watch live streams from gamers and creators worldwide, chat in real time, and follow the people you want to keep up with.',
+    description: 'Watch live streams from around the world, chat in real time, and follow the people you want to keep up with.',
     gradient: 'from-brand-violet to-brand-pink',
     bgGlow: 'rgba(123,111,255,0.08)',
     features: ['Live streams', 'Real-time chat', 'Clips and shorts', 'Community leaderboards'],

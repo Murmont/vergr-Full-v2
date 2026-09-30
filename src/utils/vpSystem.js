@@ -133,22 +133,36 @@ export const VP_LEVELS = (() => {
 export const MAX_VP_LEVEL = 100;
 export const TOTAL_VP_TO_MAX = VP_LEVELS[99].vpRequired; // 648,000
 
-// ── PRESTIGE SYSTEM (post-L100, optional, cosmetic) ──
-// After hitting L100, users may optionally prestige: reset displayed level to 1
-// with a prestige badge (P1, P2, ...). Permanent VP history preserved.
-// Each prestige adds a star on the rank ring. Never forced.
+// ── PRESTIGE (post-L100, automatic, status only) ──
+// The level stops at 100. Past it, every further full ladder of VP
+// (TOTAL_VP_TO_MAX) adds one prestige, up to PRESTIGE_MAX: a star beside the
+// rank and a title. NOTHING RESETS. The earlier design reset the displayed
+// level to 1 "with perks intact", but every perk is gated on that level, so the
+// promise contradicted itself, and nothing ever implemented it. Level, perks,
+// crest and commission stay where L100 put them. No coins (audit A112).
+// MIRROR of prestigeForVp() in functions/vpLevel.js, which writes users.prestige.
 export const PRESTIGE_MAX = 10;
+export const prestigeForVP = (totalVP) =>
+  Math.max(0, Math.min(PRESTIGE_MAX, Math.floor((Number(totalVP) || 0) / TOTAL_VP_TO_MAX) - 1));
+/** Total VP at which the NEXT prestige lands, or null below L100 and at the cap. */
+export const nextPrestigeVP = (totalVP) => {
+  const vp = Number(totalVP) || 0;
+  if (vp < TOTAL_VP_TO_MAX) return null;
+  const p = prestigeForVP(vp);
+  return p >= PRESTIGE_MAX ? null : (p + 2) * TOTAL_VP_TO_MAX;
+};
 export const PRESTIGE_REWARDS = [
-  { prestige: 1,  badge: '★',     coinReward: 500,  title: 'Ascendant I'  },
-  { prestige: 2,  badge: '★★',    coinReward: 750,  title: 'Ascendant II' },
-  { prestige: 3,  badge: '★★★',   coinReward: 1000, title: 'Ascendant III'},
-  { prestige: 4,  badge: '✦',     coinReward: 1250, title: 'Immortal I'   },
-  { prestige: 5,  badge: '✦✦',    coinReward: 1500, title: 'Immortal II'  },
-  { prestige: 6,  badge: '✦✦✦',   coinReward: 2000, title: 'Immortal III' },
-  { prestige: 7,  badge: '❂',     coinReward: 2500, title: 'Eternal I'    },
-  { prestige: 8,  badge: '❂❂',    coinReward: 3000, title: 'Eternal II'   },
-  { prestige: 9,  badge: '❂❂❂',   coinReward: 4000, title: 'Eternal III'  },
-  { prestige: 10, badge: '⟁',     coinReward: 5000, title: 'Transcendent' },
+  // No coinReward: nothing pays one, and a figure left here gets displayed again.
+  { prestige: 1,  badge: '★',     title: 'Ascendant I'  },
+  { prestige: 2,  badge: '★★',    title: 'Ascendant II' },
+  { prestige: 3,  badge: '★★★',   title: 'Ascendant III'},
+  { prestige: 4,  badge: '✦',     title: 'Immortal I'   },
+  { prestige: 5,  badge: '✦✦',    title: 'Immortal II'  },
+  { prestige: 6,  badge: '✦✦✦',   title: 'Immortal III' },
+  { prestige: 7,  badge: '❂',     title: 'Eternal I'    },
+  { prestige: 8,  badge: '❂❂',    title: 'Eternal II'   },
+  { prestige: 9,  badge: '❂❂❂',   title: 'Eternal III'  },
+  { prestige: 10, badge: '⟁',     title: 'Transcendent' },
 ];
 
 // Get user's VP level from total VP (capped at L100; prestige handled separately)
@@ -192,7 +206,7 @@ export const PLAN_VP_MULTIPLIER = {
 export const getVPMultiplier = (plan) => PLAN_VP_MULTIPLIER[plan] || 1;
 
 // ── MONTHLY PLAN BONUSES ──
-// Paid out on the 1st of each month by the scheduled function.
+// Paid once per paid period, the moment it is paid for (functions/planBonus.js).
 export const MONTHLY_VP_BONUS  = { free: 0, lite: 1000, pro: 3000 };
 export const MONTHLY_COIN_REWARDS = { free: 0, lite: 50,   pro: 150  };
 
@@ -367,7 +381,7 @@ export const COIN_PACKS = [
   { id: 'elite',     name: 'Elite Pack',     coins: 1650,   vpBonus: 0,    priceUSD: 19.99,  tagline: 'Headroom for streaks and locked content',         badge: 'BEST VALUE',   badgeStyle: 'value' },
   { id: 'legend',    name: 'Legend Pack',    coins: 4180,   vpBonus: 0,    priceUSD: 49.99,  tagline: 'For serious players and squads' },
   { id: 'champion',  name: 'Champion Pack',  coins: 8450,   vpBonus: 0,    priceUSD: 99.99,  tagline: 'Deep bulk discount' },
-  { id: 'titan',     name: 'Titan Pack',     coins: 12800,  vpBonus: 1500, priceUSD: 149.99, tagline: 'Skip ranks faster, earn more on every conversion', badge: '+1,500 VP BONUS', badgeStyle: 'vp' },
+  { id: 'titan',     name: 'Titan Pack',     coins: 12800,  vpBonus: 1500, priceUSD: 149.99, tagline: 'Skip ranks faster', badge: '+1,500 VP BONUS', badgeStyle: 'vp' },
   { id: 'ascendant', name: 'Ascendant Pack', coins: 21500,  vpBonus: 3000, priceUSD: 249.99, tagline: 'For top creators and squad leaders',              badge: 'BIGGEST VP BONUS', badgeStyle: 'vp' },
 ];
 

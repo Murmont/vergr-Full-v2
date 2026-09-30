@@ -9,6 +9,7 @@ import {
 } from '../../../components/wallet/primitives';
 import Icon from '../../../components/Icon';
 import UserName from '../../../components/UserName';
+import { auth } from '../../../firebase/config';
 
 export default function SettingsScreen() {
   const navigate = useNavigate();
@@ -29,7 +30,7 @@ export default function SettingsScreen() {
         <Column title="Account">
           <Card title="Account info">
             <Row label="Username"><UserName user={profile} masked handle fallback={'—'} /></Row>
-            <Row label="Email">{profile?.email ? maskEmail(profile.email) : '—'}</Row>
+            <Row label="Email">{auth.currentUser?.email ? maskEmail(auth.currentUser.email) : '—'}</Row>
             <Row label="Member since">{profile?.createdAt
               ? new Date(profile.createdAt.seconds ? profile.createdAt.seconds * 1000 : profile.createdAt).toLocaleDateString()
               : '—'}</Row>

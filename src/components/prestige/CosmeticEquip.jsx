@@ -136,7 +136,10 @@ export default function CosmeticEquip({ level = 1 }) {
   const nameEffect = local.nameEffect !== false;   // OPT-OUT: undefined means on
   const unlockedAccents = PROFILE_ACCENTS.filter((p) => effLevel >= p.level);
 
-  const canTyping = isUnlocked('typing_style', effLevel);
+  // ⚠ NOT isUnlocked('typing_style'): no ladder row has that id (the rows are
+  // typing_wave, typing_bars, ...), so it was false for every account and the
+  // picker never opened. TYPING_STYLE_LEVEL is the first styled unlock; rules check each style at its own level.
+  const canTyping = effLevel >= TYPING_STYLE_LEVEL;
   // The resolver, not `local.typingStyle` directly: it is the same function the
   // chat surfaces call, so the tile that looks selected here is the one that
   // will actually draw. A preview and a render disagreeing is what killed the
@@ -399,14 +402,17 @@ export default function CosmeticEquip({ level = 1 }) {
               <div className="grid grid-cols-3 gap-2">
                 {TYPING_STYLES.map((s) => {
                   const on = typingNow === s.id;
+                  // A style above your level is shown, not hidden, and cannot be
+                  // picked: typingStyleFor would only draw it as dots.
+                  const locked = effLevel < s.level;
                   return (
                     <button
                       key={s.id}
                       type="button"
-                      disabled={saving === 'typingStyle'}
-                      onClick={() => equip({ typingStyle: s.id }, s.name)}
+                      disabled={locked || saving === 'typingStyle'}
+                      onClick={() => !locked && equip({ typingStyle: s.id }, s.name)}
                       title={s.desc}
-                      className="rounded-xl py-3 flex flex-col items-center gap-2 transition-colors disabled:opacity-50"
+                      className="rounded-xl py-3 flex flex-col items-center gap-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                       style={{
                         background: on ? accentHexNow : 'rgba(255,255,255,0.045)',
                         color: on ? ensureContrast('#ffffff', accentHexNow) : 'var(--text-secondary,#9CA3AF)',
@@ -419,7 +425,7 @@ export default function CosmeticEquip({ level = 1 }) {
                           ink={on ? ensureContrast('#ffffff', accentHexNow) : (s.id === 'dots' ? undefined : accentHexNow)}
                         />
                       </span>
-                      <span className="text-[11px] font-bold">{s.name}</span>
+                      <span className="text-[11px] font-bold">{locked ? `${s.name} · ${s.level}` : s.name}</span>
                     </button>
                   );
                 })}

@@ -28,7 +28,7 @@
 // Google Secret Manager. The deploy step injects them as env vars at runtime.
 // Set with: `firebase functions:secrets:set <NAME>`. Never commit values.
 const { onCall, onRequest, HttpsError } = require('firebase-functions/v2/https');
-const { defineSecret } = require('firebase-functions/params');
+const { defineSecret, defineString } = require('firebase-functions/params');
 const { getFirestore, FieldValue, Timestamp } = require('firebase-admin/firestore');
 const crypto = require('crypto');
 const axios = require('axios');
@@ -41,9 +41,9 @@ const db = getFirestore('vgrdb');
 // an approval process to keep alive. Their secrets were disabled after this
 // shipped; do not re-add a defineSecret here without re-enabling the version
 // first, or both functions below will fail to start.
-const TWITCH_CLIENT_ID     = defineSecret('TWITCH_CLIENT_ID');
+const TWITCH_CLIENT_ID = defineString('TWITCH_CLIENT_ID');
 const TWITCH_CLIENT_SECRET = defineSecret('TWITCH_CLIENT_SECRET');
-const DISCORD_CLIENT_ID    = defineSecret('DISCORD_CLIENT_ID');
+const DISCORD_CLIENT_ID = defineString('DISCORD_CLIENT_ID');
 const DISCORD_CLIENT_SECRET= defineSecret('DISCORD_CLIENT_SECRET');
 
 // ⚠⚠ EVERY SECRET IN THIS ARRAY IS BOUND TO BOTH getOAuthStartUrl AND
@@ -55,10 +55,7 @@ const DISCORD_CLIENT_SECRET= defineSecret('DISCORD_CLIENT_SECRET');
 //
 // Twitch and Discord only. The rest became display links: the user types their
 // handle and we show it, because nothing ever read those tokens afterwards.
-const ALL_SECRETS = [
-  TWITCH_CLIENT_ID, TWITCH_CLIENT_SECRET,
-  DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET,
-];
+const ALL_SECRETS = [TWITCH_CLIENT_SECRET, DISCORD_CLIENT_SECRET];
 
 const APP_BASE = 'https://vergr-44494.web.app';
 const REDIRECT = (platform) => `${APP_BASE}/auth/${platform}/callback`;

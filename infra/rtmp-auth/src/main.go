@@ -470,7 +470,15 @@ func watchdogTick() error {
 
 				// Refresh boost state every tick (cheap single-doc read) so
 				// quality-boost transitions take effect within ~5 seconds.
-				refreshBoostState(entry)
+				// The SAME read carries the takedown marker (functions/
+				// streamTakedown.js): a stream Vergr ended is dropped here, at
+				// no extra cost, instead of publishing to the CDN forever.
+				if refreshBoostState(entry) {
+					log.Printf("watchdog: %s was TAKEN DOWN by Vergr — dropping the publisher", key)
+					dropStream(app.Name, s.Name)
+					dropStreamPlan(s.Name)
+					continue
+				}
 
 				tier := effectiveTier(entry)
 				rules, ok := PLAN_RULES[tier]
@@ -509,13 +517,18 @@ func watchdogTick() error {
 
 // refreshBoostState polls the streams doc for qualityBoost field updates.
 // Called every watchdog tick. Cheap (single Firestore read).
-func refreshBoostState(entry *streamCacheEntry) {
-	if entry == nil || entry.DocID == "" { return }
+// Returns true when the stream was TAKEN DOWN (takenDownAt set), so the caller
+// drops the publisher. A read error returns false: never drop on a hiccup.
+func refreshBoostState(entry *streamCacheEntry) bool {
+	if entry == nil || entry.DocID == "" { return false }
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
 	defer cancel()
 	doc, err := fsClient.Collection("streams").Doc(entry.DocID).Get(ctx)
-	if err != nil { return }
+	if err != nil { return false }
 	data := doc.Data()
+	if _, ok := data["takenDownAt"]; ok {
+		return true
+	}
 	var active bool
 	var tier string
 	if qb, ok := data["qualityBoost"].(map[string]interface{}); ok {
@@ -530,6 +543,7 @@ func refreshBoostState(entry *streamCacheEntry) {
 		entry.BoostActive = active
 		entry.BoostTier = tier
 	}
+	return false
 }
 
 func dropStream(app, name string) {

@@ -238,7 +238,7 @@ export default function GroupCallScreen() {
 
       <footer
         className="flex items-center justify-center gap-4 py-5"
-        style={{ paddingBottom: 'calc(env(safe-area-inset-bottom,0px) + 1.25rem)' }}
+        style={{ paddingBottom: 'calc(var(--vg-safe-b, 0px) + 1.25rem)' }}
       >
         <button
           onClick={toggleCallMic}

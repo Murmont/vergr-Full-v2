@@ -21,7 +21,7 @@ export default {
       h2: "Get Coins first"
     },
     {
-      p: "Tips are sent in Coins, so you need some in your wallet. You can buy Coins in the Shop with a card or with crypto. You can also earn Coins by competing and getting tipped yourself, then turn around and support other people with them. Either works."
+      p: "Tips are sent in Coins, so you need some in your wallet. You can buy Coins in the Shop."
     },
     {
       h2: "What the creator actually gets"

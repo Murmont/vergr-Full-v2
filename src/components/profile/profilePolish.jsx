@@ -9,6 +9,18 @@ import { useEffect, useRef, useState } from 'react';
 import CachedImg from '../CachedImg';
 import Icon from '../Icon';
 import UserName from '../UserName';
+import { IS_NATIVE_BUILD } from '../../utils/platform';
+
+// ─── Solid chip fills for the profile header ───
+// No translucent washes and no outlines on a profile's buttons, tags or icon
+// boxes (founder, 2026-09-14): over the banner glow a wash reads as see-through.
+// The accent tint is mixed into the page colour so it stays solid. The
+// backgroundColor is the fallback for a WebView without color-mix(): an
+// unsupported backgroundImage is dropped, the solid colour stays.
+const ACCENT_MIX = 'color-mix(in srgb, var(--vg-accent) 18%, #0B0B14)';
+export const ACCENT_CHIP = { backgroundColor: '#1E1A2C', backgroundImage: `linear-gradient(${ACCENT_MIX}, ${ACCENT_MIX})`, color: 'var(--vg-accent)' };
+export const SOLID_CHIP = { background: '#1A1A26' };
+export const TIP_CHIP = { background: '#2A2412' };
 
 // Deterministic per-uid banner gradient. Hues constrained to the brand family
 // (violet → blue → pink range, never cyan/green) so every fallback stays
@@ -55,10 +67,14 @@ export function CountUpNumber({ value = 0, format = (n) => n.toLocaleString(), c
 export function MiniDockHeader({ show, avatar, name, user, onBack }) {
   return (
     <div
-      className="fixed top-0 left-0 right-0 z-40 flex items-center gap-3 px-3 h-12 transition-all duration-200"
+      // ⚠ Phone and tablet only on the web. On a desktop it spans the whole
+      // window, so its avatar and name sat UNDER the 240px sidebar and all that
+      // showed was an empty bar across the top of the page (measured 2026-09-14).
+      className={`fixed top-0 left-0 right-0 z-40 flex items-center gap-3 px-3 h-12 transition-all duration-200 ${IS_NATIVE_BUILD ? '' : 'lg:hidden'}`}
       style={{
-        background: 'rgba(11,11,20,0.88)', backdropFilter: 'blur(14px)',
-        borderBottom: '1px solid rgba(255,255,255,0.06)',
+        // Solid, no blur and no rule. A see-through header shows the page
+        // scrolling under the name, which the founder has ruled out.
+        background: '#0B0B14',
         opacity: show ? 1 : 0,
         transform: show ? 'translateY(0)' : 'translateY(-100%)',
         pointerEvents: show ? 'auto' : 'none',

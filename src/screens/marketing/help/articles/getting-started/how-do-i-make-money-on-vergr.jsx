@@ -20,7 +20,7 @@ export default {
         "Tips: go live or post, and your audience tips you in Coins. Vergr pays you a share of every tip: 50% to start, up to 80% as your lifetime earnings grow.",
         "Squads: team up and share what you earn. Members pool Coins into a shared squad treasury the squad controls.",
         "Memberships: your fans pay monthly for perks you set up in the Creator Studio.",
-        "Vanguard moderation: trusted players can join the moderator program and get paid for keeping competition fair."
+        "Vanguard moderation: trusted players can join the moderator program and get paid for keeping the community safe."
       ]
     },
     {

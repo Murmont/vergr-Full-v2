@@ -27,7 +27,7 @@ export default {
       ]
     },
     {
-      note: "Squads also run APPLICATIONS for specific things (like competing on the squad's behalf), and personal invitations skip the queue entirely: requests are just the front door."
+      note: "Squads also run APPLICATIONS for specific roles, and personal invitations skip the queue entirely: requests are just the front door."
     },
     {
       cta: [

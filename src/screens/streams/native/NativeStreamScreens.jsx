@@ -80,7 +80,7 @@ function NativeHeader({ title, onBack, right }) {
 const Shell = ({ title, onBack, right, children }) => (
   <div style={{ background: C.bg, minHeight: '100%', color: C.text, fontFamily: '"Inter","DM Sans",system-ui,sans-serif' }}>
     <NativeHeader title={title} onBack={onBack} right={right} />
-    <div style={{ padding: '16px 14px calc(env(safe-area-inset-bottom, 0px) + 24px)', display: 'flex', flexDirection: 'column', gap: 14 }}>
+    <div style={{ padding: '16px 14px calc(var(--vg-safe-b, 0px) + 24px)', display: 'flex', flexDirection: 'column', gap: 14 }}>
       {children}
     </div>
   </div>
@@ -245,7 +245,7 @@ export function NativeCoStreamingScreen() {
       )}
 
       {stream && (
-        <div style={{ position: 'sticky', bottom: 0, paddingTop: 10, paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 4px)', background: 'linear-gradient(to top, rgba(10,10,20,1) 60%, rgba(10,10,20,0))' }}>
+        <div style={{ position: 'sticky', bottom: 0, paddingTop: 10, paddingBottom: 'calc(var(--vg-safe-b, 0px) + 4px)', background: 'linear-gradient(to top, rgba(10,10,20,1) 60%, rgba(10,10,20,0))' }}>
           <button onClick={() => navigate(`/broadcast/${stream.streamId}?cohost=1`)} style={{ ...cta, boxShadow: '0 0 18px rgba(123,31,255,0.45)' }}>
             Go to Broadcaster {coHostUids.length === 0 ? '(solo for now)' : `· ${coHostUids.length} co-host${coHostUids.length === 1 ? '' : 's'}`}
           </button>
@@ -352,7 +352,7 @@ export function NativeCoStreamInviteScreen() {
         </div>
       </div>
 
-      <div style={{ position: 'sticky', bottom: 0, display: 'flex', gap: 10, paddingTop: 10, paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 4px)', background: 'linear-gradient(to top, rgba(10,10,20,1) 60%, rgba(10,10,20,0))' }}>
+      <div style={{ position: 'sticky', bottom: 0, display: 'flex', gap: 10, paddingTop: 10, paddingBottom: 'calc(var(--vg-safe-b, 0px) + 4px)', background: 'linear-gradient(to top, rgba(10,10,20,1) 60%, rgba(10,10,20,0))' }}>
         <button onClick={decline} disabled={!!working} style={{ flex: 1, padding: 15, borderRadius: 14, border: `1px solid ${C.border}`, background: 'transparent', color: C.textDim, fontSize: 14, fontWeight: 800, cursor: 'pointer', opacity: working ? 0.6 : 1 }}>
           {working === 'decline' ? 'Declining…' : 'Decline'}
         </button>
@@ -395,7 +395,7 @@ export function NativeStreamEndingScreen() {
           ))}
         </div>
       </div>
-      <div style={{ padding: '0 18px calc(env(safe-area-inset-bottom, 0px) + 18px)' }}>
+      <div style={{ padding: '0 18px calc(var(--vg-safe-b, 0px) + 18px)' }}>
         <button onClick={() => navigate('/')} style={{ ...cta, padding: 16, fontSize: 15 }}>Back home</button>
       </div>
     </div>

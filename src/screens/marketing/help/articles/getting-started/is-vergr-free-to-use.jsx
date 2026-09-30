@@ -9,7 +9,7 @@ export default {
   updated: "2026-06-06",
   body: [
     {
-      p: "Short version: yes, VERGR is free. You can sign up, build a profile, post, stream, watch, and compete without spending a cent."
+      p: "Short version: yes, VERGR is free. You can sign up, build a profile, post, stream, watch and chat without spending a cent."
     },
     {
       h2: "What is free"
@@ -30,7 +30,7 @@ export default {
     {
       list: [
         "Buying VC Coins, if you want to tip, buy event tickets, or boost.",
-        "Event tickets and season passes, if you want to watch ticketed events (competing is free).",
+        "Event tickets and season passes, if you want to watch ticketed events.",
         "Lite or Pro plans, if you want the extra features.",
         "Subscribing to a creator membership."
       ]
@@ -39,7 +39,7 @@ export default {
       h2: "Do I ever have to pay?"
     },
     {
-      p: "No. Plenty of people use VERGR without buying anything. You can earn Coins by competing and getting tipped, then spend or cash those out. Paying is a shortcut, not a gate."
+      p: "No. Plenty of people use VERGR without buying anything. Everything above that is free stays free. Paying is a shortcut, not a gate."
     },
     {
       cta: [

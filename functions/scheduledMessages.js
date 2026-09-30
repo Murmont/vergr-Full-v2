@@ -14,20 +14,20 @@
 
 const functions = require('firebase-functions/v2');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
+const { isStaffDoc } = require('./staff');
 
 const db = getFirestore('vgrdb');
 const REGION = 'europe-west1';
 
 const ALLOWED_TIERS = new Set(['lite', 'pro']);
-const ADMIN_EMAILS = new Set(['vergenerd@gmail.com']);
 
 function tierOf(u) {
   const s = u && u.subscription;
   const t = typeof s === 'string' ? s : (s && s.tier);
   return t || 'free';
 }
-function isAdmin(u, email) {
-  return (u && u.role === 'admin') || (email && ADMIN_EMAILS.has(String(email).toLowerCase()));
+function isAdmin(u) {
+  return isStaffDoc(u) || (u && u.role === 'admin');
 }
 
 const MAX_TEXT = 4000;
@@ -81,7 +81,7 @@ exports.scheduleMessage = functions.https.onCall(
     // Tier gate (server-enforced): Lite / Pro / admin only.
     const userSnap = await db.collection('users').doc(uid).get();
     const u = userSnap.exists ? userSnap.data() : {};
-    if (!isAdmin(u, req.auth.token && req.auth.token.email) && !ALLOWED_TIERS.has(tierOf(u))) {
+    if (!isAdmin(u) && !ALLOWED_TIERS.has(tierOf(u))) {
       throw new functions.https.HttpsError('permission-denied', 'Scheduled messages are a Lite or Pro feature.');
     }
 

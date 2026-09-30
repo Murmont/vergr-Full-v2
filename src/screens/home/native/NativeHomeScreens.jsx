@@ -9,7 +9,7 @@
 // two-column branches; full-width single column). Shared TopBar is native-safe.
 
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, Navigate, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { doc, getDoc, collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
 import { db, functions } from '../../../firebase/config';
@@ -30,7 +30,7 @@ import { uploadMediaFile } from '../../../utils/mediaHelpers';
 import { applyVanguardMask } from '../../../utils/vanguard';
 import { PLAN_VP_MULTIPLIER, REFERRAL_VP_REFERRER, REFERRAL_VP_REFEREE } from '../../../utils/vpSystem';
 import { resolveTier } from '../../../utils/tierSystem';
-import { timeAgo } from '../../../utils/helpers';
+import { timeAgo, isShortFormat } from '../../../utils/helpers';
 import TopBar from '../../../components/TopBar';
 import UserAvatar from '../../../components/UserAvatar';
 import Icon from '../../../components/Icon';
@@ -46,6 +46,7 @@ import EmojiPicker from '../../../components/EmojiPicker';
 import VanguardBadge from '../../../components/VanguardBadge';
 import { FeedSkeleton, ListSkeleton, StackSkeleton } from '../../../components/skeletons/GlassSkeletons';
 import UserName from '../../../components/UserName';
+import { AppealSheet, HiddenPostNotice } from '../../../components/moderation/Appeal';
 
 // ═══════════════════════════════════════ NOTIFICATIONS
 
@@ -120,7 +121,9 @@ export function NativeTrendingHashtagsScreen() {
 
   useEffect(() => {
     (async () => {
-      try { const snap = await getDoc(doc(db, 'trending', 'daily')); if (snap.exists() && snap.data().hashtags?.length > 0) setTags(snap.data().hashtags); }
+      // trending/hashtags is what the _updateTrending cron writes; trending/daily
+      // (read here before) is written by nothing, so this list was always empty.
+      try { const snap = await getDoc(doc(db, 'trending', 'hashtags')); if (snap.exists() && snap.data().tags?.length > 0) setTags(snap.data().tags); }
       catch (err) { console.error(err); }
       setLoading(false);
     })();
@@ -257,17 +260,17 @@ export function NativeLeaderboardScreen() {
 const QUEST_DEFS = {
   daily: [
     { id: 'daily_post', title: 'Create a Post', description: 'Share something with the community', reward: 15, currency: 'vp', target: 1 },
-    { id: 'daily_like', title: 'Like 5 Posts', description: 'Engage with the community', reward: 5, currency: 'vp', target: 5 },
-    { id: 'daily_squad_msg', title: 'Squad Activity', description: 'Send a message in any squad', reward: 10, currency: 'vp', target: 1 },
+    { id: 'daily_like', title: 'Like 5 Posts', description: 'Engage with the community', reward: 5, currency: 'vp', target: 5, serverVerified: true },
+    { id: 'daily_squad_msg', title: 'Squad Activity', description: 'Send a message in any squad', reward: 10, currency: 'vp', target: 1, serverVerified: true },
   ],
   weekly: [
     { id: 'weekly_posts', title: 'Content Creator', description: 'Create 3 posts this week', reward: 50, currency: 'vp', target: 3 },
     { id: 'weekly_follow', title: 'Social Butterfly', description: 'Follow 10 new people this week', reward: 50, currency: 'vp', target: 10 },
   ],
   special: [
-    { id: 'creator_content', title: 'Creator Content', description: 'Post 10 times with 5+ likes and 5+ comments each', reward: 100, currency: 'vp', target: 10, oneTime: true },
-    { id: 'first_squad', title: 'Join a Squad', description: 'Join or create your first squad', reward: 50, currency: 'vp', target: 1, oneTime: true },
-    { id: 'first_event', title: 'Host an Event', description: 'Create your first ticketed event', reward: 100, currency: 'vp', target: 1, oneTime: true },
+    { id: 'creator_content', title: 'Creator Content', description: 'Post 10 times with 5+ likes and 5+ comments each', reward: 100, currency: 'vp', target: 10, oneTime: true, serverVerified: true },
+    { id: 'first_squad', title: 'Join a Squad', description: 'Join or create your first squad', reward: 50, currency: 'vp', target: 1, oneTime: true, serverVerified: true },
+    { id: 'first_event', title: 'Host an Event', description: 'Create your first ticketed event', reward: 100, currency: 'vp', target: 1, oneTime: true, serverVerified: true },
     { id: 'refer_friend', title: 'Refer a Friend', description: 'Friend joins via your link and verifies a phone number. You earn 5000 VP, they earn 3000 VP', reward: 5000, currency: 'vp', target: 1, requiresFriend: true, external: true, externalRoute: '/earn/refer', externalLabel: 'Manage' },
     { id: 'add_phone', title: 'Add Phone Number', description: 'Unlocks contact invites — open New Chat → ⋮ → Add phone number', reward: 1000, currency: 'vp', target: 1, oneTime: true, external: true, externalRoute: '/messages/new', externalLabel: 'Add' },
   ],
@@ -388,12 +391,12 @@ export function NativeEarnCoinsScreen() {
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold text-text-primary">{quest.title}</p>
                     <p className="text-xs text-text-muted">{quest.description}</p>
-                    {!completed && <><div className="w-full h-1.5 bg-surface-3 rounded-full mt-2 overflow-hidden"><div className="h-full bg-brand-violet rounded-full" style={{ width: `${Math.min((progress / quest.target) * 100, 100)}%` }} /></div><p className="text-xs text-text-muted font-dmmono mt-1">{progress}/{quest.target}</p></>}
+                    {!completed && !quest.serverVerified && <><div className="w-full h-1.5 bg-surface-3 rounded-full mt-2 overflow-hidden"><div className="h-full bg-brand-violet rounded-full" style={{ width: `${Math.min((progress / quest.target) * 100, 100)}%` }} /></div><p className="text-xs text-text-muted font-dmmono mt-1">{progress}/{quest.target}</p></>}
                   </div>
                   <div className="text-right shrink-0">
                     <p className="text-xs font-dmmono font-bold text-brand-violet">★ {quest.reward} VP</p>
                     {quest.external && !claimed && <button onClick={() => navigate(quest.externalRoute || '/messages/new')} className="mt-1 px-3 py-1.5 rounded-full bg-brand-violet text-white text-xs font-bold">{quest.externalLabel || 'Open'}</button>}
-                    {!quest.external && completed && !claimed && <button onClick={() => handleClaim(quest)} disabled={claiming === quest.id} className="mt-1 px-3 py-1.5 rounded-full bg-brand-gold text-bg-dark text-xs font-bold">{claiming === quest.id ? '...' : 'Claim'}</button>}
+                    {!quest.external && (completed || quest.serverVerified) && !claimed && <button onClick={() => handleClaim(quest)} disabled={claiming === quest.id} className="mt-1 px-3 py-1.5 rounded-full bg-brand-gold text-bg-dark text-xs font-bold">{claiming === quest.id ? '...' : 'Claim'}</button>}
                     {claimed && <span className="text-brand-violet-light text-xs font-semibold">Claimed ✓</span>}
                   </div>
                 </div>
@@ -447,7 +450,7 @@ export function NativeReferralScreen() {
         const data = userSnap.exists() ? userSnap.data() : {};
         const q = query(collection(db, 'users'), where('referredBy', '==', currentUser.uid));
         const snap = await getDocs(q);
-        const list = snap.docs.map(d => { const u = d.data(); return { uid: d.id, displayName: u.displayName || u.username || 'Unknown', avatar: u.photoURL || u.avatar || null, verified: u.phoneVerified ?? false }; });
+        const list = snap.docs.map(d => { const u = d.data(); return { uid: d.id, displayName: u.displayName || u.username || 'Unknown', avatar: u.photoURL || u.avatar || null, verified: !!u.phoneHash }; });
         let claimedIds = [];
         try {
           const cq = query(collection(db, 'quest_claims'), where('userId', '==', currentUser.uid), where('questId', '==', 'refer_friend'));
@@ -601,6 +604,7 @@ function StatRow({ icon, color, label, value, accent }) {
 
 export function NativePostDetailScreen() {
   const { postId } = useParams();
+  const location = useLocation();
   const { currentUser } = useAuth();
   const { profile } = useUser();
   const { showToast } = useUI();
@@ -623,6 +627,7 @@ export function NativePostDetailScreen() {
   const [expandedReplies, setExpandedReplies] = useState(() => new Set());
   const [likedComments, setLikedComments] = useState(() => new Set());
   const [likeBusy, setLikeBusy] = useState(() => new Set());
+  const [appealOpen, setAppealOpen] = useState(false);
   const inputRef = useRef(null);
 
   const threaded = useMemo(() => {
@@ -646,12 +651,15 @@ export function NativePostDetailScreen() {
       setLoading(true);
       try {
         const postData = await getPostByIdOrSlug(postId);
+        // A clip is not a post page: it redirects into the clip player (below),
+        // with comments in a sheet. Skip the author and comment reads.
+        if (postData && isShortFormat(postData.type)) { setPost(postData); setLoading(false); return; }
         if (postData) { postData.author = await getUser(postData.authorId); setPost(postData); }
         const resolvedId = postData?.id || postId;
         const cmts = await getComments(resolvedId, 50);
         setComments(cmts);
         if (currentUser?.uid && cmts.length) {
-          getLikedCommentIds(resolvedId, currentUser.uid, cmts.map(c => c.id)).then(setLikedComments).catch(() => {});
+          getLikedCommentIds(resolvedId, currentUser.uid, cmts).then(setLikedComments).catch(() => {});
         }
       } catch (err) { console.error('Failed to load post:', err); }
       setLoading(false);
@@ -754,12 +762,26 @@ export function NativePostDetailScreen() {
   };
 
   if (loading) return <div className="min-h-screen"><TopBar title="Post" showBack /><FeedSkeleton count={1} /></div>;
+  // A clip opens in the clip player, never as a post page. Every /post link to a
+  // clip (notifications, search, profile, old shares) lands here and is sent on,
+  // keeping ?comments=1 so a comment link opens the comment sheet.
+  if (post && isShortFormat(post.type)) return <Navigate to={`/clip/${post.id}${location.search || ''}`} replace />;
   if (!post) return <div className="min-h-screen"><TopBar title="Post" showBack /><div className="flex flex-col items-center py-20"><Icon name="error_outline" size={48} className="text-text-muted/30 mb-3" /><p className="text-text-muted text-sm">Post not found</p></div></div>;
+
+  // Hidden by moderation: its author only, with the reason and an appeal.
+  // Same rule as the web PostDetailScreen.
+  const hidden = post.status === 'hidden' || post.hidden === true;
+  const isAuthor = !!currentUser && (post.userId === currentUser.uid || post.authorId === currentUser.uid);
+  if (hidden && !isAuthor && profile?.staff !== true) {
+    return <div className="min-h-screen"><TopBar title="Post" showBack /><div className="flex flex-col items-center py-20"><Icon name="visibility_off" size={48} className="text-text-muted/30 mb-3" /><p className="text-text-muted text-sm">This post is not available</p></div></div>;
+  }
 
   return (
     <div className="flex flex-col overflow-hidden fixed inset-0 z-30 bg-bg-dark">
       <TopBar title="Post" showBack />
       <div className="flex-1 overflow-y-auto overflow-x-hidden">
+        {hidden && isAuthor && <HiddenPostNotice post={post} onAppeal={() => setAppealOpen(true)} />}
+        {appealOpen && <AppealSheet targetType="post" targetId={post.id} onClose={() => setAppealOpen(false)} />}
         <PostCard post={post} onDeleted={() => navigate(-1)} />
         <div className="px-4 py-3 border-t border-white/[0.03]">
           <h3 className="font-syne font-bold text-sm mb-4">Comments {totalCount > 0 && `(${totalCount})`}</h3>
@@ -794,7 +816,7 @@ export function NativePostDetailScreen() {
       {showMediaPanel && <MediaPanel defaultTab={showMediaPanel} onSelect={handleMediaSelect} onClose={() => setShowMediaPanel(null)} />}
       {showEmoji && <EmojiPicker onSelect={(emoji) => setInput(prev => prev + emoji)} onClose={() => setShowEmoji(false)} />}
 
-      <div className="shrink-0 glass-header border-t border-white/[0.04] px-2 pt-2 overflow-x-hidden" style={{ paddingBottom: 'calc(8px + env(safe-area-inset-bottom, 0px))' }}>
+      <div className="shrink-0 glass-header border-t border-white/[0.04] px-2 pt-2 overflow-x-hidden" style={{ paddingBottom: 'calc(8px + var(--vg-safe-b, 0px))' }}>
         {replyingTo && (
           <div className="flex items-center justify-between gap-2 mb-2 px-3 py-1.5 rounded-lg bg-surface-2 border border-white/[0.06]">
             <span className="text-xs text-text-muted truncate">Replying to <span className="text-text-secondary font-semibold">{replyingTo.name}</span></span>

@@ -296,7 +296,7 @@
 .vl-root .vl-bottom {
   position: absolute;
   left: 0; right: 0;
-  bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+  bottom: calc(24px + var(--vg-safe-b, 0px));
   display: flex;
   flex-direction: column;
   align-items: center;

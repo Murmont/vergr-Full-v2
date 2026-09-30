@@ -14,7 +14,8 @@ export default function ProductsPointer({ uid, onGoToBlocks }) {
 
   useEffect(() => {
     if (!uid) return;
-    getVergrMeProducts(uid).then(setProducts).catch(() => setProducts([]));
+    // Store-synced products only: selling for Coins is switched off (2026-09-22).
+    getVergrMeProducts(uid).then((all) => setProducts(all.filter((p) => p.checkoutMode === 'permalink'))).catch(() => setProducts([]));
   }, [uid]);
 
   const live = (products || []).filter((p) => p.published !== false);
@@ -28,10 +29,10 @@ export default function ProductsPointer({ uid, onGoToBlocks }) {
             <Icon name="storefront" size={20} className="text-brand-violet-light" />
           </div>
           <div className="min-w-0">
-            <div className="font-syne font-bold text-sm">Sell on your page, keep 92%</div>
+            <div className="font-syne font-bold text-sm">Link out to your store</div>
             <p className="text-xs text-text-secondary mt-1 leading-relaxed">
-              One flat 8% fee. Your <span className="text-gem-blue font-semibold">92% share</span> lands in your earnings instantly,
-              with <span className="text-white font-semibold">nothing else deducted</span>. Linktree charges 12%, Beacons 9%.
+              Selling for Coins is turned off. Connect your Shopify store in Vergr Shop and its products can
+              show on this page. Buyers check out on your store.
             </p>
           </div>
         </div>
@@ -49,7 +50,7 @@ export default function ProductsPointer({ uid, onGoToBlocks }) {
           <div className="p-7 text-center">
             <Icon name="inventory_2" size={32} className="text-text-muted mb-2" />
             <p className="text-sm text-text-secondary">No products yet.</p>
-            <p className="text-xs text-text-muted mt-1">Create them in Vergr Shop, then add them to this page as a block.</p>
+            <p className="text-xs text-text-muted mt-1">Connect your Shopify store in Vergr Shop, then add products to this page as a block.</p>
           </div>
         )}
 
@@ -61,7 +62,7 @@ export default function ProductsPointer({ uid, onGoToBlocks }) {
             <div className="flex-1 min-w-0">
               <div className="text-sm truncate">{p.name || 'Untitled'}</div>
               <div className="text-[11px] text-text-muted">
-                <span className="font-dmmono font-bold tabular-nums text-brand-gold">{Number(p.priceCoins || 0).toLocaleString()}c</span>
+                <span className="font-dmmono font-bold tabular-nums">{p.variants?.[0]?.storePrice || p.storePrice || ''} {p.storeCurrency || ''}</span>
                 {p.published === false ? ' · hidden' : ''}
               </div>
             </div>
@@ -81,9 +82,8 @@ export default function ProductsPointer({ uid, onGoToBlocks }) {
       </button>
 
       <p className="text-[11px] text-text-muted px-1">
-        Vergr Shop is where you create products, fulfil orders, message customers and connect
-        Shopify or WooCommerce. To show a product on this page, go to{' '}
-        <button onClick={onGoToBlocks} className="text-brand-violet-light">Links → Add block → Sell a product</button>.
+        Connect your Shopify store in Vergr Shop. To show one of its products on this page, go to{' '}
+        <button onClick={onGoToBlocks} className="text-brand-violet-light">Links → Add block → Store product</button>.
       </p>
     </div>
   );

@@ -26,7 +26,7 @@ export default function UserPickerSheet({ title = 'Select user', onSelect, onClo
 
   return (
     <div className="fixed inset-0 z-[100] bg-black/80 flex items-end sm:items-center justify-center animate-fade-in" onClick={onClose}>
-      <div className="bg-surface-1 w-full max-w-md max-h-[70vh] rounded-t-2xl sm:rounded-2xl border border-white/[0.06] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+      <div className="bg-surface-1 w-full max-w-md max-h-[70vh] rounded-t-2xl sm:rounded-2xl border border-white/[0.06] overflow-hidden flex flex-col sheet-safe" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between p-4 border-b border-white/[0.04]">
           <h3 className="text-white font-bold text-sm">{title}</h3>
           <button onClick={onClose} className="text-text-muted"><Icon name="close" size={20} /></button>

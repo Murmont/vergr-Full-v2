@@ -79,7 +79,7 @@ export default function ContentPacksSheet({ open, onClose, chatId, scope = 'conv
       onClick={onClose}
     >
       <div
-        className="w-full sm:max-w-md bg-surface-1 border border-white/10 rounded-t-3xl sm:rounded-3xl p-5 pb-7 sm:pb-5 max-h-[80vh] overflow-y-auto"
+        className="w-full sm:max-w-md bg-surface-1 border border-white/10 rounded-t-3xl sm:rounded-3xl p-5 pb-7 sm:pb-5 max-h-[80vh] overflow-y-auto sheet-safe"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-3 mb-4">

@@ -399,7 +399,7 @@ function AdModal({ form, setForm, editingAd, onClose, onSave, saving, onImageCha
               </Field>
 
               <Field label="Tags / topics">
-                <input type="text" placeholder="esports, fps, speedrun, cozy, competitive…" value={form.tagsInput} onChange={e => setForm(f => ({ ...f, tagsInput: e.target.value }))} className={inputCls} />
+                <input type="text" placeholder="fps, speedrun, cozy, rpg, strategy…" value={form.tagsInput} onChange={e => setForm(f => ({ ...f, tagsInput: e.target.value }))} className={inputCls} />
                 {form.targetTags.length > 0 && (
                   <div className="flex flex-wrap gap-1.5 mt-2">
                     {form.targetTags.map(t => (

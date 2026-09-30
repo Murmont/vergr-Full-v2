@@ -10,6 +10,8 @@ import { useUser } from '../../context/UserContext';
 import { getMyVanguardActions } from '../../firebase/firestore';
 import { rankMeta } from '../../utils/vanguardRanks';
 import { getVPLevel, getNextVPLevel, getVPProgress } from '../../utils/vpSystem';
+// Earnings and the coin store are pages of vergr.app, not of this app.
+import { openInVergr } from '../../admin/openExternal';
 
 const fmt = (n) => Number(n || 0).toLocaleString();
 const tsMs = (t) => (t?.toDate ? t.toDate().getTime() : t?.seconds ? t.seconds * 1000 : (t instanceof Date ? t.getTime() : Number(t) || 0));
@@ -121,8 +123,8 @@ export default function VanguardWalletScreen() {
             return (
               <div key={r} style={{
                 padding: 12,
-                background: isMine ? 'rgba(180,79,255,.1)' : C.card2,
-                border: `1px solid ${isMine ? 'rgba(180,79,255,.3)' : C.border}`,
+                background: isMine ? C.activeFill : C.card2,
+                border: 0,
                 borderRadius: 10,
                 textAlign: 'center',
               }}>
@@ -147,7 +149,7 @@ export default function VanguardWalletScreen() {
             </div>
           </div>
           <button
-            onClick={() => navigate('/creator/earnings')}
+            onClick={() => openInVergr('/creator/earnings')}
             style={{ marginTop: 12, width: '100%', padding: '10px 14px', background: C.violet, border: 0, borderRadius: 8, color: C.text, fontFamily: 'DM Sans', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}
           >View earnings</button>
         </VgCard>
@@ -161,8 +163,8 @@ export default function VanguardWalletScreen() {
             </div>
           </div>
           <button
-            onClick={() => navigate('/wallet/buy')}
-            style={{ marginTop: 12, width: '100%', padding: '10px 14px', background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 8, color: C.text, fontFamily: 'DM Sans', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}
+            onClick={() => openInVergr('/wallet/buy')}
+            style={{ marginTop: 12, width: '100%', padding: '10px 14px', background: C.card2, border: 0, borderRadius: 8, color: C.text, fontFamily: 'DM Sans', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}
           >Browse packs</button>
         </VgCard>
       </div>
@@ -179,13 +181,13 @@ export default function VanguardWalletScreen() {
           <div style={{ padding: 24, textAlign: 'center' }}>
             <Icon name="bolt" size={26} style={{ color: C.textMuted, opacity: 0.6 }} />
             <div style={{ fontFamily: 'DM Sans', fontSize: 13, color: C.textDim, marginTop: 8 }}>No moderation actions yet.</div>
-            <div style={{ fontFamily: 'DM Mono', fontSize: 10.5, color: C.textMuted, marginTop: 4 }}>Claim a tournament slot or work the queue to start earning VP.</div>
+            <div style={{ fontFamily: 'DM Mono', fontSize: 10.5, color: C.textMuted, marginTop: 4 }}>Work the queue to start earning VP.</div>
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {list.slice(0, 20).map((a, i) => (
               <div key={a.id || i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', background: C.card2, border: `1px solid ${C.border}`, borderRadius: 8 }}>
-                <div style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(180,79,255,.12)', color: C.violetLt, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <div style={{ width: 28, height: 28, borderRadius: 8, background: C.activeFill, color: C.violetLt, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <Icon name="bolt" size={14} />
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>

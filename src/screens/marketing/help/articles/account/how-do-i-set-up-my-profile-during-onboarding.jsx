@@ -1,5 +1,5 @@
 export default {
-  summary: "After signing up, VERGR walks you through adding a profile photo, writing a short bio, picking your interests, and optionally linking your gaming accounts. You can skip any step and come back to it later.",
+  summary: "After signing up, VERGR walks you through adding a profile photo, writing a short bio, and picking your interests. You can skip any step and come back to it later.",
   updated: "2026-06-06",
   body: [
     { p: "Onboarding takes two to three minutes and sets your profile up so people can find you and so your feed starts off relevant." },
@@ -7,10 +7,9 @@ export default {
     { list: [
       "Profile photo: upload a photo or skip for now. You can add one later from your profile.",
       "Display name: the friendly name shown above your handle. Can be anything.",
-      "Bio: a short description of who you are. Mention your games or what you do.",
-      "Interests: pick the games and content types you care about to calibrate your feed.",
-      "Who to follow: VERGR suggests creators and players based on your interests.",
-      "Gaming accounts: link Steam, Twitch, or others so your platforms show on your profile."
+      "Bio: a short description of who you are and what you make.",
+      "Interests: pick what you are into, from music and art to gaming and sport, to calibrate your feed.",
+      "Who to follow: VERGR suggests creators based on your interests.",
     ]},
     { h2: "Skipping steps" },
     { p: "Every step is optional except your username and date of birth, which you already confirmed. Tap Skip on any screen and come back to it from Settings or your profile page." },

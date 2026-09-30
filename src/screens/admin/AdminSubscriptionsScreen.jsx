@@ -1,7 +1,13 @@
 // AdminSubscriptionsScreen — /admin/subscriptions
 //
-// Pass 1: Overview / All Subscriptions / Billing & Invoices.
-// Pass 2: Plans & Pricing / Comp & Overrides / Settings / Logs + bulk actions.
+// Overview / All Subscriptions / Payments / Plans / Comp / Settings / Logs.
+//
+// ⚠ 2026-09-21: every tab here now shows something real or says plainly what it
+// is. Payments reads the subscriptions/ rows each rail writes (the old invoices
+// tab read a collection nothing wrote). Plans is READ-ONLY and comes from
+// src/utils/tierSystem.js: the old editor saved prices no checkout ever used.
+// Settings holds only the two switches the server enforces. Money is USD, and a
+// figure built from list prices says so.
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useUI } from '../../context/UIContext';
@@ -9,13 +15,37 @@ import Icon from '../../components/Icon';
 import UserAvatar from '../../components/UserAvatar';
 import AdminShell, { ADMIN_COLORS as C } from './AdminShell';
 import { call, fmtNumber, fmtMoney, fmtDate, fmtRelative, KpiCard, Tabs, useGuardedCall, ReasonPrompt } from './_adminGuarded';
+import { TIERS } from '../../utils/tierSystem';
+
+const usd = (n) => fmtMoney(n, '$');
+
+// The rail a subscriber pays through (users.subscriptionPreferredMethod).
+const RAILS = {
+  coins:       { label: 'Coins',       icon: 'toll',            fg: '#f5c842', bg: '#2e2508' },
+  card:        { label: 'Card',        icon: 'credit_card',     fg: '#93c5fd', bg: '#0f2140' },
+  google_play: { label: 'Google Play', icon: 'shop',            fg: '#86efac', bg: '#0f2a1a' },
+  huawei_iap:  { label: 'AppGallery',  icon: 'storefront',      fg: '#fca5a5', bg: '#2f1216' },
+  comp:        { label: 'Comp',        icon: 'card_giftcard',   fg: '#d8b4fe', bg: '#241536' },
+};
+function RailPill({ method }) {
+  const r = RAILS[method];
+  if (!r) return <span style={{ color: C.textMuted, fontSize: 11 }}>—</span>;
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 600,
+      padding: '3px 8px', borderRadius: 999, background: r.bg, color: r.fg, whiteSpace: 'nowrap',
+    }}>
+      <Icon name={r.icon} size={13} />{r.label}
+    </span>
+  );
+}
 
 const TABS = [
   { id: 'overview',  label: 'Overview' },
   { id: 'all',       label: 'All Subscriptions' },
-  { id: 'billing',   label: 'Billing & Invoices' },
-  { id: 'plans',     label: 'Plans & Pricing' },
-  { id: 'comp',      label: 'Comp & Overrides' },
+  { id: 'billing',   label: 'Payments' },
+  { id: 'plans',     label: 'Plans' },
+  { id: 'comp',      label: 'Comps' },
   { id: 'settings',  label: 'Settings' },
   { id: 'logs',      label: 'Logs' },
 ];
@@ -27,7 +57,7 @@ export default function AdminSubscriptionsScreen() {
     <AdminShell
       screen="subscriptions"
       title="Subscriptions"
-      subtitle="Manage subscription plans, users, billing and revenue."
+      subtitle="Who pays for Lite and Pro, how they pay, and the switches that control new plans."
     >
       <Tabs tabs={TABS} active={tab} onChange={setTab} />
       {tab === 'overview' && <OverviewTab />}
@@ -80,20 +110,23 @@ function OverviewTab() {
           value={loading ? '—' : fmtNumber(stats?.newWeek)} />
         <KpiCard icon="trending_down" color="#f04060" label="Cancelled (30d)"
           value={loading ? '—' : fmtNumber(stats?.cancelledMonth)} />
-        <KpiCard icon="paid" color="#f0a500" label="MRR"
-          value={loading ? '—' : fmtMoney(stats?.mrrEUR)} sub={stats ? `ARR ${fmtMoney(stats.arrEUR)}` : null} />
+        <KpiCard icon="paid" color="#f0a500" label="MRR at list price"
+          value={loading ? '—' : usd(stats?.mrrUSD)} sub={stats ? `ARR ${usd(stats.arrUSD)} · store and card prices vary` : null} />
         <KpiCard icon="account_balance" color="#3b82f6" label="Free Users"
           value={loading ? '—' : fmtNumber(stats?.freeCount)} />
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: 16, marginBottom: 16 }}>
-        <Card title="Subscription Trend (30d)">
+      <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr', gap: 16, marginBottom: 16 }}>
+        <Card title="New plans (30d)">
           {!trend ? <Empty label="Loading…" /> : <TrendChart points={trend.points} />}
         </Card>
-        <Card title="Plan Distribution">
+        <Card title="Plan distribution">
           {!stats ? <Empty label="Loading…" /> : (
             <PlanDonut lite={stats.liteCount} pro={stats.proCount} />
           )}
+        </Card>
+        <Card title="How subscribers pay">
+          {!stats ? <Empty label="Loading…" /> : <RailBreakdown byRail={stats.byRail || {}} total={stats.activeSubscriptions || 0} />}
         </Card>
       </div>
 
@@ -114,9 +147,10 @@ function OverviewTab() {
                   {r.user?.email || '—'}
                 </div>
               </div>
+              <RailPill method={r.method === 'cancellation' ? null : r.method} />
               <TierPill tier={r.tier} />
               <div style={{ fontSize: 10, color: C.textDim, width: 90, textAlign: 'right' }}>
-                {fmtRelative(r.createdAt)}
+                {r.method === 'cancellation' ? 'cancelled · ' : ''}{fmtRelative(r.createdAt)}
               </div>
             </div>
           ))}
@@ -140,19 +174,45 @@ function RenewalRow({ label, data }) {
   return (
     <div style={{
       display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-      padding: '12px 0', borderBottom: `1px dashed ${C.border}`,
+      padding: '12px 0', borderBottom: `1px solid ${C.border}`,
     }}>
       <div style={{ fontSize: 12, color: C.textDim }}>{label}</div>
       <div style={{ textAlign: 'right' }}>
         <div style={{ fontSize: 16, fontWeight: 700, color: C.text }} className="font-dmmono tabular-nums">
           {fmtNumber(data.count)}
         </div>
-        <div style={{ fontSize: 10, color: C.textMuted }}>~{fmtMoney(data.estimatedEUR)}</div>
+        <div style={{ fontSize: 10, color: C.textMuted }}>~{usd(data.estimatedUSD)} at list price</div>
       </div>
     </div>
   );
 }
 
+function RailBreakdown({ byRail, total }) {
+  const order = ['coins', 'card', 'google_play', 'huawei_iap', 'comp'];
+  if (!total) return <Empty label="No paid plans yet." />;
+  return (
+    <div style={{ display: 'grid', gap: 10 }}>
+      {order.map((k) => {
+        const n = byRail[k] || 0;
+        const pct = total ? Math.round((n / total) * 100) : 0;
+        return (
+          <div key={k}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+              <RailPill method={k} />
+              <span className="font-dmmono tabular-nums" style={{ fontSize: 12, color: C.text }}>{fmtNumber(n)}</span>
+            </div>
+            <div style={{ height: 6, borderRadius: 999, background: '#1d1d2c', overflow: 'hidden' }}>
+              <div style={{ width: `${pct}%`, height: '100%', background: RAILS[k].fg }} />
+            </div>
+          </div>
+        );
+      })}
+      <div style={{ fontSize: 11, color: C.textMuted, lineHeight: 1.5 }}>
+        Counts use each subscriber's payment rail. Anyone else on a paid plan predates the rail field.
+      </div>
+    </div>
+  );
+}
 // ───────────────────────────────────────────────────────────
 // ALL SUBSCRIPTIONS
 // ───────────────────────────────────────────────────────────
@@ -295,7 +355,7 @@ function AllSubscriptionsTab() {
 
       <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: 'hidden' }}>
         <div style={{
-          display: 'grid', gridTemplateColumns: '34px 2fr 80px 100px 80px 120px 100px',
+          display: 'grid', gridTemplateColumns: '34px 2fr 80px 100px 120px 120px 100px',
           padding: '10px 14px', borderBottom: `1px solid ${C.border}`,
           fontSize: 10, fontWeight: 700, color: C.textMuted, textTransform: 'uppercase',
           alignItems: 'center',
@@ -305,18 +365,18 @@ function AllSubscriptionsTab() {
           <div>User</div>
           <div>Plan</div>
           <div>Status</div>
-          <div>Price</div>
-          <div>Next Billing</div>
+          <div>Paid via</div>
+          <div>Period ends</div>
           <div style={{ textAlign: 'right' }}>Auto-Renew</div>
         </div>
         {loading && rows.length === 0 && <Empty label="Loading…" />}
         {!loading && rows.length === 0 && <Empty label="No paid subscriptions yet." />}
         {rows.map(r => (
           <div key={r.id} style={{
-            display: 'grid', gridTemplateColumns: '34px 2fr 80px 100px 80px 120px 100px',
+            display: 'grid', gridTemplateColumns: '34px 2fr 80px 100px 120px 120px 100px',
             padding: '12px 14px', borderBottom: `1px solid ${C.border}`,
             fontSize: 12, color: C.text, alignItems: 'center',
-            background: selected.has(r.id) ? '#7c3aed10' : 'transparent',
+            background: selected.has(r.id) ? '#1a1430' : 'transparent',
           }}>
             <input type="checkbox" checked={selected.has(r.id)} onChange={() => toggleRow(r.id)} />
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
@@ -332,9 +392,7 @@ function AllSubscriptionsTab() {
             </div>
             <TierPill tier={r.tier} />
             <StatusPill status={r.uiStatus} />
-            <div className="font-dmmono tabular-nums" style={{ fontSize: 12 }}>
-              {fmtMoney(r.priceEUR)}
-            </div>
+            <div><RailPill method={r.method} /></div>
             <div style={{ fontSize: 11, color: C.textDim }}>{r.periodEnd ? fmtDate(r.periodEnd) : '—'}</div>
             <div style={{ textAlign: 'right', fontSize: 11, color: r.autoRenew ? '#22c55e' : '#f0a500', fontWeight: 600 }}>
               {r.autoRenew ? 'ON' : 'OFF'}
@@ -355,236 +413,68 @@ function AllSubscriptionsTab() {
 }
 
 // ───────────────────────────────────────────────────────────
-// PLANS & PRICING
+// PLANS (read-only)
 // ───────────────────────────────────────────────────────────
 
 function PlansTab() {
-  const { showToast } = useUI();
-  const { guarded, overlay } = useGuardedCall();
-  const [rows, setRows] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [editing, setEditing] = useState(null); // plan object or { __new: true }
-  const [scheduling, setScheduling] = useState(null); // plan object
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const r = await call('adminListPlans');
-      setRows(r.rows || []);
-    } catch (e) {
-      showToast(e?.message || 'Failed to load plans', 'error');
-    }
-    setLoading(false);
-  }, [showToast]);
-
-  useEffect(() => { load(); }, [load]);
-
-  const save = async (plan) => {
-    try {
-      await guarded(() => call('adminUpsertPlan', plan));
-      showToast(`Plan ${plan.id} saved`, 'success');
-      setEditing(null); load();
-    } catch { /* toast shown */ }
-  };
-  const remove = async (id) => {
-    if (!window.confirm(`Delete plan "${id}"? Built-in plans (lite, pro) will be deactivated rather than deleted.`)) return;
-    try {
-      await guarded(() => call('adminDeletePlan', { id }));
-      showToast(`Plan ${id} removed`, 'success');
-      load();
-    } catch { /* toast shown */ }
-  };
-  const schedule = async ({ planId, priceEUR, priceCoins, effectiveAt }) => {
-    try {
-      await guarded(() => call('adminSchedulePriceChange', {
-        planId, priceEUR, priceCoins,
-        effectiveAt: new Date(effectiveAt).getTime(),
-      }));
-      showToast('Price change scheduled', 'success');
-      setScheduling(null); load();
-    } catch { /* toast shown */ }
-  };
-  const cancelSchedule = async (planId) => {
-    try {
-      await call('adminCancelScheduledPriceChange', { planId });
-      showToast('Scheduled change cancelled', 'success');
-      load();
-    } catch (e) { showToast(e?.message || 'Failed', 'error'); }
-  };
-
+  // Read-only on purpose. A price lives in code (src/utils/tierSystem.js, the
+  // card checkout in functions/payram.js) and in the Play and AppGallery
+  // consoles. The editor that used to sit here saved a plans/ collection no
+  // checkout ever read, so a "price change" changed nothing anyone paid.
+  const COINS = { lite: 500, pro: 1000 };
+  const STORE_ID = { lite: 'sub_lite', pro: 'sub_pro' };
   return (
     <>
-      {overlay}
-      {editing && <PlanEditor initial={editing} onSave={save} onCancel={() => setEditing(null)} />}
-      {scheduling && <ScheduleEditor plan={scheduling} onSave={schedule} onCancel={() => setScheduling(null)} />}
-
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-        <div style={{ fontSize: 12, color: C.textDim }}>
-          Plans drive subscription pricing across the app. Built-in plans (lite, pro) cannot be deleted, only deactivated.
-        </div>
-        <button onClick={() => setEditing({ __new: true, id: '', priceEUR: 0, priceCoins: 0, periodDays: 30, active: true, features: [] })}
-          style={{ padding: '8px 14px', borderRadius: 8, background: C.accent, color: '#fff', border: 0, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
-          + Create plan
-        </button>
+      <div style={{ margin: '0 0 14px', padding: '12px 14px', borderRadius: 10, background: C.card, color: C.textDim, fontSize: 12, lineHeight: 1.6 }}>
+        Prices are shown, not edited, here. The web price and plan perks come from the app's code; Google Play and
+        AppGallery prices are set per country in their consoles under the product IDs below. Changing a price means
+        changing it in those places, together.
       </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 12 }}>
-        {loading && rows.length === 0 && <Empty label="Loading…" />}
-        {rows.map(p => (
-          <div key={p.id} style={{
-            background: C.card, border: `1px solid ${p.active ? C.border : '#f0406040'}`, borderRadius: 12, padding: 16,
-            opacity: p.active ? 1 : 0.7,
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-              <div style={{ width: 36, height: 36, borderRadius: 8, background: `${p.color || '#7c3aed'}20`, border: `1px solid ${p.color || '#7c3aed'}40`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Icon name={p.id === 'pro' ? 'workspace_premium' : 'bolt'} size={20} />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 12 }}>
+        {['lite', 'pro'].map((id) => {
+          const t = TIERS[id];
+          return (
+            <div key={id} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 18 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                <TierPill tier={id} />
+                <div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>{t.name}</div>
+                <div style={{ flex: 1 }} />
+                <div style={{ fontSize: 11, color: C.textMuted }}>{t.tagline}</div>
               </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 14, fontWeight: 700, color: C.text }}>{p.displayName || p.name}</div>
-                <div style={{ fontSize: 11, color: C.textMuted, fontFamily: 'ui-monospace, monospace' }}>{p.id}</div>
+              <div className="font-dmmono tabular-nums" style={{ fontSize: 26, fontWeight: 800, color: C.text }}>
+                {usd(t.price)}<span style={{ fontSize: 12, color: C.textDim, fontWeight: 500 }}> / month list</span>
               </div>
-              {!p.active && <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 4, background: '#f0406020', color: '#f04060', fontWeight: 700 }}>INACTIVE</span>}
-            </div>
-            <div style={{ fontSize: 22, fontWeight: 800, color: C.text }} className="font-dmmono tabular-nums">
-              {fmtMoney(p.priceEUR)} <span style={{ fontSize: 11, color: C.textDim, fontWeight: 500 }}>/ {p.periodDays}d</span>
-            </div>
-            <div style={{ fontSize: 11, color: C.textDim, marginTop: 2 }}>
-              or {fmtNumber(p.priceCoins)} coins
-            </div>
-            {p.scheduledPrice && (
-              <div style={{ marginTop: 10, padding: 10, background: '#f0a50015', border: '1px solid #f0a50040', borderRadius: 8 }}>
-                <div style={{ fontSize: 10, fontWeight: 700, color: '#f0a500', textTransform: 'uppercase' }}>Price change scheduled</div>
-                <div style={{ fontSize: 12, color: C.text, marginTop: 4 }}>
-                  {p.scheduledPrice.priceEUR != null && <>→ {fmtMoney(p.scheduledPrice.priceEUR)}</>}
-                  {p.scheduledPrice.priceCoins != null && <> · {fmtNumber(p.scheduledPrice.priceCoins)} coins</>}
-                </div>
-                <div style={{ fontSize: 11, color: C.textDim, marginTop: 2 }}>
-                  Effective {fmtDate(p.scheduledPrice.effectiveAt)}
-                </div>
-                <button onClick={() => cancelSchedule(p.id)} style={{
-                  marginTop: 8, padding: '4px 10px', borderRadius: 6, background: 'transparent',
-                  border: '1px solid #f0a50060', color: '#f0a500', fontSize: 10, fontWeight: 600, cursor: 'pointer',
-                }}>Cancel scheduled change</button>
+              <div style={{ display: 'grid', gap: 8, marginTop: 14 }}>
+                <PriceRow rail="coins" value={`${fmtNumber(COINS[id])} coins`} note="Charged from the wallet; renews automatically if the balance covers it." />
+                <PriceRow rail="card" value={usd(t.price)} note="Base price, adjusted by region at checkout and charged in USD." />
+                <PriceRow rail="google_play" value={STORE_ID[id]} mono note="Price per market in Play Console." />
+                <PriceRow rail="huawei_iap" value={STORE_ID[id]} mono note="Price per market in AppGallery Connect." />
               </div>
-            )}
-            {p.tagline && <div style={{ fontSize: 12, color: C.textDim, marginTop: 10, fontStyle: 'italic' }}>{p.tagline}</div>}
-            <ul style={{ margin: '10px 0 0', padding: 0, listStyle: 'none', fontSize: 11, color: C.textDim }}>
-              {(p.features || []).slice(0, 5).map((f, i) => (
-                <li key={i} style={{ padding: '2px 0' }}>• {f}</li>
-              ))}
-            </ul>
-            <div style={{ display: 'flex', gap: 6, marginTop: 12 }}>
-              <button onClick={() => setEditing(p)} style={{ flex: 1, padding: '6px 10px', borderRadius: 6, background: 'transparent', border: `1px solid ${C.border}`, color: C.text, fontSize: 11, cursor: 'pointer' }}>Edit</button>
-              <button onClick={() => setScheduling(p)} style={{ flex: 1, padding: '6px 10px', borderRadius: 6, background: 'transparent', border: `1px solid ${C.border}`, color: C.text, fontSize: 11, cursor: 'pointer' }}>Schedule price</button>
-              <button onClick={() => remove(p.id)} style={{ padding: '6px 10px', borderRadius: 6, background: 'transparent', border: '1px solid #f0406040', color: '#f04060', fontSize: 11, cursor: 'pointer' }}>{['lite','pro'].includes(p.id) ? 'Deactivate' : 'Delete'}</button>
+              <div style={{ marginTop: 14, fontSize: 10, fontWeight: 700, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>What the plan includes</div>
+              <ul style={{ margin: '6px 0 0', padding: 0, listStyle: 'none', fontSize: 12, color: C.textDim, display: 'grid', gap: 4 }}>
+                {(t.features || []).map((f) => (
+                  <li key={f} style={{ display: 'flex', gap: 6 }}><Icon name="check" size={14} />{f}</li>
+                ))}
+              </ul>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </>
   );
 }
 
-function PlanEditor({ initial, onSave, onCancel }) {
-  const isNew = initial?.__new;
-  const [form, setForm] = useState({
-    id: initial.id || '',
-    name: initial.name || initial.id || '',
-    displayName: initial.displayName || '',
-    priceEUR: initial.priceEUR ?? 0,
-    priceCoins: initial.priceCoins ?? 0,
-    periodDays: initial.periodDays || 30,
-    color: initial.color || '#7B6FFF',
-    tagline: initial.tagline || '',
-    features: (initial.features || []).join('\n'),
-    active: initial.active !== false,
-  });
-  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
-  const submit = () => {
-    onSave({
-      ...form,
-      priceEUR: Number(form.priceEUR),
-      priceCoins: Number(form.priceCoins),
-      periodDays: Number(form.periodDays),
-      features: form.features.split('\n').map(s => s.trim()).filter(Boolean),
-    });
-  };
-
+function PriceRow({ rail, value, note, mono }) {
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', zIndex: 250, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 22, width: 520, maxWidth: '95vw', maxHeight: '90vh', overflow: 'auto' }}>
-        <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: C.text }}>{isNew ? 'Create plan' : `Edit plan: ${form.id}`}</h3>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 14 }}>
-          <Field label="Plan ID" disabled={!isNew} value={form.id} onChange={v => set('id', v)} placeholder="lite | pro | custom_id" />
-          <Field label="Display name" value={form.displayName} onChange={v => set('displayName', v)} placeholder="VERGR Lite" />
-          <Field label="Price (EUR)" type="number" value={form.priceEUR} onChange={v => set('priceEUR', v)} />
-          <Field label="Price (coins)" type="number" value={form.priceCoins} onChange={v => set('priceCoins', v)} />
-          <Field label="Period (days)" type="number" value={form.periodDays} onChange={v => set('periodDays', v)} />
-          <Field label="Accent color" value={form.color} onChange={v => set('color', v)} placeholder="#7B6FFF" />
-          <div style={{ gridColumn: '1 / -1' }}>
-            <Field label="Tagline" value={form.tagline} onChange={v => set('tagline', v)} placeholder="Level up faster" />
-          </div>
-          <div style={{ gridColumn: '1 / -1' }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: C.textDim, marginBottom: 6 }}>Features (one per line, max 24)</div>
-            <textarea rows={6} value={form.features} onChange={e => set('features', e.target.value)}
-              style={{ width: '100%', padding: '10px 12px', background: '#0a0a14', border: `1px solid ${C.border}`, borderRadius: 8, color: C.text, fontSize: 12, resize: 'vertical', fontFamily: 'inherit' }} />
-          </div>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: C.text }}>
-            <input type="checkbox" checked={form.active} onChange={e => set('active', e.target.checked)} />
-            Active
-          </label>
-        </div>
-        <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
-          <button onClick={onCancel} style={{ flex: 1, padding: '10px', borderRadius: 8, background: 'transparent', border: `1px solid ${C.border}`, color: C.textDim, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
-          <button onClick={submit} disabled={!form.id} style={{ flex: 1, padding: '10px', borderRadius: 8, background: C.accent, color: '#fff', border: 0, fontSize: 12, fontWeight: 700, cursor: 'pointer', opacity: !form.id ? 0.5 : 1 }}>
-            {isNew ? 'Create' : 'Save'}
-          </button>
-        </div>
-        <p style={{ margin: '10px 0 0', fontSize: 10, color: C.textMuted }}>
-          Step-up TOTP required. Action is audited.
-        </p>
+    <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: 10, alignItems: 'start' }}>
+      <RailPill method={rail} />
+      <div>
+        <div style={{ fontSize: 13, fontWeight: 600, color: C.text, fontFamily: mono ? 'ui-monospace, monospace' : undefined }}>{value}</div>
+        <div style={{ fontSize: 11, color: C.textMuted, marginTop: 1 }}>{note}</div>
       </div>
     </div>
   );
 }
-
-function ScheduleEditor({ plan, onSave, onCancel }) {
-  const minStr = useMemo(() => {
-    const d = new Date(Date.now() + 5 * 60 * 1000);
-    return d.toISOString().slice(0, 16);
-  }, []);
-  const [form, setForm] = useState({
-    priceEUR: plan.priceEUR,
-    priceCoins: plan.priceCoins,
-    effectiveAt: minStr,
-  });
-  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
-  return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', zIndex: 250, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 22, width: 440, maxWidth: '95vw' }}>
-        <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: C.text }}>Schedule price change · {plan.id}</h3>
-        <p style={{ margin: '6px 0 14px', fontSize: 12, color: C.textDim }}>
-          Current: {fmtMoney(plan.priceEUR)} / {fmtNumber(plan.priceCoins)} coins. The new prices apply at the chosen date via the daily 02:00 UTC cron.
-        </p>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-          <Field label="New price (EUR)" type="number" value={form.priceEUR} onChange={v => set('priceEUR', v)} />
-          <Field label="New price (coins)" type="number" value={form.priceCoins} onChange={v => set('priceCoins', v)} />
-          <div style={{ gridColumn: '1 / -1' }}>
-            <Field label="Effective at" type="datetime-local" value={form.effectiveAt} onChange={v => set('effectiveAt', v)} />
-          </div>
-        </div>
-        <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
-          <button onClick={onCancel} style={{ flex: 1, padding: '10px', borderRadius: 8, background: 'transparent', border: `1px solid ${C.border}`, color: C.textDim, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
-          <button onClick={() => onSave({ planId: plan.id, priceEUR: Number(form.priceEUR), priceCoins: Number(form.priceCoins), effectiveAt: form.effectiveAt })}
-            style={{ flex: 1, padding: '10px', borderRadius: 8, background: C.accent, color: '#fff', border: 0, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
-            Schedule
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function Field({ label, value, onChange, type = 'text', placeholder, disabled }) {
   return (
     <div>
@@ -606,7 +496,7 @@ function CompOverridesTab() {
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('active');
   const [typeFilter, setTypeFilter] = useState('');
-  const [composer, setComposer] = useState(null); // 'comp' | 'discount'
+  const [composer, setComposer] = useState(null); // 'comp'
   const [revoke, setRevoke] = useState(null);
 
   const load = useCallback(async () => {
@@ -630,13 +520,6 @@ function CompOverridesTab() {
       setComposer(null); load();
     } catch { /* toast shown */ }
   };
-  const grantDiscount = async (form) => {
-    try {
-      await guarded(() => call('adminApplyOverride', form));
-      showToast('Discount applied', 'success');
-      setComposer(null); load();
-    } catch { /* toast shown */ }
-  };
   const doRevoke = async ({ reason }) => {
     try {
       await guarded(() => call('adminRevokeOverride', { overrideId: revoke.id, reason }));
@@ -649,7 +532,6 @@ function CompOverridesTab() {
     <>
       {overlay}
       {composer === 'comp' && <CompComposer onSave={grantComp} onCancel={() => setComposer(null)} />}
-      {composer === 'discount' && <DiscountComposer onSave={grantDiscount} onCancel={() => setComposer(null)} />}
       {revoke && (
         <ReasonPrompt
           title={`Revoke ${revoke.type} for ${revoke.user?.displayName || revoke.userId}?`}
@@ -674,11 +556,9 @@ function CompOverridesTab() {
           style={{ padding: '8px 12px', borderRadius: 8, border: `1px solid ${C.border}`, background: '#0a0a14', color: C.text, fontSize: 12 }}>
           <option value="">All types</option>
           <option value="comp">Comp</option>
-          <option value="discount">Discount</option>
         </select>
         <div style={{ flex: 1 }} />
         <button onClick={() => setComposer('comp')} style={{ padding: '8px 14px', borderRadius: 8, background: C.accent, color: '#fff', border: 0, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>+ Comp user</button>
-        <button onClick={() => setComposer('discount')} style={{ padding: '8px 14px', borderRadius: 8, background: 'transparent', color: C.text, border: `1px solid ${C.accent}`, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>+ Apply discount</button>
       </div>
 
       <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: 'hidden' }}>
@@ -728,22 +608,6 @@ function CompComposer({ onSave, onCancel }) {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
         <SelectField label="Tier" value={form.tier} onChange={v => set('tier', v)} options={[{ value: 'lite', label: 'Lite' }, { value: 'pro', label: 'Pro' }]} />
         <Field label="Duration (days)" type="number" value={form.durationDays} onChange={v => set('durationDays', v)} />
-      </div>
-      <ReasonField value={form.reason} onChange={v => set('reason', v)} />
-    </ComposerShell>
-  );
-}
-
-function DiscountComposer({ onSave, onCancel }) {
-  const [form, setForm] = useState({ userId: '', tier: 'lite', discountPercent: 50, applyToCount: 1, reason: '' });
-  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
-  return (
-    <ComposerShell title="Apply discount" subtitle="Apply a % discount to this user's next N renewals." onCancel={onCancel} onSave={() => onSave({ ...form, discountPercent: Number(form.discountPercent), applyToCount: Number(form.applyToCount) })} disabled={!form.userId || !form.reason.trim()}>
-      <Field label="User UID" value={form.userId} onChange={v => set('userId', v)} placeholder="user id" />
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
-        <SelectField label="Tier" value={form.tier} onChange={v => set('tier', v)} options={[{ value: 'lite', label: 'Lite' }, { value: 'pro', label: 'Pro' }]} />
-        <Field label="Discount %" type="number" value={form.discountPercent} onChange={v => set('discountPercent', v)} />
-        <Field label="# of renewals" type="number" value={form.applyToCount} onChange={v => set('applyToCount', v)} />
       </div>
       <ReasonField value={form.reason} onChange={v => set('reason', v)} />
     </ComposerShell>
@@ -829,7 +693,11 @@ function SettingsTab() {
 
   const dirty = Object.keys(draft).length > 0;
   const get = (k) => draft[k] !== undefined ? draft[k] : settings?.[k];
-  const set = (k, v) => setDraft(d => ({ ...d, [k]: v }));
+  const set = (k, v) => setDraft(d => {
+    const next = { ...d, [k]: v };
+    if (settings && settings[k] === v) delete next[k];
+    return next;
+  });
 
   const save = async () => {
     setSaving(true);
@@ -842,66 +710,97 @@ function SettingsTab() {
   };
 
   if (!settings) return <Empty label="Loading…" />;
+  const paused = !!get('newSubscriptionsPaused');
+  const grace = get('gracePeriodDays') ?? 3;
 
   return (
     <>
       {overlay}
-      <Card title="Subscription system flags">
-        <p style={{ margin: '0 0 14px', fontSize: 12, color: C.textDim }}>
-          These flags control the subscription engine globally. Changes are TOTP-gated and audited.
-        </p>
-        <ToggleRow label="Subscriptions enabled" subtitle="Master switch. When off, all paid plan signups are blocked."
-          value={!!get('enabled')} onChange={v => set('enabled', v)} />
-        <ToggleRow label="Allow free signup" subtitle="When off, new users must pick a paid tier on signup."
-          value={!!get('allowFreeSignup')} onChange={v => set('allowFreeSignup', v)} />
-        <ToggleRow label="Require payment method" subtitle="Users must have a card on file before they can subscribe."
-          value={!!get('requirePaymentMethod')} onChange={v => set('requirePaymentMethod', v)} />
+      <div style={{ display: 'grid', gap: 12, maxWidth: 760 }}>
+        <SettingCard
+          icon={paused ? 'pause_circle' : 'play_circle'}
+          accent={paused ? '#f5c842' : '#4ade80'}
+          title="New subscriptions"
+          status={paused ? 'Paused' : 'Open'}
+          body={paused
+            ? 'Nobody can start a new plan. Existing plans keep working and renewing, and people can still cancel.'
+            : 'Anyone can start Lite or Pro with coins, a card, Google Play or AppGallery.'}
+          detail="Coins and card are refused on the server. Google Play and AppGallery are stopped by hiding the buy buttons in the app, because those stores charge before Vergr is asked."
+        >
+          <Switch on={!paused} onChange={(v) => set('newSubscriptionsPaused', !v)} label={paused ? 'Resume' : 'Pause'} />
+        </SettingCard>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginTop: 14 }}>
-          <Field label="Currency (ISO 4217)" value={get('currency') || 'EUR'} onChange={v => set('currency', String(v || '').toUpperCase())} />
-          <Field label="Trial days (0 = no trial)" type="number" value={get('trialDays') ?? 0} onChange={v => set('trialDays', Math.max(0, parseInt(v) || 0))} />
-          <Field label="Grace period (days)" type="number" value={get('gracePeriodDays') ?? 3} onChange={v => set('gracePeriodDays', Math.max(0, parseInt(v) || 0))} />
-          <SelectField label="Checkout mode" value={get('checkoutMode') || 'cryptomus'} onChange={v => set('checkoutMode', v)} options={[
-            { value: 'cryptomus', label: 'Cryptomus (card + crypto)' },
-            { value: 'coins_only', label: 'Coins only' },
-            { value: 'disabled', label: 'Disabled' },
-          ]} />
-        </div>
+        <SettingCard
+          icon="hourglass_bottom"
+          accent="#93c5fd"
+          title="Grace period"
+          status={grace === 0 ? 'None' : `${grace} day${grace === 1 ? '' : 's'}`}
+          body="How long a coin or card subscriber keeps their plan after it ends before being moved to Free. Coin plans keep retrying the renewal during this time, so topping up saves the plan."
+          detail="Google Play and AppGallery plans never use this: the store decides when they end, and the daily store sync applies it."
+        >
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {[0, 1, 3, 7, 14].map((d) => (
+              <button key={d} type="button" onClick={() => set('gracePeriodDays', d)} style={{
+                padding: '7px 12px', borderRadius: 8, border: 0, cursor: 'pointer',
+                fontSize: 12, fontWeight: 700,
+                background: grace === d ? C.accent : '#1d1d2c', color: grace === d ? '#fff' : C.textDim,
+              }}>{d === 0 ? 'None' : `${d}d`}</button>
+            ))}
+          </div>
+        </SettingCard>
 
-        <div style={{ display: 'flex', gap: 8, marginTop: 18 }}>
-          <button onClick={() => setDraft({})} disabled={!dirty} style={{ padding: '10px 16px', borderRadius: 8, background: 'transparent', border: `1px solid ${C.border}`, color: C.textDim, fontSize: 12, fontWeight: 600, cursor: 'pointer', opacity: dirty ? 1 : 0.5 }}>Reset</button>
-          <button onClick={save} disabled={!dirty || saving} style={{ padding: '10px 18px', borderRadius: 8, background: C.accent, color: '#fff', border: 0, fontSize: 12, fontWeight: 700, cursor: 'pointer', opacity: !dirty ? 0.5 : 1 }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4 }}>
+          <button onClick={save} disabled={!dirty || saving} style={{
+            padding: '10px 18px', borderRadius: 8, border: 0, fontSize: 12, fontWeight: 700,
+            background: dirty ? C.accent : '#26263a', color: dirty ? '#fff' : C.textMuted,
+            cursor: dirty && !saving ? 'pointer' : 'default',
+          }}>
             {saving ? 'Saving…' : 'Save changes'}
           </button>
-          {dirty && <span style={{ alignSelf: 'center', fontSize: 11, color: '#f0a500', fontWeight: 600 }}>{Object.keys(draft).length} unsaved change{Object.keys(draft).length === 1 ? '' : 's'}</span>}
+          {dirty && (
+            <button onClick={() => setDraft({})} style={{ padding: '10px 14px', borderRadius: 8, border: 0, background: 'transparent', color: C.textDim, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+              Discard
+            </button>
+          )}
+          {dirty && <span style={{ fontSize: 11, color: '#f5c842', fontWeight: 600 }}>Unsaved. Saving asks for your authenticator code.</span>}
         </div>
-      </Card>
+      </div>
     </>
   );
 }
 
-function ToggleRow({ label, subtitle, value, onChange }) {
+function SettingCard({ icon, accent, title, status, body, detail, children }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 0', borderBottom: `1px dashed ${C.border}` }}>
-      <div>
-        <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{label}</div>
-        {subtitle && <div style={{ fontSize: 11, color: C.textDim, marginTop: 2 }}>{subtitle}</div>}
+    <div style={{ background: C.card, borderRadius: 12, padding: 18, display: 'grid', gridTemplateColumns: '40px 1fr auto', gap: 14, alignItems: 'start' }}>
+      <div style={{ width: 40, height: 40, borderRadius: 10, background: '#1d1d2c', color: accent, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <Icon name={icon} size={22} />
       </div>
-      <button onClick={() => onChange(!value)} style={{
-        width: 42, height: 24, borderRadius: 999, border: 0, padding: 0,
-        background: value ? C.accent : '#3a3a4a', position: 'relative', cursor: 'pointer',
-        transition: 'background 120ms',
-      }}>
-        <span style={{
-          position: 'absolute', top: 2, left: value ? 20 : 2,
-          width: 20, height: 20, borderRadius: '50%', background: '#fff',
-          transition: 'left 120ms',
-        }} />
-      </button>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: C.text }}>{title}</div>
+          <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: '#1d1d2c', color: accent, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{status}</span>
+        </div>
+        <div style={{ fontSize: 12, color: C.textDim, marginTop: 6, lineHeight: 1.55 }}>{body}</div>
+        <div style={{ fontSize: 11, color: C.textMuted, marginTop: 6, lineHeight: 1.5 }}>{detail}</div>
+      </div>
+      <div style={{ alignSelf: 'center' }}>{children}</div>
     </div>
   );
 }
 
+function Switch({ on, onChange, label }) {
+  return (
+    <button type="button" role="switch" aria-checked={on} aria-label={label} onClick={() => onChange(!on)} style={{
+      width: 46, height: 26, borderRadius: 999, border: 0, padding: 0, cursor: 'pointer',
+      background: on ? '#22a35a' : '#3a3a4a', position: 'relative', transition: 'background 120ms',
+    }}>
+      <span style={{
+        position: 'absolute', top: 3, left: on ? 23 : 3, width: 20, height: 20, borderRadius: '50%',
+        background: '#fff', transition: 'left 120ms',
+      }} />
+    </button>
+  );
+}
 // ───────────────────────────────────────────────────────────
 // LOGS
 // ───────────────────────────────────────────────────────────
@@ -961,117 +860,117 @@ function LogsTab() {
 }
 
 // ───────────────────────────────────────────────────────────
-// BILLING & INVOICES
+// PAYMENTS
 // ───────────────────────────────────────────────────────────
 
 function BillingInvoicesTab() {
   const { showToast } = useUI();
   const [stats, setStats] = useState(null);
   const [rows, setRows] = useState([]);
+  const [cursor, setCursor] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState('');
+  const [method, setMethod] = useState('');
 
-  const load = useCallback(async () => {
+  const load = useCallback(async ({ more = false, after = null } = {}) => {
     setLoading(true);
     try {
       const [s, r] = await Promise.all([
-        call('adminGetBillingStats'),
-        call('adminListInvoices', { filters: { status: statusFilter || undefined }, pageSize: 50 }),
+        more ? Promise.resolve(null) : call('adminGetBillingStats'),
+        call('adminListInvoices', { filters: { method: method || undefined }, cursor: after, pageSize: 40 }),
       ]);
-      setStats(s); setRows(r.rows || []);
+      if (s) setStats(s);
+      setRows((prev) => more ? [...prev, ...(r.rows || [])] : (r.rows || []));
+      setCursor(r.nextCursor || null);
     } catch (e) {
-      showToast(e?.message || 'Failed to load billing', 'error');
+      showToast(e?.message || 'Failed to load payments', 'error');
     }
     setLoading(false);
-  }, [statusFilter, showToast]);
+  }, [method, showToast]);
 
   useEffect(() => { load(); }, [load]);
 
+  const bm = stats?.byMethod || {};
+  const monthLabel = stats ? new Date(stats.monthStartMs).toLocaleDateString(undefined, { month: 'long', year: 'numeric' }) : '';
+
   return (
     <>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, marginBottom: 16 }}>
-        <KpiCard icon="receipt_long" color="#7c3aed" label="Billed (This Month)"
-          value={loading ? '—' : fmtMoney(stats?.totalBilledEUR)} />
-        <KpiCard icon="check_circle" color="#22c55e" label="Collected"
-          value={loading ? '—' : fmtMoney(stats?.collectedEUR)} />
-        <KpiCard icon="schedule" color="#f0a500" label="Pending"
-          value={loading ? '—' : fmtMoney(stats?.pendingEUR)} />
-        <KpiCard icon="warning" color="#f04060" label="Overdue"
-          value={loading ? '—' : fmtMoney(stats?.overdueEUR)} />
-        <KpiCard icon="undo" color="#b44fff" label="Refunded (This Month)"
-          value={loading ? '—' : fmtMoney(stats?.refundedEUR)} />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 12, marginBottom: 16 }}>
+        <KpiCard icon="receipt_long" color="#7c3aed" label={`Payments · ${monthLabel || 'this month'}`}
+          value={stats ? fmtNumber(stats.payments) : '—'} />
+        <KpiCard icon="toll" color="#f5c842" label="Paid in coins"
+          value={stats ? `${fmtNumber(bm.coins?.coins || 0)} coins` : '—'} sub={stats ? `${fmtNumber(bm.coins?.count || 0)} payments` : null} />
+        <KpiCard icon="credit_card" color="#93c5fd" label="Paid by card"
+          value={stats ? usd(bm.card?.usd || 0) : '—'} sub={stats ? `${fmtNumber(bm.card?.count || 0)} payments, incl. fees and tax` : null} />
+        <KpiCard icon="shop" color="#86efac" label="Google Play"
+          value={stats ? fmtNumber(bm.google_play?.count || 0) : '—'} sub="payments · price set per market" />
+        <KpiCard icon="storefront" color="#fca5a5" label="AppGallery"
+          value={stats ? fmtNumber(bm.huawei_iap?.count || 0) : '—'} sub="payments · price set per market" />
       </div>
 
-      <div style={{
-        display: 'flex', gap: 8, flexWrap: 'wrap',
-        background: C.card, border: `1px solid ${C.border}`, borderRadius: 12,
-        padding: 12, marginBottom: 12,
-      }}>
-        <select
-          value={statusFilter}
-          onChange={e => setStatusFilter(e.target.value)}
-          style={{
-            padding: '8px 12px', borderRadius: 8, border: `1px solid ${C.border}`,
-            background: '#0a0a14', color: statusFilter ? C.text : C.textDim, fontSize: 12,
-          }}
-        >
-          <option value="">All Statuses</option>
-          <option value="paid">Paid</option>
-          <option value="pending">Pending</option>
-          <option value="overdue">Overdue</option>
-          <option value="failed">Failed</option>
-          <option value="refunded">Refunded</option>
-        </select>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
+        {[['', 'All'], ['coins', 'Coins'], ['card', 'Card'], ['google_play', 'Google Play'], ['huawei_iap', 'AppGallery']].map(([k, label]) => (
+          <button key={k || 'all'} type="button" onClick={() => setMethod(k)} style={{
+            padding: '7px 12px', borderRadius: 999, border: 0, cursor: 'pointer', fontSize: 12, fontWeight: 600,
+            background: method === k ? C.accent : '#1d1d2c', color: method === k ? '#fff' : C.textDim,
+          }}>{label}</button>
+        ))}
       </div>
 
-      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: 'hidden' }}>
+      <div style={{ background: C.card, borderRadius: 12, overflow: 'hidden' }}>
         <div style={{
-          display: 'grid', gridTemplateColumns: '140px 2fr 80px 100px 100px 100px 100px',
+          display: 'grid', gridTemplateColumns: '2fr 120px 70px 130px 150px 110px',
           padding: '10px 14px', borderBottom: `1px solid ${C.border}`,
           fontSize: 10, fontWeight: 700, color: C.textMuted, textTransform: 'uppercase',
         }}>
-          <div>Invoice ID</div>
-          <div>User</div>
-          <div>Plan</div>
-          <div>Amount</div>
-          <div>Issue Date</div>
-          <div>Due Date</div>
-          <div style={{ textAlign: 'right' }}>Status</div>
+          <div>User</div><div>Paid via</div><div>Plan</div><div>Amount</div><div>Covers</div><div style={{ textAlign: 'right' }}>When</div>
         </div>
         {loading && rows.length === 0 && <Empty label="Loading…" />}
         {!loading && rows.length === 0 && (
-          <Empty label="No invoices yet. Cryptomus webhook will populate this once the processor goes live." />
+          <Empty label={method ? 'No payments through this rail yet.' : 'No subscription payments yet. Each one appears here the moment a plan is paid for, on any rail.'} />
         )}
         {rows.map(r => (
           <div key={r.id} style={{
-            display: 'grid', gridTemplateColumns: '140px 2fr 80px 100px 100px 100px 100px',
+            display: 'grid', gridTemplateColumns: '2fr 120px 70px 130px 150px 110px',
             padding: '12px 14px', borderBottom: `1px solid ${C.border}`,
             fontSize: 12, color: C.text, alignItems: 'center',
           }}>
-            <div style={{ fontFamily: 'ui-monospace, monospace', fontSize: 11 }}>{r.invoiceNumber}</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
               <UserAvatar src={r.user?.avatar} size={24} />
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {r.user?.displayName || r.user?.username || '—'}
+                  {r.user?.displayName || r.user?.username || (r.userId || '').slice(0, 10) || '—'}
                 </div>
                 <div style={{ fontSize: 10, color: C.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {r.user?.email || '—'}
+                  {r.user?.email || (r.user?.username ? `@${r.user.username}` : '—')}
                 </div>
               </div>
             </div>
-            <TierPill tier={r.plan} />
-            <div className="font-dmmono tabular-nums">{fmtMoney(r.amount, r.currency === 'EUR' ? '€' : r.currency + ' ')}</div>
-            <div style={{ fontSize: 11, color: C.textDim }}>{r.issueDate ? fmtDate(r.issueDate) : '—'}</div>
-            <div style={{ fontSize: 11, color: C.textDim }}>{r.dueDate ? fmtDate(r.dueDate) : '—'}</div>
-            <div style={{ textAlign: 'right' }}><InvoiceStatusPill status={r.status} /></div>
+            <div><RailPill method={r.method} /></div>
+            <TierPill tier={r.tier} />
+            <div className="font-dmmono tabular-nums">
+              {r.amount?.kind === 'coins' ? `${fmtNumber(r.amount.value)} coins`
+                : r.amount?.kind === 'usd' ? usd(r.amount.value)
+                : <span style={{ color: C.textMuted }}>set by the store</span>}
+              {r.renewal && <div style={{ fontSize: 10, color: C.textMuted }}>renewal</div>}
+            </div>
+            <div style={{ fontSize: 11, color: C.textDim }}>
+              {r.periodStart ? fmtDate(r.periodStart) : '—'} to {r.periodEnd ? fmtDate(r.periodEnd) : '—'}
+            </div>
+            <div style={{ fontSize: 11, color: C.textDim, textAlign: 'right' }}>{fmtRelative(r.createdAt)}</div>
           </div>
         ))}
+        {cursor && (
+          <div style={{ padding: 12, textAlign: 'center' }}>
+            <button onClick={() => load({ more: true, after: cursor })} disabled={loading} style={{
+              padding: '8px 18px', borderRadius: 8, background: C.accent, color: '#fff',
+              border: 0, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+            }}>{loading ? 'Loading…' : 'Load more'}</button>
+          </div>
+        )}
       </div>
     </>
   );
 }
-
 // ───────────────────────────────────────────────────────────
 // Pills + cards + chart primitives
 // ───────────────────────────────────────────────────────────
@@ -1079,52 +978,33 @@ function BillingInvoicesTab() {
 function TierPill({ tier }) {
   if (!tier) return <span style={{ color: C.textMuted, fontSize: 10 }}>—</span>;
   const map = {
-    lite: { bg: '#7c3aed20', fg: '#b44fff', label: 'LITE' },
-    pro:  { bg: '#f0a50020', fg: '#f0a500', label: 'PRO' },
-    free: { bg: '#5a5a8520', fg: C.textDim, label: 'FREE' },
+    lite: { bg: '#241536', fg: '#c4a1ff', label: 'LITE' },
+    pro:  { bg: '#2e2508', fg: '#f5c842', label: 'PRO' },
+    free: { bg: '#1d1d2c', fg: C.textDim, label: 'FREE' },
   };
   const m = map[tier] || map.free;
   return (
     <span style={{
       fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 999,
-      background: m.bg, color: m.fg, border: `1px solid ${m.fg}40`,
+      background: m.bg, color: m.fg, justifySelf: 'start',
     }}>{m.label}</span>
   );
 }
-
 function StatusPill({ status }) {
   const map = {
-    active:    { bg: '#22c55e20', fg: '#22c55e', label: 'ACTIVE' },
-    trial:     { bg: '#3b82f620', fg: '#3b82f6', label: 'TRIAL' },
-    past_due:  { bg: '#f0a50020', fg: '#f0a500', label: 'PAST DUE' },
-    cancelled: { bg: '#5a5a8520', fg: C.textDim, label: 'CANCELLED' },
+    active:    { bg: '#0f2a1a', fg: '#4ade80', label: 'ACTIVE' },
+    trial:     { bg: '#0f2140', fg: '#93c5fd', label: 'TRIAL' },
+    past_due:  { bg: '#2e2508', fg: '#f5c842', label: 'RENEWAL DUE' },
+    cancelled: { bg: '#1d1d2c', fg: C.textDim, label: 'ENDED' },
   };
   const m = map[status] || map.active;
   return (
     <span style={{
       fontSize: 9, fontWeight: 700, padding: '3px 6px', borderRadius: 4,
-      background: m.bg, color: m.fg,
+      background: m.bg, color: m.fg, justifySelf: 'start',
     }}>{m.label}</span>
   );
 }
-
-function InvoiceStatusPill({ status }) {
-  const map = {
-    paid:     { bg: '#22c55e20', fg: '#22c55e' },
-    pending:  { bg: '#3b82f620', fg: '#3b82f6' },
-    overdue:  { bg: '#f0a50020', fg: '#f0a500' },
-    failed:   { bg: '#f0406020', fg: '#f04060' },
-    refunded: { bg: '#b44fff20', fg: '#b44fff' },
-  };
-  const m = map[status] || { bg: '#5a5a8520', fg: C.textDim };
-  return (
-    <span style={{
-      fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 999,
-      background: m.bg, color: m.fg, textTransform: 'uppercase',
-    }}>{status || '—'}</span>
-  );
-}
-
 function Card({ title, children }) {
   return (
     <div style={{

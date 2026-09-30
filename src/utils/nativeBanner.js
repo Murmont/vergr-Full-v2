@@ -1,5 +1,5 @@
 import { IS_NATIVE_BUILD } from './platform';
-import { ADS_CONFIG } from '../config/ads';
+import { adUnitFor } from '../config/ads';
 
 // Anchored AdMob banner for the native shell.
 //
@@ -11,8 +11,11 @@ import { ADS_CONFIG } from '../config/ads';
 // An anchored banner above the bottom nav is the standard answer and monetises
 // every screen, not just the feed.
 
+// ⚠ `adUnitFor('banner')` — NOT `ADS_CONFIG.admob.bannerUnitId`. That field is
+// null, and reading it directly is what kept the banner off the Huawei build
+// even after a real Petal banner slot existed for it.
 export const isNativeBannerAvailable = () =>
-  IS_NATIVE_BUILD && !!window.VergrBanner?.available?.() && !!ADS_CONFIG?.admob?.bannerUnitId;
+  IS_NATIVE_BUILD && !!window.VergrBanner?.available?.() && !!adUnitFor('banner');
 
 // Screens where a persistent banner would cover content or break immersion.
 // Ads on a live stream or an active call are both a bad experience and an
@@ -29,7 +32,7 @@ export function shouldShowBanner(pathname) {
 
 export function showNativeBanner() {
   if (!isNativeBannerAvailable()) return;
-  try { window.VergrBanner.show(ADS_CONFIG.admob.bannerUnitId); } catch { /* no fill — stay clean */ }
+  try { window.VergrBanner.show(adUnitFor('banner')); } catch { /* no fill — stay clean */ }
 }
 
 export function hideNativeBanner() {

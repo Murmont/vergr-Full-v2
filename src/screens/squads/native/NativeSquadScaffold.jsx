@@ -99,7 +99,7 @@ export default function NativeSquadScaffold({
       <div style={{ flex: '1 1 auto', minHeight: 0, background: 'var(--bg)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <div
           className="content"
-          style={{ flex: 1, minHeight: 0, overflowY: 'auto', paddingBottom: 'calc(20px + env(safe-area-inset-bottom, 0px))' }}
+          style={{ flex: 1, minHeight: 0, overflowY: 'auto', paddingBottom: 'calc(20px + var(--vg-safe-b, 0px))' }}
         >
           {children}
         </div>

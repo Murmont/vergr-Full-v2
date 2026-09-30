@@ -1,4 +1,4 @@
-// functions/payram.js — PayRam inbound rail (buy coins) + settlement.
+// functions/payram.js — PayRam inbound rail (buy coins). PayRam ONLY.
 // ─────────────────────────────────────────────────────────────────────
 // PayRam is a self-hosted crypto payment node (Docker container on Hetzner,
 // reverse-proxied at PAYRAM_NODE_URL). It onramps the user's card/Apple Pay/
@@ -43,21 +43,23 @@
 
 const { onCall, onRequest, HttpsError } = require('firebase-functions/v2/https');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
-const { defineSecret } = require('firebase-functions/params');
+const { defineSecret, defineString } = require('firebase-functions/params');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const functions = require('firebase-functions/v2');
 const axios = require('axios');
 const crypto = require('node:crypto');
-const { creditReferralPurchaseBonus } = require('./referralRevenue');
-const { regionalPrice } = require('./geoPricing');
-const coinPromos = require('./coinPromos');
+// What a purchase is and how it settles is shared with the Coda checkout and
+// lives in orders.js. This file is ONLY PayRam, so it can be deleted whole when
+// PayRam is removed (founder, 2026-09-26) without touching any other rail.
+const orders = require('./orders');
+const settlePayramOrder = (referenceId, ctx) => orders.settleOrder('payram_orders', referenceId, ctx);
 
 const db = getFirestore('vgrdb');
 const REGION = 'europe-west1';
 
 const PAYRAM_API_KEY  = defineSecret('PAYRAM_API_KEY');
-const PAYRAM_NODE_URL = defineSecret('PAYRAM_NODE_URL');
-const SECRETS = [PAYRAM_API_KEY, PAYRAM_NODE_URL];
+const PAYRAM_NODE_URL = defineString('PAYRAM_NODE_URL');
+const SECRETS = [PAYRAM_API_KEY, ...require('./receipts').RECEIPT_SECRETS];
 
 // CLAUDE.md flags secrets set via `echo` landing with a trailing \n that breaks
 // HTTP headers. Trim every read.
@@ -70,167 +72,6 @@ function isConfigured() {
   return !isPlaceholder(payramApiKey()) && !isPlaceholder(payramNodeUrl());
 }
 
-// ── EUR→USD conversion (loss-proof) ──────────────────────────────────
-// PayRam charges in USD; packs are priced in EUR. We request the USD amount
-// such that the USDC we receive is ALWAYS worth at least the EUR pack price,
-// even if the rate moves against us before the founder off-ramps USDC→EUR.
-//
-// Resolution order:
-//   1. app_config/general.payramEurUsd  — manual founder pin (used verbatim)
-//   2. live rate from open.er-api.com (free, no key) — cached 6h, last-good
-//      value persisted to app_config/general.payramEurUsdAuto for fallback
-//   3. last-good persisted value
-//   4. otherwise: REFUSE the payment (never guess a rate that could undercharge)
-//
-// A safety buffer (app_config/general.payramFxBufferPct) is then applied so
-// amountUSD = priceEUR × rate × (1 + buffer). The bias is always to charge
-// slightly MORE USD — overcharging by the FX spread is acceptable;
-// undercharging loses money and is not.
-//
-// RETIRED as a margin lever on 2026-08-11 (founder approved). Default is now 0.
-//
-// It was never a general-purpose lever, only an invisible markup on the EUR→USD
-// hop. The catalogue is going native USD, and USD is both the displayed AND the
-// charged currency, so for the buyer there is no conversion left to mark up.
-// Keeping a buffer on a native USD price would either do nothing or double-
-// charge on top of the itemised fees now shown at checkout. The margin it used
-// to provide has been folded into the per-coin price instead, where it is
-// honest and visible.
-//
-// The config field STAYS so the buffer can be switched back on without a deploy
-// if a genuinely FX-exposed rail ever appears. Set app_config/general
-// .payramFxBufferPct to re-enable. The mechanism below is untouched.
-const DEFAULT_FX_BUFFER = 0;
-const RATE_CACHE_MS = 6 * 60 * 60 * 1000;
-let _liveRate = null;       // { rate, fetchedAt }
-
-async function fetchLiveEurUsd() {
-  const now = Date.now();
-  if (_liveRate && (now - _liveRate.fetchedAt < RATE_CACHE_MS)) return _liveRate.rate;
-  try {
-    const resp = await axios.get('https://open.er-api.com/v6/latest/EUR', {
-      timeout: 8000, validateStatus: () => true,
-    });
-    const r = Number(resp.data?.rates?.USD);
-    if (resp.data?.result === 'success' && Number.isFinite(r) && r > 0) {
-      _liveRate = { rate: r, fetchedAt: now };
-      // Persist last-good for fallback (best-effort, don't block).
-      db.doc('app_config/general').set(
-        { payramEurUsdAuto: r, payramEurUsdAutoAt: FieldValue.serverTimestamp() },
-        { merge: true }
-      ).catch(() => {});
-      return r;
-    }
-  } catch (err) {
-    functions.logger.warn('payram FX live fetch failed', err.message);
-  }
-  return null;
-}
-
-// Returns the USD amount to charge for a EUR price, or throws if no trustworthy
-// rate is available (fail closed — never undercharge).
-async function priceEurToUsd(priceEUR) {
-  let cfg = {};
-  try {
-    const snap = await db.doc('app_config/general').get();
-    cfg = snap.exists ? (snap.data() || {}) : {};
-  } catch { /* fall through */ }
-
-  const pin = Number(cfg.payramEurUsd);
-  let rate = (Number.isFinite(pin) && pin > 0) ? pin : null;
-  if (rate == null) rate = await fetchLiveEurUsd();
-  if (rate == null) {
-    const lastGood = Number(cfg.payramEurUsdAuto);
-    if (Number.isFinite(lastGood) && lastGood > 0) rate = lastGood;
-  }
-  if (rate == null) {
-    throw new HttpsError('unavailable', 'Exchange rate temporarily unavailable. Please try again shortly.');
-  }
-
-  const bufferRaw = Number(cfg.payramFxBufferPct);
-  const buffer = (Number.isFinite(bufferRaw) && bufferRaw >= 0) ? bufferRaw : DEFAULT_FX_BUFFER;
-  const amountUSD = +(priceEUR * rate * (1 + buffer)).toFixed(2);
-  return { amountUSD, rate, buffer };
-}
-
-// Coin packs — keys AND values mirror src/utils/vpSystem.js → COIN_PACKS
-// exactly. NATIVE USD since 2026-08-11: coins are no longer priced in EUR and
-// converted, they are priced in the currency the buyer is charged in.
-//
-// ⚠ Keep the coin counts and prices identical to vpSystem.js. This is the
-// server-authoritative copy: the client names a pack, never an amount, and
-// every price the buyer is shown or charged is re-derived here.
-const COIN_PACKS = {
-  starter:   { coins: 78,    priceUSD: 0.99,   vpBonus: 0    },
-  gamer:     { coins: 400,   priceUSD: 4.99,   vpBonus: 0    },
-  pro:       { coins: 815,   priceUSD: 9.99,   vpBonus: 0    },
-  elite:     { coins: 1650,  priceUSD: 19.99,  vpBonus: 0    },
-  legend:    { coins: 4180,  priceUSD: 49.99,  vpBonus: 0    },
-  champion:  { coins: 8450,  priceUSD: 99.99,  vpBonus: 0    },
-  titan:     { coins: 12800, priceUSD: 149.99, vpBonus: 1500 },
-  ascendant: { coins: 21500, priceUSD: 249.99, vpBonus: 3000 },
-};
-
-// Custom-amount pricing (Buy screen "Custom amount" tab). Authoritative floor.
-// Set at the ladder's WORST per-coin rate (Starter, $0.99 / 78 coins) on
-// purpose: a custom amount must never undercut a pack, or the ladder's bulk
-// curve becomes decorative and buyers route around it.
-const CUSTOM_COIN_PRICE_USD = 0.0127;
-// PayRam's underlying card processor has a practical floor. It is not published
-// (their API exposes no fee or minimum field at all), so this stays a
-// conservative local guard rather than a mirrored constant.
-const CUSTOM_MIN_USD        = 10;
-
-// STORE ITEMS on the CARD rail: VP bonus packs and boosts, paid for in cash.
-//
-// FOUNDER, 2026-08-28: a boost is charged in COINS only when the wallet covers
-// it; otherwise it charges USD. On the Play build that USD charge is an IAP
-// (functions/playBilling.js PLAY_ITEM_PRODUCTS). On the web there is no Play
-// Billing at all, so it comes through here.
-//
-// ⚠⚠ THE CASH PRICE IS NOT DERIVED FROM THE COIN PRICE. Pricing an item at
-// playPriceFor(its coin count) put a 75-coin bonus at $1.09, which is what 78
-// coins cost: nobody buys that, and it devalues the coin. The rule is
-// priceUSD = charmRound(max(2 x coin-equivalent, $0.99)), so paying with coins
-// is always about half the cash price.
-//
-// ⚠ SKUs are the SAME strings as the Play product ids, on purpose. One
-// namespace across both rails means a cart line, a Play IAP and a ledger row
-// all name the item identically, and the prefixes keep them from colliding
-// with a coin SKU.
-//
-// ⚠ No regional multiplier, and that is not an oversight. A boost is CONSUMED,
-// so it is not the arbitrage a discounted coin would be, but it is bought with
-// the same money as coins on the same screen, and two different geo rules on
-// one checkout is how a price stops being explainable.
-//
-// ⚠ MIRRORS functions/vpBonuses.js and functions/boosts.js.
-// scripts/coin-ladder-check.mjs fails the build on any drift.
-const STORE_ITEMS = {
-  vpb_happy_hour:     { kind: 'bonus', id: 'happy_hour',   name: 'Happy Hour',            priceUSD: 0.99 },
-  vpb_flash:          { kind: 'bonus', id: 'flash',        name: 'Flash Surge',           priceUSD: 0.99 },
-  vpb_half_day:       { kind: 'bonus', id: 'half_day',     name: 'Half-Day Surge',        priceUSD: 1.59 },
-  vpb_day:            { kind: 'bonus', id: 'day',          name: 'Day Surge',             priceUSD: 2.59 },
-  vpb_weekend:        { kind: 'bonus', id: 'weekend',      name: 'Weekend Surge',         priceUSD: 4.49 },
-  vpb_long:           { kind: 'bonus', id: 'long',         name: 'Long Surge',            priceUSD: 11.99 },
-  vpb_creator:        { kind: 'bonus', id: 'creator',      name: 'Creator Surge',         priceUSD: 1.99 },
-  vpb_community:      { kind: 'bonus', id: 'community',    name: 'Community Surge',       priceUSD: 1.99 },
-  vpb_watcher:        { kind: 'bonus', id: 'watcher',      name: 'Watcher Surge',         priceUSD: 1.29 },
-  boost_post:         { kind: 'boost', id: 'post',         name: 'Post Boost',            priceUSD: 0.99 },
-  boost_lfg:          { kind: 'boost', id: 'lfg',          name: 'Teammate Search Boost', priceUSD: 0.99 },
-  boost_profile:      { kind: 'boost', id: 'profile',      name: 'Profile Boost',         priceUSD: 1.29 },
-  boost_squad:        { kind: 'boost', id: 'squad',        name: 'Squad Boost',           priceUSD: 0.99 },
-  boost_stream_boost: { kind: 'boost', id: 'stream_boost', name: 'Stream Boost',          priceUSD: 0.99 },
-  boost_stream_super: { kind: 'boost', id: 'stream_super', name: 'Super Boost',           priceUSD: 1.99 },
-  boost_stream_mega:  { kind: 'boost', id: 'stream_mega',  name: 'Mega Boost',            priceUSD: 6.99 },
-};
-
-exports._STORE_ITEMS = STORE_ITEMS;
-
-// Subscription card payments (mirror functions/subscriptions.js TIER_EUR_PRICE).
-const TIER_EUR_PRICE = { lite: 4.99, pro: 9.99 };
-const SUB_PERIOD_MS  = 30 * 24 * 3600 * 1000;
-
 const PAID_STATES = new Set(['FILLED', 'OVER_FILLED']);
 
 // ════════════════════════════════════════════════════════════════════
@@ -242,79 +83,18 @@ exports.createPayramPayment = onCall({ region: REGION, secrets: SECRETS }, async
   if (request.auth?.token?.firebase?.sign_in_provider === 'anonymous') {
     throw new HttpsError('permission-denied', 'Anonymous accounts cannot buy coins.');
   }
+  if (request.auth?.token?.email_verified !== true) {
+    throw new HttpsError('failed-precondition', 'email_unverified: Verify your email before buying.');
+  }
+
 
   // Resolve order — a fixed pack, a custom coin amount, or a subscription.
   // `gemQuoteId` and the whole buy-and-send branch were removed on 2026-08-16.
   // It let a buyer pay by card to mint value directly into another user's
   // wallet, which is the clearest money-transmission shape the product had.
-  const { packSku, customCoins, subscriptionTier, cart, itemSku } = request.data || {};
-  let order; // { kind, sku, coins, vpBonus, priceEUR, tier? }
-  if (Array.isArray(cart) && cart.length) {
-    // CART CHECKOUT. The client sends WHAT, never HOW MUCH: a list of
-    // { sku, qty } and nothing else. Every line is re-priced from COIN_PACKS
-    // here, which is the same rule the single-pack path has always followed and
-    // the only reason a cart is safe to accept at all.
-    //
-    // One payment for the whole basket rather than one per line: PayRam charges
-    // per invoice, and three redirects to buy three packs is not a checkout,
-    // it is an obstacle course.
-    let coins = 0;
-    let vpBonus = 0;
-    let priceUSD = 0;
-    const lines = [];
-    const items = [];
-    for (const raw of cart.slice(0, 20)) {
-      const sku = String(raw?.sku || '');
-      const qty = Math.min(99, Math.max(1, Math.floor(Number(raw?.qty) || 0)));
-      const pack = COIN_PACKS[sku];
-      if (pack) {
-        coins    += pack.coins   * qty;
-        vpBonus  += pack.vpBonus * qty;
-        priceUSD += pack.priceUSD * qty;
-        lines.push({ sku, qty, coins: pack.coins * qty, priceUSD: +(pack.priceUSD * qty).toFixed(2) });
-        continue;
-      }
-      // A basket may mix coins and store items. One invoice for the lot, because
-      // three redirects to buy three things is not a checkout.
-      const it = STORE_ITEMS[sku];
-      if (!it) throw new HttpsError('invalid-argument', `Unknown pack: ${sku}`);
-      priceUSD += it.priceUSD * qty;
-      lines.push({ sku, qty, coins: 0, priceUSD: +(it.priceUSD * qty).toFixed(2) });
-      items.push({ sku, kind: it.kind, id: it.id, qty });
-    }
-    if (!coins && !items.length) throw new HttpsError('invalid-argument', 'Cart is empty.');
-    order = {
-      kind: 'coins', sku: 'cart', coins, vpBonus,
-      priceUSD: +priceUSD.toFixed(2), lines, items,
-    };
-  } else if (itemSku) {
-    // QUICK BUY. The boost sheet on a live stream must not send the buyer to a
-    // basket: founder, 2026-08-28, *"if I am on a stream I will not want to
-    // leave the stream in order to purchase more coins"*.
-    const it = STORE_ITEMS[String(itemSku)];
-    if (!it) throw new HttpsError('invalid-argument', 'Unknown item');
-    const qty = Math.min(99, Math.max(1, Math.floor(Number(request.data?.qty) || 1)));
-    order = {
-      kind: 'coins', sku: String(itemSku), coins: 0, vpBonus: 0,
-      priceUSD: +(it.priceUSD * qty).toFixed(2),
-      items: [{ sku: String(itemSku), kind: it.kind, id: it.id, qty }],
-    };
-  } else if (subscriptionTier) {
-    const priceEUR = TIER_EUR_PRICE[subscriptionTier];
-    if (!priceEUR) throw new HttpsError('invalid-argument', 'Unknown subscription tier');
-    order = { kind: 'subscription', sku: `sub_${subscriptionTier}`, tier: subscriptionTier, coins: 0, vpBonus: 0, priceEUR };
-  } else if (packSku) {
-    const pack = COIN_PACKS[packSku];
-    if (!pack) throw new HttpsError('invalid-argument', 'Unknown pack');
-    order = { kind: 'coins', sku: packSku, coins: pack.coins, vpBonus: pack.vpBonus, priceUSD: pack.priceUSD };
-  } else {
-    const coins = Math.floor(Number(customCoins) || 0);
-    const priceUSD = +(coins * CUSTOM_COIN_PRICE_USD).toFixed(2);
-    if (!coins || priceUSD < CUSTOM_MIN_USD) {
-      throw new HttpsError('invalid-argument', `Minimum custom purchase is $${CUSTOM_MIN_USD}.`);
-    }
-    order = { kind: 'coins', sku: 'custom', coins, vpBonus: 0, priceUSD };
-  }
+  const resolved = await orders.resolvePaymentOrder(uid, request.data || {});
+  const { order, rate, buffer } = resolved;
+  let amountUSD = resolved.amountUSD;
 
   if (!isConfigured()) {
     return {
@@ -322,48 +102,6 @@ exports.createPayramPayment = onCall({ region: REGION, secrets: SECRETS }, async
       placeholder: true,
       message: 'PayRam is not configured. Set PAYRAM_API_KEY + PAYRAM_NODE_URL to enable.',
     };
-  }
-
-
-  // REGIONAL PRICING — SUBSCRIPTIONS ONLY. NEVER COINS.
-  //
-  // A coin has a FIXED value on the way out: it accrues a creator's revenue
-  // share at a rate that does not care where it was bought. Discount the price a coin
-  // is SOLD at and you have created an arbitrage, not a promotion. Buy 100
-  // coins for EUR 0.36 in a discount region, tip them to a creator, and that
-  // creator withdraws against the full EUR 0.0090 per coin. Vergr funds the
-  // gap on every single transaction, and anyone willing to set a VPN and a
-  // profile country turns it into a pump aimed at the treasury.
-  //
-  // Regional pricing is only ever safe on something that cannot be converted
-  // back into money. A subscription is consumed, not redeemed, so Lite and Pro
-  // can be priced regionally exactly as Spotify and Netflix price them.
-  //
-  // Affordability in cheaper markets comes from SMALLER PACKS at the same
-  // per-coin rate, never from a cheaper coin. See docs + the pack ladder in
-  // src/utils/vpSystem.js.
-  if (order.kind === 'subscription') {
-    const geo = await regionalPrice(uid, order.priceEUR);
-    order.baseEUR = order.priceEUR;
-    order.priceEUR = geo.priceEUR;
-    order.geo = { country: geo.country, tier: geo.tier, multiplier: geo.multiplier };
-  }
-
-  // Pricing is server-authoritative — never trust a client-sent amount.
-  //
-  // COINS are native USD: the pack price IS the charged figure, no conversion,
-  // no FX rate to fail on, no buffer. SUBSCRIPTIONS are still
-  // priced in EUR (because they carry regional multipliers, which
-  // are safe only on something that is consumed rather than redeemed), so they
-  // still convert here and priceEurToUsd still fails closed if no trustworthy
-  // rate is available.
-  let amountUSD;
-  let rate = null;
-  let buffer = 0;
-  if (typeof order.priceUSD === 'number') {
-    amountUSD = +order.priceUSD.toFixed(2);
-  } else {
-    ({ amountUSD, rate, buffer } = await priceEurToUsd(order.priceEUR));
   }
 
   // ── Fees and tax, ADDED to the buyer (founder decision 2026-08-11) ──
@@ -420,56 +158,14 @@ exports.createPayramPayment = onCall({ region: REGION, secrets: SECRETS }, async
 
   const referenceId = String(resp.data.reference_id);
 
-  // COIN SALE PROMO. Changes the QUANTITY DELIVERED, never the price charged:
-  // the PayRam payment above is already created and its amount is untouched.
-  // Only `coinsToCredit` and `vpBonus` on the order below move.
-  //
-  // The bonus is CLAIMED here, at order creation, rather than at settlement,
-  // which reserves it against the promo's cap at the moment we promise it. A
-  // buyer is therefore never shown a bonus that a later purchase has exhausted.
-  // The cost is that an abandoned order holds a slice of the cap, which errs
-  // toward under-issuing, the right direction for a spend limit. Idempotent on
-  // `referenceId` so a retry cannot double-reserve.
-  let promo = null;
-  if (order.kind === 'coins') {
-    try {
-      const granted = await coinPromos.applyPromo({
-        packId: (order.sku === 'cart' || order.sku === 'custom') ? null : order.sku,
-        coins: order.coins,
-        priceUSD: order.priceUSD,
-        uid,
-        orderId: referenceId,
-      });
-      if (granted.promoId) {
-        order.coins += granted.bonusCoins;
-        order.vpBonus += granted.bonusVp;
-        promo = granted;
-      }
-    } catch (e) {
-      // A promo must never block a purchase that has already been created.
-      // Worst case the buyer gets exactly what they paid for.
-      console.warn('createPayramPayment: promo skipped', e?.message || e);
-    }
-  }
+  const promo = await orders.applyOrderPromo(order, uid, referenceId);
 
   // Doc id = PayRam reference_id so circleWallets.processInboundDeposit can
   // match a Circle deposit's refId straight to payram_orders/{refId}.
   await db.collection('payram_orders').doc(referenceId).set({
     referenceId,
-    uid,
-    // Stamped so a bonus is distinguishable from the base purchase forever,
-    // in the order and in the transaction row settlement writes from it.
-    promoId: promo?.promoId || null,
-    promoBonusCoins: promo?.bonusCoins || 0,
-    promoBonusVp: promo?.bonusVp || 0,
-    kind: order.kind,                  // 'coins' | 'subscription'
-    packSku: order.sku,
-    subscriptionTier: order.tier || null,
-    coinsToCredit: order.coins,        // field name circleWallets reads (0 for subs)
-    vpBonus: order.vpBonus,
-    // null for coins since 2026-08-11: they are natively USD and never had a EUR
-    // price to record. Subscriptions still carry one.
-    amountEUR: typeof order.priceEUR === 'number' ? order.priceEUR : null,
+    rail: 'payram',
+    ...orders.baseOrderFields({ uid, order, promo, amountEUR: order.priceEUR }),
     // `amountUSD` is what the buyer is CHARGED (subtotal + fees + tax).
     // `subtotalUSD` is what we intend to net. platformRevenue.js books the two
     // separately so the ledger reconciles against the card statement rather than
@@ -487,200 +183,6 @@ exports.createPayramPayment = onCall({ region: REGION, secrets: SECRETS }, async
 
   return { ok: true, referenceId, paymentUrl: resp.data.url };
 });
-
-// ════════════════════════════════════════════════════════════════════
-// Shared settlement helper — used by webhook + poller
-// ════════════════════════════════════════════════════════════════════
-// Credits the user's coins (+ VP bonus) exactly once. Returns a small result
-// object describing what happened. Mirrors circleWallets' awaiting_settlement
-// lock so the two rails never double-credit.
-async function settlePayramOrder(referenceId, ctx = {}) {
-  const orderRef = db.collection('payram_orders').doc(referenceId);
-  const result = await db.runTransaction(async (t) => {
-    const snap = await t.get(orderRef);
-    if (!snap.exists) return { credited: false, reason: 'order-not-found' };
-    const order = snap.data();
-    if (order.status === 'settled') return { credited: false, reason: 'already-settled' };
-    if (order.status !== 'awaiting_settlement') {
-      return { credited: false, reason: `status-${order.status}` };
-    }
-    if (!order.uid) return { credited: false, reason: 'order-malformed' };
-
-    const settleStamp = {
-      status: 'settled',
-      settledAt: FieldValue.serverTimestamp(),
-      settledVia: ctx.source || 'unknown',
-      ...(ctx.invoiceId ? { invoiceId: ctx.invoiceId } : {}),
-      ...(ctx.filledAmountUSD != null ? { filledAmountUSD: ctx.filledAmountUSD } : {}),
-    };
-
-    // ── Subscription card payment ──
-    // PayRam is one-time (no stored card / recurring), so a card subscription
-    // activates one 30-day period with autoRenew=false. The renewal-reminder
-    // cron prompts the user to re-pay (or switch to coin auto-renew).
-    if (order.kind === 'subscription') {
-      const tier = order.subscriptionTier;
-      if (tier !== 'lite' && tier !== 'pro') return { credited: false, reason: 'bad-tier' };
-      const now = Date.now();
-      const periodEnd = now + SUB_PERIOD_MS;
-      const tierName = tier === 'lite' ? 'Lite' : 'Pro';
-
-      t.set(db.collection('users').doc(order.uid), {
-        subscription: tier,
-        subscriptionPeriodStart: now,
-        subscriptionPeriodEnd: periodEnd,
-        subscriptionAutoRenew: false,
-        subscriptionPreferredMethod: 'card',
-      }, { merge: true });
-
-      t.set(db.collection('subscriptions').doc(`${order.uid}_${now}`), {
-        userId: order.uid, tier, method: 'card', priceEUR: order.amountEUR,
-        periodStart: now, periodEnd, status: 'active',
-        gateway: 'payram', payramReferenceId: referenceId,
-        createdAt: FieldValue.serverTimestamp(),
-      });
-
-      t.create(db.collection('transactions').doc(), {
-        userId: order.uid, type: 'subscription_payment',
-        amount: order.amountEUR, currency: 'eur',
-        description: `${tierName} subscription — 1 month (card)`,
-        gateway: 'payram', payramReferenceId: referenceId,
-        createdAt: FieldValue.serverTimestamp(),
-      });
-
-      t.set(db.collection('notifications').doc(), {
-        recipientId: order.uid, type: 'subscription',
-        title: `${tierName} active!`,
-        body: `Your subscription is active until ${new Date(periodEnd).toLocaleDateString()}.`,
-        read: false, data: { tier },
-        createdAt: FieldValue.serverTimestamp(),
-      });
-
-      t.update(orderRef, settleStamp);
-      return { credited: true, uid: order.uid, kind: 'subscription', tier, periodEnd };
-    }
-
-
-    // ── STORE ITEMS (VP bonuses / boosts) ──
-    //
-    // Granted through the SAME helpers a coin purchase uses, so a bonus bought
-    // with a card is the identical object to one bought with coins and expires
-    // the same way. Reads come first because Firestore forbids a read after a
-    // write inside a transaction, and applyPack needs the user snapshot.
-    const orderItems = Array.isArray(order.items) ? order.items : [];
-    let userSnapForItems = null;
-    if (orderItems.some((i) => i && i.kind === 'bonus')) {
-      userSnapForItems = await t.get(db.collection('users').doc(order.uid));
-    }
-
-    // ── Coin purchase ──
-    if (typeof order.coinsToCredit !== 'number' && !orderItems.length) {
-      return { credited: false, reason: 'order-malformed' };
-    }
-    if (orderItems.length) {
-      const { applyPack, VP_BONUS_PACKS } = require('./vpBonuses');
-      const { creditBoosts, BOOSTS } = require('./boosts');
-      const itemWalletRef = db.collection('wallets').doc(order.uid);
-      const itemUserRef = db.collection('users').doc(order.uid);
-      const now = Date.now();
-      for (const line of orderItems) {
-        const qty = Math.min(99, Math.max(1, Math.floor(Number(line?.qty) || 1)));
-        if (line?.kind === 'bonus') {
-          const pack = VP_BONUS_PACKS.find((p) => p.id === line.id);
-          // A missing pack must not strand a paid order: skip the line, settle
-          // the rest, and leave the row in the transactions ledger to correct.
-          if (!pack || !userSnapForItems || !userSnapForItems.exists) continue;
-          // qty is ignored for a bonus on purpose. Stacking is additive on the
-          // excess with a hard 3.0 ceiling, so a second copy of the same pack
-          // buys almost nothing and would read as a bug on the receipt.
-          applyPack(t, itemUserRef, userSnapForItems.data(), pack, 'card_purchase', now);
-        } else if (line?.kind === 'boost') {
-          const boost = BOOSTS.find((b) => b.id === line.id);
-          if (!boost) continue;
-          creditBoosts(t, itemWalletRef, boost.id, qty);
-        }
-        t.create(db.collection('transactions').doc(), {
-          userId: order.uid,
-          type: line.kind === 'bonus' ? 'vp_bonus_purchase' : 'boost_purchase',
-          currency: 'usd',
-          amount: 0,
-          description: (line.kind === 'bonus' ? 'VP bonus: ' : 'Boost: ') + line.sku + ' (card)',
-          gateway: 'payram',
-          payramReferenceId: referenceId,
-          ...(line.kind === 'bonus' ? { packId: line.id } : { boostId: line.id, qty }),
-          createdAt: FieldValue.serverTimestamp(),
-        });
-      }
-      // An items-only order has no coins to credit and is finished here.
-      if (!order.coinsToCredit) {
-        t.update(orderRef, settleStamp);
-        return { credited: true, uid: order.uid, kind: 'items', items: orderItems };
-      }
-    }
-    const walletRef = db.collection('wallets').doc(order.uid);
-    t.set(walletRef, {
-      balance: FieldValue.increment(order.coinsToCredit),
-      totalEarned: FieldValue.increment(order.coinsToCredit),
-      lastDepositAt: FieldValue.serverTimestamp(),
-      updatedAt: FieldValue.serverTimestamp(),
-    }, { merge: true });
-    if (order.vpBonus > 0) {
-      t.set(walletRef, { vp: FieldValue.increment(order.vpBonus) }, { merge: true });
-    }
-
-    t.create(db.collection('transactions').doc(), {
-      userId: order.uid,
-      type: 'coin_purchase',
-      currency: 'coins',
-      amount: order.coinsToCredit,
-      vpBonus: order.vpBonus || 0,
-      description: `Coin pack: ${order.packSku} (PayRam)`,
-      gateway: 'payram',
-      payramReferenceId: referenceId,
-      createdAt: FieldValue.serverTimestamp(),
-    });
-
-    t.update(orderRef, settleStamp);
-
-    return {
-      credited: true, uid: order.uid, coins: order.coinsToCredit, vpBonus: order.vpBonus || 0,
-      // Carried out of the transaction for the profit ledger below. `order` is
-      // scoped to this callback, so the post-commit block cannot read it.
-      // What we intend to NET, i.e. the ladder price. Falls back to amountUSD
-      // for orders created before fees were itemised, where the two were equal.
-      subtotalUSD: Number(order.subtotalUSD) || Number(order.amountUSD) || 0,
-      buyerFeesUSD: Number(order.buyerFeesUSD) || 0,
-      processorFeeUSD: Number(order.processorFeeUSD) || 0,
-    };
-  });
-
-  // Post-commit, guarded: pay the buyer's referrer their coin revenue-share.
-  // Coin purchases only (subscription settlements return kind:'subscription').
-  if (result.credited && !result.kind && result.coins > 0) {
-    await creditReferralPurchaseBonus({
-      buyerUid: result.uid, coins: result.coins, sourceId: `order:${referenceId}`,
-    });
-
-    // Post-commit, guarded: book the sale to the profit ledger. Same sourceId
-    // as the referral bonus above, so the reconciler cron settling the same
-    // order a second time cannot double-book either one.
-    try {
-      const { bookCoinPurchase } = require('./platformRevenue');
-      await bookCoinPurchase({
-        uid: result.uid,
-        grossUsd: result.subtotalUSD,
-        coins: result.coins,
-        sourceId: `order:${referenceId}`,
-        gateway: 'payram',
-        buyerFeesUsd: result.buyerFeesUSD,
-        processorFeeUsd: result.processorFeeUSD,
-      });
-    } catch (e) {
-      console.error('platform revenue booking failed', referenceId, e?.message || e);
-    }
-  }
-  return result;
-}
 
 // ════════════════════════════════════════════════════════════════════
 // payramWebhook — GET callback from PayRam (Dashboard → Developer → Webhook)
@@ -755,13 +257,10 @@ exports.payramWebhook = onRequest(
 // the status endpoint for any order still awaiting settlement and credits it
 // if PayRam reports FILLED/OVER_FILLED. Orders older than 1h that are still
 // unpaid are marked expired.
-exports.pollPayramOrders = onSchedule(
-  { schedule: 'every 5 minutes', region: REGION, timeZone: 'UTC', secrets: SECRETS },
-  async () => {
-    if (!isConfigured()) {
-      functions.logger.info('pollPayramOrders skipped — PayRam not configured');
-      return;
-    }
+// Runs inside a dispatcher cron in index.js (it was its own Cloud Scheduler
+// job, and every job past the first three is billed monthly).
+exports.pollPayramOrders = async function pollPayramOrders() {
+    const payramReady = isConfigured();
 
     // Only check orders at least 2 min old (give the webhook first crack) and
     // not older than 24h (stale links).
@@ -787,7 +286,18 @@ exports.pollPayramOrders = onSchedule(
       const createdMs = order.createdAt?.toMillis ? order.createdAt.toMillis() : 0;
       const age = createdMs ? now - createdMs : Infinity;
       if (age < minAgeMs) continue;
+
+      // Coda orders written here before 2026-09-26 (sandbox, staff only) now
+      // belong to checkout.js. Expire them once stale so they cannot fill this
+      // query's 40-row window and starve real PayRam orders.
+      if (order.rail && order.rail !== 'payram') {
+        if (age > maxAgeMs) {
+          await doc.ref.set({ status: 'expired', lastStatus: 'LEGACY_RAIL', expiredAt: FieldValue.serverTimestamp() }, { merge: true });
+        }
+        continue;
+      }
       if (age > maxAgeMs) continue;
+      if (!payramReady) continue;
 
       let state = '';
       try {
@@ -816,8 +326,7 @@ exports.pollPayramOrders = onSchedule(
         }, { merge: true });
       }
     }
-  }
-);
+  };
 
 // ════════════════════════════════════════════════════════════════════
 // getPayramOrderStatus — polled by the in-app popup checkout
@@ -866,195 +375,3 @@ exports.getPayramOrderStatus = onCall({ region: REGION, secrets: SECRETS }, asyn
 });
 
 exports._settlePayramOrder = settlePayramOrder;
-// Shared so every caller prices in USD through the SAME rate source, cache and
-// safety buffer. A second FX path would drift from this one and be the thing
-// that silently undercharges.
-exports._priceEurToUsd = priceEurToUsd;
-
-/**
- * Price one subscription tier, for ANY card rail.
- *
- * Exported so any future card rail quotes a subscription through exactly this
- * code rather than keeping its own copy. Two rails with two price tables is the
- * duplicated-constant failure that has already bitten this codebase once, and on
- * a subscription it would mean the same subscriber paying different amounts
- * depending on which button they pressed. (The Stripe rail that used to consume
- * this was removed 2026-08-13; the export stays because the rule outlives it.)
- *
- * The EUR base is deliberate, not legacy: regional multipliers are applied to it,
- * and a regional multiplier is only ever safe on something CONSUMED rather than
- * redeemed. Coins are redeemable, so they are native USD with no multiplier.
- *
- * Returns { priceEUR, baseEUR, geo, amountUSD }. Fails closed via priceEurToUsd
- * when no trustworthy FX rate is available.
- */
-exports._internal_priceSubscription = async function _internal_priceSubscription(uid, tier) {
-  const baseEUR = TIER_EUR_PRICE[tier];
-  if (!baseEUR) throw new HttpsError('invalid-argument', 'Unknown subscription tier');
-  const geo = await regionalPrice(uid, baseEUR);
-  const { amountUSD } = await priceEurToUsd(geo.priceEUR);
-  return {
-    baseEUR,
-    priceEUR: geo.priceEUR,
-    geo: { country: geo.country, tier: geo.tier, multiplier: geo.multiplier },
-    amountUSD,
-  };
-};
-
-/**
- * What will this actually cost me, in the currency I will actually be charged.
- *
- * The buy screen used to show a EUR figure with "billed in USD/USDT" beneath
- * it, which meant the number on the button was never the number on the card
- * statement. That is the exact thing a payment processor objects to at
- * underwriting, and it is also just bad manners.
- *
- * So this runs the SAME two steps the payment path runs, in the same order,
- * against the same live rate: regional price first, FX second. The client
- * renders what comes back. There is no second calculation anywhere that could
- * drift from this one.
- *
- * Fails closed on FX exactly like the payment does: if no trustworthy rate is
- * available the quote errors rather than guessing, because a quote that
- * disagreed with the charge would be worse than no quote at all.
- */
-exports.getCoinPriceQuote = onCall(
-  { region: REGION, cors: true, secrets: [PAYRAM_API_KEY, PAYRAM_NODE_URL] },
-  async (request) => {
-    const uid = request.auth?.uid;
-    if (!uid) throw new HttpsError('unauthenticated', 'Sign in required.');
-
-    const { packSku, customCoins, subscriptionTier, all, cart, method, itemSku } = request.data || {};
-
-    // Fees and tax are quoted by the SERVER, on the same call that prices the
-    // basket, so the breakdown and the total can never come from two different
-    // calculations. `method` is the rail the buyer has selected; omitted means
-    // "price only, no fee lines yet" (the pack grid, before a rail is chosen).
-    const feesFor = async (subtotalUsd) => {
-      if (!method || !(subtotalUsd > 0)) return null;
-      try {
-        const { quoteCheckout } = require('./checkoutFees');
-        return await quoteCheckout({ subtotalUsd, method, uid });
-      } catch (e) {
-        // A fee-quote failure must not break the price quote: the buyer can
-        // still see what the coins cost. It DOES mean we must not present a
-        // total, which the client handles by falling back to the subtotal and
-        // saying fees are shown at checkout.
-        functions.logger.warn('checkout fee quote failed', { method, err: e?.message });
-        return null;
-      }
-    };
-
-    // The whole ladder in ONE call. The buy screen shows eight packs, and eight
-    // round trips to price a single screen is how you make a wallet feel slow.
-    // Region and FX are resolved once and applied across the ladder.
-    if (all) {
-      // No regional multiplier here. Coins are sold at ONE global per-coin rate
-      // because they redeem at one global rate; see the note on the payment
-      // path. This call exists to convert EUR to the USD the buyer is charged,
-      // nothing more.
-      // Native USD: the pack price IS the charged figure. No FX call, so this
-      // can no longer fail because a rate provider is down.
-      const entries = Object.entries(COIN_PACKS).map(([sku, pack]) => (
-        [sku, { coins: pack.coins, priceUSD: pack.priceUSD, amountUSD: pack.priceUSD }]
-      ));
-      return { currency: 'USD', packs: Object.fromEntries(entries) };
-    }
-
-    // CART TOTAL. Same server-side re-pricing as the payment path: the client
-    // names packs and quantities, never an amount. One quote for the basket, so
-    // the total on the cart button is the total on the statement.
-    if (Array.isArray(cart) && cart.length) {
-      let coinsTotal = 0;
-      let usdTotal = 0;
-      let itemCount = 0;
-      const lines = [];
-      for (const raw of cart.slice(0, 20)) {
-        const sku = String(raw?.sku || '');
-        const qty = Math.min(99, Math.max(1, Math.floor(Number(raw?.qty) || 0)));
-        const pack = COIN_PACKS[sku];
-        if (pack) {
-          coinsTotal += pack.coins * qty;
-          usdTotal   += pack.priceUSD * qty;
-          lines.push({ sku, qty, coins: pack.coins * qty, priceUSD: +(pack.priceUSD * qty).toFixed(2) });
-          continue;
-        }
-        // Store items (VP bonuses, boosts) price off their own USD price, NEVER
-        // off their coin cost. See the STORE_ITEMS header.
-        const it = STORE_ITEMS[sku];
-        if (!it) continue;
-        itemCount += qty;
-        usdTotal += it.priceUSD * qty;
-        lines.push({
-          sku, qty, coins: 0, kind: it.kind, name: it.name,
-          priceUSD: +(it.priceUSD * qty).toFixed(2),
-        });
-      }
-      if (!coinsTotal && !itemCount) throw new HttpsError('invalid-argument', 'Cart is empty.');
-      const usd = +usdTotal.toFixed(2);
-      return {
-        coins: coinsTotal, priceUSD: usd, amountUSD: usd,
-        currency: 'USD', fxRate: null, lines,
-        checkout: await feesFor(usd),
-      };
-    }
-
-    // COINS: native USD, no conversion. SUBSCRIPTIONS: still EUR, because they
-    // carry regional multipliers and those are safe only on something consumed
-    // rather than redeemed.
-    // A single store item, for the Quick Buy sheet: it needs the fee lines
-    // without building a basket first.
-    if (itemSku) {
-      const it = STORE_ITEMS[String(itemSku)];
-      if (!it) throw new HttpsError('invalid-argument', 'Unknown item');
-      const qty = Math.min(99, Math.max(1, Math.floor(Number(request.data?.qty) || 1)));
-      const usd = +(it.priceUSD * qty).toFixed(2);
-      return {
-        coins: 0, priceUSD: usd, amountUSD: usd, currency: 'USD', fxRate: null,
-        item: { sku: String(itemSku), kind: it.kind, id: it.id, name: it.name, qty },
-        checkout: await feesFor(usd),
-      };
-    }
-
-    if (!subscriptionTier) {
-      let coins = 0;
-      let priceUSD = 0;
-      if (packSku && packSku !== 'custom') {
-        const pack = COIN_PACKS[packSku];
-        if (!pack) throw new HttpsError('invalid-argument', 'Unknown pack');
-        priceUSD = pack.priceUSD;
-        coins = pack.coins;
-      } else {
-        coins = Math.floor(Number(customCoins) || 0);
-        priceUSD = +(coins * CUSTOM_COIN_PRICE_USD).toFixed(2);
-        if (!coins || priceUSD < CUSTOM_MIN_USD) {
-          throw new HttpsError('invalid-argument', `Minimum is $${CUSTOM_MIN_USD}.`);
-        }
-      }
-      return {
-        coins,
-        priceUSD,
-        // THE NUMBER ON THE CARD STATEMENT (before fees and tax; `checkout.total`
-        // is the figure the buyer actually pays once a rail is chosen).
-        amountUSD: priceUSD,
-        currency: 'USD',
-        fxRate: null,
-        checkout: await feesFor(priceUSD),
-      };
-    }
-
-    const baseEUR = TIER_EUR_PRICE[subscriptionTier];
-    if (!baseEUR) throw new HttpsError('invalid-argument', 'Unknown subscription tier');
-    const priceEUR = (await regionalPrice(uid, baseEUR)).priceEUR;
-    const { amountUSD, rate } = await priceEurToUsd(priceEUR);
-
-    return {
-      coins: 0,
-      priceEUR,
-      // THE NUMBER ON THE CARD STATEMENT.
-      amountUSD,
-      currency: 'USD',
-      fxRate: rate,
-    };
-  },
-);

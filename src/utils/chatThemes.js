@@ -314,10 +314,24 @@ export const chatThemeColors = (theme, isLight) =>
  *
  * Upload with: node scripts/publish-chat-patterns.mjs
  *
- * ⚠ CROSS-ORIGIN IS FINE HERE. This is a CSS mask-image, and CSS never exposes
- * pixels to script, so no CORS header is required (unlike the canvas readback
- * the ambilight used to do). The native CSP already allows it: img-src carries
- * a bare `https:`.
+ * ⚠⚠ CROSS-ORIGIN IS NOT FINE HERE, AND THE COMMENT THAT USED TO SIT ON THIS
+ * LINE SAYING SO IS WHAT SHIPPED THE BUG. It claimed a CSS mask-image needs no
+ * CORS header because CSS never exposes pixels to script. Chromium fetches a
+ * mask-image in CORS mode regardless, and a mask that fails to load HIDES
+ * EVERYTHING IT MASKS, so in the Play app (origin `http://tauri.localhost`) the
+ * whole themed chat went black. The R2 bucket policy now answers both
+ * tauri.localhost origins.
+ *
+ * ⚠ `TILE_V` IS LOAD-BEARING. THE CDN CACHES THE MISSING HEADER, NOT JUST THE
+ * BYTES. Cloudflare's Johannesburg edge was still serving `arcade` and
+ * `dracula` from copies stored ~23h BEFORE the CORS policy existed, with no
+ * `Access-Control-Allow-Origin` and `s-maxage=2592000` pinning them for 30 days,
+ * while the other six tiles (cache MISS) answered correctly. Same object, same
+ * bucket, opposite result. Bumping this version is the one fix that does not
+ * depend on someone purging a cache. **Bump it whenever a tile is re-published
+ * or whenever a header on these objects changes.**
  */
+const TILE_V = 2;
+
 export const chatPatternUrl = (theme) =>
-  (theme?.pattern ? `https://cdn.vergr.app/chat-patterns/${theme.pattern}.png` : null);
+  (theme?.pattern ? `https://cdn.vergr.app/chat-patterns/${theme.pattern}.png?v=${TILE_V}` : null);

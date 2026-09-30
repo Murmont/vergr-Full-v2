@@ -37,6 +37,19 @@ const fmtTime = (ms) => {
   return d.toLocaleString();
 };
 
+// ⚠ THIS PAGE CRASHED ON A ROW IT COULD NOT RENDER. Every admin callable
+// writes admin_actions.actor as a uid STRING, but adminMintWalletUnlockToken
+// wrote an OBJECT, and `a.actor?.slice(0, 8)` on an object throws, which took
+// the whole screen to the ErrorBoundary — including the TOTP enrollment panel,
+// which is why admin 2FA was never set up. The writer is fixed; this stays
+// because the rows already written still carry the old shape.
+const actorLabel = (actor) => {
+  if (!actor) return '—';
+  if (typeof actor === 'string') return actor.slice(0, 8);
+  const uid = actor.uid || actor.id;
+  return typeof uid === 'string' ? uid.slice(0, 8) : '—';
+};
+
 const fmtAgeSec = (ms) => {
   if (!ms) return null;
   const sec = Math.floor((Date.now() - ms) / 1000);
@@ -307,7 +320,7 @@ export default function AdminSecurityScreen() {
                   }}>
                     <code style={{ color: C.text, fontWeight: 600 }}>{a.action}</code>
                     <div style={{ color: C.textDim, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      actor: {a.actor?.slice(0, 8) || '—'}
+                      actor: {actorLabel(a.actor)}
                       {a.target?.id ? ` · target: ${a.target.type}/${String(a.target.id).slice(0, 12)}` : ''}
                       {a.ip ? ` · ${a.ip}` : ''}
                       {a.stepUpEnforced ? (a.stepUpFresh ? ' · 🔒 stepup' : ' · ⚠️ no-stepup') : ''}

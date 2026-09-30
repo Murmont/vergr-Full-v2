@@ -362,46 +362,8 @@
 .vg-profile { position: relative; isolation: isolate; animation: vg-key-drift 24s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) { .vg-profile { animation: none; } }
 
-/* ── Accent orbit: identity on the avatar, without stealing the ring ────────
- * The founder's call, and the right one. An accent RING is unreadable next to
- * a live ring, because they are the same form. A light that TRAVELS the border
- * is a different behaviour, so the two never compete:
- *
- *     static stroke   = state    (live, unseen status)   not yours to choose
- *     travelling light = identity (your accent)           yours
- *
- * Reuses the .vg-beam mechanism already measured from the founder's mockups
- * (conic masked to a 1px ring via xor compositing, rotated through the
- * registered --vg-angle property), driven by --vg-accent instead of gold.
- *
- * 11s rather than .vg-beam's 7s: this sits on a face at the top of a profile,
- * where 7s reads as busy. Degrades to a static accent edge without @property. */
-.vg-orbit { position: relative; }
-.vg-orbit::after {
-  content: '';
-  position: absolute;
-  inset: -5px;
-  z-index: 2;
-  border-radius: inherit;
-  padding: 2px;
-  pointer-events: none;
-  background: conic-gradient(
-    from var(--vg-angle),
-    var(--vg-accent-faint)  0deg,
-    var(--vg-accent-faint) 30deg,
-    var(--vg-accent-dim)   58deg,
-    var(--vg-accent)       76deg,
-    var(--vg-accent-dim)   98deg,
-    var(--vg-accent-faint) 160deg,
-    var(--vg-accent-faint) 360deg
-  );
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-          mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-          mask-composite: exclude;
-  animation: vg-orbit 11s linear infinite;
-}
-@media (prefers-reduced-motion: reduce) { .vg-orbit::after { animation: none; } }
+/* The avatar orbit (.vg-orbit) was removed 2026-09-14 (founder): the only ring
+ * on an avatar is the live ring with its pill. */
 
 /* ── Profile pages are BLACK ────────────────────────────────────────────────
  * Founder call, and it is a real fix rather than a preference: a coloured wash

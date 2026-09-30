@@ -42,7 +42,7 @@ export const VANGUARD_RANKS = [
       canRemoveModerator: false,
       canSpawnUnlimitedSquad: false,
     },
-    blurb: 'Shadow seniors in the moderation queue and tournament rooms. No live actions until promoted.',
+    blurb: 'Shadow seniors in the moderation queue. No live actions until promoted.',
   },
   {
     id: 'vanguard',
@@ -70,7 +70,7 @@ export const VANGUARD_RANKS = [
       canRemoveModerator: false,
       canSpawnUnlimitedSquad: false,
     },
-    blurb: 'Approve / reject reports, call manual tournament winners, mute users up to 24 hours.',
+    blurb: 'Approve / reject reports, mute users up to 24 hours.',
   },
   {
     id: 'senior',

@@ -15,6 +15,7 @@ import { useUser } from '../../context/UserContext';
 import { isChatMutedFor, setChatMuted, markChatCleared, deleteChatForMe, getChatClearedAt } from '../../utils/chatOps';
 import { clearChatCache, getCachedMessages } from '../../utils/messageCache';
 import { setContactNickname } from '../../firebase/firestore';
+import { socialsToList, openSocialLink } from '../../utils/profileSocials';
 import { peekChatUser } from '../../utils/chatIdentity';
 import UserName from '../../components/UserName';
 
@@ -327,6 +328,10 @@ export function ChatDetailsPanel({ chatId, variant = 'page', onClose }) {
   const avatar = otherProfile?.avatar || otherMeta?.avatar;
   const banner = otherProfile?.banner;
   const memberSince = otherProfile?.createdAt?.toDate?.();
+  // The contact email the person added as a link in Edit Profile, if they chose
+  // to show one. Never the sign-up address (founder, 2026-09-16).
+  const contactEmail = socialsToList(otherProfile?.socials, otherProfile?.socialEnabled)
+    .find((s) => s.platform === 'email') || null;
 
   // Frosted-glass quick-action button (founder design: white icons, no cyan).
   const glassActionStyle = {
@@ -446,20 +451,20 @@ export function ChatDetailsPanel({ chatId, variant = 'page', onClose }) {
         </div>
 
         {/* Info section */}
-        {(otherProfile?.email || memberSince) && (
+        {(contactEmail || memberSince) && (
           <div className="mx-4 mb-4">
-            <div className="rounded-2xl border border-white/[0.06] bg-surface-1 overflow-hidden">
-              {otherProfile?.email && (
-                <div className="flex items-center gap-3 px-4 py-3">
-                  <Icon name="email" size={20} className="text-text-secondary" />
+            <div className="rounded-2xl bg-surface-1 overflow-hidden">
+              {contactEmail && (
+                <a href={contactEmail.href} onClick={(e) => openSocialLink(e, contactEmail.href)} className="flex items-center gap-3 px-4 py-3">
+                  <Icon name="mail" size={20} className="text-text-secondary" />
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm text-text-primary">{otherProfile.email}</p>
+                    <p className="text-sm text-text-primary truncate">{contactEmail.url}</p>
                     <p className="text-[10px] text-text-muted">Email</p>
                   </div>
-                </div>
+                </a>
               )}
               {memberSince && (
-                <div className={`flex items-center gap-3 px-4 py-3 ${otherProfile?.email ? 'border-t border-white/[0.03]' : ''}`}>
+                <div className="flex items-center gap-3 px-4 py-3">
                   <Icon name="calendar_today" size={20} className="text-text-secondary" />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm text-text-primary">{memberSince.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</p>

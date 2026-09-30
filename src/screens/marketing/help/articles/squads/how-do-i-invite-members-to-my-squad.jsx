@@ -21,7 +21,7 @@ export default {
     {
       list: [
         "Invite from shared experience: someone you just played a session with converts far better than a cold invite.",
-        "Make the squad page worth joining: fresh announcements, upcoming events, and a trophy case do the selling for you.",
+        "Make the squad page worth joining: fresh announcements, upcoming events, and pinned highlights do the selling for you.",
         "Mind your open slots: squads cap at 100 members, so a big squad should invite deliberately.",
         "Respect the no: repeated invites to someone who declined is a fast way to get your squad a bad name."
       ]

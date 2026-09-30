@@ -26,7 +26,7 @@ export default function NativeSettingsScreen() {
   const rest = cards.filter(c => c.id !== 'subscription');
 
   return (
-    <div style={{ background: C.bg, minHeight: '100vh', paddingBottom: 'calc(88px + env(safe-area-inset-bottom, 0px))' }}>
+    <div style={{ background: C.bg, minHeight: '100vh', paddingBottom: 'calc(88px + var(--vg-safe-b, 0px))' }}>
       <TopBar title="Settings" showBack />
       <div style={{ padding: '12px 16px' }}>
         {heroCard && <div style={{ marginBottom: 12 }}><SettingsCard card={heroCard} /></div>}

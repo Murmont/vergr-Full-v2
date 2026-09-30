@@ -23,18 +23,20 @@ import {
   CoinGlyph, WALLET_TOKENS, fmtNum, fmtUsd, AnimatedNumber,
 } from '../../../components/wallet/primitives';
 import { useUI } from '../../../context/UIContext';
-import { useBuyCheckout, MIN_CUSTOM_USD, COIN_PRICE_USD, checkoutCartViaPlay } from './buyCheckout';
-import { auth } from '../../../firebase/config';
+import { useBuyCheckout, MIN_CUSTOM_USD, COIN_PRICE_USD } from './buyCheckout';
 import Icon from '../../../components/Icon';
 import LocalPrice from '../../../components/LocalPrice';
 import { hasLocalEstimate } from '../../../utils/currency';
 import PriceQuote from '../../../components/wallet/PriceQuote';
-import CartDrawer from '../../../components/wallet/CartDrawer';
 import { BonusPacksTab, BoostsTab } from '../../../components/wallet/StoreTabs';
 import { useCart } from '../../../context/CartContext';
+import { useUser } from '../../../context/UserContext';
+import useAppGate, { codaOfferedTo } from '../../../hooks/useAppGate';
+import { CodaCheckoutBlock } from '../../../components/wallet/CodaPay';
+import { IS_STORE_BUILD } from '../../../utils/platform';
 import useResponsive from '../../../hooks/useResponsive';
 import { getCoinPriceQuote } from '../../../firebase/firestore';
-import { getFunctions, httpsCallable } from 'firebase/functions';
+import { useActiveCoinPromo, promoBonusForPack } from '../../../utils/coinPromo';
 
 export default function BuyScreen() {
   const { showToast } = useUI();
@@ -72,22 +74,7 @@ export default function BuyScreen() {
     openCart();
   };
 
-  const checkoutCart = async (lines, _quote, method) => {
-    // Google Play cannot take a basket in one go, so it buys line by line.
-    // Routing it here rather than through PayRam is not a preference: billing
-    // digital goods inside a Play app any other way is a policy violation.
-    if (method === 'googlePlay') {
-      const res = await checkoutCartViaPlay(lines, auth.currentUser?.uid, showToast);
-      if (res.bought === res.total) { cart.clear(); cart.setOpen(false); }
-      return;
-    }
-    // SKUs and quantities only. The server re-prices the basket, which is why
-    // no amount is sent from here.
-    const ok = await startCheckout({ cart: lines }, 'your basket');
-    // Cleared only once the payment page actually opened: clearing on click
-    // would lose the basket to a blocked popup.
-    if (ok === true) { cart.clear(); cart.setOpen(false); }
-  };
+
 
   // ARRIVING FROM THE QUICK-BUY DRAWER.
   //
@@ -103,22 +90,23 @@ export default function BuyScreen() {
     if (!sku) return;
     const pack = ACTIVE_COIN_PACKS.find((p) => p.id === sku);
     window.history.replaceState({}, '', '/wallet/buy');
-    if (pack) startCheckout({ packSku: pack.id }, pack.name);
+    // Into the basket, which shows the local payment methods and the full price
+    // before anything is paid (PayRam is hidden, founder 2026-09-25).
+    if (pack) buyPack(pack);
   }, []);
 
   const customCoins = Math.floor((parseFloat(customUSD) || 0) / COIN_PRICE_USD);
+  // The website sells through Codapay (PayRam hidden). Custom amounts too.
+  const { profile } = useUser();
+  const appGate = useAppGate();
+// !IS_STORE_BUILD first: a compile-time false on Play/AppGallery, so the store
+  // bundle drops the Coda checkout entirely instead of shipping it unreachable.
+  const codaOn = !IS_STORE_BUILD && codaOfferedTo(appGate, profile);
 
   // The active coin sale, if any. Read from the server so the badge can never
   // promise a bonus the server will not credit, and so a promo that has hit its
   // cap stops advertising itself.
-  const [promo, setPromo] = useState(null);
-  useEffect(() => {
-    let alive = true;
-    httpsCallable(getFunctions(undefined, 'europe-west1'), 'getActiveCoinPromo')({})
-      .then((r) => { if (alive) setPromo(r.data?.promo || null); })
-      .catch(() => {});
-    return () => { alive = false; };
-  }, []);
+  const promo = useActiveCoinPromo();
 
   // The whole ladder priced in ONE server call: regional multiplier applied,
   // then converted to the USD figure that will actually be charged. The screen
@@ -197,6 +185,9 @@ export default function BuyScreen() {
       {tab === 'custom' && (
         <CustomTab usd={customUSD} setUsd={setCustomUSD}
           busy={checkout?.status === 'waiting'}
+          codaOn={codaOn}
+          profile={profile}
+          onCodaSettled={(s) => showToast(`Added ${Number(s?.coins || 0).toLocaleString()} coins to your wallet!`, 'success')}
           onContinue={() => startCheckout({ customCoins }, `${fmtNum(customCoins)} coins`)} />
       )}
 
@@ -209,9 +200,9 @@ export default function BuyScreen() {
         <CheckoutOverlay checkout={checkout} onCancel={cancelCheckout} />
       )}
 
-      {/* Desktop only in practice: the drawer renders nothing unless the cart
-          context is open, and mobile routes to /wallet/cart instead. */}
-      <CartDrawer onCheckout={checkoutCart} busy={checkout?.status === 'waiting'} />
+      {/* The basket is GlobalCartDrawer (AppRouter), which serves every page.
+          This screen used to mount a second copy, so on /wallet/buy two baskets
+          stacked on top of each other. */}
     </div>
   );
 }
@@ -277,7 +268,10 @@ function CheckoutOverlay({ checkout, onCancel }) {
 //      and `coins` is floored. $20 buys 1574 coins = $19.99. So the CTA's
 //      $19.99 was RIGHT and "You pay" was the wrong one — the opposite of what
 //      the audit assumed. "You pay" now reads from the server quote.
-function CustomTab({ usd, setUsd, onContinue, busy }) {
+// PayRam is hidden (founder, 2026-09-25); its server stays. Flip to show it again.
+const SHOW_PAYRAM = false;
+
+function CustomTab({ usd, setUsd, onContinue, busy, codaOn, profile, onCodaSettled }) {
   // Re-quoted as the amount changes, debounced so dragging the slider does not
   // fire a call per pixel. The quote is the ONLY source of the charged figure.
   const [customQuote, setCustomQuote] = useState(null);
@@ -353,6 +347,24 @@ function CustomTab({ usd, setUsd, onContinue, busy }) {
         </span>
       </div>
 
+      {!valid && usd && (
+        <div style={{ marginTop: 12, fontSize: 12, color: '#FCD34D' }}>
+          Minimum is {fmtUsd(MIN_CUSTOM_USD)} (set by our card processor).
+        </div>
+      )}
+
+      {/* Codapay: this amount's local methods and full prices, and the form in
+          place. Minimum unchanged. */}
+      {(!IS_STORE_BUILD && codaOn) ? (
+        valid ? (
+          <CodaCheckoutBlock
+            payload={{ customCoins: coins }}
+            profile={profile}
+            onSettled={onCodaSettled}
+          />
+        ) : null
+      ) : SHOW_PAYRAM ? (
+        <>
       <FeeBreakdown
         items={[
           { label: 'You pay',                  value: fmtUsd(chargedUsd) },
@@ -382,18 +394,18 @@ function CustomTab({ usd, setUsd, onContinue, busy }) {
         </div>
       )}
 
-      {!valid && usd && (
-        <div style={{ marginTop: 12, fontSize: 12, color: '#FCD34D' }}>
-          Minimum is {fmtUsd(MIN_CUSTOM_USD)} (set by our card processor).
-        </div>
-      )}
-
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 20 }}>
         <WalletButton variant="primary" size="lg" disabled={!valid || busy}
           icon="credit_card" iconRight="arrow_forward" onClick={onContinue}>
           Continue to checkout
         </WalletButton>
       </div>
+        </>
+      ) : (
+        <div style={{ marginTop: 16, background: '#1C1C2B', borderRadius: 12, padding: '12px 14px', fontSize: 13, color: WALLET_TOKENS.textSecondary }}>
+          Buying on the web is not open yet. You can buy coins in the Vergr Android app.
+        </div>
+      )}
     </WalletCard>
   );
 }
@@ -438,15 +450,7 @@ const BADGE_TONES = {
 function PackCard({ pack, onBuy, onAdd, busy, quote, promo }) {
   // What THIS pack gets from the active sale. The server decides whether the
   // pack qualifies; this only mirrors that decision for display.
-  const promoBonus = (() => {
-    if (!promo) return 0;
-    if (promo.packIds && !promo.packIds.includes(pack.id)) return 0;
-    if (promo.minSpendUSD && pack.priceUSD < promo.minSpendUSD) return 0;
-    if (promo.kind === 'coins_pct' || promo.kind === 'vp_pct') {
-      return Math.floor(pack.coins * promo.value / 100);
-    }
-    return Math.floor(promo.value);
-  })();
+  const sale = promoBonusForPack(promo, pack);
   const tone = BADGE_TONES[pack.badgeStyle] || BADGE_TONES.popular;
   const isVp = pack.badgeStyle === 'vp';
   const accent = isVp ? WALLET_TOKENS.violetLight : WALLET_TOKENS.gold;
@@ -540,13 +544,13 @@ function PackCard({ pack, onBuy, onAdd, busy, quote, promo }) {
             never computed here, so what the card promises is by construction
             what the server will credit. Per reference-client-side-price-constant
             the client is told, it does not decide. */}
-        {promoBonus > 0 && (
+        {sale && (
           <div style={{
             display: 'inline-block', marginBottom: 5, padding: '2px 9px', borderRadius: 999,
             fontSize: 11.5, fontWeight: 800,
-            background: 'rgba(34,197,94,0.14)', border: '1px solid rgba(34,197,94,0.4)', color: '#4ADE80',
+            background: '#123A22', color: '#4ADE80',
           }}>
-            +{fmtNum(promoBonus)} {promo.kind.startsWith('vp_') ? 'VP' : 'coins'} free
+            +{fmtNum(sale.amount)} {sale.unit} free
           </div>
         )}
 

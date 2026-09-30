@@ -6,21 +6,18 @@ import VergrLogo from '../../components/VergrLogo';
 import Icon from '../../components/Icon';
 import AuthShell from '../../components/auth/AuthShell';
 import { fetchRegionStatus, regionDisplayName } from '../../utils/geoBlocks';
+import { computeAge, latestAdultDob } from '../../utils/age';
+import { LEGAL_VERSION } from '../marketing/legal/legalContent';
+import { httpsCallable } from 'firebase/functions';
+import { functions } from '../../firebase/config';
 
-// Calculate age from a YYYY-MM-DD string. Returns null for invalid input.
-function computeAge(dobStr) {
-  if (!dobStr) return null;
-  const dob = new Date(dobStr);
-  if (Number.isNaN(dob.getTime())) return null;
-  const now = new Date();
-  let age = now.getFullYear() - dob.getFullYear();
-  const m = now.getMonth() - dob.getMonth();
-  if (m < 0 || (m === 0 && now.getDate() < dob.getDate())) age--;
-  return age;
-}
 
 export default function SignUpStep1() {
   const [email, setEmail] = useState('');
+  // Can this address receive mail? Checked on Continue, before an account
+  // exists (verifyEmailCode op 'check': shape, typos, throwaway domains, MX).
+  const [emailIssue, setEmailIssue] = useState(null); // { message, suggestion }
+  const [checkingEmail, setCheckingEmail] = useState(false);
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -74,12 +71,28 @@ export default function SignUpStep1() {
     email && password.length >= 8 && password === confirmPassword &&
     adult && agreed && complianceConfirmed && !blockedRegion;
 
-  const handleContinue = () => {
-    if (!canContinue) return;
+  const handleContinue = async () => {
+    if (!canContinue || checkingEmail) return;
+    setCheckingEmail(true);
+    try {
+      const r = await httpsCallable(functions, 'verifyEmailCode')({ op: 'check', email: email.trim() });
+      if (r?.data && r.data.ok === false) {
+        setEmailIssue({ message: r.data.message, suggestion: r.data.suggestion || null });
+        setCheckingEmail(false);
+        return;
+      }
+    } catch {
+      // Network trouble: carry on. The verification email is the real proof,
+      // and the server checks the address again before sending it.
+    }
+    setCheckingEmail(false);
     navigate('/signup/step2', {
       state: {
         email, password, dob,
-        tosVersion: 4,
+        // The CURRENT legal version. This said 4 while the Terms were at 6, so
+        // every new email account got the "Terms updated" re-accept modal the
+        // moment it finished signing up (TosVersionGate). Fixed 2026-09-27.
+        tosVersion: LEGAL_VERSION,
         tosAcceptedAt: Date.now(),
         complianceConfirmedAt: Date.now(),
         // Tell step 2 whether this is a brand-new signup or a guest
@@ -115,8 +128,19 @@ export default function SignUpStep1() {
             <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-text-muted group-focus-within:text-brand-violet-light transition-colors">
               <Icon name="mail" size={22} />
             </div>
-            <input type="email" placeholder="Email Address" value={email} onChange={e => setEmail(e.target.value)} className="input-with-icon" />
+            <input type="email" placeholder="Email Address" value={email} onChange={e => { setEmail(e.target.value); setEmailIssue(null); }} className="input-with-icon" />
           </label>
+          {emailIssue && (
+            <div className="-mt-1 text-sm" role="alert" style={{ color: '#FF8FA3' }}>
+              {emailIssue.message}{' '}
+              {emailIssue.suggestion && (
+                <button type="button" className="font-semibold underline" style={{ color: '#C9A6FF' }}
+                  onClick={() => { setEmail(emailIssue.suggestion); setEmailIssue(null); }}>
+                  Use {emailIssue.suggestion}
+                </button>
+              )}
+            </div>
+          )}
 
           {/* Password */}
           <label className="block relative group">
@@ -169,7 +193,7 @@ export default function SignUpStep1() {
             <input
               type="date"
               value={dob}
-              max={new Date(Date.now() - 18 * 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)}
+              max={latestAdultDob()}
               onChange={e => setDob(e.target.value)}
               className="input-with-icon pl-4"
             />
@@ -182,7 +206,7 @@ export default function SignUpStep1() {
           {blockedRegion && (
             <div className="rounded-xl border border-brand-ember/40 bg-brand-ember/10 p-3 text-text-primary text-xs leading-relaxed">
               <strong>Not available in {regionDisplayName(regionStatus)}.</strong>
-              {' '}VERGR's competitive gaming and virtual-currency features are
+              {' '}VERGR's virtual-currency features are
               not currently offered in your region.
             </div>
           )}
@@ -224,7 +248,7 @@ export default function SignUpStep1() {
 
           <button onClick={handleContinue} disabled={!canContinue}
             className={`btn-primary mt-2 ${!canContinue ? 'opacity-40 cursor-not-allowed' : ''}`}>
-            Continue
+            {checkingEmail ? 'Checking…' : 'Continue'}
           </button>
         </div>
 

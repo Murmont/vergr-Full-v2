@@ -6,10 +6,10 @@ import Icon from '../../components/Icon';
 import StoreGlyph from '../../components/StoreIcons';
 import UserAvatar from '../../components/UserAvatar';
 import { useAuth } from '../../context/AuthContext';
-import { useUser } from '../../context/UserContext';
 import { useUI } from '../../context/UIContext';
 import { createConversation } from '../../firebase/firestore';
 import ProductsPanel, { OrderRow } from '../../components/vergrme/ProductsPanel';
+import { isPermalinkProduct } from '../../utils/shopifyCart';
 import {
   getVergrMeProducts, getMyVergrMeSales, getMySellerOrders,
   getVergrMeCustomers, getMyShopIntegration, connectShopIntegration,
@@ -40,7 +40,6 @@ const fmtDate = (ms) => (ms ? new Date(ms).toLocaleDateString(undefined, { day: 
 export function ShopOverviewScreen() {
   const uid = useUid();
   const navigate = useNavigate();
-  const { wallet } = useUser();
   const [data, setData] = useState(null);
   const [integration, setIntegration] = useState(undefined);
 
@@ -54,8 +53,9 @@ export function ShopOverviewScreen() {
     getMyShopIntegration().then(setIntegration).catch(() => setIntegration(null));
   }, [uid]);
 
-  const gems = wallet?.vergrMeSalesGems || 0;
-  const liveProducts = (data?.products || []).filter((p) => p.published !== false).length;
+  // Only store products that check out on the creator's store can still be
+  // sold (coin selling is off), so only those count as live.
+  const liveProducts = (data?.products || []).filter((p) => isPermalinkProduct(p) && p.published !== false).length;
   const openOrders = (data?.orders || []).filter((o) => o.status === 'placed');
   const activeOrders = (data?.orders || []).filter((o) => o.status !== 'cancelled');
   const saleCount = (data?.sales?.length || 0) + activeOrders.length;
@@ -73,11 +73,10 @@ export function ShopOverviewScreen() {
     <div className="flex flex-col gap-4">
       <div>
         <h1 className="font-syne font-extrabold text-2xl">Overview</h1>
-        <p className="text-text-secondary text-sm mt-0.5">Your shop at a glance. You keep 92% of each sale, credited to your earnings.</p>
+        <p className="text-text-secondary text-sm mt-0.5">Your shop at a glance. Products from your connected store show on your vergr.me, and buyers check out on your store.</p>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Stat icon="diamond" label="Gems earned" value={fmt(gems)} tint="text-gem-blue" />
+      <div className="grid grid-cols-3 gap-3">
         <Stat icon="receipt_long" label="Sales" value={fmt(saleCount)} tint="text-brand-violet-light" />
         <Stat icon="local_shipping" label="To ship" value={fmt(openOrders.length)} tint="text-brand-gold" />
         <Stat icon="inventory_2" label="Live products" value={fmt(liveProducts)} tint="text-brand-pink" />
@@ -96,7 +95,7 @@ export function ShopOverviewScreen() {
             ) : (
               <>
                 <div className="text-sm font-semibold">Connect Shopify or WooCommerce</div>
-                <div className="text-xs text-text-muted">Sell your store's products on Vergr with synced inventory</div>
+                <div className="text-xs text-text-muted">Show your store's products on Vergr with synced inventory</div>
               </>
             )}
         </div>
@@ -105,7 +104,7 @@ export function ShopOverviewScreen() {
 
       {/* Quick actions */}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-        <QuickAction icon="add_box" label="New product" onClick={() => navigate('/shop/products')} />
+        <QuickAction icon="inventory_2" label="Store products" onClick={() => navigate('/shop/products')} />
         <QuickAction icon="local_shipping" label={openOrders.length ? `Ship ${openOrders.length} order${openOrders.length === 1 ? '' : 's'}` : 'Orders'} onClick={() => navigate('/shop/orders')} />
         <QuickAction icon="link" label="Add to my vergr.me" onClick={() => navigate('/vergrme/edit')} />
       </div>
@@ -365,7 +364,7 @@ export function ShopIntegrationsScreen() {
     <div className="flex flex-col gap-4">
       <div>
         <h1 className="font-syne font-extrabold text-2xl">Integrations</h1>
-        <p className="text-text-secondary text-sm mt-0.5">Connect your store to sell its products on Vergr with synced inventory. Vergr is another selling outlet — your store stays your source of truth.</p>
+        <p className="text-text-secondary text-sm mt-0.5">Connect your store to show its products on your vergr.me with synced inventory. Buyers check out on your store, which stays your source of truth.</p>
       </div>
 
       {integration === undefined ? (
@@ -464,10 +463,9 @@ export function ShopSettingsScreen() {
         <p className="text-text-secondary text-sm mt-0.5">How your shop works.</p>
       </div>
       <div className="bg-surface-1 border border-white/[0.06] rounded-2xl overflow-hidden">
-        <Row icon="diamond" title="You keep 92%" body="A flat 8% fee per sale. Your share is credited to your earnings instantly and is paid to you on your payout schedule. Shipping you charge passes through to you in full." />
-        <Row icon="download_for_offline" title="Digital products" body="Files are stored privately. Buyers get a short-lived, expiring download link — never a public URL." />
-        <Row icon="local_shipping" title="Physical products" body="Buyers pay in coins and enter a shipping address. Fulfil from Orders. Cancelling an unshipped order refunds the buyer in full." />
-        <Row icon="bolt" title="Connected stores" body="Sell your Shopify or WooCommerce catalog on Vergr. Inventory stays in sync so you never oversell." />
+        <Row icon="storefront" title="Checkout on your store" body="Buyers open a product on your own store and pay there. Selling for coins on Vergr is switched off." />
+        <Row icon="bolt" title="Connected stores" body="Show your Shopify or WooCommerce catalog on Vergr. Inventory stays in sync so you never show something that sold out." />
+        <Row icon="local_shipping" title="Earlier coin orders" body="Orders placed for coins before selling was switched off stay in Orders, so you can ship them. Cancelling an unshipped order refunds the buyer in full." />
       </div>
       <div className="grid grid-cols-2 gap-3">
         <QuickAction icon="link" label="Edit my vergr.me" onClick={() => navigate('/vergrme/edit')} />

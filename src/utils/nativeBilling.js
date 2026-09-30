@@ -16,6 +16,49 @@
 
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../firebase/config';
+import { IS_HUAWEI_BUILD } from './platform';
+import { blockGuestPurchase } from './guestPrompt';
+import { recordClientAttempt } from './paymentAttempts';
+
+// ─────────────────────────────────────────────────────────────────────
+// TWO STORES, ONE BRIDGE CONTRACT.
+// ─────────────────────────────────────────────────────────────────────
+//
+// On the AppGallery build `window.VergrBilling` is HuaweiIapBridge.kt instead
+// of BillingBridge.kt. It registers under the SAME name and emits the SAME
+// events with the same fields, so everything in this module — the reqId
+// handshake, the buy → verify → consume ordering, restore — is shared.
+//
+// Exactly two things differ, and both are compile-time constants so the Play
+// bundle tree-shakes the Huawei branch away entirely:
+//
+//   1. WHICH CALLABLE verifies the purchase.
+//   2. WHAT PROVES IT. Google gives us a purchaseToken that the server looks up
+//      against the Play Developer API. Huawei gives us a SIGNED BLOB —
+//      `purchaseData` plus its RSA `signature` — which the server verifies
+//      against the IAP public key. There is no token to look up, so the payload
+//      is not interchangeable.
+//
+// ⚠ Do NOT "simplify" this by always sending every field. The server keys
+// idempotency on the purchase token it reads out of the SIGNED data, never out
+// of a loose field, because a patched client can set a loose field to anything.
+const REDEEM_PURCHASE_FN = IS_HUAWEI_BUILD ? 'redeemHuaweiPurchase' : 'redeemPlayPurchase';
+const REDEEM_SUB_FN = IS_HUAWEI_BUILD ? 'redeemHuaweiSubscription' : 'redeemPlaySubscription';
+
+// A failed / cancelled / pending attempt, for Admin → Economy → Payments.
+// Fire-and-forget (recordClientAttempt never throws and is not awaited).
+function noteFailedAttempt(route, productId, result) {
+  const code = result?.code || 'failed';
+  recordClientAttempt({
+    route, productId, code, message: result?.error || '', playCode: result?.playCode ?? null,
+    stage: code === 'launch_failed' ? 'launch' : code === 'no_product' ? 'load' : 'sheet',
+  });
+}
+
+/** Pull the purchase token out of Huawei's signed JSON, for the consume call. */
+function huaweiToken(purchaseData) {
+  try { return JSON.parse(purchaseData || '{}').purchaseToken || ''; } catch { return ''; }
+}
 
 const bridge = () =>
   (typeof window !== 'undefined' && window.VergrBilling) || null;
@@ -78,6 +121,9 @@ export async function fetchPlayPrices(productIds) {
  */
 export async function buyCoinPack(productId, uid) {
   if (!isPlayBillingSupported()) throw Object.assign(new Error('unsupported'), { code: 'unsupported' });
+  // Guests may not buy: shows the log in / create account prompt and exits
+  // quietly (every caller already ignores 'cancelled') BEFORE the store sheet.
+  if (blockGuestPurchase()) throw Object.assign(new Error('cancelled'), { code: 'cancelled' });
   if (!uid) throw Object.assign(new Error('not signed in'), { code: 'failed' });
 
   const reqId = nextReqId();
@@ -86,20 +132,129 @@ export async function buyCoinPack(productId, uid) {
   const result = await pending;
 
   if (!result.ok) {
+    noteFailedAttempt(IS_HUAWEI_BUILD ? 'appgallery' : 'google_play', productId, result);
     throw Object.assign(new Error(result.error || 'Purchase failed'), { code: result.code || 'failed' });
   }
-  return redeemAndConsume(result.productId, result.purchaseToken, result.orderId);
+  return redeemAndConsume(result);
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Our own checkout (Coda) inside the Play app. See BillingBridge.kt.
+//
+// mode: 'developer'   we draw the choice: Coda form + Google Play option
+//       'alternative' alternative billing only (US / EEA): Coda form, Play
+//                     still offered beside it
+//       'google'      Google draws the choice on the Play button
+//       'user_choice' same, the older user choice billing program
+//       'none'        plain Play billing, exactly as before
+// Everything is inert until Google approves the enrolment: the probes report
+// 'none' and the basket stays the Play-only basket.
+// ─────────────────────────────────────────────────────────────────────
+
+/** Whether this build's bridge has the choice calls (the Huawei bridge does not). */
+export function billingChoiceSupported() {
+  const b = bridge();
+  return !!(b && typeof b.choiceMode === 'function' && isPlayBillingSupported());
+}
+
+let modePromise = null;
+/** The choice mode for this user, asked once per session. Never throws. */
+export function getBillingChoiceMode(allowUserChoice = false) {
+  if (!billingChoiceSupported()) return Promise.resolve({ mode: 'none' });
+  if (!modePromise) {
+    const reqId = nextReqId();
+    modePromise = (async () => {
+      try {
+        const p = awaitEvent('vergr:billing-choice-mode', reqId, 20000);
+        bridge().choiceMode(reqId, !!allowUserChoice);
+        const d = await p;
+        return { mode: d.mode || 'none', playImage: d.playImage || '', playLoyalty: d.playLoyalty || '' };
+      } catch {
+        modePromise = null; // ask again next time rather than cache a timeout
+        return { mode: 'none' };
+      }
+    })();
+  }
+  return modePromise;
+}
+
+/**
+ * Before a Coda payment in 'developer' / 'alternative' mode: Google's
+ * information dialog, then the transaction token the server reports the sale
+ * with. Resolves { token, program }; throws with code 'cancelled' or 'failed'.
+ */
+export async function prepareAltBilling() {
+  if (!billingChoiceSupported()) throw Object.assign(new Error('unsupported'), { code: 'failed' });
+  const reqId = nextReqId();
+  const p = awaitEvent('vergr:billing-choice-token', reqId, 120000);
+  bridge().choicePrepare(reqId);
+  const d = await p;
+  if (!d.ok || !d.token) {
+    const cancelled = d.code === 'cancelled';
+    throw Object.assign(new Error(cancelled ? 'cancelled' : 'Google Play could not start this checkout. Try Google Play instead.'), { code: cancelled ? 'cancelled' : 'failed' });
+  }
+  return { token: d.token, program: d.program || 'alternative' };
+}
+
+/**
+ * The basket's Google Play button. Same as buyCoinPack, except that where
+ * Google draws a choice screen the buyer may pick Vergr there: that resolves
+ * { choice: { token, program, productId } } and the basket opens the Coda form.
+ * A Play purchase resolves the redeemed result exactly as buyCoinPack does.
+ */
+export async function buyWithChoice(productId, uid) {
+  if (!isPlayBillingSupported()) throw Object.assign(new Error('unsupported'), { code: 'unsupported' });
+  if (blockGuestPurchase()) throw Object.assign(new Error('cancelled'), { code: 'cancelled' });
+  if (!uid) throw Object.assign(new Error('not signed in'), { code: 'failed' });
+  if (typeof bridge().buyChoice !== 'function') return buyCoinPack(productId, uid);
+
+  const reqId = nextReqId();
+  const purchase = awaitEvent('vergr:billing-purchase', reqId);
+  const choice = awaitEvent('vergr:billing-choice', reqId).catch(() => null);
+  bridge().buyChoice(reqId, productId, uid);
+  const first = await Promise.race([
+    purchase.then((d) => ({ kind: 'purchase', d }), () => ({ kind: 'timeout' })),
+    choice.then((d) => (d ? { kind: 'choice', d } : new Promise(() => {}))),
+  ]);
+  const asChoice = (d) => {
+    if (!d?.ok || !d.token) throw Object.assign(new Error('Google Play could not start this checkout.'), { code: 'failed' });
+    return { choice: { token: d.token, program: d.program || 'user_choice', productId: d.productId || productId } };
+  };
+  if (first.kind === 'choice') return asChoice(first.d);
+  if (first.kind === 'timeout') throw Object.assign(new Error('Purchase timed out'), { code: 'failed' });
+  const result = first.d;
+  if (!result.ok) {
+    // Google does not promise which callback fires first when the buyer picks
+    // Vergr on its screen, so a "cancelled" gets a moment for the choice to land.
+    if (result.code === 'cancelled') {
+      const late = await Promise.race([choice, new Promise((r) => setTimeout(() => r(null), 1500))]);
+      if (late) return asChoice(late);
+    }
+    noteFailedAttempt(IS_HUAWEI_BUILD ? 'appgallery' : 'google_play', productId, result);
+    throw Object.assign(new Error(result.error || 'Purchase failed'), { code: result.code || 'failed' });
+  }
+  return redeemAndConsume(result);
 }
 
 /**
  * Server-verify then consume. Split out because restorePurchases() needs the
  * identical path for a purchase that was interrupted before crediting.
+ *
+ * Takes the whole purchase record rather than three loose arguments, because
+ * the two stores prove a purchase with different fields — see the note at the
+ * top of this file.
  */
-async function redeemAndConsume(productId, purchaseToken, orderId) {
-  const redeem = httpsCallable(functions, 'redeemPlayPurchase');
+async function redeemAndConsume(p) {
+  const { productId, orderId } = p;
+  const purchaseToken = IS_HUAWEI_BUILD
+    ? (p.purchaseToken || huaweiToken(p.purchaseData))
+    : p.purchaseToken;
+  const redeem = httpsCallable(functions, REDEEM_PURCHASE_FN);
   let res;
   try {
-    res = await redeem({ productId, purchaseToken, orderId });
+    res = await redeem(IS_HUAWEI_BUILD
+      ? { productId, purchaseData: p.purchaseData, signature: p.signature }
+      : { productId, purchaseToken, orderId });
   } catch (err) {
     // Deliberately do NOT consume here. The purchase stays owned, so
     // restorePurchases() retries it on next launch instead of the user paying
@@ -128,7 +283,7 @@ export async function restorePurchases() {
   let recovered = 0;
   for (const item of detail.items || []) {
     try {
-      await redeemAndConsume(item.productId, item.purchaseToken, item.orderId);
+      await redeemAndConsume(item);
       recovered++;
     } catch { /* leave it owned; the next launch tries again */ }
   }
@@ -199,6 +354,7 @@ export async function fetchPlaySubPrices(tiers) {
  */
 export async function buySubscription(tier, uid) {
   if (!isPlayBillingSupported()) throw Object.assign(new Error('unsupported'), { code: 'unsupported' });
+  if (blockGuestPurchase()) throw Object.assign(new Error('cancelled'), { code: 'cancelled' });
   if (!uid) throw Object.assign(new Error('not signed in'), { code: 'failed' });
 
   const reqId = nextReqId();
@@ -207,14 +363,17 @@ export async function buySubscription(tier, uid) {
   const result = await pending;
 
   if (!result.ok) {
+    noteFailedAttempt(IS_HUAWEI_BUILD ? 'appgallery_sub' : 'google_play_sub', playSubIdFor(tier), result);
     throw Object.assign(new Error(result.error || 'Purchase failed'), { code: result.code || 'failed' });
   }
-  return redeemSubscription(result.purchaseToken);
+  return redeemSubscription(result);
 }
 
-async function redeemSubscription(purchaseToken) {
-  const redeem = httpsCallable(functions, 'redeemPlaySubscription');
-  const res = await redeem({ purchaseToken });
+async function redeemSubscription(p) {
+  const redeem = httpsCallable(functions, REDEEM_SUB_FN);
+  const res = await redeem(IS_HUAWEI_BUILD
+    ? { purchaseData: p.purchaseData, signature: p.signature }
+    : { purchaseToken: p.purchaseToken });
   return res?.data || {};
 }
 
@@ -236,7 +395,7 @@ export async function restoreSubscriptions() {
   }
   let applied = 0;
   for (const item of detail.items || []) {
-    try { await redeemSubscription(item.purchaseToken); applied++; } catch { /* retried next launch */ }
+    try { await redeemSubscription(item); applied++; } catch { /* retried next launch */ }
   }
   return applied;
 }

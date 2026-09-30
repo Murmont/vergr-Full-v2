@@ -20,6 +20,21 @@ export default function CallScreen() {
   const [muted, setMuted] = useState(false);
   const [videoOff, setVideoOff] = useState(callType === 'voice');
   const [speakerOn, setSpeakerOn] = useState(false);
+  // Earpiece vs loudspeaker, voice calls only. The web has no API that can
+  // route a call to the earpiece (setSinkId picks an output DEVICE, and the
+  // Android WebView does not implement it), so this toggle did nothing for its
+  // whole life. The app routes it natively through window.VergrAudio
+  // (AudioRouteBridge.kt); on web and desktop the bridge is absent and nothing
+  // changes. Applied once the call is live, because the WebView sets its own
+  // route when the call's audio starts and would override an earlier choice,
+  // and again on every toggle.
+  useEffect(() => {
+    if (callType === 'video' || status !== 'active') return;
+    try { window.VergrAudio?.setSpeaker(!!speakerOn); } catch { /* no bridge */ }
+  }, [callType, status, speakerOn]);
+  // Leaving this screen ends the call (see the setup effect's teardown), so
+  // routing goes back to the system here.
+  useEffect(() => () => { try { window.VergrAudio?.reset(); } catch { /* no bridge */ } }, []);
   const [otherUser, setOtherUser] = useState(null);
   const [showControls, setShowControls] = useState(true);
   // Camera flip. `hasTwoCameras` gates the button: offering a flip on a laptop

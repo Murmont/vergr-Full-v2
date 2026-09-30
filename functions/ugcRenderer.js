@@ -28,6 +28,7 @@
 const { onRequest } = require('firebase-functions/v2/https');
 const { getFirestore } = require('firebase-admin/firestore');
 const { RANK_BY_ID } = require('./vanguardRanks');
+const { isStaffDoc } = require('./staff');
 // One shared post-URL rule for the renderer, the sitemap and IndexNow — see
 // seoUrls.js for why three copies of it caused a live duplicate-content bug.
 const { canonicalPostPath, canonicalUserUrl } = require('./seoUrls');
@@ -169,7 +170,10 @@ function isVanguardActive(u) {
 }
 function publicIdentity(u) {
   if (!u) return { name: 'A VERGR player', username: null, avatar: null, masked: false, hidden: false };
-  if (u.role === 'admin' || u.hideFromEnumeration === true) {
+  // ⚠ isStaffDoc as well as role: the role is being removed from the founder's
+  // account, and without this the platform account would silently become
+  // crawlable and enumerable, which is a privacy change nobody asked for.
+  if (isStaffDoc(u) || u.role === 'admin' || u.hideFromEnumeration === true) {
     return { name: 'VERGR', username: null, avatar: null, masked: false, hidden: true };
   }
   if (isVanguardActive(u)) {
@@ -571,7 +575,7 @@ async function renderSitemapUsers(res) {
     const users = await db.collection('users').orderBy('followerCount', 'desc').limit(300).get();
     for (const d of users.docs) {
       const u = d.data();
-      if (!u.username || u.isGuest === true || u.role === 'admin' || u.hideFromEnumeration === true) continue;
+      if (!u.username || u.isGuest === true || isStaffDoc(u) || u.role === 'admin' || u.hideFromEnumeration === true) continue;
       if (typeof u.accountType === 'string' && u.accountType.includes('_bot')) continue;
       if (isVanguardActive(u)) continue;
       // MUST mirror renderUser's `index` exactly. It used to test
@@ -649,8 +653,8 @@ exports.ugcRenderer = onRequest({ memory: '256MiB', maxInstances: 5 }, async (re
       // Missing or non-public: plain shell, generic meta, noindex. The SPA
       // still boots, so an authorized human (e.g. the author) lands in the app.
       let html = applyHead(shell, {
-        title: 'VERGR — Where Gamers Converge',
-        description: 'Compete, create, earn and shop with the gaming community.',
+        title: 'Vergr - Go Live. Hang Out. Share the Moment.',
+        description: 'Vergr is where you go live, share clips and hang out with your people in voice chats and DMs, all in one app.',
         canonical, image: FALLBACK_IMAGE, index: false, jsonld: null,
       });
       res.set('Cache-Control', 'public, max-age=60, s-maxage=300');

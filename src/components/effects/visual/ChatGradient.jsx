@@ -12,7 +12,7 @@
 // the work and cannot hold 60fps. Measured here: 0.32ms per frame, about 2% of
 // a 60fps budget, so this needs no WebGL and no worker. Do not "improve" the
 // resolution.
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 const W = 60, H = 80;
 
@@ -174,6 +174,25 @@ export default function ChatGradient({
   const rafRef = useRef(0);
   const lastSend = useRef(sendCount);
 
+  // A CSS mask image is fetched in CORS mode, and a mask that fails to load
+  // hides EVERYTHING it masks. cdn.vergr.app only answers CORS for the web
+  // origins, so in the Play app (tauri.localhost) the tile failed and the chat
+  // showed only the black sheet under themed bubbles (founder, 2026-09-11;
+  // proven with a control on example.com). Probe the tile the way the mask
+  // fetches it, and if it cannot be read, drop the mask and show the plain
+  // gradient rather than a black screen.
+  const [maskOk, setMaskOk] = useState(true);
+  useEffect(() => {
+    if (!patternUrl) return undefined;
+    let alive = true;
+    const probe = new Image();
+    probe.crossOrigin = 'anonymous';
+    probe.onload = () => { if (alive) setMaskOk(true); };
+    probe.onerror = () => { if (alive) setMaskOk(false); };
+    probe.src = patternUrl;
+    return () => { alive = false; probe.onload = null; probe.onerror = null; };
+  }, [patternUrl]);
+
   // ⚠ BOTH reduced-motion switches. The media query catches the OS setting;
   // Vergr's own Settings → Appearance toggle is an ATTRIBUTE on <html>, and
   // index.css answers it by fast-forwarding animations to their last keyframe
@@ -267,7 +286,7 @@ export default function ChatGradient({
         style={{
           position: 'absolute', inset: 0, width: '100%', height: '100%',
           opacity: Math.max(0, Math.min(100, intensity)) / 100,
-          ...(patternUrl ? {
+          ...(patternUrl && maskOk ? {
             WebkitMaskImage: `url(${patternUrl})`, maskImage: `url(${patternUrl})`,
             WebkitMaskSize: `${tileSize}px`, maskSize: `${tileSize}px`,
             WebkitMaskRepeat: 'repeat', maskRepeat: 'repeat',

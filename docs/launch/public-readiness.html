@@ -1,0 +1,255 @@
+<title>Vergr Launch Readiness</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,700&family=DM+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --ground: #F4F3F8;
+    --panel: #FFFFFF;
+    --ink: #17151F;
+    --ink-2: #4D495C;
+    --ink-3: #77728A;
+    --accent: #6A16E6;
+    --before: #8F5B05;
+    --before-bg: #FAF0DA;
+    --after: #57536A;
+    --after-bg: #ECEAF2;
+    --done: #17804F;
+    --done-bg: #E1F3E9;
+    --code-bg: #EFEDF5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0B0B14;
+      --panel: #14141F;
+      --ink: #ECEAF3;
+      --ink-2: #B3B0C3;
+      --ink-3: #8A869C;
+      --accent: #B44FFF;
+      --before: #F2C24A;
+      --before-bg: #2A2210;
+      --after: #A6A2B8;
+      --after-bg: #1D1C28;
+      --done: #52D193;
+      --done-bg: #10251B;
+      --code-bg: #1C1B27;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #0B0B14;
+    --panel: #14141F;
+    --ink: #ECEAF3;
+    --ink-2: #B3B0C3;
+    --ink-3: #8A869C;
+    --accent: #B44FFF;
+    --before: #F2C24A;
+    --before-bg: #2A2210;
+    --after: #A6A2B8;
+    --after-bg: #1D1C28;
+    --done: #52D193;
+    --done-bg: #10251B;
+    --code-bg: #1C1B27;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font: 400 15px/1.6 "DM Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    padding-inline: 20px;
+    padding-block: 40px 72px;
+  }
+  .wrap { max-width: 920px; margin: 0 auto; display: grid; gap: 44px; }
+
+  h1, h2, h3 { font-family: Syne, "DM Sans", system-ui, sans-serif; text-wrap: balance; margin: 0; }
+  h1 { font-size: clamp(30px, 5vw, 44px); line-height: 1.08; font-weight: 800; letter-spacing: -0.01em; }
+  h2 { font-size: 22px; font-weight: 800; line-height: 1.2; }
+  h3 { font-size: 16px; font-weight: 700; line-height: 1.35; font-family: "DM Sans", system-ui, sans-serif; }
+  p { margin: 0; max-width: 68ch; }
+  code { font-family: "DM Mono", ui-monospace, Consolas, monospace; font-size: 12.5px; background: var(--code-bg); padding: 1px 6px; border-radius: 5px; overflow-wrap: anywhere; }
+
+  .eyebrow { font-family: "DM Mono", ui-monospace, monospace; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); }
+  header { display: grid; gap: 14px; }
+  header .lede { font-size: 17px; color: var(--ink-2); }
+
+  .tally { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+  .tally div { background: var(--panel); border-radius: 12px; padding: 14px 16px; display: grid; gap: 2px; }
+  .tally b { font-family: "DM Mono", ui-monospace, monospace; font-size: 30px; font-weight: 500; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  .tally span { font-size: 13px; color: var(--ink-2); }
+  .tally .t-before b { color: var(--before); }
+  .tally .t-after b { color: var(--after); }
+  .tally .t-done b { color: var(--done); }
+  @media (max-width: 520px) { .tally { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+  section { display: grid; gap: 14px; }
+  section > .intro { color: var(--ink-2); }
+
+  .items { display: grid; gap: 10px; }
+  .item { background: var(--panel); border-radius: 12px; padding: 16px 18px; display: grid; gap: 8px; }
+  .item .top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
+  .item .top h3 { flex: 1 1 320px; }
+  .item p, .item ul { color: var(--ink-2); }
+  .item ul { margin: 0; padding-left: 20px; display: grid; gap: 2px; max-width: 68ch; }
+  .item .ev { font-family: "DM Mono", ui-monospace, monospace; font-size: 12px; color: var(--ink-3); overflow-wrap: anywhere; }
+
+  .chip { font-family: "DM Mono", ui-monospace, monospace; font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
+  .c-before { background: var(--before-bg); color: var(--before); }
+  .c-after { background: var(--after-bg); color: var(--after); }
+  .c-done { background: var(--done-bg); color: var(--done); }
+  .who { font-size: 12px; color: var(--ink-3); white-space: nowrap; }
+
+  .table-wrap { overflow-x: auto; background: var(--panel); border-radius: 12px; }
+  table { border-collapse: collapse; width: 100%; min-width: 620px; font-size: 14px; }
+  th, td { text-align: left; padding: 10px 14px; vertical-align: top; }
+  th { font-family: "DM Mono", ui-monospace, monospace; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3); font-weight: 500; }
+  tbody tr:nth-child(odd) td { background: color-mix(in srgb, var(--ground) 45%, var(--panel)); }
+  td:first-child { font-weight: 500; white-space: nowrap; }
+
+  footer { color: var(--ink-3); font-size: 13px; }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">Vergr · Google Play production · updated 16 Sep 2026</div>
+    <h1>What's left before Vergr goes public</h1>
+    <p class="lede">The app-quality and safety work between the build on your phone and a public Play listing. Every item was checked against the code or a live service, not taken from old notes. Payment testing and creator payouts aren't on this list: they come once the app itself is ready.</p>
+    <div class="tally" role="list">
+      <div class="t-before" role="listitem"><b>6</b><span>Before launch</span></div>
+      <div class="t-after" role="listitem"><b>6</b><span>Can follow launch</span></div>
+      <div class="t-done" role="listitem"><b>23</b><span>Fixed today</span></div>
+    </div>
+  </header>
+
+  <section aria-labelledby="s-done">
+    <h2 id="s-done">Fixed today</h2>
+    <p class="intro">Web and server changes are live on vergr.app. The phone app picks them up with its next Play build.</p>
+    <div class="items">
+      <article class="item">
+        <div class="top"><span class="chip c-done">Done · live</span><h3>Sign-up emails are private</h3><span class="who">Deployed</span></div>
+        <p>The email someone signs up with is no longer written to their public profile record. It was removed from the 15 existing records that had it, and it now stays on the login account only. Admin screens read it from there.</p>
+        <p>To show an email, a person adds it in Edit Profile → Social Links. It appears under their bio as a mail icon like any other link, and opens the mail app. DM Contact Info shows that contact email only when they've added one.</p>
+        <div class="ev">functions/authEmails.js · src/utils/profileSocials.js · 48 profile records scanned, 0 carry an email now</div>
+      </article>
+      <article class="item">
+        <div class="top"><span class="chip c-done">Done · live</span><h3>Translation is hidden until the second server is back</h3><span class="who">Deployed</span></div>
+        <p>Hidden:</p>
+        <ul>
+          <li>the post Translate button</li>
+          <li>Translate in chat and squad long-press menus</li>
+          <li>tap-to-translate in stream chat</li>
+          <li>the Auto-translate item in the chat menu</li>
+          <li>auto-translate in the Lite and Pro lists and the plan comparison</li>
+          <li>translation wording in Language settings and four help articles</li>
+        </ul>
+        <p>Bringing it back is one switch plus restoring those help lines.</p>
+        <div class="ev">src/utils/translationSwitch.js · TRANSLATION_ENABLED = false</div>
+      </article>
+      <article class="item">
+        <div class="top"><span class="chip c-done">Done · live</span><h3>The last competitive-gaming wording is gone</h3><span class="who">Deployed</span></div>
+        <p>The September cleanup left four phrases in the policies. They're now changed:</p>
+        <ul>
+          <li>Privacy Policy: "the VERGR competitive gaming social platform" now reads "live streaming and social platform"</li>
+          <li>Terms: the rule about falsifying match-result reporting is removed</li>
+          <li>Terms: "regulatory landscape for competitive gaming" now names live streaming and online platforms</li>
+          <li>Acceptable Use: "compromises competitive integrity" now reads "undermines the fairness of the Service"</li>
+        </ul>
+        <p>"Play. Stream. Earn." is replaced with "Create. Watch. Earn." on the loading screen, login and sign-up, the splash screen and How Vergr Works. The marketing About page and squads copy no longer mention competing.</p>
+        <div class="ev">legalContent.js · LoadingScreen.jsx · AuthShell.jsx · SplashScreen.jsx · HowItWorksScreen.jsx · PublicMarketingScreens.jsx</div>
+      </article>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Phone screen</th><th>What was wrong</th><th>Now</th></tr></thead>
+        <tbody>
+          <tr><td>Notifications drawer</td><td>Heading under the status bar, last notification under the gesture bar (your report)</td><td>Clears both. Solid filter pills, no divider lines</td></tr>
+          <tr><td>Every toast</td><td>Pinned 16px from the top, under the clock, and see-through</td><td>Below the status bar, solid</td></tr>
+          <tr><td>Edit Profile</td><td>Cancel and Save Changes under the bottom nav, so Save couldn't be tapped</td><td>Nav hidden on this screen, solid save bar</td></tr>
+          <tr><td>Create Event</td><td>Create button under the bottom nav</td><td>Nav hidden, solid bar</td></tr>
+          <tr><td>Message long-press menu</td><td rowspan="5">Bottom clearance written as a Tailwind class with a space in it, so no CSS existed and the sheet sat under the nav and gesture bar</td><td rowspan="5">Classes fixed. The build check now fails on this mistake</td></tr>
+          <tr><td>Chat folder editor</td></tr>
+          <tr><td>Chat poll sheet</td></tr>
+          <tr><td>Invite members sheet</td></tr>
+          <tr><td>Animated emoji upsell</td></tr>
+          <tr><td>Live invite banner</td><td>Text started at the very top, under the status bar</td><td>Text below the status bar, solid</td></tr>
+          <tr><td>Video note, full screen</td><td>Close button 20px from the top</td><td>Below the status bar</td></tr>
+          <tr><td>Wallet transaction drawer</td><td>Full-height panel with no clearance at either end</td><td>Clears both</td></tr>
+          <tr><td>Wallet dialogs, plan comparison</td><td>Tall dialogs started 3px under the status bar</td><td>Clear both bars</td></tr>
+          <tr><td>Co-host invite sheet</td><td>Bottom row in the gesture bar</td><td>Clears it</td></tr>
+          <tr><td>vergr.me editor</td><td>Header under the status bar; menu drawer, preview and tour card had no clearance</td><td>Clears both</td></tr>
+          <tr><td>Vanguard dashboard</td><td>Header and presence banner under the status bar; the queue page scrolled sideways</td><td>Clears it; queue is one column on phones</td></tr>
+          <tr><td>Settings → About</td><td>App icon drawn at 512px, so the page scrolled sideways. Tagline read "Play. Stream. Earn."</td><td>72px icon; "A live streaming and social platform for gamers and creators."</td></tr>
+          <tr><td>Creator Studio → Community</td><td>Crashed to the error screen on every platform. "Post update" threw away the text; photo, poll and event buttons did nothing</td><td>Loads. Post update posts; the buttons open the composer or Create Event</td></tr>
+          <tr><td>Become a creator</td><td>A malformed eligibility reply would crash the screen</td><td>Guarded</td></tr>
+          <tr><td>Edit Profile → Social Links</td><td>Link switches showed off even for links that were visible on the profile</td><td>Switches match what the profile shows</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-before">
+    <h2 id="s-before">Before launch</h2>
+    <div class="items">
+      <article class="item">
+        <div class="top"><span class="chip c-before">Before launch</span><h3><code>edge2.vergr.app</code> still points at a server you gave back</h3><span class="who">You, in Cloudflare</span></div>
+        <p>The record resolves to 178.105.238.230, the IP of the deleted second streaming box. If Hetzner hands that IP to someone else, they control a vergr.app address. Delete the record; it comes back with box 2.</p>
+      </article>
+      <article class="item">
+        <div class="top"><span class="chip c-before">Before launch</span><h3>Admin authority still lives on the public @Vergr account</h3><span class="who">You</span></div>
+        <p>The planned move to a private operator login hasn't happened. The public brand account is the most-targeted login you have.</p>
+      </article>
+      <article class="item">
+        <div class="top"><span class="chip c-before">Before launch</span><h3>Live presence and view counts die on networks that block websockets</h3><span class="who">Your call (loosens the app's security policy)</span></div>
+        <p>The realtime database falls back to long-polling, which loads a script from firebaseio.com. The app's security policy doesn't allow that host, so on some office and carrier networks presence and post views stop working.</p>
+      </article>
+      <article class="item">
+        <div class="top"><span class="chip c-before">Before launch</span><h3>Test content and wrong follower counts are public</h3><span class="who">Your call</span></div>
+        <p>Test posts on @Vergr and @Verion include a broken two-frame clip and a sound test. Follower counts on existing accounts are inflated from an old double-count, so Explore shows numbers that don't match profiles.</p>
+      </article>
+      <article class="item">
+        <div class="top"><span class="chip c-before">Before launch</span><h3>The main streaming box has no backup</h3><span class="who">Your call</span></div>
+        <p>Box 1 runs streaming and the chat relay. The code is in the repo, but its running configuration isn't backed up anywhere. If it dies, live streaming and chat go with it until it's rebuilt by hand.</p>
+      </article>
+      <article class="item">
+        <div class="top"><span class="chip c-before">On launch day</span><h3>Two switches to flip</h3><span class="who">Code, on the day</span></div>
+        <p><code>PLAY_LISTING_LIVE</code> turns on the "Get it on Google Play" referral link. <code>PUBLIC_LAUNCH_MS</code> is still a placeholder date (1 Sep). It decides who gets the Day One badge, and moving it after launch takes badges away from people.</p>
+        <div class="ev">src/utils/referral.js:56 · src/utils/milestones.js:152</div>
+      </article>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-after">
+    <h2 id="s-after">Can follow launch</h2>
+    <div class="items">
+      <article class="item">
+        <div class="top"><span class="chip c-after">After launch</span><h3>Squad typing indicator has never worked; calls have no quality signal</h3><span class="who">Code</span></div>
+        <p>Squad chat never sends typing state. Calls degrade silently. The speaker-button fix has only been compile-checked, not tried on a real call.</p>
+      </article>
+      <article class="item">
+        <div class="top"><span class="chip c-after">After launch</span><h3>Photos in comments aren't scanned automatically</h3><span class="who">Your call (paid scan)</span></div>
+        <p>They can be reported, but nothing checks them on upload. Scanning is a paid Gemini call per photo.</p>
+      </article>
+      <article class="item">
+        <div class="top"><span class="chip c-after">After launch</span><h3>Adaptive video quality and translation wait on box 2</h3><span class="who">Your call</span></div>
+        <p>Every viewer gets the single uploaded file, and translation stays hidden. Both come back when the second box is restored from its snapshot.</p>
+      </article>
+      <article class="item">
+        <div class="top"><span class="chip c-after">After launch</span><h3>Play, AdMob and banking move from Murmont LLC to Vergr LLC</h3><span class="who">Waits on the EIN</span></div>
+        <p>Don't start the payments-profile switch until you can finish it.</p>
+      </article>
+      <article class="item">
+        <div class="top"><span class="chip c-after">After launch</span><h3>Governing law is South Africa for a Kentucky company</h3><span class="who">Your call</span></div>
+        <p>A deliberate choice, left as it is.</p>
+      </article>
+      <article class="item">
+        <div class="top"><span class="chip c-after">After launch</span><h3>Wallet unlock tokens are signed with a built-in fallback string</h3><span class="who">Code</span></div>
+        <p>The secret exists but isn't attached to the wallet functions. Low impact: nothing outside the wallet file checks these tokens.</p>
+        <div class="ev">functions/wallet.js:328</div>
+      </article>
+    </div>
+  </section>
+
+  <footer>
+    <p>Source: repo branch chore/revenue-share-events-1.0.196, live checks against vergr.app, Firestore and Cloud Functions on 16 Sep 2026. Update this file when an item closes.</p>
+  </footer>
+</div>

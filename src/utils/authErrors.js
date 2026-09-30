@@ -17,6 +17,8 @@ const MAP = {
   'auth/popup-blocked': 'Your browser blocked the sign-in popup — allow popups and retry.',
   'auth/account-exists-with-different-credential': 'An account already exists with this email using a different sign-in method.',
   'auth/requires-recent-login': 'Please sign in again to complete this action.',
+  // Ours, not Firebase's: Admin → App Config → "Allow new registrations" is off.
+  'vergr/signups-paused': 'New sign-ups are paused right now. Existing accounts can still sign in. Please try again later.',
 };
 
 export function authErrorMessage(err, fallback = 'Something went wrong. Please try again.') {

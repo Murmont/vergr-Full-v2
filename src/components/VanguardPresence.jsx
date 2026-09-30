@@ -153,7 +153,7 @@ export default function VanguardPresence({ parentPath }) {
       {banner && (
         <div
           style={{
-            position: 'fixed', top: 16, left: '50%', transform: 'translateX(-50%)',
+            position: 'fixed', top: 'calc(env(safe-area-inset-top, 0px) + 16px)', left: '50%', transform: 'translateX(-50%)',
             zIndex: 9999, pointerEvents: 'none',
             display: 'flex', alignItems: 'center', gap: 12,
             padding: '10px 18px 10px 12px',
@@ -177,7 +177,7 @@ export default function VanguardPresence({ parentPath }) {
       {visible.length > 0 && (
         <div
           style={{
-            position: 'fixed', top: 16, right: 16, zIndex: 9998,
+            position: 'fixed', top: 'calc(env(safe-area-inset-top, 0px) + 16px)', right: 16, zIndex: 9998,
             display: 'flex', flexDirection: 'column', gap: 6,
             padding: 8,
             background: 'rgba(11,11,20,.78)',

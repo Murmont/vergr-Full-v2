@@ -213,7 +213,7 @@ export default function NativeMatchDetailsScreen() {
       )}
       <VanguardPresence parentPath={`tournaments/${matchId}`} />
 
-      <div className="min-h-screen" style={{ paddingBottom: 'calc(88px + env(safe-area-inset-bottom, 0px))' }}>
+      <div className="min-h-screen" style={{ paddingBottom: 'calc(88px + var(--vg-safe-b, 0px))' }}>
         <TopBar showBack title={tournament.name} />
 
         <div className="px-4 py-4">

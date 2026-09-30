@@ -25,7 +25,7 @@ const LANDING_PERKS = [
 ];
 
 export default function EventTicketCard({
-  tournament, source = 'direct', variant = 'default', meta = null, onView, onPurchased, onCompete,
+  tournament, source = 'direct', variant = 'default', meta = null, onView, onPurchased,
 }) {
   const { currentUser } = useAuth();
   const { wallet, profile } = useUser();
@@ -101,7 +101,7 @@ export default function EventTicketCard({
       );
     }
     if (isCompetitor) {
-      return <p className="text-text-muted text-[11px] text-center py-2">You're competing in this event.</p>;
+      return <p className="text-text-muted text-[11px] text-center py-2">You're part of this event.</p>;
     }
     if (soldOut) {
       return <div className="py-2.5 rounded-xl bg-surface-2 border border-white/[0.06] text-text-muted text-center text-sm font-bold">Sold out</div>;
@@ -174,11 +174,6 @@ export default function EventTicketCard({
 
           {cta}
 
-          {onCompete && !hasTicket && (
-            <button onClick={onCompete} className="w-full mt-3 text-center text-text-muted hover:text-brand-violet-light text-xs font-semibold transition-colors">
-              Or compete for free →
-            </button>
-          )}
           <p className="text-text-muted text-[10px] text-center mt-3 flex items-center justify-center gap-1">
             <Icon name="lock" size={11} /> Secure checkout · coins held by VERGR
           </p>

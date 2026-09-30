@@ -1,0 +1,86 @@
+United Arab Emirates|AED|4.74
+Argentina|ARS|1997.42
+Austria|EUR|1.11
+Australia|AUD|1.82
+Bangladesh|BDT|158.70
+Belgium|EUR|1.11
+Bahrain|BHD|0.486
+Bolivia|BOB|15.15
+Brazil|BRL|6.65
+Canada|CAD|1.79
+Switzerland|CHF|1.04
+Chile|CLP|1186
+China|CNY|8.69
+Colombia|COP|4029
+Cyprus|EUR|1.11
+Czech Republic|CZK|26.93
+Germany|EUR|1.11
+Denmark|DKK|8.32
+Dominican Republic|DOP|75.40
+Algeria|DZD|171.27
+Ecuador|USD|1.29
+Estonia|EUR|1.11
+Egypt|EGP|71.82
+Spain|EUR|1.11
+Finland|EUR|1.11
+France|EUR|1.11
+Great Britain (UK, Scotland, Wales)|GBP|0.95
+Ghana|GHS|14.64
+Greece|EUR|1.11
+Guatemala|GTQ|9.84
+Hong Kong (香港地區)|HKD|10.12
+Hungary|HUF|405
+Indonesia|IDR|22992
+Republic of Ireland|EUR|1.11
+Israel|ILS|3.86
+India|INR|123.12
+Iraq|IQD|1690
+Italy|EUR|1.11
+Japan|JPY|205
+Kenya|KES|166.71
+Cambodia|USD|1.29
+South Korea|KRW|1815
+Kuwait|KWD|0.398
+Kazakhstan|KZT|599.16
+Laos|LAK|29619
+Sri Lanka|LKR|428.75
+Lithuania|EUR|1.11
+Luxembourg|EUR|1.11
+Latvia|EUR|1.11
+Morocco|MAD|11.98
+Myanmar|MMK|5670
+Mongolia|MNT|4640.16
+Malta|EUR|1.11
+Mexico|MXN|22.03
+Malaysia|MYR|5.25
+Nigeria|NGN|1828.52
+Netherlands|EUR|1.11
+Norway|NOK|12.16
+Nepal|NPR|196.85
+New Zealand|NZD|2.18
+Peru|PEN|4.35
+Philippines|PHP|79.25
+Pakistan|PKR|368
+Poland|PLN|4.80
+Puerto Rico|USD|1.29
+Palestine|ILS|3.86
+Portugal|EUR|1.11
+Paraguay|PYG|7706
+Qatar|QAR|4.71
+Romania|RON|5.84
+Saudi Arabia|SAR|4.84
+Sweden|SEK|12.27
+Singapore|SGD|1.65
+Slovenia|EUR|1.11
+Slovakia|EUR|1.11
+Thailand|THB|42.65
+Timor Leste|USD|1.29
+Tunisia|TND|3.764
+Turkey|TRY|61.74
+Taiwan (台灣地區)|TWD|41.33
+Ukraine|UAH|57.60
+United States of America|USD|1.29
+Uruguay|UYU|51.87
+Uzbekistan|UZS|15343.93
+Vietnam|VND|33755
+South Africa|ZAR|20.90

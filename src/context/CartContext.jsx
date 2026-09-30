@@ -16,6 +16,7 @@
 // uses. A cart that carried its own prices would be a cart an attacker could
 // edit, and it would drift from the charge the moment a price changed.
 import { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
+import { blockGuestPurchase } from '../utils/guestPrompt';
 
 const KEY = 'vergr.cart.v1';
 const MAX_LINES = 20;
@@ -48,6 +49,8 @@ export function CartProvider({ children }) {
   }, [lines]);
 
   const add = useCallback((sku, qty = 1) => {
+    // Guests cannot buy, so they never fill a basket: prompt them instead.
+    if (blockGuestPurchase()) return;
     setLines((prev) => {
       const found = prev.find((l) => l.sku === sku);
       if (found) {
@@ -73,9 +76,17 @@ export function CartProvider({ children }) {
 
   const count = useMemo(() => lines.reduce((n, l) => n + l.qty, 0), [lines]);
 
+  // Opening the basket is the other way into checkout (the coin pill on a
+  // stream opens it directly), so a guest is stopped here too. Closing is
+  // always allowed, and a function updater passes straight through.
+  const setOpenGuarded = useCallback((v) => {
+    if (v === true && blockGuestPurchase()) return;
+    setOpen(v);
+  }, []);
+
   const value = useMemo(
-    () => ({ lines, count, add, setQty, remove, clear, open, setOpen }),
-    [lines, count, add, setQty, remove, clear, open],
+    () => ({ lines, count, add, setQty, remove, clear, open, setOpen: setOpenGuarded }),
+    [lines, count, add, setQty, remove, clear, open, setOpenGuarded],
   );
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;

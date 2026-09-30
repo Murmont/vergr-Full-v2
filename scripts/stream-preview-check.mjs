@@ -51,7 +51,11 @@ const countTag = (src, name) => {
   const open = '<' + name;
   for (let i = src.indexOf(open); i >= 0; i = src.indexOf(open, i + 1)) {
     const c = src.charAt(i + open.length);
-    if (c === ' ' || c === '/' || c === '>' || c === String.fromCharCode(10)) n++;
+    // ⚠ \r AND TAB ARE WHITESPACE TOO. The working tree is CRLF, so a tag that
+    // ends its line is followed by \r, and without it every multi-line tag in the
+    // tree was invisible to this helper (found 2026-09-10: <SupportTray counted 0).
+    if (c === ' ' || c === '/' || c === '>' || c === String.fromCharCode(10)
+      || c === String.fromCharCode(13) || c === String.fromCharCode(9)) n++;
   }
   return n;
 };
@@ -227,6 +231,71 @@ for (const f of FILES.filter((x) => x.endsWith('.jsx'))) {
     check(src.includes('<GiftFeed'),
       `${f} announces subs but has no <GiftFeed> — tips would not show at all`);
   }
+}
+
+// ── 5b. The REAL screens draw tips the same way ─────────────────────────
+// ⚠⚠ RULE 5 ONLY EVER LOOKED AT THE SIMULATOR. TipComboFeed moved to
+// production on 2026-09-05 and every real surface was left on the centred
+// pill, so the approved design still rendered nowhere a viewer could see it,
+// with this guard green. A surface that mounts the hype train is a live
+// surface, so it owes the tip feed in every branch that draws the train.
+for (const f of PORTED_PATHS) {
+  const src = codeOnly(readFileSync(f, 'utf8'));
+  const trains = countTag(src, 'HypeTrainView');
+  if (!trains) continue;
+  check(countTag(src, 'TipAlertOverlay') === 0,
+    `${f} still mounts <TipAlertOverlay>, the replaced centred pill with no avatar`);
+  check(countTag(src, 'TipComboFeed') >= trains,
+    `${f} draws the hype train in ${trains} branch(es) but the tip feed in ${countTag(src, 'TipComboFeed')}`);
+  // ⚠ THE SERVER OWNS lastTip. A client write is denied for a viewer and
+  // SUCCEEDS for an admin or moderator, replacing the server's lastTip (which
+  // carries the avatar) and counting the tip toward the goal a second time.
+  check(!src.includes('lastTip: {'),
+    `${f} writes streams/{id}.lastTip from the client; sendTip already stamps it with the sender's avatar`);
+}
+
+// ── 5c. UserAvatar takes `src`, nothing else ───────────────────────────
+// ⚠⚠ THE HYPE TRAIN LOOKED EMPTY WITH FACES UPLOADED. previewStates passed
+// `avatar=` and `user=` to UserAvatar, which reads only `src`, so both were
+// dropped without a warning and every rider drew the placeholder disc. Rule 4
+// checked that the EXPRESSION went through faceOf() and was satisfied; nothing
+// checked that the prop it landed in was one UserAvatar reads.
+for (const f of [...FILES.map((x) => DIR + x), ...PORTED_PATHS, ...STATE_PATHS]) {
+  const src = codeOnly(readFileSync(f, 'utf8'));
+  for (const m of src.matchAll(/<UserAvatar\b[^>]*>/g)) {
+    check(!/\s(avatar|user)=\{/.test(m[0]),
+      `${f} passes avatar= or user= to <UserAvatar>, which reads only src, so it draws the placeholder disc`);
+  }
+}
+
+// ── 5d. The real hype train draws its riders ────────────────────────────
+// The preview bar shows the conductor and four riders; the real one showed the
+// leader only because the server carried no other faces.
+{
+  const view = codeOnly(readFileSync('src/components/streams/states/index.jsx', 'utf8'));
+  const at = view.indexOf('export function HypeTrainView');
+  const body = at < 0 ? '' : view.slice(at, view.indexOf('\nexport ', at + 10));
+  check(body.includes('train.top') && countTag(body, 'UserAvatar') >= 2,
+    'HypeTrainView draws only the leader again; the approved bar shows the conductor and four riders');
+  const srv = codeOnly(readFileSync('functions/hypeTrain.js', 'utf8'));
+  check(srv.includes('TRAIN_TOP_RIDERS') && /\btop,/.test(srv),
+    'functions/hypeTrain.js no longer carries `top`, so the real bar has no faces to draw after the leader');
+}
+
+// ── 5e. Subscribe and gift subs are reachable on the phone ──────────────
+// ⚠⚠ A PHONE VIEWER COULD NOT SUBSCRIBE WHILE WATCHING, and could gift a sub
+// only by tapping one person in chat (founder, 2026-09-10). The support tray is
+// the entry, and it has to be on the real viewer AND the simulator, or the
+// captures promise a control the product does not have.
+for (const f of ['src/components/streams/MobileLiveViewer.jsx', DIR + 'PreviewMobileViewer.jsx']) {
+  const src = codeOnly(readFileSync(f, 'utf8'));
+  check(countTag(src, 'SupportTray') >= 1,
+    `${f} has no <SupportTray>, so a phone viewer cannot subscribe or gift subs while watching`);
+}
+{
+  const gs = codeOnly(readFileSync('src/components/streams/GiftSubSheet.jsx', 'utf8'));
+  check(gs.includes('!recipient ||'),
+    "GiftSubSheet shows its picker only for two or more candidates again, so the tray's room gift opens with nobody to pick");
 }
 
 // The Fire tip control must drive the feed, not just the ledger.
@@ -3193,16 +3262,19 @@ check(stSrc.includes('ReconnectingOverlay') && stSrc.includes('StreamLoadingCove
   const t = await import('../src/utils/hypeTrain.js');
 
   // Exclusivity, over enough seeds that both branches are certainly exercised.
-  let vp = 0, both = 0, neither = 0;
+  // Three outcomes since 2026-09-27 (founder): coins, boost coins or VP.
+  let vp = 0, boost = 0, both = 0, neither = 0;
   const N = 20000;
   for (let i = 0; i < N; i++) {
     const r = t.settleTrain({ received: 12000, level: 4, seed: `guard:${i}` });
     if (r.kind === 'vp') vp++;
-    if (r.coins > 0 && r.vp > 0) both++;
-    if (r.coins === 0 && r.vp === 0) neither++;
+    if (r.kind === 'boost') boost++;
+    const paid = [r.coins > 0, r.boostCoins > 0, r.vp > 0].filter(Boolean).length;
+    if (paid > 1) both++;
+    if (paid === 0) neither++;
   }
-  check(both === 0, `a completed train paid coins AND VP in ${both} of ${N} settlements — it is one or the other, never both`);
-  check(neither === 0, `a completed train paid nothing at all in ${neither} of ${N} settlements — a train that reached its goal must pay one of the two`);
+  check(both === 0, `a completed train paid more than one reward in ${both} of ${N} settlements — it is exactly one of coins, boost coins or VP`);
+  check(neither === 0, `a completed train paid nothing at all in ${neither} of ${N} settlements — a train that reached its goal must pay one reward`);
 
   // The randomiser must actually be random, and that takes THREE measurements,
   // not one.
@@ -3217,18 +3289,25 @@ check(stSrc.includes('ReconnectingOverlay') && stSrc.includes('StreamLoadingCove
   //
   // So the split is necessary and nowhere near sufficient. Serial correlation
   // and run length are what actually catch it.
-  const share = vp / N;
-  check(Math.abs(share - t.TRAIN_VP_WEIGHT) < 0.015,
-    `the coin/VP split measured ${(share * 100).toFixed(2)}% VP against a ${(t.TRAIN_VP_WEIGHT * 100).toFixed(0)}% weight — the randomiser is biased`);
+  const wVp = t.TRAIN_VP_WEIGHT, wBoost = t.TRAIN_BOOST_WEIGHT, wCoins = 1 - wVp - wBoost;
+  const shares = { vp: vp / N, boost: boost / N, coins: (N - vp - boost) / N };
+  for (const [k, w] of [['vp', wVp], ['boost', wBoost], ['coins', wCoins]]) {
+    check(Math.abs(shares[k] - w) < 0.015,
+      `the hype train paid ${k} ${(shares[k] * 100).toFixed(2)}% of the time against a ${(w * 100).toFixed(0)}% weight — the randomiser is biased`);
+  }
+  // Founder, 2026-09-27: "not always real coins". Real coins must never be the
+  // likeliest outcome.
+  check(wCoins < 0.5 && shares.coins < 0.5,
+    `real coins come up ${(shares.coins * 100).toFixed(1)}% of the time — they must never be the likeliest hype train reward`);
 
   const bits = [];
-  for (let i = 0; i < N; i++) bits.push(t.trainOutcome(`guard:${i}`) === 'vp' ? 1 : 0);
+  const cat = { vp: 0, boost: 1, coins: 2 };
+  for (let i = 0; i < N; i++) bits.push(cat[t.trainOutcome(`guard:${i}`)]);
   let same = 0, run = 1, longest = 1;
   for (let i = 1; i < N; i++) {
     if (bits[i] === bits[i - 1]) { same++; run++; longest = Math.max(longest, run); } else run = 1;
   }
-  const w = t.TRAIN_VP_WEIGHT;
-  const independent = w * w + (1 - w) * (1 - w);
+  const independent = wVp * wVp + wBoost * wBoost + wCoins * wCoins;
   const repeat = same / (N - 1);
   check(Math.abs(repeat - independent) < 0.03,
     `consecutive trains repeated the same reward ${(repeat * 100).toFixed(1)}% of the time against ${(independent * 100).toFixed(1)}% expected — the outcome of one train predicts the next, so the avalanche step is missing or the seed is sequential`);
@@ -3238,7 +3317,7 @@ check(stSrc.includes('ReconnectingOverlay') && stSrc.includes('StreamLoadingCove
   // Same seed, same answer. This is what makes settling idempotent.
   const a1 = t.settleTrain({ received: 12000, level: 4, seed: 'guard:fixed' });
   const a2 = t.settleTrain({ received: 12000, level: 4, seed: 'guard:fixed' });
-  check(a1.kind === a2.kind && a1.coins === a2.coins && a1.vp === a2.vp,
+  check(a1.kind === a2.kind && a1.coins === a2.coins && a1.boostCoins === a2.boostCoins && a1.vp === a2.vp,
     'settling the same train twice produced different rewards — a retry, a reconnect or a double-fire would pay a second, different bonus');
 
   // THE PROFIT GUARANTEE. Swept across the whole revenue-share ladder and every
@@ -3270,7 +3349,7 @@ check(stSrc.includes('ReconnectingOverlay') && stSrc.includes('StreamLoadingCove
   // A coin result too small to be worth having pays VP instead, and is still one
   // reward rather than a consolation added to it.
   const tiny = t.settleTrain({ received: 60, level: 1, seed: 'guard:tiny' });
-  check(tiny.kind === 'vp' && tiny.coins === 0,
+  check(tiny.kind === 'vp' && tiny.coins === 0 && tiny.boostCoins === 0,
     'a train too small to produce a worthwhile coin bonus still pays coins — being handed 4 coins reads as being fobbed off, and it is worth less than the branch it beat');
 
   // ⚠⚠ THE SERVER MIRROR. src/utils/hypeTrain.js is what the room is PROMISED;
@@ -3286,8 +3365,8 @@ check(stSrc.includes('ReconnectingOverlay') && stSrc.includes('StreamLoadingCove
     for (const name of [
       'TRAIN_GOAL_COEFF', 'TRAIN_MAX_LEVEL', 'TRAIN_LEVEL_STEP', 'TRAIN_SOLO_CAP',
       'TRAIN_WINDOW_MS', 'TRAIN_EXTEND_MS', 'TRAIN_MAX_MS',
-      'TRAIN_BONUS_PCT', 'TRAIN_COIN_CAP', 'TRAIN_VP_PER_LEVEL', 'TRAIN_VP_WEIGHT',
-      'TRAIN_MIN_COIN_BONUS', 'TRAIN_MARGIN_FLOOR', 'OWED_USD_PER_COIN',
+      'TRAIN_BONUS_PCT', 'TRAIN_COIN_CAP', 'TRAIN_VP_PER_LEVEL', 'TRAIN_VP_WEIGHT', 'TRAIN_BOOST_WEIGHT',
+      'TRAIN_MIN_COIN_BONUS', 'TRAIN_MARGIN_FLOOR', 'OWED_USD_PER_COIN', 'TRAIN_TOP_RIDERS',
       'WORST_ONWARD_SHARE',
     ]) {
       const a = numOf(cli, name);

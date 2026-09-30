@@ -22,11 +22,24 @@
 const functions = require('firebase-functions/v2');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const { GoogleAuth } = require('google-auth-library');
+const crypto = require('crypto');
 const { creditReferralPurchaseBonus } = require('./referralRevenue');
 const coinPromos = require('./coinPromos');
+const PR = require('./paymentRecords');
 
 const db = getFirestore('vgrdb');
 const REGION = 'europe-west1';
+
+// ⚠⚠ THE PLAY API CALLS RUN AS THE APPSPOT ACCOUNT, EXPLICITLY. 2nd-gen
+// functions default to the Compute Engine account
+// (674096624319-compute@developer), but the account invited into Play Console
+// (Users and permissions) is vergr-44494@appspot, which is what the setup note
+// at the bottom of this file told the founder to add. Unpinned, every purchase
+// check authenticated as an account Play did not know, so it would 401/403, the
+// coins would never be granted and Google refunds an unconsumed purchase after
+// three days. Found 2026-09-10 before any real purchase had run. The account
+// holds roles/editor on the project, so Firestore access is unchanged.
+const PLAY_API_SERVICE_ACCOUNT = 'vergr-44494@appspot.gserviceaccount.com';
 const HttpsError = functions.https.HttpsError;
 
 const PACKAGE_NAME = 'com.vergr.desktop';
@@ -155,9 +168,11 @@ async function fetchPurchase(productId, purchaseToken) {
     `${encodeURIComponent(productId)}/tokens/${encodeURIComponent(purchaseToken)}`;
 
   const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  const api = 'purchases.products.get';
 
   if (res.status === 404) {
-    throw new HttpsError('not-found', 'Purchase not recognised by Google Play.');
+    const body = await res.text().catch(() => '');
+    throw PR.providerError(HttpsError, 'not-found', 'Purchase not recognised by Google Play.', { name: 'google', status: 404, body, api });
   }
   if (res.status === 401 || res.status === 403) {
     // Config problem, not a user problem. Say so plainly in the log: this is
@@ -165,14 +180,73 @@ async function fetchPurchase(productId, purchaseToken) {
     // in Play Console, and it would otherwise look like fraud rejection.
     const body = await res.text().catch(() => '');
     console.error('playBilling: Play API auth failed', res.status, body.slice(0, 400));
-    throw new HttpsError('internal', 'Purchase verification is temporarily unavailable.');
+    throw PR.providerError(HttpsError, 'internal', 'Purchase verification is temporarily unavailable.', { name: 'google', status: res.status, body, api });
+  }
+  if (res.status === 400) {
+    // "Invalid Value" from purchases/products (2026-09-29, a real buyer's
+    // purchase failed twice): one-time products set up with the newer
+    // purchase-option model are not readable there. productsv2 reads them.
+    const body = await res.text().catch(() => '');
+    console.warn('playBilling: products.get 400, trying productsv2', productId, body.slice(0, 200));
+    return fetchPurchaseV2(productId, purchaseToken, token, body);
   }
   if (!res.ok) {
     const body = await res.text().catch(() => '');
-    console.error('playBilling: Play API error', res.status, body.slice(0, 400));
-    throw new HttpsError('internal', 'Could not verify the purchase.');
+    console.error('playBilling: Play API error', res.status, productId, body.slice(0, 400));
+    throw PR.providerError(HttpsError, 'internal', 'Could not verify the purchase.', { name: 'google', status: res.status, body, api });
   }
   return res.json();
+}
+
+const V2_STATE = { PURCHASED: 0, CANCELLED: 1, PENDING: 2 };
+
+/**
+ * purchases/productsv2, translated to the v1 fields redeemPlayPurchase reads
+ * (purchaseState, obfuscatedExternalAccountId, orderId, purchaseTimeMillis).
+ *
+ * ⚠ v2 looks up by TOKEN ALONE; v1 had the product id in the URL, so Google
+ * itself tied the token to the product. Without the productLineItem check
+ * below, a token from the cheapest pack would claim the most expensive one.
+ */
+async function fetchPurchaseV2(productId, purchaseToken, token, v1Body = '') {
+  const url =
+    `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/` +
+    `${encodeURIComponent(PACKAGE_NAME)}/purchases/productsv2/tokens/${encodeURIComponent(purchaseToken)}`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  // Both answers go on the record: v1's reason for refusing and v2's.
+  const api = 'purchases.productsv2.get (after products.get 400)';
+  if (res.status === 404) {
+    const body = await res.text().catch(() => '');
+    throw PR.providerError(HttpsError, 'not-found', 'Purchase not recognised by Google Play.',
+      { name: 'google', status: 404, body: `v2: ${body} | v1: ${v1Body}`, api });
+  }
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    console.error('playBilling: productsv2 error', res.status, productId, body.slice(0, 400));
+    throw PR.providerError(HttpsError, 'internal', 'Could not verify the purchase.',
+      { name: 'google', status: res.status, body: `v2: ${body} | v1: ${v1Body}`, api });
+  }
+  const p = await res.json();
+  const lines = Array.isArray(p.productLineItem) ? p.productLineItem : [];
+  // What Google actually holds for this token: whether an order exists, its
+  // state, and whether it is a test purchase. Never logs the token itself.
+  console.log('playBilling: productsv2', JSON.stringify({
+    productId, orderId: p.orderId || null, state: p.purchaseStateContext?.purchaseState || null,
+    test: !!p.testPurchaseContext, ack: p.acknowledgementState || null,
+    products: lines.map((l) => l.productId), completed: p.purchaseCompletionTime || null,
+  }));
+  if (!lines.some((l) => l.productId === productId)) {
+    console.warn('playBilling: productsv2 product mismatch', { asked: productId, got: lines.map((l) => l.productId) });
+    throw new HttpsError('permission-denied', 'This purchase is for a different product.');
+  }
+  const state = p.purchaseStateContext?.purchaseState;
+  return {
+    purchaseState: state in V2_STATE ? V2_STATE[state] : 1,
+    obfuscatedExternalAccountId: p.obfuscatedExternalAccountId,
+    orderId: p.orderId,
+    purchaseTimeMillis: p.purchaseCompletionTime ? String(Date.parse(p.purchaseCompletionTime)) : undefined,
+    viaProductsV2: true,
+  };
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -183,14 +257,57 @@ async function fetchPurchase(productId, purchaseToken) {
 // crediting twice.
 // ════════════════════════════════════════════════════════════════════
 exports._PLAY_ITEM_PRODUCTS = PLAY_ITEM_PRODUCTS;
+// Admin "Re-check with Google" (paymentAdmin.js) runs the SAME verification and
+// credit as the app, with the BUYER's uid. Never a second copy of this logic.
+exports._redeemPlay = (...a) => redeemPlay(...a);
+exports._androidPublisherToken = (...a) => androidPublisherToken(...a);
+exports._PACKAGE_NAME = PACKAGE_NAME;
+exports._PLAY_API_SERVICE_ACCOUNT = PLAY_API_SERVICE_ACCOUNT;
+// Shared with functions/huaweiBilling.js so BOTH stores sell the same coin
+// counts for the same product id. A second copy is how they would drift.
+exports._PLAY_PRODUCTS = PLAY_PRODUCTS;
 
+// The callable is a thin wrapper: every failure is recorded on the Payments
+// tab (paymentRecords.js) with the stage it happened at, then re-thrown
+// unchanged so the app behaves exactly as before. Admin "Re-check with Google"
+// calls redeemPlay directly with the BUYER's uid.
 exports.redeemPlayPurchase = functions.https.onCall(
-  { region: REGION },
+  { region: REGION, serviceAccount: PLAY_API_SERVICE_ACCOUNT, secrets: require('./receipts').RECEIPT_SECRETS },
   async (request) => {
     const uid = request.auth?.uid;
     if (!uid) throw new HttpsError('unauthenticated', 'Must be signed in.');
+    const data = request.data || {};
+    const stage = { at: 'validate', orderId: null };
+    try {
+      const out = await redeemPlay(uid, data, stage);
+      if (!out.alreadyCredited) {
+        await PR.markCredited({ route: PR.ROUTES.GOOGLE_PLAY, purchaseToken: data.purchaseToken, detail: `credited by redeemPlayPurchase` });
+        await require('./receipts').sendPurchaseReceipt({
+          uid, orderId: stage.orderId || data.orderId || null, method: 'Google Play',
+          coins: Number(out.coins) || 0,
+          itemName: out.itemKind ? String(data.productId || 'Store item') : null,
+        });
+      }
+      return out;
+    } catch (err) {
+      await PR.recordIncident({
+        route: PR.ROUTES.GOOGLE_PLAY, uid,
+        productId: typeof data.productId === 'string' ? data.productId : null,
+        purchaseToken: typeof data.purchaseToken === 'string' ? data.purchaseToken : null,
+        orderId: stage.orderId || (typeof data.orderId === 'string' ? data.orderId : null),
+        stage: stage.at, err,
+      });
+      throw err;
+    }
+  }
+);
 
-    const { productId, purchaseToken, orderId } = request.data || {};
+/**
+ * Verify one Play one-time purchase with Google and credit it. `stage.at`
+ * names the step in progress so a failure is recorded against it.
+ */
+async function redeemPlay(uid, data, stage = {}) {
+    const { productId, purchaseToken, orderId } = data || {};
     if (typeof productId !== 'string' || typeof purchaseToken !== 'string' || !purchaseToken) {
       throw new HttpsError('invalid-argument', 'productId and purchaseToken are required.');
     }
@@ -201,6 +318,7 @@ exports.redeemPlayPurchase = functions.https.onCall(
 
     // Fast path: already credited. Checked before hitting Google so a restore
     // sweep over several old tokens does not burn API quota.
+    stage.at = 'ledger_check';
     const ledgerRef = db.collection('play_purchases').doc(purchaseToken);
     const existing = await ledgerRef.get();
     if (existing.exists) {
@@ -216,8 +334,11 @@ exports.redeemPlayPurchase = functions.https.onCall(
       return { coins: d.coins || 0, vpBonus: d.vpBonus || 0, alreadyCredited: true };
     }
 
+    stage.at = 'provider_check';
     const purchase = await fetchPurchase(productId, purchaseToken);
+    stage.orderId = purchase.orderId || orderId || null;
 
+    stage.at = 'purchase_state';
     if (purchase.purchaseState !== 0) {
       // 2 = pending (cash / delayed payment methods). Not an error, just not
       // money yet — the client shows "waiting for payment" and restore() picks
@@ -228,11 +349,14 @@ exports.redeemPlayPurchase = functions.https.onCall(
       );
     }
 
+    stage.at = 'account_check';
     const boundAccount = purchase.obfuscatedExternalAccountId;
     if (boundAccount && boundAccount !== uid) {
       console.warn('playBilling: account mismatch', { bound: boundAccount, caller: uid });
       throw new HttpsError('permission-denied', 'This purchase belongs to another account.');
     }
+
+    stage.at = 'credit';
 
     // ── STORE ITEM (VP bonus / boost) ────────────────────────────────
     //
@@ -275,6 +399,7 @@ exports.redeemPlayPurchase = functions.https.onCall(
         }
 
         t.create(ledgerRef, {
+          route: PR.ROUTES.GOOGLE_PLAY,
           uid,
           productId,
           itemKind: item.kind,
@@ -320,6 +445,7 @@ exports.redeemPlayPurchase = functions.https.onCall(
     // price Google charged is untouched: only the quantity delivered moves.
     let coins = product.coins;
     let vpBonus = product.vpBonus;
+    let promoBoostCoins = 0;
     let promo = null;
     try {
       const granted = await coinPromos.applyPromo({
@@ -330,7 +456,9 @@ exports.redeemPlayPurchase = functions.https.onCall(
         orderId: purchaseToken,
       });
       if (granted.promoId) {
-        coins += granted.bonusCoins;
+        // ⚠ Promo bonus coins are BOOST coins (founder, 2026-09-27): boosts and
+        // VP packs only, never tips. `coins` stays what was bought.
+        promoBoostCoins = granted.bonusCoins;
         vpBonus += granted.bonusVp;
         promo = granted;
       }
@@ -348,6 +476,7 @@ exports.redeemPlayPurchase = functions.https.onCall(
       if (fresh.exists) return;
 
       t.create(ledgerRef, {
+        route: PR.ROUTES.GOOGLE_PLAY,
         uid,
         productId,
         coins,
@@ -369,6 +498,9 @@ exports.redeemPlayPurchase = functions.https.onCall(
 
       if (vpBonus > 0) {
         t.set(walletRef, { vp: FieldValue.increment(vpBonus) }, { merge: true });
+      }
+      if (promoBoostCoins > 0) {
+        t.set(walletRef, { boostCoins: FieldValue.increment(promoBoostCoins) }, { merge: true });
       }
 
       t.create(db.collection('transactions').doc(), {
@@ -398,9 +530,8 @@ exports.redeemPlayPurchase = functions.https.onCall(
       console.error('playBilling: referral bonus failed (purchase already credited)', err);
     }
 
-    return { coins, vpBonus, alreadyCredited: false };
-  }
-);
+    return { coins, vpBonus, promoBoostCoins, alreadyCredited: false };
+}
 
 // ════════════════════════════════════════════════════════════════════
 // SUBSCRIPTIONS
@@ -421,14 +552,18 @@ async function fetchSubscription(purchaseToken) {
     `${encodeURIComponent(purchaseToken)}`;
 
   const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-  if (res.status === 404) throw new HttpsError('not-found', 'Subscription not recognised by Google Play.');
+  const api = 'purchases.subscriptionsv2.get';
+  if (res.status === 404) {
+    const body = await res.text().catch(() => '');
+    throw PR.providerError(HttpsError, 'not-found', 'Subscription not recognised by Google Play.', { name: 'google', status: 404, body, api });
+  }
   if (!res.ok) {
     const body = await res.text().catch(() => '');
     console.error('playBilling: subscriptionsv2 error', res.status, body.slice(0, 400));
     if (res.status === 401 || res.status === 403) {
-      throw new HttpsError('internal', 'Subscription verification is temporarily unavailable.');
+      throw PR.providerError(HttpsError, 'internal', 'Subscription verification is temporarily unavailable.', { name: 'google', status: res.status, body, api });
     }
-    throw new HttpsError('internal', 'Could not verify the subscription.');
+    throw PR.providerError(HttpsError, 'internal', 'Could not verify the subscription.', { name: 'google', status: res.status, body, api });
   }
   return res.json();
 }
@@ -496,11 +631,14 @@ async function applySubscription(uid, sub, purchaseToken) {
     subscriptionPreferredMethod: 'google_play',
     playSubscription: { purchaseToken, productId: sub.productId, expiryMs: sub.expiryMs },
   });
+  // Bonus for this paid period. The daily sync calls this too: a new expiry means
+  // Google renewed (and charged), the same expiry pays nothing (planBonus.js).
+  await require('./planBonus').grantPlanBonus(db, uid, sub.tier, sub.expiryMs, 'google_play');
   return { tier: sub.tier, active: true, expiryMs: sub.expiryMs };
 }
 
 exports.redeemPlaySubscription = functions.https.onCall(
-  { region: REGION },
+  { region: REGION, serviceAccount: PLAY_API_SERVICE_ACCOUNT },
   async (request) => {
     const uid = request.auth?.uid;
     if (!uid) throw new HttpsError('unauthenticated', 'Must be signed in.');
@@ -509,9 +647,28 @@ exports.redeemPlaySubscription = functions.https.onCall(
     if (typeof purchaseToken !== 'string' || !purchaseToken) {
       throw new HttpsError('invalid-argument', 'purchaseToken is required.');
     }
+    const stage = { at: 'provider_check', productId: null };
+    try {
+      const out = await redeemPlaySub(uid, purchaseToken, stage);
+      await PR.markCredited({ route: PR.ROUTES.GOOGLE_PLAY_SUB, purchaseToken, detail: `plan ${out.tier} active` });
+      return out;
+    } catch (err) {
+      await PR.recordIncident({
+        route: PR.ROUTES.GOOGLE_PLAY_SUB, uid, productId: stage.productId,
+        purchaseToken, stage: stage.at, err,
+      });
+      throw err;
+    }
+  }
+);
 
+/** Verify a Play subscription and apply the plan. `stage.at` names the step. */
+async function redeemPlaySub(uid, purchaseToken, stage = {}) {
+    stage.at = 'provider_check';
     const data = await fetchSubscription(purchaseToken);
     const sub = readSubscription(data);
+    stage.productId = sub.productId || null;
+    stage.at = 'plan_check';
 
     if (!sub.tier) throw new HttpsError('invalid-argument', 'Unknown subscription product.');
     if (sub.boundAccount && sub.boundAccount !== uid) {
@@ -524,22 +681,28 @@ exports.redeemPlaySubscription = functions.https.onCall(
 
     // Acknowledge BEFORE granting: if we granted first and acknowledgement
     // failed, Google would refund at 3 days while the user kept the tier.
+    stage.at = 'acknowledge';
     if (data.acknowledgementState !== 'ACKNOWLEDGEMENT_STATE_ACKNOWLEDGED') {
       await acknowledgeSubscription(sub.productId, purchaseToken);
     }
 
+    stage.at = 'apply_plan';
     const result = await applySubscription(uid, sub, purchaseToken);
 
-    await db.collection('subscriptions').doc(`${uid}_${Date.now()}`).set({
+    // ONE row per billing period, keyed by token + expiry. The app re-redeems
+    // owned subscriptions on reinstall and restore (nativeBilling.js
+    // restoreSubscriptions), and a Date.now() id wrote a fresh "payment" every
+    // time, so the admin Payments tab would have counted one purchase many times.
+    const periodId = `${uid}_play_${crypto.createHash('sha256').update(purchaseToken).digest('hex').slice(0, 16)}_${sub.expiryMs || 0}`;
+    await db.collection('subscriptions').doc(periodId).create({
       userId: uid, tier: sub.tier, method: 'google_play',
       periodEnd: sub.expiryMs, status: 'active',
       playPurchaseToken: purchaseToken,
       createdAt: FieldValue.serverTimestamp(),
-    });
+    }).catch((e) => { if (e?.code !== 6) throw e; }); // 6 = ALREADY_EXISTS: same period, already recorded
 
     return result;
-  }
-);
+}
 
 /**
  * Daily reconcile. Play renews on its own schedule and tells us nothing, so a
@@ -582,6 +745,10 @@ exports.syncPlaySubscriptions = async function syncPlaySubscriptions() {
 //    Type: consumable. Set the price per market.
 //
 // 2. Play Console → Users and permissions → Invite user → add the Firebase
+//    ⚠ The purchase callables are PINNED to that account (serviceAccount above);
+//    the daily subscription sync runs inside cronDaily as the Compute Engine
+//    account (674096624319-compute@developer.gserviceaccount.com), so invite
+//    that one too, with the same two permissions, or renewals never reconcile.
 //    service account email (<project>@appspot.gserviceaccount.com), with the
 //    "View financial data" and "Manage orders and subscriptions" permissions.
 //    Without this the API returns 401/403 and every redeem fails.

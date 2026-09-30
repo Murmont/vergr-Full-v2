@@ -56,6 +56,11 @@ export default function CartScreen() {
           busy={!!checkout}
           onClose={() => navigate('/wallet/buy')}
           variant="page"
+          onCodaSettled={(s) => {
+            clear();
+            showToast(Number(s?.coins) > 0 ? `Added ${Number(s.coins).toLocaleString()} coins to your wallet!` : 'Purchase complete!', 'success');
+            navigate('/wallet');
+          }}
         />
       </div>
     </div>

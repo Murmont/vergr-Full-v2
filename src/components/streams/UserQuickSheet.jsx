@@ -142,7 +142,9 @@ export default function UserQuickSheet({ open, uid, onClose, watchLiveStreamId =
               background: C.bg,
               borderTop: `1px solid ${C.border}`,
               borderTopLeftRadius: 18, borderTopRightRadius: 18,
-              padding: '12px 18px 28px',
+              // Pinned to the bottom edge, so it must clear the phone's
+              // gesture/nav bar or the last row sits under it (2026-09-11).
+              padding: '12px 18px calc(28px + var(--vg-safe-b, 0px))',
               color: C.text,
               fontFamily: '"DM Sans", system-ui, sans-serif',
               maxHeight: '70vh',

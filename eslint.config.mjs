@@ -40,7 +40,7 @@ const crashRules = {
 export default [
   {
     ignores: [
-      'dist/**', 'node_modules/**', 'src-tauri/**', 'infra/**', 'vlink/**',
+      'dist/**', 'dist-admin/**', 'dist-vanguard/**', 'node_modules/**', 'src-tauri/**', 'infra/**', 'vlink/**',
       'android/**', 'functions/node_modules/**', 'chat-pattern-tiles/**',
       'public/**', 'docs/**', '**/*.min.js',
       // Gitignored scratch: the measuring harnesses that render a component in

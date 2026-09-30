@@ -59,7 +59,7 @@ export default function FollowSuggestionsScreen() {
     <div className="screen-container min-h-screen">
       <TopBar title="Suggested For You" showBack />
       <div className="flex-1 px-4 pb-32">
-        <p className="text-text-secondary text-sm mb-6">Follow creators and gamers to fill your feed</p>
+        <p className="text-text-secondary text-sm mb-6">Follow people to fill your feed</p>
         
         {loading ? (
           <div className="flex justify-center pt-10">
@@ -107,7 +107,7 @@ export default function FollowSuggestionsScreen() {
         )}
       </div>
 
-      <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[480px] p-4 glass-header border-t border-white/[0.04]">
+      <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[480px] p-4 glass-header border-t border-white/[0.04]" style={{ paddingBottom: 'calc(16px + var(--vg-safe-b, 0px))' }}>
         <button onClick={() => navigate('/', { replace: true })} className="btn-primary">
           {followed.length > 0 ? `Continue (${followed.length} followed)` : "Let's Go!"}
         </button>

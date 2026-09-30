@@ -103,6 +103,9 @@ func main() {
 	}
 	defer fsClient.Close()
 
+	// Admin → App Config switches the relay must obey (appconfig.go).
+	go watchAppConfig(ctx)
+
 	if err := initStore(); err != nil {
 		log.Fatalf("chat store init: %v", err)
 	}
@@ -347,6 +350,7 @@ func handleStreamWS(w http.ResponseWriter, r *http.Request) {
 
 	p := newPeer(uid, user, conn, room)
 	p.streamMod = stream
+	p.emailOK = tokenEmailVerified(t)
 	// ⚠ A NAMED VANGUARD IN A THREE-PERSON ROOM DE-ANONYMISES THEM BY ELIMINATION,
 	// which is exactly what the identity mask exists to prevent. The product already
 	// decided this shape: <VanguardPresence> lets Overseers join streams silently.
@@ -798,6 +802,21 @@ type Peer struct {
 	// de-anonymises them by elimination, which is what the identity mask exists to
 	// prevent. Speaking is a deliberate act that reveals them.
 	silent bool
+	// Required email verification (founder, 2026-09-29): an account whose email
+	// is not verified may WATCH and READ chat but may not speak. Read once from
+	// the ID token at connect (Firebase Auth's own email_verified claim), so it
+	// costs nothing; after verifying, the client reconnects with a fresh token.
+	emailOK bool
+}
+
+// tokenEmailVerified reads Firebase Auth's email_verified claim off a verified
+// ID token. Absent or anything but true means not verified.
+func tokenEmailVerified(t *fbauth.Token) bool {
+	if t == nil {
+		return false
+	}
+	v, _ := t.Claims["email_verified"].(bool)
+	return v
 }
 
 var peerCounter atomic.Int64
@@ -965,6 +984,10 @@ func (p *Peer) run(ctx context.Context) {
 const maxTtsChars = 200
 
 func (p *Peer) handleTts(ctx context.Context, in Msg) {
+	if !p.emailOK {
+		_ = p.write(Msg{Type: "reject", Reason: "verify-email"})
+		return
+	}
 	text := strings.TrimSpace(in.Text)
 	if text == "" {
 		_ = p.write(Msg{Type: "reject", Reason: "empty"})
@@ -1057,6 +1080,10 @@ func (p *Peer) handleTts(ctx context.Context, in Msg) {
 }
 
 func (p *Peer) handleSend(ctx context.Context, in Msg) {
+	if in.Type == "msg" && !p.emailOK {
+		_ = p.write(Msg{Type: "reject", Reason: "verify-email"})
+		return
+	}
 	text := strings.TrimSpace(in.Text)
 	if text == "" {
 		_ = p.write(Msg{Type: "reject", Reason: "empty"})

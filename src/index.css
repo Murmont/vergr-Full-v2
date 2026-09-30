@@ -38,9 +38,12 @@ html[data-reduced-motion="true"] *::after {
       transition-all duration-200 flex items-center justify-center font-dmsans tracking-tight;
     box-shadow: 0 4px 20px rgba(123,31,255,0.30);
   }
+  /* A SOLID value step, never a hairline (docs/AUDIT_RULES.md: no outline
+     lighter than its own fill). #22222F reads on the page, on surface-1 cards
+     and on surface-2 cards alike, the same fill GuestSignupPrompt uses. */
   .btn-secondary {
-    @apply w-full h-[52px] rounded-full border border-white/10 bg-surface-1
-      text-text-primary font-semibold text-[15px] hover:bg-surface-2 hover:border-white/[0.15]
+    @apply w-full h-[52px] rounded-full bg-[#22222F]
+      text-text-primary font-semibold text-[15px] hover:bg-[#2A2A3A]
       active:scale-[0.97] transition-all duration-200 flex items-center justify-center;
   }
   .btn-ghost {
@@ -89,7 +92,7 @@ html[data-reduced-motion="true"] *::after {
 }
 
 @layer utilities {
-  .safe-bottom { padding-bottom: env(safe-area-inset-bottom, 0px); }
+  .safe-bottom { padding-bottom: var(--vg-safe-b, 0px); }
 }
 
 /* ─── Chat background pattern (Telegram-style) ─── */
@@ -147,15 +150,12 @@ html[data-reduced-motion="true"] *::after {
   border: 1px solid rgba(255, 255, 255, 0.06);
 }
 
-/* Refractive sticky header. */
+/* Sticky header. SOLID (founder, 2026-09-14): a see-through header shows the
+   page scrolling under its buttons, and the hairline under it is one of the thin
+   divider lines that had to go. The name is kept so the 20+ headers using it
+   change together. */
 .glass-header {
-  background: rgba(11, 11, 20, 0.65);
-  backdrop-filter: blur(20px) saturate(1.8);
-  -webkit-backdrop-filter: blur(20px) saturate(1.8);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-}
-.glass-header.scrolled {
-  border-bottom-color: rgba(255, 255, 255, 0.1);
+  background: #0B0B14;
 }
 
 /* ─── Emoji picker slot-machine entrance ───
@@ -238,10 +238,7 @@ html[data-reduced-motion="true"] *::after {
 }
 
 [data-theme='light'] .glass-header {
-  background: rgba(255, 255, 255, 0.75);
-  backdrop-filter: blur(24px) saturate(1.5);
-  -webkit-backdrop-filter: blur(24px) saturate(1.5);
-  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  background: #FFFFFF;
 }
 
 [data-theme='light'] .glass-panel {

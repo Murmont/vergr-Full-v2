@@ -18,11 +18,11 @@ const CONDUCT = [
   '**Anonymity is absolute.** Never reveal your real identity to any user. First offence = demotion to Recruit. Second offence = removal + permanent ban from Vanguard.',
   '**No personal moderation.** Never moderate content involving someone you have an off-platform relationship with. Pass the case.',
   '**No retaliation.** Never use moderation powers against users who criticised you or the platform.',
-  '**Tournament decisions are final** once posted unless appealed to Senior+.',
+  '**Decisions are final** once posted unless appealed to Senior+.',
   '**Confidentiality.** Audit logs, evidence, user reports, and internal Vanguard chat content are never shared externally.',
   '**Consistency.** Apply the same rule to similar cases. Ask in squad chat when unsure.',
   '**Inactivity = forfeit.** No login in 30 days = inactive, treasury share suspended. 90 days = rank degrades by one.',
-  '**Conflict of interest disclosure.** Declare any stake in content/tournaments you\'re moderating and recuse yourself.',
+  '**Conflict of interest disclosure.** Declare any stake in content you\'re moderating and recuse yourself.',
 ];
 
 export default function VanguardInvitationScreen() {
@@ -49,7 +49,8 @@ export default function VanguardInvitationScreen() {
       const fn = httpsCallable(getFunctions(undefined, 'europe-west1'), 'acceptVanguardInvitation');
       await fn({ invitationId: inv.id, acceptedConductCode: true });
       showToast(`Welcome to the Vanguard, ${rankMeta(inv.startRank).label}.`, 'success');
-      navigate('/vanguard/me');
+      // The dashboard is the Vergr Vanguard app now; this page hands it over.
+      navigate('/vanguard');
     } catch (e) {
       showToast(e?.message || 'Could not accept', 'error');
       setBusy(false);
@@ -102,11 +103,11 @@ export default function VanguardInvitationScreen() {
           <div style={{ fontFamily: 'Syne', fontWeight: 800, fontSize: 18, marginBottom: 12 }}>What you're signing up for</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, fontSize: 13.5, lineHeight: 1.6, color: C.textDim }}>
             <div>• You are <strong style={{ color: '#fff' }}>anonymous to other users</strong>. They see you as "@{meta.usernameTag}" with your rank badge. Other Vanguard members + the founder see your real identity.</div>
-            <div>• <strong style={{ color: '#fff' }}>This email is now your Vanguard account.</strong> If you want to participate as a regular user (tournaments, posts, etc.) you need a separate account with a different email.</div>
+            <div>• <strong style={{ color: '#fff' }}>This email is now your Vanguard account.</strong> If you want to participate as a regular user (posts, streams, etc.) you need a separate account with a different email.</div>
             <div>• <strong style={{ color: C.gold }}>You keep 100% of your creator revenue share</strong> while your Vanguard status is active (everyone else keeps 50% to 80%).</div>
-            <div>• <strong style={{ color: C.gold }}>The Vanguard squad treasury</strong> receives the 5% mod fee from every tournament Vanguard moderates. Monthly auto-distribution to active members, weighted by rank × actions taken.</div>
+            <div>• <strong style={{ color: C.gold }}>The Vanguard squad treasury</strong> is distributed monthly to active members, weighted by rank × actions taken.</div>
             <div>• Every confirmed moderation action grants VP — rings, badges and standing across the platform.</div>
-            <div>• <strong style={{ color: '#fff' }}>Unlimited invites.</strong> Normal users have a per-week cap; you don't. More users = more tournament fees = more for Vanguard.</div>
+            <div>• <strong style={{ color: '#fff' }}>Unlimited invites.</strong> Normal users have a per-week cap; you don't.</div>
           </div>
         </section>
 

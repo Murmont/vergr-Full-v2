@@ -27,7 +27,9 @@ const TABS = [
   { id: 'profile-images', label: 'Profile Images', icon: 'image'          },
   { id: 'cover-banner',   label: 'Cover Banner',   icon: 'wallpaper'      },
   { id: 'social-links',   label: 'Social Links',   icon: 'share'          },
-  { id: 'gaming-info',    label: 'Gaming Info',    icon: 'sports_esports' },
+  // id kept as 'gaming-info' so existing links still land here; the tab is
+  // Interests now (2026-09-21): Vergr is not only for gamers.
+  { id: 'gaming-info',    label: 'Interests',      icon: 'interests'      },
   { id: 'schedule',       label: 'Schedule',       icon: 'calendar_month' },
   { id: 'preferences',    label: 'Preferences',    icon: 'tune'           },
 ];
@@ -49,6 +51,9 @@ const SOCIAL_PLATFORMS = [
   { id: 'discord',   name: 'Discord',     icon: 'chat',           hint: 'https://discord.gg/...' },
   { id: 'facebook',  name: 'Facebook',    icon: 'facebook',       hint: 'https://facebook.com/username' },
   { id: 'website',   name: 'Website',     icon: 'language',       hint: 'https://your-site.com' },
+  // A contact address the person CHOOSES to show. Never the sign-up email,
+  // which is private (it lives in Firebase Auth only).
+  { id: 'email',     name: 'Email',       icon: 'mail',           hint: 'contact@you.com', type: 'email' },
 ];
 
 const STREAM_PLATFORMS = [
@@ -938,14 +943,18 @@ export function SocialLinksTab({ form, setField }) {
       <FormSection title="Social Media Links" sub="These will be displayed on your profile.">
         {SOCIAL_PLATFORMS.map(p => (
           <div key={p.id} className="flex items-center gap-2.5 py-2">
-            <div className="w-9 h-9 rounded-md flex items-center justify-center text-text-muted" style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)' }}>
+            <div className="w-9 h-9 rounded-md flex items-center justify-center text-text-muted" style={{ background: '#1A1A26' }}>
               <Icon name={p.icon} size={15} />
             </div>
             <span className="w-[110px] text-[12px] font-semibold text-text-primary">{p.name}</span>
-            <input className={`${inputClass} flex-1`} type="text" placeholder={p.hint}
+            <input className={`${inputClass} flex-1`} type={p.type || 'text'} placeholder={p.hint}
+                   inputMode={p.type === 'email' ? 'email' : undefined} autoCapitalize="none"
                    value={form.socials[p.id] || ''}
                    onChange={(e) => updateSocial(p.id, e.target.value)} />
-            <Toggle on={!!form.socialEnabled[p.id]} onChange={(v) => toggleEnabled(p.id, v)} />
+            {/* A filled-in link shows on the profile unless it is switched OFF
+                (profileSocials.socialsToList), so the switch reads the same way.
+                It used to read !!value and showed off for links that were live. */}
+            <Toggle on={form.socialEnabled[p.id] !== false} onChange={(v) => toggleEnabled(p.id, v)} />
           </div>
         ))}
       </FormSection>
@@ -982,8 +991,14 @@ function Toggle({ on, onChange }) {
   );
 }
 
-// 5. Gaming Info ────────────────────────────────────────────────
-export function GamingInfoTab({ form, update, setField }) {
+// 5. Interests ────────────────────────────────────────────────
+// Was "Gaming Info" (Main Games first, then a Gaming Platforms ID form). Now
+// interests lead, games are optional, and the platform IDs moved to
+// Settings, Connected accounts: IDs typed here were never shown anywhere, while
+// the ones there are shown on the profile (components/profile/LinkedHandles.jsx,
+// which also still displays any IDs saved here before this change).
+export function GamingInfoTab({ form, setField }) {
+  const navigate = useNavigate();
   const toggleGame = (g) => {
     const set = new Set(form.games);
     set.has(g) ? set.delete(g) : (set.size < 6 && set.add(g));
@@ -994,51 +1009,22 @@ export function GamingInfoTab({ form, update, setField }) {
     set.has(g) ? set.delete(g) : set.add(g);
     setField('gameTags', Array.from(set));
   };
-
-  const PLATFORMS = [
-    { id: 'playstation', name: 'PlayStation', icon: 'sports_esports' },
-    { id: 'xbox',        name: 'Xbox',        icon: 'sports_esports' },
-    { id: 'steam',       name: 'Steam',       icon: 'desktop_windows' },
-    { id: 'epic',        name: 'Epic Games',  icon: 'videogame_asset' },
-    { id: 'riot',        name: 'Riot ID',     icon: 'sports_kabaddi' },
-  ];
-  const updatePlatform = (id, val) => setField('platforms', { ...form.platforms, [id]: val });
+  const chip = (on) => (on
+    ? { background: '#7B1FFF', color: '#fff' }
+    : { background: '#1D1D2C', color: '#9CA3AF' });
 
   return (
     <>
-      <PanelHeader title="Gaming Info" sub="Share your games, platforms, and IDs with the community." />
+      <PanelHeader title="Interests" sub="What you're into. It shapes your For You feed, and you can change it any time." />
 
-      <FormSection title="Main Games" sub={`Selected: ${form.games.length}/6`}>
-        <div className="grid gap-2.5" style={{ gridTemplateColumns: IS_NATIVE_BUILD ? 'repeat(2, minmax(0, 1fr))' : 'repeat(auto-fill, minmax(140px, 1fr))' }}>
-          {POPULAR_GAMES.map(g => {
-            const selected = form.games.includes(g);
-            return (
-              <button key={g} onClick={() => toggleGame(g)}
-                className="flex flex-col items-center gap-1.5 p-3 rounded-lg transition-all"
-                style={selected
-                  ? { background: 'rgba(180,79,255,0.15)', border: '1px solid rgba(180,79,255,0.50)', color: '#fff' }
-                  : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', color: '#9CA3AF' }}>
-                <div className="w-9 h-9 rounded-md flex items-center justify-center" style={{ background: selected ? 'rgba(180,79,255,0.20)' : 'rgba(255,255,255,0.04)' }}>
-                  <Icon name="sports_esports" size={18} />
-                </div>
-                <span className="text-[11px] font-bold text-center leading-tight">{g}</span>
-                {selected && <Icon name="check_circle" size={14} style={{ color: '#B44FFF' }} />}
-              </button>
-            );
-          })}
-        </div>
-      </FormSection>
-
-      <FormSection title="Interests" sub="What you're into — tunes your For You feed. Change these anytime.">
+      <FormSection title="Your interests" sub="Pick as many as you like.">
         <div className="flex flex-wrap gap-2">
           {CONTENT_TOPICS.map(g => {
             const on = (form.gameTags || []).includes(g);
             return (
-              <button key={g} onClick={() => toggleInterest(g)}
-                className="px-3 py-1.5 rounded-full text-[12px] font-bold transition-all"
-                style={on
-                  ? { background: 'rgba(180,79,255,0.18)', border: '1px solid rgba(180,79,255,0.55)', color: '#fff' }
-                  : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', color: '#9CA3AF' }}>
+              <button key={g} type="button" onClick={() => toggleInterest(g)} aria-pressed={on}
+                className="px-3 py-1.5 rounded-full text-[12px] font-bold transition-colors"
+                style={chip(on)}>
                 {g}
               </button>
             );
@@ -1046,23 +1032,31 @@ export function GamingInfoTab({ form, update, setField }) {
         </div>
       </FormSection>
 
-      <FormSection title="Gaming Platforms" sub="Add your platform accounts and IDs.">
-        {PLATFORMS.map(p => (
-          <div key={p.id} className="flex items-center gap-2.5 py-2">
-            <div className="w-9 h-9 rounded-md flex items-center justify-center text-text-muted"
-                 style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)' }}>
-              <Icon name={p.icon} size={15} />
-            </div>
-            <span className="w-[110px] text-[12px] font-semibold text-text-primary">{p.name}</span>
-            <input className={`${inputClass} flex-1`} type="text" placeholder={`Your ${p.name} ID`}
-                   value={form.platforms[p.id] || ''}
-                   onChange={(e) => updatePlatform(p.id, e.target.value)} />
-          </div>
-        ))}
+      <FormSection title="Games you play" sub={`Optional. Up to 6, and only if you game. Selected: ${form.games.length}/6`}>
+        <div className="flex flex-wrap gap-2">
+          {POPULAR_GAMES.map(g => {
+            const on = form.games.includes(g);
+            return (
+              <button key={g} type="button" onClick={() => toggleGame(g)} aria-pressed={on}
+                className="px-3 py-1.5 rounded-full text-[12px] font-bold transition-colors"
+                style={chip(on)}>
+                {g}
+              </button>
+            );
+          })}
+        </div>
       </FormSection>
 
-      <FormSection title="Custom Status" sub="Add a short status to let others know what you're up to.">
-        <input className={inputClass} type="text" maxLength={60} placeholder="e.g. Grinding ranked"
+      <FormSection title="Game and platform IDs" sub="Your Steam, PlayStation, Xbox, Riot, Epic and other IDs live in Connected accounts, and show on your profile from there.">
+        <button type="button" onClick={() => navigate('/settings/linked-accounts')}
+          className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg text-[12px] font-bold"
+          style={{ background: '#1D1D2C', color: '#fff' }}>
+          <Icon name="link" size={15} /> Open Connected accounts
+        </button>
+      </FormSection>
+
+      <FormSection title="Custom status" sub="A short line about what you're up to right now.">
+        <input className={inputClass} type="text" maxLength={60} placeholder="e.g. Editing a new video"
                value={form.customStatus}
                onChange={(e) => setField('customStatus', e.target.value)} />
         <p className="text-[10px] text-text-muted text-right mt-1">{form.customStatus.length}/60</p>

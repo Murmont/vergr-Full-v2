@@ -70,7 +70,7 @@ export default function NativeJoinGroupScreen() {
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-bg-dark px-6 text-center"
-      style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 14px)', paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 14px)' }}>
+      style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 14px)', paddingBottom: 'calc(var(--vg-safe-b, 0px) + 14px)' }}>
       {group === undefined && (
         <div className="text-text-muted text-sm flex items-center gap-2">
           <Icon name="hourglass_top" size={18} /> Loading invite…

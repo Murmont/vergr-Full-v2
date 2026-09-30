@@ -483,7 +483,7 @@ function EmojiPicker({ onSelect, onClose, height = 300, emojiSize = 31 }) {
         onPointerUp={endTonePress}
         onPointerLeave={endTonePress}
         onContextMenu={(e) => { if (TONEABLE.has(emoji)) { e.preventDefault(); toneLongPressed.current = true; openTonePicker(emoji, e.currentTarget); } }}
-        className={`flex items-center justify-center w-full aspect-square rounded-md hover:bg-surface-2/60 active:scale-75 transition-transform select-none ${animate ? 'emoji-in' : ''}`}
+        className={`flex items-center justify-center w-full aspect-square rounded-md hover:bg-surface-2 active:scale-75 transition-transform select-none ${animate ? 'emoji-in' : ''}`}
         style={animate ? { '--eid': `${Math.min(row * 0.028 + (i % cols) * 0.008, 0.4)}s`, '--eiy': `${14 + row * 6}px` } : undefined}>
         {/* hoverToPlay, NOT playOnceInView. play-on-scroll-in swapped each glyph
             for its Lottie one tile at a time as you scrolled, and because the
@@ -497,9 +497,11 @@ function EmojiPicker({ onSelect, onClose, height = 300, emojiSize = 31 }) {
   };
 
   return (
-    <div className="bg-surface-1 border-t border-white/[0.04] flex flex-col" style={{ height }}>
+    // No hairlines anywhere in the picker (founder, 2026-09-14). Rows are
+    // separated by space and solid values, never 1px strokes.
+    <div className="bg-surface-1 flex flex-col" style={{ height }}>
       {/* Category rail ABOVE search (Telegram puts its sets row on top). */}
-      <div className="flex items-center border-b border-white/[0.04] px-0.5 shrink-0">
+      <div className="flex items-center px-0.5 shrink-0">
         {recent.length > 0 && (
           <button onClick={() => jumpTo('__recent__')} className={tabClass('__recent__')}>
             <Icon name="schedule" size={16} />
@@ -515,7 +517,7 @@ function EmojiPicker({ onSelect, onClose, height = 300, emojiSize = 31 }) {
       </div>
 
       <div className="px-2 pt-2 pb-1 flex items-center gap-1.5">
-        <div className="flex-1 flex items-center bg-surface-2 border border-white/[0.06] rounded-lg px-2.5 gap-2 focus-within:border-brand-violet/50 transition-colors">
+        <div className="flex-1 flex items-center bg-surface-2 rounded-lg px-2.5 gap-2">
           <Icon name="search" size={16} className="text-text-muted shrink-0" />
           <input ref={searchRef} type="text" placeholder="Search emoji..." value={search}
             onChange={e => setSearch(e.target.value)}
@@ -539,7 +541,7 @@ function EmojiPicker({ onSelect, onClose, height = 300, emojiSize = 31 }) {
           <button
             onClick={onClose}
             title="Close emoji picker"
-            className="shrink-0 w-8 h-8 rounded-lg bg-surface-2 border border-white/[0.06] flex items-center justify-center text-text-muted hover:text-white hover:bg-surface-3 transition-colors"
+            className="shrink-0 w-8 h-8 rounded-lg bg-surface-2 flex items-center justify-center text-text-muted hover:text-white hover:bg-surface-3 transition-colors"
           >
             <Icon name="close" size={16} />
           </button>
@@ -564,7 +566,7 @@ function EmojiPicker({ onSelect, onClose, height = 300, emojiSize = 31 }) {
             // content-visibility virtualizes offscreen sections for free
             // (~1,700 cells total would otherwise all lay out on open).
             style={si > 0 ? { contentVisibility: 'auto', containIntrinsicSize: `auto ${Math.ceil(list.length / cols) * (MIN_CELL + CELL_GAP) + 26}px` } : undefined}>
-            <p className="sticky top-0 z-10 bg-surface-1/95 backdrop-blur-sm text-[9px] font-bold text-text-muted uppercase tracking-widest px-2 py-1">
+            <p className="sticky top-0 z-10 bg-surface-1 text-[9px] font-bold text-text-muted uppercase tracking-widest px-2 py-1">
               {name === '__recent__' ? 'Recently Used' : name}
             </p>
             <div className="grid gap-1" style={gridStyle}>
@@ -579,7 +581,7 @@ function EmojiPicker({ onSelect, onClose, height = 300, emojiSize = 31 }) {
       {tonePicker && createPortal(
         <div className="fixed inset-0 z-[10010]" onPointerDown={() => setTonePicker(null)}>
           <div
-            className="absolute flex items-center gap-0.5 p-1.5 bg-surface-1 border border-white/10 rounded-full shadow-2xl"
+            className="absolute flex items-center gap-0.5 p-1.5 bg-surface-2 rounded-full shadow-2xl"
             style={{ left: tonePicker.left, top: tonePicker.top }}
             onPointerDown={(e) => e.stopPropagation()}
           >
@@ -589,7 +591,7 @@ function EmojiPicker({ onSelect, onClose, height = 300, emojiSize = 31 }) {
               return (
                 <button key={tone || 'default'} onClick={() => pickTone(tone)}
                   className={`w-8 h-8 rounded-full flex items-center justify-center text-[22px] leading-none transition-colors ${
-                    selected ? 'bg-brand-violet/30 ring-1 ring-brand-violet/60' : 'hover:bg-surface-2'
+                    selected ? 'bg-[#3B2A63]' : 'hover:bg-surface-3'
                   }`}>
                   <span role="img" style={{ color: 'initial' }}>{variant}</span>
                 </button>

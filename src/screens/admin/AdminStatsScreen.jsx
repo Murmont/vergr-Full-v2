@@ -9,10 +9,12 @@
 // Errors (client_errors intake) / Geography / Event Load / Costs.
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import { useUI } from '../../context/UIContext';
 import Icon from '../../components/Icon';
 import AdminShell, { ADMIN_COLORS as C } from './AdminShell';
-import { call, fmtNumber, fmtRelative, KpiCard, Tabs } from './_adminGuarded';
+import { call, fmtNumber, fmtRelative, KpiCard, Tabs, useGuardedCall } from './_adminGuarded';
+import { openInVergr } from '../../admin/openExternal';
 
 const TABS = [
   { id: 'overview',     label: 'Overview' },
@@ -80,11 +82,13 @@ function OverviewTab({ autoRefresh }) {
   const [data, setData] = useState(null);
   const [feed, setFeed] = useState([]);
   const [loadingFirst, setLoadingFirst] = useState(true);
+  // The live-stream list costs reads, so it is fetched only while it is open.
+  const [showLive, setShowLive] = useState(false);
 
   const load = useCallback(async () => {
     try {
       const [o, f] = await Promise.all([
-        call('adminGetLiveStatsOverview'),
+        call('adminGetLiveStatsOverview', showLive ? { liveList: true } : {}),
         call('adminGetLiveActivityFeed', { limit: 15 }),
       ]);
       setData(o); setFeed(f.rows || []);
@@ -92,9 +96,11 @@ function OverviewTab({ autoRefresh }) {
       if (loadingFirst) showToast(e?.message || 'Failed to load stats', 'error');
     }
     setLoadingFirst(false);
-  }, [showToast, loadingFirst]);
+  }, [showToast, loadingFirst, showLive]);
 
   usePolling(load, 10_000, autoRefresh);
+  // Opening the list fetches it now rather than on the next 10s tick.
+  useEffect(() => { if (showLive) load(); }, [showLive]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <>
@@ -112,6 +118,14 @@ function OverviewTab({ autoRefresh }) {
         <KpiCard icon="event" color="#b44fff" label="MAU"
           value={loadingFirst ? '—' : fmtNumber(data?.monthlyActive)} />
       </div>
+
+      <LiveNowCard
+        count={data?.liveStreams || 0}
+        open={showLive}
+        onToggle={() => setShowLive((v) => !v)}
+        rows={data?.liveNow}
+        onEnded={load}
+      />
 
       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 16, marginBottom: 16 }}>
         <Card title="Active Users (24h)">
@@ -280,14 +294,12 @@ function SystemTab({ autoRefresh }) {
 
       {/* STORAGE / EXTERNAL */}
       <SectionHeader title="External services" status="info"
-        sub="Cloudflare + Cryptomus — independent integrations, wired separately" />
+        sub="Cloudflare, wired separately" />
       <Card>
         <SystemRow name="Cloudflare R2 (vergr-media bucket)" status={data.r2.status}
           note="Cloudflare API key not set in Firebase Secrets. Storage GB + Class A/B ops will land when wired." />
         <SystemRow name="Cloudflare CDN egress" status={data.cdn.status}
           note="Same — needs CLOUDFLARE_API_TOKEN secret." />
-        <SystemRow name="Cryptomus Wallet" status={data.cryptomus.status}
-          note="Awaiting underwriting approval. Balance + transaction count surface once approved + keys flip from placeholder." />
       </Card>
 
       {(h.status === 'unwired' || s.status === 'unwired') && (
@@ -573,6 +585,101 @@ function Empty({ label }) {
   return <div style={{ padding: 24, textAlign: 'center', color: C.textDim, fontSize: 12 }}>{label}</div>;
 }
 
+// Live now: every stream on air, with Watch (opens it on vergr.app) and End
+// stream. Ending someone else's stream goes through endStreamSession with
+// `takedown: true` (functions/streamTakedown.js): it asks for a reason the host
+// is shown, needs a fresh authenticator code, and actually stops the broadcast
+// on the ingest servers. The list is fetched only while this card is open.
+function LiveNowCard({ count, open, onToggle, rows, onEnded }) {
+  const { showToast } = useUI();
+  const { guarded, overlay } = useGuardedCall();
+  const [ending, setEnding] = useState(null); // stream being ended
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const confirmEnd = async () => {
+    if (!ending || reason.trim().length < 4 || busy) return;
+    setBusy(true);
+    try {
+      const r = await guarded(() => call('endStreamSession', { streamId: ending.id, takedown: true, reason: reason.trim() }));
+      showToast(r?.alreadyEnded ? 'That stream had already ended.' : 'Stream ended. The host has been told why.', 'success');
+      setEnding(null);
+      setReason('');
+      onEnded?.();
+    } catch { /* guarded already showed the error */ }
+    setBusy(false);
+  };
+
+  return (
+    <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16, marginBottom: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <h3 style={{ margin: 0, fontSize: 13, fontWeight: 700, color: C.text, flex: 1 }}>
+          Live now {count > 0 ? `(${fmtNumber(count)})` : ''}
+        </h3>
+        <button type="button" onClick={onToggle} style={{
+          padding: '6px 12px', borderRadius: 8, border: 0, background: '#2a2a3e', color: C.text,
+          fontSize: 12, fontWeight: 600, cursor: 'pointer',
+        }}>{open ? 'Hide' : 'Show streams'}</button>
+      </div>
+      {open && (
+        <div style={{ marginTop: 12 }}>
+          {!rows && <Empty label="Loading…" />}
+          {rows && rows.length === 0 && <Empty label="Nothing is live right now." />}
+          {rows && rows.map((s) => (
+            <div key={s.id} style={{
+              display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 90px 110px auto', gap: 12, alignItems: 'center',
+              padding: '10px 12px', background: '#0a0a14', borderRadius: 8, marginBottom: 6,
+            }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {s.title || 'Untitled stream'}
+                </div>
+                <div style={{ fontSize: 11, color: C.textMuted }}>
+                  @{s.hostUsername || (s.hostUid || '').slice(0, 8)} · {s.ingestType === 'browser' ? 'browser' : 'OBS'}
+                </div>
+              </div>
+              <div className="font-dmmono tabular-nums" style={{ fontSize: 12, color: C.textDim }}>{fmtNumber(s.viewerCount)} watching</div>
+              <div style={{ fontSize: 11, color: C.textMuted }}>{s.startedAt ? `since ${fmtRelative(s.startedAt)}` : ''}</div>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button type="button" onClick={() => openInVergr(`/watch/${s.id}`)} style={{
+                  padding: '6px 10px', borderRadius: 8, border: 0, background: '#2a2a3e', color: C.text, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                }}>Watch</button>
+                <button type="button" onClick={() => { setEnding(s); setReason(''); }} style={{
+                  padding: '6px 10px', borderRadius: 8, border: 0, background: '#f04060', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                }}>End stream</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {ending && (
+        <div onClick={() => !busy && setEnding(null)} style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: 440, background: C.card, borderRadius: 12, padding: 20 }}>
+            <div style={{ fontSize: 15, fontWeight: 800, color: C.text, marginBottom: 6 }}>End "{ending.title || 'this stream'}"?</div>
+            <div style={{ fontSize: 12, color: C.textDim, lineHeight: 1.55, marginBottom: 12 }}>
+              The broadcast stops for everyone and the host is shown the reason below, with a way to appeal.
+            </div>
+            <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={3} maxLength={300}
+              placeholder="Reason the host will see, e.g. Nudity on stream"
+              style={{ width: '100%', boxSizing: 'border-box', background: '#0a0a14', border: 0, borderRadius: 8, padding: 10, color: C.text, fontSize: 13, resize: 'vertical' }} />
+            <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+              <button type="button" disabled={busy} onClick={() => setEnding(null)} style={{
+                flex: 1, padding: 10, borderRadius: 8, border: 0, background: '#2a2a3e', color: C.text, fontWeight: 600, cursor: 'pointer',
+              }}>Cancel</button>
+              <button type="button" disabled={busy || reason.trim().length < 4} onClick={confirmEnd} style={{
+                flex: 1, padding: 10, borderRadius: 8, border: 0,
+                background: reason.trim().length < 4 ? '#3a2a30' : '#f04060', color: '#fff', fontWeight: 700,
+                cursor: reason.trim().length < 4 ? 'not-allowed' : 'pointer',
+              }}>{busy ? 'Ending…' : 'End stream'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {overlay}
+    </div>
+  );
+}
+
 function ActiveChart({ points }) {
   if (!points || points.length === 0) return <Empty label="No data." />;
   const W = 700, H = 200, P = 24;
@@ -801,17 +908,19 @@ function CostsTab() {
                 <span style={{ fontSize: 12.5, color: '#7c3aed', fontWeight: 800 }} className="tabular-nums">${(gcp.monthlyUsd ?? 0).toFixed(2)}/mo</span>
               </div>
 
-              {/* Superseded-but-still-ENABLED secret versions are the classic
-                  silent GCP waste here — each one bills forever. */}
+              {/* Superseded secret versions are the classic silent GCP waste
+                  here. ENABLED and DISABLED both bill (Google's own definition
+                  of "active"); only DESTROYED is free, so disabling one to
+                  "stop paying" does nothing. */}
               {gcp.secrets?.wastedVersions > 0 && (
-                <div style={{ marginTop: 10, padding: 10, background: '#F5C84212', border: '1px solid #F5C84233', borderRadius: 8 }}>
+                <div style={{ marginTop: 10, padding: 10, background: '#2a2008', borderRadius: 8 }}>
                   <div style={{ fontSize: 11, color: '#F5C842', fontWeight: 700, marginBottom: 4 }}>
-                    {gcp.secrets.wastedVersions} superseded versions still billing — ${gcp.secrets.wastedUsd.toFixed(2)}/mo wasted
+                    {gcp.secrets.wastedVersions} older versions still billing, ${gcp.secrets.wastedUsd.toFixed(2)}/mo
                   </div>
                   <div style={{ fontSize: 10.5, color: C.textDim, lineHeight: 1.5 }}>
-                    Only the newest version of a secret is used, but every ENABLED one bills.
-                    Worst: {(gcp.secrets.worst || []).map(s => `${s.name} (${s.versions})`).join(', ')}.
-                    Destroy the old ones: <code style={{ color: C.text }}>gcloud secrets versions destroy N --secret=NAME</code>
+                    Enabled and disabled versions both bill; only destroyed ones are free.
+                    Most: {(gcp.secrets.worst || []).map(s => `${s.name} (${s.versions})`).join(', ')}.
+                    Destroy an old version only after checking no deployed function still pins it.
                   </div>
                 </div>
               )}
@@ -970,13 +1079,13 @@ function EngagementTab({ autoRefresh }) {
         <KpiCard icon="flag" color="#f04060" label="Reports pending" value={fmtNumber(data.reportsPending)} />
       </div>
       <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16 }}>
-        <div style={{ fontSize: 12.5, fontWeight: 800, color: C.text, marginBottom: 10 }}>Daily signups + revenue (last {daily.length} rolled-up days)</div>
+        <div style={{ fontSize: 12.5, fontWeight: 800, color: C.text, marginBottom: 10 }}>Daily signups (last {daily.length} rolled-up days). Gold = a day with a new paid plan.</div>
         {daily.length === 0 ? (
           <div style={{ fontSize: 12, color: C.textDim }}>No daily_metrics rollups yet — the nightly cron populates this.</div>
         ) : (
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, height: 90 }}>
             {daily.map(d => (
-              <div key={d.date} title={`${d.date}: ${d.signups} signups · ${d.newPaid} new paid · €${d.revenueEUR.toFixed(2)}`}
+              <div key={d.date} title={`${d.date}: ${d.signups} signups · ${d.newPaid} new paid`}
                 style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', height: '100%' }}>
                 <div style={{ height: `${Math.max(4, (d.signups / maxSignups) * 100)}%`, background: d.newPaid > 0 ? '#f0a500' : '#7c3aed', borderRadius: 3, opacity: 0.85 }} />
                 <div style={{ fontSize: 8, color: C.textMuted, textAlign: 'center', marginTop: 3 }}>{d.date.slice(5)}</div>
@@ -990,6 +1099,19 @@ function EngagementTab({ autoRefresh }) {
 }
 
 // ─── TRANSACTIONS — live ledger tail (full paginator lives on Economy) ──────
+// Revenue-share rows carry amountMicroUsd and currency 'usd' with no `amount`
+// (gems were deleted 2026-08-16), so reading `amount` alone printed them as
+// "0 usd". Money is shown as money; everything else stays a count of coins.
+const txSigned = (t) => (t.currency === 'usd' && Number.isFinite(t.amountMicroUsd) ? t.amountMicroUsd : (t.amount || 0));
+function txLabel(t) {
+  const v = txSigned(t);
+  const sign = v > 0 ? '+' : v < 0 ? '-' : '';
+  if (t.currency === 'usd' && Number.isFinite(t.amountMicroUsd)) {
+    return sign + '$' + (Math.abs(v) / 1e6).toFixed(Math.abs(v) < 10_000 ? 4 : 2);
+  }
+  return (v > 0 ? '+' : '') + fmtNumber(v) + ' ' + (t.currency || 'coins');
+}
+
 function TransactionsTab() {
   const [rows, setRows] = useState(null);
   const [users, setUsers] = useState({});
@@ -1006,7 +1128,9 @@ function TransactionsTab() {
     <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}>
         <span style={{ fontSize: 12.5, fontWeight: 800, color: C.text }}>Latest {rows.length} transactions</span>
-        <a href="/admin/economy" style={{ fontSize: 11, color: '#b44fff', fontWeight: 700 }}>Full ledger + filters → Economy</a>
+        {/* A Link, not an <a href>: Vergr Admin is a MemoryRouter, so a plain href
+            reloads the whole console instead of moving to the Economy screen. */}
+        <Link to="/admin/economy" style={{ fontSize: 11, color: '#b44fff', fontWeight: 700 }}>Full ledger + filters → Economy</Link>
       </div>
       {rows.length === 0 && <div style={{ fontSize: 12, color: C.textDim }}>No transactions yet.</div>}
       {rows.map(t => (
@@ -1016,8 +1140,8 @@ function TransactionsTab() {
             {users[t.userId]?.displayName || (t.userId === '__platform__' ? 'Platform' : (t.userId || '').slice(0, 8))}
             {t.description ? <span style={{ color: C.textDim }}> · {t.description}</span> : null}
           </span>
-          <span style={{ fontSize: 11.5, fontWeight: 800, color: (t.amount || 0) < 0 ? '#f04060' : '#22c55e' }} className="tabular-nums">
-            {(t.amount || 0) > 0 ? '+' : ''}{fmtNumber(t.amount || 0)} {t.currency || 'coins'}
+          <span style={{ fontSize: 11.5, fontWeight: 800, color: txSigned(t) < 0 ? '#f04060' : '#22c55e' }} className="tabular-nums">
+            {txLabel(t)}
           </span>
           <span style={{ fontSize: 10, color: C.textMuted, width: 62, textAlign: 'right' }} className="tabular-nums">{fmtRelative(t.createdAt)}</span>
         </div>

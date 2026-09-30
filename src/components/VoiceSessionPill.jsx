@@ -23,7 +23,7 @@ export default function VoiceSessionPill() {
   return (
     <div
       className="fixed z-[70] left-1/2 -translate-x-1/2 flex items-center gap-2 pl-3 pr-1.5 py-1.5 rounded-full bg-surface-1/95 backdrop-blur-xl border border-brand-violet/30 shadow-2xl shadow-black/50"
-      style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 76px)' }}
+      style={{ bottom: 'calc(var(--vg-safe-b, 0px) + 76px)' }}
     >
       <button
         onClick={() => navigate(`/messages/voice/${vs.channelId}`)}

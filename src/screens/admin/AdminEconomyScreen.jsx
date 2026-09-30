@@ -17,6 +17,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import AdminPromosTab from './AdminPromosTab';
+import AdminPaymentsTab from './AdminPaymentsTab';
 import { useUI } from '../../context/UIContext';
 import Icon from '../../components/Icon';
 import UserAvatar from '../../components/UserAvatar';
@@ -28,6 +29,7 @@ import {
 
 const TABS = [
   { id: 'overview',     label: 'Overview' },
+  { id: 'payments',     label: 'Payments' },
   { id: 'grant',        label: 'Grant' },
   { id: 'payouts',      label: 'Creator payouts' },
   { id: 'promos',       label: 'Coin sales' },
@@ -35,7 +37,17 @@ const TABS = [
   { id: 'settings',     label: 'Settings' },
 ];
 
-const usd = (micro) => `$${((Number(micro) || 0) / 1e6).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+// Money rows are micro-USD. 'owed' is the admin grant, 'usd' is every revenue
+// share credit (tips, sales, accruals). Treating only 'owed' as money printed a
+// $0.001234 tip as "+1,234 usd".
+const isMoneyRow = (r) => r.currency === 'owed' || r.currency === 'usd';
+// Sub-cent amounts keep four places: a tip share is often a fraction of a cent,
+// and rounding it to $0.00 makes a real credit look like nothing happened.
+const usd = (micro) => {
+  const v = (Number(micro) || 0) / 1e6;
+  const d = v !== 0 && Math.abs(v) < 0.01 ? 4 : 2;
+  return `$${v.toLocaleString(undefined, { minimumFractionDigits: d, maximumFractionDigits: d })}`;
+};
 
 export default function AdminEconomyScreen() {
   const [tab, setTab] = useState('overview');
@@ -49,6 +61,7 @@ export default function AdminEconomyScreen() {
     >
       <Tabs tabs={TABS} active={tab} onChange={setTab} />
       {tab === 'overview'     && <OverviewTab />}
+      {tab === 'payments'     && <AdminPaymentsTab guarded={guarded} />}
       {tab === 'grant'        && <GrantTab guarded={guarded} />}
       {tab === 'payouts'      && <PayoutsTab guarded={guarded} />}
       {tab === 'promos'       && <AdminPromosTab />}
@@ -329,7 +342,7 @@ function GrantTab({ guarded }) {
           rows={3}
           value={reason}
           onChange={e => setReason(e.target.value)}
-          placeholder="e.g. Tournament prize correction — match #1234"
+          placeholder="e.g. Support credit, ticket #1234"
           style={{ ...inputStyle, resize: 'vertical', fontFamily: 'inherit' }}
         />
 
@@ -360,7 +373,9 @@ function GrantTab({ guarded }) {
             {recent.map(r => (
               <div key={r.id} style={{ fontSize: 12, padding: 10, background: C.card2, borderRadius: 8 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'baseline' }}>
-                  <span style={{ color: C.text, fontWeight: 600 }}>{r.amount > 0 ? '+' : ''}{fmtNumber(r.amount)} {r.currency}</span>
+                  <span style={{ color: C.text, fontWeight: 600 }}>{isMoneyRow(r)
+                    ? `${r.amount > 0 ? '+' : ''}${usd(r.amountMicroUsd ?? r.amount)}`
+                    : `${r.amount > 0 ? '+' : ''}${fmtNumber(r.amount)} ${r.currency}`}</span>
                   <span style={{ color: C.textDim, fontSize: 10 }}>{fmtRelative(r.createdAt)}</span>
                 </div>
                 <div style={{ color: C.textDim, fontSize: 11, marginTop: 2 }}>{r.description || '—'}</div>
@@ -377,7 +392,7 @@ function GrantTab({ guarded }) {
 // CREATOR PAYOUTS
 // ───────────────────────────────────────────────────────────
 //
-// This is the only way money leaves Vergr. `runCreatorPayouts` (daily 06:00 UTC)
+// This is the only way money leaves Vergr. `runCreatorPayouts` (daily 05:00 UTC, inside cronMoney)
 // works out what Vergr owes each enrolled creator as a supplier and pays it on
 // Vergr's schedule. There is no user-initiated withdrawal and there has not been
 // one since 2026-08-16.
@@ -551,7 +566,7 @@ function PayoutsTab({ guarded }) {
         <h3 style={{ margin: 0, fontSize: 13, fontWeight: 700, color: C.text, marginBottom: 10 }}>Payout runs</h3>
         {(ov?.runs || []).length === 0 ? (
           <div style={{ fontSize: 12, color: C.textDim }}>
-            No run has ever executed. The cron fires daily at 06:00 UTC and self-gates: a creator is only
+            No run has ever executed. The cron fires daily at 05:00 UTC and self-gates: a creator is only
             included on a day their cadence is due.
           </div>
         ) : (
@@ -942,7 +957,7 @@ function TransactionsTab() {
                     <td style={{ ...td, fontSize: 11, color: C.textDim }}>{r.type}</td>
                     <td style={td}>
                       <span className="font-dmmono tabular-nums" style={{ fontSize: 12, fontWeight: 700, color: positive ? '#22c55e' : '#f04060' }}>
-                        {r.currency === 'owed'
+                        {isMoneyRow(r)
                           ? `${positive ? '+' : ''}${usd(r.amountMicroUsd ?? r.amount)}`
                           : `${positive ? '+' : ''}${fmtNumber(r.amount)} ${r.currency || 'coins'}`}
                       </span>

@@ -258,6 +258,9 @@ export const Modal = ({ open, onClose, children, width = 480, title }) => {
       position: 'fixed', inset: 0, zIndex: 200,
       background: 'rgba(5,3,12,0.72)', backdropFilter: 'blur(6px)',
       display: 'grid', placeItems: 'center', padding: 16,
+      // A 90vh dialog centred on a phone started 3px under the status bar.
+      paddingTop: 'calc(env(safe-area-inset-top, 0px) + 16px)',
+      paddingBottom: 'calc(var(--vg-safe-b) + 16px)',
     }}>
       <div onClick={(e) => e.stopPropagation()} style={{
         width: '100%', maxWidth: width,
@@ -313,6 +316,10 @@ export const Drawer = ({ open, onClose, children, width = 480 }) => {
         transform: `translateX(${open ? '0' : '100%'})`,
         transition: 'transform 0.28s cubic-bezier(0.2,0.8,0.2,1)',
         overflowY: 'auto',
+        // Full-height panel: clear the status bar and the gesture bar on the phone.
+        paddingTop: 'env(safe-area-inset-top, 0px)',
+        paddingBottom: 'var(--vg-safe-b)',
+        boxSizing: 'border-box',
       }}>
         {children}
       </div>
@@ -549,7 +556,36 @@ export const txUnit = (currency) => {
   switch (String(currency || 'coins').toLowerCase()) {
     case 'coins': return 'c';
     case 'vp':    return 'VP';
+    case 'boost_coins': return 'boost coins';
     case 'usd':   return '';
     default:      return '';
   }
+};
+
+/**
+ * A ledger row's amount as it should read: { text, credit }.
+ *
+ * Two row shapes broke the plain `fmtNum(amount) + txUnit(currency)`:
+ *  - a creator's earning (tip_received, payouts, reversals, Vergr.me sales) is
+ *    `currency: 'usd'` with `amount` in MICRO-dollars, so a 5-cent tip share
+ *    rendered "+50,000" with no unit;
+ *  - a bonus or boost bought with cash has `amount: 0` and its price in
+ *    `priceUSD`, so it rendered "+0".
+ * Every writer of a non-zero usd row sets `amount === amountMicroUsd`
+ * (functions/index.js sendTip, creatorPayouts, coinLedger, vergrMeShop...).
+ */
+export const txAmount = (tx) => {
+  const amount = Number(tx?.amount) || 0;
+  const usdRow = String(tx?.currency || '').toLowerCase() === 'usd';
+  if (amount === 0 && tx?.priceUSD != null) {
+    return { text: `$${Number(tx.priceUSD).toFixed(2)}`, credit: false };
+  }
+  if (usdRow && amount === 0) return { text: 'Free', credit: true };
+  const micro = tx?.amountMicroUsd != null ? Number(tx.amountMicroUsd) : (usdRow ? amount : null);
+  if (micro != null) {
+    const dollars = (Math.abs(micro) / 1e6).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return { text: `${micro < 0 ? '-' : '+'}$${dollars}`, credit: micro >= 0 };
+  }
+  const unit = txUnit(tx?.currency);
+  return { text: `${amount > 0 ? '+' : ''}${fmtNum(amount)}${unit ? ` ${unit}` : ''}`, credit: amount >= 0 };
 };

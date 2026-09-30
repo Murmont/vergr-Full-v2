@@ -17,6 +17,7 @@ import Icon from '../../components/Icon';
 // the main chunk via TosVersionGate.
 import { OPERATOR } from '../marketing/legal/legalContent';
 import UserName from '../../components/UserName';
+import RaisePayoutLimit from '../../components/creator/RaisePayoutLimit';
 
 const NUM = 'font-dmmono font-bold tabular-nums';
 const usd = (micro) => `$${((Number(micro) || 0) / 1e6).toLocaleString(undefined, {
@@ -120,7 +121,9 @@ export function PayoutSetupScreen() {
                       : 'A government ID and a selfie. Required before any payment.'
                 }
                 cta="Verify"
-                onCta={() => navigate('/wallet/kyc')}
+                // The Didit check. /wallet/kyc sent people to /onboarding/identity,
+                // a profile form with no identity check, so nobody got verified.
+                onCta={() => navigate('/creator/verify')}
               />
               <StepRow
                 done={taxOnFile}
@@ -147,6 +150,13 @@ export function PayoutSetupScreen() {
               />
             </div>
           </Card>
+
+          <RaisePayoutLimit
+            uid={currentUser?.uid}
+            limits={account?.limits}
+            upgrade={account?.upgrade}
+            onSubmitted={load}
+          />
 
           {/* Honest about what is not wired yet. A step that silently does
               nothing is worse than one that says it is coming. */}

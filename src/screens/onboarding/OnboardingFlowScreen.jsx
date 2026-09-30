@@ -17,6 +17,7 @@ import { FIRST_BOOT_EVENT } from '../../components/FirstBootIntro';
 import AddPhoneModal from '../../components/AddPhoneModal';
 import UserAvatar from '../../components/UserAvatar';
 import Icon from '../../components/Icon';
+import { getPendingReferrerId, clearReferral } from '../../utils/referral';
 
 // Setup-first onboarding (rebuilt 2026-07-09; founder-approved). The old
 // slide-carousel + interests/profile/follow chain navigated to routes that
@@ -92,6 +93,22 @@ export default function OnboardingFlowScreen() {
   const [phoneSaved, setPhoneSaved] = useState(false);
 
   useEffect(() => { if (profile?.bio && !bio) setBio(profile.bio); /* eslint-disable-next-line */ }, [profile?.bio]);
+
+  // ⚠ REFERRAL ATTRIBUTION FOR EVERY SIGNUP PATH, NOT JUST EMAIL. Only the email
+  // flow (SignUpStep2) wrote `referredBy`, so anyone who signed up with Google
+  // lost their referral, on the web and in the app. Every new account passes
+  // through here, so the pending ref (the link, a stashed value, or the Play
+  // install referrer) is applied once. The rules make `referredBy` write-once
+  // and forbid self-referral, so this can never overwrite an existing one.
+  useEffect(() => {
+    const u = auth.currentUser;
+    if (!u || u.isAnonymous || !profile || profile.referredBy) return;
+    const ref = getPendingReferrerId();
+    if (!ref || ref === u.uid) return;
+    updateDoc(doc(db, 'users', u.uid), { referredBy: ref, referredAt: new Date() })
+      .then(() => clearReferral())
+      .catch(() => { /* a later visit retries; the ref stays stashed */ });
+  }, [profile?.uid, profile?.referredBy]); // eslint-disable-line
 
   // Fire-and-forget reward claim. Server verifies the data + locks the amount;
   // 'already-exists' just means a previous run claimed it — treat as done.

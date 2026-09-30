@@ -46,7 +46,7 @@ export default function DisplaySettingsScreen() {
   };
 
   const THEME_OPTIONS = [
-    { id: 'dark', label: 'Dark', icon: 'dark_mode', desc: 'Optimized for gaming sessions' },
+    { id: 'dark', label: 'Dark', icon: 'dark_mode', desc: 'Easy on the eyes, day or night' },
     { id: 'light', label: 'Light', icon: 'light_mode', desc: 'Clean and bright' },
     { id: 'system', label: 'System', icon: 'settings_suggest', desc: 'Follows your OS setting' },
   ];

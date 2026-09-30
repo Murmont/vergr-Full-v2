@@ -8,7 +8,8 @@ import { StackSkeleton } from '../components/skeletons/GlassSkeletons';
 import VergrMeView from '../components/VergrMeView';
 import VergrMePopups from '../components/vergrme/VergrMePopups';
 import { getBlocks } from '../hooks/useVergrMe';
-import { supportUrl } from '../utils/vergrMeThemes';
+import { supportUrl, pageForPlan } from '../utils/vergrMeThemes';
+import { resolveTier } from '../utils/tierSystem';
 import { enrichBlocks } from '../utils/vergrMeEnrich';
 import { vergrMeUrl, VERGRME_DISPLAY_PREFIX } from '../utils/vergrMeUrl';
 import {
@@ -59,7 +60,9 @@ export default function VergrMePage({ usernameOverride }) {
           setLoading(false);
           return;
         }
-        const pageData = pageSnap.data();
+        // Draw only what the OWNER's plan pays for (the doc is client-written).
+        const owner = profileSnap.data() || {};
+        const pageData = pageForPlan(pageSnap.data(), owner.staff === true ? 'pro' : resolveTier(owner));
         setData(pageData);
 
         // Enrich vergr_* cross-promo blocks with live data (stream/tournament/
@@ -371,7 +374,7 @@ function ShippingCheckoutSheet({ block, sellerUid, onClose }) {
   return (
     <div className="fixed inset-0 z-[10003] flex items-end sm:items-center justify-center">
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={busy ? undefined : onClose} />
-      <div className="relative w-full sm:max-w-md bg-[#14141F] border border-white/10 rounded-t-2xl sm:rounded-2xl p-5 max-h-[90vh] overflow-y-auto text-white">
+      <div className="relative w-full sm:max-w-md bg-[#14141F] border border-white/10 rounded-t-2xl sm:rounded-2xl p-5 max-h-[90vh] overflow-y-auto text-white sheet-safe">
         {done ? (
           <div className="text-center py-6">
             <div className="text-4xl mb-3">📦</div>

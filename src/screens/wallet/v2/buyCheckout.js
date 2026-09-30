@@ -13,6 +13,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPayramPayment, getPayramOrderStatus } from '../../../firebase/firestore';
 import { isTauri } from '../../../utils/platform';
+import { blockGuestPurchase } from '../../../utils/guestPrompt';
 
 // ⚠ MIRRORS functions/payram.js → CUSTOM_COIN_PRICE_USD and CUSTOM_MIN_USD.
 // Keep them identical.
@@ -71,6 +72,9 @@ export function useBuyCheckout(showToast, opts = {}) {
    */
   async function startCheckout(payload, label) {
     if (checkout?.status === 'waiting') return false;
+    // Before the payment popup opens, not after: a guest gets the log in /
+    // create account prompt instead of a checkout the server would refuse.
+    if (blockGuestPurchase()) return false;
     // Any Tauri shell (Android app AND the desktop app) must hand off to the
     // SYSTEM browser — a webview popup renders blank/blocked there. Plain
     // web/PWA keeps the in-page popup so the user never leaves Vergr.

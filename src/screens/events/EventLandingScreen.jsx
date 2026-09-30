@@ -1,19 +1,17 @@
 // Public event landing page — route /e/:id. The shareable destination behind
-// every ticket link. Works logged-out (read-only tournament data + ticket
-// status), converts visitors via the EventTicketCard. Non-ticketed events
-// redirect to the normal lobby.
+// every ticket link. Works logged-out (read-only event data + ticket
+// status) and converts visitors via the EventTicketCard.
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import { getTournament, getUser } from '../../firebase/firestore';
 import Icon from '../../components/Icon';
 import UserAvatar from '../../components/UserAvatar';
 import EventTicketCard from '../../components/tournament/EventTicketCard';
 import SeasonPassCard from '../../components/tournament/SeasonPassCard';
 import { EventShareRow } from '../../components/tournament/EventShareSheet';
-import { getBracketType } from '../../utils/tournamentTypes';
 
 const STATUS_PILL = {
-  open: { label: 'Registration Open', cls: 'bg-brand-violet/15 text-brand-violet-light' },
+  open: { label: 'Upcoming', cls: 'bg-brand-violet/15 text-brand-violet-light' },
   active: { label: 'Live Now', cls: 'bg-brand-ember/15 text-brand-ember' },
   completed: { label: 'Finished', cls: 'bg-white/10 text-text-muted' },
   cancelled: { label: 'Cancelled', cls: 'bg-brand-ember/10 text-brand-ember' },
@@ -29,7 +27,6 @@ function fmtDate(ts) {
 
 export default function EventLandingScreen() {
   const { id } = useParams();
-  const navigate = useNavigate();
   const [tournament, setTournament] = useState(null);
   const [host, setHost] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -42,8 +39,8 @@ export default function EventLandingScreen() {
         const t = await getTournament(id);
         if (!alive) return;
         if (!t) { setNotFound(true); setLoading(false); return; }
-        // Non-ticketed events use the standard lobby.
-        if (t.fundingModel !== 'ticketed') { navigate(`/match/${id}`, { replace: true }); return; }
+        // Every event renders here. Non-ticketed ones used to bounce to /match/:id,
+        // the retired tournament lobby, which no longer exists.
         setTournament({ ...t, id });
         document.title = `${t.name} — VERGR Event`;
         if (t.adminId) getUser(t.adminId).then((u) => { if (alive) setHost(u); }).catch(() => {});
@@ -53,7 +50,7 @@ export default function EventLandingScreen() {
       if (alive) setLoading(false);
     })();
     return () => { alive = false; };
-  }, [id, navigate]);
+  }, [id]);
 
   if (loading) {
     return <div className="min-h-screen bg-bg-dark flex items-center justify-center text-text-muted">Loading event…</div>;
@@ -68,9 +65,7 @@ export default function EventLandingScreen() {
     );
   }
 
-  const cfg = getBracketType(tournament.type);
   const pill = STATUS_PILL[tournament.status] || STATUS_PILL.open;
-  const purse = tournament.declaredPurse || 0;
   const ticketPrice = tournament.ticket?.priceCoins || 0;
   const sold = tournament.ticket?.sold || 0;
   const capacity = tournament.ticket?.capacity || 0;
@@ -110,8 +105,7 @@ export default function EventLandingScreen() {
           </div>
 
           {/* Stat strip */}
-          <div className="grid grid-cols-3 gap-3">
-            <Stat icon="emoji_events" color="text-brand-gold" value={purse.toLocaleString()} label="Prize Purse" />
+          <div className="grid grid-cols-2 gap-3">
             <Stat icon="confirmation_number" color="text-brand-violet-light" value={ticketPrice ? ticketPrice.toLocaleString() : 'Free'} label="Ticket" />
             <Stat icon="visibility" color="text-brand-violet-light" value={`${sold.toLocaleString()}/${capacity.toLocaleString()}`} label="Tickets" />
           </div>
@@ -125,15 +119,14 @@ export default function EventLandingScreen() {
             )}
             <Section title="What's a ticket?">
               <p className="text-text-secondary text-sm leading-relaxed">
-                A ticket lets you watch the event live and support the host. You're not entering the competition — players compete for free.
+                A ticket lets you watch the event live and support the host.
               </p>
             </Section>
           </div>
 
           {/* Event details */}
           <Section title="Event details">
-            <DetailRow label="Format" value={cfg?.label || tournament.eventKind || 'Event'} />
-            <DetailRow label="Players" value={`${tournament.participants?.length || 0} / ${tournament.maxParticipants}`} />
+            <DetailRow label="Format" value={tournament.eventKind || 'Live event'} />
             {startLabel && <DetailRow label="Starts" value={startLabel} />}
             <DetailRow label="Tickets sold" value={`${sold.toLocaleString()} / ${capacity.toLocaleString()}`} />
           </Section>
@@ -147,12 +140,8 @@ export default function EventLandingScreen() {
         {/* Ticket rail */}
         <div className="lg:col-span-1">
           <div className="lg:sticky lg:top-6 space-y-4">
-            <EventTicketCard tournament={tournament} variant="landing" source="sharelink"
-              onCompete={() => navigate(`/match/${id}`)} />
+            <EventTicketCard tournament={tournament} variant="landing" source="sharelink" />
             {tournament.adminId && <SeasonPassCard hostUid={tournament.adminId} hostName={host?.username || host?.displayName} />}
-            <Link to={`/match/${id}`} className="block text-center text-text-muted hover:text-brand-violet-light text-xs font-semibold">
-              Open the full tournament lobby →
-            </Link>
           </div>
         </div>
       </div>

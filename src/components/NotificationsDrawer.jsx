@@ -119,9 +119,12 @@ export default function NotificationsDrawer() {
                 enter="transform transition ease-in-out duration-300" enterFrom="translate-x-full" enterTo="translate-x-0"
                 leave="transform transition ease-in-out duration-300" leaveFrom="translate-x-0" leaveTo="translate-x-full">
                 <Dialog.Panel className="pointer-events-auto w-screen max-w-md">
-                  <div className="flex h-full flex-col bg-bg-dark border-l border-white/[0.04] shadow-xl">
-                    {/* Header */}
-                    <div className="px-4 py-3.5 glass-header sticky top-0 z-10">
+                  <div className="flex h-full flex-col bg-bg-dark shadow-xl">
+                    {/* Header. The drawer is a full-height fixed panel, so it has to
+                        clear the status bar itself: on the phone the app draws edge to
+                        edge and the heading sat at y22-46 under the clock (measured,
+                        2026-09-16). env() is 0 on web, so this is a no-op there. */}
+                    <div className="px-4 pb-3.5 glass-header sticky top-0 z-10" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 0.875rem)' }}>
                       <div className="flex items-center justify-between">
                         <Dialog.Title className="flex items-center gap-2">
                           <span className="text-base font-syne font-bold text-text-primary">Notifications</span>
@@ -146,7 +149,7 @@ export default function NotificationsDrawer() {
                     </div>
 
                     {/* Filter pills */}
-                    <div className="px-4 pt-2 pb-2.5 border-b border-white/[0.04] flex items-center gap-1.5 overflow-x-auto">
+                    <div className="px-4 pt-2 pb-2.5 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
                       {FILTERS.map(f => {
                         const active = filterId === f.id;
                         return (
@@ -155,8 +158,8 @@ export default function NotificationsDrawer() {
                             onClick={() => setFilterId(f.id)}
                             className={`px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition-colors ${
                               active
-                                ? 'bg-brand-violet/20 text-brand-violet border border-brand-violet/30'
-                                : 'bg-surface-1/40 text-text-muted border border-white/[0.04] hover:text-text-secondary'
+                                ? 'bg-brand-violet text-white'
+                                : 'bg-[#1A1A26] text-text-muted hover:text-text-secondary'
                             }`}
                           >
                             {f.label}
@@ -165,8 +168,10 @@ export default function NotificationsDrawer() {
                       })}
                     </div>
 
-                    {/* List */}
-                    <div className="flex-1 overflow-y-auto">
+                    {/* List. Bottom padding clears the gesture bar: the last row ended
+                        at y916 on a 915px phone before this. --vg-safe-b is the app's
+                        one bottom inset (24px under html.vergr-native, env() on web). */}
+                    <div className="flex-1 overflow-y-auto" style={{ paddingBottom: 'calc(var(--vg-safe-b) + 0.5rem)' }}>
                       {filtered.length === 0 ? (
                         <div className="flex flex-col items-center justify-center h-64 text-text-muted">
                           <Icon name="notifications_none" size={48} className="mb-4 opacity-20" />
@@ -190,7 +195,7 @@ export default function NotificationsDrawer() {
                               <div key={notif.id}>
                                 <button onClick={() => handleClick(notif)}
                                   className={`w-full px-4 py-3 text-left transition-colors flex items-start gap-3 ${
-                                    !notif.read ? 'bg-brand-violet/5 hover:bg-brand-violet/8' : 'hover:bg-surface-1/50'
+                                    !notif.read ? 'bg-[#15121F] hover:bg-[#1B1729]' : 'hover:bg-[#12121B]'
                                   }`}>
                                   {notif._kind && notif._kind !== 'doc' && notif.senderAvatar ? (
                                     <div className="relative shrink-0 mt-0.5">
@@ -219,23 +224,23 @@ export default function NotificationsDrawer() {
                                 </button>
 
                                 {isExpanded && (
-                                  <div className="px-4 pb-3 pl-16 border-b border-white/[0.03] bg-surface-1/20">
+                                  <div className="px-4 pb-3 pl-16 bg-[#101019]">
                                     {body && <p className="text-sm text-text-secondary mb-3">{body}</p>}
                                     {notif.data?.amount && (
-                                      <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-gold/10 border border-brand-gold/15 mb-3">
+                                      <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#2A2412] mb-3">
                                         <span className="text-brand-gold text-xs font-dmmono font-bold">+{notif.data.amount} coins</span>
                                       </div>
                                     )}
                                     <div className="flex gap-2">
                                       {hasLink(notif) && (
                                         <button onClick={() => handleNavigate(notif)}
-                                          className="px-3 py-1.5 rounded-lg bg-brand-violet/10 border border-brand-violet/15 text-brand-violet-light text-xs font-semibold hover:bg-brand-violet/15 transition-colors">
+                                          className="px-3 py-1.5 rounded-lg bg-brand-violet text-white text-xs font-semibold hover:bg-[#8C3BFF] transition-colors">
                                           View
                                         </button>
                                       )}
                                       {!notif.read && (
                                         <button onClick={(e) => { e.stopPropagation(); markRead(notif.id); }}
-                                          className="px-3 py-1.5 rounded-lg bg-surface-2 border border-white/[0.06] text-text-muted text-xs font-semibold hover:text-text-secondary transition-colors">
+                                          className="px-3 py-1.5 rounded-lg bg-[#1A1A26] text-text-muted text-xs font-semibold hover:text-text-secondary transition-colors">
                                           Mark read
                                         </button>
                                       )}

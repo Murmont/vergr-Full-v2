@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- VERGR VANGUARD — the moderation app, built as its OWN app (2026-09-21).
+         =====================================================================
+         This shell is NOT part of vergr.app. It is the entry point for the
+         Vergr Vanguard desktop build (`npm run build:vanguard`, packaged by
+         src-tauri/tauri.vanguard.conf.json), and it is never deployed to
+         hosting, exactly like Vergr Admin (admin.html).
+
+         Founder, 2026-09-21: "now we need a moderation app (vanguard)". The
+         Vanguard dashboard used to be routes inside the consumer web app; a
+         moderation surface there is one more thing for someone with bad intent
+         to find. Moderators sign in here with their Vergr account, and the app
+         demands an authenticator before it shows anything.
+
+         No service worker, no manifest, no analytics, no AdSense, nothing
+         indexable. -->
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Vergr Vanguard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=Syne:wght@600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0&display=block"
+      rel="stylesheet"
+    />
+    <style>
+      html, body, #vanguard-root { height: 100%; }
+      body { margin: 0; background: #07070f; color: #e0e0f0; font-family: 'DM Sans', system-ui, sans-serif; }
+    </style>
+  </head>
+  <body>
+    <div id="vanguard-root"></div>
+    <script type="module" src="/src/vanguard/main.jsx"></script>
+  </body>
+</html>

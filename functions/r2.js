@@ -1,8 +1,9 @@
 const functions = require('firebase-functions/v2');
-const { S3Client, PutObjectCommand, CopyObjectCommand, DeleteObjectCommand, PutBucketCorsCommand, GetBucketCorsCommand, ListBucketsCommand, HeadBucketCommand } = require('@aws-sdk/client-s3');
+const { S3Client, PutObjectCommand, DeleteObjectCommand, PutBucketCorsCommand, GetBucketCorsCommand, ListBucketsCommand, HeadBucketCommand } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const { getFirestore } = require('firebase-admin/firestore');
 const crypto = require('crypto');
+const { isStaffDoc } = require('./staff');
 
 const REGION = 'auto';
 
@@ -18,12 +19,14 @@ const ALLOWED_TYPES = [
   'image/jpeg', 'image/png', 'image/webp', 'image/gif',
   'video/mp4', 'video/webm', 'video/quicktime',
   'audio/mpeg', 'audio/ogg', 'audio/wav', 'audio/webm',
+  // Phones save recordings as M4A/AAC, which the list above refused.
+  'audio/mp4', 'audio/aac', 'audio/x-m4a', 'audio/x-wav',
 ];
 
 // 'announcement' covers channel-message media and channel avatars. Admin-only in
 // practice (the callables that reference it are admin-guarded), but the kind is
 // listed here because getR2UploadUrl validates against this list.
-const ALLOWED_KINDS = ['avatar', 'banner', 'post', 'short', 'clip', 'article', 'squad', 'announcement', 'tournament', 'tournament-proof', 'ambiance', 'chat', 'comment'];
+const ALLOWED_KINDS = ['avatar', 'banner', 'post', 'short', 'clip', 'article', 'squad', 'announcement', 'tournament', 'tournament-proof', 'ambiance', 'chat', 'comment', 'sound'];
 
 // ⚠ 'chat' and 'comment' added 2026-09-06. Until then `uploadMediaFile()` in
 // mediaHelpers.js carried a NO-OP ternary (`folder.startsWith('post') ? 'post'
@@ -88,7 +91,7 @@ function getBucket() { return env('R2_BUCKET') || 'vergr-media'; }
 function getPublicBase() { return (env('R2_PUBLIC_BASE') || 'https://cdn.vergr.app').replace(/\/$/, ''); }
 
 exports.getR2UploadUrl = functions.https.onCall({
-  secrets: ['R2_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET', 'R2_PUBLIC_BASE'],
+  secrets: [ 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY'],
   region: 'europe-west1',
 }, async (req) => {
   if (!req.auth) throw new functions.https.HttpsError('unauthenticated', 'Sign in required.');
@@ -114,7 +117,7 @@ exports.getR2UploadUrl = functions.https.onCall({
   const db = getFirestore('vgrdb');
   const userDoc = await db.collection('users').doc(req.auth.uid).get();
   const _ud = userDoc.exists ? userDoc.data() : {};
-  const isAdmin = _ud.role === 'admin' || (_ud.email || '').toLowerCase() === 'vergenerd@gmail.com';
+  const isAdmin = isStaffDoc(_ud) || _ud.role === 'admin';
   const plan = isAdmin ? 'pro' : (userDoc.exists ? (userDoc.data().subscription || 'free') : 'free');
   // ⚠ AN ANIMATED BANNER IS NOT A GAMING VOD, and must not inherit the plan cap.
   // `banner` fell under SIZE_CAPS, so a free user could have pushed a 200MB file
@@ -125,7 +128,8 @@ exports.getR2UploadUrl = functions.https.onCall({
   // The client compresses to far below this (8s, 480px short side, ~1.2Mbps,
   // see uploadBanner). This is the BACKSTOP for anything that bypasses it.
   const isBannerVideo = kind === 'banner' && String(contentType || '').startsWith('video/');
-  const cap = kind === 'ambiance' ? AMBIANCE_MAX_BYTES
+  // A 'sound' (utils/sounds.js) is capped exactly like profile music.
+  const cap = (kind === 'ambiance' || kind === 'sound') ? AMBIANCE_MAX_BYTES
     : isBannerVideo ? BANNER_VIDEO_MAX_BYTES
     : (SIZE_CAPS[plan] || SIZE_CAPS.free);
 
@@ -139,12 +143,16 @@ exports.getR2UploadUrl = functions.https.onCall({
   if (kind === 'ambiance' && !contentType.startsWith('audio/')) {
     throw new functions.https.HttpsError('invalid-argument', 'Profile ambiance must be an audio file.');
   }
+  if (kind === 'sound' && !contentType.startsWith('audio/')) {
+    throw new functions.https.HttpsError('invalid-argument', 'A sound must be an audio file.');
+  }
   if (sizeBytes > cap) {
     const capMB = Math.round(cap / 1024 / 1024);
     // ⚠ Say WHICH limit. The ambiance and banner-video caps are per-KIND, not
     // per plan, so "your free plan limit" would send someone to the upgrade page
     // to fix something upgrading cannot fix.
     const why = kind === 'ambiance' ? `Profile music is limited to ${capMB}MB.`
+      : kind === 'sound' ? `Sounds are limited to ${capMB}MB.`
       : isBannerVideo ? `An animated banner is limited to ${capMB}MB.`
       : `File exceeds your ${plan} plan limit of ${capMB}MB.`;
     throw new functions.https.HttpsError('resource-exhausted', why);
@@ -181,7 +189,7 @@ exports.getR2UploadUrl = functions.https.onCall({
 // caps text exports at ~40k messages so real files are single-digit MB), and
 // the key prefix is what importWhatsAppExport + the box worker validate.
 exports.getImportUploadUrl = functions.https.onCall({
-  secrets: ['R2_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET', 'R2_PUBLIC_BASE'],
+  secrets: [ 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY'],
   region: 'europe-west1',
 }, async (req) => {
   if (!req.auth) throw new functions.https.HttpsError('unauthenticated', 'Sign in required.');
@@ -209,7 +217,7 @@ exports.getImportUploadUrl = functions.https.onCall({
 // CORS policy — that may 403 if the token is Object-scoped but we report
 // the exact error either way.
 exports.setR2CorsPolicy = functions.https.onCall({
-  secrets: ['R2_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET', 'R2_PUBLIC_BASE'],
+  secrets: [ 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY'],
   region: 'europe-west1',
 }, async (req) => {
   if (!req.auth) throw new functions.https.HttpsError('unauthenticated', 'Sign in required.');
@@ -314,9 +322,11 @@ exports.setR2CorsPolicy = functions.https.onCall({
   return report;
 });
 
-// Scheduled weekly — engagement-aware tiering. DORMANT (totalPosts=0 < 5000).
+// coldStorageDemotion DELETED 2026-09-21 (with markMediaViewed, its only feeder,
+// which had no caller). It was dormant, but it ARMED ITSELF at 5,000 posts and
+// had no tier or size filter, so growth alone would have repeated this:
 //
-// ⚠⚠ DO NOT ARM THIS, AND DO NOT RE-CREATE THE BUCKET LIFECYCLE RULE.
+// ⚠⚠ DO NOT RE-CREATE THIS JOB OR THE BUCKET LIFECYCLE RULE.
 // The comment that used to sit here said the "R2 bucket lifecycle rule (90-day
 // IA transition) handles cold-tiering by itself", as though that were a saving.
 // It was the opposite. On 2026-08-12 that rule moved the oldest 38 objects
@@ -333,64 +343,4 @@ exports.setR2CorsPolicy = functions.https.onCall({
 //     2 MB OTA bundles; 5 were avatars under 60 KB.
 //   * Break-even against Standard is ~1.8 TB stored. The bucket is 0.74 GB.
 //
-// If cold tiering is ever wanted it belongs HERE and not in a lifecycle rule,
-// because a lifecycle rule filters on PREFIX ONLY and the keys are
-// `post/<uid>/...`, which cannot express a plan. Founder's stated intent
-// (2026-09-06) is that cold storage apply to PAYING PRO USERS ONLY. This
-// function has NO tier filter today, so arming it as written repeats the bug.
-// Any future version needs BOTH a Pro-tier check AND a minimum object size,
-// since IA only ever pays for few-and-large objects.
-exports.coldStorageDemotion = functions.scheduler.onSchedule({
-  schedule: '0 3 * * 0', // Sunday 03:00 UTC
-  region: 'europe-west1',
-  secrets: ['R2_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET'],
-}, async () => {
-  const ACTIVATION_THRESHOLD = 5000;
-
-  const db = getFirestore('vgrdb');
-  const cfgSnap = await db.collection('app_config').doc('general').get();
-  const cfg = cfgSnap.exists ? cfgSnap.data() : {};
-
-  // Manual override: admin can force-enable from app_config/general.tieringEnabled.
-  const force = cfg.tieringEnabled === true;
-  const totalPosts = cfg.totalPosts || 0;
-
-  if (!force && totalPosts < ACTIVATION_THRESHOLD) {
-    console.log(`coldStorageDemotion: dormant (totalPosts=${totalPosts} < ${ACTIVATION_THRESHOLD}). R2 lifecycle handles cold-tiering.`);
-    return;
-  }
-
-  const ninetyDaysAgo = Date.now() - 90 * 24 * 3600 * 1000;
-  const stale = await db.collection('posts')
-    .where('lastViewedAt', '<', ninetyDaysAgo)
-    .where('storageTier', '!=', 'cold')
-    .limit(500)
-    .get();
-
-  if (stale.empty) { console.log('coldStorageDemotion: nothing to demote.'); return; }
-
-  const client = getClient();
-  const bucket = getBucket();
-  let demoted = 0;
-
-  for (const docSnap of stale.docs) {
-    const data = docSnap.data();
-    const key = data.mediaKey; // r2 object key, set on upload
-    if (!key) continue;
-    try {
-      // R2 copy-in-place with new storage class.
-      await client.send(new CopyObjectCommand({
-        Bucket: bucket,
-        CopySource: `${bucket}/${key}`,
-        Key: key,
-        StorageClass: 'STANDARD_IA',
-        MetadataDirective: 'COPY',
-      }));
-      await docSnap.ref.update({ storageTier: 'cold', tieredAt: Date.now() });
-      demoted++;
-    } catch (e) {
-      console.warn('demote failed', key, e.message);
-    }
-  }
-  console.log(`coldStorageDemotion: demoted ${demoted}/${stale.size} posts to IA.`);
-});
+// Cold tiering is banned by the founder. Do not rebuild it.

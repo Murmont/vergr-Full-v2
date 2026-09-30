@@ -27,6 +27,7 @@ import RankBadge from '../RankBadge';
 import RankCrestPopover from '../RankCrestPopover';
 import { chatNameColor } from '../../utils/rankUnlocks';
 import TranslationSheet from '../TranslationSheet';
+import { TRANSLATION_ENABLED } from '../../utils/translationSwitch';
 import { isTauri } from '../../utils/platform';
 import { spring } from '../primitives/springs';
 import UserQuickSheet from './UserQuickSheet';
@@ -109,6 +110,10 @@ export default function ChatPanel({
   // Optional. When absent the banner renders WITHOUT a CTA rather than drawing a
   // dead one, so a surface that has no sheet plumbing can still mount this safely.
   onAppeal = null, onOpenSheet = null,
+  // Optional. Receives the message-list element (null on unmount) so a parent
+  // can place transients directly above the newest row: TipComboFeed's
+  // useAboveChat. Pass a stable setter; a new function each render re-fires it.
+  onListRef = null,
 }) {
   // 'overlay' = TikTok-style transparent feed over the video: no header,
   // scrim-chip message rows, top fade mask, slim composer. Used by the
@@ -214,6 +219,11 @@ export default function ChatPanel({
   const [channel, setChannel] = useState('public');
   const clientRef = useRef(null);
   const listRef = useRef(null);
+  useEffect(() => {
+    if (!onListRef) return undefined;
+    onListRef(listRef.current);
+    return () => onListRef(null);
+  }, [onListRef]);
   const autoScrollRef = useRef(true);
 
   useEffect(() => {
@@ -256,6 +266,7 @@ export default function ChatPanel({
             r === 'muted'          ? 'You are muted in this chat.' :
             r === 'banned'         ? 'You are banned from this chat.' :
             r === 'rate-limit'     ? 'Slow down a little.' :
+            r === 'verify-email'   ? 'Verify your email to chat.' :
             `Message blocked: ${r}`;
           showToast(friendly, 'error');
         },
@@ -662,7 +673,7 @@ export default function ChatPanel({
             onOpenSheet={onOpenSheet}
           />
           <form onSubmit={onSend} style={{
-            padding: overlay ? '6px 0 0' : '8px 8px calc(8px + env(safe-area-inset-bottom))',
+            padding: overlay ? '6px 0 0' : '8px 8px calc(8px + var(--vg-safe-b, 0px))',
             display: 'flex', gap: overlay ? 8 : 6, alignItems: 'center',
           }}>
             {canSpeak && (
@@ -1126,8 +1137,8 @@ function ChatRow({ m, isSelf, vpLevel, onTap, onReport, streamId, onTranslate, o
           </span>
           <span
             dir="auto"
-            style={{ color: C.text, wordBreak: 'break-word', cursor: isTauri() && !isSelf && m.text ? 'pointer' : undefined }}
-            onClick={() => { if (isTauri() && !isSelf && m.text && m.type !== 'tip' && onTranslate) onTranslate(m.text); }}
+            style={{ color: C.text, wordBreak: 'break-word', cursor: TRANSLATION_ENABLED && isTauri() && !isSelf && m.text ? 'pointer' : undefined }}
+            onClick={() => { if (TRANSLATION_ENABLED && isTauri() && !isSelf && m.text && m.type !== 'tip' && onTranslate) onTranslate(m.text); }}
           >{m.text}</span>
         </div>
         {m.flagged && (

@@ -306,7 +306,7 @@ export default function MediaPreview({ file, onSend, onSchedule, scheduling = fa
       {/* Footer */}
       <footer
         className="shrink-0 px-3 pt-3"
-        style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 12px)' }}
+        style={{ paddingBottom: 'calc(var(--vg-safe-b, 0px) + 12px)' }}
       >
         <div className="max-w-2xl mx-auto">
           {isVideo && duration > 1.2 && (

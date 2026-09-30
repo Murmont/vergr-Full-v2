@@ -36,7 +36,7 @@ export default function CreatePollSheet({ onClose, onCreate }) {
         animate={{ y: 0, opacity: 1 }}
         transition={{ type: 'spring', stiffness: 380, damping: 32 }}
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-md bg-surface-1 border border-white/[0.08] rounded-t-2xl sm:rounded-2xl p-5 pb-[calc(env(safe-area-inset-bottom)+1.25rem)] sm:pb-5">
+        className="w-full max-w-md bg-surface-1 border border-white/[0.08] rounded-t-2xl sm:rounded-2xl p-5 pb-[calc(var(--vg-safe-b,0px)+1.25rem)] sm:pb-5">
         <div className="flex items-center justify-between mb-4">
           <h2 className="font-syne font-bold text-lg text-text-primary flex items-center gap-2">
             <Icon name="bar_chart" size={20} className="text-brand-violet-light" /> New Poll

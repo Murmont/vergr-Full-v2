@@ -49,7 +49,7 @@ export default function InterestSelectionScreen() {
         </div>
       </div>
 
-      <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[480px] p-4 glass-header border-t border-white/[0.04]">
+      <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[480px] p-4 glass-header border-t border-white/[0.04]" style={{ paddingBottom: 'calc(16px + var(--vg-safe-b, 0px))' }}>
         <button
           onClick={() => navigate('/setup/profile', { state: { interests: selected } })}
           disabled={selected.length < 3}

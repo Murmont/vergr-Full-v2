@@ -5,7 +5,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useUser } from '../../../context/UserContext';
 import {
-  WalletCard, WalletButton, StatusPill, WALLET_TOKENS, fmtNum, fmtEUR, txUnit,
+  WalletCard, WalletButton, StatusPill, WALLET_TOKENS, fmtNum, fmtEUR, txAmount,
 } from '../../../components/wallet/primitives';
 import Icon from '../../../components/Icon';
 import { getTransactions } from '../../../firebase/firestore';
@@ -123,9 +123,8 @@ function HistoryRow({ tx }) {
   const when = tx.createdAt
     ? new Date(tx.createdAt.seconds ? tx.createdAt.seconds * 1000 : tx.createdAt).toLocaleString()
     : '';
-  const amount = tx.amount || 0;
-  const credit = amount >= 0;
-  const currency = txUnit(tx.currency);
+  const shown = txAmount(tx);
+  const credit = shown.credit;
   return (
     <div style={{
       display: 'grid',
@@ -143,7 +142,7 @@ function HistoryRow({ tx }) {
         textAlign: 'right', fontWeight: 600,
         color: credit ? '#86EFAC' : WALLET_TOKENS.text,
       }}>
-        {credit ? '+' : ''}{fmtNum(amount)} {currency}
+        {shown.text}
       </span>
       <span style={{ display: 'flex', justifyContent: 'flex-end' }}>
         <StatusPill status={tx.status || 'settled'} />

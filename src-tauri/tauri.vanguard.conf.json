@@ -1,0 +1,48 @@
+{
+  "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/crates/tauri-cli/schema.json",
+  "productName": "Vergr Vanguard",
+  "identifier": "com.vergr.vanguard",
+  "version": "1.0.0",
+  "build": {
+    "frontendDist": "../dist-vanguard",
+    "beforeBuildCommand": "npm run build:vanguard",
+    "beforeDevCommand": "npm run dev:vanguard",
+    "devUrl": "http://localhost:5175/vanguard.html"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Vergr Vanguard",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 1100,
+        "minHeight": 700,
+        "center": true,
+        "resizable": true,
+        "decorations": true,
+        "transparent": false,
+        "dragDropEnabled": false,
+        "theme": "Dark",
+        "devtools": false
+      }
+    ]
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://sfu.vergr.app/ops/vanguard/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEREQ0IxMjkyRUU1RUQzREEKUldUYTAxN3VraExMM2NMVVpPd1VKRi85dGRoa3RXU2k5L3gxQWNlbm85ZDRXcSs4ckNqM0lLazgK"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "createUpdaterArtifacts": true,
+    "targets": ["nsis"],
+    "copyright": "© 2026 Vergr LLC",
+    "category": "SocialNetworking",
+    "shortDescription": "Vergr Vanguard",
+    "longDescription": "Moderation app for Vergr's Vanguard moderators. Not for distribution."
+  }
+}

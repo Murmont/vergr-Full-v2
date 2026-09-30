@@ -77,7 +77,7 @@ function WalletGuestGate() {
       minHeight: '100vh', background: WALLET_TOKENS.bg, color: WALLET_TOKENS.text,
       fontFamily: 'DM Sans, system-ui, sans-serif',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-      padding: 'calc(24px + env(safe-area-inset-top)) 20px calc(24px + env(safe-area-inset-bottom))',
+      padding: 'calc(24px + env(safe-area-inset-top)) 20px calc(24px + var(--vg-safe-b, 0px))',
     }}>
       <div style={{
         width: '100%', maxWidth: 420, textAlign: 'center',
@@ -260,7 +260,7 @@ function WalletShell() {
         minWidth: 0,                    // critical so children can shrink
         overflowX: 'hidden',            // decorative glows must not scroll the page
         // Mobile gets extra bottom padding to clear the fixed bottom-nav.
-        paddingBottom: isDesktop ? 'env(safe-area-inset-bottom)' : 'calc(88px + env(safe-area-inset-bottom))',
+        paddingBottom: isDesktop ? 'var(--vg-safe-b, 0px)' : 'calc(88px + var(--vg-safe-b, 0px))',
       }}>
         <Topbar meta={meta} wallet={wallet} navigate={navigate} isDesktop={isDesktop}
                 onMobileNav={() => setMobileNavOpen(v => !v)} />
@@ -539,8 +539,11 @@ function MobileBottomNav({ matches, navigate, moreOpen, onOpenMore }) {
     <nav style={{
       display: 'flex',
       position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 60,
-      height: 'calc(64px + env(safe-area-inset-bottom))',
-      paddingBottom: 'env(safe-area-inset-bottom)',
+      // ⚠ `--vg-safe-b`, not env(): the bottom inset reports 0 in the Android
+      // WebView (measured over CDP, see the block in index.html), which is why
+      // the gesture pill was drawn straight through the Buy and History labels.
+      height: 'calc(64px + var(--vg-safe-b, 0px))',
+      paddingBottom: 'var(--vg-safe-b, 0px)',
       background: 'rgba(7,7,16,0.92)',
       borderTop: `1px solid ${WALLET_TOKENS.hairlineStrong}`,
       backdropFilter: 'blur(12px)',
@@ -575,7 +578,7 @@ function MobileMoreDrawer({ onClose, navigate, matches }) {
         background: WALLET_TOKENS.surface1,
         borderTop: `1px solid ${WALLET_TOKENS.hairlineStrong}`,
         borderTopLeftRadius: 20, borderTopRightRadius: 20,
-        padding: '8px 12px calc(16px + env(safe-area-inset-bottom))',
+        padding: '8px 12px calc(16px + var(--vg-safe-b, 0px))',
       }}>
         <div style={{ width: 40, height: 4, borderRadius: 4, background: WALLET_TOKENS.hairlineStrong, margin: '8px auto 12px' }} />
         {MORE_MENU.map(it => {

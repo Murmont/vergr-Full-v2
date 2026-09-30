@@ -142,6 +142,7 @@ export default function CoHostInviteModal({ streamId, coHostUids = [], onClose, 
             width: '100%', maxWidth: 520, maxHeight: '82vh', overflowY: 'auto',
             background: C.bg, border: `1px solid ${C.border}`,
             borderRadius: '16px 16px 0 0', padding: 18,
+            paddingBottom: 'calc(18px + var(--vg-safe-b))',
             display: 'flex', flexDirection: 'column', gap: 14,
             color: C.text, fontFamily: '"DM Sans", system-ui, sans-serif',
           }}>

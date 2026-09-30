@@ -32,6 +32,7 @@ import UserAvatar from '../../components/UserAvatar';
 import TopBar from '../../components/TopBar';
 import Icon from '../../components/Icon';
 import UserName from '../../components/UserName';
+import { publicUrl } from '../../utils/publicUrl';
 
 export default function GroupInfoScreen() {
   const { chatId } = useParams();
@@ -111,7 +112,7 @@ export default function GroupInfoScreen() {
     getGroupInviteCode(chatId).then(setInviteCode).catch(() => setInviteCode(null));
   }, [chatId, isAdmin]);
 
-  const inviteUrl = `${window.location.origin}/messages/g/${inviteCode || chatId}`;
+  const inviteUrl = publicUrl(`/messages/g/${inviteCode || chatId}`);
 
   const copyInvite = async () => {
     try { await navigator.clipboard.writeText(inviteUrl); showToast('Invite link copied', 'success'); }
@@ -601,7 +602,7 @@ export function AddMembersSheet({ existing, onAdd, onClose }) {
 
   return (
     <div className="fixed inset-0 z-[100] bg-black/80 flex items-end sm:items-center justify-center" onClick={onClose}>
-      <div className="bg-surface-1 w-full max-w-md max-h-[75vh] rounded-t-2xl sm:rounded-2xl border border-white/[0.06] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+      <div className="bg-surface-1 w-full max-w-md max-h-[75vh] rounded-t-2xl sm:rounded-2xl border border-white/[0.06] overflow-hidden flex flex-col sheet-safe" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between p-4 border-b border-white/[0.04]">
           <h3 className="text-white font-bold text-sm">Add members</h3>
           <button onClick={onClose} className="text-text-muted"><Icon name="close" size={20} /></button>

@@ -64,6 +64,21 @@ export default function ProfileAudio({ track, enabled, onReport, accent = 'var(-
   const [pos, setPos] = useState(0);
   const [dur, setDur] = useState(0);
   const [failed, setFailed] = useState(false);
+  // The track name folds away while the page scrolls and comes back when it
+  // stops, the way Material's extended FAB does, so the player is never a pill
+  // parked over the text someone is reading (founder, 2026-09-14: "the music
+  // pill overlaps"). Capture phase, so an inner scroll container counts too.
+  const [scrolling, setScrolling] = useState(false);
+  useEffect(() => {
+    let t = 0;
+    const onScroll = () => {
+      setScrolling(true);
+      clearTimeout(t);
+      t = setTimeout(() => setScrolling(false), 900);
+    };
+    window.addEventListener('scroll', onScroll, { capture: true, passive: true });
+    return () => { window.removeEventListener('scroll', onScroll, { capture: true }); clearTimeout(t); };
+  }, []);
 
   const src = track?.source === 'audius'
     ? (track.trackId ? streamUrl(track.trackId) : null)
@@ -214,7 +229,7 @@ export default function ProfileAudio({ track, enabled, onReport, accent = 'var(-
           // The credit. Artist, title, artwork, licence, link back.
           <div
             className="rounded-2xl overflow-hidden shadow-2xl w-[248px]"
-            style={{ background: 'var(--surface-1,#14141F)', border: '1px solid rgba(255,255,255,0.10)' }}
+            style={{ background: '#1A1A27' }}
           >
             <div className="flex items-center gap-2.5 p-2.5">
               {track.artwork
@@ -247,8 +262,7 @@ export default function ProfileAudio({ track, enabled, onReport, accent = 'var(-
               </>
             )}
 
-            <div className="flex items-center justify-between gap-2 px-2.5 py-1.5 mt-1"
-              style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+            <div className="flex items-center justify-between gap-2 px-2.5 py-1.5 mt-1">
               {isAudius ? (
                 <a href={trackUrl(track)} target="_blank" rel="noopener noreferrer"
                   className="text-[10px] text-text-secondary hover:underline truncate">
@@ -268,11 +282,11 @@ export default function ProfileAudio({ track, enabled, onReport, accent = 'var(-
         )}
 
         {/* Track name, tap to open the credit. Hidden while the popup is open. */}
-        {!open && (
+        {!open && !scrolling && (
           <button type="button" onClick={() => setOpen(true)}
             aria-label="Show track details"
             className="max-w-[168px] px-3 py-1.5 rounded-full text-[11px] font-bold truncate shadow-lg"
-            style={{ background: 'rgba(10,10,16,0.82)', color: '#fff', border: '1px solid rgba(255,255,255,0.10)' }}>
+            style={{ background: '#15151F', color: '#fff' }}>
             {track.title || 'Profile music'}
           </button>
         )}

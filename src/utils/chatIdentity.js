@@ -118,6 +118,16 @@ export function peekChatUser(uid) {
   return hit ? hit.user : null;
 }
 
+/** Every identity already in the cache, with no fetch. Feeds the @mention
+ *  suggestions in comments, which must cost no read. */
+export function peekChatUsers() {
+  const out = [];
+  for (const [uid, v] of cache.entries()) {
+    if (v?.user) out.push({ ...v.user, uid: v.user.uid || uid });
+  }
+  return out;
+}
+
 /** Batch resolve. Returns { uid: user }. Missing/failed uids are omitted. */
 export async function resolveChatUsers(uids) {
   const unique = [...new Set((uids || []).filter(Boolean))];

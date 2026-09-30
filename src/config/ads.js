@@ -1,3 +1,8 @@
+// IS_HUAWEI_BUILD is a compile-time constant and platform.js imports nothing,
+// so this cannot become a cycle. It is what `adUnitFor()` at the bottom of this
+// file branches on.
+import { IS_HUAWEI_BUILD } from '../utils/platform';
+
 // ────────────────────────────────────────────────────────────
 // Ads configuration
 // ────────────────────────────────────────────────────────────
@@ -61,11 +66,26 @@ export const ADS_CONFIG = {
   // Monetise → Ad Slots). Leave them as test IDs until then — a real slot that
   // does not exist yet returns a load error, which is indistinguishable from a
   // broken integration.
+  // REAL slots, created 2026-09-17 in Petal Publisher Center under app
+  // Vergr(APK) 118257437. Both publisher agreements are signed (Merchant
+  // 2026-08-04, Petal Ads Publisher 2026-09-17), and all three units read
+  // "Enabled".
+  //
+  // ⚠ Their APP status reads "Inactive" until Vergr is actually RELEASED on
+  // AppGallery, and an inactive app does not get filled. So a pre-release
+  // build will see no-fill on every one of these, which is correct behaviour
+  // and NOT an integration fault. Flip `useTestSlots` to true to tell the two
+  // apart: Huawei's test slots always fill, so if a test slot fills and a real
+  // one does not, the integration is fine and the app is simply not live yet.
   petal: {
-    useTestSlots: true,
-    rewardedSlotId: 'testx9dtjwj8hp',
-    bannerSlotId: 'testw6vs28auh3',
-    nativeFeedSlotId: 'testu7m3hc4gvm',
+    useTestSlots: false,
+    rewardedSlotId: 'u3ahi3x1j8',
+    bannerSlotId: 'd63128ivt1',
+    nativeFeedSlotId: 'j71bbgou0y',
+    // Huawei's own published test slots. Kept so the swap above is one edit.
+    testRewardedSlotId: 'testx9dtjwj8hp',
+    testBannerSlotId: 'testw6vs28auh3',
+    testNativeFeedSlotId: 'testu7m3hc4gvm',
   },
 
   admob: {
@@ -129,6 +149,53 @@ export const ADS_CONFIG = {
   dailyAdBonusThreshold: 10,
   dailyAdBonusVp: 250,
 };
+
+// ────────────────────────────────────────────────────────────
+// THE ONE PLACE THAT DECIDES WHICH SLOT ID A BUILD USES.
+// ────────────────────────────────────────────────────────────
+//
+// ⚠⚠ THIS EXISTS BECAUSE THE PETAL IDS WERE DEAD CONFIG. Before 2026-09-17,
+// `ADS_CONFIG.petal.bannerSlotId` and `.nativeFeedSlotId` had ZERO readers, and
+// `useTestSlots` had zero readers, so:
+//
+//   • nativeBanner.js gated on `admob.bannerUnitId`, which is null, so the
+//     Huawei build NEVER showed a banner even though a Petal banner slot
+//     existed for it;
+//   • nativeFeedAd.js handed `admob.nativeFeedUnitId` — a `ca-app-pub-…`
+//     string — to the PETAL SDK, which can never fill it;
+//   • flipping `useTestSlots` changed nothing at all.
+//
+// Only the rewarded path branched, and it did so inline in admob.js. Three
+// call sites, three different answers to one question, which is exactly how
+// the boost surfaces and the avatar orbit drifted apart. There is now ONE
+// answer, and every caller asks it.
+//
+// Returns null when this build has no slot for that format — callers already
+// treat a falsy id as "do not mount", so an unconfigured format stays silent
+// rather than rendering an empty hole.
+export function adUnitFor(kind) {
+  const p = ADS_CONFIG.petal;
+  if (IS_HUAWEI_BUILD) {
+    if (kind === 'rewarded') return p.useTestSlots ? p.testRewardedSlotId : p.rewardedSlotId;
+    if (kind === 'banner') return p.useTestSlots ? p.testBannerSlotId : p.bannerSlotId;
+    if (kind === 'nativeFeed') return p.useTestSlots ? p.testNativeFeedSlotId : p.nativeFeedSlotId;
+    return null;
+  }
+  const a = ADS_CONFIG.admob;
+  if (kind === 'rewarded') return a.rewardedUnitId || null;
+  if (kind === 'banner') return a.bannerUnitId || null;
+  if (kind === 'nativeFeed') return (a.useTestIds ? TEST_NATIVE_UNIT_ID : a.nativeFeedUnitId) || null;
+  return null;
+}
+
+/**
+ * The always-fills diagnostic in-feed unit for THIS build, used by the remote
+ * `adsUseTestIds` switch. On Huawei that has to be Petal's test slot — handing
+ * Google's `ca-app-pub-3940…` test unit to the Petal SDK reproduces the exact
+ * blank slot the switch exists to rule out.
+ */
+export const testNativeFeedUnit = () =>
+  (IS_HUAWEI_BUILD ? ADS_CONFIG.petal.testNativeFeedSlotId : TEST_NATIVE_UNIT_ID);
 
 /** Returns true if the given zone has been configured AND is enabled. */
 export const isAdZoneReady = (zone) => {

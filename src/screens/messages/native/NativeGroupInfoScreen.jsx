@@ -18,6 +18,7 @@ import TopBar from '../../../components/TopBar';
 import Icon from '../../../components/Icon';
 import { AddMembersSheet } from '../GroupInfoScreen';
 import UserName from '../../../components/UserName';
+import { publicUrl } from '../../../utils/publicUrl';
 
 export default function NativeGroupInfoScreen() {
   const { chatId } = useParams();
@@ -80,7 +81,7 @@ export default function NativeGroupInfoScreen() {
   const myName = () => chatDisplayName(me, { displayName: auth.currentUser?.displayName }, null, 'Someone');
 
   const copyInvite = async () => {
-    const url = `${window.location.origin}/messages/g/${chatId}`;
+    const url = publicUrl(`/messages/g/${chatId}`);
     try { await navigator.clipboard.writeText(url); showToast('Invite link copied', 'success'); }
     catch { showToast(url, 'info'); }
   };
@@ -173,7 +174,7 @@ export default function NativeGroupInfoScreen() {
   const toggle = (on) => `w-11 h-6 rounded-full flex items-center px-0.5 transition-colors ${on ? 'bg-brand-violet justify-end' : 'bg-surface-3 justify-start'}`;
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--bg-dark)', paddingBottom: 'calc(88px + env(safe-area-inset-bottom, 0px))' }}>
+    <div style={{ minHeight: '100vh', background: 'var(--bg-dark)', paddingBottom: 'calc(88px + var(--vg-safe-b, 0px))' }}>
       <TopBar title="Group Info" showBack />
 
       <div className="pb-6">

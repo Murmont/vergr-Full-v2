@@ -20,7 +20,7 @@ export default {
       h2: "Lite, $4.99 per month"
     },
     {
-      p: "Lite is the entry point for people who want to stream and post properly. It removes the follower requirement so you can go live from day one, bumps streaming to 720p and your daily allowance from 30 minutes to four hours, removes ads, earns VP at 1.5× with a monthly VP and coin bonus, lifts uploads to 1GB, and adds scheduled posts, scheduled DMs, chat auto-translate and the Creator Studio analytics and calendar."
+      p: "Lite is the entry point for people who want to stream and post properly. It removes the follower requirement so you can go live from day one, bumps streaming to 720p and your daily allowance from 30 minutes to four hours, removes ads, earns VP at 1.5× with a monthly VP and coin bonus, lifts uploads to 1GB, and adds scheduled posts, scheduled DMs and the Creator Studio analytics and calendar."
     },
     {
       h2: "Pro, $9.99 per month"

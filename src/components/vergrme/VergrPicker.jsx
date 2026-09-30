@@ -23,7 +23,7 @@ export default function VergrPicker({ open, title, emptyText, load, onSelect, on
 
   return (
     <div className="fixed inset-0 z-[120] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
-      <div onClick={(e) => e.stopPropagation()} className="w-full sm:max-w-md bg-surface-1 border border-white/[0.08] rounded-t-3xl sm:rounded-2xl p-5 max-h-[75vh] flex flex-col">
+      <div onClick={(e) => e.stopPropagation()} className="w-full sm:max-w-md bg-surface-1 border border-white/[0.08] rounded-t-3xl sm:rounded-2xl p-5 max-h-[75vh] flex flex-col sheet-safe">
         <div className="flex items-center justify-between mb-3">
           <h3 className="font-syne text-lg font-bold text-white">{title}</h3>
           <button onClick={onClose} className="text-text-muted hover:text-white"><Icon name="close" size={20} /></button>

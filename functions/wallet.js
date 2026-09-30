@@ -33,6 +33,8 @@ const functions = require('firebase-functions/v2');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const crypto = require('node:crypto');
 const speakeasy = require('speakeasy');
+const { isOperator } = require('./operator');
+const { isStaffDoc } = require('./staff');
 
 const db = getFirestore('vgrdb');
 const REGION = 'europe-west1';
@@ -572,9 +574,11 @@ exports.addWhitelistedAddress = functions.https.onCall({ region: REGION }, async
     const data = walletSnap.data() || {};
     const list = data.whitelistedAddresses || [];
 
-    // Admin bypass for cooldown + TOTP gates. Used during sandbox testing.
+    // Staff bypass for cooldown + TOTP gates. Used during sandbox testing.
+    // ⚠ A PERK, not authority (functions/staff.js): it only skips a waiting
+    // period on the caller's OWN wallet. Admin power is the operator claim.
     const userSnap = await tx.get(db.collection('users').doc(uid));
-    const isAdmin = userSnap.data()?.role === 'admin';
+    const isAdmin = isStaffDoc(userSnap.data()) || userSnap.data()?.role === 'admin';
 
     if (list.length >= MAX_WHITELIST_ADDRESSES) {
       throw new HttpsError('failed-precondition',
@@ -651,7 +655,11 @@ exports.removeWhitelistedAddress = functions.https.onCall({ region: REGION }, as
 //
 // Founder needs to test withdrawal + admin flows without going through the
 // PIN modal every 5 minutes. This callable mints a regular unlock token if
-// (and only if) the caller has `users/{uid}.role === 'admin'`.
+// (and only if) the caller is the OPERATOR (functions/operator.js).
+//
+// ⚠⚠ THIS IS AUTHORITY, SO IT MUST NOT READ users/{uid}.role. The operator has
+// no users document at all, so a role check refuses the one account that is
+// supposed to hold every admin power, and the callable becomes unreachable.
 //
 // The token is identical to a PIN-derived token — same HMAC signature, same
 // 5-min TTL. Downstream callables (TOTP, whitelist, future withdraw) can't
@@ -660,15 +668,19 @@ exports.removeWhitelistedAddress = functions.https.onCall({ region: REGION }, as
 // Audit: every mint writes to `admin_actions/` so misuse is visible.
 exports.adminMintWalletUnlockToken = functions.https.onCall({ region: REGION }, async (request) => {
   const uid = requireAuthUid(request);
-  const userSnap = await db.collection('users').doc(uid).get();
-  const role = userSnap.data()?.role;
-  if (role !== 'admin') {
-    throw new HttpsError('permission-denied', 'Admin only.');
+  if (!(await isOperator(uid))) {
+    const userSnap = await db.collection('users').doc(uid).get();
+    if (userSnap.data()?.role !== 'admin') {
+      throw new HttpsError('permission-denied', 'Admin only.');
+    }
   }
   const token = signUnlockToken(uid);
   // Best-effort audit — don't block on failure.
   db.collection('admin_actions').add({
-    actor: { uid, role: 'admin' },
+    // ⚠ A STRING uid, like every other writer. This one row wrote an OBJECT,
+    // and the Admin Security screen renders actor with .slice(), so the whole
+    // page threw the moment a bypass had ever been used.
+    actor: uid,
     action: 'wallet_unlock_admin_bypass',
     target: { type: 'wallet', uid },
     createdAt: FieldValue.serverTimestamp(),

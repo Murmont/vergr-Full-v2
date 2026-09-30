@@ -5,7 +5,7 @@
 // Top-level: summary (1-2 sentences, answer-first), updated (YYYY-MM-DD), body [].
 
 export default {
-  summary: "Vergr.me is your built-in link-in-bio page, like Linktree but made for gamers and creators. It pulls your links, socials, and a tip jar into one shareable page at your own handle, with themes you can customise and built-in visitor stats. It is free, with a fuller design kit on Pro.",
+  summary: "Vergr.me is your built-in link-in-bio page, like Linktree but built into your Vergr profile. It pulls your links, socials, and a tip jar into one shareable page at your own handle, with themes you can customise and built-in visitor stats. It is free, with a fuller design kit on Pro.",
   updated: "2026-06-06",
   body: [
     {

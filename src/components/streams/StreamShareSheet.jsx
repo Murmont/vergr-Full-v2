@@ -95,7 +95,7 @@ export default function StreamShareSheet({ streamId, streamTitle, hostName, live
       <div
         className="relative z-10 w-full sm:max-w-md bg-surface-1 border border-surface-3 rounded-t-3xl sm:rounded-3xl p-5 pb-8"
         onClick={(e) => e.stopPropagation()}
-        style={{ paddingBottom: 'calc(20px + env(safe-area-inset-bottom))' }}
+        style={{ paddingBottom: 'calc(20px + var(--vg-safe-b, 0px))' }}
       >
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-syne font-bold text-text-primary text-lg">Share stream</h3>

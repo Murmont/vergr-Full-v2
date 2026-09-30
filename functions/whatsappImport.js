@@ -14,8 +14,10 @@
 // locked scope as Discord Phase 2).
 
 const functions = require('firebase-functions/v2');
+const { planOf } = require('./plan');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const admin = require('firebase-admin');
+const { isStaffDoc } = require('./staff');
 
 if (admin.apps.length === 0) admin.initializeApp();
 const db = getFirestore('vgrdb');
@@ -42,8 +44,8 @@ exports.importWhatsAppExport = functions.https.onCall(
 
     const userSnap = await db.collection('users').doc(uid).get();
     const userData = userSnap.exists ? userSnap.data() : {};
-    const isAdmin = userData.role === 'admin' || request.auth.token?.email === 'vergenerd@gmail.com';
-    const tier = userData.subscription?.tier || 'free';
+    const isAdmin = isStaffDoc(userData) || userData.role === 'admin';
+    const tier = planOf(userData);
     const fullHistory = request.data?.fullHistory === true;
     if (fullHistory && tier !== 'pro' && !isAdmin) {
       throw new HttpsError('permission-denied', 'full_history_pro_only');

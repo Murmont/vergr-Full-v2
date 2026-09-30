@@ -86,6 +86,28 @@ export default function Ambilight({
   // sample stretched over a tall card loses the media's shape and floods the
   // entire card with colour. The glow has to keep a resemblance of the source.
   bleed = 0,
+  // Per-axis overrides of `bleed`, in px. The feed passes bleedY={0}: light
+  // above or below a post's media lands on its author line and its like row.
+  bleedX = null,
+  bleedY = null,
+  // Fade the glow to nothing at every edge of its own box with a mask, and clip
+  // the blur to that box. Without it the glow ends wherever an ancestor's
+  // overflow clip happens to be, which draws a hard line (measured on the feed,
+  // 2026-09-14: a straight vertical edge at the card's left side).
+  edgeFade = false,
+  // 'bottom' = the profile shape: the layer fills the banner + header + stats
+  // block, CLIPS its own blur, and fades to transparent at the bottom with a
+  // mask. No feather colour is involved at all, so it can never disagree with
+  // the page behind it.
+  //
+  // ⚠ WHY THIS EXISTS. The profiles used a fixed 340/400/470px box with a
+  // `#000000` feather. Measured on the phone (2026-09-14): the feather painted a
+  // solid black slab over the #0B0B14 page, ended in a hard edge exactly at
+  // 340px, and that edge cut through the Followers / Following / Likes numbers.
+  // The canvas blur was not clipped either, so the only colour visible was the
+  // part that leaked BELOW the black. A mask fades light into whatever is
+  // behind it; a feather has to guess the colour, and it guessed wrong.
+  fade = null,
   className = '',
 }) {
   const canvasRef = useRef(null);
@@ -162,12 +184,32 @@ export default function Ambilight({
 
   if (!enabled) return null;
 
+  const fadeBottom = fade === 'bottom';
+  // Solid for the top 40% (the banner hides most of it), then falls to nothing
+  // by the bottom of the block, so no edge is ever drawn.
+  const fadeMask = 'linear-gradient(to bottom, #000 0%, #000 40%, rgba(0,0,0,0.55) 70%, transparent 100%)';
+
+  const bx = bleedX ?? bleed;
+  const by = bleedY ?? bleed;
+  // Full strength at the media's edge, zero at the box's edge. With no vertical
+  // bleed the top and bottom fade inside the media's own height instead, so the
+  // light never has a corner.
+  const edgeMask = edgeFade
+    ? `linear-gradient(to right, transparent 0, #000 ${bx}px, #000 calc(100% - ${bx}px), transparent 100%), `
+      + `linear-gradient(to bottom, transparent 0, #000 ${by > 0 ? `${by}px` : '18%'}, #000 ${by > 0 ? `calc(100% - ${by}px)` : '82%'}, transparent 100%)`
+    : null;
+  const clipped = fadeBottom || !!edgeMask;
+
   return (
     <div
       aria-hidden
       ref={layerRef}
       className={className}
       style={{
+        ...(fadeBottom ? { overflow: 'hidden', WebkitMaskImage: fadeMask, maskImage: fadeMask } : {}),
+        // Two mask layers INTERSECTED: `source-in` is the prefixed spelling the
+        // Android WebView reads, `intersect` the standard one.
+        ...(edgeMask ? { overflow: 'hidden', WebkitMaskImage: edgeMask, maskImage: edgeMask, WebkitMaskComposite: 'source-in', maskComposite: 'intersect' } : {}),
         // ⚠ `inset: 0`, NEVER a negative inset.
         //
         // The first version used `inset: -spread` so the glow would extend past
@@ -192,7 +234,7 @@ export default function Ambilight({
         // different shape from the source. A 16:9 frame sampled into a tall
         // card produces a wash with no resemblance to the media.
         position: 'absolute',
-        inset: -bleed,
+        inset: `${-by}px ${-bx}px`,
         zIndex: -1,
         pointerEvents: 'none',
       }}
@@ -200,8 +242,11 @@ export default function Ambilight({
       <canvas
         ref={canvasRef}
         style={{
-          width: '100%',
-          height: '100%',
+          // Clipped mode: the canvas overhangs its box by one blur radius so
+          // the blur does not fade to transparent at the box's own edges.
+          ...(clipped
+            ? { position: 'absolute', left: -blurPx, top: -blurPx, width: `calc(100% + ${blurPx * 2}px)`, height: `calc(100% + ${blurPx * 2}px)` }
+            : { width: '100%', height: '100%' }),
           display: 'block',
           opacity: intensity,
           // Scaled to the rendered cell size by the ResizeObserver above, never
@@ -214,7 +259,7 @@ export default function Ambilight({
           rectangle. Omitted when `feather === false` — behind a card that
           already clips its corners it would paint a dark ring INSIDE the card,
           which is the "darkened border" that got the first version rejected. */}
-      {feather !== false && (
+      {feather !== false && !clipped && (
         <div
           style={{
             position: 'absolute',

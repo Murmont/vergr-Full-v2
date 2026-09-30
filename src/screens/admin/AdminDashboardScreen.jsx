@@ -74,8 +74,8 @@ export default function AdminDashboardScreen() {
           sub={data ? `${fmtNumber(data.liteCount)} Lite · ${fmtNumber(data.proCount)} Pro` : null} />
         <KpiCard icon="live_tv" color="#f04060" label="Live Streams"
           value={loading ? '—' : fmtNumber(data?.liveStreams)} />
-        <KpiCard icon="paid" color="#f0a500" label="MRR"
-          value={loading ? '—' : fmtMoney(data?.mrrEUR)} />
+        <KpiCard icon="paid" color="#f0a500" label="MRR at list price"
+          value={loading ? '—' : fmtMoney(data?.mrrEUR, '$')} />
         {/* Was "Tournaments (30d)". Tournaments are retired, so this now shows the
             figure the dashboard was missing: what Vergr owes its creators. */}
         <KpiCard icon="request_quote" color="#22c55e" label="Revenue share owed"
@@ -305,58 +305,58 @@ function BackfillNudge({ onDone }) {
   );
 }
 
-// Revenue Overview — stacked bar chart per day.
-// Subscription EUR is shown as the headline metric (left axis = €), with
-// platform coins (tip fees + tournament mod cut) shown as secondary
-// translucent bars stacked on top. The header rolls up window totals.
+// Revenue Overview: what Vergr KEPT each day, from the profit ledger
+// (platform_revenue_daily, functions/platformRevenue.js), in USD.
+//
+// It used to stack subscription EUR on top of a 10% tip fee and a tournament
+// mod cut. Neither fee exists, the charge is USD, and subscriptions were counted
+// at list price whether or not anyone paid. A day can now be NEGATIVE (a
+// referral bonus mints coins we owe with no sale behind them), so the bars grow
+// up from a zero line for a gain and down from it for a loss.
 function RevenueChart({ points, totals }) {
   if (!points.length) return <Empty label="No data." />;
-  const W = 600, H = 200, PAD_L = 36, PAD_R = 12, PAD_T = 10, PAD_B = 24;
+  const W = 600, H = 200, PAD_L = 44, PAD_R = 12, PAD_T = 10, PAD_B = 24;
   const innerW = W - PAD_L - PAD_R;
   const innerH = H - PAD_T - PAD_B;
-  // Use EUR as primary axis; convert coin revenue to EUR-equiv via 100c ≈ €0.90
-  // (rough — purely for visual stacking; treats coin platform-cut as part of revenue).
-  // Ladder floor, USD (src/utils/vpSystem.js COIN_VALUE_USD). Was 0.009 EUR,
-  // which understated every admin revenue figure by ~29% after the USD move.
-  const COIN_TO_EUR = 0.01163;
-  const dailyTotal = points.map(p => p.revenue.subscriptionEUR + p.revenue.totalPlatformCoins * COIN_TO_EUR);
-  const max = Math.max(0.01, ...dailyTotal);
+  const nets = points.map(p => p.margin?.net || 0);
+  const top = Math.max(0.01, ...nets);
+  const bottom = Math.min(0, ...nets);
+  const span = top - bottom;
+  const yFor = (v) => PAD_T + innerH * ((top - v) / span);
+  const zeroY = yFor(0);
   const barW = innerW / points.length;
   const gap = Math.max(1, barW * 0.2);
   const drawW = barW - gap;
+  const m = totals?.margin || {};
+  const money = (v) => `${v < 0 ? '-' : ''}${fmtMoney(Math.abs(v || 0))}`;
 
   return (
     <div>
-      <div style={{ display: 'flex', gap: 18, marginBottom: 10, fontSize: 11 }}>
-        <ChartStat label="Subscription €" value={fmtMoney(totals?.subscriptionEUR ?? 0)} color="#22c55e" />
-        <ChartStat label="Platform coins" value={`${fmtNumber(totals?.totalPlatformCoins ?? 0)}c`} color="#f0a500" />
-        <ChartStat label="Window total" value={fmtMoney((totals?.subscriptionEUR ?? 0) + (totals?.totalPlatformCoins ?? 0) * COIN_TO_EUR)} color={C.text} />
+      <div style={{ display: 'flex', gap: 18, marginBottom: 10, fontSize: 11, flexWrap: 'wrap' }}>
+        <ChartStat label="Kept (net)" value={money(m.net)} color={(m.net || 0) < 0 ? '#f04060' : '#22c55e'} />
+        <ChartStat label="Sales" value={money(m.sales)} color={C.text} />
+        <ChartStat label="Payment fees" value={money(m.fees)} color="#f0a500" />
+        <ChartStat label="Owed to creators" value={money(m.owed)} color="#b44fff" />
+        <ChartStat label="Spent on Vergr" value={money(m.released)} color="#3b82f6" />
       </div>
       <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ width: '100%', height: 220 }}>
-        {/* axis gridlines */}
-        {[0, 0.5, 1].map(t => (
-          <line key={t} x1={PAD_L} x2={W - PAD_R}
-            y1={PAD_T + innerH * (1 - t)} y2={PAD_T + innerH * (1 - t)}
-            stroke={C.border} strokeWidth="1" />
-        ))}
-        {/* Y axis labels */}
-        <text x={PAD_L - 6} y={PAD_T + innerH} textAnchor="end" fontSize="9" fill={C.textMuted} dominantBaseline="middle">€0</text>
-        <text x={PAD_L - 6} y={PAD_T} textAnchor="end" fontSize="9" fill={C.textMuted} dominantBaseline="middle">€{max.toFixed(0)}</text>
+        <line x1={PAD_L} x2={W - PAD_R} y1={zeroY} y2={zeroY} stroke={C.border} strokeWidth="1" />
+        <text x={PAD_L - 6} y={yFor(top)} textAnchor="end" fontSize="9" fill={C.textMuted} dominantBaseline="middle">${top.toFixed(2)}</text>
+        <text x={PAD_L - 6} y={zeroY} textAnchor="end" fontSize="9" fill={C.textMuted} dominantBaseline="middle">$0</text>
+        {bottom < 0 && (
+          <text x={PAD_L - 6} y={yFor(bottom)} textAnchor="end" fontSize="9" fill={C.textMuted} dominantBaseline="middle">-${Math.abs(bottom).toFixed(2)}</text>
+        )}
 
         {points.map((p, i) => {
-          const subEUR = p.revenue.subscriptionEUR;
-          const coinEUR = p.revenue.totalPlatformCoins * COIN_TO_EUR;
-          const totalEUR = subEUR + coinEUR;
+          const d = p.margin || {};
+          const net = d.net || 0;
           const x = PAD_L + i * barW + gap / 2;
-          const subH = (subEUR / max) * innerH;
-          const coinH = (coinEUR / max) * innerH;
-          const subY = PAD_T + innerH - subH;
-          const coinY = subY - coinH;
+          const y = net >= 0 ? yFor(net) : zeroY;
+          const h = Math.abs(yFor(net) - zeroY);
           return (
             <g key={p.date}>
-              <title>{`${p.date}\n€${subEUR.toFixed(2)} subs\n${fmtNumber(p.revenue.totalPlatformCoins)}c platform coins\nTotal ≈ €${totalEUR.toFixed(2)}`}</title>
-              {subEUR > 0 && <rect x={x} y={subY} width={drawW} height={subH} fill="#22c55e" rx="2" />}
-              {coinEUR > 0 && <rect x={x} y={coinY} width={drawW} height={coinH} fill="#f0a500" fillOpacity="0.85" rx="2" />}
+              <title>{`${p.date}\nKept ${money(net)}\nSales ${money(d.sales)}\nPayment fees ${money(d.fees)}\nOwed to creators ${money(d.owed)}\nSpent on Vergr ${money(d.released)}`}</title>
+              {net !== 0 && <rect x={x} y={y} width={drawW} height={Math.max(1, h)} fill={net < 0 ? '#f04060' : '#22c55e'} rx="2" />}
             </g>
           );
         })}
@@ -367,6 +367,10 @@ function RevenueChart({ points, totals }) {
           </text>
         ))}
       </svg>
+      <div style={{ fontSize: 10.5, color: C.textMuted, marginTop: 6, lineHeight: 1.5 }}>
+        Counts web and desktop card or crypto sales (PayRam). Google Play and AppGallery
+        purchases are not booked in the ledger yet, so they are missing from this chart.
+      </div>
     </div>
   );
 }

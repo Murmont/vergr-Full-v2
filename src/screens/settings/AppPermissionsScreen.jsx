@@ -100,7 +100,7 @@ export default function AppPermissionsScreen() {
     { key: 'camera', label: 'Camera', desc: 'For profile photos, posts, and streaming', icon: 'photo_camera' },
     { key: 'microphone', label: 'Microphone', desc: 'For voice notes and streaming', icon: 'mic' },
     { key: 'notifications', label: 'Notifications', desc: 'Push notifications for activity', icon: 'notifications' },
-    { key: 'location', label: 'Location', desc: 'For finding nearby gamers and events', icon: 'location_on' },
+    { key: 'location', label: 'Location', desc: 'For finding people and events near you', icon: 'location_on' },
     { key: 'storage', label: 'Photo Library', desc: 'Granted when you choose a file to upload', icon: 'photo_library' },
   ];
 

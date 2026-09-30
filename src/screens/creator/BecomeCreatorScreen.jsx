@@ -220,7 +220,7 @@ export default function BecomeCreatorScreen() {
           <div className="relative z-[1]">
             <div className="text-lg font-bold text-text-primary">What every creator needs</div>
             <div className="text-xs text-text-muted mb-2">All three are required.</div>
-            {data ? Object.entries(data.required).map(([k, r]) => (
+            {data ? Object.entries(data.required || {}).map(([k, r]) => (
               <Req key={k} met={r.met} label={r.label} detail={r.detail} />
             )) : <div className="text-sm text-text-muted py-4">Checking your account…</div>}
 
@@ -231,7 +231,7 @@ export default function BecomeCreatorScreen() {
               You only need to complete one. Pick whichever suits how you use Vergr.
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
-              {data && Object.entries(data.paths).map(([id, p]) => <PathCard key={id} id={id} p={p} />)}
+              {data && Object.entries(data.paths || {}).map(([id, p]) => <PathCard key={id} id={id} p={p} />)}
             </div>
 
             {status !== 'active' && status !== 'pending' && (

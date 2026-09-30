@@ -48,7 +48,7 @@ export const CONTENT_MODERATION_POLICY = {
   ...base,
   label: 'Content Moderation Policy',
   intro: [
-    `VERGR is a live streaming and social platform for gamers and creators, operated by ${OPERATOR.legalName}. People come here to play, broadcast, build squads and meet others who play what they play. This policy explains how we keep that space safe: what is not allowed, how we detect it, who decides, and what happens next.`,
+    `VERGR is a live streaming and social app, operated by ${OPERATOR.legalName}. People come here to go live, share clips, hang out in squads and message each other. This policy explains how we keep that space safe: what is not allowed, how we detect it, who decides, and what happens next.`,
     'We use a combination of automated scanning and trained human reviewers. Automated systems run before content becomes visible. Humans decide anything that is contested, and every human decision is recorded.',
   ],
   sections: [
@@ -189,7 +189,7 @@ export const IDV_AND_CONSENT_PROCEDURES = {
           'Level 2, adds proof of address: payment up to 2,500 US dollars per month, and eligibility for a faster payout schedule.',
           'Level 3, adds source of funds evidence: payment up to 15,000 US dollars per month.',
         ]),
-        'Limits are enforced on the server against a rolling window. A request that would exceed the cap for the account\'s current level is refused, not queued.',
+        'Limits are enforced on the server against the calendar month. Earnings above the cap for the account\'s current level remain owed and carry into a later payment; they are never forfeited.',
       ],
     },
     {
@@ -289,7 +289,7 @@ export const ANTI_SLAVERY_STATEMENT = {
       id: 'business',
       title: '1. Our business and structure',
       body: [
-        `${OPERATOR.legalName} is a limited liability company registered in the ${OPERATOR.formationState} under registration number ${OPERATOR.registrationNumber}, with its registered office at ${OPERATOR.registeredAddress}. We operate VERGR, a live streaming and social platform for gamers and creators.`,
+        `${OPERATOR.legalName} is a limited liability company registered in the ${OPERATOR.formationState} under registration number ${OPERATOR.registrationNumber}, with its registered office at ${OPERATOR.registeredAddress}. We operate VERGR, a live streaming and social app.`,
         'Our suppliers are cloud infrastructure, payment processing and identity verification providers. These are established corporate vendors in low-risk sectors.',
       ],
     },

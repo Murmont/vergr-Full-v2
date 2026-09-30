@@ -88,7 +88,7 @@ export default function VanguardTreasuryScreen() {
         <Icon name="savings" size={30} style={{ color: C.textMuted, opacity: 0.6 }} />
         <div style={{ fontFamily: 'DM Sans', fontWeight: 700, fontSize: 15, color: C.text, marginTop: 10 }}>The treasury hasn't started yet</div>
         <div style={{ fontFamily: 'DM Sans', fontSize: 12.5, color: C.textDim, marginTop: 6, maxWidth: 420, marginInline: 'auto', lineHeight: 1.5 }}>
-          The treasury is a self-funded pool fed by the 5% tournament mod cut. Once tournaments with that cut finalize, the balance and your projected share appear here. Inactive mods get no share — show up and work.
+          The treasury is a shared Vanguard pool. Once it holds a balance, the balance and your projected share appear here. Inactive mods get no share.
         </div>
       </VgCard>
     </VanguardLayout>
@@ -126,7 +126,7 @@ export default function VanguardTreasuryScreen() {
           <div style={{ fontFamily: 'DM Sans', fontSize: 12, color: C.textDim, marginTop: 8 }}>
             For {rankMeta(myRank).label} at {myActions} actions this month
           </div>
-          <div style={{ marginTop: 12, padding: 8, background: 'rgba(245,200,66,.08)', border: `1px solid rgba(245,200,66,.2)`, borderRadius: 8, fontFamily: 'DM Mono', fontSize: 10, color: C.gold }}>
+          <div style={{ marginTop: 12, padding: 8, background: C.goldFill, border: 0, borderRadius: 8, fontFamily: 'DM Mono', fontSize: 10, color: C.gold }}>
             Weight: {fmt(myWeight)} of {fmt(totalWeight)} total
           </div>
         </VgCard>
@@ -217,7 +217,7 @@ export default function VanguardTreasuryScreen() {
       </div>
 
       <div style={{ marginTop: 14, fontFamily: 'DM Mono', fontSize: 10.5, color: C.textMuted, textAlign: 'center' }}>
-        Treasury is a self-funded pool fed by the 5% tournament mod cut. Inactive mods get no share — show up + work.
+        The treasury is split monthly by rank and actions. Inactive mods get no share.
       </div>
     </VanguardLayout>
   );

@@ -1,30 +1,22 @@
-// functions/admobReward.js — AdMob Rewarded ads → Watch-to-Earn COINS
+// functions/admobReward.js — AdMob Rewarded ads → boost coins
 // ─────────────────────────────────────────────────────────────────────
-// Why this exists: coins are a CASHABLE currency, so we must never credit
-// them on a forgeable client signal (the old web Watch-to-Earn pays VP for
-// exactly this reason). AdMob Rewarded ads support Server-Side Verification
-// (SSV): when a user genuinely finishes a rewarded ad, Google calls THIS
-// endpoint with a cryptographically signed payload. A valid signature means
-// the ad really played to completion — i.e. we earned ad revenue — so it is
-// safe to credit coins. Coins are only ever credited from here, never from
-// the client.
+// AdMob Rewarded ads support Server-Side Verification (SSV): when a user
+// genuinely finishes a rewarded ad, Google calls THIS endpoint with a signed
+// payload. Nothing is ever credited from a client signal.
 //
-// Flow:
-//   1. Native AdMobBridge shows a rewarded ad with ServerSideVerificationOptions
-//      { userId: <uid>, customData: "<uid>|<nonce>" }.
-//   2. User finishes the ad → Google GETs this URL with the signed query.
-//   3. We verify the ECDSA-SHA256 signature against Google's published verifier
-//      keys, then credit a fixed (server-controlled) coin amount to the uid,
-//      idempotently keyed on transaction_id, under a per-day cap.
+// Every verified view moves wallets/{uid}.adProgress on by one. The last view
+// of a set (3, founder 2026-09-26) credits wallets/{uid}.boostCoins, which buy
+// ONLY boosts and VP packs (functions/boostCoins.js). Normal coins are never
+// credited here, and nothing here accrues revenue share.
 //
 // SECURITY:
-//   - Coin value is FIXED server-side (admobRewardCoins), NOT taken from the
-//     callback's reward_amount, so an AdMob-console misconfig can't inflate the
-//     economy.
-//   - Idempotent on transaction_id (admob_rewards/{txId}) — Google may retry.
-//   - Per-UTC-day cap so a user can't farm unlimited coins.
-//   - Paid tiers (lite/pro) are skipped — ads + ad rewards are a free-tier-only
-//     experience (paying removes ads everywhere).
+//   - Amounts are FIXED server-side (adRewardConfig), never taken from the
+//     callback's reward_amount.
+//   - Idempotent on transaction_id (admob_rewards/{txId}): Google may retry.
+//   - Per-UTC-day cap on completed sets, counted on the wallet the transaction
+//     already reads, so a view costs no extra document.
+//   - Paid tiers (lite/pro) are skipped: paying removes ads everywhere.
+//   - Only users whose users.geoCountry is on the reward list.
 //
 // AdMob console setup (founder): per Rewarded ad unit → Server-side
 // verification → set the callback URL to this function's HTTPS trigger.
@@ -38,11 +30,54 @@ const axios = require('axios');
 const db = getFirestore('vgrdb');
 const REGION = 'europe-west1';
 
-// Server-controlled defaults. Override live via app_config/general:
-//   admobRewardCoins   — coins per verified rewarded view
-//   admobDailyCap      — max verified views credited per UTC day per user
-const DEFAULT_REWARD_COINS = 2;
-const DEFAULT_DAILY_CAP = 20;
+// Watch 3 ads, get boost coins (founder, 2026-09-26). Every verified view moves
+// the counter on; the Nth view in a set pays BOOST COINS, which buy only boosts
+// and VP packs (functions/boostCoins.js). Normal coins are never credited here:
+// a tipped coin becomes revenue share Vergr owes, and ads must never feed that.
+//
+// Live overrides in app_config/general (all read below):
+//   adAdsPerReward      — verified views per reward (founder: 3)
+//   adRewardBoostCoins  — boost coins per completed set
+//   adRewardsPerDay     — completed sets per UTC day
+//   adRewardCountries   — ISO codes where ad rewards run (users.geoCountry)
+const DEFAULT_ADS_PER_REWARD = 3;
+const DEFAULT_REWARD_BOOST_COINS = 75;
+const DEFAULT_REWARDS_PER_DAY = 3;
+// Markets where a rewarded view pays well enough to be worth offering. Replace
+// with our own AdMob earnings by country once real views exist.
+const DEFAULT_REWARD_COUNTRIES = [
+  'US', 'CA', 'GB', 'IE', 'AU', 'NZ', 'DE', 'AT', 'CH', 'NL', 'BE', 'FR',
+  'DK', 'SE', 'NO', 'FI', 'JP', 'KR', 'AE', 'SA', 'QA', 'KW',
+];
+
+function adRewardConfig(cfg) {
+  const c = cfg || {};
+  const pos = (v, d) => (Number(v) > 0 ? Math.floor(Number(v)) : d);
+  const list = Array.isArray(c.adRewardCountries) && c.adRewardCountries.length
+    ? c.adRewardCountries.map((x) => String(x).toUpperCase())
+    : DEFAULT_REWARD_COUNTRIES;
+  return {
+    adsPerReward: pos(c.adAdsPerReward, DEFAULT_ADS_PER_REWARD),
+    rewardCoins: pos(c.adRewardBoostCoins, DEFAULT_REWARD_BOOST_COINS),
+    rewardsPerDay: pos(c.adRewardsPerDay, DEFAULT_REWARDS_PER_DAY),
+    countries: list,
+  };
+}
+
+// Pure: what one verified view does to the counter. Exported for the guard.
+function nextAdProgress(prev, day, conf) {
+  const p = prev && prev.day === day ? prev : { day, watched: 0, rewardsToday: 0 };
+  if (p.rewardsToday >= conf.rewardsPerDay) return { status: 'capped', progress: p, coins: 0 };
+  const watched = (Number(p.watched) || 0) + 1;
+  if (watched >= conf.adsPerReward) {
+    return {
+      status: 'rewarded',
+      coins: conf.rewardCoins,
+      progress: { day, watched: 0, rewardsToday: (Number(p.rewardsToday) || 0) + 1 },
+    };
+  }
+  return { status: 'counted', coins: 0, progress: { day, watched, rewardsToday: Number(p.rewardsToday) || 0 } };
+}
 
 const VERIFIER_KEYS_URL = 'https://www.gstatic.com/admob/reward/verifier-keys.json';
 
@@ -183,21 +218,16 @@ exports.admobSsvCallback = functions.https.onRequest(
 
     try {
       const rewardRef = db.collection('admob_rewards').doc(txId);
-
-      // Read config + user + idempotency atomically.
       const cfgSnap = await db.collection('app_config').doc('general').get();
-      const cfg = cfgSnap.exists ? cfgSnap.data() : {};
-      const rewardCoins = Number(cfg.admobRewardCoins) > 0 ? Number(cfg.admobRewardCoins) : DEFAULT_REWARD_COINS;
-      const dailyCap = Number(cfg.admobDailyCap) > 0 ? Number(cfg.admobDailyCap) : DEFAULT_DAILY_CAP;
+      const conf = adRewardConfig(cfgSnap.exists ? cfgSnap.data() : {});
 
       const userRef = db.collection('users').doc(uid);
       const walletRef = db.collection('wallets').doc(uid);
       const day = utcDayKey();
-      const counterRef = db.collection('admob_reward_counters').doc(`${uid}_${day}`);
 
       const result = await db.runTransaction(async (tx) => {
-        const [rewardDoc, userDoc, counterDoc] = await Promise.all([
-          tx.get(rewardRef), tx.get(userRef), tx.get(counterRef),
+        const [rewardDoc, userDoc, walletDoc] = await Promise.all([
+          tx.get(rewardRef), tx.get(userRef), tx.get(walletRef),
         ]);
 
         if (rewardDoc.exists) return { status: 'duplicate' };
@@ -205,48 +235,41 @@ exports.admobSsvCallback = functions.https.onRequest(
 
         // Free-tier only — paid plans never earn from ads.
         const u = userDoc.data() || {};
-        // `subscription` is written as a plain string by the purchase flows;
-        // also accept the legacy object/`tier` shapes.
         const s = u.subscription;
         const tier = (typeof s === 'string' ? s : (s && s.tier)) || u.tier || 'free';
         if (tier === 'lite' || tier === 'pro') return { status: 'paid_tier' };
 
-        const used = counterDoc.exists ? (counterDoc.data().count || 0) : 0;
-        if (used >= dailyCap) return { status: 'capped' };
+        // Only where a view pays enough. The card is hidden elsewhere too.
+        const country = String(u.geoCountry || '').toUpperCase();
+        if (!conf.countries.includes(country)) return { status: 'country' };
 
-        // Credit coins (cashable balance) + record the verified watch.
-        // convertible: ad-reward coins are platform income to the user, not a
-        // purchase, so they may accrue revenue share — see coinLedger.js
-        tx.set(walletRef, {
-          // earnedCoinCredit supplies balance + earnedBalance +
-          // totalEarnedCoinsGross, the last of which drives the revenue share
-          // ladder and was missing from this hand-rolled write.
-          ...require('./coinLedger').earnedCoinCredit(rewardCoins),
-        }, { merge: true });
+        const w = walletDoc.exists ? walletDoc.data() : {};
+        const step = nextAdProgress(w.adProgress, day, conf);
+        if (step.status === 'capped') return { status: 'capped' };
+
+        const walletWrite = { adProgress: step.progress, updatedAt: FieldValue.serverTimestamp() };
+        if (step.coins > 0) walletWrite.boostCoins = FieldValue.increment(step.coins);
+        tx.set(walletRef, walletWrite, { merge: true });
+
         tx.set(rewardRef, {
-          uid, coins: rewardCoins, txId, day,
+          uid, txId, day, boostCoins: step.coins,
+          step: step.status === 'rewarded' ? conf.adsPerReward : step.progress.watched,
           adNetwork: (q.ad_network || '').toString(),
           adUnit: (q.ad_unit || '').toString(),
           createdAt: FieldValue.serverTimestamp(),
         });
-        tx.set(counterRef, {
-          uid, day, count: FieldValue.increment(1),
-          coins: FieldValue.increment(rewardCoins),
-          updatedAt: FieldValue.serverTimestamp(),
-        }, { merge: true });
-        return { status: 'credited', coins: rewardCoins };
+        if (step.coins > 0) {
+          tx.set(db.collection('transactions').doc(), {
+            userId: uid,
+            type: 'ad_reward_boost_coins',
+            amount: step.coins,
+            currency: 'boost_coins',
+            description: `Watched ${conf.adsPerReward} ads`,
+            createdAt: FieldValue.serverTimestamp(),
+          });
+        }
+        return { status: step.status, boostCoins: step.coins };
       });
-
-      // AUTO-CONVERT AT RECEIPT: rewarded-ad coins are income from the
-      // platform, so they follow the same rule as every other earned credit and
-      // accrue at the user's current rate. Post-commit, guarded, idempotent
-      // on the AdMob transaction id, so Google's retries cannot convert twice.
-      if (result.status === 'credited' && result.coins > 0) {
-        const { settleEarnedShare } = require('./coinLedger');
-        await settleEarnedShare(db, {
-          uid, coins: result.coins, source: 'ad_reward', sourceId: `ad:${txId}`,
-        });
-      }
 
       functions.logger.info('admobSsv', { uid, txId, ...result });
       // Always 200 to Google on a valid signature so it stops retrying; the
@@ -259,3 +282,5 @@ exports.admobSsvCallback = functions.https.onRequest(
     }
   }
 );
+
+module.exports._internal = { nextAdProgress, adRewardConfig };

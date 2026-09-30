@@ -5,7 +5,7 @@
 // Top-level: summary (1-2 sentences, answer-first), updated (YYYY-MM-DD), body [].
 
 export default {
-  summary: "Yes. You can buy Lite or Pro with Coins instead of a card, roughly 500 Coins for Lite and 1,000 for Pro. It is handy if you have earned a Coin balance through tips and competition. It is the same plan whichever way you pay.",
+  summary: "Yes. You can buy Lite or Pro with Coins instead of a card, roughly 500 Coins for Lite and 1,000 for Pro. It is handy if you already have a Coin balance. It is the same plan whichever way you pay.",
   updated: "2026-06-06",
   body: [
     {

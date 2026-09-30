@@ -1,5 +1,5 @@
 import { IS_NATIVE_BUILD } from './platform';
-import { ADS_CONFIG } from '../config/ads';
+import { adUnitFor } from '../config/ads';
 
 // TRUE in-feed AdMob native ads on the native shell.
 //
@@ -16,10 +16,13 @@ import { ADS_CONFIG } from '../config/ads';
 
 let seq = 0;
 
+// ⚠ `adUnitFor('nativeFeed')` — NOT `ADS_CONFIG.admob.nativeFeedUnitId`. On the
+// Huawei build that field is an AdMob `ca-app-pub-…` string, which the Petal SDK
+// can never fill, so the slot would have collapsed on every impression forever.
 export const isNativeFeedAdAvailable = () =>
   IS_NATIVE_BUILD
   && !!window.VergrFeedAd?.available?.()
-  && !!ADS_CONFIG?.admob?.nativeFeedUnitId;
+  && !!adUnitFor('nativeFeed');
 
 /** Document-absolute rect in CSS px. */
 function docRect(el) {
@@ -44,7 +47,7 @@ function docRect(el) {
 export function attachFeedAd(el, onState, unitIdOverride) {
   if (!el || !isNativeFeedAdAvailable()) return () => {};
   const slotId = `feed-ad-${++seq}`;
-  const unitId = unitIdOverride || ADS_CONFIG.admob.nativeFeedUnitId;
+  const unitId = unitIdOverride || adUnitFor('nativeFeed');
 
   // Report the SDK's verdict exactly once. `noReplyTimer` is declared BEFORE
   // settle() closes over it — a const declared after would be a temporal dead

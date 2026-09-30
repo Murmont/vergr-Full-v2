@@ -1,4 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { doc, onSnapshot, getDoc } from 'firebase/firestore';
+import { db } from '../firebase/config';
 import { motion } from 'framer-motion';
 import { voteOnPoll } from '../firebase/firestore';
 import { useAuth } from '../context/AuthContext';
@@ -11,13 +13,32 @@ export default function PollCard({ post }) {
   const [localVotes, setLocalVotes] = useState(post.votes || {});
   const [totalVotes, setTotalVotes] = useState(post.totalVotes || 0);
 
+  // The counts live on polls/{post.id}, the store every vote writes into; the
+  // post only carries the question and options. It used to show post.votes,
+  // which nothing ever wrote, so every poll read 0 votes forever.
+  useEffect(() => {
+    if (!post?.id) return undefined;
+    return onSnapshot(doc(db, 'polls', post.id), (snap) => {
+      if (!snap.exists()) return;
+      const d = snap.data() || {};
+      setLocalVotes(d.votes || {});
+      setTotalVotes(d.totalVotes || 0);
+    }, () => {});
+  }, [post?.id]);
+  // Already voted (on any device): show the results, never a second vote.
+  useEffect(() => {
+    if (!post?.id || !currentUser?.uid) return;
+    getDoc(doc(db, 'polls', post.id, 'votes', currentUser.uid))
+      .then((s) => { if (s.exists()) setHasVoted(true); })
+      .catch(() => {});
+  }, [post?.id, currentUser?.uid]);
+
   const handleVote = async (index) => {
     if (hasVoted || loading) return;
     setLoading(true);
     try {
       await voteOnPoll(post.id, index, currentUser.uid);
-      setLocalVotes(prev => ({ ...prev, [index]: (prev[index] || 0) + 1 }));
-      setTotalVotes(prev => prev + 1);
+      // The live listener brings the new counts in.
       setHasVoted(true);
     } catch (err) {
       console.error(err);

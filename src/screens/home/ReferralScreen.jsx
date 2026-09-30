@@ -1,6 +1,9 @@
-// Refer-a-Friend — server payouts: referrer +5,000 VP, referee +3,000 VP,
-// PLUS a coin revenue-share (1%..5% of referrals' coin purchases for 2y).
-// Eligibility gated server-side (signup via link + phone verified).
+// Refer-a-Friend. Server payouts: referrer +5,000 VP, referee +3,000 VP, PLUS a
+// coin revenue share on referrals' coin purchases for 2 years: 1% (2% on a
+// purchase by a referral who has streamed), +0.5% per referral on an active
+// Lite or Pro plan, capped at 3% (functions/referralRevenue.js).
+// Eligibility gated server-side (signup via link + a verified phone, i.e. the
+// friend's doc carries `phoneHash`).
 //
 // This screen is a TABBED HUB (ReferralHub) rendered in two variants:
 //   • standalone (/earn/refer) — its own vertical side-nav on desktop, a
@@ -12,7 +15,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ListSkeleton } from '../../components/skeletons/GlassSkeletons';
-import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '../../firebase/config';
 import { useAuth } from '../../context/AuthContext';
@@ -31,16 +34,10 @@ import UserName from '../../components/UserName';
 
 const BASE_URL = 'https://vergr.app';
 
-const BONUS_MILESTONES = [
-  { icon: 'group',              label: 'Invite 3 friends',  reward: '+2,000 VP',  gold: false },
-  { icon: 'groups',             label: 'Invite 10 friends', reward: '+10,000 VP', gold: false },
-  { icon: 'workspace_premium',  label: 'Invite 25 friends', reward: 'VIP Status', gold: true  },
-];
-
 const TIPS = [
-  { icon: 'group',         color: 'violet', title: 'Invite your squad members', body: "You'll earn more when you invite people who play!" },
-  { icon: 'emoji_events',  color: 'gold',   title: 'Share after a win',         body: 'People are more likely to join after seeing you win.' },
-  { icon: 'forum',         color: 'blue',   title: 'Use Discord',               body: 'Sharing in Discord servers gets the best results!' },
+  { icon: 'group',         color: 'violet', title: 'Invite your squad',            body: 'People you already chat with are the likeliest to join.' },
+  { icon: 'auto_awesome',  color: 'gold',   title: 'Share after a great moment', body: 'A clip or a stream people enjoyed is the best invitation.' },
+  { icon: 'forum',         color: 'blue',   title: 'Use Discord',                  body: 'Sharing in Discord servers gets the best results.' },
 ];
 
 // 3 steps to match the 3 icon nodes baked into the how-it-works banner art.
@@ -61,7 +58,7 @@ export const FAQS = [
   { q: 'Can I earn VP for more than one friend?',
     a: 'Yes, every friend who verifies a phone gets you 5,000 VP. Free accounts can do 5 per week, Lite/Pro accounts 20 per week. Vanguard members have no limit.' },
   { q: 'Do I keep earning after they sign up?',
-    a: "Yes. On top of the one-time VP reward, you earn 1% in coins on every coin purchase your referrals make, for their first 2 years. If a referral is on an active Lite or Pro plan, your rate goes up by 0.5% (up to a 5% cap), and it drops back down if their plan lapses. Earnings land in your coin balance automatically and show up on the Earnings tab." },
+    a: "Yes. On top of the one-time VP reward, you earn 1% in coins on every coin purchase your referrals make (2% when that referral has streamed on Vergr), for their first 2 years. If a referral is on an active Lite or Pro plan, your rate goes up by 0.5% (up to a 3% cap), and it drops back down if their plan lapses. Earnings land in your coin balance automatically and show up on the Earnings tab." },
   { q: 'My friend signed up but I don\'t see a Claim button. What now?',
     a: 'They just need to add and verify a phone number. Once they do, your Claim button shows up on the Your Invites tab.' },
   { q: 'We did everything, but I still don\'t see a Claim button. Help?',
@@ -133,12 +130,9 @@ function ReferralHub({ variant }) {
     let cancelled = false;
     (async () => {
       try {
-        const userSnap = await getDoc(doc(db, 'users', currentUser.uid));
-        const data = userSnap.exists() ? userSnap.data() : {};
-        const totalInvites = data.referralCount ?? 0;
-        const successfulReferrals = data.successfulReferrals ?? 0;
-        const vpEarned = data.referralVpEarned ?? 0;
-
+        // The stats are counted from the invites and the claims below.
+        // `referralCount`, `successfulReferrals` and `referralVpEarned` were
+        // read off the user doc, and nothing writes them, so all three showed 0.
         const q = query(collection(db, 'users'), where('referredBy', '==', currentUser.uid));
         const snap = await getDocs(q);
         const list = snap.docs.map(d => {
@@ -147,7 +141,9 @@ function ReferralHub({ variant }) {
             uid: d.id,
             displayName: u.displayName || u.username || 'Unknown',
             avatar: u.photoURL || u.avatar || null,
-            verified: u.phoneVerified ?? false,
+            // The server's claim gate is `phoneHash` (a verified phone).
+            // `phoneVerified` is written by nothing, so no Claim button ever showed.
+            verified: !!u.phoneHash,
             subscribed: resolveTier(u) !== 'free',
           };
         });
@@ -164,7 +160,11 @@ function ReferralHub({ variant }) {
         } catch (e) { /* eligibility still validated server-side on claim */ }
 
         if (!cancelled) {
-          setStats({ totalInvites, successfulReferrals, vpEarned });
+          setStats({
+            totalInvites: list.length,
+            successfulReferrals: claimedIds.length,
+            vpEarned: claimedIds.length * REFERRAL_VP_REFERRER,
+          });
           setInvites(list);
           setClaimedFriendIds(claimedIds);
         }
@@ -226,9 +226,11 @@ function ReferralHub({ variant }) {
     }
   }, [claimingId, showToast]);
 
-  // Coin revenue-share: 1% + 0.5% per active-subbed referral (pool-wide), cap 5%.
+  // Coin revenue share: 1% + 0.5% per active-subbed referral, cap 3% (the
+  // server's MAX_RATE since 2026-08-11). A referral who has streamed pays a 2%
+  // base on their own purchases; that is per purchase, so it is stated, not summed.
   const activeSubbed = useMemo(() => invites.filter(i => i.subscribed).length, [invites]);
-  const revenueRate = Math.min(5, 1 + 0.5 * activeSubbed);
+  const revenueRate = Math.min(3, 1 + 0.5 * activeSubbed);
   const revenueCoins = wallet?.referralRevenueCoins || 0;
 
   const pendingClaims = invites.filter(i => i.verified && !claimedFriendIds.includes(i.uid)).length;
@@ -245,9 +247,9 @@ function ReferralHub({ variant }) {
         <div className="relative z-10 p-7">
           <div className="flex items-center gap-2 mb-2">
             <h2 className="font-syne text-3xl font-black text-text-primary">Invite a friend, you both get VP</h2>
-            <InfoTip text="VP is your Vergr progression score. The higher your VP, the larger the revenue share you keep as a creator, and the faster your profile levels up." />
+            <InfoTip text="VP is your Vergr progression score. It levels up your profile and unlocks the rewards on the rank ladder." />
           </div>
-          <p className="text-text-secondary text-sm max-w-[34rem]">The more VP you have, the larger the share you keep of what your content earns.</p>
+          <p className="text-text-secondary text-sm max-w-[34rem]">VP levels up your profile and unlocks the rewards on the rank ladder.</p>
         </div>
       </div>
 
@@ -270,24 +272,13 @@ function ReferralHub({ variant }) {
       <RevenueShareCard rate={revenueRate} coins={revenueCoins} activeSubbed={activeSubbed}
                         onSeeEarnings={() => setTab('earnings')} />
 
-      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2">
-        <SidebarCard title="Referral Stats">
-          <Stat icon="group"      color="#B44FFF" label="Total Invites"        value={loading ? '—' : stats.totalInvites} />
-          <Stat icon="how_to_reg" color="#22D17E" label="Successful Referrals" value={loading ? '—' : stats.successfulReferrals} />
-          <Stat icon="diamond"    color="#B44FFF" label="VP Earned"            value={loading ? '—' : `${stats.vpEarned.toLocaleString()} VP`} accent />
-        </SidebarCard>
-        <SidebarCard title="Bonus Rewards">
-          {BONUS_MILESTONES.map((m, i) => (
-            <div key={i} className="flex items-center gap-3 py-1.5">
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${m.gold ? 'bg-brand-gold-light/15' : 'bg-brand-violet/15'}`}>
-                <Icon name={m.icon} size={14} className={m.gold ? 'text-brand-gold-light' : 'text-brand-violet-light'} />
-              </div>
-              <span className="flex-1 text-text-secondary text-[12.5px]">{m.label}</span>
-              <span className={`text-[12.5px] font-bold tabular-nums shrink-0 ${m.gold ? 'text-brand-gold-light' : 'text-brand-violet-light'}`}>{m.reward}</span>
-            </div>
-          ))}
-        </SidebarCard>
-      </div>
+      {/* "Bonus Rewards" (3 friends +2,000 VP, 10 +10,000 VP, 25 VIP Status) was
+          removed: nothing on the server pays any of them. */}
+      <SidebarCard title="Referral Stats">
+        <Stat icon="group"      color="#B44FFF" label="Total Invites"        value={loading ? '-' : stats.totalInvites} />
+        <Stat icon="how_to_reg" color="#22D17E" label="Successful Referrals" value={loading ? '-' : stats.successfulReferrals} />
+        <Stat icon="diamond"    color="#B44FFF" label="VP Earned"            value={loading ? '-' : `${stats.vpEarned.toLocaleString()} VP`} accent />
+      </SidebarCard>
     </div>
   );
 
@@ -425,9 +416,9 @@ function ReferralHub({ variant }) {
       <div className="rounded-2xl bg-surface-1 border border-surface-3 p-5">
         <p className="text-sm font-semibold text-text-primary mb-3">How your rate works</p>
         <ul className="space-y-2.5 text-sm text-text-secondary">
-          <li className="flex gap-2.5"><Icon name="check_circle" size={18} style={{ color: '#F5C842' }} className="shrink-0 mt-0.5" /><span>You earn <span className="text-brand-gold-light font-semibold">1%</span> in coins on every coin purchase your referrals make.</span></li>
+          <li className="flex gap-2.5"><Icon name="check_circle" size={18} style={{ color: '#F5C842' }} className="shrink-0 mt-0.5" /><span>You earn <span className="text-brand-gold-light font-semibold">1%</span> in coins on every coin purchase your referrals make, and <span className="text-brand-gold-light font-semibold">2%</span> on purchases by a referral who has streamed on Vergr.</span></li>
           <li className="flex gap-2.5"><Icon name="trending_up" size={18} style={{ color: '#F5C842' }} className="shrink-0 mt-0.5" /><span>Each referral on an active Lite or Pro plan adds <span className="text-brand-gold-light font-semibold">+0.5%</span> to your rate, across all your referrals' purchases.</span></li>
-          <li className="flex gap-2.5"><Icon name="verified" size={18} style={{ color: '#F5C842' }} className="shrink-0 mt-0.5" /><span>Your rate is capped at <span className="text-brand-gold-light font-semibold">5%</span>, and drops back down if a referral's plan lapses.</span></li>
+          <li className="flex gap-2.5"><Icon name="verified" size={18} style={{ color: '#F5C842' }} className="shrink-0 mt-0.5" /><span>Your rate is capped at <span className="text-brand-gold-light font-semibold">3%</span>, and drops back down if a referral's plan lapses.</span></li>
           <li className="flex gap-2.5"><Icon name="schedule" size={18} style={{ color: '#F5C842' }} className="shrink-0 mt-0.5" /><span>Revenue-share runs for each referral's first <span className="text-brand-gold-light font-semibold">2 years</span>. Earnings land in your coin balance automatically.</span></li>
         </ul>
         <button onClick={() => navigate('/wallet/history')}
@@ -641,7 +632,7 @@ function RevenueShareCard({ rate, coins, activeSubbed, onSeeEarnings, detailed }
             On top of the VP reward, you earn <span className="text-brand-gold-light font-semibold">1%</span> in
             coins on every coin purchase your referrals make, for their first 2 years. Each referral on an active
             Lite or Pro plan adds <span className="text-brand-gold-light font-semibold">+0.5%</span> to your rate,
-            up to <span className="text-brand-gold-light font-semibold">5%</span>.
+            up to <span className="text-brand-gold-light font-semibold">3%</span>.
           </p>
         </div>
         <div className="flex items-center gap-4 shrink-0">

@@ -5,7 +5,8 @@
       "namespace": "android_app",
       "package_name": "com.vergr.desktop",
       "sha256_cert_fingerprints": [
-        "EC:26:E2:EE:09:5D:D0:D8:AA:14:A2:26:19:20:03:98:0A:CB:50:02:DB:59:A7:54:4F:AC:3F:D6:61:6A:A0:CF"
+        "EC:26:E2:EE:09:5D:D0:D8:AA:14:A2:26:19:20:03:98:0A:CB:50:02:DB:59:A7:54:4F:AC:3F:D6:61:6A:A0:CF",
+        "95:08:CA:73:3B:2C:20:36:A9:13:25:EF:0D:34:28:C3:AB:BC:74:29:9C:14:2B:E5:92:55:BA:44:3F:D6:3B:6A"
       ]
     }
   }

@@ -3,22 +3,19 @@
 //
 // Keep both lists in sync. See CLAUDE.md "Compliance + age + geo" section.
 
-// 2026-07-08: unblocked the 11 skill-gaming-only countries after the ticketed-
-// events pivot (see functions/geo.js for the reasoning). Remaining blocks are
-// sanctions / crypto-illegal / MENA gambling law. Keep in sync with geo.js.
+// SANCTIONED COUNTRIES ONLY (founder rule). China and the five MENA countries
+// are not sanctioned and are not blocked. Keep in sync with functions/geo.js,
+// which is the list that actually enforces.
 export const BLOCKED_COUNTRIES = new Set([
-  'CN','KP','IR','SY','CU','RU','BY','VE',
-  'SA','AE','QA','KW','IQ',
+  'KP','IR','SY','CU','RU','BY','VE',
 ]);
 
 // 2026-07-08: emptied (ticketed-events pivot). Keep in sync with geo.js.
 export const BLOCKED_US_STATES = new Set([]);
 
 export const COUNTRY_NAMES = {
-  CN: 'China', KP: 'North Korea', IR: 'Iran', SY: 'Syria', CU: 'Cuba',
+  KP: 'North Korea', IR: 'Iran', SY: 'Syria', CU: 'Cuba',
   RU: 'Russia', BY: 'Belarus', VE: 'Venezuela',
-  SA: 'Saudi Arabia', AE: 'United Arab Emirates', QA: 'Qatar',
-  KW: 'Kuwait', IQ: 'Iraq',
 };
 
 let cachedStatus = null;
@@ -51,6 +48,37 @@ export async function fetchRegionStatus({ force = false } = {}) {
     // Fail-open in the UI — the server-side callable check is the real gate.
     return { blocked: false, country: null, region: null, reason: 'check_failed' };
   }
+}
+
+// SAVE THIS ACCOUNT'S COUNTRY, ONCE (functions/geo.js stampAccountCountry).
+// Checkout needs it for payment methods, local prices and tax. Called only while
+// the already-loaded profile has no geoCountry, so it is one request per
+// account, ever, and it reads nothing. The server takes the country from
+// Cloudflare, never from here. Resolves the saved country code or null.
+const stampInFlight = new Map();
+export function ensureAccountCountry(user, profile) {
+  if (!user || user.isAnonymous) return Promise.resolve(null);
+  if (profile?.geoCountry) return Promise.resolve(profile.geoCountry);
+  if (stampInFlight.has(user.uid)) return stampInFlight.get(user.uid);
+  const p = (async () => {
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch('https://api.vergr.app/getRegionStatus?stamp=1', {
+        method: 'GET',
+        cache: 'no-store',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      return data?.stamped ? data.country : null;
+    } catch {
+      return null;
+    }
+  })();
+  stampInFlight.set(user.uid, p);
+  // A failed attempt may retry later in the session (e.g. from the basket).
+  p.then((c) => { if (!c) stampInFlight.delete(user.uid); });
+  return p;
 }
 
 export function regionDisplayName(status) {

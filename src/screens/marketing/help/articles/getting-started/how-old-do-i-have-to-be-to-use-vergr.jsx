@@ -18,7 +18,7 @@ export default {
       h2: "Why the age requirement"
     },
     {
-      p: "VERGR involves real-money skill competition and payouts. Those features carry an 18+ requirement, and we apply it across the platform to keep things consistent and compliant where we operate."
+      p: "VERGR involves paid purchases, direct messages with people you do not know, and creator payouts. Those carry an 18+ requirement, and we apply it across the platform to keep things consistent and compliant where we operate."
     },
     {
       cta: [

@@ -14,6 +14,7 @@ const functions = require('firebase-functions/v2');
 const { defineSecret } = require('firebase-functions/params');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const crypto = require('crypto');
+const { isStaffDoc } = require('./staff');
 
 const REGION = 'europe-west1';
 const db = getFirestore('vgrdb');
@@ -244,8 +245,7 @@ exports.createStreamSession = functions.https.onCall({ region: REGION }, async (
   const user = userSnap.data();
   // Admins (founder + ops) bypass EVERY streaming limit — follower gate, daily
   // cap, boost fee, tier rendition caps. effective plan is forced to 'pro'.
-  const ADMIN_EMAILS = ['vergenerd@gmail.com'];
-  const isAdmin = user.role === 'admin' || ADMIN_EMAILS.includes((user.email || '').toLowerCase());
+  const isAdmin = isStaffDoc(user) || user.role === 'admin';
   const plan = isAdmin ? 'pro' : (user.subscription || 'free');
   const planRules = PLAN_RULES[plan] || PLAN_RULES.free;
 
@@ -599,6 +599,49 @@ exports.endStreamSession = functions.https.onCall({ region: REGION }, async (req
   const { streamId } = req.data || {};
   if (!streamId) throw new functions.https.HttpsError('invalid-argument', 'streamId required.');
 
+  // ── Ending SOMEONE ELSE'S stream (Vergr Admin → Live Stats → Live now) ──
+  // Rides this existing function rather than a new one: a new Cloud Function is
+  // a new Artifact Registry image, i.e. money. Same gate and step-up as a
+  // moderation decision (adminModeration.js guardCaller). The takedown itself
+  // lives in streamTakedown.js, shared with the report-approval path, so the
+  // two cannot drift.
+  if (req.data?.takedown === true) {
+    const { requireAdminScreen } = require('./adminAccess');
+    const { requireFreshStepUp, auditAdminAction } = require('./adminSecurity');
+    const { takedownStream } = require('./streamTakedown');
+    // A Vanguard moderator (Vergr Vanguard → Live now) takes the same path,
+    // through runVanguardAction: rank authority (canMute, i.e. Vanguard rank
+    // and up; recruits are read-only), the moderator's 12h authenticator
+    // session, and a vanguard_actions row. Admin rights are tried first.
+    const isAdminCaller = await requireAdminScreen(uid, 'moderation').then(() => true, () => false);
+    if (!isAdminCaller) {
+      const { runVanguardAction } = require('./vanguard');
+      const reason = String(req.data.reason || '');
+      const res = await runVanguardAction({
+        uid,
+        requiredAuthority: 'canMute',
+        actionType: 'stream_takedown',
+        mutator: async (_db, callerUid) => {
+          const out = await takedownStream({ streamId, byUid: callerUid, reason, source: 'vanguard_direct' });
+          return { streamId, targetType: 'stream', targetId: streamId, reason: reason.slice(0, 400), alreadyEnded: !!out.alreadyEnded };
+        },
+      });
+      return { ok: true, takenDown: !res.alreadyEnded, alreadyEnded: !!res.alreadyEnded };
+    }
+    await requireAdminScreen(uid, 'moderation');
+    await requireFreshStepUp(uid);
+    const reason = String(req.data.reason || '');
+    const out = await takedownStream({ streamId, byUid: uid, reason, source: 'admin_direct' });
+    await auditAdminAction({
+      actor: uid,
+      action: 'admin_end_stream',
+      target: { type: 'stream', id: streamId },
+      reason: reason.slice(0, 400),
+      meta: { hostUid: out.hostUid || null, alreadyEnded: !!out.alreadyEnded },
+    });
+    return { ok: true, takenDown: !out.alreadyEnded, alreadyEnded: !!out.alreadyEnded };
+  }
+
   let streamStartMs = 0;
   const endResult = await db.runTransaction(async (tx) => {
     const streamRef = db.collection('streams').doc(streamId);
@@ -682,7 +725,8 @@ exports.endStreamSession = functions.https.onCall({ region: REGION }, async (req
   if (endResult && !endResult.alreadyEnded && endResult.hypeTrain
       && endResult.hypeTrain.received > 0 && !endResult.hypeTrain.settledAt) {
     try {
-      await require('./hypeTrain').settleAndGrant(streamId, uid, endResult.hypeTrain);
+      // Returned so the host's end-of-stream summary can say what it paid.
+      endResult.trainBonus = await require('./hypeTrain').settleAndGrant(streamId, uid, endResult.hypeTrain);
     } catch (e) {
       console.error('[endStreamSession] hype train settle failed', streamId, e);
     }

@@ -23,7 +23,7 @@ export default {
         "Game nights: the bread and butter, casual sessions in the squad's hangout room.",
         "Scrims and practice: structured warm-ups before a squad stream or a big session.",
         "Watch parties: everyone in voice for a big release, a patch drop, or another squad's stream.",
-        "Watch parties: gather in the hangout while squad champions compete."
+        "Watch parties: gather in the hangout to watch a stream together."
       ]
     },
     {

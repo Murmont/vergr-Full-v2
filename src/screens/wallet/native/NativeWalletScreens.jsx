@@ -14,20 +14,23 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useUser } from '../../../context/UserContext';
+import useAppGate, { codaOfferedTo } from '../../../hooks/useAppGate';
+import { CodaCheckoutBlock } from '../../../components/wallet/CodaPay';
 import { useUI } from '../../../context/UIContext';
 import { useWalletUnlock } from '../../../context/WalletUnlockContext';
 import {
   WalletCard, WalletButton, SectionLabel, Pill, Callout, FeeBreakdown,
   CoinGlyph, GemGlyph, VPGlyph, AnimatedNumber, StatusPill,
-  WALLET_TOKENS, fmtNum, fmtEUR, fmtUsd, txUnit,
+  WALLET_TOKENS, fmtNum, fmtEUR, fmtUsd, txAmount,
 } from '../../../components/wallet/primitives';
 import Icon from '../../../components/Icon';
 import { getTransactions } from '../../../firebase/firestore';
 import { getVPLevel, getNextVPLevel, COIN_PACKS, COIN_VALUE_USD } from '../../../utils/vpSystem';
-import { IS_STORE_BUILD, IS_HUAWEI_BUILD } from '../../../utils/platform';
+import { IS_STORE_BUILD, IS_HUAWEI_BUILD, IS_PLAY_BUILD, STORE_NAME } from '../../../utils/platform';
 import { useAuth } from '../../../context/AuthContext';
+import { useCart } from '../../../context/CartContext';
 import {
-  isPlayBillingSupported, fetchPlayPrices, buyCoinPack, playProductIdFor,
+  isPlayBillingSupported, fetchPlayPrices, playProductIdFor,
 } from '../../../utils/nativeBilling';
 
 // ONE LADDER, EVERYWHERE — web, Play and Huawei sell the identical packs.
@@ -39,10 +42,11 @@ import {
 // and read back at runtime through fetchPlayPrices(). See storePricing.js.
 const ACTIVE_COIN_PACKS = COIN_PACKS;
 import { getMyWalletSecurityStatus } from '../../../firebase/walletCallables';
+import { auth } from '../../../firebase/config';
 import { useBuyCheckout, MIN_CUSTOM_USD, COIN_PRICE_USD } from '../v2/buyCheckout';
-import PaymentMethodPicker from '../../../components/wallet/PaymentMethodPicker';
 import { BonusPacksTab, BoostsTab } from '../../../components/wallet/StoreTabs';
 import UserName from '../../../components/UserName';
+import { useActiveCoinPromo, promoBonusForPack } from '../../../utils/coinPromo';
 
 // COIN_VALUE_USD comes from vpSystem (imported above) and is never re-declared
 // here. This file used to hardcode `GEM_TO_EUR = 0.009`, which
@@ -74,6 +78,9 @@ export function NativeHomeScreen() {
   }, [profile?.uid]);
 
   const coins = wallet?.balance || 0;
+  // Boost coins: the monthly plan bonus, sale bonuses, ad rewards and some
+  // hype trains pay them. They buy boosts and VP packs only, never tips.
+  const boostCoins = Math.max(0, Math.floor(Number(wallet?.boostCoins) || 0));
 
   const vp    = wallet?.vp      || 0;
   const vpInfo = getVPLevel(vp);
@@ -113,6 +120,11 @@ export function NativeHomeScreen() {
       <NativeBal
         glyph={<CoinGlyph size={28} />} label="Coins" labelColor={WALLET_TOKENS.gold}
         value={coins} valueColor={WALLET_TOKENS.goldLight} fiat={fmtUsd(coins * COIN_VALUE_USD)}
+        extra={boostCoins > 0 ? (
+              <div style={{ marginTop: 6, fontSize: 12, color: WALLET_TOKENS.textMuted }}>
+                + <span className="font-dmmono tabular-nums" style={{ color: WALLET_TOKENS.goldLight, fontWeight: 700 }}>{fmtNum(boostCoins)}</span> boost coins, for boosts and VP packs
+              </div>
+            ) : null}
         actions={<>
           <WalletButton size="sm" variant="primary" onClick={() => navigate('/wallet/buy')}>Buy</WalletButton>
         </>}
@@ -132,7 +144,7 @@ export function NativeHomeScreen() {
 
       {/* Quick actions — fixed 2-up grid (renders 2 cols at any width) */}
       <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
-        <QuickAction icon="shopping_cart" color={WALLET_TOKENS.gold} title="Buy coins" sub="Card or bank" onClick={() => navigate('/wallet/buy')} />
+        <QuickAction icon="shopping_cart" color={WALLET_TOKENS.gold} title="Buy coins" sub={IS_STORE_BUILD ? STORE_NAME : 'Card or bank'} onClick={() => navigate('/wallet/buy')} />
       </div>
 
 
@@ -235,9 +247,8 @@ function SecRow({ ok, label }) {
 }
 
 function TxRow({ tx }) {
-  const amount = tx.amount || 0;
-  const credit = amount >= 0;
-  const currency = tx.currency || 'coins';
+  const shown = txAmount(tx);
+  const credit = shown.credit;
   const when = tx.createdAt
     ? new Date(tx.createdAt.seconds ? tx.createdAt.seconds * 1000 : tx.createdAt).toLocaleString()
     : '';
@@ -253,7 +264,7 @@ function TxRow({ tx }) {
         <div style={{ fontSize: 12, color: WALLET_TOKENS.textMuted }}>{when}</div>
       </div>
       <div className="font-dmmono tabular-nums" style={{ fontWeight: 600, fontSize: 14, color: credit ? '#86EFAC' : WALLET_TOKENS.text, flexShrink: 0 }}>
-        {credit ? '+' : ''}{fmtNum(amount)} {txUnit(currency)}
+        {shown.text}
       </div>
     </div>
   );
@@ -286,7 +297,7 @@ export function NativeSettingsScreen() {
       <Section title="Account">
         <Card title="Account info">
           <Row label="Username"><UserName user={profile} masked handle fallback={'—'} /></Row>
-          <Row label="Email">{profile?.email ? maskEmail(profile.email) : '—'}</Row>
+          <Row label="Email">{auth.currentUser?.email ? maskEmail(auth.currentUser.email) : '—'}</Row>
           <Row label="Member since" last>{profile?.createdAt
             ? new Date(profile.createdAt.seconds ? profile.createdAt.seconds * 1000 : profile.createdAt).toLocaleDateString()
             : '—'}</Row>
@@ -306,7 +317,9 @@ export function NativeSettingsScreen() {
           <WalletButton variant="primary" size="sm" iconRight="arrow_forward" onClick={() => navigate('/wallet/kyc')}>Manage KYC</WalletButton>
         </Card>
         <Card title="Danger zone" danger>
-          <DangerBtn label="Freeze wallet" />
+          {/* There is no self-serve freeze on the server; support freezes it. This
+              button used to do nothing at all. */}
+          <DangerBtn label="Freeze wallet" onClick={() => { window.location.href = 'mailto:support@vergr.app?subject=' + encodeURIComponent('Please freeze my Vergr wallet'); }} />
           <DangerBtn label="Contact support" onClick={() => navigate('/wallet/help')} />
         </Card>
       </Section>
@@ -382,7 +395,7 @@ const HIST_FILTERS = [
   { id: 'tips',         label: 'Tips',             match: (t) => t.type === 'tip_received' || t.type === 'tip_sent' },
 
 
-  { id: 'purchases',    label: 'Purchases',        match: (t) => t.type === 'buy' || t.type === 'coin_purchase' },
+  { id: 'purchases',    label: 'Purchases',        match: (t) => ['buy', 'coin_purchase', 'vp_bonus_purchase', 'boost_purchase'].includes(t.type) },
   { id: 'memberships',  label: 'Memberships',      match: (t) => t.type === 'membership' || t.type === 'fan_renewal' },
 ];
 
@@ -449,9 +462,8 @@ function NativeHistoryRow({ tx }) {
   const when = tx.createdAt
     ? new Date(tx.createdAt.seconds ? tx.createdAt.seconds * 1000 : tx.createdAt).toLocaleString()
     : '';
-  const amount = tx.amount || 0;
-  const credit = amount >= 0;
-  const currency = txUnit(tx.currency);
+  const shown = txAmount(tx);
+  const credit = shown.credit;
   const showStatus = tx.status && tx.status !== 'settled' && tx.status !== 'completed';
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 10px', borderBottom: `1px solid ${WALLET_TOKENS.hairline}` }}>
@@ -466,7 +478,7 @@ function NativeHistoryRow({ tx }) {
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
         <span className="font-dmmono tabular-nums" style={{ fontWeight: 600, fontSize: 14, color: credit ? '#86EFAC' : WALLET_TOKENS.text }}>
-          {credit ? '+' : ''}{fmtNum(amount)} {currency}
+          {shown.text}
         </span>
         {showStatus && <StatusPill status={tx.status} />}
       </div>
@@ -482,18 +494,24 @@ const KYC_TIERS = [
   { level: 0, name: 'Unverified', dailyEUR: 0, monthlyEUR: 0,
     requires: ['Email confirmed'], unlocks: ['Buy coins', 'Tip creators', 'Unlock paid content', 'Cannot be paid a revenue share'] },
   { level: 1, name: 'Basic', dailyEUR: 0, monthlyEUR: 50,
-    requires: ['Government ID', 'Selfie liveness'], unlocks: ['VERGR can pay your creator revenue share', 'Paid up to €50 per month'] },
+    requires: ['Government ID', 'Selfie liveness'], unlocks: ['VERGR can pay your creator revenue share', 'Paid up to $50 per month'] },
+  // The caps are USD (KYC_MONTHLY_CAP_MICRO_USD, AML policy section 2). These
+  // said euros, tied source of funds to deposits (which do not exist), and
+  // promised priority support (never built). Now matches the web KYC screen.
   { level: 2, name: 'Standard', dailyEUR: 0, monthlyEUR: 2500,
-    requires: ['L1 + proof of address'], unlocks: ['Paid up to €2,500 per month', 'Faster payout schedules unlock'] },
+    requires: ['L1 + proof of address (bill, bank statement or government letter, last 3 months)'], unlocks: ['Paid up to $2,500 per month', 'Faster payout schedules unlock'] },
   { level: 3, name: 'Premium', dailyEUR: 0, monthlyEUR: 15000,
-    requires: ['L2 + source-of-funds on first €1,000+ deposit'], unlocks: ['Paid up to €15,000 per month', 'Priority support'] },
+    requires: ['L2 + source-of-funds documents'], unlocks: ['Paid up to $15,000 per month'] },
 ];
 
 export function NativeKycScreen() {
   const navigate = useNavigate();
   const [kycLevel, setKycLevel] = useState(0);
   useEffect(() => { getMyWalletSecurityStatus().then(s => setKycLevel(s?.kycLevel ?? 0)).catch(() => {}); }, []);
-  const start = () => navigate('/onboarding/identity?return=/wallet/kyc');
+  // Level 1 is the Didit check at /creator/verify (/onboarding/identity is a
+  // profile form with no identity check). Levels 2 and 3 are a document upload
+  // on the payout setup screen.
+  const start = (level) => navigate(level <= 1 ? '/creator/verify' : '/creator/earnings/setup');
 
   return (
     <div style={{ ...COL, gap: 14, width: '100%', maxWidth: '100%' }}>
@@ -561,14 +579,16 @@ export function NativeKycScreen() {
             </div>
 
             {next && (
-              <WalletButton variant="primary" full onClick={start} iconRight="arrow_forward">Start verification</WalletButton>
+              <WalletButton variant="primary" full onClick={() => start(t.level)} iconRight="arrow_forward">
+                {t.level <= 1 ? 'Start verification' : 'Upload document'}
+              </WalletButton>
             )}
           </div>
         );
       })}
 
       <Callout tone="info" icon="info" title="Why we ask">
-        EU regulators require identity verification for withdrawals. Documents go straight to Didit; we see only the result.
+        We verify identity before paying a creator their revenue share, as the regulations require. Your ID and selfie go straight to Didit and we see only the result. For Levels 2 and 3 you upload a document that Vergr staff review; it is deleted as soon as it has been reviewed.
       </Callout>
     </div>
   );
@@ -585,9 +605,10 @@ export function NativeBuyScreen() {
   const { checkout, startCheckout, cancelCheckout } = useBuyCheckout(showToast);
   const customCoins = Math.floor((parseFloat(customUSD) || 0) / COIN_PRICE_USD);
   const { currentUser } = useAuth();
-  const [playBusy, setPlayBusy] = useState('');
   const [playPrices, setPlayPrices] = useState({});
-  const busy = checkout?.status === 'waiting' || Boolean(playBusy);
+  const promo = useActiveCoinPromo();
+  const cart = useCart();
+  const busy = checkout?.status === 'waiting';
 
   // Play Billing is mandatory for digital goods on the Play build. PayRam is
   // still the path everywhere else (web, desktop, sideload APK), so this is a
@@ -605,88 +626,61 @@ export function NativeBuyScreen() {
     return () => { alive = false; };
   }, [usePlay]);
 
-  // Route a pack purchase.
-  //
-  // ⚠ THIS USED TO FORCE PLAY BILLING and it was WRONG.
-  //
-  // The old comment here claimed "a card checkout for coins inside a Play app is
-  // the payments-policy breach that gets an app pulled", and hid every other
-  // rail plus the whole Custom tab on a store build. That belief contradicted
-  // `PaymentMethodPicker.jsx`, which had already been written to the correct
-  // rule and offers both rails on the web.
-  //
-  // Google may NOT compel Play Billing as the only option. What it does require
-  // is a FAIR comparison: no steering, no badge calling one option better, no
-  // pre-selection of the cheaper rail, and the Play price shown as Play's own
-  // string. `<PaymentMethodPicker>` already implements exactly that, which is
-  // why it is reused here instead of a native-only variant that could drift
-  // away from the policy the web version encodes.
-  //
-  // The buyer picks. That is the whole point.
-  const [payFor, setPayFor] = useState(null); // pack awaiting a method choice
-
-  const buyPack = (pack) => setPayFor(pack);
-
-  // Chosen rail for `payFor`. Play Billing only becomes reachable if the bridge
-  // is actually up, so a broken bridge disables THAT ROW rather than blocking
-  // the purchase entirely as it used to.
-  const payWith = (pack, method) => {
-    setPayFor(null);
-    if (method === 'googlePlay') { buyViaPlay(pack); return; }
-    startCheckout({ packSku: pack.id }, pack.name); // card or crypto, via PayRam
+  // A pack goes INTO THE BASKET and the basket opens over this screen, exactly
+  // as on the web. The basket is the confirm step: fee lines, the payment-method
+  // choice (the same PaymentMethodPicker, so the Play fair-comparison rules still
+  // live in ONE place, and Play baskets buy line by line) and the refund terms.
+  // This screen used to open its own method sheet instead, so the app had no
+  // basket at all (founder, 2026-09-11: "what happened to the cart draw?").
+  const buyPack = (pack) => {
+    cart.add(pack.id, 1);
+    cart.setOpen(true);
   };
 
-  const buyViaPlay = async (pack) => {
-    setPlayBusy(pack.id);
-    try {
-      const res = await buyCoinPack(playProductIdFor(pack.id), currentUser?.uid);
-      showToast(`${fmtNum(res.coins || pack.coins)} coins added`, 'success');
-    } catch (err) {
-      // 'cancelled' is a normal user action, not an error worth shouting about.
-      if (err?.code === 'cancelled') return;
-      if (err?.code === 'pending') {
-        showToast('Payment is processing. Your coins will arrive shortly.', 'info');
-        return;
-      }
-      // redeem_failed means Play took the money but we could not credit it.
-      // The purchase stays unconsumed and is retried on next launch, so tell
-      // the user it is not lost rather than implying the payment failed.
-      showToast(
-        err?.code === 'redeem_failed'
-          ? 'Payment received. Your coins are still being added — reopen the app if they do not appear.'
-          : (err?.message || 'Purchase failed'),
-        'error'
-      );
-    } finally {
-      setPlayBusy('');
-    }
-  };
+  // `/wallet/buy?pack=<id>` from an older quick-buy link: same thing, once.
+  // Consumed with replaceState so a back gesture does not re-add it.
+  useEffect(() => {
+    const sku = new URLSearchParams(window.location.search).get('pack');
+    if (!sku) return;
+    window.history.replaceState({}, '', '/wallet/buy');
+    const pack = ACTIVE_COIN_PACKS.find((p) => p.id === sku);
+    if (pack) { cart.add(pack.id, 1); cart.setOpen(true); }
+  }, []);
 
   return (
     <div style={{ ...COL, gap: 16, width: '100%', maxWidth: '100%' }}>
       <div>
-        <div style={{ fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: WALLET_TOKENS.violetLight, fontWeight: 600, marginBottom: 6 }}>Buy coins</div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+          <div style={{ fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: WALLET_TOKENS.violetLight, fontWeight: 600 }}>Buy coins</div>
+          {cart.count > 0 && (
+            <button onClick={() => cart.setOpen(true)} aria-label={`Open basket, ${cart.count} item${cart.count === 1 ? '' : 's'}`}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 999, border: 0, cursor: 'pointer', background: WALLET_TOKENS.surface2, color: WALLET_TOKENS.text, font: 'inherit', fontSize: 12, fontWeight: 700 }}>
+              <Icon name="shopping_cart" size={16} />
+              <span className="font-dmmono tabular-nums">{cart.count}</span>
+            </button>
+          )}
+        </div>
         <h1 style={{ fontFamily: 'Syne, sans-serif', fontWeight: 700, fontSize: 26, letterSpacing: '-0.02em' }}>Top up your wallet.</h1>
         <p style={{ color: WALLET_TOKENS.textSecondary, fontSize: 13, marginTop: 6 }}>
-          Card, Apple Pay, or instant bank. Coins land within seconds.
+          {IS_STORE_BUILD
+            ? `Paid through ${STORE_NAME}. Coins land within seconds.`
+            : 'Card, Apple Pay, Google Pay or instant bank. Coins land within seconds.'}
         </p>
       </div>
 
       {/* Segmented tabs */}
       <div style={{ display: 'flex', gap: 4, padding: 4, background: WALLET_TOKENS.surface2, borderRadius: 12 }}>
         <NativeTabBtn active={tab === 'packs'}  onClick={() => setTab('packs')}>Coin packs</NativeTabBtn>
-        {/* No Custom tab on the Play build: Play Billing sells fixed SKUs only,
-            and routing a custom amount through PayRam instead would be exactly
-            the payments-policy breach that gets an app pulled. Huawei is the
-            exception — it has no Play Billing at all and sells through PayRam
-            by design, so a custom amount is fine there. */}
-        {/* Custom amount is available on EVERY build, including Play.
-            It was hidden on store builds under the same mistaken belief that
-            corrupted buyPack. A custom amount cannot use Play Billing (fixed
-            SKUs), so it is inherently an alternative-billing purchase, which is
-            permitted. Hiding it removed a legitimate option from Play users for
-            no policy reason. */}
-        <NativeTabBtn active={tab === 'custom'} onClick={() => setTab('custom')}>Custom</NativeTabBtn>
+        {/* No Custom tab on the Play build. A custom amount cannot use Play
+            Billing (fixed SKUs), so it is always our own checkout, which a Play
+            app may offer only to US / UK / EEA users of an ENROLLED developer.
+            Vergr is not enrolled yet (founder, 2026-09-11: once the EIN
+            arrives). ⚠ HUAWEI LOST IT TOO on 2026-09-17, when that build moved
+            from PayRam to HUAWEI IAP: a custom amount cannot use fixed IAP
+            products on EITHER store. Web, desktop and sideload keep it. */}
+        {!IS_STORE_BUILD && (
+          <NativeTabBtn active={tab === 'custom'} onClick={() => setTab('custom')}>Custom</NativeTabBtn>
+        )}
         {/* Spending COINS, not opening a second payment rail, so there is no
             Play Billing question here: the coins were already bought through
             whichever rail the user chose. */}
@@ -698,7 +692,7 @@ export function NativeBuyScreen() {
         // Fixed 2-up grid — renders 2 cols at any width (no media query).
         <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
           {ACTIVE_COIN_PACKS.map(p => (
-            <NativePackCard key={p.id} pack={p} busy={busy}
+            <NativePackCard key={p.id} pack={p} busy={busy} sale={promoBonusForPack(promo, p)}
               playPrice={playPrices[playProductIdFor(p.id)]?.price}
               onBuy={() => buyPack(p)} />
           ))}
@@ -709,22 +703,12 @@ export function NativeBuyScreen() {
       {tab === 'boosts' && <BoostsTab compact />}
 
 
-      {tab === 'custom' && (
+      {tab === 'custom' && !IS_STORE_BUILD && (
         <NativeCustomBuy usd={customUSD} setUsd={setCustomUSD} busy={busy}
+          onCodaSettled={(s) => showToast(`Added ${Number(s?.coins || 0).toLocaleString()} coins to your wallet!`, 'success')}
           onContinue={() => startCheckout({ customCoins }, `${fmtNum(customCoins)} coins`)} />
       )}
 
-      {/* Method choice. Same component the web cart uses, so the fair-comparison
-          rules live in ONE place and cannot drift between surfaces. */}
-      {payFor && (
-        <NativePayMethodSheet
-          pack={payFor}
-          playPrice={playPrices[playProductIdFor(payFor.id)]?.price}
-          playAvailable={IS_STORE_BUILD && !IS_HUAWEI_BUILD && isPlayBillingSupported()}
-          onPick={(m) => payWith(payFor, m)}
-          onClose={() => setPayFor(null)}
-        />
-      )}
 
       {checkout && <NativeCheckoutOverlay checkout={checkout} onCancel={cancelCheckout} />}
     </div>
@@ -745,83 +729,7 @@ function NativeTabBtn({ active, children, onClick }) {
 // `playPrice` is Play's own localized string (e.g. "R189,99"). When present it
 // MUST win over pack.priceEUR: Play sets the price per market, and rendering a
 // different figure than the purchase sheet is both confusing and a policy risk.
-/**
- * Choose how to pay for a pack, on native.
- *
- * Wraps the SAME `<PaymentMethodPicker>` the web cart uses. That component
- * already encodes Play's alternative-billing requirements: identical padding,
- * type and tap target on every row, no "best value" badge, no colour that scores
- * one rail against another, and the Play row showing Play's OWN formatted price
- * rather than a number we calculated.
- *
- * Reused rather than reimplemented so those rules cannot drift apart between
- * web and native, which is exactly how this screen ended up Play-only in the
- * first place.
- */
-function NativePayMethodSheet({ pack, playPrice, playAvailable, onPick, onClose }) {
-  // Nothing is pre-selected as the better deal. 'card' is the default only
-  // because it is first in the list, matching the web cart.
-  const [method, setMethod] = useState('card');
-
-  return (
-    <div
-      onClick={onClose}
-      style={{
-        position: 'fixed', inset: 0, zIndex: 200,
-        background: 'rgba(5,5,10,0.72)', backdropFilter: 'blur(6px)',
-        display: 'flex', alignItems: 'flex-end',
-      }}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          width: '100%', background: WALLET_TOKENS.surface1,
-          borderTopLeftRadius: 20, borderTopRightRadius: 20,
-          borderTop: `1px solid ${WALLET_TOKENS.hairline}`,
-          padding: '18px 16px calc(18px + env(safe-area-inset-bottom))',
-          color: WALLET_TOKENS.text, maxHeight: '88vh', overflowY: 'auto',
-        }}
-      >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-          <span style={{ fontFamily: 'Syne, sans-serif', fontWeight: 800, fontSize: 17 }}>
-            {pack.name}
-          </span>
-          <button onClick={onClose} aria-label="Close"
-            style={{ background: 'none', border: 0, color: WALLET_TOKENS.textSecondary, padding: 4, cursor: 'pointer' }}>
-            <Icon name="close" size={20} />
-          </button>
-        </div>
-        <div style={{ fontSize: 12.5, color: WALLET_TOKENS.textMuted, marginBottom: 14 }}>
-          {fmtNum(pack.coins)} coins{pack.vpBonus > 0 ? ` · +${fmtNum(pack.vpBonus)} VP` : ''}
-        </div>
-
-        <PaymentMethodPicker
-          value={method}
-          onChange={setMethod}
-          googlePlayAvailable={playAvailable}
-          coins={pack.coins}
-          cardPrice={`$${pack.priceUSD.toFixed(2)}`}
-          playPrice={playPrice}
-          playPriceLoading={playAvailable && !playPrice}
-          playUnavailableReason={playAvailable ? '' : 'Not available on this device'}
-        />
-
-        <button
-          onClick={() => onPick(method)}
-          style={{
-            width: '100%', marginTop: 6, padding: '13px 16px', borderRadius: 12,
-            border: 0, cursor: 'pointer', background: WALLET_TOKENS.gold,
-            color: '#141018', font: 'inherit', fontWeight: 800, fontSize: 15,
-          }}
-        >
-          Continue
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function NativePackCard({ pack, onBuy, busy, playPrice }) {
+function NativePackCard({ pack, onBuy, busy, playPrice, sale }) {
   const isPopular = pack.badgeStyle === 'popular';
   return (
     <div style={{
@@ -853,8 +761,18 @@ function NativePackCard({ pack, onBuy, busy, playPrice }) {
       {pack.vpBonus > 0 && (
         <div style={{ fontSize: 11, color: WALLET_TOKENS.goldLight, marginBottom: 4 }}>+ {fmtNum(pack.vpBonus)} VP</div>
       )}
+      {/* The live sale, from the server. The Play and AppGallery redeem paths
+          credit it too, so a phone buyer is told what they get. */}
+      {sale && (
+        <div style={{ fontSize: 11, fontWeight: 800, color: '#4ADE80', marginBottom: 4 }}>+ {fmtNum(sale.amount)} {sale.unit} free</div>
+      )}
       <div style={{ fontSize: 11, color: WALLET_TOKENS.textMuted, lineHeight: 1.35, marginBottom: 12, flex: 1 }}>{pack.tagline}</div>
-      <div className="font-dmmono tabular-nums" style={{ fontSize: 18, fontWeight: 700, marginBottom: 10 }}>{playPrice || fmtUsd(pack.priceUSD)}</div>
+      {/* ⚠ On the Play build NEVER fall back to our USD: Google charges its own
+          (higher) price, so "$0.99" here would show less than the sheet charges.
+          Until Google's string arrives the price line stays blank. */}
+      <div className="font-dmmono tabular-nums" style={{ fontSize: 18, fontWeight: 700, marginBottom: 10, minHeight: 24 }}>
+        {playPrice || (IS_STORE_BUILD && !IS_HUAWEI_BUILD && isPlayBillingSupported() ? '' : fmtUsd(pack.priceUSD))}
+      </div>
       <WalletButton variant="primary" full disabled={busy} onClick={onBuy}>Buy</WalletButton>
     </div>
   );
@@ -865,7 +783,17 @@ function NativePackCard({ pack, onBuy, busy, playPrice }) {
 // bug: `fmtEUR` is a EUR->local CONVERTER, so USD chips rendered inflated by
 // the live FX rate, the input was prefixed `€`, and "You pay" echoed the typed
 // amount rather than the charge for the whole (floored) coin count.
-function NativeCustomBuy({ usd, setUsd, onContinue, busy }) {
+// PayRam is hidden (founder, 2026-09-25); its server stays. Flip to show it again.
+const SHOW_PAYRAM_NATIVE = false;
+
+function NativeCustomBuy({ usd, setUsd, onContinue, busy, onCodaSettled }) {
+  // Sideload app (no store): Codapay, like the website. Never on a store build,
+  // which does not render this tab at all.
+  const { profile } = useUser();
+  const appGate = useAppGate();
+// !IS_STORE_BUILD first: a compile-time false on Play/AppGallery, so the store
+  // bundle drops the Coda checkout entirely instead of shipping it unreachable.
+  const codaOn = !IS_STORE_BUILD && codaOfferedTo(appGate, profile);
   const usdNum = parseFloat(usd) || 0;
   const coins = Math.floor(usdNum / COIN_PRICE_USD);
   const valid = usdNum >= MIN_CUSTOM_USD;
@@ -907,6 +835,15 @@ function NativeCustomBuy({ usd, setUsd, onContinue, busy }) {
           </span>
         </span>
       </div>
+      {!valid && usd && (
+        <div style={{ marginTop: 12, fontSize: 12, color: '#FCD34D' }}>
+          Minimum is {fmtUsd(MIN_CUSTOM_USD)} (set by our card processor).
+        </div>
+      )}
+      {codaOn ? (
+        valid ? <CodaCheckoutBlock payload={{ customCoins: coins }} profile={profile} onSettled={onCodaSettled} /> : null
+      ) : SHOW_PAYRAM_NATIVE ? (
+        <>
       <FeeBreakdown
         items={[
           { label: 'You pay', value: fmtUsd(chargedUsd) },
@@ -916,17 +853,18 @@ function NativeCustomBuy({ usd, setUsd, onContinue, busy }) {
         total={`${fmtNum(coins)} coins`}
         totalLabel="You receive"
       />
-      {!valid && usd && (
-        <div style={{ marginTop: 12, fontSize: 12, color: '#FCD34D' }}>
-          Minimum is {fmtUsd(MIN_CUSTOM_USD)} (set by our card processor).
-        </div>
-      )}
       <div style={{ marginTop: 18 }}>
         <WalletButton variant="primary" size="lg" full disabled={!valid || busy}
           icon="credit_card" iconRight="arrow_forward" onClick={onContinue}>
           Continue to checkout
         </WalletButton>
       </div>
+        </>
+      ) : (
+        <div style={{ marginTop: 16, background: '#1C1C2B', borderRadius: 12, padding: '12px 14px', fontSize: 13, color: WALLET_TOKENS.textSecondary }}>
+          Buying here is not open yet.
+        </div>
+      )}
     </WalletCard>
   );
 }
@@ -938,7 +876,7 @@ function NativeCheckoutOverlay({ checkout, onCancel }) {
       position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(5,5,12,0.82)',
       backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', padding: 16,
     }}>
-      <WalletCard style={{ width: '100%', maxWidth: 460, textAlign: 'center', marginBottom: 'calc(env(safe-area-inset-bottom) + 8px)' }}>
+      <WalletCard style={{ width: '100%', maxWidth: 460, textAlign: 'center', marginBottom: 'calc(var(--vg-safe-b, 0px) + 8px)' }}>
         <div style={{
           width: 56, height: 56, borderRadius: '50%', margin: '4px auto 16px', display: 'grid', placeItems: 'center',
           background: 'rgba(123,31,255,0.15)', border: `1px solid ${WALLET_TOKENS.violet}`,

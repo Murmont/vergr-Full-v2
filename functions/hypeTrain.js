@@ -36,6 +36,9 @@ const TRAIN_SOLO_CAP = 0.4;
 const TRAIN_WINDOW_MS = 300000;
 const TRAIN_EXTEND_MS = 30000;
 const TRAIN_MAX_MS = 900000;
+// Faces on the bar: the conductor plus four riders. It is also the bound on
+// `top`, the only per-rider display data the stream doc carries.
+const TRAIN_TOP_RIDERS = 5;
 
 const trainBaseGoal = (viewers) =>
   Math.round(TRAIN_GOAL_COEFF * Math.sqrt(Math.max(1, Number(viewers) || 1)));
@@ -47,7 +50,12 @@ const trainLevelGoal = (base, level) =>
 const TRAIN_BONUS_PCT = 0.20;
 const TRAIN_COIN_CAP = 5000;
 const TRAIN_VP_PER_LEVEL = 50;
-const TRAIN_VP_WEIGHT = 0.65;
+// Three outcomes, one per train, at random (founder, 2026-09-27: coins, VP or
+// boost coins, "cycled so that its random and not always real coins"). Real
+// coins are whatever the other two leave. Boost coins buy boosts and VP packs
+// only (functions/boostCoins.js), so they carry no revenue-share cost.
+const TRAIN_VP_WEIGHT = 0.40;
+const TRAIN_BOOST_WEIGHT = 0.40;
 const TRAIN_MIN_COIN_BONUS = 25;
 
 // ── 3. THE MACHINE THAT GUARANTEES A PROFIT ─────────────────────────────────
@@ -109,23 +117,32 @@ function trainRoll(seed) {
   return (h >>> 0) / 4294967296;
 }
 
-const trainOutcome = (seed) => (trainRoll(seed) < TRAIN_VP_WEIGHT ? 'vp' : 'coins');
+const trainOutcome = (seed) => {
+  const r = trainRoll(seed);
+  if (r < TRAIN_VP_WEIGHT) return 'vp';
+  if (r < TRAIN_VP_WEIGHT + TRAIN_BOOST_WEIGHT) return 'boost';
+  return 'coins';
+};
 
 const newSeed = () => crypto.randomBytes(16).toString('hex');
 
 // ── 5. THE ONE SETTLEMENT ───────────────────────────────────────────────────
-/** Exactly one reward. Never both, never neither. */
+/** Exactly one reward: coins, boost coins or VP. Never two, never none. */
 function settleTrain(opts) {
   const o = opts || {};
   const got = Math.max(0, Math.floor(o.received || 0));
   if (got <= 0) return null;
   const lvl = Math.max(1, Math.round(o.level || 1));
   const share = typeof o.share === 'number' ? o.share : WORST_ONWARD_SHARE;
+  // Boost coins pay the SAME amount the coin branch would, so the number never
+  // depends on which branch came up.
   const coins = coinBonusFor(got, share);
-  const kind = (trainOutcome(o.seed) === 'coins' && coins >= TRAIN_MIN_COIN_BONUS) ? 'coins' : 'vp';
+  const drawn = trainOutcome(o.seed);
+  const kind = (drawn !== 'vp' && coins >= TRAIN_MIN_COIN_BONUS) ? drawn : 'vp';
   return {
     kind,
     coins: kind === 'coins' ? coins : 0,
+    boostCoins: kind === 'boost' ? coins : 0,
     vp: kind === 'vp' ? vpBonusFor(lvl) : 0,
     level: lvl,
     received: got,
@@ -206,10 +223,10 @@ function advanceTrain(prev, opts) {
   // per train. `sendTip` has ALREADY loaded the sender's name and avatar for the
   // tip alert, so carrying them costs nothing.
   //
-  // ⚠ ONLY THE LEADER IS CARRIED, not a name for every rider. The riders map can
-  // hold hundreds of uids and the stream doc is world-readable and re-sent to
-  // every viewer on every change; a name and a URL each would bloat the payload
-  // the whole room downloads.
+  // ⚠ ONLY THE TOP FEW ARE CARRIED, never a name for every rider. The riders
+  // map can hold hundreds of uids and the stream doc is world-readable and
+  // re-sent to every viewer on every change; a name and a URL each would bloat
+  // the payload the whole room downloads. `top` stops at TRAIN_TOP_RIDERS.
   let topUid = base.topUid || null;
   let topCoins = base.topCoins || 0;
   let topName = base.topName || null;
@@ -221,6 +238,17 @@ function advanceTrain(prev, opts) {
     topAvatar = o.avatar || null;
   }
 
+  // The riders the bar draws after the conductor. Each entry carries the name
+  // and avatar from that rider's OWN latest tip, which sendTip had already
+  // loaded for the alert, so no rider is ever looked up. Its coins equal
+  // riders[uid] because an entry is only rewritten when that rider tips.
+  const top = (Array.isArray(base.top) ? base.top : []).filter((r) => r && r.uid && r.uid !== uid);
+  top.push({ uid, coins: riders[uid], name: o.name || null, avatar: o.avatar || null });
+  // Stable, so on a tie the earlier rider stays ahead: the same rule the
+  // leader fields above use.
+  top.sort((a, b) => b.coins - a.coins);
+  top.length = Math.min(top.length, TRAIN_TOP_RIDERS);
+
   return {
     train: Object.assign({}, base, {
       level,
@@ -231,7 +259,7 @@ function advanceTrain(prev, opts) {
       perLevel,
       riders,
       riderCount: Object.keys(riders).length,
-      topUid, topCoins, topName, topAvatar,
+      topUid, topCoins, topName, topAvatar, top,
       endsAtMs: Math.min(base.startedAtMs + TRAIN_MAX_MS, now + TRAIN_EXTEND_MS),
     }),
     expired,
@@ -292,14 +320,19 @@ async function settleAndGrant(streamId, hostUid, train) {
 
     if (bonus.kind === 'coins') {
       tx.set(walletRef, { balance: FieldValue.increment(bonus.coins) }, { merge: true });
+    } else if (bonus.kind === 'boost') {
+      // Boost coins: boosts and VP packs only, never tippable.
+      tx.set(walletRef, { boostCoins: FieldValue.increment(bonus.boostCoins) }, { merge: true });
     } else {
       tx.set(walletRef, { vp: FieldValue.increment(bonus.vp) }, { merge: true });
     }
 
+    const paidCoins = bonus.kind === 'coins' ? bonus.coins : bonus.kind === 'boost' ? bonus.boostCoins : 0;
     tx.set(db.collection('transactions').doc(), {
       userId: hostUid,
       type: 'hype_train_bonus',
-      amount: bonus.kind === 'coins' ? bonus.coins : 0,
+      amount: paidCoins,
+      ...(bonus.kind === 'boost' ? { currency: 'boost_coins' } : {}),
       vp: bonus.vp,
       streamId,
       // The audit record. The seed is not stored, so this row IS the evidence
@@ -308,25 +341,31 @@ async function settleAndGrant(streamId, hostUid, train) {
         kind: bonus.kind, level: bonus.level, received: bonus.received,
         pct: TRAIN_BONUS_PCT, cap: TRAIN_COIN_CAP,
       },
-      description: bonus.kind === 'coins'
-        ? 'Hype train level ' + bonus.level + ': ' + bonus.coins + ' coins'
-        : 'Hype train level ' + bonus.level + ': ' + bonus.vp + ' VP',
+      description: 'Hype train level ' + bonus.level + ': ' + (bonus.kind === 'vp'
+        ? bonus.vp + ' VP'
+        : paidCoins + (bonus.kind === 'boost' ? ' boost coins' : ' coins')),
       createdAt: FieldValue.serverTimestamp(),
     });
 
+    // `hypeTrainBonus` is what the stream screens show ("250 coins to you").
+    // It is its OWN field because the next tip replaces `hypeTrain` with a new
+    // train, which would wipe `hypeTrain.bonus` before any screen drew it.
+    // Server-only in firestore.rules, like `hypeTrain`.
+    const at = Date.now();
     tx.update(streamRef, {
-      'hypeTrain.settledAt': Date.now(),
+      'hypeTrain.settledAt': at,
       'hypeTrain.bonus': bonus,
+      hypeTrainBonus: { ...bonus, trainStartedAtMs: live.startedAtMs, at },
     });
-    return bonus;
+    return { ...bonus, trainStartedAtMs: live.startedAtMs, at };
   });
 }
 
 module.exports = {
   settleAndGrant,
   TRAIN_GOAL_COEFF, TRAIN_MAX_LEVEL, TRAIN_LEVEL_STEP, TRAIN_SOLO_CAP,
-  TRAIN_WINDOW_MS, TRAIN_EXTEND_MS, TRAIN_MAX_MS,
-  TRAIN_BONUS_PCT, TRAIN_COIN_CAP, TRAIN_VP_PER_LEVEL, TRAIN_VP_WEIGHT,
+  TRAIN_WINDOW_MS, TRAIN_EXTEND_MS, TRAIN_MAX_MS, TRAIN_TOP_RIDERS,
+  TRAIN_BONUS_PCT, TRAIN_COIN_CAP, TRAIN_VP_PER_LEVEL, TRAIN_VP_WEIGHT, TRAIN_BOOST_WEIGHT,
   TRAIN_MIN_COIN_BONUS, TRAIN_MARGIN_FLOOR,
   OWED_USD_PER_COIN, WORST_ONWARD_SHARE, TARGET_NET_USD_PER_COIN,
   trainBaseGoal, trainLevelGoal, trainMarginUsd, maxSafeCoinBonus,

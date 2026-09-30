@@ -1,21 +1,21 @@
 // Help center article: How does the squad leaderboard work?
 
 export default {
-  summary: "The squad's Leaderboard screen ranks members against each other, contribution, activity, and competitive results, so the squad's internal standings are visible and a little friendly rivalry stays fuelled. It is the inside-the-squad counterpart to the platform's global leaderboard.",
-  updated: "2026-07-02",
+  summary: "The squad's Leaderboard screen ranks members against each other on contribution and activity, so the squad's internal standings are visible and a little friendly rivalry stays fuelled. It is the inside-the-squad counterpart to the platform's global leaderboard.",
+  updated: "2026-09-10",
   body: [
     {
       h2: "What it ranks"
     },
     {
-      p: "The leaderboard measures members' standing within the squad: who shows up, who contributes, who delivers in competition. Climbing it is a matter of doing squad things: showing up for squad streams, participating in events and challenges, and generally being the member every squad wants ten of."
+      p: "The leaderboard measures members' standing within the squad: who shows up, who contributes, who keeps the squad going. Climbing it is a matter of doing squad things: showing up for squad streams, participating in events and challenges, and generally being the member every squad wants ten of."
     },
     {
       h2: "What it is for"
     },
     {
       list: [
-        "Motivation: rankings turn ambient participation into a game, and gamers, it turns out, respond to games.",
+        "Motivation: a ranking gives everyone a reason to keep showing up.",
         "Recognition: consistent contributors are visible, not just loud ones.",
         "Recognition: the leaderboard is honest evidence of who is actually carrying the squad, which makes role decisions less political.",
         "Culture: a leaderboard the whole squad can see keeps standards ambient, nobody has to nag."

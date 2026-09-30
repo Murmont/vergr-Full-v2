@@ -16,7 +16,14 @@ const tabs = [
 // '/post' = the post-detail + comments screen: it docks its own comment
 // composer at the bottom, so the app tab bar would overlap it (mainstream
 // apps drop the tab bar on a post detail anyway). Back button in its TopBar.
-const HIDE_ON_PATHS = ['/broadcast', '/watch', '/stream/', '/shorts', '/call/', '/go-live', '/creator', '/post/'];
+// /create/short and /create/clip: the post screen owns the bottom of the screen
+// for its Post button, the way TikTok's publish screen hides the tab bar.
+const NAV_ICON_BOX = 'flex items-center justify-center h-[26px] w-[26px] shrink-0';
+
+// Form screens with their own fixed Save / Create bar hide the tab bar too: on
+// the phone the nav (z-50) was drawn over Edit Profile's Cancel and Save and over
+// Create Event's button, so neither could be tapped (measured 2026-09-16).
+const HIDE_ON_PATHS = ['/broadcast', '/watch', '/stream/', '/shorts', '/call/', '/go-live', '/creator', '/post/', '/create/short', '/create/clip', '/edit-profile', '/events/create'];
 
 // ONE number on the tab, the way every major messaging app does it.
 //
@@ -50,7 +57,11 @@ export default function BottomNav() {
   const profileActive = location.pathname.startsWith('/profile');
 
   return (
-    <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[480px] z-50 glass-header safe-bottom lg:hidden" style={{ borderBottom: 'none', borderTop: '1px solid rgba(255,255,255,0.04)' }}>
+    // `data-vg-bottomnav` is read by Modal.jsx, which measures this bar so a
+    // bottom sheet's primary button is not covered by it. Do not remove it.
+    // Solid and no top rule (founder, 2026-09-14): a see-through bar shows the
+    // feed scrolling under the labels, and the rule was one of the thin lines.
+    <nav data-vg-bottomnav="" className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[480px] z-50 safe-bottom lg:hidden" style={{ background: '#0E0E17' }}>
       <div className="flex items-center justify-around h-14 px-2">
         {tabs.map((tab) => {
           const active = isActive(tab.path);
@@ -72,7 +83,11 @@ export default function BottomNav() {
                   transition={{ type: 'spring', stiffness: 500, damping: 35 }}
                 />
               )}
-              <div className="relative flex items-center justify-center">
+              {/* ⚠ ONE BOX SIZE FOR EVERY TAB, the avatar included. The icon
+                  glyph's line box and the 24px avatar were different heights, so
+                  PROFILE's label sat about 5px higher than the other four
+                  (measured on the founder's phone screenshot, 2026-09-14). */}
+              <div className={`relative ${NAV_ICON_BOX}`}>
                 <Icon name={tab.icon} filled={active} size={22} />
                 {badge > 0 && (
                   <span className="absolute -top-1.5 -right-2.5 min-w-[16px] h-4 bg-brand-ember rounded-full flex items-center justify-center text-[9px] font-black text-white px-1">
@@ -108,7 +123,9 @@ export default function BottomNav() {
               (live = ember, unseen status = violet), so using one to mean
               "this tab is selected" overloads it. The underline bar and the
               label colour already mark the active tab. */}
-          <UserAvatar src={profile?.avatar || profile?.photoURL} size={24} />
+          <span className={NAV_ICON_BOX}>
+            <UserAvatar src={profile?.avatar || profile?.photoURL} size={24} />
+          </span>
           <span className={`text-[9px] font-semibold uppercase tracking-tight transition-opacity ${profileActive ? 'opacity-100' : 'opacity-50'}`}>
             Profile
           </span>

@@ -15,20 +15,20 @@ import { useLayout } from '../../context/LayoutContext';
 import {
   getUserById, getUserByUsername, getUserPosts, getPost, blockUser, reportUser,
   followUser, unfollowUser, isFollowing as checkFollowing,
-  createConversation, getUserVP, getFollowers, getFollowing, getTaggedPosts,
+  createConversation, getUserVP, countFollowers, countFollowing, getTaggedPosts,
 } from '../../firebase/firestore';
 import StreamScheduleCard from '../../components/profile/StreamScheduleCard';
 import NameAudioButton from '../../components/profile/NameAudioButton';
 import MyQrModal from '../../components/messages/MyQrModal';
 import ReportSheet from '../../components/ReportSheet';
 import useHeaderCollapse from '../../hooks/useHeaderCollapse';
-import { bannerGradient, CountUpNumber, MiniDockHeader } from '../../components/profile/profilePolish';
+import { bannerGradient, CountUpNumber, MiniDockHeader, ACCENT_CHIP, SOLID_CHIP, TIP_CHIP } from '../../components/profile/profilePolish';
 import { accentFor } from '../../utils/rankUnlocks';
 
 import { themeStyle, themeTokens, headerLightStyle } from '../../utils/profileThemes';
 import { Ambilight, ProfileAudio, useEffectEnabled } from '../../components/effects';
 import { avatarRing, RING } from '../../utils/avatarRing';
-import { isGroupSeen } from '../../utils/statusSeen';
+import { isShortFormat, sharesToFeed, isMediaPost } from '../../utils/helpers';
 import { presenceVisible } from '../../utils/presence';
 import useOnlineStatus from '../../hooks/useOnlineStatus';
 import { IS_NATIVE_BUILD } from '../../utils/platform';
@@ -46,11 +46,13 @@ import CachedImg from '../../components/CachedImg';
 import ProfileBanner from '../../components/profile/ProfileBanner';
 import MembershipBlock from '../../components/membership/MembershipBlock';
 import TwitchMirrorPlayer from '../../components/streams/TwitchMirrorPlayer';
-import PostCard from '../../components/PostCard';
+import { ProfilePostList, TopClipsList } from '../../components/profile/ProfileGrid';
 import Icon from '../../components/Icon';
 import SendCoinsModal from '../../components/SendCoinsModal';
 import { CoinIcon, VPIcon } from '../../components/CoinIcon';
 import { PRIVACY_DEFAULTS } from '../../utils/privacy';
+import { socialsToList, socialIcon, socialLabel, openSocialLink } from '../../utils/profileSocials';
+import LinkedHandles from '../../components/profile/LinkedHandles';
 
 // Likes are private (IG model): the tab lives only on your OWN profile
 // (ProfileScreen), never on someone else's.
@@ -83,7 +85,6 @@ export default function PublicProfileScreen() {
   // an unlock visible to other people (components/effects/README.md). The
   // Vanguard mask is applied at the USE site, because it is a plain boolean and
   // must not gate the hook.
-  const orbitUnlocked = useEffectEnabled('orbit', user);
   // Same rule as above: unconditional, above the early return. Both effects read
   // the VIEWED user's profile, never the viewer's.
   const ambilightOn = useEffectEnabled('ambilight', user);
@@ -136,22 +137,27 @@ export default function PublicProfileScreen() {
           if (currentUser?.uid && u.id !== currentUser.uid) {
             trackEvent('profile_visit', { authorId: u.id, target: 'user' });
           }
-          const [userPosts, isFollow, vpData, followers, followingList, tagged] = await Promise.all([
+          // Counts are aggregation queries and "do they follow me" is one doc
+          // read. This used to download EVERY follower and following doc of the
+          // viewed account just to read .length, which is what made a big
+          // profile (@vergr) slow to open (founder, 2026-09-11).
+          const [userPosts, isFollow, vpData, followerN, followingN, tagged, followsMe] = await Promise.all([
             getUserPosts(u.id, 30),
             currentUser ? checkFollowing(currentUser.uid, u.id) : false,
             getUserVP(u.id).catch(() => ({ vp: 0 })),
-            getFollowers(u.id).catch(() => []),
-            getFollowing(u.id).catch(() => []),
+            countFollowers(u.id).catch(() => null),
+            countFollowing(u.id).catch(() => null),
             getTaggedPosts(u.id, 30).catch(() => []),
+            currentUser?.uid && currentUser.uid !== u.id ? checkFollowing(u.id, currentUser.uid).catch(() => false) : false,
           ]);
           setPosts(userPosts || []);
           setTaggedPosts(tagged || []);
           setFollowing(!!isFollow);
           setUserVP(vpData?.vp || 0);
-          setFollowerCount((followers?.length) ?? u.followerCount ?? 0);
-          setFollowingCount((followingList?.length) ?? u.followingCount ?? 0);
+          setFollowerCount(followerN ?? u.followerCount ?? 0);
+          setFollowingCount(followingN ?? u.followingCount ?? 0);
           // For privacy relationship checks: does the viewed user follow the viewer?
-          setTargetFollowsMe(currentUser?.uid ? (followingList || []).some(e => e.followingId === currentUser.uid) : false);
+          setTargetFollowsMe(!!followsMe);
         }
       } catch (err) {
         console.error('Error loading profile:', err);
@@ -174,7 +180,11 @@ export default function PublicProfileScreen() {
   // Right panel — public version
   useEffect(() => {
     if (!user) { setRightPanel(null); return; }
-    setRightPanel(<PublicRightPanel user={user} posts={posts} navigate={navigate} />);
+    // ⚠ A MASKED VANGUARD GETS NO RIGHT RAIL. It carried the real account's
+    // Twitch player (linkedAccounts.twitch, i.e. the person's own handle), its
+    // top clips and its totals: each one enough to match the persona to a person.
+    const persona = applyVanguardMask(user, viewer)?.isVanguardPersona;
+    setRightPanel(persona ? null : <PublicRightPanel user={user} posts={posts} loaded={!loading} navigate={navigate} onViewClips={() => setActiveTab('Clips')} />);
     setContentAlign('left');
     // Profile pages are black, shell included. Removing the class on unmount
     // restores #0B0B14 everywhere else, so this cannot leak into other routes.
@@ -183,7 +193,7 @@ export default function PublicProfileScreen() {
       setRightPanel(null); setContentAlign('center');
       document.body.classList.remove('vg-black-shell');
     };
-  }, [setRightPanel, setContentAlign, user, posts, navigate]);
+  }, [setRightPanel, setContentAlign, user, viewer, posts, loading, navigate]);
 
   // Close 3-dot menu on outside click
   useEffect(() => {
@@ -236,9 +246,9 @@ export default function PublicProfileScreen() {
   const filteredPosts = useMemo(() => {
     if (!user) return [];
     const decorated = posts.map(p => ({ ...p, author: user }));
-    if (activeTab === 'Posts') return decorated;
-    if (activeTab === 'Media') return decorated.filter(p => p.imageUrl || p.videoUrl);
-    if (activeTab === 'Clips') return decorated.filter(p => p.type === 'clip');
+    if (activeTab === 'Posts') return decorated.filter(sharesToFeed);
+    if (activeTab === 'Media') return decorated.filter(isMediaPost);
+    if (activeTab === 'Clips') return decorated.filter(p => isShortFormat(p.type));
     if (activeTab === 'Tagged') return taggedPosts; // authored by others — PostCard resolves each author itself
     return decorated;
   }, [activeTab, posts, taggedPosts, user]);
@@ -295,25 +305,9 @@ export default function PublicProfileScreen() {
   // what would have made a hex accent work in the picker and silently do nothing
   // on two of them — and desync the avatar orbit, which reads the same token.
   const accentHex = masked.isVanguardPersona ? null : accentFor(user, null);
-  // ONE ring, resolved by priority: LIVE > STATUS > ORBIT. See
-  // src/utils/avatarRing.js.
-  //
-  // ⚠ STATUS COSTS NOTHING HERE, and that is the whole design. `statusUntil` and
-  // `statusLastId` are denormalised onto the user doc by markStatusPosted() when
-  // a status is published — a write that happens once per status. Both fields
-  // therefore arrive on the user doc this screen has ALREADY loaded, and
-  // `isGroupSeen` is localStorage. No query, no extra read, and `statusUntil`
-  // needs no cleanup: it simply falls into the past.
-  const unseenStatus = !!(
-    user?.statusUntil > Date.now()
-    && !isGroupSeen(currentUser?.uid, user.id, user.statusLastId)
-  );
-  const ring = avatarRing({
-    live: !!(user?.id && isUserLive(user.id)),
-    unseenStatus,
-    orbit: orbitUnlocked,
-    masked: masked.isVanguardPersona,
-  });
+  // ONE ring, and it is the live ring (founder, 2026-09-14). The orbit and the
+  // unseen-status ring are gone. See src/utils/avatarRing.js.
+  const ring = avatarRing({ live: !!(user?.id && isUserLive(user.id)) });
 
   // Equipped profile theme. Same rule as the accent: it dresses the PAGE.
   // Only used for the bannerless fallback, so a user who uploaded their own
@@ -379,39 +373,20 @@ export default function PublicProfileScreen() {
       {/* Docked mini-header — fades in when the banner scrolls away (B8.1). */}
       <MiniDockHeader show={docked} avatar={masked.avatar} name={displayName} user={masked} onBack={() => navigate(-1)} />
 
-      {/* ⚠ AMBILIGHT SITS OUTSIDE THE BANNER BLOCK, not inside it. The banner is
-          `overflow-hidden` (it has to be, for the parallax), so light drawn
-          within it would be clipped at exactly the edges it needs to cross.
+      {/* ⚠ AMBILIGHT FILLS THE BANNER + HEADER + STATS BLOCK AND FADES OUT AT ITS
+          BOTTOM. The rule was always "the glow ends where the stats bar ends"; it
+          used to be approximated with a fixed pixel height (400px here, 470px,
+          340px on the phone) and a black feather, and on the phone that fixed
+          edge cut straight through the stats numbers. Wrapping the block makes
+          the rule true by construction, whatever the header's height.
 
-          The box is 400px against a 220px banner: it OWNS the 180px below,
-          which is the only direction a full-bleed banner leaves free. Ambilight
-          fills whatever box it is given and never reaches outside it, so the
-          area it can light is decided HERE, once, and cannot creep into the
-          stats row (docs/effects/02).
-
-          `zIndex: -1` is load-bearing, and so is `.vg-profile` on the root: a
-          negative-z child paints above its parent's BACKGROUND but below its
-          in-flow content, which is exactly what a light layer needs — and it
-          needs the root to be its containing block or the glow escapes across
-          the app shell. Both halves, or neither.
-
-          The OWNER's effect decides, so it reads the viewed user's profile. */}
-      {/* ⚠ 470px, NOT the owner page's 400px, and copying that number is exactly
-          the mistake. What has to match is the RELATIONSHIP: the glow ends where
-          the stats bar ends, so the whole identity + stats block sits inside the
-          light.
-
-          Measured — owner: glow 0..400, stats bar 300..402, so the row is lit.
-          Public: glow 0..400, stats bar 354..464, so the row ended 64px BELOW
-          the light and sat in unlit black. Same component, same opacity, same
-          filter, and it still looked wrong, because this page is taller: it
-          carries an action row the owner's page does not.
-
-          If either page's header height changes, re-measure. The rule is "glow
-          bottom >= stats bar bottom", not a magic number. */}
+          `zIndex: -1` and `.vg-profile` (isolation on the root) are still
+          load-bearing: the light paints above the page background and below
+          everything in the block. The OWNER's effect decides. */}
+      <div className="relative">
       {ambilightOn && !masked.isVanguardPersona && user.banner && (
-        <div className="absolute inset-x-0 top-0 h-[470px] pointer-events-none" style={{ zIndex: -1 }}>
-          <Ambilight src={user.banner} videoRef={bannerVideoRef} enabled spread={180} intensity={0.72} feather="#000000" />
+        <div className="absolute inset-0 pointer-events-none" style={{ zIndex: -1 }}>
+          <Ambilight src={user.banner} videoRef={bannerVideoRef} enabled intensity={0.72} fade="bottom" />
         </div>
       )}
       {/* BANNER — inner wrapper carries the parallax transform so the overlaid
@@ -463,7 +438,7 @@ export default function PublicProfileScreen() {
         <button
           onClick={() => navigate(-1)}
           className="absolute top-3.5 left-3.5 w-[34px] h-[34px] flex items-center justify-center rounded-lg text-white"
-          style={{ background: 'rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.15)', backdropFilter: 'blur(8px)' }}
+          style={{ background: '#15151F' }}
         >
           <Icon name="arrow_back" size={16} />
         </button>
@@ -473,7 +448,7 @@ export default function PublicProfileScreen() {
           <button
             onClick={handleShare}
             className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-[12px] font-semibold text-white transition-colors hover:brightness-125"
-            style={{ background: 'rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.15)', backdropFilter: 'blur(8px)' }}
+            style={{ background: '#15151F' }}
           >
             <Icon name="share" size={13} /> Share
           </button>
@@ -481,7 +456,7 @@ export default function PublicProfileScreen() {
             <button
               onClick={(e) => { e.stopPropagation(); setMenuOpen(o => !o); }}
               className="w-[34px] h-[34px] flex items-center justify-center rounded-lg text-white"
-              style={{ background: 'rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.15)', backdropFilter: 'blur(8px)' }}
+              style={{ background: '#15151F' }}
             >
               <Icon name="more_vert" size={16} />
             </button>
@@ -536,41 +511,15 @@ export default function PublicProfileScreen() {
             avatar's -mt-11 actually lift it over the edge while the text column
             begins at the row top, below the banner. */}
         <div className="flex items-start gap-4 mb-3 pt-1">
-          {/* ⚠ THE ORBIT WAS INVISIBLE TO EVERYONE BUT ITS OWNER. It was mounted
-              only on ProfileScreen (your own page), so an unlock whose entire
-              purpose is to be SEEN by other people was seen by nobody. Found by
-              inventorying mount points while documenting it, not from a report.
-
-              Two things were needed, and one alone would have looked broken:
-              the orbit renders here, AND the accent tokens it reads are set on
-              this element. `.vg-orbit` consumes --vg-accent-faint/-dim/-bloom,
-              which only `themeTokens()` produces; this screen never called it,
-              so a mounted orbit would have drawn an uncoloured ring. */}
-          {/* ⚠ ONE RING, RESOLVED BY PRIORITY — see src/utils/avatarRing.js.
-              The band used to carry a rank border, a champion frame, a live ring
-              and the orbit all at once, so the thing the user actually equipped
-              was painted over. Live borrows the band and gives it back.
-
-              The rank-colour border is REMOVED: it contradicted the locked rule
-              that rank never touches the avatar ring. Rank still reads in chat
-              and on the entry ribbon. */}
+          {/* ⚠ ONE RING, AND IT IS THE LIVE RING, WITH ITS PILL (founder,
+              2026-09-14). The orbit, the unseen-status ring and the dark
+              separator ring are gone. The gradient paints only when there is no
+              photo: behind a photo its antialiased edge showed as a thin ring. */}
           <div
-            onClick={ring === RING.STATUS ? () => navigate('/status') : undefined}
-            className={`${ring === RING.ORBIT ? 'vg-orbit ' : ''}w-[88px] h-[88px] -mt-11 rounded-full flex items-center justify-center font-syne font-black text-[30px] relative shrink-0`}
+            className="w-[88px] h-[88px] -mt-11 rounded-full flex items-center justify-center font-syne font-black text-[30px] relative shrink-0"
             style={{
-              // The orbit's --vg-accent-* now come from the ROOT contract above,
-              // like every other surface. Setting them again here would be a
-              // second source of truth for the same token.
-              background: 'linear-gradient(135deg,#7b1fff,#3b82f6)',
-              // Live is ember and urgent; an unseen status is the accent-neutral
-              // violet the rest of the app already uses for "new". Both are a
-              // solid ring, so they read as STATE, distinct from the orbit's
-              // travelling light which reads as identity.
-              ...(ring === RING.LIVE
-                ? { boxShadow: '0 0 0 3px #0B0B14, 0 0 0 6px #F04060, 0 0 22px #F0406088' }
-                : ring === RING.STATUS
-                  ? { boxShadow: '0 0 0 3px #0B0B14, 0 0 0 6px #B44FFF, 0 0 18px #B44FFF66', cursor: 'pointer' }
-                  : { boxShadow: '0 0 0 3px #0B0B14' }),
+              background: masked.avatar ? 'transparent' : 'linear-gradient(135deg,#7b1fff,#3b82f6)',
+              ...(ring === RING.LIVE ? { boxShadow: '0 0 0 3px #0B0B14, 0 0 0 6px #F04060, 0 0 22px #F0406088' } : {}),
             }}
           >
             {/* overflow-hidden on inner image wrapper so the presence dot
@@ -627,7 +576,7 @@ export default function PublicProfileScreen() {
               )}
               {!isBot && (
                 <span className="px-2 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase shrink-0"
-                      style={{ background: `${accent}33`, color: accent, border: `1px solid ${accent}4D` }}>
+                      style={ACCENT_CHIP}>
                   {vpLevel?.name || 'Rookie'}
                 </span>
               )}
@@ -675,10 +624,11 @@ export default function PublicProfileScreen() {
             {/* Linked socials + join date — both leak identity, so hide when
                 masked. */}
             <div className="flex items-center gap-2.5 flex-wrap">
-              {!masked.isVanguardPersona && socialsToList(user.socials, user.socialEnabled).slice(0, 5).map((s, i) => (
-                <a key={i} href={s.url} target="_blank" rel="noreferrer"
+              {!masked.isVanguardPersona && socialsToList(user.socials, user.socialEnabled).map((s, i) => (
+                <a key={i} href={s.href} target="_blank" rel="noreferrer" aria-label={socialLabel(s.platform)}
+                   onClick={(e) => openSocialLink(e, s.href)}
                    className="w-7 h-7 rounded-md flex items-center justify-center text-text-muted hover:text-white hover:bg-purple-700/20 transition-colors"
-                   style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                   style={SOLID_CHIP}>
                   <Icon name={socialIcon(s.platform)} size={13} />
                 </a>
               ))}
@@ -688,6 +638,7 @@ export default function PublicProfileScreen() {
                 </span>
               )}
             </div>
+            {!masked.isVanguardPersona && <LinkedHandles linkedAccounts={user.linkedAccounts} platforms={user.platforms} className="mt-2" />}
           </div>
           {/* ⚠ ACTIONS SIT ON THE RIGHT, in the black space under the banner.
               Founder, said three times: "the following, message, and tips have
@@ -709,7 +660,7 @@ export default function PublicProfileScreen() {
                         transition={{ type: 'spring', stiffness: 500, damping: 25 }}
                         className="px-5 py-2 rounded-full font-bold text-[13px] transition-colors shrink-0"
                         style={following
-                          ? { background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.10)', color: '#a0a0c0' }
+                          ? { ...SOLID_CHIP, color: '#a0a0c0' }
                           : { background: 'var(--vg-accent)', color: '#fff', boxShadow: '0 0 18px var(--vg-accent-dim)' }}
                       >
                         {following ? 'Following' : 'Follow'}
@@ -718,13 +669,13 @@ export default function PublicProfileScreen() {
                         <>
                           <button onClick={handleMessage}
                                   className="w-10 h-10 rounded-full flex items-center justify-center hover:brightness-125 transition-all shrink-0 text-white"
-                                  style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.10)' }}
+                                  style={SOLID_CHIP}
                                   title="Message">
                             <Icon name="chat_bubble" size={16} />
                           </button>
                           <button onClick={() => setShowTip(true)}
                                   className="w-10 h-10 rounded-full flex items-center justify-center hover:brightness-125 transition-all shrink-0"
-                                  style={{ background: 'rgba(245,197,66,0.12)', border: '1px solid rgba(245,197,66,0.25)' }}
+                                  style={TIP_CHIP}
                                   title="Tip">
                             <CoinIcon size={16} />
                           </button>
@@ -736,7 +687,7 @@ export default function PublicProfileScreen() {
                     <button
                       onClick={() => navigate('/edit-profile')}
                       className="px-4 py-2 rounded-lg font-bold text-[12px] mb-2"
-                      style={{ background: 'var(--vg-accent-chip)', color: 'var(--vg-accent)', border: '1px solid rgba(180,79,255,0.40)' }}
+                      style={ACCENT_CHIP}
                     >
                       Edit Profile
                     </button>
@@ -749,7 +700,10 @@ export default function PublicProfileScreen() {
       {/* STATS BAR — compact 3-up counts (Instagram/TikTok style), VP banner
           stacked full-width below. Mobile-first: no bulky icon boxes, no
           inline VP banner that overflowed off-screen on phones. */}
-      <div className="px-5 py-3 border-b" style={{ borderColor: '#1E1E2E' }}>
+      {/* ⚠ Withheld for a masked Vanguard: the real account's counts are enough
+          to match the persona to a person. */}
+      {!masked.isVanguardPersona && (
+      <div className="px-5 py-3">
         {/* ⚠ ONE ROW: Followers | Following | Likes | VP, exactly as the owner's
             own profile does it (ProfileScreen.jsx:413). Founder, 2026-08-24:
             "Vergr points does not need to be a full width, the stats and Vergr
@@ -789,6 +743,8 @@ export default function PublicProfileScreen() {
         )}
         </div>
       </div>
+      )}
+      </div>
 
       {/* STREAM SCHEDULE — read-only card, self-hides when unset/masked. */}
       {!masked.isVanguardPersona && user.streamSchedule && (
@@ -809,7 +765,7 @@ export default function PublicProfileScreen() {
           doesn't show personal post history; their actions are attributed
           to "@Vanguard" wherever those posts/comments live in feeds. */}
       {!masked.isVanguardPersona && (
-        <div className="flex items-center justify-between px-5 border-b" style={{ borderColor: '#1E1E2E' }}>
+        <div className="flex items-center justify-between px-5">
           <div className="flex">
             {PROFILE_TABS.map(t => (
               <button key={t}
@@ -835,17 +791,18 @@ export default function PublicProfileScreen() {
           </p>
         </div>
       ) : (
-      <div className="px-5 py-4">
-        {/* PINNED — above the Posts grid only; the main list drops pinned ids
+      // One timeline column for Posts, uniform grids for Clips and Media (see
+      // components/profile/ProfileGrid.jsx for why). The bottom padding keeps the
+      // last post clear of the floating music player when one is playing.
+      <div className={`py-3 md:px-5 ${!isMe && ambianceOn && user.cosmetics?.profileAudio ? 'pb-28' : ''}`}>
+        {/* PINNED — above the Posts list only; the main list drops pinned ids
             so nothing renders twice. */}
         {activeTab === 'Posts' && pinnedPosts.length > 0 && (
-          <div className="mb-4">
-            <p className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-text-secondary mb-2.5">
+          <div className="mb-2">
+            <p className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-text-secondary px-4 md:px-0 pt-1 pb-2">
               <Icon name="push_pin" size={13} style={{ color: accent }} /> Pinned
             </p>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-              {pinnedPosts.map(p => <PostCard key={`pin-${p.id}`} post={{ ...p, author: user }} compact />)}
-            </div>
+            <ProfilePostList tab="Posts" posts={pinnedPosts.map(p => ({ ...p, author: user }))} />
           </div>
         )}
         {(() => {
@@ -859,17 +816,13 @@ export default function PublicProfileScreen() {
               </div>
             );
           }
-          return (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-              {list.map(p => <PostCard key={p.id} post={p} compact />)}
-            </div>
-          );
+          return <ProfilePostList tab={activeTab} posts={list} />;
         })()}
       </div>
       )}
 
       {showTip && user && (
-        <SendCoinsModal isOpen={showTip} onClose={() => setShowTip(false)} preselectedUser={user} />
+        <SendCoinsModal isOpen={showTip} onClose={() => setShowTip(false)} recipient={user} />
       )}
       <MyQrModal open={showQr} onClose={() => setShowQr(false)} user={user} />
       {showBoost && (
@@ -891,7 +844,10 @@ export default function PublicProfileScreen() {
           ⚠ The report control is MANDATORY: nothing scans audio, so a visitor
           being able to report it IS the moderation story. */}
       {!isMe && !masked.isVanguardPersona && (
-        <div className="sticky bottom-6 z-30 flex justify-end pr-4 pointer-events-none">
+        // ⚠ ABOVE THE BOTTOM NAV ON A PHONE. At bottom-6 it sat BEHIND the fixed
+        // 56px nav (z-50 over z-30), so a phone browser never showed it; on a
+        // computer there is no bottom nav and bottom-6 is right.
+        <div className="sticky bottom-[calc(72px+var(--vg-safe-b,0px))] lg:bottom-6 z-30 flex justify-end pr-4 pointer-events-none">
           <div className="pointer-events-auto">
             <ProfileAudio
               track={user.cosmetics?.profileAudio}
@@ -936,7 +892,7 @@ function Stat({ icon, label, value, onClick }) {
   return (
     <button onClick={onClick} className="flex items-center gap-2.5 pr-6 transition-colors hover:brightness-125">
       <div className="w-[34px] h-[34px] rounded-lg flex items-center justify-center"
-           style={{ background: 'rgba(255,255,255,0.045)', color: 'var(--vg-accent)' }}>
+           style={{ ...SOLID_CHIP, color: 'var(--vg-accent)' }}>
         <Icon name={icon} size={16} />
       </div>
       <div className="text-left">
@@ -954,30 +910,16 @@ function formatCount(n) {
   return n.toString();
 }
 
-function socialsToList(socials, enabled = {}) {
-  if (!socials) return [];
-  if (Array.isArray(socials)) return socials.filter(s => s && s.url);
-  if (typeof socials === 'object') {
-    return Object.entries(socials)
-      .filter(([platform, url]) => url && enabled?.[platform] !== false)
-      .map(([platform, url]) => ({ platform, url }));
-  }
-  return [];
-}
-
-function socialIcon(platform) {
-  const map = { twitter: 'public', x: 'public', youtube: 'play_circle', instagram: 'photo_camera',
-                tiktok: 'music_note', discord: 'chat', twitch: 'live_tv', website: 'language' };
-  return map[(platform || '').toLowerCase()] || 'link';
-}
 
 // ─── Right rail ────────────────────────────────────────────────────
 
-function PublicRightPanel({ user, posts, navigate }) {
+function PublicRightPanel({ user, posts, loaded = true, navigate, onViewClips }) {
+  // Before the posts arrive every figure was a confident "0".
+  const shown = (v) => (loaded ? v.toLocaleString() : '–');
   const totalLikes = posts.reduce((s, p) => s + (p.likeCount || 0), 0);
   const totalViews = posts.reduce((s, p) => s + (p.viewCount || 0), 0);
-  const totalClips = posts.filter(p => p.type === 'clip').length;
-  const topClips = [...posts].filter(p => p.type === 'clip')
+  const totalClips = posts.filter(p => isShortFormat(p.type)).length;
+  const topClips = [...posts].filter(p => isShortFormat(p.type))
                      .sort((a, b) => (b.likeCount || 0) - (a.likeCount || 0))
                      .slice(0, 3);
   // Twitch handle pulled from linkedAccounts. Stored as either a string
@@ -987,7 +929,7 @@ function PublicRightPanel({ user, posts, navigate }) {
   return (
     <div className="w-full px-3 py-4 space-y-4">
       {twitchUser && (
-        <div className="rounded-xl p-3" style={{ background: '#14141F', border: '1px solid #1E1E2E' }}>
+        <div className="rounded-xl p-3" style={{ background: '#14141F' }}>
           <div className="flex items-center justify-between mb-2">
             <p className="text-[13px] font-bold text-text-primary">Twitch</p>
             <a href={`https://twitch.tv/${twitchUser}`} target="_blank" rel="noreferrer"
@@ -998,42 +940,32 @@ function PublicRightPanel({ user, posts, navigate }) {
       )}
 
       {/* Stats */}
-      <div className="rounded-xl p-3" style={{ background: '#14141F', border: '1px solid #1E1E2E' }}>
+      <div className="rounded-xl p-3" style={{ background: '#14141F' }}>
         <p className="text-[13px] font-bold text-text-primary mb-2.5">Profile Overview</p>
         <div className="grid grid-cols-2 gap-2">
-          <OvCard icon="visibility" label="Total Views" value={totalViews.toLocaleString()} />
-          <OvCard icon="movie"      label="Total Clips" value={totalClips.toLocaleString()} />
-          <OvCard icon="favorite"   label="Total Likes" value={totalLikes.toLocaleString()} />
-          <OvCard icon="forum"      label="Posts"       value={(user.postCount || posts.length).toLocaleString()} />
+          <OvCard icon="visibility" label="Total Views" value={shown(totalViews)} />
+          <OvCard icon="movie"      label="Total Clips" value={shown(totalClips)} />
+          <OvCard icon="favorite"   label="Total Likes" value={shown(totalLikes)} />
+          <OvCard icon="forum"      label="Posts"       value={user.postCount ? user.postCount.toLocaleString() : shown(posts.length)} />
         </div>
       </div>
 
       {/* Top Clips */}
-      <div className="rounded-xl p-3" style={{ background: '#14141F', border: '1px solid #1E1E2E' }}>
-        <p className="text-[13px] font-bold text-text-primary mb-2">Top Clips</p>
-        {topClips.length === 0 ? (
-          <p className="text-[11px] text-text-muted">No clips yet</p>
-        ) : (
-          topClips.map(c => (
-            <button key={c.id}
-              onClick={() => navigate(`/post/${c.id}`)}
-              className="flex items-center gap-2 py-2 w-full text-left border-b last:border-0"
-              style={{ borderColor: '#1E1E2E' }}>
-              <div className="w-[52px] h-[34px] rounded-md shrink-0 overflow-hidden"
-                   style={{ background: 'linear-gradient(135deg,#1a0a2e,#0a1a3e)' }}>
-                {c.imageUrl && <img src={c.imageUrl} alt="" className="w-full h-full object-cover" />}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-[11px] font-semibold text-text-primary truncate">{c.text || c.title || 'Clip'}</p>
-                <p className="text-[10px] text-text-muted">♥ {(c.likeCount || 0).toLocaleString()}</p>
-              </div>
-            </button>
-          ))
-        )}
+      {/* ⚠ It read `c.imageUrl`, which no clip carries, so every thumbnail was
+          an empty gradient box, and `c.text`, so every title said "Clip"
+          (founder, 2026-09-14 screenshot). TopClipsList draws the real cover. */}
+      <div className="rounded-xl p-3" style={{ background: '#14141F' }}>
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-[13px] font-bold text-text-primary">Top Clips</p>
+          {topClips.length > 0 && (
+            <button onClick={onViewClips} className="text-[11px] font-semibold text-brand-violet-light">View All</button>
+          )}
+        </div>
+        <TopClipsList clips={topClips} loading={!loaded} />
       </div>
 
       {/* Squads */}
-      <div className="rounded-xl p-3" style={{ background: '#14141F', border: '1px solid #1E1E2E' }}>
+      <div className="rounded-xl p-3" style={{ background: '#14141F' }}>
         <p className="text-[13px] font-bold text-text-primary mb-2">Squads</p>
         {/* ⚠ "Public squads coming soon" was REMOVED 2026-08-24. A coming-soon
             panel on the page strangers judge the product by reads as unfinished.
@@ -1046,7 +978,7 @@ function PublicRightPanel({ user, posts, navigate }) {
 
 function OvCard({ icon, label, value }) {
   return (
-    <div className="rounded-[10px] p-2.5" style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.07)' }}>
+    <div className="rounded-[10px] p-2.5" style={{ background: '#1C1C29' }}>
       <div className="flex items-center gap-1 text-[10px] text-text-muted mb-1">
         <Icon name={icon} size={11} /> {label}
       </div>

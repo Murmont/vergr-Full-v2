@@ -32,7 +32,7 @@ export default function NativeMyMembershipsScreen() {
   const fmtDate = (ms) => (ms ? new Date(ms).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : '—');
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--bg-dark)', paddingBottom: 'calc(88px + env(safe-area-inset-bottom, 0px))' }}>
+    <div style={{ minHeight: '100vh', background: 'var(--bg-dark)', paddingBottom: 'calc(88px + var(--vg-safe-b, 0px))' }}>
       <TopBar title="My Memberships" showBack />
       <div className="px-4 py-5">
         {subs === null ? (

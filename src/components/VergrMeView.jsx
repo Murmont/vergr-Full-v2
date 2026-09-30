@@ -1321,7 +1321,18 @@ function DigitalProductBlock({ block, t, accent, linkSty, interactive, fire }) {
   if (!p) {
     return interactive ? null : (
       <EditorNote t={t} radius={linkSty.borderRadius}>
-        {block.productId ? 'Your digital product renders here on the live page.' : 'Pick a product for this block (or create one in the Products tab).'}
+        {block.productId ? 'Your store product renders here on the live page.' : 'Pick a product from your connected store for this block.'}
+      </EditorNote>
+    );
+  }
+  // Selling for Coins is switched off (founder, 2026-09-22). Only products
+  // synced from the seller's Shopify store render, and they check out on
+  // Shopify. A coin-priced product is hidden on the live page; the server
+  // refuses the purchase too (vergrMeShop.js COIN_PRODUCT_SALES_ENABLED).
+  if (p.checkoutMode !== 'permalink') {
+    return interactive ? null : (
+      <EditorNote t={t} radius={linkSty.borderRadius}>
+        This product is priced in Coins, and selling for Coins is turned off, so it is hidden on your live page. Link to your store with a Product or Shop catalog block instead.
       </EditorNote>
     );
   }

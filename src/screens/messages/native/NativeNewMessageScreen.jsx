@@ -176,12 +176,12 @@ export default function NativeNewMessageScreen() {
   const inviteContact = (contact) => {
     // Canonical domain + the sender's ref: an invited friend who signs up and
     // verifies a phone pays BOTH sides the referral VP.
-    const body = encodeURIComponent(`Hey! Add me on Vergr — the gamer social app. https://vergr.app/reflink?ref=${auth.currentUser?.uid || ''}`);
+    const body = encodeURIComponent(`Hey! Add me on Vergr. https://vergr.app/reflink?ref=${auth.currentUser?.uid || ''}`);
     window.location.href = `sms:${contact.tel}?body=${body}`;
   };
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--bg-dark)', paddingBottom: 'calc(88px + env(safe-area-inset-bottom, 0px))' }}
+    <div style={{ minHeight: '100vh', background: 'var(--bg-dark)', paddingBottom: 'calc(88px + var(--vg-safe-b, 0px))' }}
       className="flex flex-col">
       <header className="flex items-center gap-3 px-4 pb-3 border-b border-white/[0.04] relative"
         style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 14px)' }}>

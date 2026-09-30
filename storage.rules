@@ -213,6 +213,17 @@ service firebase.storage {
       allow read, update, delete: if false;
     }
 
+    // Payout verification documents (proof of address / source of funds).
+    // functions/payoutVerification.js. The owner may upload; NOBODY may read,
+    // including the owner: only the Admin SDK reads them, for review, and they
+    // are deleted as soon as a decision is made. 5 MB matches MAX_FILE_BYTES.
+    match /upgrade-docs/{userId}/{fileName} {
+      allow create: if isOwner(userId)
+        && request.resource.contentType in ['application/pdf', 'image/jpeg', 'image/png', 'image/webp']
+        && request.resource.size < 5 * 1024 * 1024;
+      allow read, update, delete: if false;
+    }
+
     // Deny everything else
     match /{allPaths=**} {
       allow read, write: if false;

@@ -1,8 +1,11 @@
 // /vanguard/handbook — The Vanguard Handbook. Design ref: Vanguard Handbook.png
 // Full content: 8 Rules, Consequences Ladder, Financials with MRR-activation pills,
-// Tournament procedure, Platform rules FAQ. Side-nav of sections.
+// Working the queue, Platform rules FAQ. Side-nav of sections.
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { doc, onSnapshot } from 'firebase/firestore';
+import ReactMarkdown from 'react-markdown';
+import { db } from '../../firebase/config';
 import VanguardLayout, { VG_COLORS as C, VanguardPageHeader, VgCard } from '../../components/vanguard/VanguardLayout';
 import Icon from '../../components/Icon';
 import { VANGUARD_RANKS, STIPEND_MRR_BRACKETS, stipendForRank } from '../../utils/vanguardRanks';
@@ -12,7 +15,6 @@ const SECTIONS = [
   { key: 'consequences',  label: 'Consequences Ladder',            icon: 'warning' },
   { key: 'financials',    label: 'Financials & Treasury',          icon: 'paid' },
   { key: 'recruits',      label: 'Onboarding & Recruits',          icon: 'school' },
-  { key: 'tournaments',   label: 'Tournament Winner-Call Procedure', icon: 'emoji_events' },
   { key: 'queue',         label: 'Working the Queue',              icon: 'inbox' },
   { key: 'escalations',   label: 'Escalations & Appeals',          icon: 'priority_high' },
   { key: 'faq',           label: 'Platform Rules FAQ',             icon: 'help' },
@@ -27,8 +29,8 @@ const RULES = [
   { n: 2, title: 'Onboarding the Recruits', body: 'Recruits learn by shadowing. Take time to explain your reasoning when they ask. Mentor at least one Recruit per quarter at Senior+ rank.' },
   { n: 3, title: 'Platform Confidentiality', body: 'Audit logs, evidence, user reports, Vanguard chat content — never shared externally. Screenshots of moderation surfaces are prohibited.' },
   { n: 4, title: 'Follow the Evidence',     body: 'Decisions based on evidence, not vibes. When evidence is grainy, escalate. Don\'t guess.' },
-  { n: 5, title: 'Escalation Paths',         body: 'When unsure: ask in Vanguard Chat. When stake is high (permaban, large prize pool): escalate to Senior+. Recruits cannot decide; only shadow + flag.' },
-  { n: 6, title: 'Tournament Standards',     body: 'Match decisions are final after 24h unless appealed to Senior+. Use Decision Library precedents before deciding. Document your reasoning in the audit log.' },
+  { n: 5, title: 'Escalation Paths',         body: 'When unsure: ask in Vanguard Chat. When stakes are high (permaban, account removal): escalate to Senior+. Recruits cannot decide; only shadow + flag.' },
+  { n: 6, title: 'Decision Standards',     body: 'Decisions are final after 24h unless appealed to Senior+. Use Decision Library precedents before deciding. Document your reasoning in the audit log.' },
   { n: 7, title: 'Consistency, Even when Costly', body: 'Apply the same rule to friends as to strangers. Recuse from any case involving personal off-platform relationships. Disclose conflicts of interest immediately.' },
   { n: 8, title: 'Discipline Means Following', body: 'When Commander+ overturns your decision, accept it. Appeal once, then move on. Repeated insubordination = demotion review.' },
 ];
@@ -65,16 +67,39 @@ function StipendCell({ rankId, mrr }) {
   );
 }
 
+// Admin → Moderation → Settings writes app_config/general.moderation.handbookMarkdown.
+// Until 2026-09-21 nothing rendered it. This listener shares the one the app
+// already holds on app_config/general (the SDK dedupes the target), so opening
+// the handbook costs no extra read.
+function useHouseGuidance() {
+  const [md, setMd] = useState('');
+  useEffect(() => onSnapshot(doc(db, 'app_config', 'general'),
+    (snap) => setMd(String(snap.data()?.moderation?.handbookMarkdown || '').trim()),
+    () => setMd('')), []);
+  return md;
+}
+
 export default function VanguardHandbookScreen() {
   const [section, setSection] = useState('rules');
+  const house = useHouseGuidance();
+  const sections = house ? [{ key: 'house', label: 'Current guidance', icon: 'campaign' }, ...SECTIONS] : SECTIONS;
 
   const renderSection = () => {
+    if (section === 'house' && house) return (
+      <VgCard style={{ padding: 20 }}>
+        <div style={{ fontFamily: 'Syne', fontSize: 16, fontWeight: 800, color: C.text, marginBottom: 4 }}>Current guidance</div>
+        <div style={{ fontFamily: 'DM Sans', fontSize: 11.5, color: C.textMuted, marginBottom: 14 }}>Set by the Vergr team. Where it differs from the sections below, this wins.</div>
+        <div className="vg-handbook-md" style={{ fontFamily: 'DM Sans', fontSize: 13, lineHeight: 1.6, color: C.textDim }}>
+          <ReactMarkdown>{house}</ReactMarkdown>
+        </div>
+      </VgCard>
+    );
     if (section === 'rules') return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         {RULES.map(r => (
           <VgCard key={r.n}>
             <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-              <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(180,79,255,.12)', color: C.violetLt, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontFamily: 'Syne', fontWeight: 800, fontSize: 16 }}>{r.n}</div>
+              <div style={{ width: 36, height: 36, borderRadius: 10, background: C.activeFill, color: C.violetLt, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontFamily: 'Syne', fontWeight: 800, fontSize: 16 }}>{r.n}</div>
               <div>
                 <div style={{ fontFamily: 'Syne', fontWeight: 700, fontSize: 15, color: C.text }}>{r.title}</div>
                 <div style={{ fontFamily: 'DM Sans', fontSize: 13, color: C.textDim, marginTop: 6, lineHeight: 1.55 }}>{r.body}</div>
@@ -93,7 +118,7 @@ export default function VanguardHandbookScreen() {
             <div style={{ fontFamily: 'DM Sans', fontSize: 12.5, color: C.textDim, marginTop: 6, lineHeight: 1.55 }}>{c.body}</div>
           </VgCard>
         ))}
-        <div style={{ marginTop: 6, padding: 10, background: 'rgba(245,200,66,.06)', border: `1px solid rgba(245,200,66,.2)`, borderRadius: 8, fontFamily: 'DM Sans', fontSize: 12, color: C.gold }}>
+        <div style={{ marginTop: 6, padding: 10, background: C.goldFill, border: 0, borderRadius: 8, fontFamily: 'DM Sans', fontSize: 12, color: C.gold }}>
           <Icon name="info" size={14} style={{ verticalAlign: 'middle', marginRight: 6 }} />
           Severe breaches (anonymity violation, evidence leak, abuse of authority) go directly to Level 6, no warnings. Founder + Overseers vote on severe-breach calls.
         </div>
@@ -108,7 +133,7 @@ export default function VanguardHandbookScreen() {
               <div style={{ fontFamily: 'DM Mono', fontSize: 10, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '.14em' }}>Platform MRR</div>
               <div style={{ fontFamily: 'DM Mono', fontSize: 22, fontWeight: 800, color: C.text }}>€{CURRENT_MRR.toLocaleString()}</div>
             </div>
-            <div style={{ padding: '6px 12px', background: CURRENT_MRR >= 10000 ? 'rgba(34,209,126,.12)' : 'rgba(107,114,128,.12)', border: `1px solid ${CURRENT_MRR >= 10000 ? 'rgba(34,209,126,.3)' : C.border}`, borderRadius: 999, fontFamily: 'DM Sans', fontSize: 12, fontWeight: 700, color: CURRENT_MRR >= 10000 ? C.success : C.textMuted }}>
+            <div style={{ padding: '6px 12px', background: CURRENT_MRR >= 10000 ? C.successFill : C.card2, border: 0, borderRadius: 999, fontFamily: 'DM Sans', fontSize: 12, fontWeight: 700, color: CURRENT_MRR >= 10000 ? C.success : C.textMuted }}>
               {CURRENT_MRR >= 10000 ? '🟢 Tier B Active' : '⚪ Tier B Dormant'}
             </div>
           </div>
@@ -120,7 +145,7 @@ export default function VanguardHandbookScreen() {
         <VgCard>
           <div style={{ fontFamily: 'DM Mono', fontSize: 10, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '.14em', marginBottom: 12 }}>Active perks — every rank, every day</div>
           <ul style={{ margin: 0, paddingLeft: 18, fontFamily: 'DM Sans', fontSize: 13, color: C.textDim, lineHeight: 1.8 }}>
-            <li><strong style={{ color: C.text }}>Treasury share</strong> — every active mod earns from the 5% tournament mod cut on tournaments they preside over. Pool distributes 1st of each month at 00:05 UTC.</li>
+            <li><strong style={{ color: C.text }}>Treasury share</strong>: when the Vanguard treasury holds a balance, it is split among active mods on the 1st of each month at 00:05 UTC.</li>
             <li><strong style={{ color: C.text }}>100% revenue share</strong> — while your Vanguard status is active you keep everything your content earns. Everyone else keeps 50% to 80%, set by lifetime earnings.</li>
             <li><strong style={{ color: C.text }}>+VP per moderation action</strong> — Recruit +10, Vanguard +50, Senior +100, Commander +200, Overseer +500.</li>
             <li><strong style={{ color: C.text }}>Unlimited referral cap</strong> — normal users capped at 5/week (Free) or 20/week (Lite/Pro). You're uncapped.</li>
@@ -155,8 +180,8 @@ export default function VanguardHandbookScreen() {
               </tbody>
             </table>
           </div>
-          <div style={{ marginTop: 14, padding: 10, background: 'rgba(180,79,255,.05)', border: `1px solid rgba(180,79,255,.15)`, borderRadius: 8, fontFamily: 'DM Mono', fontSize: 10.5, color: C.textDim }}>
-            Stipends are paid from <code>app_revenue/tournaments</code> first, <code>app_revenue/tips</code> as fallback. Infrastructure stays funded — stipends never come from the tip 10% lifeline. Activates at €10k MRR. Currently dormant.
+          <div style={{ marginTop: 14, padding: 10, background: C.violetSoftFill, border: 0, borderRadius: 8, fontFamily: 'DM Mono', fontSize: 10.5, color: C.textDim }}>
+            Stipends are paid from platform revenue once MRR reaches €10k. Currently dormant.
           </div>
         </VgCard>
 
@@ -182,28 +207,12 @@ export default function VanguardHandbookScreen() {
           <li>A Senior+ recommends them on the Roster page. Founder approves the promotion.</li>
           <li>New Vanguard gets first solo decision authority + treasury weight unlocks at 1.0×.</li>
         </ol>
-        <div style={{ marginTop: 12, padding: 10, background: 'rgba(180,79,255,.05)', border: `1px solid rgba(180,79,255,.15)`, borderRadius: 8, fontFamily: 'DM Sans', fontSize: 12, color: C.textDim }}>
+        <div style={{ marginTop: 12, padding: 10, background: C.violetSoftFill, border: 0, borderRadius: 8, fontFamily: 'DM Sans', fontSize: 12, color: C.textDim }}>
           Senior+ ranks: mentor at least one Recruit per quarter. Mentor-to-mentee promotion stats are visible to Commander+ on the Roster page.
         </div>
       </VgCard>
     );
 
-    if (section === 'tournaments') return (
-      <VgCard>
-        <h3 style={{ fontFamily: 'Syne', fontWeight: 700, fontSize: 16, color: C.text, margin: '0 0 12px' }}>Tournament winner-call procedure</h3>
-        <ol style={{ paddingLeft: 18, fontFamily: 'DM Sans', fontSize: 13, color: C.textDim, lineHeight: 1.7 }}>
-          <li><strong style={{ color: C.text }}>Verify your authority.</strong> Recruits cannot decide. Vanguard+ can.</li>
-          <li><strong style={{ color: C.text }}>Review evidence.</strong> GSI data {'>'} replay clips {'>'} screenshots {'>'} player testimony. Demand timestamps.</li>
-          <li><strong style={{ color: C.text }}>Check the Decision Library.</strong> Search for prior rulings on similar disputes. Cite precedent in your reason.</li>
-          <li><strong style={{ color: C.text }}>Document.</strong> Write a clear reason in the Decision column. This goes to audit + appears on the appeal record if challenged.</li>
-          <li><strong style={{ color: C.text }}>Decide.</strong> Click the winning player. Match auto-completes. Bracket advances.</li>
-          <li><strong style={{ color: C.text }}>If unclear:</strong> escalate to Senior+. Don't guess on prize-money disputes.</li>
-        </ol>
-        <div style={{ marginTop: 12, padding: 10, background: 'rgba(34,209,126,.05)', border: `1px solid rgba(34,209,126,.2)`, borderRadius: 8, fontFamily: 'DM Sans', fontSize: 12, color: C.success }}>
-          Tournaments you decide get flagged <code>vanguardModerated: true</code>. The 5% mod cut routes to the Vanguard treasury automatically. Your action increments your monthly count + treasury weight.
-        </div>
-      </VgCard>
-    );
 
     if (section === 'queue') return (
       <VgCard>
@@ -211,7 +220,7 @@ export default function VanguardHandbookScreen() {
         <ul style={{ paddingLeft: 18, fontFamily: 'DM Sans', fontSize: 13, color: C.textDim, lineHeight: 1.7 }}>
           <li><strong style={{ color: C.text }}>Oldest first.</strong> The queue defaults to oldest items first to prevent old cases getting buried.</li>
           <li><strong style={{ color: C.text }}>Claim before reviewing.</strong> Once you claim a case, you have 48h SLA. Held longer = auto-released to queue.</li>
-          <li><strong style={{ color: C.text }}>Use filters.</strong> Critical-only filter when you have 15 minutes. Tournaments filter when you want decision practice.</li>
+          <li><strong style={{ color: C.text }}>Use filters.</strong> Critical-only filter when you have 15 minutes.</li>
           <li><strong style={{ color: C.text }}>Notes are private.</strong> Use the Notes page to track patterns, but never share screenshots externally.</li>
           <li><strong style={{ color: C.text }}>Reason is required.</strong> Every decision gets logged. Write reasons others could learn from.</li>
         </ul>
@@ -222,7 +231,7 @@ export default function VanguardHandbookScreen() {
       <VgCard>
         <h3 style={{ fontFamily: 'Syne', fontWeight: 700, fontSize: 16, color: C.text, margin: '0 0 12px' }}>Escalations & Appeals</h3>
         <div style={{ fontFamily: 'DM Sans', fontSize: 13, color: C.textDim, lineHeight: 1.7 }}>
-          <p><strong style={{ color: C.text }}>When to escalate:</strong> evidence is grainy, stakes are high (permaban / large prize pool), conflict of interest, you've been challenged on appeal once and want a second opinion.</p>
+          <p><strong style={{ color: C.text }}>When to escalate:</strong> evidence is grainy, stakes are high (permaban / account removal), conflict of interest, you've been challenged on appeal once and want a second opinion.</p>
           <p><strong style={{ color: C.text }}>Escalation chain:</strong> Vanguard → Senior Vanguard → Commander → Overseer → Founder. Don't skip levels unless time-critical.</p>
           <p><strong style={{ color: C.text }}>Appeals:</strong> Users can appeal your decision once. The next-tier mod reviews + either upholds or overturns. Repeated overturns trigger a Mentor Review.</p>
           <p><strong style={{ color: C.text }}>If your decision is overturned:</strong> read the reviewer's reason carefully. Add the case to your Notes. Discuss in Vanguard Chat if you disagree — never publicly.</p>
@@ -234,7 +243,7 @@ export default function VanguardHandbookScreen() {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {[
           { q: 'A user claims they were banned for no reason. What do I tell them?', a: 'Every action has an audit row. Look it up in the Action Lookup. Then tell them the reason code + the day they violated. They can appeal once.' },
-          { q: 'Can I moderate a tournament my friend is competing in?',                  a: 'No. Conflict of interest. Pass the case to another mod. Disclose the relationship in Vanguard Chat.' },
+          { q: 'Can I moderate content from a friend?',                  a: 'No. Conflict of interest. Pass the case to another mod. Disclose the relationship in Vanguard Chat.' },
           { q: 'How do I unban someone?',                                                 a: 'Find their record in User Lookup, find the ban in audit log, and run an Unban action (Commander+ only). Document why.' },
           { q: 'What if I disagree with another mod\'s decision?',                        a: 'Discuss in Vanguard Chat. Don\'t challenge publicly. If still unresolved, formally escalate to Commander+ for review.' },
           { q: 'A user offers me coins to overturn a decision.',                          a: 'Report immediately in Vanguard Chat with screenshots. Bribery = instant Level-6 consequences for both parties.' },
@@ -255,7 +264,7 @@ export default function VanguardHandbookScreen() {
         title="Vanguard Handbook"
         subtitle="Your complete guide to policies, procedures, and best practices."
         right={
-          <button style={{ padding: '8px 14px', background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 8, color: C.textDim, fontFamily: 'DM Sans', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+          <button type="button" onClick={() => window.print()} style={{ padding: '8px 14px', background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 8, color: C.textDim, fontFamily: 'DM Sans', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
             <Icon name="download" size={14} /> Download PDF
           </button>
         }
@@ -263,7 +272,7 @@ export default function VanguardHandbookScreen() {
 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(220px, 260px) minmax(0, 1fr)', gap: 14 }}>
         <VgCard style={{ padding: 8, alignSelf: 'flex-start' }}>
-          {SECTIONS.map((s) => {
+          {sections.map((s) => {
             const isActive = section === s.key;
             return (
               <button
@@ -273,7 +282,7 @@ export default function VanguardHandbookScreen() {
                   width: '100%',
                   display: 'flex', alignItems: 'center', gap: 10,
                   padding: '10px 12px',
-                  background: isActive ? 'rgba(180,79,255,.12)' : 'transparent',
+                  background: isActive ? C.activeFill : 'transparent',
                   border: 0,
                   borderLeft: isActive ? `2px solid ${C.violetLt}` : '2px solid transparent',
                   borderRadius: 6,

@@ -134,15 +134,10 @@ export const PROFILE_ACCENTS = [
 // nothing, because `isEffectOn()` below ANDs the opt-out against `vpLevel`,
 // which is server-written and server-only. A visitor's client evaluates the
 // PROFILE OWNER's vpLevel, so an effect cannot be faked to anybody else.
+// ⚠ The avatar ORBIT (was L6) is REMOVED, founder 2026-09-14: the only ring on
+// an avatar is the live ring. L6 still grants the Orchid accent and the Deep
+// gradient, so the level is not hollow.
 export const EFFECTS = [
-  {
-    id: 'orbit',
-    name: 'Avatar orbit',
-    desc: 'A light in your accent colour travels the edge of your avatar.',
-    level: 6,
-    surface: 'profile',
-    defaultOn: true,
-  },
   {
     id: 'ambiance',
     name: 'Profile music',
@@ -197,7 +192,12 @@ export const isEffectOn = (id, profile) => {
 // TYPING_STYLE_LEVEL is the single number. Changing it here changes the ladder
 // row, the picker and (via scripts/vp-mirror-check.mjs) what firestore.rules is
 // required to say.
-export const TYPING_STYLE_LEVEL = 32;   // Challenger L2 (RANK_TIERS: 31-40)
+// ⚠ NOW THE FIRST STYLED UNLOCK (Wave), not a gate for the whole set. The
+// picker opens here and each style carries its own level, which
+// firestore.rules enforces per id (cosmeticMinLevel). It was 32 while the
+// ladder granted Wave at 9 and Levels at 23, so the rows promised styles the
+// server refused.
+export const TYPING_STYLE_LEVEL = 9;    // Wave, Rookie L9
 
 // ── The animated crest. Effect 21, docs/effects/21-animated-crest.md ──
 //
@@ -404,8 +404,11 @@ export const boostTokensForLevel = (level) =>
 const buildLadder = () => {
   const out = [];
 
-  out.push(row(1, 'crest_rookie', 'crest', 'Rookie crest', 'chat',
-    'Your crest appears beside your name in live chat.'));
+  // ⚠ ROOKIE HAS NO NAME CREST (RankBadge MIN_BADGE_LEVEL = 11, founder
+  // 2026-08-27: "visible if they are higher than rookie"), so this row must not
+  // say it sits beside your name. It said so, and nothing drew it.
+  out.push(row(1, 'crest_rookie', 'crest', 'Rookie crest', 'profile',
+    'Your first crest, on your profile and your ladder. It joins your name at Contender (L11).'));
 
   // A crest upgrade at every rank-band start. This is the answer to the
   // founder's question about crest vs badge: they are ONE thing. The crest is

@@ -118,7 +118,11 @@ exports.onAdminActionCreated = functions.firestore.onDocumentCreated(
     if (SUPPRESS_PER_ROW_ALERT.has(row.action)) return;
 
     // Find every admin user.
-    const adminsSnap = await db.collection('users').where('role', '==', 'admin').get();
+    // ⚠ 'staff', NOT role === 'admin'. Admin AUTHORITY moved to a Firebase Auth
+    // custom claim on an account with no users document (functions/operator.js),
+    // so a role query finds nobody and these alerts would go silently nowhere.
+    // Notifications need a real account with a device; that is the staff flag.
+    const adminsSnap = await db.collection('users').where('staff', '==', true).get();
     const adminIds = adminsSnap.docs.map(d => d.id);
     if (adminIds.length === 0) return;
 
@@ -182,7 +186,11 @@ exports.adminTotpBruteForceMonitor = defer(
       byActor.set(a, (byActor.get(a) || 0) + 1);
     });
 
-    const adminsSnap = await db.collection('users').where('role', '==', 'admin').get();
+    // ⚠ 'staff', NOT role === 'admin'. Admin AUTHORITY moved to a Firebase Auth
+    // custom claim on an account with no users document (functions/operator.js),
+    // so a role query finds nobody and these alerts would go silently nowhere.
+    // Notifications need a real account with a device; that is the staff flag.
+    const adminsSnap = await db.collection('users').where('staff', '==', true).get();
     const adminIds = adminsSnap.docs.map(d => d.id);
 
     for (const [actor, count] of byActor) {

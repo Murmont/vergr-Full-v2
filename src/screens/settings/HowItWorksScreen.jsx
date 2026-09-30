@@ -11,7 +11,7 @@ const SECTIONS = [
     icon: 'stadia_controller',
     color: '#B44FFF',
     title: 'What is VERGR?',
-    content: 'VERGR is a live streaming and social platform for gamers and creators. You watch and broadcast live streams, post clips, message friends, and build a squad. Creators are supported directly by their audience through tips, memberships, and paid streams.',
+    content: "Vergr is where you go live, share clips and hang out with your people in voice chats and DMs, all in one app. You watch and broadcast live streams, post clips, message friends, and build a squad. Creators are paid a share of the revenue their content generates, on Vergr's own schedule.",
   },
   {
     id: 'economy',
@@ -47,8 +47,8 @@ const SECTIONS = [
     items: [
       { label: '5-day login streak', value: '5 coins + 50 VP' },
       { label: 'Refer a friend', value: '+5,000 VP for you, +3,000 VP for your friend' },
-      { label: 'Lite sub ($4.99/mo)', value: '+1,000 VP + 50 coins / month, 1.5× VP multiplier' },
-      { label: 'Pro sub ($9.99/mo)', value: '+3,000 VP + 150 coins / month, 2× VP multiplier' },
+      { label: 'Lite sub ($4.99/mo)', value: '+1,000 VP + 50 boost coins / month, 1.5× VP multiplier' },
+      { label: 'Pro sub ($9.99/mo)', value: '+3,000 VP + 150 boost coins / month, 2× VP multiplier' },
       { label: 'Buy coin packs', value: 'Bonus VP on the Titan and Ascendant packs' },
     ],
   },
@@ -89,7 +89,7 @@ const SECTIONS = [
     icon: 'shield',
     color: '#B44FFF',
     title: 'Squads',
-    content: 'Squads are your gaming crew. Create or join a squad to chat, run voice hangouts, share media, and climb the squad leaderboard. Every squad has a leadership structure elected by members.',
+    content: 'Squads are your crew. Create or join a squad to chat, run voice hangouts, share media, and climb the squad leaderboard. Every squad has a leadership structure elected by members.',
     items: [
       { label: 'President', value: 'Runs the squad. Set by creator, then monthly elections.' },
       { label: 'Vice President', value: 'Steps in if president is inactive 4+ days.' },
@@ -119,7 +119,7 @@ const SECTIONS = [
       { label: 'Article', value: 'Long-form guides and blogs' },
       { label: 'LFG', value: 'Find players — game, platform, region, rank' },
       { label: 'Tier List', value: 'Rank anything in S/A/B/C/D tiers' },
-      { label: 'Achievement', value: 'Show off your gaming wins' },
+      { label: 'Achievement', value: 'Share a win or a milestone' },
       { label: 'Poll', value: 'Ask the community anything' },
     ],
   },
@@ -158,10 +158,10 @@ export default function HowItWorksScreen() {
       <div className={`px-4 py-4 ${isDesktop ? 'max-w-2xl' : ''}`}>
         {/* Hero */}
         <div className="p-5 rounded-2xl bg-surface-1 border border-white/[0.06] mb-5">
-          <h2 className="font-syne text-xl font-bold mb-2">Play. Stream. Earn.</h2>
+          <h2 className="font-syne text-xl font-bold mb-2">Create together. Watch together. Earn together.</h2>
           <p className="text-text-secondary text-sm leading-relaxed">
-            VERGR is built for gamers who want more than just another social feed. 
-            Play, post, stream, and build a squad. Creators are paid a share of the revenue their audience generates.
+            Vergr is for people who want more than just another social feed. 
+            Post, stream, and build a squad. Creators are paid a share of the revenue their audience generates.
           </p>
         </div>
 

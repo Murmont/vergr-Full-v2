@@ -547,6 +547,7 @@ function ReportDrawer({ reportId, guarded, onClose, onChanged }) {
                       {target.text}
                     </div>
                   )}
+                  <ReportedMedia items={target.mediaUrls} />
                   {target.status && target.status !== 'visible' && (
                     <div style={{ marginTop: 8, fontSize: 11, color: '#f04060', fontWeight: 700 }}>
                       Post status: {target.status}
@@ -710,3 +711,27 @@ const bulkBtn = (color, danger = false) => ({
   background: danger ? 'transparent' : `${color}25`,
   color, fontSize: 11, fontWeight: 700, cursor: 'pointer',
 });
+
+// ⚠ adminGetReportDetail has always returned the post's media, and nothing drew
+// it, so a moderator reviewing a reported photo or clip saw only its caption.
+// On a visual platform that is most reports. Letterboxed, never cropped: a
+// moderator must see the whole frame, including whatever is at the edges.
+const VIDEO_RX = /\.(webm|mp4|mov|m4v|m3u8)(\?|#|$)/i;
+function ReportedMedia({ items }) {
+  const list = (Array.isArray(items) ? items : [])
+    .map((m) => (typeof m === 'string' ? { url: m } : { url: m?.url || m?.src, type: m?.type }))
+    .filter((m) => typeof m.url === 'string' && m.url.startsWith('https://'))
+    .slice(0, 4);
+  if (list.length === 0) return null;
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: list.length > 1 ? '1fr 1fr' : '1fr', gap: 6, marginTop: 8 }}>
+      {list.map((m, i) => {
+        const isVideo = String(m.type || '').startsWith('video') || VIDEO_RX.test(m.url);
+        const box = { width: '100%', height: list.length > 1 ? 140 : 240, objectFit: 'contain', background: '#000', borderRadius: 6, display: 'block' };
+        return isVideo
+          ? <video key={i} src={m.url} controls muted playsInline preload="metadata" style={box} />
+          : <img key={i} src={m.url} alt={'Reported media ' + (i + 1)} loading="lazy" style={box} />;
+      })}
+    </div>
+  );
+}

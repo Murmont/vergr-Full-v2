@@ -198,11 +198,11 @@
     <link rel="preload" as="image" href="/brand/loader-nebula.webp" fetchpriority="high" />
     <link rel="preload" as="image" href="/icons/icon-512-v2.png" fetchpriority="high" />
     <meta name="theme-color" content="#07080D" />
-    <meta name="description" content="Connect with gamers, live stream in high quality, and share clips on Vergr. Build your squad, follow creators, and support them with tips and memberships." />
+    <meta name="description" content="Vergr is where you go live, share clips and hang out with your people in voice chats and DMs, all in one app." />
     <!-- Cryptomus merchant domain ownership verification. Keep until
          Cryptomus confirms verification, after which it can be removed. -->
     <meta name="cryptomus" content="a3067f24" />
-    <title>Vergr | Live Streaming for Gamers & Creators</title>
+    <title>Vergr - Go Live. Hang Out. Share the Moment.</title>
 
     <!-- Structured data for search engines: Organization + WebSite. Helps
          Google understand VERGR is a software product / community, not a
@@ -216,7 +216,7 @@
           "name": "VERGR",
           "url": "https://vergr.app",
           "logo": "https://vergr.app/brand/logo.png",
-          "description": "VERGR is a live streaming and social platform for gamers and creators, with broadcasting, clips, squad communities, and a creator economy.",
+          "description": "Vergr is where you go live, share clips and hang out with your people in voice chats and DMs, all in one app.",
           "sameAs": [],
           "contactPoint": {
             "@type": "ContactPoint",
@@ -244,8 +244,8 @@
          get the right title + image + description for shared URLs. -->
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="VERGR" />
-    <meta property="og:title" content="Vergr | Live Streaming for Gamers & Creators" />
-    <meta property="og:description" content="Connect with gamers, live stream in high quality, and share clips on Vergr. Build your squad, follow creators, and support them with tips and memberships." />
+    <meta property="og:title" content="Vergr - Go Live. Hang Out. Share the Moment." />
+    <meta property="og:description" content="Vergr is where you go live, share clips and hang out with your people in voice chats and DMs, all in one app." />
     <meta property="og:image" content="https://vergr.app/og/share-poster.jpg" />
     <meta property="og:image:width" content="1280" />
     <meta property="og:image:height" content="644" />
@@ -258,8 +258,8 @@
     <meta property="og:video:width" content="1280" />
     <meta property="og:video:height" content="644" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Vergr | Live Streaming for Gamers & Creators" />
-    <meta name="twitter:description" content="Connect with gamers, live stream in high quality, and share clips on Vergr. Build your squad, follow creators, and support them with tips and memberships." />
+    <meta name="twitter:title" content="Vergr - Go Live. Hang Out. Share the Moment." />
+    <meta name="twitter:description" content="Vergr is where you go live, share clips and hang out with your people in voice chats and DMs, all in one app." />
     <meta name="twitter:image" content="https://vergr.app/og/share-poster.jpg" />
     <link rel="canonical" href="https://vergr.app/" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -356,6 +356,12 @@
         letter-spacing: normal;
         text-transform: none;
         display: inline-block;
+        /* Every glyph is exactly 1em wide. Without this cap, while the font is
+           in its block period the invisible ligature WORD takes its fallback
+           width ("slow_motion_video" is ~10 icons wide), so on a cold load the
+           sidebar labels sat at x=89..205 before snapping back (measured
+           2026-09-14). Overflow stays visible so the baseline does not move. */
+        max-width: 1em;
         white-space: nowrap;
         word-wrap: normal;
         direction: ltr;
@@ -383,7 +389,35 @@
          ignores the status-bar inset, so the back arrow hugged the status bar on
          native. Add the safe-area inset to any top-of-screen header.pt-12. */
       .vergr-native header.pt-12 { padding-top: calc(env(safe-area-inset-top, 0px) + 2.25rem) !important; }
-      .safe-bottom { padding-bottom: env(safe-area-inset-bottom, 0px); }
+      /* ⚠⚠ THE BOTTOM SAFE-AREA INSET IS 0 IN THE ANDROID WEBVIEW. THE TOP ONE
+         IS NOT. Measured over CDP against the running 1.0.209 app on 2026-09-11
+         (Chrome 113 WebView, viewport 412x915, dpr 2.625), every shape tested:
+
+           height: env(safe-area-inset-bottom)          -> 0px
+           height: env(safe-area-inset-bottom, 0px)     -> 0px
+           calc(64px + env(safe-area-inset-bottom))     -> 64px
+           padding-bottom: env(safe-area-inset-bottom)  -> 0px
+           env(safe-area-inset-TOP)                     -> 49px  (works)
+
+         Android exposes the cutout/status bar to CSS but NOT the gesture bar, so
+         every bottom fix written against that inset has been a NO-OP on a phone:
+         `.safe-bottom` on BottomNav, `.sheet-safe` on the 17 swept sheets, the
+         wallet's own nav, and the Modal padding. Seen on screen as the gesture
+         pill striking through the SHORTS, Buy and History labels.
+
+         So the value comes from here instead. `max()` keeps whatever a real
+         platform reports (iOS, or a future WebView that fixes this) and only
+         supplies the floor when the platform says 0. 24px is the Android gesture
+         bar (24dp). Web is untouched: the override is scoped to .vergr-native.
+         ⚠ A 3-button navigation bar is taller (48dp); the honest fix is to read
+         the real inset in Kotlin and set --vg-safe-b from the bridge. */
+      :root { --vg-safe-b: env(safe-area-inset-bottom, 0px); }
+      html.vergr-native { --vg-safe-b: max(env(safe-area-inset-bottom, 0px), 24px); }
+      .safe-bottom { padding-bottom: var(--vg-safe-b); }
+      /* Bottom sheets: a spacer after the last child, so the sheet's own
+         background runs down under the phone's gesture/nav bar while its
+         controls stay above it. Phone widths only; a centred modal has no bar. */
+      @media (max-width: 767px) { .sheet-safe::after { content: ''; display: block; flex: 0 0 auto; height: var(--vg-safe-b); } }
       .gold-text { background: linear-gradient(135deg, #F5C542 0%, #D4A017 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
       input:-webkit-autofill { -webkit-box-shadow: 0 0 0 30px #161922 inset !important; -webkit-text-fill-color: #ECEFFE !important; }
 
@@ -561,7 +595,12 @@
           resolved = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
         }
         document.documentElement.setAttribute('data-theme', resolved);
-        document.documentElement.className = resolved;
+        // EDIT the class list, never REPLACE it. The <head> script above has
+        // already tagged the native shell with `vergr-native`, and assigning
+        // className here wiped that tag, so every `.vergr-native` rule was dead
+        // on the Play build (squad composer under the gesture bar, 2026-09-11).
+        document.documentElement.classList.remove('dark', 'light');
+        document.documentElement.classList.add(resolved);
         if (resolved === 'light') {
           document.body.style.background = '#F4F4F5';
           document.body.style.color = '#09090B';

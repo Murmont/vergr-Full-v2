@@ -328,7 +328,7 @@ export default function GoLiveSetupScreen() {
   // staring at a silently-disabled button wondering why (the exact thing that
   // made a blind tester give up and ask the founder).
   const STREAM_FOLLOWER_GATE = 100;
-  const isAdmin = profile?.role === 'admin' || (currentUser?.email || '').toLowerCase() === 'vergenerd@gmail.com';
+  const isAdmin = profile?.staff === true || profile?.role === 'admin';
   const planTier = resolveTier(profile);
   const followerCount = profile?.followerCount || 0;
 

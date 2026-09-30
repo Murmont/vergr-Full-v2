@@ -178,7 +178,7 @@ export default function PriceSheet({
       onClick={onClose}
     >
       <div
-        className="w-full sm:max-w-md bg-surface-1 border border-white/10 rounded-t-3xl sm:rounded-3xl p-5 pb-7 sm:pb-5"
+        className="w-full sm:max-w-md bg-surface-1 border border-white/10 rounded-t-3xl sm:rounded-3xl p-5 pb-7 sm:pb-5 sheet-safe"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-3 mb-1">

@@ -76,7 +76,9 @@ export default function EditorSidebar({ active, onSelect, isPro, open, onClose }
       {open && (
         <div className="lg:hidden fixed inset-0 z-50 flex">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-          <div className="relative h-full shadow-2xl animate-[slidein_0.2s_ease]">{Nav}</div>
+          {/* Full-height drawer on the phone: clear the status bar and gesture bar. */}
+          <div className="relative h-full shadow-2xl animate-[slidein_0.2s_ease] bg-[#0F0F1A] box-border"
+            style={{ paddingTop: 'env(safe-area-inset-top, 0px)', paddingBottom: 'var(--vg-safe-b)' }}>{Nav}</div>
         </div>
       )}
     </>

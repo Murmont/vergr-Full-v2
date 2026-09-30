@@ -8,11 +8,13 @@
 // Each Vanguard page slots into `children`. Pages should set their own
 // `<VanguardPageHeader>` content if they want a title row under the top bar.
 //
-// Auth model:
-//   - If user is not Vanguard AND not founder → bounce to /home
-//   - Founder (role==='admin') gets read-only oversight (PageHeader shows
-//     a yellow "Founder oversight view" strip; pages handle action-disable
-//     themselves).
+// Auth model (since 2026-09-21 this renders ONLY inside Vergr Vanguard):
+//   - Who may be here is decided by src/vanguard/VanguardGate.jsx and, for
+//     every action, by the server. This layout no longer bounces anyone.
+//   - The operator arrives with a stand-in profile (role 'admin', staff) and is
+//     shown as Founder, matching the server's synthetic Overseer.
+//   - There are no consumer routes in the app: "Open Vergr" opens vergr.app in
+//     the system browser (src/admin/openExternal.js).
 
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -24,7 +26,8 @@ import UserAvatar from '../UserAvatar';
 import { isVanguard } from '../../utils/vanguard';
 import { rankMeta } from '../../utils/vanguardRanks';
 import { doc, updateDoc } from 'firebase/firestore';
-import { db } from '../../firebase/config';
+import { db, auth } from '../../firebase/config';
+import { openInVergr } from '../../admin/openExternal';
 
 const C = {
   bg:        '#0B0B14',
@@ -40,6 +43,14 @@ const C = {
   gold:      '#F5C842',
   ember:     '#F04060',
   success:   '#22D17E',
+  // Solid tints for selected / hovered / status fills. The screens used to
+  // paint these as rgba washes over whatever sat behind them.
+  activeFill:  '#25193A',
+  violetSoftFill: '#1A1529',
+  hoverFill:   '#171724',
+  goldFill:    '#2A2412',
+  successFill: '#0F2C1F',
+  emberFill:   '#33141D',
 };
 
 // 5 grouped sections. Each entry: { key, label, icon, path, minRank?, badge? }
@@ -49,10 +60,8 @@ const NAV_SECTIONS = [
     title: null, // first group, no header
     items: [
       { key: 'today',         label: 'Today',         icon: 'home',          path: '/vanguard/today' },
-      { key: 'schedule',      label: 'Schedule',      icon: 'event',         path: '/vanguard/schedule' },
       { key: 'queue',         label: 'Queue',         icon: 'inbox',         path: '/vanguard/queue' },
       { key: 'live',          label: 'Live Now',      icon: 'live_tv',       path: '/vanguard/live' },
-      { key: 'my-cases',      label: 'My Cases',      icon: 'folder_managed', path: '/vanguard/my-cases' },
       { key: 'notes',         label: 'Notes',         icon: 'sticky_note_2', path: '/vanguard/notes' },
     ],
   },
@@ -92,7 +101,6 @@ const NAV_SECTIONS = [
     title: 'Lookups',
     items: [
       { key: 'lookup-user',   label: 'User Lookup',       icon: 'person_search', path: '/vanguard/lookup/user' },
-      { key: 'lookup-tour',   label: 'Tournament Lookup', icon: 'emoji_events',  path: '/vanguard/lookup/tournament' },
       { key: 'lookup-action', label: 'Action Lookup',     icon: 'search',        path: '/vanguard/lookup/action' },
     ],
   },
@@ -104,16 +112,16 @@ const visibleForRank = (item, rank) => !item.minRank || (RANK_ORDER[rank] || 0) 
 export default function VanguardLayout({ children, page = 'today' }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const { currentUser } = useAuth();
+  const { currentUser, logout } = useAuth();
   const { profile } = useUser();
   const { isDesktop } = useResponsive();
 
   const myRank = profile?.vanguard?.rank;
   const meIsVanguard = isVanguard(profile);
-  // Admin = role==='admin' OR the founder email — matches useTier/vanguard.js
-  // so the founder is never bounced even if the role field is ever missing.
-  const isFounder = profile?.role === 'admin'
-    || (profile?.email || '').toLowerCase() === 'vergenerd@gmail.com';
+  // Staff flag, server-only, matching useTier and functions/staff.js. The old
+  // hardcoded founder email is gone: it was a backdoor, and 11 of its 15 server
+  // twins were already dead because users/{uid}.email was removed 2026-09-16.
+  const isFounder = profile?.staff === true || profile?.role === 'admin';
   // Founder has FULL moderator authority on this dashboard — no read-only
   // restrictions, every action callable accepts role==='admin' as equivalent
   // to Overseer. The pill on the top bar is informational only.
@@ -126,16 +134,9 @@ export default function VanguardLayout({ children, page = 'today' }) {
 
   useEffect(() => { setDrawerOpen(false); }, [location.pathname]);
 
-  // Bounce non-Vanguard non-founder. Wait for the profile (Firestore user doc)
-  // to load first — currentUser (Auth) resolves before profile, so judging on a
-  // null profile would bounce the founder before role==='admin' even arrives.
-  useEffect(() => {
-    if (!currentUser) return;
-    if (!profile) return;
-    if (!meIsVanguard && !isFounder) {
-      navigate('/home', { replace: true });
-    }
-  }, [currentUser, profile, meIsVanguard, isFounder, navigate]);
+  // ⚠ No bounce here any more. It sent non-members to /home, a consumer route
+  // that does not exist inside Vergr Vanguard, and the gate has already
+  // refused anyone who is not a moderator before this renders.
 
   // Persist on-duty toggle (mod is offline-ish when off duty — banner doesn't fire on stream/tournament joins).
   const toggleDuty = async () => {
@@ -177,6 +178,11 @@ export default function VanguardLayout({ children, page = 'today' }) {
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
+        // On the phone the drawer is full height and the app draws edge to edge.
+        // env() is 0 on web and desktop, so both are no-ops there.
+        paddingTop: 'env(safe-area-inset-top, 0px)',
+        paddingBottom: 'var(--vg-safe-b)',
+        boxSizing: 'border-box',
         transition: 'width .2s ease',
       }}
     >
@@ -189,12 +195,12 @@ export default function VanguardLayout({ children, page = 'today' }) {
       </div>
 
       <button
-        onClick={() => navigate('/home')}
+        onClick={() => openInVergr('/home')}
         style={{
           margin: '10px 10px 4px',
           padding: '8px 10px',
-          background: 'transparent',
-          border: `1px solid ${C.border}`,
+          background: C.card2,
+          border: 0,
           borderRadius: 8,
           color: C.textDim,
           cursor: 'pointer',
@@ -205,10 +211,10 @@ export default function VanguardLayout({ children, page = 'today' }) {
           fontSize: 12,
           fontWeight: 600,
         }}
-        title="Back to main app"
+        title="Open vergr.app in your browser"
       >
-        <Icon name="arrow_back" size={16} />
-        {!collapsed && <span>Back to App</span>}
+        <Icon name="open_in_new" size={16} />
+        {!collapsed && <span>Open Vergr</span>}
       </button>
 
       {/* Nav scroll area */}
@@ -261,7 +267,8 @@ export default function VanguardLayout({ children, page = 'today' }) {
                       gap: 10,
                       padding: collapsed ? '10px 0' : '9px 10px',
                       justifyContent: collapsed ? 'center' : 'flex-start',
-                      background: isActive ? 'rgba(180,79,255,.12)' : 'transparent',
+                      // Solid values, never a see-through wash.
+                      background: isActive ? C.activeFill : 'transparent',
                       border: 0,
                       borderLeft: isActive ? `2px solid ${C.violetLt}` : '2px solid transparent',
                       borderRadius: collapsed ? 8 : 6,
@@ -273,7 +280,7 @@ export default function VanguardLayout({ children, page = 'today' }) {
                       transition: 'background .12s',
                       marginBottom: 1,
                     }}
-                    onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = 'rgba(255,255,255,.03)'; }}
+                    onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = C.hoverFill; }}
                     onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.background = 'transparent'; }}
                   >
                     <Icon name={item.icon} size={18} />
@@ -286,14 +293,39 @@ export default function VanguardLayout({ children, page = 'today' }) {
         })}
       </nav>
 
+      {/* Sign out: the only way to switch accounts in the app. */}
+      <button
+        onClick={() => logout()}
+        style={{
+          margin: '10px 10px 0',
+          padding: '8px 10px',
+          background: 'transparent',
+          border: 0,
+          borderRadius: 8,
+          color: C.textDim,
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          fontFamily: 'DM Sans',
+          fontSize: 12,
+          fontWeight: 600,
+          justifyContent: collapsed ? 'center' : 'flex-start',
+        }}
+        title="Sign out"
+      >
+        <Icon name="logout" size={16} />
+        {!collapsed && <span>Sign out</span>}
+      </button>
+
       {/* Collapse toggle */}
       <button
         onClick={() => setCollapsed((v) => !v)}
         style={{
           margin: 10,
           padding: '8px 10px',
-          background: 'transparent',
-          border: `1px solid ${C.border}`,
+          background: C.card2,
+          border: 0,
           borderRadius: 8,
           color: C.textMuted,
           cursor: 'pointer',
@@ -315,12 +347,16 @@ export default function VanguardLayout({ children, page = 'today' }) {
   const TopBar = (
     <div
       style={{
-        height: 64,
+        // 64px of bar BELOW the status bar: on the phone the menu button measured
+        // at y9-55, i.e. under the clock (2026-09-16).
+        height: 'calc(64px + env(safe-area-inset-top, 0px))',
         background: C.card,
         borderBottom: `1px solid ${C.border}`,
         display: 'flex',
         alignItems: 'center',
         padding: '0 18px',
+        paddingTop: 'env(safe-area-inset-top, 0px)',
+        boxSizing: 'border-box',
         position: 'sticky',
         top: 0,
         zIndex: 50,
@@ -345,8 +381,8 @@ export default function VanguardLayout({ children, page = 'today' }) {
           alignItems: 'center',
           gap: 10,
           padding: '6px 12px 6px 6px',
-          background: showFounderPill ? 'rgba(245,200,66,.08)' : 'rgba(180,79,255,.08)',
-          border: `1px solid ${showFounderPill ? 'rgba(245,200,66,.4)' : 'rgba(180,79,255,.3)'}`,
+          background: showFounderPill ? C.goldFill : C.activeFill,
+          border: 0,
           borderRadius: 999,
           minHeight: 40,
         }}>
@@ -373,8 +409,8 @@ export default function VanguardLayout({ children, page = 'today' }) {
               alignItems: 'center',
               gap: 8,
               padding: '6px 12px',
-              background: onDuty ? 'rgba(34,209,126,.12)' : 'rgba(107,114,128,.12)',
-              border: `1px solid ${onDuty ? 'rgba(34,209,126,.4)' : 'rgba(107,114,128,.4)'}`,
+              background: onDuty ? C.successFill : C.card2,
+              border: 0,
               borderRadius: 999,
               color: onDuty ? C.success : C.textMuted,
               cursor: 'pointer',
@@ -408,7 +444,7 @@ export default function VanguardLayout({ children, page = 'today' }) {
       }}>
         <Icon name="search" size={16} style={{ color: C.textMuted }} />
         <input
-          placeholder="Search users, cases, tournaments…"
+          placeholder="Search users and cases…"
           onKeyDown={(e) => {
             if (e.key === 'Enter' && e.currentTarget.value.trim()) {
               navigate(`/vanguard/lookup/user?q=${encodeURIComponent(e.currentTarget.value.trim())}`);
@@ -458,7 +494,7 @@ export default function VanguardLayout({ children, page = 'today' }) {
       {/* Main column */}
       <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
         {TopBar}
-        <main style={{ flex: 1, padding: isDesktop ? '24px 28px 80px' : '16px 14px 80px', maxWidth: 1600, width: '100%', margin: '0 auto' }}>
+        <main style={{ flex: 1, padding: isDesktop ? '24px 28px 80px' : '16px 14px calc(80px + var(--vg-safe-b))', maxWidth: 1600, width: '100%', margin: '0 auto' }}>
           {children}
         </main>
       </div>

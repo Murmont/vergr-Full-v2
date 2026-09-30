@@ -19,8 +19,7 @@
 //   vergr:ad-dismissed  — ad closed (after reward or skip)
 //   vergr:ad-failed     — { error } load/show failed
 
-import { ADS_CONFIG } from '../config/ads';
-import { IS_HUAWEI_BUILD } from './platform';
+import { adUnitFor } from '../config/ads';
 
 function bridge() {
   if (typeof window === 'undefined') return null;
@@ -77,10 +76,9 @@ export function showRewardedForCoins(uid) {
     try {
       // Same bridge name on both builds; only the slot id differs. On Huawei
       // the native side is HuaweiAdsBridge and AdMob unit ids mean nothing to
-      // it, so it must be handed a Petal slot.
-      b.showRewarded(uid, randNonce(), IS_HUAWEI_BUILD
-        ? ADS_CONFIG.petal.rewardedSlotId
-        : ADS_CONFIG.admob.rewardedUnitId);
+      // it, so it must be handed a Petal slot. `adUnitFor` is the one place
+      // that decides which — see the note above it in config/ads.js.
+      b.showRewarded(uid, randNonce(), adUnitFor('rewarded'));
     } catch (err) {
       cleanup();
       reject(err instanceof Error ? err : new Error('admob_show_threw'));

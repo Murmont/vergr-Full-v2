@@ -6,6 +6,7 @@ import { updateUserSettings } from '../../firebase/firestore';
 import TopBar from '../../components/TopBar';
 import Icon from '../../components/Icon';
 import { SUPPORTED_LANGS } from '../../utils/localePrefs';
+import { TRANSLATION_ENABLED } from '../../utils/translationSwitch';
 import { useLayout } from '../../context/LayoutContext';
 import useResponsive from '../../hooks/useResponsive';
 
@@ -63,7 +64,9 @@ export default function LanguageSettingsScreen() {
     <div className={isDesktop ? "min-h-screen pb-8" : "screen-container min-h-screen pb-8"}>
       <TopBar title="Language" showBack />
       <div className="px-4 py-2">
-        <p className="text-text-muted text-xs mb-4">This sets the language posts and chats are translated <span className="text-text-secondary">into</span>, and helps surface content from people who speak it. Languages marked <span className="text-brand-violet-light font-semibold">Translate</span> are available for on-demand translation now.</p>
+        {TRANSLATION_ENABLED
+          ? <p className="text-text-muted text-xs mb-4">This sets the language posts and chats are translated <span className="text-text-secondary">into</span>, and helps surface content from people who speak it. Languages marked <span className="text-brand-violet-light font-semibold">Translate</span> are available for on-demand translation now.</p>
+          : <p className="text-text-muted text-xs mb-4">This helps surface posts, streams and people who speak your language.</p>}
         <div className="space-y-1">
           {LANGUAGES.map(l => (
             <button
@@ -75,7 +78,7 @@ export default function LanguageSettingsScreen() {
             >
               <span className="text-xl">{l.flag}</span>
               <span className="flex-1 text-sm font-semibold text-left">{l.label}</span>
-              {SUPPORTED_LANGS.includes(l.code) && (
+              {TRANSLATION_ENABLED && SUPPORTED_LANGS.includes(l.code) && (
                 <span className="text-[10px] font-bold uppercase tracking-wide text-brand-violet-light bg-brand-violet/15 px-2 py-0.5 rounded-full">Translate</span>
               )}
               {lang === l.code && <Icon name="check_circle" filled size={20} className="text-brand-violet-light" />}

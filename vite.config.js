@@ -51,6 +51,19 @@ export default defineConfig(({ mode }) => {
   //
   // Re-enabling self-update here is NOT a store-policy problem: dev-channel
   // builds are never distributed through Play or AppGallery.
+  // ADMIN build (`--mode admin`) = Vergr Admin, the operator console, as its
+  // own desktop application. It has its OWN html entry (admin.html), its own
+  // React root (src/admin/main.jsx) and its own output directory, so it shares
+  // the admin SCREENS with the app and nothing else. It is never deployed to
+  // hosting: the founder's rule is that the admin must not be reachable from
+  // the web at all.
+  const isAdmin = mode === 'admin';
+  // VANGUARD build (`--mode vanguard`) = Vergr Vanguard, the moderation app,
+  // built exactly like Vergr Admin: its own html entry (vanguard.html), its own
+  // React root (src/vanguard/main.jsx), its own output directory, never deployed
+  // to hosting. It shares the Vanguard SCREENS with nothing else: the web app no
+  // longer routes them (2026-09-21).
+  const isVanguardApp = mode === 'vanguard';
   const isDevChannel = mode === 'native-dev';
   const isHuawei = mode === 'native-huawei';
   const isStore = mode === 'native-store' || isHuawei || isDevChannel;
@@ -67,7 +80,11 @@ export default defineConfig(({ mode }) => {
         'firebase/messaging': path.resolve(__dirname, 'src/demo/mockMisc.js'),
       }
     : {};
-  const outDir = mode === 'demo' ? 'dist-demo' : mode === 'demo-native' ? 'dist-demo-native' : 'dist';
+  const outDir = mode === 'demo' ? 'dist-demo'
+    : mode === 'demo-native' ? 'dist-demo-native'
+    : isAdmin ? 'dist-admin'
+    : isVanguardApp ? 'dist-vanguard'
+    : 'dist';
 
   return {
     // Option B native build flag. `npm run build:android` runs `vite build
@@ -79,6 +96,8 @@ export default defineConfig(({ mode }) => {
       __VERGR_STORE_BUILD__: JSON.stringify(isStore),
       __VERGR_HUAWEI_BUILD__: JSON.stringify(isHuawei),
       __VERGR_DEV_CHANNEL__: JSON.stringify(isDevChannel),
+      __VERGR_ADMIN__: JSON.stringify(isAdmin),
+      __VERGR_VANGUARD_APP__: JSON.stringify(isVanguardApp),
     },
     plugins: [
       react(),
@@ -119,6 +138,10 @@ export default defineConfig(({ mode }) => {
       outDir,
       sourcemap: false,
       rollupOptions: {
+        // The admin app boots from admin.html, not index.html, so the consumer
+        // shell (and everything it pulls in) is not in this bundle at all.
+        ...(isAdmin ? { input: path.resolve(__dirname, 'admin.html') } : {}),
+        ...(isVanguardApp ? { input: path.resolve(__dirname, 'vanguard.html') } : {}),
         // See history: only externalize specifiers that can't resolve at build
         // time; keep @tauri-apps/api/core + /event bundled for the OTA path.
         external: [

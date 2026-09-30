@@ -295,6 +295,8 @@ func (r *ChatRoom) bufferSince(ts int64) []ChatMsg {
 // ============================================================
 
 type ChatPeer struct {
+	// Required email verification: see Peer.emailOK in main.go.
+	emailOK bool
 	connID string
 	uid    string
 	conn   *websocket.Conn
@@ -672,6 +674,7 @@ func handleSquadWS(w http.ResponseWriter, r *http.Request) {
 	// Squad rooms have no admin-post restriction (nil admins, adminsOnly off).
 	room := getOrCreateChatRoom(roomKey, true, members, nil, false)
 	p := newChatPeer(uid, conn, room)
+	p.emailOK = tokenEmailVerified(t)
 	room.addPeer(p)
 	defer room.removePeer(p)
 	defer p.close()
@@ -796,6 +799,7 @@ func handleConvoWS(w http.ResponseWriter, r *http.Request, convoID string, wantG
 	room := getOrCreateChatRoom(convoID, isGroup, me.members, me.admins, me.adminsOnly)
 	room.applyPolicy(me)
 	p := newChatPeer(uid, conn, room)
+	p.emailOK = tokenEmailVerified(t)
 	// 1:1 only: a stranger gets text until the other person follows them back.
 	if !isGroup {
 		p.setNoMedia(dmMediaBlockedFor(ctx, me.members, uid))
@@ -917,6 +921,10 @@ func (p *ChatPeer) runChat(ctx context.Context) {
 }
 
 func (p *ChatPeer) handleChatSend(ctx context.Context, in ChatMsg) {
+	if !p.emailOK {
+		_ = p.write(ChatMsg{Type: "reject", ID: in.ID, Reason: "verify-email"})
+		return
+	}
 	if !p.takeToken() {
 		_ = p.write(ChatMsg{Type: "reject", Reason: "rate-limit"})
 		return
@@ -980,6 +988,12 @@ func (p *ChatPeer) handleChatSend(ctx context.Context, in ChatMsg) {
 	p.room.mu.RUnlock()
 	if isBanned {
 		_ = p.write(ChatMsg{Type: "reject", ID: in.ID, Reason: "banned"})
+		return
+	}
+	// Platform-wide DM pause (Admin → App Config → Allow direct messages).
+	// Squad rooms share this handler and are not direct messages.
+	if dmsPaused.Load() && !strings.HasPrefix(p.room.ID, "squad:") {
+		_ = p.write(ChatMsg{Type: "reject", ID: in.ID, Reason: "dms-paused"})
 		return
 	}
 	if p.room.IsGroup && adminsOnly && !isAdmin {

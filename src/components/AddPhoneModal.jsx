@@ -57,7 +57,7 @@ export default function AddPhoneModal({ onSaved, onClose, rewardAmount = 1000 })
   return createPortal(
     <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center">
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full sm:max-w-md bg-surface-1 border border-white/[0.06] rounded-t-3xl sm:rounded-3xl shadow-2xl p-5">
+      <div className="relative w-full sm:max-w-md bg-surface-1 border border-white/[0.06] rounded-t-3xl sm:rounded-3xl shadow-2xl p-5 sheet-safe">
         <div className="flex items-start gap-3 mb-4">
           <div className="w-10 h-10 rounded-full bg-brand-violet/15 text-brand-violet-light flex items-center justify-center shrink-0">
             <Icon name="phone" size={20} />

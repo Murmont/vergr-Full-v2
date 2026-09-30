@@ -24,8 +24,11 @@
 
 const functions = require('firebase-functions/v2');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
+const { authEmailFor } = require('./authEmails');
 const crypto = require('crypto');
-const { requireAdmin, auditAdminAction, extractRequestMeta } = require('./adminSecurity');
+const { requireAdmin, requireFreshStepUp, auditAdminAction, extractRequestMeta } = require('./adminSecurity');
+const { isOperator, requireOperatorSession, armOperator } = require('./operator');
+const { getAuth } = require('firebase-admin/auth');
 
 const db = getFirestore('vgrdb');
 const REGION = 'europe-west1';
@@ -80,7 +83,16 @@ function normalizeScreens(input) {
 async function requireAdminScreen(uid, screen) {
   if (!uid) throw new HttpsError('unauthenticated', 'Must be logged in.');
 
-  // Founder bypass — role:'admin' on the users doc.
+  // The Operator (functions/operator.js) holds every screen. It is an Auth
+  // custom claim with no users/{uid} document at all, so it is checked FIRST:
+  // a users doc read would find nothing and fall through to permission-denied.
+  if (await isOperator(uid)) {
+    await requireOperatorSession(uid);
+    return { isFounder: true, isOperator: true, allowedScreens: ['*'] };
+  }
+
+  // Founder bypass — role:'admin' on the users doc. TRANSITION path for
+  // @Vergr; removed once Vergr Admin is verified end to end.
   const userSnap = await db.collection('users').doc(uid).get();
   if (userSnap.exists && userSnap.data()?.role === 'admin') {
     return { isFounder: true, allowedScreens: ['*'] };
@@ -118,15 +130,38 @@ exports.inviteAdmin = functions.https.onCall(
   async (request) => {
     const uid = request.auth?.uid;
     await requireFounder(uid);
-    const { email, allowedScreens } = request.data || {};
+    const { email, allowedScreens, operator } = request.data || {};
     if (!email || typeof email !== 'string') {
       throw new HttpsError('invalid-argument', 'email required.');
     }
+    const emailLower = email.trim().toLowerCase();
+
+    // operator: true arms the SUPER ADMIN (functions/operator.js) instead of
+    // creating a sub-admin invite. It writes no invite doc and sends no
+    // notification: the address belongs to nobody on Vergr and no account for
+    // it exists yet. It is hosted here rather than in its own callable because
+    // a new Cloud Function is a new Artifact Registry image, i.e. money.
+    if (operator === true) {
+      const step = await requireFreshStepUp(uid);
+      const armed = await armOperator(emailLower, uid);
+      const m = extractRequestMeta(request);
+      await auditAdminAction({
+        actor: uid,
+        action: 'operator_arm',
+        target: { type: 'operator', id: armed.emailHash },
+        after: { expiresAt: armed.expiresAt },
+        ip: m.ip,
+        userAgent: m.userAgent,
+        stepUpEnforced: !!step.stepUpEnforced,
+        stepUpFresh: !!step.stepUpEnforced,
+      });
+      return { ok: true, operator: true, expiresAt: armed.expiresAt };
+    }
+
     const screens = normalizeScreens(allowedScreens);
     if (screens.length === 0) {
       throw new HttpsError('invalid-argument', 'allowedScreens must include at least one screen.');
     }
-    const emailLower = email.trim().toLowerCase();
 
     // Dedupe — one pending invite per email at a time.
     const existing = await db.collection('admin_invites')
@@ -162,18 +197,23 @@ exports.inviteAdmin = functions.https.onCall(
       stepUpFresh: false,
     });
 
-    // Notify the user if we already have an account for that email.
-    const userMatch = await db.collection('users')
-      .where('email', '==', emailLower)
-      .limit(1)
-      .get();
-    if (!userMatch.empty) {
-      const target = userMatch.docs[0];
+    // ⚠⚠ THIS LOOKUP WAS DEAD AND THE INVITEE WAS NEVER TOLD. It queried
+    // `users where email ==`, and that field was removed from the profile doc
+    // on 2026-09-16 because users/{uid} is publicly listable, so it matched
+    // nothing and notified nobody, silently. The address lives in Auth now.
+    //
+    // ⚠ The notification is a COURTESY, not the delivery mechanism. A
+    // profile-less ops account has no app to read it in, and that is fine:
+    // Vergr Admin finds the pending invite from the signed-in address itself,
+    // so no invite id ever has to be sent anywhere.
+    let inviteeUid = null;
+    try { inviteeUid = (await getAuth().getUserByEmail(emailLower)).uid; } catch { /* no account yet */ }
+    if (inviteeUid && (await db.collection('users').doc(inviteeUid).get()).exists) {
       await db.collection('notifications').add({
-        recipientId: target.id,
+        recipientId: inviteeUid,
         type: 'admin_invite',
         title: 'You\'ve been invited as a VERGR admin',
-        body: `Scopes: ${screens.join(', ')}`,
+        body: `Open Vergr Admin and sign in to accept. Scopes: ${screens.join(', ')}`,
         targetId: ref.id,
         read: false,
         createdAt: FieldValue.serverTimestamp(),
@@ -222,14 +262,34 @@ exports.acceptAdminInvite = functions.https.onCall(
     const uid = request.auth?.uid;
     if (!uid) throw new HttpsError('unauthenticated', 'Must be logged in.');
     const { inviteId } = request.data || {};
-    if (!inviteId) throw new HttpsError('invalid-argument', 'inviteId required.');
 
-    const userSnap = await db.collection('users').doc(uid).get();
-    if (!userSnap.exists) throw new HttpsError('not-found', 'User profile missing.');
-    const userEmail = (userSnap.data().email || '').toLowerCase();
-    if (!userEmail) throw new HttpsError('failed-precondition', 'No email on user profile.');
+    // ⚠⚠ THERE IS DELIBERATELY NO PROFILE REQUIREMENT ANY MORE. This threw
+    // "User profile missing", which forced every sub-admin to be an ordinary
+    // Vergr user with a public @handle — the exact link the operator exists to
+    // break. A sub-admin can ban and mute real people, so they are a target
+    // too, and the rule is that an admin identity leaves nothing to find.
+    //
+    // The sign-up email is read from Auth, never from the public profile doc.
+    const userEmail = ((await authEmailFor(uid)) || '').toLowerCase();
+    if (!userEmail) throw new HttpsError('failed-precondition', 'No email on this account.');
 
-    const ref = db.collection('admin_invites').doc(inviteId);
+    // ⚠ inviteId IS OPTIONAL, and that is what makes the flow usable at all.
+    // Without it there is nothing to transmit: the invitee opens Vergr Admin,
+    // signs in, and the server finds the pending invite for their OWN address.
+    // An id may still be passed, and is then checked against that same address
+    // by the email comparison below, so this widens nothing.
+    let ref;
+    if (inviteId) {
+      ref = db.collection('admin_invites').doc(inviteId);
+    } else {
+      const found = await db.collection('admin_invites')
+        .where('email', '==', userEmail)
+        .where('status', '==', 'pending')
+        .limit(1)
+        .get();
+      if (found.empty) throw new HttpsError('not-found', 'No pending invitation for this account.');
+      ref = found.docs[0].ref;
+    }
     const snap = await ref.get();
     if (!snap.exists) throw new HttpsError('not-found', 'Invite not found.');
     const inv = snap.data();
@@ -246,15 +306,30 @@ exports.acceptAdminInvite = functions.https.onCall(
       throw new HttpsError('deadline-exceeded', 'Invite expired.');
     }
 
-    // Create / re-activate the admin_users doc.
+    // Create / re-activate the admin_users doc. The label comes from the Auth
+    // record, so a profile-less ops account still reads as something on
+    // /admin/access instead of a bare uid.
+    let label = null;
+    try { label = (await getAuth().getUser(uid)).displayName || null; } catch { /* optional */ }
+
+    // ⚠⚠ ACCEPTING DOES NOT MAKE A SUB-ADMIN ACTIVE. Finishing authenticator
+    // setup does (confirmAdminTotpEnrollment flips pending_2fa -> active).
+    // This is how the 2FA requirement reaches ~150 deployed functions WITHOUT
+    // redeploying them: they carry an older requireFreshStepUp that lets an
+    // UNENROLLED caller through, but every one of them also runs
+    // requireAdminScreen, which refuses any status other than 'active'. So a
+    // sub-admin with no authenticator is refused everywhere, old code included.
+    // Someone re-invited who already has an authenticator goes straight to active.
+    const sec = await db.collection('admin_security').doc(uid).get();
+    const status = sec.exists && sec.data()?.enrolled ? 'active' : 'pending_2fa';
     await db.collection('admin_users').doc(uid).set({
       email: userEmail,
-      displayName: userSnap.data().displayName || null,
+      displayName: label,
       allowedScreens: inv.allowedScreens || [],
       invitedBy: inv.invitedBy,
       invitedAt: inv.createdAt || FieldValue.serverTimestamp(),
       acceptedAt: FieldValue.serverTimestamp(),
-      status: 'active',
+      status,
     }, { merge: true });
 
     await ref.set({
@@ -272,7 +347,7 @@ exports.acceptAdminInvite = functions.https.onCall(
       ip: meta.ip, userAgent: meta.userAgent,
       stepUpEnforced: false, stepUpFresh: false,
     });
-    return { ok: true, allowedScreens: inv.allowedScreens };
+    return { ok: true, allowedScreens: inv.allowedScreens, status };
   }
 );
 
@@ -379,6 +454,12 @@ exports.getMyAdminAccess = functions.https.onCall(
   async (request) => {
     const uid = request.auth?.uid;
     if (!uid) return { isAdmin: false };
+    // No session check here: this is the call Vergr Admin makes to find out
+    // WHETHER to show the authenticator gate, so demanding a session would be
+    // a deadlock. Nothing is granted by the answer; every action re-checks.
+    if (await isOperator(uid)) {
+      return { isAdmin: true, isFounder: true, isOperator: true, allowedScreens: ['*'] };
+    }
     const userSnap = await db.collection('users').doc(uid).get();
     if (userSnap.exists && userSnap.data()?.role === 'admin') {
       return { isAdmin: true, isFounder: true, allowedScreens: ['*'] };

@@ -129,7 +129,8 @@ export default function BoostSheet({
   const [busy, setBusy] = useState(null);
   const [topUp, setTopUp] = useState(null);
 
-  const coins = Number(wallet?.balance) || 0;
+  // Boost coins (rewarded ads) spend here first, server-side: functions/boostCoins.js.
+  const coins = (Number(wallet?.balance) || 0) + (Number(wallet?.boostCoins) || 0);
 
   // A post takes either the normal or the teammate boost, never both — spending
   // the wrong one is a refund conversation, so it is not offered.
@@ -247,7 +248,7 @@ export default function BoostSheet({
         style={{
           width: '100%', maxWidth: 460, background: C.card,
           borderTopLeftRadius: 18, borderTopRightRadius: 18,
-          padding: 20, paddingBottom: 'calc(env(safe-area-inset-bottom,0px) + 20px)',
+          padding: 20, paddingBottom: 'calc(var(--vg-safe-b, 0px) + 20px)',
           boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.07)',
         }}
       >

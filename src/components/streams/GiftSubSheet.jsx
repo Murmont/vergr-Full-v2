@@ -135,15 +135,24 @@ export default function GiftSubSheet({ creatorId, recipient, candidates = [], on
     } finally { setBusy(false); }
   };
 
-  const multi = people.length > 1;
+  // ⚠ WITH NO NAMED RECIPIENT THE PICKER IS THE WHOLE SHEET. The support tray
+  // opens this for the room rather than for one person, and gating the picker on
+  // "more than one candidate" left that case with a button reading "Pick who it
+  // is for" and nothing to pick from.
+  const multi = !recipient || people.length > 1;
+  const pickedName = people.find((u) => u.uid === picked[0])?.displayName;
 
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 130, display: 'flex', alignItems: 'flex-end' }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', background: C.card, borderTopLeftRadius: 18, borderTopRightRadius: 18, padding: 18, paddingBottom: 'calc(18px + env(safe-area-inset-bottom))', maxHeight: '80vh', overflowY: 'auto' }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', background: C.card, borderTopLeftRadius: 18, borderTopRightRadius: 18, padding: 18, paddingBottom: 'calc(18px + var(--vg-safe-b, 0px))', maxHeight: '80vh', overflowY: 'auto' }}>
         <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 4, color: C.text }}>
           {picked.length > 1
             ? `Gift ${picked.length} subs`
-            : `Gift a sub to ${recipient?.displayName || 'this viewer'}`}
+            : recipient
+              ? `Gift a sub to ${recipient.displayName || 'this viewer'}`
+              : picked.length === 1
+                ? `Gift a sub to ${pickedName || 'this viewer'}`
+                : 'Gift subs to viewers'}
         </div>
         <div style={{ fontSize: 12, color: C.textDim, lineHeight: 1.5, marginBottom: 14 }}>
           You pay, they get the perks. One month, and it does not renew.
@@ -204,6 +213,11 @@ export default function GiftSubSheet({ creatorId, recipient, candidates = [], on
               )}
             </div>
 
+            {people.length === 0 && (
+              <div style={{ fontSize: 13, color: C.textDim, lineHeight: 1.5, padding: '6px 2px 10px' }}>
+                Nobody to pick yet. Supporters and people who join this stream show up here as it goes on.
+              </div>
+            )}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 210, overflowY: 'auto' }}>
               {people.map((u) => {
                 const on = picked.includes(u.uid);

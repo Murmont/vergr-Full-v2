@@ -16,6 +16,7 @@
 const functions = require('firebase-functions/v2');
 const { defineSecret } = require('firebase-functions/params');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
+const { isStaffDoc } = require('./staff');
 
 const REGION = 'europe-west1';
 const db = getFirestore('vgrdb');
@@ -23,7 +24,6 @@ const LIBRETRANSLATE_KEY = defineSecret('LIBRETRANSLATE_KEY');
 const LT_BASE = process.env.LIBRETRANSLATE_BASE || 'https://archive.vergr.app/lt';
 
 const SUPPORTED = new Set(['en', 'es', 'pt', 'de', 'uk', 'it', 'nl', 'pl', 'tr']);
-const ADMIN_EMAILS = ['vergenerd@gmail.com'];
 const isPaid = (sub) => sub === 'lite' || sub === 'pro';
 
 // LibreTranslate's `source:'auto'` detector silently fails on short or
@@ -74,7 +74,7 @@ exports.translateContent = functions.https.onCall(
     // Resolve caller (subscription + admin).
     const userSnap = await db.collection('users').doc(uid).get();
     const user = userSnap.exists ? userSnap.data() : {};
-    const isAdmin = user.role === 'admin' || ADMIN_EMAILS.includes((user.email || '').toLowerCase());
+    const isAdmin = isStaffDoc(user) || user.role === 'admin';
 
     // ── Subscription gating ──
     if (!isAdmin) {

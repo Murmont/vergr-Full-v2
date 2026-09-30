@@ -263,7 +263,7 @@ export default function NewMessageScreen() {
     // Canonical domain + the sender's ref: an invited friend who signs up and
     // verifies a phone pays BOTH sides the referral VP.
     const body = encodeURIComponent(
-      `Hey! Add me on Vergr — the gamer social app. https://vergr.app/reflink?ref=${auth.currentUser?.uid || ''}`
+      `Hey! Add me on Vergr. https://vergr.app/reflink?ref=${auth.currentUser?.uid || ''}`
     );
     // `sms:` with a `body` param opens the native SMS composer on iOS &
     // Android. Desktop falls back to the OS's default handler (usually

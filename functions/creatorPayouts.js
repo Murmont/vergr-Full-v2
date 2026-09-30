@@ -38,7 +38,15 @@
 // it cannot actually send.
 
 const functions = require('firebase-functions/v2');
-const { getFirestore, FieldValue } = require('firebase-admin/firestore');
+const { getFirestore, FieldValue, Timestamp } = require('firebase-admin/firestore');
+// The ONE sanctioned-country list (geo.js), so payouts, sign-up and the
+// published AML policy can never name different countries.
+const { BLOCKED_COUNTRIES } = require('./geo');
+// Mercury: pure rules (mercuryPayouts) and the box 1 relay that makes the calls,
+// because Mercury only accepts our tokens from box 1's whitelisted IP.
+const mercury = require('./mercuryPayouts');
+const { relayCall } = require('./mercuryRelayClient');
+const { authEmailFor } = require('./authEmails');
 
 const db = getFirestore('vgrdb');
 const REGION = 'europe-west1';
@@ -91,6 +99,24 @@ const CADENCE_REQUIREMENTS = {
  * Applied in blockingReason(), so it gates the payout RUN and not just the UI.
  */
 const MIN_ACCOUNT_AGE_DAYS = 30;
+
+/**
+ * The countries on record for a user: the profile selection, then the Didit ID
+ * country.
+ *
+ * ⚠ `users/{uid}.kyc.country` is read for accounts verified BEFORE the Didit
+ * result was split (audit A30), which moved `country` to the owner-only
+ * `users/{uid}/private/kyc`. After the split that field is never written, so
+ * the ID-country half of the sanctions check was silently dead. Payout setup
+ * (connectPayoutAccount) now copies the verified country onto
+ * `payout_accounts/{uid}.verifiedCountry`, which the run already reads, so the
+ * check works again at zero extra reads.
+ */
+function countriesOf(userData, account = null) {
+  // account.country is the bank recipient's address country from Mercury
+  // (refreshPayoutOnboarding), a third signal that also costs no read.
+  return [userData?.country, userData?.kyc?.country, account?.verifiedCountry, account?.country];
+}
 
 /** Account age in whole days from the user doc, or null if unreadable. */
 function accountAgeDays(userData, now = Date.now()) {
@@ -206,18 +232,35 @@ async function lastStatementMs(uid) {
   } catch (e) { console.error('lastStatementMs', e?.message || e); return null; }
 }
 
-/** Micro-USD already paid to this creator in the trailing 30 days. */
-async function paidLast30Days(uid, now = Date.now()) {
-  const since = new Date(now - 30 * 86_400_000);
+/**
+ * Micro-USD already paid (or in flight) to this creator in the current calendar
+ * month, UTC.
+ *
+ * The AML policy (section 2) caps what VERGR pays "in a calendar month" and says
+ * caps are enforced "against the calendar month". This used to be a trailing 30
+ * days, which broke the Standard monthly schedule: the run fires on the 1st at
+ * 06:00, so in any month of 30 days or fewer last month's statement was still
+ * inside the window by a few seconds, and a capped creator was skipped every
+ * other month.
+ *
+ * Ordered by createdAt DESC so the one (uid ASC, createdAt DESC) index serves
+ * this, lastStatementMs and the creator's own statement list.
+ */
+async function paidThisCalendarMonth(uid, now = Date.now()) {
+  const d = new Date(now);
+  const since = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1));
+  const until = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1));
   const snap = await db.collection('payout_statements')
     .where('uid', '==', uid)
     .where('createdAt', '>=', since)
+    .where('createdAt', '<', until)
+    .orderBy('createdAt', 'desc')
     .get();
   let total = 0;
-  for (const d of snap.docs) {
-    const s = d.data();
-    // Count pending as spent: a payment in flight has left the cap's budget.
-    if (s.status === 'paid' || s.status === 'pending') total += Number(s.amountMicroUsd || 0);
+  for (const doc of snap.docs) {
+    const st = doc.data();
+    // queued = sitting in the Mercury dashboard for approval: already debited.
+    if (st.status === 'paid' || st.status === 'pending' || st.status === 'queued') total += Number(st.amountMicroUsd || 0);
   }
   return total;
 }
@@ -291,11 +334,19 @@ function cadenceDueToday(cadenceKey, date) {
  * Order matters for the message the creator sees: report the thing they can
  * act on first, not the first thing that happens to fail.
  */
-function blockingReason(account, wallet, kycLevel, now = Date.now(), ageDays = null) {
+function blockingReason(account, wallet, kycLevel, now = Date.now(), ageDays = null, countries = []) {
   if (activeStrikeCount(account, now) >= STRIKE_SUSPEND_THRESHOLD) {
     return 'suspended_strikes';
   }
   if (account?.frozen) return 'frozen';
+  // Sanctioned-country block (AML policy section 3). Checks the country the
+  // creator selected on their profile AND the country on their Didit-verified
+  // ID. Both sit on the users doc the caller ALREADY read for kycLevel and
+  // account age, so this costs no extra read. Didit itself already refuses a
+  // document issued by a blocked country (didit.js).
+  if (countries.some((c) => c && BLOCKED_COUNTRIES.has(String(c).trim().toUpperCase()))) {
+    return 'sanctioned_country';
+  }
   // Unreadable age is treated as too new: this fails CLOSED, because the cost of
   // holding a legitimate payout for a cycle is far lower than releasing one to a
   // fresh account that turns out to be fraudulent.
@@ -310,23 +361,59 @@ function blockingReason(account, wallet, kycLevel, now = Date.now(), ageDays = n
 // ── Partner seam ──────────────────────────────────────────────────────
 
 /**
- * Send one payment through the payout partner.
+ * Ask Mercury to send one payment, through the box 1 relay.
  *
- * THE ONLY PARTNER-SPECIFIC FUNCTION IN THIS FILE. Implement against whichever
- * partner is chosen (Tipalti / Trolley / Dots / Payoneer) and return a stable
- * reference id. Everything above this line is partner-agnostic.
+ * A success means QUEUED, not sent: the request lands in the Mercury dashboard
+ * as `pendingApproval` and the founder approves it. Only reconcileQueuedPayouts()
+ * turns it into `paid`.
  *
- * It MUST be idempotent on `idempotencyKey`: a run that times out after the
- * partner accepted the payment but before we recorded it will retry, and
- * paying twice is much worse than paying late.
+ * Returns, never throws for a known outcome:
+ *   { outcome: 'queued', requestId, mercuryStatus, needsLookup }
+ *   { outcome: 'not_sent', reason }   Mercury certainly never created it:
+ *                                     safe to put the money back.
+ *   { outcome: 'unknown', reason, detail }
+ *                                     we cannot tell a timeout or a Mercury
+ *                                     error from an accepted payment, so a human
+ *                                     reconciles and nothing is re-credited.
  *
- * @returns {Promise<{reference: string, status: string}>}
+ * Idempotent on `idempotencyKey` (the statement id). ⚠ Mercury documents
+ * idempotency and 409-as-replay on createTransaction, not on this endpoint;
+ * verify with a deliberate repeat before trusting it.
  */
-async function disbursePayout({ payeeId, amountMicroUsd, idempotencyKey }) {
-  throw new Error(
-    'PAYOUT_PARTNER_NOT_CONFIGURED: no payout partner is wired yet. '
-    + `Would have sent ${microUsdToStr(amountMicroUsd)} to payee ${payeeId} (key ${idempotencyKey}).`
-  );
+async function disbursePayout({ payeeId, amountMicroUsd, idempotencyKey, paymentMethod, legalName }) {
+  const { cents, carryMicroUsd } = mercury.splitPayable(amountMicroUsd);
+  if (carryMicroUsd !== 0) return { outcome: 'not_sent', reason: 'amount_not_whole_cents' };
+
+  let res;
+  try {
+    res = await relayCall('send', { recipientId: payeeId, cents, paymentMethod, idempotencyKey, legalName });
+  } catch (e) {
+    const msg = String(e?.message || e);
+    // No identity token means the request never left this function.
+    if (msg.startsWith('relay_identity_')) return { outcome: 'not_sent', reason: msg };
+    return { outcome: 'unknown', reason: 'relay_unreachable', detail: msg.slice(0, 300) };
+  }
+
+  if (!res.ok) {
+    // The relay refused BEFORE calling Mercury: bad body, auth, missing config.
+    // A 502 means the relay tried Mercury and could not tell what happened.
+    if ([400, 401, 403, 404, 413, 503].includes(res.httpStatus)) {
+      return { outcome: 'not_sent', reason: res.error || `relay_${res.httpStatus}` };
+    }
+    return { outcome: 'unknown', reason: res.error || `relay_${res.httpStatus}` };
+  }
+
+  const c = res.classification || mercury.classifySendResponse(res.mercuryStatus, res.body);
+  if (c.outcome === 'accepted') {
+    return {
+      outcome: 'queued', requestId: c.requestId, mercuryStatus: c.mercuryStatus, needsLookup: !!c.needsLookup,
+      // Which account it left from, so a return can be traced even after the
+      // payout account is switched (MERCURY_PAYOUT_ACCOUNT_ID on box 1).
+      accountId: res.body?.accountId || null,
+    };
+  }
+  if (c.outcome === 'retry_later') return { outcome: 'not_sent', reason: c.reason };
+  return { outcome: 'unknown', reason: c.reason, detail: c.detail };
 }
 
 /**
@@ -382,6 +469,7 @@ async function buildRunPlan(now = new Date()) {
     const reason = blockingReason(
       account, wallet, kycLevel, now.getTime(),
       accountAgeDays(userSnap.exists ? userSnap.data() : null, now.getTime()),
+      countriesOf(userSnap.exists ? userSnap.data() : null, account),
     );
     if (reason) { skipped.push({ uid, reason, cadence: cadence.key }); continue; }
 
@@ -392,19 +480,37 @@ async function buildRunPlan(now = new Date()) {
     const owedTotal = owedMicroUsd(wallet);
     let amountMicroUsd = owedTotal;
     const capMicro = KYC_MONTHLY_CAP_MICRO_USD[Math.min(kycLevel, 3)] ?? 0;
-    const alreadyPaidMicro = await paidLast30Days(uid, now.getTime());
+    const alreadyPaidMicro = await paidThisCalendarMonth(uid, now.getTime());
     const headroomMicro = Math.max(0, capMicro - alreadyPaidMicro);
 
     if (amountMicroUsd > headroomMicro) amountMicroUsd = headroomMicro;
-    // Capping can push the payment under the minimum, in which case nothing goes
-    // out this run and the whole balance carries forward.
-    if (amountMicroUsd < MIN_PAYOUT_MICRO_USD) {
-      skipped.push({
-        uid,
-        reason: headroomMicro <= 0 ? 'kyc_monthly_cap_reached' : 'below_minimum_after_cap',
-        cadence: cadence.key,
-        kycLevel,
-      });
+    // The $100 minimum applies to the ACCRUED BALANCE, not to the capped payment.
+    // ToS 8.4: "If your accrued balance is below the minimum on a scheduled date,
+    // no payment is made". That balance test is blockingReason() -> below_minimum.
+    // The AML policy (section 2) caps what is paid per month by verification level
+    // and says "Earnings above the cap remain owed and carry into a later run".
+    // So a Level 1 creator owed $150 is paid $50 now and $100 carries forward.
+    //
+    // ⚠ This used to skip any CAPPED payment under $100. The Level 1 cap is $50,
+    // so that made every Level 1 creator unpayable forever, which contradicts
+    // ToS 8.2 ("at least Level 1") and the help centre. No published rule says it.
+    if (amountMicroUsd <= 0) {
+      skipped.push({ uid, reason: 'kyc_monthly_cap_reached', cadence: cadence.key, kycLevel });
+      continue;
+    }
+
+    // Mercury is paid in whole cents. Round DOWN here, so the amount reserved
+    // is exactly the amount sent and the sub-cent remainder stays owed and
+    // rolls into the next payout.
+    amountMicroUsd = mercury.splitPayable(amountMicroUsd).sendMicroUsd;
+    if (amountMicroUsd <= 0) {
+      skipped.push({ uid, reason: 'kyc_monthly_cap_reached', cadence: cadence.key, kycLevel });
+      continue;
+    }
+
+    const paymentMethod = account.mercuryPaymentMethod;
+    if (paymentMethod !== 'ach' && paymentMethod !== 'internationalWire') {
+      skipped.push({ uid, reason: 'payment_method_missing', cadence: cadence.key });
       continue;
     }
 
@@ -413,6 +519,10 @@ async function buildRunPlan(now = new Date()) {
       amountMicroUsd,
       cadence: cadence.key,
       payeeId: account.partnerPayeeId,
+      paymentMethod,
+      // The supplier's verified name, carried on a wire's purpose. Mercury's
+      // bank-account name is the fallback; the two already matched to get here.
+      legalName: account.verifiedLegalName || account.legalName || null,
       cappedByKyc: amountMicroUsd < owedTotal,
     });
 
@@ -493,59 +603,408 @@ async function payOne(runId, entry) {
 
   if (!reserved) return { uid, status: 'skipped' };
 
-  // 2. Send.
+  // 2. Ask Mercury. Nothing here counts as a payout or tells the creator they
+  // are paid: that happens only when the founder approves (markStatementPaid).
+  let result;
   try {
-    const result = await disbursePayout({
-      payeeId, amountMicroUsd, idempotencyKey: `${runId}__${uid}`,
+    result = await disbursePayout({
+      payeeId, amountMicroUsd, idempotencyKey: statementRef.id,
+      paymentMethod: entry.paymentMethod, legalName: entry.legalName,
     });
+  } catch (e) {
+    result = { outcome: 'unknown', reason: 'exception', detail: String(e?.message || e).slice(0, 300) };
+  }
 
+  if (result.outcome === 'queued') {
     await statementRef.update({
-      status: 'paid',
-      partnerReference: result.reference,
-      partnerStatus: result.status || null,
-      paidAt: FieldValue.serverTimestamp(),
+      status: 'queued',
+      mercuryRequestId: result.requestId || null,
+      mercuryStatus: result.mercuryStatus || null,
+      needsLookup: !!result.needsLookup,
+      mercuryAccountId: result.accountId || null,
+      queuedAt: FieldValue.serverTimestamp(),
     });
+    await recordMercuryUse('send');
+    // An org whose approval rules auto-approve comes back approved at once.
+    if (result.mercuryStatus === 'approved' && await markStatementPaid(statementRef.id)) {
+      return { uid, status: 'paid', amountMicroUsd };
+    }
+    return { uid, status: 'queued', amountMicroUsd };
+  }
 
-    // `firstPayoutAt` is the clock the cadence ladder is measured against, so it
-    // must be written ONCE and never move. A plain set/merge with a server
-    // timestamp would rewrite it on every run, pinning daysSinceFirstPayout at
-    // 0 and quietly making Established and Priority unreachable forever.
-    // Transaction so the read and the conditional write cannot interleave.
-    await db.runTransaction(async (tx) => {
-      const snap = await tx.get(accountRef);
-      const fields = {
-        successfulPayouts: FieldValue.increment(1),
-        lastPayoutAt: FieldValue.serverTimestamp(),
-      };
-      if (!snap.exists || !snap.data()?.firstPayoutAt) {
-        fields.firstPayoutAt = FieldValue.serverTimestamp();
-      }
-      tx.set(accountRef, fields, { merge: true });
+  if (result.outcome === 'not_sent') {
+    // Mercury never created it, so the reservation is undone now. Quietly: this
+    // is our retry, not something the creator needs to act on.
+    await reverseStatement(statementRef.id, result.reason, { notify: false });
+    console.warn('[payouts] not sent, re-credited', runId, uid, result.reason);
+    return { uid, status: 'not_sent', reason: result.reason };
+  }
+
+  // Unknown. Leave the payable debited: refunding here could double-credit if
+  // Mercury did in fact accept it. A failed statement is the signal for a human.
+  await statementRef.update({
+    status: 'failed',
+    error: String([result.reason, result.detail].filter(Boolean).join(': ')).slice(0, 500),
+    failedAt: FieldValue.serverTimestamp(),
+  }).catch(() => {});
+  console.error('payOne failed', runId, uid, result.reason);
+  return { uid, status: 'failed', error: result.reason };
+}
+
+// ── Statement transitions ─────────────────────────────────────────────
+
+/**
+ * queued -> paid, once Mercury reports the request approved.
+ *
+ * THIS is where a payout counts. successfulPayouts and firstPayoutAt drive the
+ * cadence ladder (resolveCadence), so advancing them on a payment that was never
+ * approved would promote a creator to faster payouts on money that never moved.
+ * `firstPayoutAt` is written once and never moves. Returns true only for the
+ * call that made the transition, so the notification goes out exactly once.
+ */
+async function markStatementPaid(statementId) {
+  const statementRef = db.collection('payout_statements').doc(statementId);
+  const flipped = await db.runTransaction(async (tx) => {
+    const st = await tx.get(statementRef);
+    if (!st.exists || st.data().status !== 'queued') return null;
+    const { uid } = st.data();
+    const accountRef = db.collection('payout_accounts').doc(uid);
+    const acc = await tx.get(accountRef);
+    tx.update(statementRef, {
+      status: 'paid', mercuryStatus: 'approved', paidAt: FieldValue.serverTimestamp(),
+      // Watched for a returned wire until this time (checkReturnedPayouts).
+      returnWatch: true,
+      returnWatchUntilMs: Date.now() + RETURN_WATCH_DAYS * 86_400_000,
     });
+    const fields = {
+      successfulPayouts: FieldValue.increment(1),
+      lastPayoutAt: FieldValue.serverTimestamp(),
+    };
+    if (!acc.exists || !acc.data()?.firstPayoutAt) fields.firstPayoutAt = FieldValue.serverTimestamp();
+    tx.set(accountRef, fields, { merge: true });
+    return st.data();
+  });
+  if (!flipped) return false;
+  await db.collection('notifications').add({
+    recipientId: flipped.uid,
+    type: 'revenue_share_paid',
+    title: 'You have been paid',
+    body: `${microUsdToStr(flipped.amountMicroUsd)} is on its way to your payout account.`,
+    read: false,
+    data: { runId: flipped.runId, amountMicroUsd: flipped.amountMicroUsd },
+    createdAt: FieldValue.serverTimestamp(),
+  });
+  return true;
+}
 
-    await db.collection('notifications').add({
-      recipientId: uid,
-      type: 'revenue_share_paid',
-      title: 'You have been paid',
-      body: `${microUsdToStr(amountMicroUsd)} is on its way to your payout account.`,
-      read: false,
-      data: { runId, amountMicroUsd },
+/**
+ * pending|queued -> reversed: put the money back into owedMicroUsd.
+ *
+ * Only from states where the money has NOT left. A paid statement is never
+ * reversed here; a returned wire is build step 6 and has its own evidence.
+ * Idempotent: a second call finds `reversed` and does nothing.
+ */
+async function reverseStatement(statementId, reason, { notify = true } = {}) {
+  const statementRef = db.collection('payout_statements').doc(statementId);
+  const done = await db.runTransaction(async (tx) => {
+    const st = await tx.get(statementRef);
+    if (!st.exists) return null;
+    const d = st.data();
+    if (d.status !== 'pending' && d.status !== 'queued') return null;
+    const amount = Math.floor(Number(d.amountMicroUsd || 0));
+    tx.update(db.collection('wallets').doc(d.uid), {
+      owedMicroUsd: FieldValue.increment(amount),
+      totalPaidMicroUsd: FieldValue.increment(-amount),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    tx.update(statementRef, {
+      status: 'reversed', reverseReason: String(reason || 'unknown').slice(0, 120),
+      reversedAt: FieldValue.serverTimestamp(),
+    });
+    tx.set(db.collection('transactions').doc(), {
+      userId: d.uid,
+      type: 'revenue_share_payout_reversed',
+      currency: 'usd',
+      amountMicroUsd: amount,
+      amount,
+      description: `Payout not sent, ${microUsdToStr(amount)} returned to your balance`,
+      meta: { runId: d.runId, statementId, reason: String(reason || '').slice(0, 120) },
       createdAt: FieldValue.serverTimestamp(),
     });
-
-    return { uid, status: 'paid', amountMicroUsd };
-  } catch (e) {
-    // Leave the statement `pending` and the payable debited. A pending statement
-    // is the signal for a human to reconcile, and refunding automatically here
-    // could double-credit if the partner actually did accept the payment.
-    await statementRef.update({
-      status: 'failed',
-      error: String(e?.message || e).slice(0, 500),
-      failedAt: FieldValue.serverTimestamp(),
-    }).catch(() => {});
-    console.error('payOne failed', runId, uid, e?.message || e);
-    return { uid, status: 'failed', error: String(e?.message || e) };
+    return d;
+  });
+  if (!done) return false;
+  if (notify) {
+    await db.collection('notifications').add({
+      recipientId: done.uid,
+      type: 'revenue_share_payout_reversed',
+      title: 'Your payout was not sent',
+      body: `${microUsdToStr(done.amountMicroUsd)} is back in your balance and will be included in your next payout.`,
+      read: false,
+      data: { runId: done.runId, amountMicroUsd: done.amountMicroUsd },
+      createdAt: FieldValue.serverTimestamp(),
+    });
   }
+  return true;
+}
+
+// ── Returned payments (build step 6) ─────────────────────────────────
+
+/** How long after approval a paid statement is watched for a returned wire. */
+const RETURN_WATCH_DAYS = 45;
+
+/**
+ * paid -> reversed, because the receiving bank sent the money back.
+ *
+ * The debt to the creator was never discharged, so the FULL statement amount is
+ * re-credited, whatever the bank deducted on the way (that loss is Vergr's).
+ * The payout stops counting toward the cadence ladder, and the payee id is
+ * cleared: the bank refused those details, so paying them again would only
+ * bounce again. The creator is told and reconnects.
+ */
+async function reverseReturnedPayout(statementId, verdict) {
+  const statementRef = db.collection('payout_statements').doc(statementId);
+  const done = await db.runTransaction(async (tx) => {
+    const st = await tx.get(statementRef);
+    if (!st.exists || st.data().status !== 'paid') return null;
+    const d = st.data();
+    const accountRef = db.collection('payout_accounts').doc(d.uid);
+    const acc = await tx.get(accountRef);
+    const amount = Math.floor(Number(d.amountMicroUsd || 0));
+    tx.update(db.collection('wallets').doc(d.uid), {
+      owedMicroUsd: FieldValue.increment(amount),
+      totalPaidMicroUsd: FieldValue.increment(-amount),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    tx.update(statementRef, {
+      status: 'reversed',
+      reverseReason: 'returned_by_bank',
+      returnReason: String(verdict?.reason || '').slice(0, 120),
+      returnDetail: verdict?.detail ? String(verdict.detail).slice(0, 300) : null,
+      returnedTransactionId: verdict?.transactionId || null,
+      returnWatch: false,
+      reversedAt: FieldValue.serverTimestamp(),
+    });
+    const accFields = {
+      partnerPayeeId: FieldValue.delete(),
+      notPayableReason: 'bank_returned_payment',
+      mercuryInviteStatus: 'returned',
+      payoutAccountReturnedAt: FieldValue.serverTimestamp(),
+    };
+    if (Number(acc.data()?.successfulPayouts || 0) > 0) accFields.successfulPayouts = FieldValue.increment(-1);
+    tx.set(accountRef, accFields, { merge: true });
+    tx.set(db.collection('transactions').doc(), {
+      userId: d.uid,
+      type: 'revenue_share_payout_reversed',
+      currency: 'usd',
+      amountMicroUsd: amount,
+      amount,
+      description: `Payout returned by your bank, ${microUsdToStr(amount)} back in your balance`,
+      meta: { runId: d.runId, statementId, reason: 'returned_by_bank' },
+      createdAt: FieldValue.serverTimestamp(),
+    });
+    return d;
+  });
+  if (!done) return false;
+  await db.collection('notifications').add({
+    recipientId: done.uid,
+    type: 'revenue_share_payout_returned',
+    title: 'Your bank sent your payout back',
+    body: `${microUsdToStr(done.amountMicroUsd)} is back in your balance. Reconnect your payout account with correct details to be paid.`,
+    read: false,
+    data: { runId: done.runId, amountMicroUsd: done.amountMicroUsd },
+    createdAt: FieldValue.serverTimestamp(),
+  });
+  return true;
+}
+
+/**
+ * The second reconciliation layer. For every paid statement still on the watch
+ * list, read the transactions Mercury created for its request and act:
+ *   returned                       -> reverseReturnedPayout
+ *   delivered, watch window over   -> off the list
+ *   nothing found, window over     -> off the list and surfaced to staff, because
+ *                                     an approved payment with no transaction is
+ *                                     something a human should look at
+ * Queries only watched statements (single-field equality, no index), so the
+ * daily cost stays bounded by recent payouts, never by all payouts ever.
+ */
+async function checkReturnedPayouts(limit = 500) {
+  const snap = await db.collection('payout_statements').where('returnWatch', '==', true).limit(limit).get();
+  const out = { watched: snap.size, returned: 0, closed: 0, unconfirmed: 0, errors: 0 };
+  const now = Date.now();
+  const unconfirmed = [];
+  for (const doc of snap.docs) {
+    const st = doc.data();
+    if (!st.mercuryRequestId) { out.errors++; continue; }
+    try {
+      const sinceMs = (tsMs(st.queuedAt) || tsMs(st.paidAt) || now) - 7 * 86_400_000;
+      const r = await relayCall('transactions', {
+        requestId: st.mercuryRequestId,
+        accountId: st.mercuryAccountId || undefined,
+        start: mercury.mercuryDate(sinceMs),
+      });
+      if (!r.ok || r.mercuryStatus !== 200) { out.errors++; continue; }
+      const v = mercury.returnVerdict(r.body?.transactions);
+      if (v.state === 'returned') {
+        if (await reverseReturnedPayout(doc.id, v)) out.returned++;
+        console.warn('[payouts] payout returned by bank', doc.id, v.reason);
+        continue;
+      }
+      const windowOver = now > Number(st.returnWatchUntilMs || 0);
+      if (!windowOver) continue;
+      if (v.state === 'delivered') {
+        await doc.ref.update({ returnWatch: false, deliveredTransactionId: v.transactionId || null, deliveryConfirmedAt: FieldValue.serverTimestamp() });
+        out.closed++;
+      } else {
+        await doc.ref.update({ returnWatch: false, deliveryUnconfirmed: true });
+        unconfirmed.push(doc.id);
+        out.unconfirmed++;
+      }
+    } catch (e) {
+      out.errors++;
+      console.error('[payouts] return check failed', doc.id, String(e?.message || e).slice(0, 200));
+    }
+  }
+  if (unconfirmed.length) {
+    await alertStaff('payout_delivery_unconfirmed', 'Payouts approved but never seen leaving Mercury',
+      `${unconfirmed.length} approved payout(s) have no sent transaction after ${RETURN_WATCH_DAYS} days. Check them in the Mercury dashboard.`,
+      { statementIds: unconfirmed.slice(0, 20) });
+  }
+  return out;
+}
+
+// ── Reconcile + Mercury health (run at the start of every daily run) ─
+
+/** A queued request older than this is surfaced to staff. Not a money number. */
+const APPROVAL_STALE_DAYS = 3;
+
+/**
+ * Mercury deletes a token unused for 45 days and DOWNGRADES one whose scopes
+ * outrun its use for 45 days. The keep-alive call keeps both tokens' READ use
+ * current, but only a real send uses Token A's send scope and only a real
+ * invite uses Token B's create scopes, so those are tracked and warned about.
+ * Both tokens were created 2026-09-24.
+ */
+const MERCURY_TOKENS_CREATED_MS = Date.parse('2026-09-24T00:00:00Z');
+const MERCURY_SCOPE_IDLE_LIMIT_DAYS = 45;
+const MERCURY_SCOPE_WARN_DAYS = 35;
+const healthRef = () => db.collection('payout_health').doc('mercury');
+
+/** Stamp the last real use of a write scope: 'send' (Token A) or 'invite' (Token B). */
+async function recordMercuryUse(kind) {
+  const field = kind === 'send' ? 'lastSendRequestAt' : 'lastInviteCreatedAt';
+  await healthRef().set({ [field]: FieldValue.serverTimestamp() }, { merge: true }).catch(() => {});
+}
+
+async function alertStaff(type, title, body, data = {}) {
+  const admins = await db.collection('users').where('staff', '==', true).limit(20).get();
+  if (admins.empty) return;
+  const batch = db.batch();
+  for (const a of admins.docs) {
+    batch.set(db.collection('notifications').doc(), {
+      recipientId: a.id, type, title, body, read: false, data,
+      createdAt: FieldValue.serverTimestamp(),
+    });
+  }
+  await batch.commit();
+}
+
+/** Pure: which write scopes are close to being stripped. Exported for the guard. */
+function scopeIdleWarnings(health, nowMs = Date.now()) {
+  const out = [];
+  for (const [kind, field, token] of [['send', 'lastSendRequestAt', 'A'], ['invite', 'lastInviteCreatedAt', 'B']]) {
+    const since = Math.max(tsMs(health?.[field]) || 0, MERCURY_TOKENS_CREATED_MS);
+    const idleDays = Math.floor((nowMs - since) / 86_400_000);
+    if (idleDays >= MERCURY_SCOPE_WARN_DAYS) {
+      out.push({ kind, token, idleDays, daysLeft: Math.max(0, MERCURY_SCOPE_IDLE_LIMIT_DAYS - idleDays), since });
+    }
+  }
+  return out;
+}
+
+async function checkMercuryHealth() {
+  let keepaliveOk = false;
+  try {
+    const r = await relayCall('accounts', {});
+    keepaliveOk = r.ok && r.mercuryStatus === 200;
+    if (!keepaliveOk) console.error('[payouts] Mercury keep-alive failed', r.httpStatus, r.error || '', r.mercuryStatus || '');
+  } catch (e) {
+    console.error('[payouts] Mercury keep-alive unreachable', String(e?.message || e).slice(0, 200));
+  }
+  const snap = await healthRef().get();
+  const health = snap.exists ? snap.data() : {};
+  const warnings = scopeIdleWarnings(health);
+  const update = { lastKeepaliveAt: FieldValue.serverTimestamp(), keepaliveOk };
+
+  // One alert per idle stretch per token, never one per day.
+  for (const w of warnings) {
+    const key = `${w.kind}_${w.since}`;
+    if (health[`alerted_${w.kind}`] === key) continue;
+    await alertStaff(
+      'payout_token_idle',
+      `Mercury Token ${w.token} is about to lose its ${w.kind === 'send' ? 'send' : 'invite'} permission`,
+      w.kind === 'send'
+        ? `No payout has been requested for ${w.idleDays} days. Mercury removes Token A's send permission at 45 days (${w.daysLeft} left). After that it must be recreated before anyone can be paid.`
+        : `No creator has connected a payout account for ${w.idleDays} days. Mercury removes Token B at 45 days (${w.daysLeft} left). After that it must be recreated before anyone can connect.`,
+      { token: w.token, idleDays: w.idleDays },
+    );
+    update[`alerted_${w.kind}`] = key;
+  }
+  if (!keepaliveOk && !health.keepaliveAlerted) {
+    await alertStaff('payout_mercury_unreachable', 'Payouts cannot reach Mercury',
+      'The daily payout run could not reach Mercury through the box 1 relay. Check vergr-mercury-relay and the Mercury tokens.');
+    update.keepaliveAlerted = true;
+  }
+  if (keepaliveOk) update.keepaliveAlerted = false;
+  await healthRef().set(update, { merge: true });
+  return { keepaliveOk, warnings: warnings.length };
+}
+
+/**
+ * Walk every queued statement and apply Mercury's decision.
+ *   approved              -> paid (counts, notifies)
+ *   rejected / cancelled  -> reversed (money back, notifies)
+ *   pendingApproval       -> left alone; older than APPROVAL_STALE_DAYS is
+ *                            surfaced once, because the creator's balance is
+ *                            debited while it waits
+ * Single-field equality query, so no composite index.
+ */
+async function reconcileQueuedPayouts(limit = 500) {
+  const snap = await db.collection('payout_statements').where('status', '==', 'queued').limit(limit).get();
+  const out = { queued: snap.size, paid: 0, reversed: 0, stale: 0, errors: 0 };
+  const stale = [];
+  for (const doc of snap.docs) {
+    const st = doc.data();
+    if (!st.mercuryRequestId) { out.errors++; continue; }
+    try {
+      const r = await relayCall('send/get', { requestId: st.mercuryRequestId });
+      if (!r.ok || r.mercuryStatus !== 200) { out.errors++; continue; }
+      const status = r.body?.status || null;
+      const next = mercury.statementTransitionFor(status);
+      if (next === 'paid') { if (await markStatementPaid(doc.id)) out.paid++; continue; }
+      if (next === 'reversed') { if (await reverseStatement(doc.id, `mercury_${status}`)) out.reversed++; continue; }
+      if (next === 'unknown') { console.error('[payouts] unrecognised Mercury status', doc.id, status); out.errors++; continue; }
+      const queuedMs = tsMs(st.queuedAt);
+      if (queuedMs && Date.now() - queuedMs > APPROVAL_STALE_DAYS * 86_400_000 && !st.approvalStaleAlertedAt) {
+        stale.push({ id: doc.id, amountMicroUsd: st.amountMicroUsd });
+      }
+    } catch (e) {
+      out.errors++;
+      console.error('[payouts] reconcile failed', doc.id, String(e?.message || e).slice(0, 200));
+    }
+  }
+  if (stale.length) {
+    const total = stale.reduce((a, x) => a + Number(x.amountMicroUsd || 0), 0);
+    await alertStaff('payout_approval_stale', 'Payouts are waiting for your approval in Mercury',
+      `${stale.length} payout(s) totalling ${microUsdToStr(total)} have waited over ${APPROVAL_STALE_DAYS} days. Creators' balances are debited while they wait.`,
+      { count: stale.length, totalMicroUsd: total });
+    const batch = db.batch();
+    for (const x of stale) batch.update(db.collection('payout_statements').doc(x.id), { approvalStaleAlertedAt: FieldValue.serverTimestamp() });
+    await batch.commit();
+    out.stale = stale.length;
+  }
+  return out;
 }
 
 /**
@@ -583,6 +1042,39 @@ async function executeRun(now = new Date()) {
     }, { merge: true });
     console.warn('runCreatorPayouts BLOCKED: payoutsPaused is set in app_config/general.');
     return { runId, status: 'blocked', reason: 'payouts_paused' };
+  }
+
+  // Keep the Mercury tokens alive and apply the founder's approvals from the
+  // Mercury dashboard. Both run even when there is nobody to pay today, and
+  // neither is allowed to block the run.
+  let mercuryHealth = null;
+  let reconcile = null;
+  try { mercuryHealth = await checkMercuryHealth(); } catch (e) {
+    console.error('[payouts] Mercury health check failed', String(e?.message || e).slice(0, 200));
+  }
+  try {
+    reconcile = await reconcileQueuedPayouts();
+    if (reconcile.queued) console.log('[payouts] reconcile', reconcile);
+  } catch (e) {
+    console.error('[payouts] reconcile failed', String(e?.message || e).slice(0, 200));
+  }
+
+  // Returned wires: re-credit before this run reads anyone's balance.
+  let returns = null;
+  try {
+    returns = await checkReturnedPayouts();
+    if (returns.watched) console.log('[payouts] return check', returns);
+  } catch (e) {
+    console.error('[payouts] return check failed', String(e?.message || e).slice(0, 200));
+  }
+
+  // Read back finished Mercury onboardings first, so a creator who completed
+  // the form yesterday can be paid today. Never allowed to block the run.
+  try {
+    const sweep = await sweepPayoutOnboarding();
+    if (sweep.pending) console.log('[payouts] onboarding sweep', sweep);
+  } catch (e) {
+    console.error('[payouts] onboarding sweep failed', String(e?.message || e).slice(0, 200));
   }
 
   const { plan, skipped } = await buildRunPlan(now);
@@ -626,28 +1118,34 @@ async function executeRun(now = new Date()) {
   }
 
   const paid = results.filter((r) => r.status === 'paid');
+  const queued = results.filter((r) => r.status === 'queued');
+  const notSent = results.filter((r) => r.status === 'not_sent');
   const failed = results.filter((r) => r.status === 'failed');
 
   await runRef.set({
     status: failed.length ? 'complete_with_errors' : 'complete',
+    // paid = approved at once; queued = waiting for approval in Mercury.
     paidCount: paid.length,
     paidMicroUsd: paid.reduce((s, r) => s + (r.amountMicroUsd || 0), 0),
+    queuedCount: queued.length,
+    queuedMicroUsd: queued.reduce((s, r) => s + (r.amountMicroUsd || 0), 0),
+    notSentCount: notSent.length,
     failedCount: failed.length,
+    mercuryHealth, reconcile, returns,
     completedAt: FieldValue.serverTimestamp(),
   }, { merge: true });
 
-  return { runId, paid: paid.length, failed: failed.length, skipped: skipped.length };
+  return { runId, paid: paid.length, queued: queued.length, notSent: notSent.length, failed: failed.length, skipped: skipped.length };
 }
 
 // ── Exports ───────────────────────────────────────────────────────────
 
-exports.runCreatorPayouts = functions.scheduler.onSchedule(
-  { schedule: 'every day 06:00', timeZone: 'UTC', region: REGION },
-  async () => {
+// Runs inside a dispatcher cron in index.js (it was its own Cloud Scheduler
+// job, and every job past the first three is billed monthly).
+exports.runCreatorPayouts = async function runCreatorPayouts() {
     const out = await executeRun(new Date());
     console.log('runCreatorPayouts', JSON.stringify(out));
-  },
-);
+  };
 
 /**
  * Admin dry run. Shows exactly who would be paid and who would be skipped, with
@@ -657,8 +1155,11 @@ exports.runCreatorPayouts = functions.scheduler.onSchedule(
 exports.previewCreatorPayoutRun = functions.https.onCall(
   { region: REGION },
   async (request) => {
-    const { requireAdmin } = require('./adminSecurity');
-    await requireAdmin(request.auth?.uid);  // takes a uid, not the request
+    // ⚠ Was requireAdmin, which is operator-only now that role:'admin' is gone,
+    // so a sub-admin granted Economy saw this button and got 'Admin only'. It is
+    // a DRY RUN that moves nothing, so the Economy grant is the right gate.
+    const { requireAdminScreen } = require('./adminAccess');
+    await requireAdminScreen(request.auth?.uid, 'economy');
     const when = request.data?.date ? new Date(request.data.date) : new Date();
     const { plan, skipped } = await buildRunPlan(when);
     return {
@@ -687,17 +1188,33 @@ exports.getPayoutAccount = functions.https.onCall(
     const uid = request.auth?.uid;
     if (!uid) throw new functions.https.HttpsError('unauthenticated', 'Sign in first.');
 
-    const [accSnap, walletSnap, userSnap] = await Promise.all([
+    const [accSnap, walletSnap, userSnap, upgradeSnap, paidThisMonth] = await Promise.all([
       db.collection('payout_accounts').doc(uid).get(),
       db.collection('wallets').doc(uid).get(),
       db.collection('users').doc(uid).get(),
+      // The Level 2 / 3 request, so the screen can say where it stands.
+      db.collection('kyc_upgrades').doc(uid).get(),
+      // What this calendar month's cap has already used. Only when someone opens
+      // the screen, never in a loop.
+      paidThisCalendarMonth(uid).catch(() => 0),
     ]);
 
-    const account = accSnap.exists ? accSnap.data() : null;
+    let account = accSnap.exists ? accSnap.data() : null;
+    // A creator who just finished Mercury's form comes back to this screen, so
+    // this is where the verdict is read. One relay call, only while an invite is
+    // pending and at most every 30s. A failure never breaks the screen.
+    try {
+      const refreshed = await refreshPayoutOnboarding(uid, account);
+      if (refreshed) account = { ...account, ...refreshed };
+    } catch (e) {
+      console.error('[payouts] onboarding refresh failed', uid, String(e?.message || e).slice(0, 200));
+    }
     const wallet = walletSnap.exists ? walletSnap.data() : {};
     const kycLevel = Number(userSnap.exists ? (userSnap.data()?.kycLevel || 0) : 0);
     const now = Date.now();
     const cadence = resolveCadence(account || {}, kycLevel, now);
+    const inviteExpiresMs = tsMs(account?.mercuryInviteExpiresAt);
+    const inviteLive = account?.mercuryInviteStatus === 'created' && inviteExpiresMs && inviteExpiresMs > now;
 
     return {
       enrolled: !!account?.enrolled,
@@ -705,6 +1222,42 @@ exports.getPayoutAccount = functions.https.onCall(
       taxFormStatus: account?.taxFormStatus || 'required',
       taxFormType: account?.taxFormType || null,
       payoutAccountConnected: !!account?.partnerPayeeId,
+      // Monthly limit by verification level (AML policy section 2). Earnings above
+      // it carry forward; the screen explains that and offers the next level.
+      limits: (() => {
+        const cap = KYC_MONTHLY_CAP_MICRO_USD[Math.min(kycLevel, 3)] ?? 0;
+        const owed = owedMicroUsd(wallet);
+        const remaining = Math.max(0, cap - paidThisMonth);
+        const nextLevel = kycLevel >= 1 && kycLevel < 3 ? kycLevel + 1 : null;
+        return {
+          level: kycLevel,
+          monthlyCapMicroUsd: cap,
+          paidThisMonthMicroUsd: paidThisMonth,
+          remainingThisMonthMicroUsd: remaining,
+          // Owed now but above what this month's cap can pay: it waits.
+          aboveCapMicroUsd: Math.max(0, owed - remaining),
+          nextLevel,
+          nextLevelCapMicroUsd: nextLevel ? KYC_MONTHLY_CAP_MICRO_USD[nextLevel] : null,
+        };
+      })(),
+      upgrade: upgradeSnap.exists ? {
+        status: upgradeSnap.data().status || null,
+        targetLevel: upgradeSnap.data().targetLevel || null,
+        docType: upgradeSnap.data().docType || null,
+        rejectionReason: upgradeSnap.data().rejectionReason || null,
+        submittedAtMs: tsMs(upgradeSnap.data().submittedAt),
+        reviewedAtMs: tsMs(upgradeSnap.data().reviewedAt),
+      } : null,
+      // Mercury onboarding state (build step 4). The screen renders each one as
+      // a person who is stuck and what they do next.
+      onboarding: {
+        inviteStatus: account?.mercuryInviteStatus || null,
+        onboardingUrl: inviteLive ? account.mercuryInviteUrl : null,
+        expiresAtMs: inviteLive ? inviteExpiresMs : null,
+        nameMatch: account?.nameMatch || null,
+        notPayableReason: account?.notPayableReason || null,
+        taxFormReason: account?.taxFormReason || null,
+      },
       cadence: cadence.key,
       cadenceLabel: cadence.label,
       successfulPayouts: Number(account?.successfulPayouts || 0),
@@ -736,6 +1289,7 @@ exports.getPayoutAccount = functions.https.onCall(
       blockedBy: blockingReason(
         account || {}, wallet, kycLevel, now,
         accountAgeDays(userSnap.exists ? userSnap.data() : null, now),
+        countriesOf(userSnap.exists ? userSnap.data() : null, account),
       ),
     };
   },
@@ -761,9 +1315,235 @@ exports.enrollForPayouts = functions.https.onCall(
           : FieldValue.serverTimestamp(),
       }, { merge: true });
     });
-    return { enrolled: true };
+    if (!request.data?.connectPayoutAccount) return { enrolled: true };
+    return { enrolled: true, onboarding: await connectPayoutAccount(uid) };
   },
 );
+
+// ── Payout account onboarding (Mercury recipient invite) ─────────────
+//
+// Hosted on enrollForPayouts ({ connectPayoutAccount: true }) rather than a new
+// callable, because every new Cloud Function is a new Artifact Registry image.
+//
+// The creator enters their bank details AND uploads their W-9 / W-8BEN on
+// Mercury's own hosted page (onboardingUrl). Vergr never sees the bank details.
+// Mercury's verdict on the finished invite is read back in build step 4.
+
+/** Creator-facing copy for every refusal. Kept here so the screen and server agree. */
+const ONBOARDING_REFUSALS = {
+  not_enrolled: 'Start payout setup first.',
+  kyc_required: 'Verify your identity first.',
+  frozen: 'Payouts are paused on your account. Contact support.',
+  name_mismatch_review: 'The name on your bank account did not match your verified identity. Contact support to fix it.',
+  verified_name_missing: 'We need to re-check your identity before you can connect a payout account. Contact support.',
+  country_unknown: 'Set your country in your profile first.',
+  sanctioned_country: 'Payouts are not available in your country.',
+  mercury_unsupported_country: 'Our payments partner cannot send money to your country yet.',
+  in_progress: 'Your payout setup is already starting. Try again in a minute.',
+  email_missing: 'Your account needs an email address to connect a payout account.',
+  not_open: 'Connecting a payout account is not open yet.',
+  partner_error: 'We could not reach our payments partner. Try again shortly.',
+};
+
+function refuse(reason) {
+  return new functions.https.HttpsError('failed-precondition', ONBOARDING_REFUSALS[reason] || 'Payout setup is unavailable.', { reason });
+}
+
+async function connectPayoutAccount(uid) {
+  const accountRef = db.collection('payout_accounts').doc(uid);
+  const [userSnap, kycSnap] = await Promise.all([
+    db.collection('users').doc(uid).get(),
+    db.collection('users').doc(uid).collection('private').doc('kyc').get(),
+  ]);
+  const userData = userSnap.exists ? userSnap.data() : null;
+  const privateKyc = kycSnap.exists ? kycSnap.data() : null;
+
+  // Decide and claim inside one transaction, so two taps cannot create two invites.
+  const decision = await db.runTransaction(async (tx) => {
+    const snap = await tx.get(accountRef);
+    const d = mercury.onboardingDecision({
+      account: snap.exists ? snap.data() : null, userData, privateKyc, blocked: BLOCKED_COUNTRIES,
+    });
+    if (d.action === 'create') {
+      tx.set(accountRef, {
+        mercuryInvitePendingAt: FieldValue.serverTimestamp(),
+        // Copied from the server-written Didit result: the name the bank account
+        // must match, and the ID country the payout run checks for sanctions.
+        verifiedLegalName: d.legalName,
+        verifiedCountry: d.verifiedCountry || null,
+      }, { merge: true });
+    }
+    return d;
+  });
+
+  if (decision.action === 'refuse') throw refuse(decision.reason);
+  if (decision.action === 'connected') return { status: 'connected' };
+  if (decision.action === 'reuse') {
+    return { status: 'invite', onboardingUrl: decision.onboardingUrl, expiresAtMs: decision.expiresAtMs };
+  }
+
+  const clearPending = () => accountRef.set({ mercuryInvitePendingAt: FieldValue.delete() }, { merge: true });
+
+  const contactEmail = await authEmailFor(uid);
+  if (!contactEmail) { await clearPending(); throw refuse('email_missing'); }
+
+  let res;
+  try {
+    res = await relayCall('invites/create', {
+      contactEmail,
+      legalName: decision.legalName,
+      country: decision.country,
+      organizationName: mercury.OPERATOR_LEGAL_NAME,
+    });
+  } catch (e) {
+    await clearPending();
+    console.error('[payouts] relay unreachable', uid, String(e?.message || e).slice(0, 200));
+    throw refuse('partner_error');
+  }
+
+  if (!res.ok || (res.mercuryStatus !== 200 && res.mercuryStatus !== 201)) {
+    await clearPending();
+    // Never log the email or the name; the status codes are enough to diagnose.
+    console.error('[payouts] invite refused', uid, res.httpStatus, res.error || '', res.mercuryStatus || '');
+    throw refuse(res.error === 'token_b_missing' ? 'not_open' : 'partner_error');
+  }
+
+  const inv = mercury.inviteState(res.body);
+  if (!inv.inviteId || !inv.onboardingUrl) {
+    await clearPending();
+    console.error('[payouts] invite response missing id or url', uid);
+    throw refuse('partner_error');
+  }
+
+  await accountRef.set({
+    mercuryInviteId: inv.inviteId,
+    mercuryInviteStatus: inv.status,
+    mercuryInviteUrl: inv.onboardingUrl,
+    mercuryInviteExpiresAt: inv.expiresAtMs ? Timestamp.fromMillis(inv.expiresAtMs) : null,
+    mercuryInviteCreatedAt: FieldValue.serverTimestamp(),
+    mercuryInvitePendingAt: FieldValue.delete(),
+  }, { merge: true });
+  await recordMercuryUse('invite');
+
+  return { status: 'invite', onboardingUrl: inv.onboardingUrl, expiresAtMs: inv.expiresAtMs };
+}
+
+function tsMs(t) {
+  if (!t) return null;
+  if (typeof t.toMillis === 'function') return t.toMillis();
+  if (typeof t === 'number') return t;
+  const ms = Date.parse(t);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+const INVITE_REFRESH_MIN_MS = 30 * 1000;
+
+/**
+ * Read Mercury's verdict on a pending invite and record it (build step 4).
+ *
+ * Returns the PLAIN fields written (so a caller can show them without a
+ * re-read), or null when there was nothing to do.
+ *
+ * partnerPayeeId is the field blockingReason() treats as "payout account
+ * connected". It is set ONLY when recipientVerdict() says the recipient is
+ * payable: active, the bank account's name matches the Didit-verified name,
+ * a country Mercury can pay, and a method we can send. A mismatch is recorded
+ * for review and never auto-resolved: paying an account in someone else's name
+ * is exactly what the identity gate exists to stop.
+ *
+ * Tax status comes from Mercury's own classification of the uploaded form, never
+ * from the creator, which is the rule applyPartnerAccountState() documents.
+ */
+async function refreshPayoutOnboarding(uid, account, { force = false } = {}) {
+  if (!account?.mercuryInviteId || account.mercuryInviteStatus !== 'created') return null;
+  const checkedAt = tsMs(account.mercuryInviteCheckedAt);
+  if (!force && checkedAt && Date.now() - checkedAt < INVITE_REFRESH_MIN_MS) return null;
+
+  const ref = db.collection('payout_accounts').doc(uid);
+  const stamp = { mercuryInviteCheckedAt: FieldValue.serverTimestamp() };
+
+  const inviteRes = await relayCall('invites/get', { inviteId: account.mercuryInviteId });
+  if (inviteRes.ok && inviteRes.mercuryStatus === 404) {
+    await ref.set({ ...stamp, mercuryInviteStatus: 'expired' }, { merge: true });
+    return { mercuryInviteStatus: 'expired' };
+  }
+  if (!inviteRes.ok || inviteRes.mercuryStatus !== 200) {
+    console.error('[payouts] invite read failed', uid, inviteRes.httpStatus, inviteRes.error || '', inviteRes.mercuryStatus || '');
+    await ref.set(stamp, { merge: true });
+    return null;
+  }
+
+  const inv = mercury.inviteState(inviteRes.body);
+  if (inv.status === 'expired') {
+    await ref.set({ ...stamp, mercuryInviteStatus: 'expired' }, { merge: true });
+    return { mercuryInviteStatus: 'expired' };
+  }
+  if (inv.status !== 'completed' || !inv.recipientId) {
+    await ref.set({
+      ...stamp,
+      ...(inv.expiresAtMs ? { mercuryInviteExpiresAt: Timestamp.fromMillis(inv.expiresAtMs) } : {}),
+    }, { merge: true });
+    return null;
+  }
+
+  const recRes = await relayCall('recipient', { recipientId: inv.recipientId });
+  if (!recRes.ok || recRes.mercuryStatus !== 200) {
+    console.error('[payouts] recipient read failed', uid, recRes.httpStatus, recRes.error || '', recRes.mercuryStatus || '');
+    await ref.set(stamp, { merge: true });
+    return null;
+  }
+
+  const v = mercury.recipientVerdict(recRes.body, account.verifiedLegalName);
+  const plain = {
+    mercuryInviteStatus: 'completed',
+    mercuryRecipientId: inv.recipientId,
+    taxFormStatus: v.taxFormStatus || 'submitted',
+    taxFormType: v.taxFormType || null,
+    taxFormReason: v.taxFormReason || null,
+    legalName: v.legalName || null,
+    country: v.country || null,
+    mercuryPaymentMethod: v.mercuryPaymentMethod || null,
+    isBusiness: v.isBusiness ?? null,
+    nameMatch: v.nameMatch || null,
+    notPayableReason: v.notPayableReason || null,
+    partnerPayeeId: v.partnerPayeeId || null,
+  };
+  await ref.set({
+    ...plain,
+    ...stamp,
+    mercuryVerdictAt: FieldValue.serverTimestamp(),
+    // A null payee must REMOVE the field, not store null, so a recipient that
+    // stops being payable can never keep an old id by accident.
+    partnerPayeeId: v.partnerPayeeId || FieldValue.delete(),
+  }, { merge: true });
+
+  if (v.notPayableReason) {
+    // Uid and reason only; never the name, which is personal data in a log.
+    console.warn('[payouts] onboarding completed but not payable', uid, v.notPayableReason);
+  }
+  return plain;
+}
+
+/**
+ * Sweep for creators who finished Mercury's form and never reopened the payout
+ * screen. Runs inside the existing daily run, so it adds no Cloud Function and
+ * no Scheduler job. A single-field equality query, so no composite index.
+ */
+async function sweepPayoutOnboarding(limit = 200) {
+  const snap = await db.collection('payout_accounts')
+    .where('mercuryInviteStatus', '==', 'created')
+    .limit(limit)
+    .get();
+  let refreshed = 0;
+  for (const doc of snap.docs) {
+    try {
+      if (await refreshPayoutOnboarding(doc.id, doc.data(), { force: true })) refreshed++;
+    } catch (e) {
+      console.error('[payouts] sweep refresh failed', doc.id, String(e?.message || e).slice(0, 200));
+    }
+  }
+  return { pending: snap.size, refreshed };
+}
 
 /**
  * Record tax-form and payee state from the payments partner.
@@ -794,9 +1574,11 @@ async function applyPartnerAccountState(uid, { taxFormStatus, taxFormType, partn
 exports.adminSetPayoutAccountState = functions.https.onCall(
   { region: REGION },
   async (request) => {
-    const { requireAdmin, auditAdminAction } = require('./adminSecurity');
+    const { requireAdmin, requireFreshStepUp, auditAdminAction } = require('./adminSecurity');
     const actor = request.auth?.uid;
     await requireAdmin(actor);
+    // Every one of these moves when or whether a creator is paid.
+    await requireFreshStepUp(actor);
     const { uid, ...state } = request.data || {};
     if (!uid) throw new functions.https.HttpsError('invalid-argument', 'uid is required.');
     const applied = await applyPartnerAccountState(uid, state);
@@ -930,9 +1712,11 @@ async function reverseStrike(db_, { uid, sourceId, reversedBy, reason = null }) 
 exports.adminRecordPayoutStrike = functions.https.onCall(
   { region: REGION },
   async (request) => {
-    const { requireAdmin, auditAdminAction } = require('./adminSecurity');
+    const { requireAdmin, requireFreshStepUp, auditAdminAction } = require('./adminSecurity');
     const actor = request.auth?.uid;
     await requireAdmin(actor);
+    // Every one of these moves when or whether a creator is paid.
+    await requireFreshStepUp(actor);
     const { uid, reason, sourceId, notes } = request.data || {};
     const out = await recordStrike(db, { uid, reason, sourceId: sourceId || `admin_${actor}_${Date.now()}`, notes });
     await auditAdminAction({ actor, action: 'payout_strike_recorded', target: uid, reason, meta: { notes } });
@@ -944,9 +1728,11 @@ exports.adminRecordPayoutStrike = functions.https.onCall(
 exports.adminReversePayoutStrike = functions.https.onCall(
   { region: REGION },
   async (request) => {
-    const { requireAdmin, auditAdminAction } = require('./adminSecurity');
+    const { requireAdmin, requireFreshStepUp, auditAdminAction } = require('./adminSecurity');
     const actor = request.auth?.uid;
     await requireAdmin(actor);
+    // Every one of these moves when or whether a creator is paid.
+    await requireFreshStepUp(actor);
     const { uid, sourceId, reason } = request.data || {};
     const out = await reverseStrike(db, { uid, sourceId, reversedBy: actor, reason });
     await auditAdminAction({ actor, action: 'payout_strike_reversed', target: uid, reason, meta: { sourceId } });
@@ -961,7 +1747,7 @@ exports.applyPartnerAccountState = applyPartnerAccountState;
 
 exports._internal = {
   KYC_MONTHLY_CAP_MICRO_USD,
-  paidLast30Days,
+  paidThisCalendarMonth,
   applyPartnerAccountState,
   recordStrike,
   reverseStrike,
@@ -972,6 +1758,19 @@ exports._internal = {
   resolveCadence,
   cadenceDueToday,
   blockingReason,
+  countriesOf,
+  connectPayoutAccount,
+  refreshPayoutOnboarding,
+  sweepPayoutOnboarding,
+  disbursePayout,
+  payOne,
+  markStatementPaid,
+  reverseStatement,
+  reconcileQueuedPayouts,
+  checkMercuryHealth,
+  scopeIdleWarnings,
+  reverseReturnedPayout,
+  checkReturnedPayouts,
   activeStrikeCount,
   buildRunPlan,
   executeRun,

@@ -5,35 +5,28 @@
 // Top-level: summary (1-2 sentences, answer-first), updated (YYYY-MM-DD), body [].
 
 export default {
-  summary: "No. You do not need to be good at games to use VERGR. Plenty of people are here to stream, build a community, post clips, hang out in squads, watch, and tip, none of which need you to win anything. Being entertaining matters far more than being good.",
-  updated: "2026-06-06",
+  summary: "No. Vergr is not a gaming app, and nothing on it depends on being good at a game. People go live about all kinds of things, post clips, hang out in squads and message each other.",
+  updated: "2026-09-19",
   body: [
     {
-      p: "This is one of the most common worries from new users, and the honest answer is: not at all. VERGR is a place for gamers of every level. Being good at a game is one path here, not the price of entry."
+      p: "Games are one thing people stream on Vergr, but they are not the point of it. Nothing here asks you to win anything."
     },
     {
-      h2: "Tons of VERGR has nothing to do with winning"
+      h2: "What people do on Vergr"
     },
     {
       list: [
-        "Stream what you play, however you play it. People follow personalities, not just highlight reels.",
-        "Post clips, photos, articles, tier lists, and more. Funny beats flawless most of the time.",
-        "Join a squad, hang out in voice, and split what the group earns together.",
-        "Watch streams, chat, react, and tip the creators you like.",
-        "Build a following and earn from tips and memberships without ever entering a single match for money."
+        "Go live about whatever you are into: just chatting, music, creative work, watch-alongs, or a game you like.",
+        "Post clips, photos, articles, tier lists and polls.",
+        "Join a squad and hang out in voice.",
+        "Watch streams, chat, react and support the people you follow."
       ]
     },
     {
-      h2: "What if I want to compete?"
+      h2: "Personality beats polish"
     },
     {
-      p: "Some of the most-watched streams on any platform are people who are openly bad at the game and funny about it. Commentary, personality, and consistency build an audience. Skill is one route to being watchable, not the only one."
-    },
-    {
-      h2: "Getting better is part of it"
-    },
-    {
-      p: "If you want to climb, watching higher-ranked streamers is a free way to learn, and playing casual matches lets you practise without pressure. Improvement is a feature here, not a requirement."
+      p: "The streams people come back to are the ones with a person worth hanging out with. Being yourself and showing up consistently builds an audience far more than being good at anything."
     },
     {
       cta: [
@@ -43,7 +36,7 @@ export default {
         },
         {
           to: "/platform/help/how-do-i-make-money-on-vergr",
-          label: "Ways to earn"
+          label: "How the revenue share works"
         }
       ]
     }

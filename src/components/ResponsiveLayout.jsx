@@ -33,10 +33,12 @@ export default function ResponsiveLayout({
     return <>{children}</>;
   }
 
+  // No dividers anywhere in the shell: columns separate by value and spacing,
+  // never a hairline (founder, 2026-09-14: "there are thin divider lines").
   const notifButton = isDesktop ? (
     <button
       onClick={() => setNotificationsDrawerOpen(true)}
-      className="fixed top-4 right-4 z-40 w-9 h-9 rounded-full bg-surface-2 border border-white/[0.06] text-text-secondary flex items-center justify-center hover:text-text-primary hover:bg-surface-3 transition-colors"
+      className="fixed top-4 right-4 z-40 w-9 h-9 rounded-full bg-surface-2 text-text-secondary flex items-center justify-center hover:text-text-primary hover:bg-surface-3 transition-colors"
     >
       <Icon name="notifications" size={18} />
       {unreadCount > 0 && (
@@ -57,11 +59,11 @@ export default function ResponsiveLayout({
           <div className="flex justify-center">
             <div className="flex gap-0">
               <div className="w-[620px] bg-surface-1 shadow-xl shadow-black/30 overflow-visible">
-                <div className="border-x border-white/10">
+                <div>
                   {children}
                 </div>
               </div>
-              <aside className="w-[340px] shrink-0 sticky top-0 h-screen overflow-y-auto no-scrollbar border-l border-white/[0.06] bg-bg-dark py-4">
+              <aside className="w-[340px] shrink-0 sticky top-0 h-screen overflow-y-auto no-scrollbar bg-bg-dark py-4">
                 {rightPanel}
               </aside>
             </div>
@@ -82,7 +84,7 @@ export default function ResponsiveLayout({
           <div style={{ marginLeft: sidebarWidth }} className="flex-1 transition-all duration-200">
             {notifButton}
             <div className="flex">
-              <main className="w-full max-w-[680px] min-h-screen border-x border-white/[0.04]">
+              <main className="w-full max-w-[680px] min-h-screen">
                 {children}
               </main>
               {rightPanel && (
@@ -102,10 +104,12 @@ export default function ResponsiveLayout({
             <div style={{ marginLeft: sidebarWidth }} className="flex-1 transition-all duration-200">
               {notifButton}
               <div className="flex">
-                <main className="flex-1 min-h-screen border-x border-white/[0.04]">
+                <main className="flex-1 min-h-screen">
                   {children}
                 </main>
-                <aside className="hidden xl:block w-[240px] shrink-0 py-4 sticky top-0 h-screen overflow-y-auto no-scrollbar border-l border-white/[0.06]">
+                {/* pt-16: the fixed bell sits at top-4 right-4, and at py-4 it
+                    covered the first rail card's corner and its link. */}
+                <aside className="hidden xl:block w-[240px] shrink-0 pt-16 pb-4 sticky top-0 h-screen overflow-y-auto no-scrollbar">
                   {rightPanel}
                 </aside>
               </div>
@@ -119,7 +123,7 @@ export default function ResponsiveLayout({
             <div style={{ marginLeft: sidebarWidth }} className="flex-1 transition-all duration-200">
               {notifButton}
               <div className="flex justify-start">
-                <main className="flex-1 min-h-screen border-x border-white/[0.04]">
+                <main className="flex-1 min-h-screen">
                   {children}
                 </main>
               </div>
@@ -136,7 +140,7 @@ export default function ResponsiveLayout({
         <DesktopSidebar collapsed />
         <div className="flex-1 ml-[80px]">
           <div className={`flex ${centered ? 'justify-center' : 'justify-start'}`}>
-            <main className="w-full max-w-[680px] min-h-screen border-x border-white/[0.04]">
+            <main className="w-full max-w-[680px] min-h-screen">
               {children}
             </main>
           </div>

@@ -16,6 +16,8 @@ import { useAuth } from '../../context/AuthContext';
 import Icon from '../../components/Icon';
 import { VPIcon } from '../../components/CoinIcon';
 import { REFERRAL_VP_REFEREE } from '../../utils/vpSystem';
+import { stashReferral, PLAY_LISTING_LIVE, playStoreUrl } from '../../utils/referral';
+import { IS_NATIVE_BUILD } from '../../utils/platform';
 
 const PERKS = [
   { icon: 'confirmation_number', title: 'Host live events', body: 'Run a show, a watch party or a class across your favourite games.' },
@@ -36,6 +38,12 @@ export default function InviteLandingScreen() {
   useEffect(() => {
     if (!authLoading && currentUser) navigate('/', { replace: true });
   }, [authLoading, currentUser, navigate]);
+
+  // ⚠ STASH THE REF HERE TOO. captureReferral in AppRouter runs once, at module
+  // load, so when this screen is reached by an in-app navigation (the Android
+  // App Link opens the installed app and routes here) the ref was never stashed
+  // and signup lost it.
+  useEffect(() => { stashReferral(ref); }, [ref]);
 
   // Personalise with the referrer's public profile (users/{uid} is world-read).
   useEffect(() => {
@@ -104,7 +112,7 @@ export default function InviteLandingScreen() {
         <p className="text-text-secondary text-[14px] leading-relaxed mb-5 max-w-xs">
           {/* Tournaments removed 2026-08-19: retired, unrouted, and llms.txt says
               publicly that Vergr runs no prize competitions. */}
-          The home for gamers and creators: live streaming, squads, clips, and a revenue share.
+          Vergr is where you go live, share clips and hang out with your people in voice chats and DMs, all in one app.
         </p>
 
         {/* Reward chip — honest: both sides earn VP after setup. */}
@@ -132,6 +140,17 @@ export default function InviteLandingScreen() {
           ))}
         </div>
 
+        {/* Android visitors in a browser get the Play Store with the ref riding in
+            the `referrer` parameter, so the fresh install still knows who invited
+            them (InstallReferrerBridge reads it). Hidden until the listing is
+            public: until then the store page is "not found" for non-testers. */}
+        {PLAY_LISTING_LIVE && !IS_NATIVE_BUILD && typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent) && (
+          <a href={playStoreUrl(ref)}
+            className="w-full py-4 rounded-2xl font-syne font-extrabold text-[16px] text-white mb-3 flex items-center justify-center gap-2 active:scale-[0.98] transition-transform"
+            style={{ background: '#1A1A2A' }}>
+            <Icon name="shop" size={20} /> Get the app on Google Play
+          </a>
+        )}
         <button onClick={goSignup}
           className="w-full py-4 rounded-2xl font-syne font-extrabold text-[16px] text-white mb-3 active:scale-[0.98] transition-transform"
           style={{ background: 'linear-gradient(135deg, #7B1FFF 0%, #B44FFF 55%, #C87FFF 100%)', boxShadow: '0 8px 28px rgba(123,31,255,0.45), inset 0 1px 0 rgba(255,255,255,0.25)' }}>

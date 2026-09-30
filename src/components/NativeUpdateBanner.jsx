@@ -111,7 +111,7 @@ export default function NativeUpdateBanner() {
       <div
         className="fixed left-3 right-3 z-[9999] rounded-2xl px-4 py-3 flex items-start gap-3"
         style={{
-          bottom: 'calc(76px + env(safe-area-inset-bottom))',
+          bottom: 'calc(76px + var(--vg-safe-b, 0px))',
           background: isErr ? 'linear-gradient(135deg,#2a0f14,#3a0e12)' : 'linear-gradient(135deg,#0e1426,#10182e)',
           border: `1px solid ${isErr ? 'rgba(240,64,96,0.4)' : 'rgba(120,140,200,0.35)'}`,
           boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
@@ -137,7 +137,7 @@ export default function NativeUpdateBanner() {
     return (
       <div
         className="fixed left-3 right-3 z-[9999] rounded-2xl px-4 py-3 flex items-center gap-3"
-        style={{ bottom: 'calc(76px + env(safe-area-inset-bottom))', background: 'linear-gradient(135deg,#0c2a24,#0e3a30)', border: '1px solid rgba(180,79,255,0.4)', boxShadow: '0 8px 32px rgba(0,0,0,0.5)' }}
+        style={{ bottom: 'calc(76px + var(--vg-safe-b, 0px))', background: 'linear-gradient(135deg,#0c2a24,#0e3a30)', border: '1px solid rgba(180,79,255,0.4)', boxShadow: '0 8px 32px rgba(0,0,0,0.5)' }}
       >
         <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ background: 'rgba(180,79,255,0.18)' }}>
           <Icon name="bolt" size={18} className="text-brand-violet-light" />
@@ -180,7 +180,7 @@ export default function NativeUpdateBanner() {
     <div
       className="fixed left-3 right-3 z-[9999] rounded-2xl px-4 py-3 flex items-center gap-3"
       style={{
-        bottom: 'calc(76px + env(safe-area-inset-bottom))',
+        bottom: 'calc(76px + var(--vg-safe-b, 0px))',
         background: 'linear-gradient(135deg,#1a1030,#241048)',
         border: '1px solid rgba(180,79,255,0.4)',
         boxShadow: '0 8px 32px rgba(0,0,0,0.5)',

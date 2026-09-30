@@ -1,8 +1,26 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Icon from './Icon';
 
 export default function Modal({ isOpen, onClose, title, children, fullScreen = false }) {
+  // ⚠⚠ `var(--vg-safe-b, 0px)` IS THE GESTURE BAR, NOT VERGR'S OWN NAV.
+  // A sheet opened over a screen that still shows BottomNav lost its last 56px
+  // to that nav: measured on the emulator 2026-09-11 (1.0.209), the tip sheet's
+  // "Send 500" button was cut in half by the nav on the native public profile.
+  // The inset only describes the SYSTEM bar, so the app's own bar has to be
+  // measured. It is `position: fixed`, so its height is whatever it renders at
+  // (including its own safe-bottom padding) and reading it once per open costs
+  // one layout read, no listener.
+  const [navPad, setNavPad] = useState(0);
+  useEffect(() => {
+    if (!isOpen) { setNavPad(0); return; }
+    const nav = document.querySelector('[data-vg-bottomnav]');
+    // getBoundingClientRect, not offsetHeight: the nav animates and we want the
+    // painted height. A hidden nav (immersive routes) measures 0, which is
+    // correct, and no nav at all leaves the padding untouched.
+    setNavPad(nav ? Math.round(nav.getBoundingClientRect().height) : 0);
+  }, [isOpen]);
+
   useEffect(() => {
     if (isOpen) document.body.style.overflow = 'hidden';
     else document.body.style.overflow = '';
@@ -47,10 +65,11 @@ export default function Modal({ isOpen, onClose, title, children, fullScreen = f
             )}
             {/* Bottom-anchored sheet: without the safe-area allowance the last
                 control (usually the primary button) sits under the Android
-                gesture/nav bar and cannot be tapped. */}
+                gesture/nav bar and cannot be tapped. `navPad` adds Vergr's OWN
+                bottom nav on top of that, which the inset does not describe. */}
             <div
               className="overflow-y-auto p-4"
-              style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 16px)' }}
+              style={{ paddingBottom: `calc(var(--vg-safe-b, 0px) + 16px + ${navPad}px)` }}
             >
               {children}
             </div>

@@ -194,7 +194,7 @@ function ProductPage() {
           fontWeight: 800, letterSpacing: '-0.03em', margin: '14px 0 0',
         }}>Vergr Lite and Vergr Pro</h1>
         <p style={{ marginTop: 18, maxWidth: 680, fontSize: 17, lineHeight: 1.65, color: C.text2 }}>
-          Vergr is a live streaming and social platform for gamers. Lite and Pro
+          Vergr is where you go live, share clips and hang out with your people in voice chats and DMs. Lite and Pro
           are optional monthly subscriptions that unlock higher streaming
           quality, larger uploads, creator tools and analytics on your account.
           Everything else on Vergr stays free.

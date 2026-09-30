@@ -22,6 +22,12 @@ export default function GlobalCartDrawer() {
   const cart = useCart();
   const { showToast } = useUI();
   const { checkout, startCheckout } = useBuyCheckout(showToast);
+  // Codapay runs INSIDE the basket (CodaPay.jsx); the basket only tells us when
+  // the server has settled the order.
+  const onCodaSettled = (s) => {
+    cart.clear(); cart.setOpen(false);
+    showToast(Number(s?.coins) > 0 ? `Added ${Number(s.coins).toLocaleString()} coins to your wallet!` : 'Purchase complete!', 'success');
+  };
 
   // ⚠ Identical to BuyScreen's checkoutCart, deliberately: two baskets that
   // check out differently is the drift this whole file exists to avoid. If that
@@ -43,5 +49,5 @@ export default function GlobalCartDrawer() {
   // Nothing rendered while closed, so this is free on every other page.
   if (!cart.open) return null;
 
-  return <CartDrawer onCheckout={checkoutCart} busy={checkout?.status === 'waiting'} />;
+  return <CartDrawer onCheckout={checkoutCart} busy={checkout?.status === 'waiting'} onCodaSettled={onCodaSettled} />;
 }

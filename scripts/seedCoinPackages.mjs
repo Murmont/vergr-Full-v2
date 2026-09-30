@@ -6,7 +6,7 @@
 //
 // `coin_packages` is a DISPLAY/CMS collection. NOTHING in the live buy path
 // reads it: the ladder is compiled into `src/utils/vpSystem.js` (client) and
-// mirrored in `functions/payram.js` (server, authoritative), and every price a
+// mirrored in `functions/orders.js` (server, authoritative), and every price a
 // buyer sees or is charged comes from `getCoinPriceQuote`.
 //
 // So this script cannot change what anyone is charged. It CAN mislead the next

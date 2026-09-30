@@ -162,7 +162,7 @@ export default function DesktopSidebar() {
     const active = activeItem?.path === item.path;
     const badge = item.path === '/messages' ? unreadChatCount : 0;
     // Glossy 3D img icons (Messages hub, Figma) get a glass active pill with a
-    // violet glow instead of the flat fill + borderRight used elsewhere.
+    // violet glow instead of the flat fill used elsewhere.
     const glossy = !!item.img;
     const stateCls = glossy
       ? (active ? 'text-white' : 'text-text-secondary hover:bg-white/[0.04] hover:text-text-primary')
@@ -170,27 +170,28 @@ export default function DesktopSidebar() {
     // Active = real frosted glass: neutral translucent fill + backdrop blur +
     // a light top-sheen rim, wrapped in a PURPLE GLOW (outer box-shadows). The
     // purple lives in the glow, not the fill — the fill stays glass-neutral.
+    // ⚠ No outline on the active item. A 2px right border on a rounded pill
+    // draws a curved stroke down one side, and a 1px ring is the hairline look
+    // the founder ruled out. Active = the solid fill plus a bold label.
     const styleObj = glossy
       ? (active
           ? {
-              background: 'rgba(255,255,255,0.06)',
-              boxShadow: '0 0 0 1px rgba(180,79,255,0.60), 0 0 18px 2px rgba(138,18,202,0.55), 0 0 40px rgba(123,31,255,0.30), inset 0 1px 0 rgba(255,255,255,0.12)',
+              background: '#1E1035',
+              boxShadow: '0 0 18px 2px rgba(138,18,202,0.55), 0 0 40px rgba(123,31,255,0.30)',
             }
           : undefined)
-      : (active ? { borderRight: '2px solid #B44FFF' } : undefined);
+      : undefined;
     return (
       <button
         onClick={() => navigate(item.path)}
         title={collapsed ? item.label : undefined}
         className={`w-full flex items-center rounded-xl transition-all duration-150 group relative ${
-          glossy && active ? 'backdrop-blur-md' : ''
-        } ${
           collapsed ? 'justify-center py-2.5 px-0' : `gap-3 px-3 ${glossy ? 'py-2.5' : 'py-2'}`
         } ${stateCls}`}
         style={styleObj}
       >
-        {/* Active indicator: glossy = glass glow pill (styleObj), others = the
-            static borderRight. No framer-motion layoutId (it slid on hover). */}
+        {/* Active indicator: glossy = glow pill (styleObj), others = the solid
+            fill. No framer-motion layoutId (it slid on hover). */}
         <div className="relative shrink-0">
           {glossy ? (
             <img
@@ -240,11 +241,7 @@ export default function DesktopSidebar() {
             ? 'bg-[#1E1035] text-white'
             : 'text-text-secondary hover:bg-[#1A1A2A] hover:text-text-primary'
         }`}
-        style={catActive ? { borderRight: '2px solid #B44FFF' } : undefined}
       >
-        {catActive && !collapsed && (
-          <div className="absolute right-0 top-0 bottom-0 w-[2px] bg-[#B44FFF]" />
-        )}
         <div className="relative shrink-0">
           <Icon name={catIcon} size={20} />
           {/* Collapsed rail: the same single number, on the icon corner. */}
@@ -274,11 +271,11 @@ export default function DesktopSidebar() {
 
   return (
     <>
-      <aside className={`fixed left-0 top-0 bottom-0 ${W} bg-[#0F0F1A] border-r border-[#1E1E2E] flex flex-col z-50 transition-all duration-200`}>
+      <aside className={`fixed left-0 top-0 bottom-0 ${W} bg-[#0F0F1A] flex flex-col z-50 transition-all duration-200`}>
         {/* Brand header */}
         <button
           onClick={() => navigate('/')}
-          className={`flex items-center gap-2.5 px-4 py-4 border-b border-white/[0.04] hover:bg-white/[0.02] transition-colors ${collapsed ? 'justify-center px-0' : ''}`}
+          className={`flex items-center gap-2.5 px-4 py-4 hover:bg-white/[0.02] transition-colors ${collapsed ? 'justify-center px-0' : ''}`}
         >
           <img src="/brand/logo.png" alt="VERGR" className="w-8 h-8 rounded-lg shrink-0" />
           {!collapsed && (
@@ -297,7 +294,7 @@ export default function DesktopSidebar() {
         {!isMain && !collapsed && (
           <button
             onClick={() => navigate(nav.back?.path || '/')}
-            className="flex items-center gap-2 px-4 py-2.5 text-text-muted hover:text-brand-violet-light border-b border-white/[0.03] transition-colors"
+            className="flex items-center gap-2 px-4 py-2.5 text-text-muted hover:text-brand-violet-light transition-colors"
           >
             <Icon name="arrow_back" size={16} />
             <span className="text-[11px] font-dmmono uppercase tracking-[0.12em]">{nav.back?.label || 'Back'}</span>
@@ -306,7 +303,7 @@ export default function DesktopSidebar() {
         {!isMain && collapsed && (
           <button
             onClick={() => navigate(nav.back?.path || '/')}
-            className="flex items-center justify-center py-2.5 text-text-muted hover:text-brand-violet-light border-b border-white/[0.03]"
+            className="flex items-center justify-center py-2.5 text-text-muted hover:text-brand-violet-light"
             title={nav.back?.label || 'Back'}
           >
             <Icon name="arrow_back" size={18} />
@@ -326,7 +323,7 @@ export default function DesktopSidebar() {
               </div>
 
               {/* Divider */}
-              <div className="mx-2 my-3 h-px bg-white/[0.05]" />
+              <div className="my-3" />
 
               {/* Category buttons (Community, Compete, You) */}
               {!collapsed && (
@@ -337,7 +334,7 @@ export default function DesktopSidebar() {
               </div>
 
               {/* Divider */}
-              <div className="mx-2 my-3 h-px bg-white/[0.05]" />
+              <div className="my-3" />
 
               {/* Your Squads — real data. Empty → CTA to join or create. */}
               {!collapsed ? (
@@ -351,11 +348,11 @@ export default function DesktopSidebar() {
                     >+</button>
                   </div>
                   {squadsLoaded && userSquads.length === 0 ? (
-                    <div className="mx-2 p-3 rounded-lg bg-white/[0.03] border border-white/[0.06]">
+                    <div className="mx-2 p-3 rounded-lg bg-[#1A1A2A]">
                       <p className="text-[11px] text-text-secondary font-medium mb-1">Not in a squad?</p>
-                      <p className="text-[10px] text-text-muted leading-snug mb-2">Team up, compete together, and share clips with your crew.</p>
+                      <p className="text-[10px] text-text-muted leading-snug mb-2">Team up, stream together, and share clips with your crew.</p>
                       <div className="flex gap-1.5">
-                        <button onClick={() => navigate('/squads')} className="flex-1 py-1 rounded-md bg-white/[0.05] hover:bg-white/[0.08] text-text-primary text-[10px] font-bold">Join</button>
+                        <button onClick={() => navigate('/squads')} className="flex-1 py-1 rounded-md bg-[#26263A] hover:bg-[#2E2E44] text-text-primary text-[10px] font-bold">Join</button>
                         <button onClick={() => navigate('/squads/create')} className="flex-1 py-1 rounded-md bg-gradient-to-r from-brand-violet to-brand-pink text-white text-[10px] font-bold">Create</button>
                       </div>
                     </div>
@@ -391,7 +388,7 @@ export default function DesktopSidebar() {
                     <button
                       onClick={() => navigate('/squads')}
                       title="Find or create a squad"
-                      className="w-[26px] h-[26px] rounded-full bg-white/[0.05] border border-dashed border-white/[0.15] hover:border-brand-violet/40 flex items-center justify-center"
+                      className="w-[26px] h-[26px] rounded-full bg-[#1A1A2A] hover:bg-[#26263A] flex items-center justify-center"
                     >
                       <Icon name="add" size={14} className="text-text-muted" />
                     </button>
@@ -435,8 +432,8 @@ export default function DesktopSidebar() {
 
         {/* Rich user card */}
         <div
-          className={`border-t border-white/[0.06] ${collapsed ? 'p-2' : 'p-3'}`}
-          style={{ background: 'linear-gradient(180deg, transparent, rgba(123,111,255,0.08))' }}
+          className={collapsed ? 'p-2' : 'p-3'}
+          style={{ background: '#13131F' }}
         >
           {!collapsed ? (
             <>
@@ -444,7 +441,7 @@ export default function DesktopSidebar() {
                 <UserAvatar src={profile?.avatar || profile?.photoURL} size={30} isVerified={profile?.isVerified} />
                 <div className="flex-1 min-w-0">
                   <p className="text-[12px] font-extrabold text-text-primary truncate leading-tight">
-                    <UserName user={profile} masked fallback={'Gamer'} />
+                    <UserName user={profile} masked fallback={'Member'} />
                   </p>
                   <p className="text-[9.5px] text-brand-violet font-dmmono font-bold">{sbVpLevel?.name || 'Rookie'}</p>
                 </div>
@@ -480,13 +477,13 @@ export default function DesktopSidebar() {
               <div className="grid grid-cols-2 gap-2">
                 <button
                   onClick={() => navigate('/profile')}
-                  className="py-2 rounded-lg bg-white/[0.06] hover:bg-white/[0.1] text-text-primary text-[11px] font-bold flex items-center justify-center gap-1.5 transition-colors"
+                  className="py-2 rounded-lg bg-[#1E1E2E] hover:bg-[#26263A] text-text-primary text-[11px] font-bold flex items-center justify-center gap-1.5 transition-colors"
                 >
                   <Icon name="person" size={14} /> Profile
                 </button>
                 <button
                   onClick={() => navigate('/settings')}
-                  className="py-2 rounded-lg bg-white/[0.06] hover:bg-white/[0.1] text-text-primary text-[11px] font-bold flex items-center justify-center gap-1.5 transition-colors"
+                  className="py-2 rounded-lg bg-[#1E1E2E] hover:bg-[#26263A] text-text-primary text-[11px] font-bold flex items-center justify-center gap-1.5 transition-colors"
                 >
                   <Icon name="settings" size={14} /> Settings
                 </button>
@@ -503,7 +500,7 @@ export default function DesktopSidebar() {
         {collapsed && (
           <button
             onClick={toggleCollapsed}
-            className="flex items-center justify-center py-2 border-t border-white/[0.04] text-text-muted hover:text-text-primary"
+            className="flex items-center justify-center py-2 text-text-muted hover:text-text-primary"
             title="Expand"
           >
             <Icon name="menu" size={18} />
@@ -519,9 +516,9 @@ export default function DesktopSidebar() {
           onMouseEnter={keepFlyout}
           onMouseLeave={closeFlyout}
           style={{ position: 'fixed', top: flyout.top, left: flyout.left, zIndex: 9999 }}
-          className="bg-[#13131f] border border-white/[0.08] rounded-xl p-1.5 min-w-[190px] shadow-2xl shadow-black/60"
+          className="bg-[#13131f] rounded-xl p-1.5 min-w-[190px] shadow-2xl shadow-black/60"
         >
-          <div className="px-2.5 pt-1.5 pb-2 text-[9.5px] font-dmmono font-bold text-text-muted/70 uppercase tracking-[0.1em] border-b border-white/[0.04] mb-1">
+          <div className="px-2.5 pt-1.5 pb-2 text-[9.5px] font-dmmono font-bold text-text-muted/70 uppercase tracking-[0.1em] mb-1">
             {flyout.group.header}
           </div>
           {flyout.group.items.map(item => {

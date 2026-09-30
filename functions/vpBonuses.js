@@ -15,6 +15,7 @@ const functions = require('firebase-functions/v2');
 const { HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
+const { planSpend, debitFields } = require('./boostCoins');
 
 const db = () => getFirestore('vgrdb');
 
@@ -144,19 +145,16 @@ exports.purchaseVpBonus = functions.https.onCall(
       const [userSnap, walletSnap] = await Promise.all([tx.get(userRef), tx.get(walletRef)]);
       if (!userSnap.exists) throw new HttpsError('not-found', 'No account.');
 
-      const balance = Number((walletSnap.data() || {}).balance) || 0;
-      if (balance < pack.coins) {
+      const plan = planSpend(walletSnap.data() || {}, pack.coins);
+      if (!plan.ok) {
         throw new HttpsError('failed-precondition',
-          `You need ${pack.coins} coins for ${pack.name}. You have ${balance}.`);
+          `You need ${pack.coins} coins for ${pack.name}. You have ${plan.total}.`);
       }
 
       const now = Date.now();
       const kept = applyPack(tx, userRef, userSnap.data(), pack, 'purchase', now);
 
-      tx.set(walletRef, {
-        balance: FieldValue.increment(-pack.coins),
-        totalSpent: FieldValue.increment(pack.coins),
-      }, { merge: true });
+      tx.set(walletRef, debitFields(plan), { merge: true });
 
       tx.set(d.collection('transactions').doc(), {
         userId: uid,

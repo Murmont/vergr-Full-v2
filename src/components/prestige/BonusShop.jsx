@@ -70,7 +70,8 @@ export default function BonusShop() {
   const { showToast } = useUI();
   const [busy, setBusy] = useState(null);
 
-  const coins = Number(wallet?.balance) || 0;
+  // Boost coins (rewarded ads) spend here first, server-side: functions/boostCoins.js.
+  const coins = (Number(wallet?.balance) || 0) + (Number(wallet?.boostCoins) || 0);
   const live = activeBonuses(profile);
 
   const buy = async (pack) => {
@@ -163,7 +164,7 @@ export default function BonusShop() {
 
       <p style={{ color: C.muted, fontSize: 11, margin: '12px 0 0', lineHeight: 1.5 }}>
         You have {coins.toLocaleString()} coins. Bonuses start the moment you buy them
-        and run down in real time, so start one when you are about to play.
+        and run down in real time, so start one when you are about to post, stream or watch.
         Fourteen levels on the ladder hand you one free.
       </p>
     </div>

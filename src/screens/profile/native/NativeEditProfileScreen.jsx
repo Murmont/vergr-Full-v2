@@ -77,7 +77,7 @@ export default function NativeEditProfileScreen() {
   };
 
   return (
-    <div style={{ background: '#0B0B14', minHeight: '100vh' }} className="pb-28">
+    <div style={{ background: '#0B0B14', minHeight: '100vh', paddingBottom: 'calc(96px + var(--vg-safe-b))' }}>
       {/* Native safe-area header + tab scroller */}
       <div className="sticky top-0 z-20 bg-bg-dark/95 backdrop-blur-md border-b border-surface-3"
         style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 8px)' }}>
@@ -110,17 +110,18 @@ export default function NativeEditProfileScreen() {
         {activeTab === 'preferences' && <PreferencesTab form={form} setField={setField} />}
       </div>
 
-      {/* Sticky save bar above the bottom nav / home indicator */}
-      <div className="fixed left-0 right-0 z-30 px-4 flex gap-2"
-        style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 12px)' }}>
+      {/* Save bar. The tab bar is hidden on this route (BottomNav HIDE_ON_PATHS),
+          so the bar sits on its own solid strip above the gesture bar. */}
+      <div className="fixed left-0 right-0 bottom-0 z-30 px-4 pt-3 flex gap-2"
+        style={{ background: '#0B0B14', paddingBottom: 'calc(var(--vg-safe-b, 0px) + 12px)' }}>
         <button onClick={() => navigate(-1)} className="flex-1 py-3 rounded-xl text-[13px] font-semibold"
-          style={{ background: 'rgba(20,20,31,0.95)', border: '1px solid #1E1E2E', color: '#9CA3AF', backdropFilter: 'blur(8px)' }}>
+          style={{ background: '#1A1A26', color: '#9CA3AF' }}>
           Cancel
         </button>
         <button onClick={save} disabled={saving} className="flex-[2] py-3 rounded-xl text-[13px] font-extrabold"
           style={saving
-            ? { background: 'rgba(255,255,255,0.06)', color: '#6B7280', border: '1px solid rgba(255,255,255,0.06)' }
-            : { background: 'linear-gradient(135deg, #6D28D9, #7C3AED)', color: '#fff', boxShadow: '0 4px 16px rgba(124,58,237,0.30)' }}>
+            ? { background: '#2A2438', color: '#6B7280' }
+            : { background: '#7B1FFF', color: '#fff' }}>
           {saving ? 'Saving…' : 'Save Changes'}
         </button>
       </div>

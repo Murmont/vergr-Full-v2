@@ -24,6 +24,7 @@
 // as claimable, rather than shipped on trust.
 
 const functions = require('firebase-functions/v2');
+const { planOf } = require('./plan');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 
 const db = getFirestore('vgrdb');
@@ -129,7 +130,7 @@ exports.claimCreatorQuest = functions.https.onCall(
     const claimRef = db.collection('quest_claims').doc(`${uid}_${questId}_${day}`);
 
     const userSnap = await db.collection('users').doc(uid).get();
-    const tier = String(userSnap.data()?.subscription?.tier || 'free').toLowerCase();
+    const tier = planOf(userSnap.data());
     const vp = Math.round(quest.vp * (PLAN_VP_MULTIPLIER[tier] || 1));
 
     const granted = await db.runTransaction(async (tx) => {

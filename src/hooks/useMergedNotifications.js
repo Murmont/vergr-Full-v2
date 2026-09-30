@@ -50,7 +50,10 @@ export function routeForNotification(item) {
   const postId = d.postId || d.data?.postId;
   const orderId = d.data?.orderId;
   const userId = d.senderId || d.userId || d.data?.senderId;
-  if (postId) return `/post/${postId}`;
+  // A notification about a comment opens with the comments up. A clip's /post
+  // link is redirected into the clip player by the post screen, which carries
+  // this flag through to the sheet.
+  if (postId) return `/post/${postId}${/comment|reply|mention/i.test(String(d.type || '')) ? '?comments=1' : ''}`;
   if (orderId) return `/orders/${orderId}`;
   if (squadId) return `/squads/${squadId}`;
   if (userId) return `/user/${userId}`;

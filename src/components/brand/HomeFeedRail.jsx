@@ -2,12 +2,15 @@
 // Cards: Live Now · Trending · Who To Follow · Upcoming Cups · Active Squads
 // Every section reads from Firestore. Empty sections render a short
 // "nothing here yet" message instead of dummy content.
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
+import { readFeedCache } from '../../utils/feedCache';
+import { isShortFormat, compactCount } from '../../utils/helpers';
+import { Cover, captionOf } from '../profile/ProfileGrid';
 import { isDiscoverableStream, streamPremium } from '../../utils/streamVisibility';
 import CachedImg from '../CachedImg';
 import { useNavigate } from 'react-router-dom';
-import { collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
+import { collection, query, where, orderBy, limit, getDocs, doc, getDoc } from 'firebase/firestore';
 import { db } from '../../firebase/config';
 import { mergeBoostedFirst } from '../../utils/promoBoost';
 import { boostSlotsFor } from '../../utils/boostDelivery';
@@ -24,7 +27,9 @@ function compact(n) {
   return String(n);
 }
 
-export default function HomeFeedRail() {
+// `posts` are the feed posts already on screen (HomeFeedScreen passes them), so
+// the Clips card and the Trending fallback cost no read.
+export default function HomeFeedRail({ posts = [] }) {
   // Needed so a boosted profile is never suggested to itself.
   const { currentUser } = useAuth();
   const navigate = useNavigate();
@@ -33,6 +38,44 @@ export default function HomeFeedRail() {
   const [creators, setCreators] = useState([]);
   const [squads, setSquads] = useState([]);
   const [loaded, setLoaded] = useState({ live: false, tags: false, creators: false, squads: false });
+
+  // Clips, from posts already loaded: the feed page, plus the Clips feed if this
+  // device has opened it. ⚠ NO QUERY. A clips read on every desktop home load is
+  // exactly the kind of read the founder asked not to add. Founder, 2026-09-14:
+  // "No clips are shown on the home page side bar ... which makes me think that
+  // it isnt working" — the rail had no clips card at all.
+  const clips = useMemo(() => {
+    const pool = new Map();
+    const take = (p) => {
+      if (p?.id && isShortFormat(p.type) && (p.thumbnailUrl || p.mediaUrls?.length || p.mediaUrl)) pool.set(p.id, p);
+    };
+    posts.forEach(take);
+    (readFeedCache('shorts') || []).forEach(take);
+    const score = (p) => (p.likeCount || 0) + (p.commentCount || 0) * 3;
+    const ranked = [...pool.values()].sort((a, b) => score(b) - score(a)).slice(0, 6);
+    // Whole rows only. Five tiles in a three-column grid left a hole in the
+    // second row (measured 2026-09-14), which reads as a missing clip.
+    return ranked.length >= 3 ? ranked.slice(0, ranked.length - (ranked.length % 3)) : ranked;
+  }, [posts]);
+
+  // Tags in the posts already on screen. Shown only when the server's trending
+  // list is empty: that job counts the last 24 hours, so a quiet day leaves it
+  // blank and the card would say "no trending tags" above posts full of them.
+  const feedTags = useMemo(() => {
+    const counts = new Map();
+    for (const p of posts) {
+      for (const raw of (Array.isArray(p?.hashtags) ? p.hashtags : [])) {
+        const tag = String(raw || '').replace(/^#/, '').trim();
+        if (!tag) continue;
+        const row = counts.get(tag) || { tag, posts: 0, score: 0 };
+        row.posts += 1;
+        row.score += 10 + (p.likeCount || 0) + (p.commentCount || 0) * 3;
+        counts.set(tag, row);
+      }
+    }
+    return [...counts.values()].sort((a, b) => b.score - a.score).slice(0, 6);
+  }, [posts]);
+  const shownTags = hashtags.length ? hashtags : feedTags;
 
   useEffect(() => {
     let alive = true;
@@ -78,12 +121,21 @@ export default function HomeFeedRail() {
       } finally { mark('live'); }
     })();
 
-    // Trending hashtags.
+    // Trending hashtags. ⚠ ONE DOC, NOT A QUERY, AND THE QUERY WAS WHY TRENDING
+    // WAS ALWAYS EMPTY. It asked `hashtags` for orderBy('postCount'), a field the
+    // server never writes (_updateTrending in functions/index.js writes
+    // postCount24h and trendScore), and Firestore leaves out every doc that lacks
+    // the field being ordered on. The same job writes its ranked list to
+    // trending/hashtags, which the composer already reads: one read, not six.
     (async () => {
       try {
-        const q = query(collection(db, 'hashtags'), orderBy('postCount', 'desc'), limit(6));
-        const snap = await getDocs(q);
-        if (alive) setHashtags(snap.docs.map(d => ({ tag: d.id, posts: d.data().postCount || 0 })));
+        const snap = await getDoc(doc(db, 'trending', 'hashtags'));
+        const tags = snap.exists() ? (snap.data().tags || []) : [];
+        if (alive) {
+          setHashtags(tags.slice(0, 6)
+            .map((t) => (typeof t === 'string' ? { tag: t, posts: 0 } : { tag: t?.tag, posts: t?.count || 0 }))
+            .filter((t) => t.tag));
+        }
       } catch {}
       finally { mark('tags'); }
     })();
@@ -196,25 +248,53 @@ export default function HomeFeedRail() {
           )}
       </Card>
 
+      {/* Clips */}
+      <Card>
+        <Header
+          icon="slow_motion_video" color="text-brand-ember" label="Clips"
+          action={clips.length > 0 ? { label: 'See all', onClick: () => navigate('/shorts') } : null}
+        />
+        {clips.length === 0 ? (
+          <EmptyHint icon="slow_motion_video" text="No clips yet." cta={{ label: 'Post a clip', onClick: () => navigate('/create/clip') }} />
+        ) : (
+          <div className="grid grid-cols-3 gap-1.5">
+            {clips.map((c) => (
+              <button key={c.id} onClick={() => navigate(`/clip/${c.id}`)} aria-label={`Open clip: ${captionOf(c)}`}
+                className="relative aspect-[9/16] rounded-md overflow-hidden active:opacity-80" style={{ background: '#15151F' }}>
+                <Cover post={c} />
+                <span aria-hidden className="absolute inset-x-0 bottom-0 h-1/2 pointer-events-none"
+                  style={{ background: 'linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.7) 100%)' }} />
+                <span className="absolute left-1.5 bottom-1 flex items-center gap-0.5 text-white text-[10px] font-bold tabular-nums"
+                  style={{ textShadow: '0 1px 3px rgba(0,0,0,0.8)' }}>
+                  <Icon name="favorite" size={11} filled /> {compactCount(c.likeCount)}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+      </Card>
+
       {/* Trending hashtags */}
       <Card>
         <Header
           icon="trending_up" color="text-brand-violet-light" label="Trending"
-          action={hashtags.length > 0 ? { label: 'See all', onClick: () => navigate('/trending-hashtags') } : null}
+          action={shownTags.length > 0 ? { label: 'See all', onClick: () => navigate('/trending-hashtags') } : null}
         />
-        {!loaded.tags ? <SkeletonRows count={4} />
-          : hashtags.length === 0 ? (
+        {!loaded.tags && !feedTags.length ? <SkeletonRows count={4} />
+          : shownTags.length === 0 ? (
             <EmptyHint icon="tag" text="No trending tags yet. Use #tags in posts to start trends." />
           ) : (
             <div className="space-y-1">
-              {hashtags.map((h, i) => (
+              {shownTags.map((h, i) => (
                 <button key={h.tag}
                   onClick={() => navigate(`/hashtag/${encodeURIComponent(h.tag)}`)}
-                  className="w-full flex items-center gap-3 px-1.5 py-1.5 rounded-lg hover:bg-white/[0.04] text-left">
+                  className="w-full flex items-center gap-3 px-1.5 py-1.5 rounded-lg hover:bg-[#1C1C29] text-left">
                   <span className="text-[10px] font-dmmono text-text-muted w-4 tabular-nums">{i+1}</span>
                   <div className="flex-1 min-w-0">
                     <div className="text-[12px] text-text-primary font-semibold truncate">#{h.tag}</div>
-                    <div className="text-[10px] text-text-muted font-dmmono">{compact(h.posts)} posts</div>
+                    {h.posts > 0 && (
+                      <div className="text-[10px] text-text-muted font-dmmono">{compact(h.posts)} {h.posts === 1 ? 'post' : 'posts'}</div>
+                    )}
                   </div>
                   <Icon name="arrow_forward_ios" size={10} className="text-text-muted/50" />
                 </button>
@@ -315,7 +395,9 @@ export default function HomeFeedRail() {
 
 function Card({ children }) {
   return (
-    <div className="rounded-2xl bg-white/[0.03] border border-white/[0.06] p-3.5">
+    // Solid, no hairline: a see-through card with a stroke is the look the
+    // founder has ruled out.
+    <div className="rounded-2xl p-3.5" style={{ background: '#15151F' }}>
       {children}
     </div>
   );

@@ -68,7 +68,7 @@ export default function AuthShell({ children }) {
 
         <div className="relative z-10 max-w-[440px]">
           <h2 className="font-syne text-4xl xl:text-5xl font-extrabold text-white leading-[1.05] mb-4">
-            Where gamers<br />converge.
+            Go live. Hang out.<br />Share the moment.
           </h2>
           <p className="text-text-secondary text-base mb-9 leading-relaxed">
             {/* Led with "Tournaments" until 2026-08-19. Tournaments are retired and
@@ -77,8 +77,8 @@ export default function AuthShell({ children }) {
                 advertising something that does not exist. This is the sign-in page,
                 which is what a store or processor reviewer sees first. Positioning
                 is the canonical one from CLAUDE.md: a live streaming and social
-                platform for gamers and creators. */}
-            Live streams, squads, clips and a real creator economy. One home for gamers and creators.
+                platform. Since 2026-09-19 it leads with the site title, never "gamers". */}
+            Vergr is where you go live, share clips and hang out with your people in voice chats and DMs, all in one app.
           </p>
           <ul className="space-y-4">
             {FEATURES.map((f) => (
@@ -96,7 +96,7 @@ export default function AuthShell({ children }) {
           </ul>
         </div>
 
-        <p className="relative z-10 text-text-muted text-xs">© 2026 Vergr · Play. Stream. Earn.</p>
+        <p className="relative z-10 text-text-muted text-xs">© 2026 Vergr · Create. Watch. Earn.</p>
       </div>
 
       {/* ── Form panel ── */}

@@ -31,6 +31,10 @@ import ReactionsFloor from '../../../components/streams/ReactionsFloor';
 import { BoostTimer } from '../../../components/streams/BoostStreamSheet';
 import { Scene, PreviewChat, PreviewSheets, glass, glassDark, iconBtn, C, compact } from './previewChrome';
 import { GiftFeed, useGiftFeed, useAboveChat, FloatingHeart, MovableGoal } from './previewSoloParts';
+// Prop-only, so IMPORTED like the alerts: the tray the founder reviews here is
+// the tray a viewer gets.
+import SupportTray from '../../../components/streams/SupportTray';
+import { DEFAULT_MEMBERSHIP_TIERS } from '../../../utils/membershipDefaults';
 // ⚠ THE DOCK USES IMAGE ASSETS, NOT MATERIAL GLYPHS. A first pass substituted
 // Icon names here (group_add / monetization_on / redeem / send) and it was simply
 // wrong: the shipped dock renders these .webp files through GlassDockBtn, so the
@@ -66,6 +70,7 @@ export default function PreviewMobileViewer({ doc, host, messages, joinEvents, o
   // The real hook re-evaluates once a second so an expiry flips the UI with no
   // write. Same here, and it stops as soon as there is no poll.
   const [pollTick, setPollTick] = useState(0);
+  const [trayOpen, setTrayOpen] = useState(false);
   useEffect(() => {
     const id = setInterval(() => setPollTick((n) => n + 1), 1000);
     return () => clearInterval(id);
@@ -251,6 +256,16 @@ export default function PreviewMobileViewer({ doc, host, messages, joinEvents, o
           generic centred pill instead — the thing that was replaced. */}
       <HypeTrain /><TrainBonusHost />
       <GiftFeed toasts={gifts} style={{ bottom: aboveChat ?? 'calc(30% + 84px)', left: 10 }} />
+      {/* The support tray, imported from production and fed the mock tiers, so
+          subscribing and gifting subs are reachable here exactly as on a phone. */}
+      <SupportTray
+        open={trayOpen} onOpen={() => setTrayOpen(true)} onClose={() => setTrayOpen(false)}
+        hostName={host?.displayName} hostAvatar={avatars[host.id] || host.avatar}
+        tiers={DEFAULT_MEMBERSHIP_TIERS.filter((t) => t.published !== false)}
+        onSubscribe={() => { setTrayOpen(false); onOpenSheet({ kind: 'subscribe' }); }}
+        onGiftSubs={() => { setTrayOpen(false); onOpenSheet({ kind: 'giftsub' }); }}
+        onManage={() => setTrayOpen(false)}
+      />
       <SubAlertOverlay lastSub={doc.lastSub} anchor="bottom" bottom={aboveChat ?? 'calc(30% + 84px)'} />
       <ReactionsFloor events={reactions} position="right" />
       <JoinAnnouncer events={joinEvents} side="left" sound={false} bottom={aboveChat ?? 'calc(30% + 84px)'} />

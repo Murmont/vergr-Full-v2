@@ -31,7 +31,7 @@
 //     to be populated by the PayRam handler once it ships)
 
 const functions = require('firebase-functions/v2');
-const { defineSecret } = require('firebase-functions/params');
+const { defineSecret, defineString } = require('firebase-functions/params');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const crypto = require('node:crypto');
 const axios = require('axios');
@@ -44,14 +44,14 @@ const REGION = 'europe-west1';
 // function's service account access at deploy time and binds the values into
 // process.env at runtime.
 const CIRCLE_API_KEY                  = defineSecret('CIRCLE_API_KEY');
-const CIRCLE_HOT_WALLET_ID            = defineSecret('CIRCLE_HOT_WALLET_ID');
-const CIRCLE_BLOCKCHAIN               = defineSecret('CIRCLE_BLOCKCHAIN');
+const CIRCLE_HOT_WALLET_ID = defineString('CIRCLE_HOT_WALLET_ID');
+const CIRCLE_BLOCKCHAIN = defineString('CIRCLE_BLOCKCHAIN');
 // PEM-formatted ECDSA public key for verifying Circle webhook signatures.
 // Founder pastes this from the Circle Console (Notifications / Webhook
 // settings — exact location varies). When unset, the function probes a
 // list of candidate API endpoints; if those also 404, signature
 // verification is skipped with a warning (sandbox bring-up only).
-const CIRCLE_NOTIFICATIONS_PUBLIC_KEY = defineSecret('CIRCLE_NOTIFICATIONS_PUBLIC_KEY');
+const CIRCLE_NOTIFICATIONS_PUBLIC_KEY = defineString('CIRCLE_NOTIFICATIONS_PUBLIC_KEY');
 
 // ── Secret accessors ─────────────────────────────────────────────────
 // CLAUDE.md flags a recurring bug: secrets set via `echo "x" | firebase ...`
@@ -217,7 +217,7 @@ exports.circleWalletsWebhook = functions.https.onRequest(
     cors: false,
     maxInstances: 4,
     memory: '256MiB',
-    secrets: [CIRCLE_API_KEY, CIRCLE_HOT_WALLET_ID, CIRCLE_BLOCKCHAIN, CIRCLE_NOTIFICATIONS_PUBLIC_KEY],
+    secrets: [CIRCLE_API_KEY],
   },
   async (req, res) => {
     if (req.method === 'HEAD') {
@@ -427,6 +427,9 @@ async function processInboundDeposit(tx, ctx = {}) {
         // be marked settled here with the coins credited and the VP bonus or
         // boost silently dropped, and the order can only be settled once.
         !(Array.isArray(payram.data().items) && payram.data().items.length) &&
+        // Same for a promo bonus: it is credited as boost coins by
+        // settlePayramOrder, which this branch knows nothing about.
+        !(Number(payram.data().promoBoostCoins) > 0) &&
         typeof payram.data().coinsToCredit === 'number' &&
         payram.data().coinsToCredit > 0
       ) {
@@ -639,14 +642,9 @@ async function logOutboundEvent(tx, ctx = {}) {
 // processInboundDeposit. Idempotency stops double-credit on overlap with the
 // webhook. Cursor stored at system/circle_cursor.lastCheckedISO.
 
-exports.pollCircleDeposits = functions.scheduler.onSchedule(
-  {
-    schedule: 'every 5 minutes',
-    region: REGION,
-    timeZone: 'UTC',
-    secrets: [CIRCLE_API_KEY, CIRCLE_HOT_WALLET_ID, CIRCLE_BLOCKCHAIN, CIRCLE_NOTIFICATIONS_PUBLIC_KEY],
-  },
-  async () => {
+// Runs inside a dispatcher cron in index.js (it was its own Cloud Scheduler
+// job, and every job past the first three is billed monthly).
+exports.pollCircleDeposits = async function pollCircleDeposits() {
     const apiKey = circleApiKey();
     if (isPlaceholder(apiKey)) {
       functions.logger.info('pollCircleDeposits skipped — CIRCLE_API_KEY not configured');
@@ -696,8 +694,7 @@ exports.pollCircleDeposits = functions.scheduler.onSchedule(
       lastCheckedISO: new Date().toISOString(),
       lastProcessedCount: txs.length,
     }, { merge: true });
-  }
-);
+  };
 
 // Exposed for admin tools + future reconciliation cron.
 exports._processInboundDeposit = processInboundDeposit;

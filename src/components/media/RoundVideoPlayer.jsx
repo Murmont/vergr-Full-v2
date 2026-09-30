@@ -155,7 +155,8 @@ export function RoundVideoOverlay({ src, onClose }) {
         type="button"
         onClick={(e) => { e.stopPropagation(); onClose?.(); }}
         aria-label="Close"
-        className="absolute top-5 right-5 w-10 h-10 rounded-full bg-white/10 backdrop-blur-sm flex items-center justify-center text-white active:scale-90"
+        className="absolute right-5 w-10 h-10 rounded-full bg-[#1A1A26] flex items-center justify-center text-white active:scale-90"
+        style={{ top: 'calc(env(safe-area-inset-top, 0px) + 1.25rem)' }}
       >
         <Icon name="close" size={22} />
       </button>

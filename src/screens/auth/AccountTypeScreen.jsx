@@ -6,7 +6,7 @@ export default function AccountTypeScreen() {
   const [type, setType] = useState(null);
   const navigate = useNavigate();
   const types = [
-    { id: 'gamer', icon: 'gamepad-2', label: 'Gamer', desc: 'Join squads, go live, earn coins, and connect with gamers worldwide.' },
+    { id: 'viewer', icon: 'group', label: 'Viewer', desc: 'Watch streams, hang out in squads and support the people you follow.' },
     { id: 'creator', icon: 'video', label: 'Creator', desc: 'Stream, grow your audience, monetize your content, and access creator tools.' },
   ];
   return (

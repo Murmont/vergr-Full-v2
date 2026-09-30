@@ -111,7 +111,7 @@ export default function NativeChatSettingsScreen() {
   const bgsByCategory = getBackgroundsByCategory();
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--bg-dark)', paddingBottom: 'calc(88px + env(safe-area-inset-bottom, 0px))' }}>
+    <div style={{ minHeight: '100vh', background: 'var(--bg-dark)', paddingBottom: 'calc(88px + var(--vg-safe-b, 0px))' }}>
       <TopBar title={chat.isGroup ? 'Group Info' : 'Chat Details'} showBack />
 
       <main className="px-4 py-6">

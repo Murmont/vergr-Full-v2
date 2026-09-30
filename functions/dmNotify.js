@@ -18,13 +18,13 @@
 
 const functions = require('firebase-functions/v2');
 const admin = require('firebase-admin');
-const { defineSecret } = require('firebase-functions/params');
+const { defineSecret, defineString } = require('firebase-functions/params');
 const { getFirestore } = require('firebase-admin/firestore');
 
 const DM_NOTIFY_KEY = defineSecret('DM_NOTIFY_KEY');
 // Huawei Push Kit (HMS) — reaches Huawei devices, which have no FCM. No-op until
 // the secrets hold real AppGallery-Connect values (see functions/huaweiPush.js).
-const HUAWEI_PUSH_APP_ID = defineSecret('HUAWEI_PUSH_APP_ID');
+const HUAWEI_PUSH_APP_ID = defineString('HUAWEI_PUSH_APP_ID');
 const HUAWEI_PUSH_CLIENT_SECRET = defineSecret('HUAWEI_PUSH_CLIENT_SECRET');
 const { sendHuaweiPush } = require('./huaweiPush');
 const { RANK_BY_ID } = require('./vanguardRanks');
@@ -99,7 +99,7 @@ function isMutedFor(mutedVal, uid) {
 }
 
 exports.notifyDmDelivery = functions.https.onRequest(
-  { secrets: [DM_NOTIFY_KEY, HUAWEI_PUSH_APP_ID, HUAWEI_PUSH_CLIENT_SECRET], cors: false, region: 'europe-west1' },
+  { secrets: [DM_NOTIFY_KEY, HUAWEI_PUSH_CLIENT_SECRET], cors: false, region: 'europe-west1' },
   async (req, res) => {
     if (req.method !== 'POST') { res.status(405).send('method'); return; }
     const expected = DM_NOTIFY_KEY.value();

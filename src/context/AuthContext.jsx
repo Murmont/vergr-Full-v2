@@ -3,13 +3,53 @@ import { auth, googleProvider, db, rtdb } from '../firebase/config';
 import {
   onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword,
   signInWithPopup, signInWithRedirect, signOut, sendPasswordResetEmail, updateProfile,
-  signInAnonymously, EmailAuthProvider, linkWithCredential,
+  signInAnonymously, EmailAuthProvider, linkWithCredential, getAdditionalUserInfo,
 } from 'firebase/auth';
-import { doc, setDoc, updateDoc, serverTimestamp as firestoreTimestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, serverTimestamp as firestoreTimestamp } from 'firebase/firestore';
 import { ref, onValue, set, serverTimestamp as rtdbTimestamp } from 'firebase/database';
 import { isDesktopApp, isMobileApp } from '../utils/platform';
 import { desktopGoogleAuth } from '../utils/desktopAuth';
 import { unregisterPushTokens } from '../utils/pushNotifications';
+import { currentAppGate } from '../hooks/useAppGate';
+
+// ── "Allow new registrations" (Admin → App Config) ─────────────────────────
+// Enforced HERE, in the auth layer, so every way of creating an account is
+// covered by one check: email sign-up, converting a guest, and Google (which
+// creates an account the first time it is used). Guests are not registrations
+// and are not blocked; "Allow guest browsing" was never a real switch.
+//
+// ⚠ The decision uses the live app_config listener (useAppGate), so it costs no
+// read. Before UNDOING a Google account we re-read the doc once, because
+// deleting someone's brand-new account on a stale cached value would be worse
+// than letting one through.
+//
+// ⚠ This is the client half. A script calling the Firebase Auth REST API
+// directly is not stopped by it; the server half would cost one read per new
+// account (founder decision, not taken).
+function signupsPausedError() {
+  const e = new Error('New sign-ups are paused right now.');
+  e.code = 'vergr/signups-paused';
+  return e;
+}
+function assertRegistrationsOpen() {
+  if (!currentAppGate().registrationsOpen) throw signupsPausedError();
+}
+async function registrationsClosedConfirmed() {
+  if (currentAppGate().registrationsOpen) return false;
+  try {
+    const snap = await getDoc(doc(db, 'app_config', 'general'));
+    return snap.exists() && snap.data()?.allowNewRegistrations === false;
+  } catch { return false; }
+}
+// A Google sign-in that just CREATED an account while sign-ups are paused is
+// undone: the Auth user is deleted (onUserDeleted cleans the seeded docs).
+async function undoIfNewAccountWhilePaused(cred) {
+  if (!cred?.user || cred.user.isAnonymous) return;
+  if (!getAdditionalUserInfo(cred)?.isNewUser) return;
+  if (!(await registrationsClosedConfirmed())) return;
+  try { await cred.user.delete(); } catch { await signOut(auth).catch(() => {}); }
+  throw signupsPausedError();
+}
 
 
 const AuthContext = createContext(null);
@@ -22,6 +62,22 @@ export function AuthProvider({ children }) {
     const unsub = onAuthStateChanged(auth, (user) => {
       setCurrentUser(user);
       setLoading(false);
+      // The phone's Google sign-in is a REDIRECT, so no credential comes back
+      // to loginWithGoogle to check. An account created seconds ago, while
+      // sign-ups are paused, is undone here instead. The login screen reads the
+      // session flag and says why.
+      if (user && !user.isAnonymous && !currentAppGate().registrationsOpen) {
+        const created = Date.parse(user.metadata?.creationTime || '') || 0;
+        const fresh = created > 0 && Date.now() - created < 2 * 60 * 1000
+          && user.metadata?.creationTime === user.metadata?.lastSignInTime;
+        if (fresh) {
+          registrationsClosedConfirmed().then((closed) => {
+            if (!closed) return;
+            try { sessionStorage.setItem('vergr.signupsPaused', '1'); } catch { /* ignore */ }
+            user.delete().catch(() => signOut(auth).catch(() => {}));
+          });
+        }
+      }
       // DO NOT signal the native splash here. Auth resolving only unblocks the
       // ROUTER; the screen itself is a lazy chunk behind <Suspense>, so at this
       // instant there is still nothing painted. Signalling here dismissed the
@@ -72,6 +128,7 @@ export function AuthProvider({ children }) {
   }, []);
 
   const signUp = useCallback(async (email, password, displayName) => {
+    assertRegistrationsOpen();
     const cred = await createUserWithEmailAndPassword(auth, email, password);
     if (displayName) {
       await updateProfile(cred.user, { displayName });
@@ -83,16 +140,21 @@ export function AuthProvider({ children }) {
     // Desktop shell: signInWithPopup can't open a browser popup — use the
     // localhost OAuth bridge (tiny_http + signInWithCredential).
     if (isDesktopApp()) {
-      return desktopGoogleAuth();
+      const cred = await desktopGoogleAuth();
+      await undoIfNewAccountWhilePaused(cred);
+      return cred;
     }
     // Mobile shell (Android/iOS WebView): popups are blocked, so use the
-    // redirect flow; onAuthStateChanged picks up the result on return.
+    // redirect flow; onAuthStateChanged picks up the result on return (and
+    // applies the paused-sign-ups check there, see below).
     // TODO(native-auth): replace with a native Custom Tabs / ASWebAuth bridge
     // (mirror desktopAuth.js) for a cleaner in-app experience.
     if (isMobileApp()) {
       return signInWithRedirect(auth, googleProvider);
     }
-    return signInWithPopup(auth, googleProvider);
+    const cred = await signInWithPopup(auth, googleProvider);
+    await undoIfNewAccountWhilePaused(cred);
+    return cred;
   }, []);
 
   const logout = useCallback(async () => {
@@ -167,6 +229,8 @@ export function AuthProvider({ children }) {
     if (!u || !u.isAnonymous) {
       throw new Error('No anonymous user to convert.');
     }
+    // Turning a guest into a real account IS a registration.
+    assertRegistrationsOpen();
     const credential = EmailAuthProvider.credential(email, password);
     const linkedCred = await linkWithCredential(u, credential);
     if (displayName) {
@@ -176,7 +240,7 @@ export function AuthProvider({ children }) {
     try {
       await updateDoc(doc(db, 'users', linkedCred.user.uid), {
         isGuest: false,
-        email,
+        // No email: users/{uid} is publicly listable. The address is on the Auth account.
         displayName: displayName || null,
         convertedFromGuestAt: firestoreTimestamp(),
       });

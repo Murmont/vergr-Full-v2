@@ -13,6 +13,7 @@
 const functions = require('firebase-functions/v2');
 const { defineSecret } = require('firebase-functions/params');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
+const { isStaffDoc } = require('./staff');
 
 const REGION = 'europe-west1';
 const db = getFirestore('vgrdb');
@@ -74,7 +75,7 @@ exports.requestStreamClip = functions.https.onCall(
     // Admins (founder/ops) bypass every paywall → treated as 'pro', no quota.
     const uSnap = await db.collection('users').doc(uid).get();
     const uData = uSnap.exists ? uSnap.data() : {};
-    const isAdmin = uData.role === 'admin' || (uData.email || '').toLowerCase() === 'vergenerd@gmail.com';
+    const isAdmin = isStaffDoc(uData) || uData.role === 'admin';
     const sub = uData.subscription;
     const t = typeof sub === 'string' ? sub : sub?.tier;
     const tier = isAdmin ? 'pro' : (t === 'pro' || t === 'lite' ? t : 'free');

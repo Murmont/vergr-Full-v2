@@ -66,7 +66,7 @@ export default function InviteMembersSheet({ groups = [], source, guildId, onClo
   return (
     <div onClick={(e) => { if (e.target === e.currentTarget) onClose?.(); }}
       className="fixed inset-0 z-[110] bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center sm:p-4">
-      <div className="w-full sm:max-w-md bg-surface-1 border border-white/[0.08] rounded-t-2xl sm:rounded-2xl overflow-hidden pb-[env(safe-area-inset-bottom)]">
+      <div className="w-full sm:max-w-md bg-surface-1 border border-white/[0.08] rounded-t-2xl sm:rounded-2xl overflow-hidden pb-[var(--vg-safe-b,0px)]">
         <div className="px-6 pt-5 pb-4 border-b border-white/[0.05] flex items-center justify-between">
           <h2 className="font-syne text-lg font-extrabold text-text-primary">Invite your members</h2>
           <button onClick={onClose} className="text-text-muted hover:text-text-primary"><Icon name="close" size={22} /></button>

@@ -1,5 +1,7 @@
-// Editable email templates (founder decision D3: no bulk email, but the emails
-// we already send must be editable).
+// Editable email templates, plus the shared renderer the admin email campaigns
+// use (functions/emailCampaigns.js). D3 originally ruled out bulk email; the
+// founder asked for designed campaigns on 2026-09-30, so they now exist, and
+// every campaign carries an unsubscribe link.
 //
 // WHAT ACTUALLY EXISTS, so nobody assumes more than there is:
 //
@@ -34,7 +36,61 @@ const HttpsError = functions.https.HttpsError;
 const SCREEN = 'announcements';
 const COL = 'email_templates';
 
-const BLOCK_TYPES = ['heading', 'paragraph', 'code', 'button', 'divider', 'image'];
+const BLOCK_TYPES = ['heading', 'paragraph', 'code', 'button', 'chips', 'divider', 'image'];
+
+// Colour themes. SOLID values only (founder design rule): every gradient on the
+// hero and the button has a solid bgcolor fallback for Outlook.
+const THEMES = {
+  violet:   { label: 'Violet',   hero: '#2B0D5E', heroImg: 'radial-gradient(120% 90% at 20% 0%,#5A1FB5 0%,#2B0D5E 55%,#170A33 100%)', eyebrow: '#D9C6FF', sub: '#DCCEFA', btn: '#7B1FFF', btnImg: 'linear-gradient(135deg,#7B1FFF 0%,#A43BFF 100%)', btnText: '#FFFFFF', code: '#221A38', codeText: '#EADCFF', chipText: '#E4DAFB', link: '#B9A3E8' },
+  ember:    { label: 'Ember',    hero: '#4A0E1C', heroImg: 'radial-gradient(120% 90% at 20% 0%,#B52A48 0%,#4A0E1C 55%,#22070E 100%)', eyebrow: '#FFC9D3', sub: '#FFD9E0', btn: '#E0304F', btnImg: 'linear-gradient(135deg,#E0304F 0%,#FF6A7F 100%)', btnText: '#FFFFFF', code: '#3A1620', codeText: '#FFD9E0', chipText: '#FFD9E0', link: '#F59AAB' },
+  gold:     { label: 'Gold',     hero: '#4A3208', heroImg: 'radial-gradient(120% 90% at 20% 0%,#B9851A 0%,#4A3208 55%,#1F1504 100%)', eyebrow: '#FCE7AE', sub: '#FBEAC2', btn: '#E9A517', btnImg: 'linear-gradient(135deg,#E9A517 0%,#F5C842 100%)', btnText: '#1A1204', code: '#33260C', codeText: '#FCEFB4', chipText: '#FBEAC2', link: '#E8C77A' },
+  blue:     { label: 'Blue',     hero: '#0C1F52', heroImg: 'radial-gradient(120% 90% at 20% 0%,#2F61D6 0%,#0C1F52 55%,#061030 100%)', eyebrow: '#C9D8FF', sub: '#D6E1FF', btn: '#3D7FFF', btnImg: 'linear-gradient(135deg,#3D7FFF 0%,#6A9BFF 100%)', btnText: '#FFFFFF', code: '#16223F', codeText: '#D6E1FF', chipText: '#D6E1FF', link: '#9DB7F5' },
+  midnight: { label: 'Midnight', hero: '#1A1A2A', heroImg: 'radial-gradient(120% 90% at 20% 0%,#34344F 0%,#1A1A2A 55%,#0E0E17 100%)', eyebrow: '#D0D0E4', sub: '#D8D8EA', btn: '#7B1FFF', btnImg: 'linear-gradient(135deg,#7B1FFF 0%,#A43BFF 100%)', btnText: '#FFFFFF', code: '#22223A', codeText: '#E4E4F4', chipText: '#E4E4F4', link: '#B9A3E8' },
+};
+const themeOf = (id) => THEMES[id] || THEMES.violet;
+
+/**
+ * Validate a design submitted from the admin. Shared by template saves and
+ * campaigns so both keep the same fields: the old save path dropped the chips'
+ * items and the hero, which silently emptied those blocks.
+ */
+function cleanDesign(d = {}) {
+  const subject = String(d.subject || '').trim();
+  if (!subject) throw new HttpsError('invalid-argument', 'The email needs a subject line.');
+  if (!Array.isArray(d.blocks) || !d.blocks.length) {
+    throw new HttpsError('invalid-argument', 'The email needs at least one block.');
+  }
+  const blocks = d.blocks.slice(0, 40).map((b) => {
+    if (!BLOCK_TYPES.includes(b?.type)) throw new HttpsError('invalid-argument', 'Unknown block: ' + b?.type);
+    if (b.type === 'image' && !String(b.alt || '').trim()) {
+      throw new HttpsError('invalid-argument',
+        'An image needs alt text. Most email clients block images by default, so the alt text is what people actually read.');
+    }
+    const url = String(b.url || '').trim().slice(0, 500);
+    if ((b.type === 'button' || b.type === 'image') && url && !/^(https:\/\/|mailto:|\{\{)/i.test(url)) {
+      throw new HttpsError('invalid-argument', 'Links and images must start with https://.');
+    }
+    return {
+      type: b.type,
+      text: String(b.text || '').slice(0, 2000),
+      url,
+      alt: String(b.alt || '').slice(0, 160),
+      items: Array.isArray(b.items) ? b.items.slice(0, 4).map((x) => String(x || '').slice(0, 40)) : [],
+      muted: b.muted === true,
+      align: b.align === 'center' ? 'center' : 'left',
+    };
+  });
+  const hero = d.hero && typeof d.hero === 'object'
+    ? { title: String(d.hero.title || '').slice(0, 80), subtitle: String(d.hero.subtitle || '').slice(0, 140) }
+    : { title: '', subtitle: '' };
+  return {
+    subject: subject.slice(0, 200),
+    preheader: String(d.preheader || '').slice(0, 200),
+    hero,
+    theme: THEMES[d.theme] ? d.theme : 'violet',
+    blocks,
+  };
+}
 
 // ────────────────────────────────────────────────────────────────────
 // SHIPPED DEFAULTS
@@ -44,24 +100,61 @@ const BLOCK_TYPES = ['heading', 'paragraph', 'code', 'button', 'divider', 'image
 
 const DEFAULTS = {
   verification: {
-    name: 'Email verification code',
-    description: 'Sent when someone verifies their email address.',
-    subject: 'Your Vergr code: {{code}}',
-    preheader: 'Your verification code expires in 10 minutes.',
+    name: 'Email verification',
+    description: 'Sent when someone verifies their email address. One-tap button plus a code.',
+    subject: 'Verify your Vergr email',
+    preheader: 'One tap and you can post, message and buy on Vergr.',
+    hero: { title: 'Verify your email', subtitle: 'One tap and you’re all set.' },
     blocks: [
       { type: 'heading', text: 'Hey {{name}},' },
-      { type: 'paragraph', text: 'Use this code to verify your email and secure your Vergr account.' },
+      { type: 'paragraph', text: 'Confirm this is your email so you can post, message and buy on Vergr. Until then you can still look around.' },
+      { type: 'button', text: 'Verify my email', url: '{{verifyLink}}' },
+      { type: 'chips', items: ['Post', 'Message', 'Buy'] },
+      { type: 'paragraph', text: 'On a different device? Enter this code in the app instead.', muted: true, align: 'center' },
       { type: 'code', text: '{{code}}' },
-      { type: 'paragraph', text: 'This code expires in 10 minutes.', muted: true, align: 'center' },
-      { type: 'paragraph', text: "If you didn't create a Vergr account, you can ignore this email.", muted: true, align: 'center' },
+      { type: 'paragraph', text: 'The button works for 24 hours, the code for 10 minutes.', muted: true, align: 'center' },
+      { type: 'paragraph', text: "Didn't sign up for Vergr? You can ignore this email and nothing will happen.", muted: true, align: 'center' },
     ],
-    tokens: ['name', 'code'],
+    tokens: ['name', 'code', 'verifyLink'],
+  },
+  receipt: {
+    name: 'Purchase receipt',
+    description: 'Sent after a purchase is credited to the account.',
+    subject: 'Your Vergr receipt: {{item}}',
+    preheader: 'Your purchase is on your account.',
+    hero: { title: 'Thanks for your purchase', subtitle: 'It’s already on your account.' },
+    blocks: [
+      { type: 'heading', text: 'Thanks, {{name}}' },
+      { type: 'paragraph', text: 'Your purchase went through and is already on your account.' },
+      { type: 'paragraph', text: '{{item}}' },
+      { type: 'paragraph', text: '{{paidLine}}' },
+      { type: 'paragraph', text: 'Order {{orderId}} · {{date}}', muted: true },
+      { type: 'paragraph', text: 'Coins are a licence to use Vergr features. They have no cash value and cannot be exchanged for money.', muted: true },
+      { type: 'button', text: 'Open Vergr', url: 'https://vergr.app/wallet' },
+      { type: 'paragraph', text: 'Questions about this purchase? Email support@vergr.app with the order number.', muted: true },
+    ],
+    tokens: ['name', 'item', 'paidLine', 'orderId', 'date'],
+  },
+  refund: {
+    name: 'Refund notice',
+    description: 'Sent when a purchase is refunded or charged back.',
+    subject: 'Your Vergr purchase was refunded',
+    preheader: 'A purchase on your account was refunded.',
+    hero: { title: 'A purchase was refunded', subtitle: 'Here’s what changed on your account.' },
+    blocks: [
+      { type: 'heading', text: 'Hey {{name}},' },
+      { type: 'paragraph', text: '{{item}} (order {{orderId}}) was {{how}}.' },
+      { type: 'paragraph', text: '{{coinsLine}}' },
+      { type: 'paragraph', text: 'If you did not ask for this, email support@vergr.app with the order number.', muted: true },
+    ],
+    tokens: ['name', 'item', 'orderId', 'how', 'coinsLine'],
   },
   password_reset: {
     name: 'Password reset',
     description: 'Sent when someone asks to reset their password.',
     subject: 'Reset your Vergr password',
     preheader: 'Use this link to set a new password.',
+    hero: { title: 'Reset your password', subtitle: 'It only takes a moment.' },
     blocks: [
       { type: 'heading', text: 'Hey {{name}},' },
       { type: 'paragraph', text: 'Someone asked to reset the password on your Vergr account. Tap the button to set a new one.' },
@@ -76,9 +169,10 @@ const DEFAULTS = {
     description: 'Sent once, after someone finishes creating their account.',
     subject: 'Welcome to Vergr, {{name}}',
     preheader: 'Here is how to get started.',
+    hero: { title: 'Welcome to Vergr', subtitle: 'Go live, share clips, hang out.' },
     blocks: [
       { type: 'heading', text: 'Welcome, {{name}}' },
-      { type: 'paragraph', text: 'Vergr is where gamers and creators stream, post and build an audience. Here is the quickest way in.' },
+      { type: 'paragraph', text: 'Vergr is where you go live, share clips and hang out with your people in voice chats and DMs, all in one app. Here is the quickest way in.' },
       { type: 'paragraph', text: 'Follow a few creators so your feed has something in it, then post your first clip.' },
       { type: 'button', text: 'Open Vergr', url: 'https://vergr.app' },
     ],
@@ -107,32 +201,47 @@ function fill(text, vars) {
 }
 
 /** One block as an email-safe table row. Inline styles only; clients strip <style>. */
-function renderBlock(b, vars) {
-  const F = "font-family:'Segoe UI',Arial,sans-serif";
+function renderBlock(b, vars, th = THEMES.violet) {
+  // Email-safe: tables, inline styles, SOLID colours (no rgba washes and no
+  // hairline borders: founder design rule). Fonts degrade to system sans.
+  const F = "font-family:'DM Sans','Segoe UI',Helvetica,Arial,sans-serif";
   const align = b.align === 'center' ? 'center' : 'left';
   switch (b.type) {
     case 'heading':
-      return `<tr><td style="padding:0 0 8px;${F};font-size:18px;font-weight:700;color:#ffffff;text-align:${align};">${esc(fill(b.text, vars))}</td></tr>`;
-    case 'paragraph':
-      return `<tr><td style="padding:0 0 16px;${F};font-size:${b.muted ? 13 : 15}px;line-height:1.6;color:${b.muted ? '#6B7280' : '#9CA3AF'};text-align:${align};">${esc(fill(b.text, vars))}</td></tr>`;
+      return `<tr><td style="padding:0 0 10px;${F};font-size:19px;line-height:26px;font-weight:700;color:#FFFFFF;text-align:${align};">${esc(fill(b.text, vars))}</td></tr>`;
+    case 'paragraph': {
+      const t = fill(b.text, vars);
+      if (!t) return '';
+      return `<tr><td style="padding:0 0 ${b.muted ? 12 : 18}px;${F};font-size:${b.muted ? 13 : 15}px;line-height:${b.muted ? 20 : 24}px;color:${b.muted ? '#7C7C95' : '#C3C3D4'};text-align:${align};">${esc(t).replace(/\n/g, '<br>')}</td></tr>`;
+    }
     case 'code':
-      return `<tr><td align="center" style="padding:6px 0 22px;"><div style="display:inline-block;padding:16px 28px;background:rgba(123,31,255,0.14);border:1px solid rgba(180,79,255,0.45);border-radius:14px;font-family:'Courier New',monospace;font-size:34px;font-weight:800;letter-spacing:10px;color:#C87FFF;">${esc(fill(b.text, vars))}</div></td></tr>`;
+      return `<tr><td align="center" style="padding:4px 0 22px;"><table role="presentation" cellpadding="0" cellspacing="0"><tr><td bgcolor="${th.code}" style="background:${th.code};border-radius:16px;padding:18px 26px 18px 38px;font-family:'DM Mono','SFMono-Regular',Menlo,Consolas,monospace;font-size:34px;line-height:40px;font-weight:700;letter-spacing:12px;color:${th.codeText};text-align:center;">${esc(fill(b.text, vars))}</td></tr></table></td></tr>`;
     case 'button': {
       // A TABLE CELL, not a styled anchor. Outlook ignores padding and
       // background on an <a>, so a "button" built that way renders as bare
-      // underlined text for a large share of recipients.
+      // underlined text for a large share of recipients. Full width so it is
+      // an easy thumb target; bgcolor is the fallback where gradients fail.
       const url = fill(b.url, vars);
       if (!url) return '';
-      return `<tr><td align="center" style="padding:6px 0 22px;"><table role="presentation" cellpadding="0" cellspacing="0"><tr><td style="background:#7B1FFF;border-radius:12px;"><a href="${esc(url)}" style="display:inline-block;padding:14px 30px;${F};font-size:15px;font-weight:700;color:#ffffff;text-decoration:none;">${esc(fill(b.text, vars) || 'Open')}</a></td></tr></table></td></tr>`;
+      return `<tr><td style="padding:6px 0 24px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" bgcolor="${th.btn}" style="background:${th.btn};background-image:${th.btnImg};border-radius:14px;"><a href="${esc(url)}" style="display:block;padding:17px 24px;${F};font-size:16px;line-height:20px;font-weight:700;color:${th.btnText};text-decoration:none;text-align:center;">${esc(fill(b.text, vars) || 'Open')}</a></td></tr></table></td></tr>`;
+    }
+    case 'chips': {
+      // A row of solid tiles ("what this unlocks"). Up to four.
+      const items = (Array.isArray(b.items) ? b.items : []).slice(0, 4).map((x) => fill(x, vars)).filter(Boolean);
+      if (!items.length) return '';
+      const w = Math.floor(100 / items.length);
+      const cells = items.map((t, i) => `<td width="${w}%" style="padding:0 ${i === items.length - 1 ? 0 : 8}px 0 0;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td bgcolor="#1C1C2B" style="background:#1C1C2B;border-radius:12px;padding:12px 6px;${F};font-size:13px;line-height:18px;font-weight:600;color:${th.chipText};text-align:center;">${esc(t)}</td></tr></table></td>`).join('');
+      return `<tr><td style="padding:2px 0 26px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>${cells}</tr></table></td></tr>`;
     }
     case 'divider':
-      return `<tr><td style="padding:6px 0 22px;"><div style="height:1px;background:rgba(255,255,255,0.08);"></div></td></tr>`;
+      // A band of space, not a rule.
+      return '<tr><td style="padding:0 0 22px;font-size:0;line-height:0;">&nbsp;</td></tr>';
     case 'image': {
       const src = fill(b.url, vars);
       if (!src) return '';
       // Alt text is required, not decorative: a large share of clients block
       // images by default and the alt is all the recipient sees.
-      return `<tr><td align="center" style="padding:0 0 20px;"><img src="${esc(src)}" alt="${esc(b.alt || '')}" width="536" style="max-width:100%;height:auto;border-radius:12px;display:block;"></td></tr>`;
+      return `<tr><td align="center" style="padding:0 0 20px;"><img src="${esc(src)}" alt="${esc(b.alt || '')}" width="480" style="max-width:100%;height:auto;border-radius:14px;display:block;"></td></tr>`;
     }
     default:
       return '';
@@ -140,11 +249,18 @@ function renderBlock(b, vars) {
 }
 
 /** The plain-text alternative, from the SAME blocks, so the two cannot drift. */
-function renderText(tpl, vars) {
+function renderText(tpl, vars, opts = {}) {
   const lines = [];
+  const heroTitle = fill(tpl.hero && tpl.hero.title, vars);
+  if (heroTitle) lines.push(heroTitle.toUpperCase());
   for (const b of tpl.blocks || []) {
     if (b.type === 'divider') { lines.push('---'); continue; }
     if (b.type === 'image') continue;
+    if (b.type === 'chips') {
+      const items = (b.items || []).map((x) => fill(x, vars)).filter(Boolean);
+      if (items.length) lines.push(items.join(' · '));
+      continue;
+    }
     if (b.type === 'button') {
       const url = fill(b.url, vars);
       if (url) lines.push(`${fill(b.text, vars) || 'Open'}: ${url}`);
@@ -154,26 +270,58 @@ function renderText(tpl, vars) {
     if (t) lines.push(t);
   }
   lines.push('');
-  lines.push('Vergr, Where Gamers Converge');
-  lines.push('This is an automated message from noreply@vergr.app, please do not reply.');
+  lines.push('Vergr LLC, 212 N. 2nd St, Ste 100, Richmond, KY 40475, USA');
+  lines.push('This is an automated message. Replies are not read; write to support@vergr.app instead.');
+  if (opts.unsubscribeUrl) lines.push('Unsubscribe from Vergr emails: ' + opts.unsubscribeUrl);
   return lines.join('\n\n');
 }
 
-function renderHtml(tpl, vars) {
-  const body = (tpl.blocks || []).map((b) => renderBlock(b, vars)).join('');
+function renderHtml(tpl, vars, opts = {}) {
+  const th = themeOf(tpl.theme);
+  const body = (tpl.blocks || []).map((b) => renderBlock(b, vars, th)).join('');
+  const unsub = opts.unsubscribeUrl
+    ? `<br><br>You're getting this because you have a Vergr account. <a href="${esc(opts.unsubscribeUrl)}" style="color:${th.link};text-decoration:underline;">Unsubscribe</a>`
+    : '';
   const preheader = fill(tpl.preheader, vars);
-  return `<!doctype html><html><body style="margin:0;padding:0;background:#0B0B14;">
-${preheader ? `<div style="display:none;max-height:0;overflow:hidden;opacity:0;">${esc(preheader)}</div>` : ''}
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0B0B14;padding:32px 16px;">
-    <tr><td align="center">
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;background:#14141F;border:1px solid rgba(255,255,255,0.08);border-radius:20px;overflow:hidden;">
-        <tr><td style="background:linear-gradient(135deg,#160a33 0%,#2d0a5a 55%,#3a0a6e 100%);padding:34px 32px 28px;text-align:center;">
-          <img src="https://vergr.app/icons/icon-192-v2.png" width="52" height="52" alt="Vergr" style="border-radius:12px;display:block;margin:0 auto 12px;">
-          <div style="font-family:'Segoe UI',Arial,sans-serif;font-size:22px;font-weight:800;color:#ffffff;letter-spacing:0.5px;">VERGR</div>
-        </td></tr>
-        <tr><td style="padding:32px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${body}</table></td></tr>
-        <tr><td style="padding:18px 32px 26px;border-top:1px solid rgba(255,255,255,0.06);font-family:'Segoe UI',Arial,sans-serif;">
-          <p style="margin:0;font-size:11px;color:#6B7280;text-align:center;">&copy; 2026 Vergr &middot; Where Gamers Converge<br>This is an automated message from noreply@vergr.app, please don't reply.</p>
+  const heroTitle = fill(tpl.hero && tpl.hero.title, vars);
+  const heroSub = fill(tpl.hero && tpl.hero.subtitle, vars);
+  const F = "font-family:'DM Sans','Segoe UI',Helvetica,Arial,sans-serif";
+  const D = "font-family:'Syne','DM Sans','Segoe UI',Helvetica,Arial,sans-serif";
+  const pre = preheader
+    ? `<div style="display:none;max-height:0;overflow:hidden;opacity:0;mso-hide:all;">${esc(preheader)}&#8199;&#847;&#8199;&#847;&#8199;&#847;</div>`
+    : '';
+  const title = heroTitle
+    ? `<div class="vg-title" style="${D};font-size:30px;line-height:36px;font-weight:800;color:#FFFFFF;margin-top:22px;">${esc(heroTitle)}</div>`
+    : '';
+  const sub = heroSub
+    ? `<div style="${F};font-size:16px;line-height:24px;color:${th.sub};margin-top:8px;">${esc(heroSub)}</div>`
+    : '';
+  return `<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark"><meta name="supported-color-schemes" content="dark">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&family=DM+Mono:wght@500&family=Syne:wght@800&display=swap" rel="stylesheet">
+<title>${esc(fill(tpl.subject, vars))}</title>
+<style>@media (max-width:620px){.vg-pad{padding-left:24px!important;padding-right:24px!important}.vg-hero{padding:36px 24px 30px!important}.vg-title{font-size:25px!important;line-height:31px!important}}</style>
+</head><body style="margin:0;padding:0;background:#08080F;-webkit-text-size-adjust:100%;">
+${pre}
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#08080F" style="background:#08080F;">
+    <tr><td align="center" style="padding:28px 12px 40px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;">
+        <tr><td bgcolor="#14141F" style="background:#14141F;border-radius:24px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+            <tr><td class="vg-hero" align="center" bgcolor="${th.hero}" style="background:${th.hero};background-image:${th.heroImg};padding:44px 40px 38px;border-radius:24px 24px 0 0;">
+              <img src="https://vergr.app/icons/icon-192-v2.png" width="64" height="64" alt="Vergr" style="display:block;border-radius:18px;margin:0 auto 14px;">
+              <div style="${D};font-size:14px;line-height:18px;font-weight:800;letter-spacing:4px;color:${th.eyebrow};text-transform:uppercase;">Vergr</div>
+              ${title}
+              ${sub}
+            </td></tr>
+            <tr><td class="vg-pad" style="padding:36px 40px 18px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${body}</table></td></tr>
+            <tr><td class="vg-pad" bgcolor="#101019" style="background:#101019;padding:22px 40px 26px;border-radius:0 0 24px 24px;${F};font-size:12px;line-height:19px;color:#6E6E86;text-align:center;">
+              <a href="https://vergr.app/platform/help" style="color:${th.link};text-decoration:none;">Help centre</a>&nbsp;&middot;&nbsp;<a href="https://vergr.app/platform/privacy" style="color:${th.link};text-decoration:none;">Privacy</a>&nbsp;&middot;&nbsp;<a href="mailto:support@vergr.app" style="color:${th.link};text-decoration:none;">support@vergr.app</a><br>
+              Vergr LLC &middot; 212 N. 2nd St, Ste 100, Richmond, KY 40475, USA<br>
+              This is an automated message. Replies are not read; write to support@vergr.app instead.${unsub}
+            </td></tr>
+          </table>
         </td></tr>
       </table>
     </td></tr>
@@ -221,11 +369,20 @@ async function renderEmail(templateId, vars = {}) {
 // ADMIN
 // ────────────────────────────────────────────────────────────────────
 
+// Email campaigns ride THIS callable (op: 'campaign.*') rather than a new Cloud
+// Function: a new function is a new Artifact Registry image. SMTP_PASS is bound
+// here for test and batch sends; binding a secret adds no secret version.
+const SMTP_PASS = functions.params.defineSecret('SMTP_PASS');
+
 exports.adminListEmailTemplates = functions.https.onCall(
-  { region: REGION, cors: true },
+  { region: REGION, cors: true, secrets: [SMTP_PASS], timeoutSeconds: 300 },
   async (request) => {
     const uid = request.auth?.uid;
     await requireAdminScreen(uid, SCREEN);
+    const op = String(request.data?.op || '');
+    if (op.startsWith('campaign.')) {
+      return require('./emailCampaigns').handleCampaignOp(op, request);
+    }
     const snap = await db.collection(COL).get();
     const stored = {};
     snap.forEach((d) => { stored[d.id] = d.data(); });
@@ -245,6 +402,8 @@ exports.adminListEmailTemplates = functions.https.onCall(
           updatedAt: s?.updatedAt?.toMillis?.() || null,
           subject: s?.subject ?? def.subject,
           preheader: s?.preheader ?? def.preheader,
+          hero: s?.hero || def.hero || { title: '', subtitle: '' },
+          theme: s?.theme || def.theme || 'violet',
           blocks: (Array.isArray(s?.blocks) && s.blocks.length) ? s.blocks : def.blocks,
         };
       }),
@@ -262,29 +421,11 @@ exports.adminSaveEmailTemplate = functions.https.onCall(
     await requireAdminScreen(uid, SCREEN);
     await adminRateLimit(uid, 'email_template_save', { perHour: 60, perDay: 200 });
 
-    const { templateId, subject, preheader, blocks } = request.data || {};
+    const { templateId } = request.data || {};
     if (!DEFAULTS[templateId]) throw new HttpsError('invalid-argument', 'Unknown template.');
-    if (!subject || !String(subject).trim()) {
-      throw new HttpsError('invalid-argument', 'The email needs a subject line.');
-    }
-    if (!Array.isArray(blocks) || !blocks.length) {
-      throw new HttpsError('invalid-argument', 'The email needs at least one block.');
-    }
-    const clean = blocks.slice(0, 30).map((b) => {
-      if (!BLOCK_TYPES.includes(b?.type)) throw new HttpsError('invalid-argument', `Unknown block: ${b?.type}`);
-      if (b.type === 'image' && !String(b.alt || '').trim()) {
-        throw new HttpsError('invalid-argument',
-          'An image needs alt text. Most email clients block images by default, so the alt text is what people actually read.');
-      }
-      return {
-        type: b.type,
-        text: String(b.text || '').slice(0, 1000),
-        url: String(b.url || '').slice(0, 500),
-        alt: String(b.alt || '').slice(0, 160),
-        muted: b.muted === true,
-        align: b.align === 'center' ? 'center' : 'left',
-      };
-    });
+    const design = cleanDesign(request.data || {});
+    const { subject } = design;
+    const clean = design.blocks;
 
     // A required token that has been deleted would send a code-less code email.
     // Rejected rather than warned about, because the failure is invisible until
@@ -306,8 +447,10 @@ exports.adminSaveEmailTemplate = functions.https.onCall(
       await ref.collection('versions').doc(String(prior.data().version || 0)).set(prior.data());
     }
     await ref.set({
-      subject: String(subject).slice(0, 200),
-      preheader: String(preheader || '').slice(0, 200),
+      subject: design.subject,
+      preheader: design.preheader,
+      hero: design.hero,
+      theme: design.theme,
       blocks: clean,
       version: (prior.exists ? (prior.data().version || 0) : 0) + 1,
       updatedAt: FieldValue.serverTimestamp(),
@@ -352,17 +495,22 @@ exports.adminPreviewEmailTemplate = functions.https.onCall(
   async (request) => {
     const uid = request.auth?.uid;
     await requireAdminScreen(uid, SCREEN);
-    const { templateId, subject, preheader, blocks } = request.data || {};
+    const { templateId, subject, preheader, blocks, hero, theme } = request.data || {};
     const def = DEFAULTS[templateId];
     if (!def) throw new HttpsError('invalid-argument', 'Unknown template.');
     const sample = {
       name: 'Alex', code: '384712',
       resetLink: 'https://vergr.app/reset?token=sample',
+      verifyLink: 'https://vergr.app/verify-email',
+      item: '1,200 Coins', paidLine: 'Paid $9.99', orderId: 'VG-1042', date: '30 Sep 2026',
+      how: 'refunded', coinsLine: '1,200 Coins were removed from your balance.',
     };
     const tpl = {
       ...def,
       subject: subject ?? def.subject,
       preheader: preheader ?? def.preheader,
+      hero: hero || def.hero,
+      theme: theme || def.theme,
       blocks: (Array.isArray(blocks) && blocks.length) ? blocks : def.blocks,
     };
     return {
@@ -375,4 +523,6 @@ exports.adminPreviewEmailTemplate = functions.https.onCall(
 
 module.exports.renderEmail = renderEmail;
 module.exports.DEFAULTS = DEFAULTS;
-module.exports._internal = { fill, renderHtml, renderText, renderBlock, BLOCK_TYPES };
+module.exports.THEMES = THEMES;
+module.exports.cleanDesign = cleanDesign;
+module.exports._internal ={ fill, renderHtml, renderText, renderBlock, BLOCK_TYPES };

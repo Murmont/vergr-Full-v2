@@ -17,8 +17,9 @@
 // VPN bypass is accepted — this is a compliance signal, not DRM.
 
 const { onRequest, onCall, HttpsError } = require('firebase-functions/v2/https');
-const { getFirestore } = require('firebase-admin/firestore');
+const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const admin = require('firebase-admin');
+const { isStaffDoc } = require('./staff');
 
 if (admin.apps.length === 0) admin.initializeApp();
 const db = getFirestore('vgrdb');
@@ -35,11 +36,12 @@ const db = getFirestore('vgrdb');
 // Bangladesh, Pakistan, Brunei) were UNBLOCKED after tournaments moved to the
 // ticketed-events model (competitors register FREE, never stake, are never
 // prize-eligible from their own money), which removes the wager/gambling basis.
-// The countries below remain blocked for reasons the ticketed pivot does NOT
-// change: sanctions, an outright crypto-withdrawal ban, or MENA gambling law.
+// ⚠ SANCTIONED COUNTRIES ONLY. Founder rule, stated more than once: nothing
+// else is blocked. China was removed 2026-09-18: it was blocked because crypto
+// withdrawals are illegal there, and withdrawals no longer exist on Vergr, so
+// the reason is gone. It was never a sanctions block. Do not add a country here
+// for any reason other than sanctions.
 const BLOCKED_COUNTRIES = new Set([
-  // Sanctions / crypto-withdrawal prohibited — Circle + USDC cannot serve these.
-  'CN',  // China — crypto trading + withdrawals prohibited (also separate ICP-licensed distribution)
   'KP',  // North Korea (sanctioned)
   'IR',  // Iran (sanctioned)
   'SY',  // Syria (sanctioned)
@@ -164,9 +166,53 @@ function evaluateBlock(country, region) {
 exports.getRegionStatus = onRequest({ region: 'europe-west1', cors: true, secrets: ['VERGR_GEO_TOKEN'] }, async (req, res) => {
   const { country, region } = readCountryAndState(req.headers);
   const status = evaluateBlock(country, region);
+  if (req.query?.stamp === '1' && country) {
+    status.stamped = await stampAccountCountry(req, country, region);
+  }
   res.set('Cache-Control', 'no-store');
   res.json(status);
 });
+
+// SAVE THE ACCOUNT'S COUNTRY (founder, 2026-09-25: "it can't be optional").
+//
+// Checkout needs the buyer's country for its payment methods, local prices and
+// tax, and 16 of 18 real accounts had none. The app asks for this ONCE per
+// account: only while its already-loaded profile has no geoCountry, so it costs
+// one write per account, ever, and no reads (see useAccountCountry).
+//
+// Saved once, never moved by a later visit, so a user who turns on a VPN keeps
+// their own country's methods and prices (founder: VPNs stay allowed).
+//
+// ⚠ THE IP GOES IN user_geo/{uid}, NEVER ON users/{uid}. users is publicly
+// listable (the reason emails were moved off it on 2026-09-16). user_geo has no
+// client rule, so no client can read or write it.
+//
+// Both headers are set by the Cloudflare worker (vergr-geo-proxy) from
+// Cloudflare's own lookup and trusted only with the worker's token, so a
+// browser cannot choose its country or IP.
+async function stampAccountCountry(req, country, region) {
+  const h = req.headers || {};
+  const authz = String(h.authorization || '');
+  if (!authz.startsWith('Bearer ') || !geoHeadersTrusted(h)) return false;
+  let tok;
+  try { tok = await admin.auth().verifyIdToken(authz.slice(7)); } catch { return false; }
+  // Guests cannot buy; the operator has no profile and must not get one.
+  if (tok.firebase?.sign_in_provider === 'anonymous' || tok.operator === true) return false;
+  const ip = String(h['x-vergr-ip'] || '').slice(0, 64) || null;
+  try {
+    // update(), not set(): an account whose profile does not exist yet is
+    // stamped on its next visit rather than given a half-empty users doc.
+    await db.collection('users').doc(tok.uid).update({
+      geoCountry: country, geoRegion: region || null, geoAt: FieldValue.serverTimestamp(),
+    });
+    await db.collection('user_geo').doc(tok.uid).set({
+      country, region: region || null, ip, at: FieldValue.serverTimestamp(),
+    }, { merge: true });
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 // ────────────────────────────────────────────────────────────────────────
 // Callable defense-in-depth — invoke at the top of any wallet, tournament,
@@ -191,7 +237,7 @@ exports.assertRegionAllowed = async function assertRegionAllowed(request, opts =
     try {
       const u = await db.collection('users').doc(uid).get();
       const d = u.exists ? u.data() : {};
-      if (d.role === 'admin' || (d.email || '').toLowerCase() === 'vergenerd@gmail.com') {
+      if (isStaffDoc(d) || d.role === 'admin') {
         return { country: 'ZZ', region: null, founder: true };
       }
     } catch { /* fall through to normal check */ }

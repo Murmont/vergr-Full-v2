@@ -12,7 +12,7 @@
 // Both wired together here because they share the streams collection.
 
 const functions = require('firebase-functions/v2');
-const { defineSecret } = require('firebase-functions/params');
+const { defineSecret, defineString } = require('firebase-functions/params');
 const { onDocumentWritten } = require('firebase-functions/v2/firestore');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
@@ -24,7 +24,7 @@ const db = getFirestore('vgrdb');
 const HOST_OPS_TOKEN = defineSecret('HOST_OPS_TOKEN');
 const R2_ACCESS_KEY_ID     = defineSecret('R2_ACCESS_KEY_ID');
 const R2_SECRET_ACCESS_KEY = defineSecret('R2_SECRET_ACCESS_KEY');
-const R2_ACCOUNT_ID        = defineSecret('R2_ACCOUNT_ID');
+const R2_ACCOUNT_ID = defineString('R2_ACCOUNT_ID');
 
 // Public URL of the launcher (must be HTTPS, behind Cloudflare DNS-only).
 // Set via runtime env in firebase functions:config:set if you prefer.
@@ -105,15 +105,9 @@ exports.triggerCohostComposite = onDocumentWritten(
 // ─────────────────────────────────────────────────────────────────────────────
 // 2) R2 segment cleanup cron — hourly.
 // ─────────────────────────────────────────────────────────────────────────────
-exports.cleanupExpiredStreamSegments = onSchedule(
-  {
-    region: REGION,
-    schedule: 'every 60 minutes',
-    timeZone: 'UTC',
-    // HOST_OPS_TOKEN: the same pass also retries failed past-broadcast archives.
-    secrets: [R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_ACCOUNT_ID, HOST_OPS_TOKEN],
-  },
-  async () => {
+// Runs inside a dispatcher cron in index.js (it was its own Cloud Scheduler
+// job, and every job past the first three is billed monthly).
+exports.cleanupExpiredStreamSegments = async function cleanupExpiredStreamSegments() {
     const accountId = env(R2_ACCOUNT_ID);
     const accessKey = env(R2_ACCESS_KEY_ID);
     const secret    = env(R2_SECRET_ACCESS_KEY);
@@ -305,72 +299,4 @@ exports.cleanupExpiredStreamSegments = onSchedule(
       vodRetries: retried,
     });
     console.log(`R2 cleanup: deleted ${deleted} objects across ${keysByStream.size} stream-keys; vods purged ${vodsPurged}, archives retried ${retried}`);
-  },
-);
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 3) Tournament-proof chunk cleanup. Daily cron deletes `tournament-proof/`
-//    objects older than PROOF_TTL_MS. Proof feeds are 30-day retention so
-//    disputes can still be reviewed within a reasonable window without
-//    paying indefinite R2 storage.
-// ─────────────────────────────────────────────────────────────────────────────
-exports.cleanupExpiredProofChunks = onSchedule(
-  {
-    region: REGION,
-    schedule: 'every 24 hours',
-    timeZone: 'UTC',
-    secrets: [R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_ACCOUNT_ID],
-  },
-  async () => {
-    const accountId = env(R2_ACCOUNT_ID);
-    const accessKey = env(R2_ACCESS_KEY_ID);
-    const secret    = env(R2_SECRET_ACCESS_KEY);
-    if (!accountId || !accessKey || !secret) {
-      console.warn('R2 secrets missing — skipping proof cleanup');
-      return;
-    }
-    const bucket = 'vergr-media';
-    const s3 = new S3Client({
-      region: 'auto',
-      endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
-      credentials: { accessKeyId: accessKey, secretAccessKey: secret },
-      requestChecksumCalculation: 'WHEN_REQUIRED',
-    });
-
-    const PROOF_TTL_MS = 30 * 24 * 60 * 60 * 1000;
-    const cutoff = Date.now() - PROOF_TTL_MS;
-    const deleteKeys = [];
-    let continuationToken;
-    do {
-      const out = await s3.send(new ListObjectsV2Command({
-        Bucket: bucket,
-        Prefix: 'tournament-proof/',
-        ContinuationToken: continuationToken,
-      }));
-      for (const obj of out.Contents || []) {
-        if (obj.LastModified && obj.LastModified.getTime() < cutoff) {
-          deleteKeys.push(obj.Key);
-        }
-      }
-      continuationToken = out.IsTruncated ? out.NextContinuationToken : null;
-    } while (continuationToken);
-
-    let deleted = 0;
-    for (let i = 0; i < deleteKeys.length; i += 1000) {
-      const batch = deleteKeys.slice(i, i + 1000).map((Key) => ({ Key }));
-      await s3.send(new DeleteObjectsCommand({
-        Bucket: bucket,
-        Delete: { Objects: batch, Quiet: true },
-      }));
-      deleted += batch.length;
-    }
-
-    await db.collection('streaming_cleanup_logs').add({
-      ranAt: FieldValue.serverTimestamp(),
-      kind: 'tournament-proof',
-      ttlDays: 30,
-      deletedCount: deleted,
-    });
-    console.log(`Proof cleanup: deleted ${deleted} chunks older than 30d`);
-  },
-);
+  };

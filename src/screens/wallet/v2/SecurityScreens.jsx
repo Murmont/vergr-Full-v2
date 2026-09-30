@@ -9,6 +9,7 @@ import {
   Modal, WALLET_TOKENS, fmtNum, fmtEUR,
 } from '../../../components/wallet/primitives';
 import Icon from '../../../components/Icon';
+import { QRCodeSVG } from 'qrcode.react';
 import { useUser } from '../../../context/UserContext';
 import { useWalletUnlock } from '../../../context/WalletUnlockContext';
 import { bioAvailable, bioEnrolled, bioClear } from '../../../utils/nativeBiometric';
@@ -127,7 +128,12 @@ function SecBlock({ icon, title, status, children }) {
 // ╚══════════════════════════════════════════════════════════════╝
 export function SecurityPinScreen() {
   const navigate = useNavigate();
-  const [phase, setPhase] = useState('current'); // current | new | confirm | done
+  const [phase, setPhase] = useState('current'); // current | new | confirm | code | done
+  // ⚠ changeWalletPin REQUIRES a TOTP code once wallet 2FA is on. This screen
+  // never sent one, so with 2FA enabled the PIN could not be changed at all.
+  const [totpOn, setTotpOn] = useState(false);
+  const [totpCode, setTotpCode] = useState('');
+  useEffect(() => { getMyWalletSecurityStatus().then((s) => setTotpOn(!!s?.totpEnrolled)).catch(() => {}); }, []);
   const [oldPin, setOldPin] = useState('');
   const [newPin, setNewPin] = useState('');
   const [confirmPin, setConfirmPin] = useState('');
@@ -148,23 +154,28 @@ export function SecurityPinScreen() {
     setPhase('confirm');
   };
 
+  const save = async () => {
+    setSubmitting(true);
+    setError(null);
+    try {
+      await changeWalletPin({ oldPin, newPin, ...(totpOn ? { totpCode } : {}) });
+      setPhase('done');
+    } catch (e) {
+      setError(e?.message || 'Could not change PIN.');
+      setPhase('current'); setOldPin(''); setNewPin(''); setConfirmPin(''); setTotpCode('');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const onConfirm = async (v) => {
     if (v !== newPin) {
       setError("PINs don't match. Try again.");
       setTimeout(() => { setConfirmPin(''); setError(null); }, 1500);
       return;
     }
-    setSubmitting(true);
-    setError(null);
-    try {
-      await changeWalletPin({ oldPin, newPin });
-      setPhase('done');
-    } catch (e) {
-      setError(e?.message || 'Could not change PIN.');
-      setPhase('current'); setOldPin(''); setNewPin(''); setConfirmPin('');
-    } finally {
-      setSubmitting(false);
-    }
+    if (totpOn) { setPhase('code'); return; }
+    await save();
   };
 
   return (
@@ -194,6 +205,27 @@ export function SecurityPinScreen() {
                     value={confirmPin} onChange={setConfirmPin}
                     onComplete={onConfirm} error={error}
                     disabled={submitting} />
+        )}
+        {phase === 'code' && (
+          <div>
+            <div style={{ fontFamily: 'Syne, sans-serif', fontWeight: 700, fontSize: 26, marginBottom: 8 }}>Your 2FA code</div>
+            <div style={{ color: WALLET_TOKENS.textSecondary, marginBottom: 20 }}>
+              2FA is on, so changing the PIN needs a current code from your authenticator.
+            </div>
+            <input value={totpCode} onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                   placeholder="000000" inputMode="numeric" autoFocus
+                   style={{
+                     width: '100%', maxWidth: 280, padding: '14px 18px', fontSize: 26, letterSpacing: '0.4em',
+                     textAlign: 'center', background: WALLET_TOKENS.surface2, color: WALLET_TOKENS.text,
+                     border: `1px solid ${WALLET_TOKENS.hairlineStrong}`, borderRadius: 12, outline: 'none',
+                   }} />
+            {error && <div style={{ marginTop: 16, color: '#FCA5A5', fontSize: 13 }}>{error}</div>}
+            <div style={{ marginTop: 20 }}>
+              <WalletButton variant="primary" full disabled={totpCode.length !== 6 || submitting} onClick={save}>
+                {submitting ? 'Saving…' : 'Change PIN'}
+              </WalletButton>
+            </div>
+          </div>
         )}
         {phase === 'done' && (
           <div>
@@ -380,8 +412,9 @@ export function SecurityTotpScreen() {
           <div style={{ fontWeight: 600, marginBottom: 12 }}>Scan with your authenticator app.</div>
           <div style={{ display: 'grid', placeItems: 'center', marginBottom: 20 }}>
             <div style={{ width: 200, height: 200, background: '#fff', borderRadius: 12, display: 'grid', placeItems: 'center' }}>
-              <img src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(otpauth || '')}`}
-                   width="180" height="180" alt="2FA QR" />
+              {/* Drawn locally. It was an <img> from api.qrserver.com, which
+                  handed the 2FA SECRET (inside the otpauth URL) to a third party. */}
+              <QRCodeSVG value={otpauth || ''} size={180} />
             </div>
           </div>
           <div style={{ fontSize: 12, color: WALLET_TOKENS.textMuted, textAlign: 'center', marginBottom: 6 }}>

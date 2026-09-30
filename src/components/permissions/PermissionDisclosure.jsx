@@ -85,7 +85,7 @@ export default function PermissionDisclosure({
         style={{
           background: '#14141F', border: '1px solid rgba(255,255,255,0.08)',
           borderRadius: 20, padding: 22, color: '#FFF',
-          marginBottom: 'env(safe-area-inset-bottom, 0px)',
+          marginBottom: 'var(--vg-safe-b, 0px)',
         }}
       >
         <div style={{

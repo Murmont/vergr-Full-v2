@@ -32,14 +32,24 @@ const crypto = require('crypto');
 const REGION = 'europe-west1';
 const db = getFirestore('vgrdb');
 
+// ⚠ SELLING PRODUCTS FOR COINS IS SWITCHED OFF (founder, 2026-09-22): too much
+// to police for scams. vergr.me keeps link-outs only (link and product blocks,
+// the Shop catalog import, and Shopify-app products that check out on Shopify).
+// This refuses the coin purchase and the paid-file upload at the server, which
+// is the boundary; the client hides the blocks. Existing buyers keep their
+// downloads and sellers can still cancel an open order. Flip to true to restore.
+const COIN_PRODUCT_SALES_ENABLED = false;
+const SALES_OFF_MSG = 'Selling products for Coins is turned off. Link to your store instead.';
+
 // External-store write-back (Shopify/Woo inventory decrement). Best-effort,
 // called AFTER the purchase transaction commits — see shopSync.js.
 const { decrementExternalStock } = require('./shopSync');
 const { COIN_MICRO_USD, microUsdToStr } = require('./coinLedger');
+const { isStaffDoc } = require('./staff');
 
 const SALE_FEE = 0.08; // LOCKED — founder 2026-07-17. 8% flat, credited straight to the payable.
 const MAX_PRICE_COINS = 500_000; // sanity ceiling, mirrors the largest platform amount (prize cap)
-const R2_SECRETS = ['R2_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET'];
+const R2_SECRETS = [ 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY'];
 
 // Mirrors functions/r2.js SIZE_CAPS — keep in sync.
 const SIZE_CAPS = {
@@ -85,6 +95,7 @@ exports.getVergrMeProductUploadUrl = functions.https.onCall(
   async (req) => {
     const uid = req.auth?.uid;
     if (!uid) throw new functions.https.HttpsError('unauthenticated', 'Sign in required.');
+    if (!COIN_PRODUCT_SALES_ENABLED) throw new functions.https.HttpsError('failed-precondition', SALES_OFF_MSG);
     const contentType = String(req.data?.contentType || '');
     const sizeBytes = Math.floor(Number(req.data?.sizeBytes) || 0);
     const fileName = safeName(req.data?.fileName);
@@ -95,7 +106,7 @@ exports.getVergrMeProductUploadUrl = functions.https.onCall(
 
     const userDoc = await db.collection('users').doc(uid).get();
     const u = userDoc.exists ? userDoc.data() : {};
-    const isAdmin = u.role === 'admin' || (u.email || '').toLowerCase() === 'vergenerd@gmail.com';
+    const isAdmin = isStaffDoc(u) || u.role === 'admin';
     const plan = isAdmin ? 'pro' : (u.subscription?.tier || u.subscription || 'free');
     const cap = SIZE_CAPS[plan] || SIZE_CAPS.free;
     if (sizeBytes > cap) {
@@ -138,6 +149,7 @@ exports.purchaseVergrMeProduct = functions.https.onCall(
   async (req) => {
     const uid = req.auth?.uid;
     if (!uid) throw new functions.https.HttpsError('unauthenticated', 'Sign in required.');
+    if (!COIN_PRODUCT_SALES_ENABLED) throw new functions.https.HttpsError('failed-precondition', SALES_OFF_MSG);
     const sellerUid = String(req.data?.sellerUid || '');
     const productId = String(req.data?.productId || '');
     if (!sellerUid || !productId) throw new functions.https.HttpsError('invalid-argument', 'sellerUid and productId required.');

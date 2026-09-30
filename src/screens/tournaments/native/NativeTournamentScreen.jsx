@@ -77,7 +77,7 @@ export default function NativeTournamentScreen() {
   const spotlight = (featured && SHOWABLE.includes(featured.status)) ? featured : fallbackSpotlight;
 
   return (
-    <div className="min-h-screen" style={{ paddingBottom: 'calc(88px + env(safe-area-inset-bottom, 0px))' }}>
+    <div className="min-h-screen" style={{ paddingBottom: 'calc(88px + var(--vg-safe-b, 0px))' }}>
       {showOnboard && <TournamentOnboarding onClose={dismissOnboard} />}
       {showBrawl && <BrawlQuickplay onClose={() => setShowBrawl(false)} />}
 

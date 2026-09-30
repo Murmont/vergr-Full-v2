@@ -1,7 +1,7 @@
 // /vanguard/* — second batch of dashboard pages.
 //
 // Real data only. Every screen here is backed by a real Firestore collection:
-// Peer Activity, Live Now, Payout History, My Cases, plus the collaboration
+// Peer Activity, Live Now, Payout History, plus the collaboration
 // tools (Notes, Escalations, Announcements, Decision Library) which read/write
 // vanguard_notes / vanguard_escalations / vanguard_announcements /
 // vanguard_precedents. Empty states show when a collection has no rows yet.
@@ -16,12 +16,7 @@ import {
   getRecentVanguardActions,
   getMyVanguardActions,
   getLiveStreams,
-  getTournaments,
-  getTournament,
-  getTournamentMatches,
   getMyVanguardPayoutHistory,
-  getMyTournamentAssignments,
-  searchTournamentsForMod,
   searchUsers,
   getUserById,
   getVanguardNotes, addVanguardNote, deleteVanguardNote,
@@ -31,6 +26,8 @@ import {
 } from '../../firebase/firestore';
 import { rankMeta } from '../../utils/vanguardRanks';
 import { resolveTier } from '../../utils/tierSystem';
+import { AccountActions, EndStreamAction } from '../../components/vanguard/ModActions';
+import { openInVergr } from '../../admin/openExternal';
 
 // Shared form primitives ──────────────────────────────────────────────────────
 const inputStyle = { width: '100%', padding: '10px 12px', background: C.card2, border: `1px solid ${C.border}`, borderRadius: 8, color: C.text, fontFamily: 'DM Sans', fontSize: 13, outline: 'none', boxSizing: 'border-box' };
@@ -95,7 +92,6 @@ export function VanguardPeerScreen() {
 
   const filters = [
     { key: 'all', label: 'All activity' },
-    { key: 'tournament', label: 'Tournament calls' },
     { key: 'report', label: 'Report decisions' },
     { key: 'ban', label: 'Bans + mutes' },
     { key: 'overturn', label: 'Overturns' },
@@ -103,7 +99,6 @@ export function VanguardPeerScreen() {
   const list = acts || [];
   const filtered = list.filter((a) => {
     if (filter === 'all') return true;
-    if (filter === 'tournament') return a.action.includes('tournament');
     if (filter === 'report') return a.action.includes('report');
     if (filter === 'ban') return a.action.includes('ban') || a.action.includes('mute');
     if (filter === 'overturn') return a.action.includes('overturn') || a.action.includes('review');
@@ -120,21 +115,21 @@ export function VanguardPeerScreen() {
       <VgCard style={{ padding: 10, marginBottom: 12, display: 'flex', gap: 8, overflowX: 'auto', flexWrap: 'wrap' }}>
         {filters.map((f) => (
           <button key={f.key} onClick={() => setFilter(f.key)}
-            style={{ padding: '8px 14px', background: filter === f.key ? 'rgba(180,79,255,.12)' : 'transparent', border: `1px solid ${filter === f.key ? 'rgba(180,79,255,.4)' : C.border}`, borderRadius: 999, color: filter === f.key ? C.violetLt : C.textDim, fontFamily: 'DM Sans', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}>{f.label}</button>
+            style={{ padding: '8px 14px', background: filter === f.key ? C.activeFill : 'transparent', border: 0, borderRadius: 999, color: filter === f.key ? C.violetLt : C.textDim, fontFamily: 'DM Sans', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}>{f.label}</button>
         ))}
       </VgCard>
 
       {acts === null ? (
         <VgCard style={{ textAlign: 'center', color: C.textMuted, padding: 36 }}>Loading…</VgCard>
       ) : filtered.length === 0 ? (
-        <EmptyState icon="forum" title="No peer activity yet" body="As Vanguard members resolve disputes, reports and tournament results, their actions appear here in real time." />
+        <EmptyState icon="forum" title="No peer activity yet" body="As Vanguard members resolve reports, appeals and flags, their actions appear here in real time." />
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {filtered.map((a) => {
             const m = rankMeta(a.moderatorRank);
             return (
               <VgCard key={a.id} style={{ padding: '12px 14px', display: 'flex', alignItems: 'center', gap: 12 }}>
-                <div style={{ width: 34, height: 34, borderRadius: 8, background: 'rgba(180,79,255,.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <div style={{ width: 34, height: 34, borderRadius: 8, background: C.activeFill, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                   <img src={m.badge} alt="" style={{ height: 18 }} />
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
@@ -172,23 +167,20 @@ export function VanguardPeerScreen() {
 
 // ─── Live Now ────────────────────────────────────────────────────────────────
 export function VanguardLiveScreen() {
-  const navigate = useNavigate();
   const [streams, setStreams] = useState(null);
-  const [tournaments, setTournaments] = useState(null);
+  const [tick, setTick] = useState(0);
 
   useEffect(() => {
     let alive = true;
     getLiveStreams(24).then((s) => { if (alive) setStreams(s || []); }).catch(() => { if (alive) setStreams([]); });
-    getTournaments('in_progress', 24).then((t) => { if (alive) setTournaments(t || []); }).catch(() => { if (alive) setTournaments([]); });
     return () => { alive = false; };
-  }, []);
+  }, [tick]);
 
   const sList = streams || [];
-  const tList = tournaments || [];
 
   return (
     <VanguardLayout page="live">
-      <VanguardPageHeader title="Live Now" subtitle="Active streams and tournaments that need Vanguard eyes." />
+      <VanguardPageHeader title="Live Now" subtitle="Active streams that need Vanguard eyes." />
 
       <div style={{ marginBottom: 10, fontFamily: 'DM Mono', fontSize: 10, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '.14em' }}>Live streams · {streams === null ? '…' : sList.length}</div>
       {streams === null ? (
@@ -199,41 +191,24 @@ export function VanguardLiveScreen() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12, marginBottom: 18 }}>
           {sList.map((s) => (
             <VgCard key={s.id} style={{ padding: 0, overflow: 'hidden' }}>
-              <div style={{ aspectRatio: '16/9', background: `linear-gradient(135deg, ${C.violet}33, ${C.ember}33)`, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <div style={{ aspectRatio: '16/9', background: C.card2, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 {s.thumbnailUrl ? <img src={s.thumbnailUrl} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} /> : <Icon name="live_tv" size={32} style={{ color: C.text, opacity: 0.6 }} />}
                 <span style={{ position: 'absolute', top: 8, left: 8, padding: '2px 8px', background: C.ember, borderRadius: 4, fontFamily: 'DM Mono', fontSize: 9.5, fontWeight: 700, color: C.text, letterSpacing: '.08em' }}>● LIVE</span>
-                <span style={{ position: 'absolute', bottom: 8, right: 8, padding: '2px 8px', background: 'rgba(0,0,0,.7)', borderRadius: 4, fontFamily: 'DM Mono', fontSize: 10, color: C.text }}>{fmt(s.viewerCount)} viewers</span>
+                <span style={{ position: 'absolute', bottom: 8, right: 8, padding: '2px 8px', background: C.bg, borderRadius: 4, fontFamily: 'DM Mono', fontSize: 10, color: C.text }}>{fmt(s.viewerCount)} viewers</span>
               </div>
               <div style={{ padding: 10 }}>
                 <div style={{ fontFamily: 'DM Sans', fontSize: 13, fontWeight: 700, color: C.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.title || 'Untitled stream'}</div>
                 <div style={{ fontFamily: 'DM Mono', fontSize: 10.5, color: C.textDim, marginTop: 2 }}>@{s.streamer?.username || 'streamer'}{s.game ? ` · ${s.game}` : ''}</div>
-                <button onClick={() => navigate(`/watch/${s.id}`)} style={{ marginTop: 8, width: '100%', padding: '6px 8px', background: C.violet, border: 0, borderRadius: 6, color: C.text, fontFamily: 'DM Sans', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>Watch + Moderate</button>
+                {/* Watching happens on vergr.app (the app has no player); ending
+                    the stream happens here, through the real takedown. */}
+                <button onClick={() => openInVergr(`/watch/${s.id}`)} style={{ marginTop: 8, width: '100%', padding: '7px 8px', background: C.violet, border: 0, borderRadius: 6, color: C.text, fontFamily: 'DM Sans', fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}>Watch on vergr.app</button>
+                <div style={{ marginTop: 6 }}><EndStreamAction streamId={s.id} compact onDone={() => setTick((t) => t + 1)} /></div>
               </div>
             </VgCard>
           ))}
         </div>
       )}
 
-      <div style={{ marginBottom: 10, fontFamily: 'DM Mono', fontSize: 10, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '.14em' }}>Live tournaments · {tournaments === null ? '…' : tList.length}</div>
-      {tournaments === null ? (
-        <VgCard style={{ textAlign: 'center', color: C.textMuted, padding: 24 }}>Loading…</VgCard>
-      ) : tList.length === 0 ? (
-        <EmptyState icon="emoji_events" title="No tournaments in progress" body="In-progress tournaments appear here so you can observe and step in if a match needs a referee." />
-      ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12 }}>
-          {tList.map((t) => (
-            <VgCard key={t.id}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                <span style={{ padding: '2px 8px', background: C.ember, borderRadius: 4, fontFamily: 'DM Mono', fontSize: 9.5, fontWeight: 700, color: C.text }}>● LIVE</span>
-                <span style={{ fontFamily: 'DM Mono', fontSize: 10, color: C.gold, fontWeight: 700 }}>{fmt(t.prizePool || t.declaredPurse || 0)}c</span>
-              </div>
-              <div style={{ fontFamily: 'DM Sans', fontSize: 14, fontWeight: 700, color: C.text }}>{t.name}</div>
-              <div style={{ fontFamily: 'DM Mono', fontSize: 10.5, color: C.textDim, marginTop: 4 }}>{t.game}{t.maxParticipants ? ` · ${t.maxParticipants} players` : ''}</div>
-              <button onClick={() => navigate(`/match/${t.id}`)} style={{ marginTop: 10, width: '100%', padding: '7px 10px', background: C.violet, border: 0, borderRadius: 6, color: C.text, fontFamily: 'DM Sans', fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}>Observe + Moderate</button>
-            </VgCard>
-          ))}
-        </div>
-      )}
     </VanguardLayout>
   );
 }
@@ -298,72 +273,10 @@ export function VanguardPayoutsScreen() {
   );
 }
 
-// ─── My Cases ────────────────────────────────────────────────────────────────
-export function VanguardMyCasesScreen() {
-  const navigate = useNavigate();
-  const { profile } = useUser();
-  const [cases, setCases] = useState(null);
-
-  useEffect(() => {
-    let alive = true;
-    if (profile?.uid) {
-      getMyTournamentAssignments(profile.uid, 50).then((rows) => {
-        if (!alive) return;
-        const active = (rows || []).filter((a) => ['assigned', 'checked_in', 'in_progress'].includes(a.status));
-        setCases(active.map((a) => {
-          const startMs = tsMs(a.scheduledStart);
-          const hoursLeft = startMs ? Math.round((startMs - Date.now()) / 3600_000) : null;
-          return { id: a.id, code: (a.id || '').slice(0, 8).toUpperCase(), title: a.tournamentName || 'Tournament', game: a.game, status: a.status, claimedAt: a.claimedAt, hoursLeft };
-        }));
-      }).catch(() => { if (alive) setCases([]); });
-    } else setCases([]);
-    return () => { alive = false; };
-  }, [profile?.uid]);
-
-  const list = cases || [];
-
-  return (
-    <VanguardLayout page="my-cases">
-      <VanguardPageHeader title="My Cases" subtitle="Tournament slots you've claimed and are working through." />
-      <div style={{ marginBottom: 12, padding: 10, background: 'rgba(245,200,66,.05)', border: `1px solid rgba(245,200,66,.2)`, borderRadius: 8, fontFamily: 'DM Sans', fontSize: 12, color: C.gold }}>
-        <Icon name="info" size={14} style={{ verticalAlign: 'middle', marginRight: 6 }} />
-        Check in 15 minutes before start. Slots released within an hour of start count as a no-show.
-      </div>
-      {cases === null ? (
-        <VgCard style={{ textAlign: 'center', color: C.textMuted, padding: 36 }}>Loading…</VgCard>
-      ) : list.length === 0 ? (
-        <EmptyState icon="folder_managed" title="No active cases" body="Claim an open tournament slot from the Schedule tab and it'll show up here to work through." />
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {list.map((c) => (
-            <VgCard key={c.id} style={{ padding: 12, display: 'flex', gap: 12, alignItems: 'center' }}>
-              <div style={{ width: 38, height: 38, borderRadius: 8, background: `${C.violetLt}22`, color: C.violetLt, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <Icon name="emoji_events" size={18} />
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontFamily: 'DM Mono', fontSize: 10, color: C.textMuted }}>{c.code}{c.game ? ` · ${c.game}` : ''}</div>
-                <div style={{ fontFamily: 'DM Sans', fontSize: 13.5, color: C.text, fontWeight: 700 }}>{c.title}</div>
-                <div style={{ fontFamily: 'DM Mono', fontSize: 10.5, color: C.textDim, marginTop: 2 }}>Status: {c.status.replace(/_/g, ' ')}{c.claimedAt ? ` · Claimed ${fmtAgo(c.claimedAt)}` : ''}</div>
-              </div>
-              {c.hoursLeft != null && (
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontFamily: 'DM Mono', fontSize: 12, fontWeight: 700, color: c.hoursLeft < 1 ? C.ember : c.hoursLeft < 6 ? C.gold : C.success }}>{c.hoursLeft <= 0 ? 'now' : `${c.hoursLeft}h`}</div>
-                  <div style={{ fontFamily: 'DM Mono', fontSize: 9.5, color: C.textMuted }}>to start</div>
-                </div>
-              )}
-              <button onClick={() => navigate(`/vanguard/moderation-room/${c.id}`)} style={{ padding: '8px 14px', background: C.violet, border: 0, borderRadius: 8, color: C.text, fontFamily: 'DM Sans', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>Open</button>
-            </VgCard>
-          ))}
-        </div>
-      )}
-    </VanguardLayout>
-  );
-}
 
 // ─── Notes (vanguard_notes) ──────────────────────────────────────────────────
 const NOTE_SUBJECTS = [
   { key: 'user', label: 'User', icon: 'person' },
-  { key: 'tournament', label: 'Tournament', icon: 'emoji_events' },
   { key: 'stream', label: 'Stream', icon: 'live_tv' },
   { key: 'general', label: 'General', icon: 'sticky_note_2' },
 ];
@@ -405,21 +318,21 @@ export function VanguardNotesScreen() {
 
   return (
     <VanguardLayout page="notes">
-      <VanguardPageHeader title="Notes" subtitle="Shared watchlist notes on users, tournaments and recurring patterns. Visible to every Vanguard member." />
+      <VanguardPageHeader title="Notes" subtitle="Shared watchlist notes on users, streams and recurring patterns. Visible to every Vanguard member." />
 
       <VgCard style={{ marginBottom: 14 }}>
         <div style={{ fontFamily: 'DM Sans', fontWeight: 700, fontSize: 13.5, color: C.text, marginBottom: 10 }}>Add a note</div>
         <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
           {NOTE_SUBJECTS.map((s) => (
             <button key={s.key} onClick={() => setSubjectType(s.key)}
-              style={{ padding: '7px 12px', display: 'flex', alignItems: 'center', gap: 6, background: subjectType === s.key ? 'rgba(180,79,255,.14)' : 'transparent', border: `1px solid ${subjectType === s.key ? 'rgba(180,79,255,.45)' : C.border}`, borderRadius: 8, color: subjectType === s.key ? C.violetLt : C.textDim, fontFamily: 'DM Sans', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+              style={{ padding: '7px 12px', display: 'flex', alignItems: 'center', gap: 6, background: subjectType === s.key ? C.activeFill : 'transparent', border: 0, borderRadius: 8, color: subjectType === s.key ? C.violetLt : C.textDim, fontFamily: 'DM Sans', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
               <Icon name={s.icon} size={14} />{s.label}
             </button>
           ))}
         </div>
         {subjectType !== 'general' && (
           <VgField label={`${NOTE_SUBJECTS.find((s) => s.key === subjectType)?.label} reference (username, name or ID)`}>
-            <input value={subjectLabel} onChange={(e) => setSubjectLabel(e.target.value)} placeholder="e.g. @someplayer or tournament name" style={inputStyle} />
+            <input value={subjectLabel} onChange={(e) => setSubjectLabel(e.target.value)} placeholder="e.g. @someplayer or stream title" style={inputStyle} />
           </VgField>
         )}
         <VgField label="Note">
@@ -431,23 +344,23 @@ export function VanguardNotesScreen() {
       <VgCard style={{ padding: 10, marginBottom: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         {[{ key: 'all', label: 'All notes' }, ...NOTE_SUBJECTS.map((s) => ({ key: s.key, label: s.label }))].map((f) => (
           <button key={f.key} onClick={() => setFilter(f.key)}
-            style={{ padding: '7px 13px', background: filter === f.key ? 'rgba(180,79,255,.12)' : 'transparent', border: `1px solid ${filter === f.key ? 'rgba(180,79,255,.4)' : C.border}`, borderRadius: 999, color: filter === f.key ? C.violetLt : C.textDim, fontFamily: 'DM Sans', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>{f.label}</button>
+            style={{ padding: '7px 13px', background: filter === f.key ? C.activeFill : 'transparent', border: 0, borderRadius: 999, color: filter === f.key ? C.violetLt : C.textDim, fontFamily: 'DM Sans', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>{f.label}</button>
         ))}
       </VgCard>
 
       {notes === null ? (
         <VgCard style={{ textAlign: 'center', color: C.textMuted, padding: 36 }}>Loading…</VgCard>
       ) : list.length === 0 ? (
-        <EmptyState icon="sticky_note_2" title="No notes yet" body="Add the first watchlist note above. Notes are shared across the whole Vanguard so everyone sees the same context on a user or tournament." />
+        <EmptyState icon="sticky_note_2" title="No notes yet" body="Add the first watchlist note above. Notes are shared across the whole Vanguard so everyone sees the same context on a user or stream." />
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {list.map((n) => {
-            const subj = NOTE_SUBJECTS.find((s) => s.key === n.subjectType) || NOTE_SUBJECTS[3];
+            const subj = NOTE_SUBJECTS.find((s) => s.key === n.subjectType) || NOTE_SUBJECTS[NOTE_SUBJECTS.length - 1];
             const mine = n.authorId === profile?.uid;
             return (
               <VgCard key={n.id} style={{ padding: '12px 14px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '2px 8px', background: 'rgba(180,79,255,.1)', borderRadius: 5, fontFamily: 'DM Sans', fontSize: 11, fontWeight: 700, color: C.violetLt }}><Icon name={subj.icon} size={12} />{subj.label}</span>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '2px 8px', background: C.activeFill, borderRadius: 5, fontFamily: 'DM Sans', fontSize: 11, fontWeight: 700, color: C.violetLt }}><Icon name={subj.icon} size={12} />{subj.label}</span>
                   {n.subjectLabel && <span style={{ fontFamily: 'DM Sans', fontSize: 12.5, fontWeight: 700, color: C.text }}>{n.subjectLabel}</span>}
                   <span style={{ marginLeft: 'auto', fontFamily: 'DM Mono', fontSize: 10, color: C.textMuted }}>{rankTag(n.authorRank)} · {fmtAgo(n.createdAt)}</span>
                 </div>
@@ -467,7 +380,6 @@ export function VanguardNotesScreen() {
 // ─── Escalations (vanguard_escalations) ──────────────────────────────────────
 const ESC_CASE_TYPES = [
   { key: 'report', label: 'User report' },
-  { key: 'tournament', label: 'Tournament dispute' },
   { key: 'stream', label: 'Stream incident' },
   { key: 'appeal', label: 'Appeal / overturn' },
   { key: 'other', label: 'Other' },
@@ -552,8 +464,8 @@ export function VanguardEscalationsScreen() {
               {ESC_CASE_TYPES.map((t) => <option key={t.key} value={t.key} style={{ background: C.card2 }}>{t.label}</option>)}
             </select>
           </VgField>
-          <VgField label="Reference (case code, tournament ID, username — optional)">
-            <input value={caseRef} onChange={(e) => setCaseRef(e.target.value)} placeholder="e.g. tournament ID or @user" style={inputStyle} />
+          <VgField label="Reference (case code or username, optional)">
+            <input value={caseRef} onChange={(e) => setCaseRef(e.target.value)} placeholder="e.g. case code or @user" style={inputStyle} />
           </VgField>
           <VgField label="Escalate to">
             <select value={toRank} onChange={(e) => setToRank(e.target.value)} style={inputStyle}>
@@ -583,7 +495,7 @@ export function VanguardEscalationsScreen() {
             return (
               <VgCard key={esc.id} style={{ padding: '12px 14px', opacity: resolved ? 0.72 : 1 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
-                  <span style={{ padding: '2px 8px', background: resolved ? 'rgba(110,231,183,.12)' : 'rgba(245,200,66,.14)', borderRadius: 5, fontFamily: 'DM Mono', fontSize: 10, fontWeight: 700, color: resolved ? C.success : C.gold, textTransform: 'uppercase', letterSpacing: '.08em' }}>{resolved ? 'Resolved' : 'Open'}</span>
+                  <span style={{ padding: '2px 8px', background: resolved ? C.successFill : C.goldFill, borderRadius: 5, fontFamily: 'DM Mono', fontSize: 10, fontWeight: 700, color: resolved ? C.success : C.gold, textTransform: 'uppercase', letterSpacing: '.08em' }}>{resolved ? 'Resolved' : 'Open'}</span>
                   <span style={{ fontFamily: 'DM Sans', fontSize: 12.5, fontWeight: 700, color: C.text }}>{ct}</span>
                   {esc.caseRef && <span style={{ fontFamily: 'DM Mono', fontSize: 11, color: C.textDim }}>· {esc.caseRef}</span>}
                   <span style={{ marginLeft: 'auto', fontFamily: 'DM Mono', fontSize: 10, color: C.textMuted }}>→ {rankTag(esc.toRank)} · {fmtAgo(esc.createdAt)}</span>
@@ -676,7 +588,7 @@ export function VanguardAnnouncementsScreen() {
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {list.map((a) => (
-            <VgCard key={a.id} style={{ borderColor: a.pinned ? 'rgba(180,79,255,.4)' : C.border }}>
+            <VgCard key={a.id} style={{ borderColor: C.card }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                 {a.pinned && <Icon name="push_pin" size={15} style={{ color: C.violetLt }} />}
                 <div style={{ fontFamily: 'Syne', fontWeight: 800, fontSize: 16, color: C.text, flex: 1 }}>{a.title}</div>
@@ -791,7 +703,7 @@ export function VanguardLibraryScreen() {
                 </div>
                 {p.tags && p.tags.length > 0 && (
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
-                    {p.tags.map((t, i) => <span key={i} style={{ padding: '2px 8px', background: 'rgba(180,79,255,.1)', borderRadius: 5, fontFamily: 'DM Mono', fontSize: 10, color: C.violetLt }}>{t}</span>)}
+                    {p.tags.map((t, i) => <span key={i} style={{ padding: '2px 8px', background: C.activeFill, borderRadius: 5, fontFamily: 'DM Mono', fontSize: 10, color: C.violetLt }}>{t}</span>)}
                   </div>
                 )}
                 {(mine || canManageAll) && (
@@ -823,9 +735,9 @@ export function VanguardChatScreen() {
     <VanguardLayout page="chat">
       <VanguardPageHeader title="Vanguard Chat" subtitle="Secure squad communication for active Vanguard members." />
 
-      <VgCard style={{ marginBottom: 14, background: `linear-gradient(135deg, ${C.card}, rgba(180,79,255,.06))` }}>
+      <VgCard style={{ marginBottom: 14 }}>
         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-          <div style={{ width: 48, height: 48, borderRadius: 12, background: 'rgba(180,79,255,.15)', color: C.violetLt, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          <div style={{ width: 48, height: 48, borderRadius: 12, background: C.activeFill, color: C.violetLt, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
             <Icon name="security" size={26} />
           </div>
           <div style={{ flex: 1 }}>
@@ -843,7 +755,7 @@ export function VanguardChatScreen() {
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {pins.map((a) => (
-            <VgCard key={a.id} style={{ borderColor: 'rgba(180,79,255,.4)' }}>
+            <VgCard key={a.id} style={{ border: 0, borderLeft: `3px solid ${C.violetLt}` }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
                 <Icon name="push_pin" size={15} style={{ color: C.violetLt }} />
                 <div style={{ fontFamily: 'Syne', fontWeight: 800, fontSize: 15, color: C.text, flex: 1 }}>{a.title}</div>
@@ -856,7 +768,7 @@ export function VanguardChatScreen() {
       )}
 
       <div style={{ textAlign: 'center', marginTop: 16 }}>
-        <button onClick={() => navigate('/messages')} style={{ padding: '10px 22px', background: C.violet, border: 0, borderRadius: 8, color: C.text, fontFamily: 'DM Sans', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Open Messages →</button>
+        <button onClick={() => openInVergr('/messages')} style={{ padding: '10px 22px', background: C.violet, border: 0, borderRadius: 8, color: C.text, fontFamily: 'DM Sans', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Open Messages on vergr.app</button>
       </div>
     </VanguardLayout>
   );
@@ -946,13 +858,18 @@ export function VanguardLookupUserScreen() {
               <KV k="Role" v={selected.role || 'user'} />
               <KV k="Plan" v={resolveTier(selected)} />
               <KV k="Followers" v={fmt(selected.followerCount || 0)} />
-              <KV k="Status" v={selected.banned ? 'Banned' : selected.suspended ? 'Suspended' : selected.muted ? 'Muted' : 'Active'} />
+              {/* The mute lives on mutedUntil; `muted` was never written, so a muted user read Active. */}
+              <KV k="Status" v={selected.banned ? 'Banned' : tsMs(selected.mutedUntil) > Date.now() ? `Muted until ${new Date(tsMs(selected.mutedUntil)).toLocaleString()}` : 'Active'} />
             </div>
             <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <VgButton small onClick={() => navigate(`/user/${selected.id || selected.uid || selected.username}`)}>View profile</VgButton>
+              <VgButton small onClick={() => openInVergr(`/user/${selected.id || selected.uid || selected.username}`)}>View profile on vergr.app</VgButton>
               <VgButton small kind="ghost" onClick={() => navigate('/vanguard/notes')}>Add a note</VgButton>
             </div>
           </VgCard>
+
+          <div style={{ marginBottom: 12 }}>
+            <AccountActions uid={selected.id || selected.uid} name={selected.displayName || selected.username} />
+          </div>
 
           <div style={{ marginBottom: 8, fontFamily: 'DM Mono', fontSize: 10, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '.14em' }}>Vanguard notes on this user · {notes.length}</div>
           {notes.length === 0 ? (
@@ -991,110 +908,6 @@ export function VanguardLookupUserScreen() {
   );
 }
 
-// Tournament Lookup ─────────────────────────────────────────────────────────────
-export function VanguardLookupTournamentScreen() {
-  const navigate = useNavigate();
-  const [term, setTerm] = useState('');
-  const [results, setResults] = useState(null);
-  const [selected, setSelected] = useState(null);
-  const [matches, setMatches] = useState(null);
-  const [busy, setBusy] = useState(false);
-
-  const open = async (id) => {
-    setBusy(true); setResults(null);
-    try {
-      const t = await getTournament(id).catch(() => null);
-      if (!t) { setBusy(false); setSelected(null); setResults([]); return; }
-      setSelected(t);
-      setMatches(null);
-      getTournamentMatches(id).then((m) => setMatches(m || [])).catch(() => setMatches([]));
-    } catch { setSelected(null); }
-    setBusy(false);
-  };
-  const run = async () => {
-    const qy = term.trim();
-    if (!qy) return;
-    setBusy(true); setSelected(null); setMatches(null); setResults(null);
-    // ID-shaped input → open directly.
-    if (qy.length >= 16 && !qy.includes(' ')) {
-      const direct = await getTournament(qy).catch(() => null);
-      if (direct) { setBusy(false); return open(qy); }
-    }
-    // Otherwise name/game search across ALL tournaments (public + private).
-    try {
-      const hits = await searchTournamentsForMod(qy, 30).catch(() => []);
-      if (hits.length === 1) { setBusy(false); return open(hits[0].id); }
-      setResults(hits);
-    } catch { setResults([]); }
-    setBusy(false);
-  };
-
-  return (
-    <VanguardLayout page="lookup-tour">
-      <VanguardPageHeader title="Tournament Lookup" subtitle="Search any tournament by name or game (public and private). A tournament ID also works." />
-      <SearchBar value={term} onChange={setTerm} onRun={run} busy={busy} placeholder="Event name, game, or tournament ID…" />
-
-      {selected ? (
-        <div>
-          <VgCard style={{ marginBottom: 12 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-              <div style={{ fontFamily: 'Syne', fontWeight: 800, fontSize: 18, color: C.text, flex: 1 }}>{selected.name}</div>
-              <VgButton small kind="ghost" onClick={() => { setSelected(null); setMatches(null); }}>Back</VgButton>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8 }}>
-              <KV k="Tournament ID" v={selected.id} />
-              <KV k="Game" v={selected.game} />
-              <KV k="Status" v={selected.status} />
-              <KV k="Format" v={selected.bracketType || selected.format} />
-              <KV k="Players" v={`${(selected.participants || []).length}/${selected.maxParticipants || '—'}`} />
-              <KV k="Prize / purse" v={`${fmt(selected.prizePool || selected.declaredPurse || 0)}c`} />
-              <KV k="Visibility" v={selected.visibility} />
-              <KV k="Starts" v={fmtDate(selected.scheduledStart || selected.startDate)} />
-            </div>
-            <div style={{ marginTop: 12 }}>
-              <VgButton small onClick={() => navigate(`/match/${selected.id}`)}>Open tournament page</VgButton>
-            </div>
-          </VgCard>
-
-          <div style={{ marginBottom: 8, fontFamily: 'DM Mono', fontSize: 10, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '.14em' }}>Matches · {matches === null ? '…' : matches.length}</div>
-          {matches === null ? (
-            <VgCard style={{ textAlign: 'center', color: C.textMuted, padding: 24 }}>Loading…</VgCard>
-          ) : matches.length === 0 ? (
-            <EmptyState icon="account_tree" title="No matches yet" body="The bracket hasn't generated matches, or none are recorded for this tournament." />
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {matches.map((m) => (
-                <VgCard key={m.id} style={{ padding: '9px 12px', display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <span style={{ fontFamily: 'DM Mono', fontSize: 10, color: C.textMuted, minWidth: 60 }}>R{m.round || '?'}·M{m.matchNumber || '?'}</span>
-                  <span style={{ flex: 1, fontFamily: 'DM Sans', fontSize: 12.5, color: C.text }}>{m.player1Data?.username || '—'} vs {m.player2Data?.username || '—'}</span>
-                  <span style={{ fontFamily: 'DM Mono', fontSize: 10.5, color: m.winner ? C.success : C.textDim }}>{m.winner ? 'decided' : (m.status || 'pending')}</span>
-                </VgCard>
-              ))}
-            </div>
-          )}
-        </div>
-      ) : results === null ? (
-        busy ? <VgCard style={{ textAlign: 'center', color: C.textMuted, padding: 36 }}>Searching…</VgCard>
-        : <EmptyState icon="emoji_events" title="Find a tournament" body="Type an event name or game to search every tournament (public and private). You normally reach a case from the Queue, Schedule or My Cases tabs, where it's already linked." />
-      ) : results.length === 0 ? (
-        <EmptyState icon="search_off" title="No tournaments found" body="No event matched that name or game. Check the spelling, or open it from the Queue / My Cases tab where it's linked directly." />
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {results.map((t) => (
-            <VgCard key={t.id} style={{ padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }} onClick={() => open(t.id)}>
-              <Icon name="emoji_events" size={20} style={{ color: C.violetLt }} />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontFamily: 'DM Sans', fontSize: 13.5, fontWeight: 700, color: C.text }}>{t.name}</div>
-                <div style={{ fontFamily: 'DM Mono', fontSize: 11, color: C.textDim }}>{t.game} · {t.status}</div>
-              </div>
-              <Icon name="chevron_right" size={18} style={{ color: C.textMuted }} />
-            </VgCard>
-          ))}
-        </div>
-      )}
-    </VanguardLayout>
-  );
-}
 
 // Action Lookup ─────────────────────────────────────────────────────────────────
 export function VanguardLookupActionScreen() {
@@ -1130,12 +943,12 @@ export function VanguardLookupActionScreen() {
         <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
           {[{ k: 'mine', l: 'My actions' }, { k: 'all', l: 'All Vanguard' }].map((s) => (
             <button key={s.k} onClick={() => setScope(s.k)}
-              style={{ padding: '7px 14px', background: scope === s.k ? 'rgba(180,79,255,.12)' : 'transparent', border: `1px solid ${scope === s.k ? 'rgba(180,79,255,.4)' : C.border}`, borderRadius: 999, color: scope === s.k ? C.violetLt : C.textDim, fontFamily: 'DM Sans', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>{s.l}</button>
+              style={{ padding: '7px 14px', background: scope === s.k ? C.activeFill : 'transparent', border: 0, borderRadius: 999, color: scope === s.k ? C.violetLt : C.textDim, fontFamily: 'DM Sans', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>{s.l}</button>
           ))}
         </div>
       )}
       {!canReadAll && (
-        <div style={{ marginBottom: 12, padding: 10, background: 'rgba(245,200,66,.05)', border: `1px solid rgba(245,200,66,.2)`, borderRadius: 8, fontFamily: 'DM Sans', fontSize: 12, color: C.gold }}>
+        <div style={{ marginBottom: 12, padding: 10, background: C.goldFill, border: 0, borderRadius: 8, fontFamily: 'DM Sans', fontSize: 12, color: C.gold }}>
           <Icon name="info" size={14} style={{ verticalAlign: 'middle', marginRight: 6 }} />
           You can search your own audit trail. The full cross-Vanguard log unlocks at Commander.
         </div>
@@ -1152,7 +965,7 @@ export function VanguardLookupActionScreen() {
           {list.map((a) => (
             <VgCard key={a.id} style={{ padding: '10px 12px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                <span style={{ padding: '2px 8px', background: 'rgba(180,79,255,.1)', borderRadius: 5, fontFamily: 'DM Mono', fontSize: 10.5, fontWeight: 700, color: C.violetLt }}>{(a.action || 'action').replace(/_/g, ' ')}</span>
+                <span style={{ padding: '2px 8px', background: C.activeFill, borderRadius: 5, fontFamily: 'DM Mono', fontSize: 10.5, fontWeight: 700, color: C.violetLt }}>{(a.action || 'action').replace(/_/g, ' ')}</span>
                 {a.targetType && <span style={{ fontFamily: 'DM Sans', fontSize: 12, color: C.textDim }}>{a.targetType}{a.targetId ? ` · ${a.targetId}` : ''}</span>}
                 <span style={{ marginLeft: 'auto', fontFamily: 'DM Mono', fontSize: 10, color: C.textMuted }}>{rankTag(a.rank)} · {fmtAgo(a.takenAt)}</span>
               </div>

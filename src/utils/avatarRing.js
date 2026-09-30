@@ -72,13 +72,12 @@ export const RING = {
  * @param {boolean} [s.masked]        a Vanguard persona shows nothing personal
  * @returns {'live'|'status'|'orbit'|null}
  */
-export function avatarRing({ live = false, unseenStatus = false, orbit = false, masked = false } = {}) {
-  // A masked persona reveals no identity, so it gets no accent — but it can
-  // still be live, which is a fact about the broadcast and not about who they
-  // are. Live therefore survives the mask; the orbit does not.
-  if (live) return RING.LIVE;
-  if (masked) return RING.NONE;
-  if (unseenStatus) return RING.STATUS;
-  if (orbit) return RING.ORBIT;
-  return RING.NONE;
+export function avatarRing({ live = false } = {}) {
+  // ⚠⚠ SUPERSEDED 2026-09-14 (founder): "The only ring that should be visible
+  // is the live ring with the pill", and the orbit and the unseen-status ring
+  // were removed with it. Everything above this function describes the old
+  // three-way priority and is kept as history. LIVE is now the only answer, and
+  // it still survives a Vanguard mask: being live is a fact about the broadcast,
+  // not about who is broadcasting.
+  return live ? RING.LIVE : RING.NONE;
 }

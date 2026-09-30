@@ -227,14 +227,27 @@ export function playPriceFor(coins, countryCode, {
  *
  * ## The pricing rule the catalogue follows
  *
- *   priceUSD = charmRound( max( 2 x coinEquivalent, MIN_STORE_PRICE_USD ) )
+ *   priceUSD = charmRound( max( coins x RETAIL_COIN_USD, MIN_STORE_PRICE_USD ) )
+ *   RETAIL_COIN_USD = $0.99 / 78 = the coin ladder's WORST per-coin rate
  *
- * where coinEquivalent = coins x TARGET_NET_USD_PER_COIN / (1 - fee).
+ * ⚠⚠ THAT IS THE SHIPPED RULE. THIS COMMENT PREVIOUSLY DOCUMENTED A DIFFERENT,
+ * REJECTED ONE — max(2 x coinEquivalent, floor), coinEquivalent anchored on
+ * TARGET_NET_USD_PER_COIN — and it did NOT describe the catalogue. Checked item
+ * by item on 2026-09-11: it overprices 14 of the 16, putting vpb_flash at $2.09
+ * against the shipped $0.99. That was the SECOND wrong pricing and it was
+ * rejected because $2.09 is DEARER than the 78-coin pack which buys the same
+ * item outright with change. Do not re-derive any price from it.
  *
- * Paying with coins is therefore always about half the price of paying cash.
- * That is deliberate: it is what keeps coins worth holding and stops the cash
- * price cannibalising the coin economy. The floor is Google's US minimum, which
- * only binds on the two 25-coin items.
+ * The anchor is what a buyer ACTUALLY PAYS for a coin at retail, never what a
+ * coin NETS after Google's cut. functions/payram.js uses the identical number as
+ * CUSTOM_COIN_PRICE_USD so a custom amount cannot undercut a pack.
+ *
+ * Paying with coins is therefore usually cheaper than paying cash, deliberately:
+ * it keeps coins worth holding and stops the cash price cannibalising the coin
+ * economy. The floor is Google's US minimum and binds on everything under 78
+ * coins, which is why five items sit at $0.99 in cash.
+ *
+ * Enforced, with 239 assertions, by scripts/coin-ladder-check.mjs.
  *
  * Same shape as playSubPriceFor: gross up for the store fee, and for the VAT
  * Google collects and remits before paying us in tax-inclusive markets.
@@ -262,3 +275,155 @@ export function playNetPerCoin(priceUSD, coins, countryCode, opts) {
   if (!coins) return 0;
   return playNetFor(priceUSD, countryCode, opts) / coins;
 }
+
+// ─────────────────────────────────────────────────────────────────────
+// HUAWEI APPGALLERY
+// ─────────────────────────────────────────────────────────────────────
+//
+// Same arithmetic as Play, a different cut. Everything above already takes
+// `{ fee }` as an option, so this section is thin wrappers rather than a second
+// copy of the model — the tax table, charmRound and the net floor are shared,
+// and there is no second place for them to drift.
+//
+// ## THE RATE IS NOT AN ASSUMPTION. IT IS QUOTED FROM THE AGREEMENT.
+//
+// HUAWEI AppGallery Connect Distribution Service Agreement for Paid Apps
+// (agrType 1005), clause 3.3, "Commission Fee Ratio charged by Huawei", row
+// "In-App purchase (subscriptions included) or Digital Content":
+//
+//   Education                                        20%  /  20%
+//   Gaming                             Mainland China 50%  /  30%  other
+//   Media and entertainment, tools, communication,
+//   books and references, photography, food and
+//   drink, travel and navigation, travel and
+//   accommodation, shopping, business, kids,
+//   finance, sports and health, lifestyle and
+//   convenience, cars, and personalized themes       30%  /  30%
+//
+// Vergr's AppGallery category is **Apps / Social / Community**, which is
+// neither Education nor Gaming, so the applicable ratio is 30%. Mainland China
+// is not a distribution market for us, so the single figure is 30% either way.
+//
+// ⚠ Being categorised as GAMING would cost nothing outside China (still 30%)
+// but 50% inside it. Do not let the category drift to Gaming.
+//
+// And the settlement formula, from the same clause:
+//
+//   settlement = (collections − Discounts − Indirect Taxes − Refunds
+//                 − Channel Deduction) × (1 − Commission Fee Ratio)
+//
+// Indirect taxes come off BEFORE the commission, which is exactly the shape
+// `playNetFor` already models as `price / (1 + vat) × (1 − fee)`. So
+// TAX_INCLUSIVE_MARKETS applies unchanged.
+//
+// ⚠ The text above is quoted from the agreement template Huawei serves at
+// version 2020063002. The Merchant Service Agreement on this account was
+// signed 2026-08-04, and clause 2.4 lets Huawei change the commission on 30
+// days' notice. Re-read the signed copy in AppGallery Connect before treating
+// 30% as current, and change ONLY the constant below.
+
+/** Huawei's cut of an IAP sale, taken on the ex-tax price. Agreement cl. 3.3. */
+export const HUAWEI_SERVICE_FEE = 0.30;
+
+/**
+ * Minimum Settlement Amount, agreement clause 3.4: outside mainland China,
+ * **EUR 200**. Below it Huawei rolls the balance to the next period, and if it
+ * has not been reached for six consecutive months they settle every six months.
+ *
+ * Recorded here because it is a real operational fact about AppGallery revenue,
+ * not a pricing input: early Huawei earnings will accrue rather than arrive.
+ */
+export const HUAWEI_MIN_SETTLEMENT_EUR = 200;
+
+/** Coin-pack price for AppGallery, holding the same net floor per coin. */
+export function huaweiPriceFor(coins, countryCode, opts = {}) {
+  return playPriceFor(coins, countryCode, { fee: HUAWEI_SERVICE_FEE, ...opts });
+}
+
+/** Boost / VP-bonus price for AppGallery, anchored on the item's own priceUSD. */
+export function huaweiItemPriceFor(priceUSD, countryCode, opts = {}) {
+  return playItemPriceFor(priceUSD, countryCode, { fee: HUAWEI_SERVICE_FEE, ...opts });
+}
+
+/** Subscription price for AppGallery, holding the web net. */
+export function huaweiSubPriceFor(webPriceUSD, countryCode, opts = {}) {
+  return playSubPriceFor(webPriceUSD, countryCode, { fee: HUAWEI_SERVICE_FEE, ...opts });
+}
+
+/** What we actually receive from AppGallery for a given local price. */
+export function huaweiNetFor(priceUSD, countryCode, opts = {}) {
+  return playNetFor(priceUSD, countryCode, { fee: HUAWEI_SERVICE_FEE, ...opts });
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// THE FEE LINE (founder decision, 2026-09-17)
+// ─────────────────────────────────────────────────────────────────────
+//
+// "the % extra must be shown as a fee ... if something is 0.99 on the app, they
+//  need to see that the price extra is the fee from the payment method"
+//
+// The base price of a thing is the same everywhere. What differs by channel is
+// the store's cut, which has to be recovered in the sticker price. So the
+// purchase surface shows the split instead of one inflated number.
+//
+// ⚠⚠ THE SPLIT IS DERIVED FROM THE STORE'S OWN PRICE, NEVER FROM OUR USD
+// CATALOGUE. Two reasons, and the first one is fatal to the obvious approach:
+//
+//   1. CURRENCY. The store hands back "R 264,99" while our catalogue says
+//      $9.99. Subtracting those needs an FX rate we do not have, would be
+//      wrong the moment it moved, and would put a fabricated number next to a
+//      real charge. Splitting the store's OWN figure needs no FX at all,
+//      because every component is a fraction of one amount in one currency.
+//   2. ROUNDING. charmRound moves the price to a price point, and the store
+//      rounds again to its own band. A "base" carried over from our catalogue
+//      would not add up to the total on screen.
+//
+// So: total comes from the SDK, tax and fee are fractions of it, and the
+// remainder is ours. The three parts ALWAYS sum to the total exactly, because
+// the remainder is computed by subtraction rather than independently.
+//
+// ⚠ NO STEERING. The copy that renders this must name no other payment rail,
+// quote no other price, and tell nobody it is cheaper elsewhere. It states what
+// the buyer is being charged and who gets it. That is disclosure, which is
+// allowed; pointing at a different checkout is steering, which is not — the
+// same line help/articles/playBuild.js already walks.
+
+/**
+ * Break a store price into what the buyer pays, what the store keeps and what
+ * reaches Vergr — all in the store's OWN currency.
+ *
+ * @param micros    integer price in millionths, from the SDK
+ *                  (Play `getPriceAmountMicros`, Huawei `getMicrosPrice`)
+ * @param country   ISO-2 market, for the VAT table
+ * @param fee       the store's commission on the ex-tax amount
+ *
+ * Returns integer micros so nothing is lost to float drift, plus the rates used
+ * so the UI can label them ("AppGallery fee (30%)") without recomputing.
+ *
+ * `taxMicros` is 0 in tax-EXCLUSIVE markets (US, CA and anywhere not in
+ * TAX_INCLUSIVE_MARKETS): there the tax is added at checkout on top of this
+ * price, so it is not part of the number we were handed.
+ */
+export function storePriceBreakdown(micros, country, fee) {
+  const total = Math.max(0, Math.round(Number(micros) || 0));
+  const vat = taxRateFor(country);
+  const rate = Number(fee);
+  if (!Number.isFinite(rate) || rate < 0 || rate >= 1) {
+    throw new Error(`storePriceBreakdown: bad fee ${fee}`);
+  }
+  // Tax first — the agreement (and Play) deduct it before the commission.
+  const exTax = Math.round(total / (1 + vat));
+  const taxMicros = total - exTax;
+  const feeMicros = Math.round(exTax * rate);
+  // By subtraction, so the parts cannot fail to sum to the total.
+  const netMicros = total - taxMicros - feeMicros;
+  return { totalMicros: total, taxMicros, feeMicros, netMicros, vatRate: vat, feeRate: rate };
+}
+
+/** `storePriceBreakdown` for the AppGallery build. */
+export const huaweiPriceBreakdown = (micros, country) =>
+  storePriceBreakdown(micros, country, HUAWEI_SERVICE_FEE);
+
+/** `storePriceBreakdown` for the Google Play build. */
+export const playPriceBreakdown = (micros, country) =>
+  storePriceBreakdown(micros, country, PLAY_SERVICE_FEE);

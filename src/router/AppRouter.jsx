@@ -19,15 +19,30 @@ import Toast from '../components/Toast';
 import PushToast from '../components/PushToast';
 import IncomingCallOverlay from '../components/IncomingCallOverlay';
 import VoiceSessionPill from '../components/VoiceSessionPill';
-// Admin screens are code-split into ./AdminRoutes (lazy) and excluded from the
-// native APK build entirely — see the __VERGR_NATIVE__ gate below. Do NOT
-// statically import any AdminXScreen here or it rejoins the main bundle.
+// ⚠⚠ THE ADMIN DASHBOARD IS NOT PART OF THIS APP ANY MORE (2026-09-20).
+// It lives in VERGR ADMIN, a separate desktop application: admin.html +
+// src/admin/*, built with `npm run admin:build`. It still renders the same
+// src/router/AdminRoutes.jsx, so there is ONE implementation of every admin
+// screen, but AdminApp.jsx is the only thing that imports it now.
+//
+// Founder, 2026-09-19: "the admin shouldn't be available from web anyway, it
+// should be a desktop app separate from the actual app ... so that if someone
+// with bad intent looks there will actually be nothing to find."
+//
+// Do NOT re-add a /admin route or a link to one here. The server no longer
+// trusts users/{uid}.role either: authority is a Firebase Auth custom claim on
+// an account that has no profile at all (functions/operator.js).
 import DesktopNotificationManager from '../components/DesktopNotificationManager';
 import NotificationsDrawer from '../components/NotificationsDrawer';
 import ConsentSheet from '../components/ConsentSheet';
 import TosVersionGate from '../components/TosVersionGate';
+import AgeTermsGate from '../components/AgeTermsGate';
+import BannedGate from '../components/BannedGate';
+import AppGate from '../components/AppGate';
+import ReferIntroGate from '../components/ReferIntroGate';
 import LevelUpWatcher from '../components/engagement/LevelUpWatcher';
 import GuestSignupPrompt from '../components/GuestSignupPrompt';
+import VerifyEmailPrompt from '../components/VerifyEmailPrompt';
 import AnnouncementPopup from '../components/AnnouncementPopup';
 import GuestModeBanner from '../components/GuestModeBanner';
 import { captureSignals } from '../utils/captureSignals';
@@ -53,7 +68,6 @@ import { useEffect, Suspense, lazy } from 'react';
 // so the admin chunk is tree-shaken out of the native APK build entirely.
 // __VERGR_NATIVE__ is a vite `define` (literal true/false), so on native this
 // folds to `null` and Rollup never emits AdminRoutes or its admin screens.
-const AdminRoutes = __VERGR_NATIVE__ ? null : lazy(() => import('./AdminRoutes'));
 import { checkScheduledBackup } from '../utils/chatBackup';
 
 // Vergr.me Link‑in‑Bio
@@ -312,6 +326,7 @@ const ForgotPasswordScreen = lazy(() => import('../screens/auth/ForgotPasswordSc
 const TwoFASetupScreen = lazy(() => import('../screens/auth/TwoFASetupScreen'));
 const TwoFALoginScreen = lazy(() => import('../screens/auth/TwoFALoginScreen'));
 const EmailVerificationScreen = lazy(() => import('../screens/auth/EmailVerificationScreen'));
+const UnsubscribeScreen = lazy(() => import('../screens/auth/UnsubscribeScreen'));
 const PhoneEntryScreen = lazy(() => import('../screens/auth/PhoneEntryScreen'));
 const PhoneOTPScreen = lazy(() => import('../screens/auth/PhoneOTPScreen'));
 const NewPasswordScreen = lazy(() => import('../screens/auth/NewPasswordScreen'));
@@ -399,12 +414,17 @@ const NativeClipViewerScreen = lazy(() => import('../screens/viewer/native/Nativ
 // Shorts
 const ShortsScreen = lazy(() => import('../screens/shorts/ShortsScreen'));
 const NativeShortsScreen = lazy(() => import('../screens/shorts/native/NativeShortsScreen'));
-const CreateShortScreen = lazy(() => import('../screens/create/CreateShortScreen'));
+const SoundScreen = lazy(() => import('../screens/shorts/SoundScreen'));
+const CreateClipFlow = lazy(() => import('../screens/create/CreateClipFlow'));
 const NativeCreatePostSelectorScreen = lazy(() => import('../screens/create/native/NativeCreateScreens').then((m) => ({ default: m.NativeCreatePostSelectorScreen })));
 const NativeCreateTextPostScreen = lazy(() => import('../screens/create/native/NativeCreateScreens').then((m) => ({ default: m.NativeCreateTextPostScreen })));
 const NativeCreatePhotoPostScreen = lazy(() => import('../screens/create/native/NativeCreateScreens').then((m) => ({ default: m.NativeCreatePhotoPostScreen })));
-const NativeCreateClipPostScreen = lazy(() => import('../screens/create/native/NativeCreateScreens').then((m) => ({ default: m.NativeCreateClipPostScreen })));
-const NativeCreateShortScreen = lazy(() => import('../screens/create/native/NativeCreateScreens').then((m) => ({ default: m.NativeCreateShortScreen })));
+// /create/short is the old name of the clip flow. Links and a sound's "Use this
+// sound" may still carry it, with a ?sound= that must survive the hop.
+function CreateShortRedirect() {
+  const { search } = useLocation();
+  return <Navigate to={`/create/clip${search}`} replace />;
+}
 const NativeCreateArticleScreen = lazy(() => import('../screens/create/native/NativeCreateScreens').then((m) => ({ default: m.NativeCreateArticleScreen })));
 const NativeCreateAchievementScreen = lazy(() => import('../screens/create/native/NativeCreateScreens').then((m) => ({ default: m.NativeCreateAchievementScreen })));
 const NativeCreateLFGScreen = lazy(() => import('../screens/create/native/NativeCreateScreens').then((m) => ({ default: m.NativeCreateLFGScreen })));
@@ -507,33 +527,19 @@ const NativeInviteMembersScreen = lazy(() => import('../screens/squads/native/Na
 const NativeSquadChatThreadScreen = lazy(() => import('../screens/squads/native/NativeSquadChatThreadScreen'));
 const NativeSquadStreamScreen = lazy(() => import('../screens/squads/native/NativeSquadStreamScreen'));
 const VanguardInvitationScreen = lazy(() => import('../screens/vanguard/VanguardInvitationScreen'));
-const VanguardMeScreen = lazy(() => import('../screens/vanguard/VanguardMeScreen'));
-const VanguardTodayScreen = lazy(() => import('../screens/vanguard/VanguardTodayScreen'));
-const VanguardScheduleScreen = lazy(() => import('../screens/vanguard/VanguardScheduleScreen'));
-const VanguardModerationRoomScreen = lazy(() => import('../screens/vanguard/VanguardModerationRoomScreen'));
+// The Vanguard moderation screens live in Vergr Vanguard, their own desktop app
+// (src/vanguard/, src/router/VanguardRoutes.jsx), since 2026-09-21. vergr.app
+// keeps the invitation page and a page that hands a member the app.
+const VanguardGetAppScreen = lazy(() => import('../screens/vanguard/VanguardGetAppScreen'));
+// Not imported since 2026-09-10: VanguardMeScreen (/vanguard/me only redirects), the
+// tournament-assignment screens VanguardScheduleScreen and VanguardModerationRoomScreen,
+// the My Cases and Tournament Lookup pages, ModWallScreen and VanguardReviewQueueScreen.
+// Founder: the app may have nothing to do with tournaments (Google Play policy). The
+// files stay on disk, unrouted.
 // The two tournament OBS overlays are no longer imported here: neither had a
 // Route, so they were dead weight. TournamentOverlayNeon.jsx itself stays on
 // disk because StreamerBattleOverlay imports its exported OVERLAY_CSS.
 const StreamerBattleOverlay = lazy(() => import('../screens/overlay/StreamerBattleOverlay'));
-const VanguardQueueScreen = lazy(() => import('../screens/vanguard/VanguardQueueScreen'));
-const VanguardTreasuryScreen = lazy(() => import('../screens/vanguard/VanguardTreasuryScreen'));
-const VanguardWalletScreen = lazy(() => import('../screens/vanguard/VanguardWalletScreen'));
-const VanguardRankScreen = lazy(() => import('../screens/vanguard/VanguardRankScreen'));
-const VanguardStatsScreen = lazy(() => import('../screens/vanguard/VanguardStatsScreen'));
-const VanguardRosterScreen = lazy(() => import('../screens/vanguard/VanguardRosterScreen'));
-const VanguardHandbookScreen = lazy(() => import('../screens/vanguard/VanguardHandbookScreen'));
-const VanguardPeerScreen = lazy(() => import('../screens/vanguard/VanguardPagesB').then((m) => ({ default: m.VanguardPeerScreen })));
-const VanguardLiveScreen = lazy(() => import('../screens/vanguard/VanguardPagesB').then((m) => ({ default: m.VanguardLiveScreen })));
-const VanguardPayoutsScreen = lazy(() => import('../screens/vanguard/VanguardPagesB').then((m) => ({ default: m.VanguardPayoutsScreen })));
-const VanguardMyCasesScreen = lazy(() => import('../screens/vanguard/VanguardPagesB').then((m) => ({ default: m.VanguardMyCasesScreen })));
-const VanguardNotesScreen = lazy(() => import('../screens/vanguard/VanguardPagesB').then((m) => ({ default: m.VanguardNotesScreen })));
-const VanguardEscalationsScreen = lazy(() => import('../screens/vanguard/VanguardPagesB').then((m) => ({ default: m.VanguardEscalationsScreen })));
-const VanguardAnnouncementsScreen = lazy(() => import('../screens/vanguard/VanguardPagesB').then((m) => ({ default: m.VanguardAnnouncementsScreen })));
-const VanguardLibraryScreen = lazy(() => import('../screens/vanguard/VanguardPagesB').then((m) => ({ default: m.VanguardLibraryScreen })));
-const VanguardChatScreen = lazy(() => import('../screens/vanguard/VanguardPagesB').then((m) => ({ default: m.VanguardChatScreen })));
-const VanguardLookupUserScreen = lazy(() => import('../screens/vanguard/VanguardPagesB').then((m) => ({ default: m.VanguardLookupUserScreen })));
-const VanguardLookupTournamentScreen = lazy(() => import('../screens/vanguard/VanguardPagesB').then((m) => ({ default: m.VanguardLookupTournamentScreen })));
-const VanguardLookupActionScreen = lazy(() => import('../screens/vanguard/VanguardPagesB').then((m) => ({ default: m.VanguardLookupActionScreen })));
 const InviteMembersScreen = lazy(() => import('../screens/squads/InviteMembersScreen'));
 
 // Wallet & Coins
@@ -660,10 +666,9 @@ import LiveInviteBanner from '../components/LiveInviteBanner';
 // TournamentSummonsBanner unmounted with the tournaments section. The
 // component file is kept; re-import and re-mount below to restore it.
 
-// Tournaments
-const ModWallScreen = lazy(() => import('../screens/tournaments/ModWallScreen'));
-const VanguardReviewQueueScreen = lazy(() => import('../screens/tournaments/VanguardReviewQueueScreen'));
-const HudOverlay = lazy(() => import('../screens/hud/HudOverlay'));
+// The HUD is the desktop tournament overlay window. It stays for the Windows app and
+// is compiled out of the Android bundle, the same way AdminRoutes is.
+const HudOverlay = __VERGR_NATIVE__ ? null : lazy(() => import('../screens/hud/HudOverlay'));
 const EventLandingScreen = lazy(() => import('../screens/events/EventLandingScreen'));
 const CreateEventScreen = lazy(() => import('../screens/events/CreateEventScreen'));
 
@@ -708,6 +713,7 @@ const NoSearchResultsScreen = lazy(() => import('../screens/search/NoSearchResul
 
 // Utility
 const MaintenanceScreen = lazy(() => import('../screens/utility/MaintenanceScreen'));
+const AppealScreen = lazy(() => import('../screens/moderation/AppealScreen'));
 const ForceUpdateScreen = lazy(() => import('../screens/utility/ForceUpdateScreen'));
 const NetworkErrorScreen = lazy(() => import('../screens/utility/NetworkErrorScreen'));
 const ActivityLogScreen = lazy(() => import('../screens/utility/ActivityLogScreen'));
@@ -781,12 +787,22 @@ export default function AppRouter() {
                   <ImageProtection />
                   <SignalsCapture />
                   <ConsentSheet />
+                  {/* A ban used to write a flag nothing read. This is the
+                      client half; the server disables the Auth account. */}
+                  <BannedGate />
+                  {/* Maintenance mode + paused sign-ups (Admin → App Config).
+                      Both switches were saved and read by nothing until now. */}
+                  <AppGate />
                   <TosVersionGate />
+                  <AgeTermsGate />
+                  {/* Refer & Earn, shown once to every new account after onboarding. */}
+                  <ReferIntroGate />
                   {/* Levelling up was completely silent: LevelUpCelebration was
                       built and rendered nowhere (audit A111). Mounted app-wide so
                       the moment lands whatever screen earned it. */}
                   <LevelUpWatcher />
                   <GuestSignupPrompt />
+                  <VerifyEmailPrompt />
                   <AnnouncementPopup />
                   <GuestModeBanner />
                   <NotificationsDrawer />
@@ -912,6 +928,7 @@ export default function AppRouter() {
                     <Route path="/2fa-setup" element={<TwoFASetupScreen />} />
                     <Route path="/2fa-login" element={<TwoFALoginScreen />} />
                     <Route path="/verify-email" element={<EmailVerificationScreen />} />
+                    <Route path="/unsubscribe" element={<UnsubscribeScreen />} />
                     <Route path="/phone-entry" element={<PhoneEntryScreen />} />
                     <Route path="/phone-otp" element={<PhoneOTPScreen />} />
                     <Route path="/new-password" element={<NewPasswordScreen />} />
@@ -937,6 +954,8 @@ export default function AppRouter() {
 
                     {/* Utility (public) */}
                     <Route path="/maintenance" element={<MaintenanceScreen />} />
+                    {/* Where moderation notifications point: hidden post, ended stream, mute. */}
+                    <Route path="/appeal" element={<ProtectedRoute><AppealScreen /></ProtectedRoute>} />
                     <Route path="/update-required" element={<ForceUpdateScreen />} />
                     <Route path="/offline" element={<NetworkErrorScreen />} />
 
@@ -975,7 +994,8 @@ export default function AppRouter() {
                       <Route path="/create"             element={IS_NATIVE_BUILD ? <GuestRouteGate action="create posts"><NativeCreatePostSelectorScreen /></GuestRouteGate> : <Navigate to="/" replace />} />
                       <Route path="/create/text"        element={IS_NATIVE_BUILD ? <GuestRouteGate action="create posts"><NativeCreateTextPostScreen /></GuestRouteGate> : <Navigate to="/" replace />} />
                       <Route path="/create/photo"       element={IS_NATIVE_BUILD ? <GuestRouteGate action="post photos"><NativeCreatePhotoPostScreen /></GuestRouteGate> : <Navigate to="/" replace />} />
-                      <Route path="/create/clip"        element={IS_NATIVE_BUILD ? <GuestRouteGate action="post clips"><NativeCreateClipPostScreen /></GuestRouteGate> : <Navigate to="/" replace />} />
+                      {/* ONE clip flow, web and phone: record or upload, edit, post. */}
+                      <Route path="/create/clip"        element={<GuestRouteGate action="post clips"><CreateClipFlow /></GuestRouteGate>} />
                       <Route path="/create/article"     element={IS_NATIVE_BUILD ? <GuestRouteGate action="post articles"><NativeCreateArticleScreen /></GuestRouteGate> : <Navigate to="/" replace />} />
                       <Route path="/create/lfg"         element={IS_NATIVE_BUILD ? <GuestRouteGate action="post LFG"><NativeCreateLFGScreen /></GuestRouteGate> : <Navigate to="/" replace />} />
                       <Route path="/create/tierlist"    element={IS_NATIVE_BUILD ? <GuestRouteGate action="post tier lists"><NativeCreateTierListScreen /></GuestRouteGate> : <Navigate to="/" replace />} />
@@ -985,10 +1005,11 @@ export default function AppRouter() {
 
                       {/* Shorts */}
                       <Route path="/shorts" element={IS_NATIVE_BUILD ? <NativeShortsScreen /> : <ShortsScreen />} />
-                      <Route path="/create/short" element={<GuestRouteGate action="create shorts">{IS_NATIVE_BUILD ? <NativeCreateShortScreen /> : <CreateShortScreen />}</GuestRouteGate>} />
+                      <Route path="/create/short" element={<CreateShortRedirect />} />
 
                       {/* Viewers */}
                       <Route path="/clip/:postId" element={IS_NATIVE_BUILD ? <NativeClipViewerScreen /> : <ClipViewerScreen />} />
+                      <Route path="/sound/:soundId" element={<SoundScreen />} />
 
                       {/* Profile */}
                       <Route path="/edit-profile" element={<GuestRouteGate action="edit your profile">{IS_NATIVE_BUILD ? <NativeEditProfileScreen /> : <EditProfileScreen />}</GuestRouteGate>} />
@@ -1060,15 +1081,10 @@ export default function AppRouter() {
                       <Route path="/stream/ended" element={IS_NATIVE_BUILD ? <NativeStreamEndingScreen /> : <StreamEndingScreen />} />
 
                       {/* Tournaments are retired from the product. Every route
-                          that reached a tournament screen is unregistered so
-                          nothing is navigable or crawlable. The screen files
-                          under src/screens/tournaments/ are KEPT on disk — to
-                          restore the section, re-add these routes plus the
-                          navConfig entries. Only the role-gated moderation
-                          surfaces stay mounted. */}
-                      <Route path="/vanguard/wall" element={<ModWallScreen />} />
-                      {/* Distinct path — /vanguard/queue resolves to the active moderation queue (VanguardQueueScreen) below; this is the separate review/anti-cheat queue. */}
-                      <Route path="/vanguard/review-queue" element={<VanguardReviewQueueScreen />} />
+                          that reached a tournament screen is unregistered, and on
+                          2026-09-10 that came to include the Vanguard mod wall and
+                          review queue (founder: the app may have nothing to do with
+                          tournaments). The screen files stay on disk. */}
 
                       {/* Settings */}
                       <Route path="/settings" element={IS_NATIVE_BUILD ? <NativeSettingsHubScreen /> : <SettingsScreen />} />
@@ -1107,17 +1123,14 @@ export default function AppRouter() {
 
                       <Route path="/settings/privacy-policy" element={<PrivacyPolicyScreen />} />
 
-                      {/* Admin — new sidebar-shell dashboard. Old card-grid replaced 2026-05-17.
-                          Phase 1 will replace each "SOON" screen with its redesigned mockup. */}
-                      {/* Admin UI: lazy chunk on web, EXCLUDED from the native APK
-                          (AdminRoutes is null when __VERGR_NATIVE__). */}
-                      {!IS_NATIVE_BUILD && AdminRoutes && (
-                        <Route path="/admin/*" element={<Suspense fallback={null}><AdminRoutes /></Suspense>} />
-                      )}
-                      <Route path="/hud" element={<HudOverlay />} />
+                      {/* No /admin route. The admin dashboard is the separate
+                          Vergr Admin desktop app; see the note at the top of this
+                          file. /admin now falls through to the catch-all, which is
+                          the intended behaviour: there is nothing here to find. */}
+                      {HudOverlay && <Route path="/hud" element={<HudOverlay />} />}
                       <Route path="/vanguard/invitation" element={<VanguardInvitationScreen />} />
-                      {/* Legacy redirect — /vanguard/me → /vanguard/today (new shell) */}
-                      <Route path="/vanguard/me" element={<Navigate to="/vanguard/today" replace />} />
+                      {/* Legacy /vanguard/me (old notifications link there) → the get-the-app page. */}
+                      <Route path="/vanguard/me" element={<Navigate to="/vanguard" replace />} />
 
                       {/* Search */}
                       <Route path="/search" element={IS_NATIVE_BUILD ? <NativeSearchResultsAllScreen /> : <SearchResultsAllScreen />} />
@@ -1187,31 +1200,14 @@ export default function AppRouter() {
                       <Route path="/shop/settings"     element={<ShopSettingsScreen />} />
                     </Route>
 
-                    {/* ---------- VANGUARD DASHBOARD (own layout — sidebar + topbar) ---------- */}
+                    {/* ---------- VANGUARD ----------
+                        The moderation dashboard is Vergr Vanguard, its own desktop
+                        app (2026-09-21), so it is not reachable from the web. Every
+                        other /vanguard path lands on the page that gives a member
+                        the app; a non-member is sent home from there. */}
                     <Route element={<ProtectedRoute><Outlet /></ProtectedRoute>}>
-                      <Route path="/vanguard"                  element={<Navigate to="/vanguard/today" replace />} />
-                      <Route path="/vanguard/today"            element={<VanguardTodayScreen />} />
-                      <Route path="/vanguard/schedule"         element={<VanguardScheduleScreen />} />
-                      <Route path="/vanguard/moderation-room/:assignmentId" element={<VanguardModerationRoomScreen />} />
-                      <Route path="/vanguard/queue"            element={<VanguardQueueScreen />} />
-                      <Route path="/vanguard/live"             element={<VanguardLiveScreen />} />
-                      <Route path="/vanguard/my-cases"         element={<VanguardMyCasesScreen />} />
-                      <Route path="/vanguard/notes"            element={<VanguardNotesScreen />} />
-                      <Route path="/vanguard/treasury"         element={<VanguardTreasuryScreen />} />
-                      <Route path="/vanguard/payouts"          element={<VanguardPayoutsScreen />} />
-                      <Route path="/vanguard/wallet"           element={<VanguardWalletScreen />} />
-                      <Route path="/vanguard/stats"            element={<VanguardStatsScreen />} />
-                      <Route path="/vanguard/rank"             element={<VanguardRankScreen />} />
-                      <Route path="/vanguard/peer"             element={<VanguardPeerScreen />} />
-                      <Route path="/vanguard/roster"           element={<VanguardRosterScreen />} />
-                      <Route path="/vanguard/chat"             element={<VanguardChatScreen />} />
-                      <Route path="/vanguard/escalations"      element={<VanguardEscalationsScreen />} />
-                      <Route path="/vanguard/handbook"         element={<VanguardHandbookScreen />} />
-                      <Route path="/vanguard/library"          element={<VanguardLibraryScreen />} />
-                      <Route path="/vanguard/announcements"    element={<VanguardAnnouncementsScreen />} />
-                      <Route path="/vanguard/lookup/user"      element={<VanguardLookupUserScreen />} />
-                      <Route path="/vanguard/lookup/tournament" element={<VanguardLookupTournamentScreen />} />
-                      <Route path="/vanguard/lookup/action"    element={<VanguardLookupActionScreen />} />
+                      <Route path="/vanguard"   element={<VanguardGetAppScreen />} />
+                      <Route path="/vanguard/*" element={<Navigate to="/vanguard" replace />} />
                     </Route>
 
                     {/* ---------- CREATOR STUDIO (own layout — sidebar + topbar) ---------- */}

@@ -1,3 +1,4 @@
+import { dispatchVerifyPrompt } from './emailGate';
 // chatRelay — WebSocket client for the vergr-chat live-stream chat relay.
 //
 // Connection: wss://chat.vergr.app/stream/<streamId>?token=<firebase-id-token>
@@ -90,7 +91,9 @@ export async function connectChat({
         case 'msg':
         case 'tip':    onMessage(m); break;
         case 'system': onSystem(m); break;
-        case 'reject': onReject(m); break;
+        // An unverified email may read but not speak: explain it once, here, for
+        // every chat surface, then let the screen mark the message as failed.
+        case 'reject': if (m.reason === 'verify-email') dispatchVerifyPrompt('send messages'); onReject(m); break;
         case 'hide':   onHide(m);   break;
         case 'heart':  onHeart(m);  break;
         // Effect 13. A SEPARATE verb from 'msg' on purpose: the relay runs a

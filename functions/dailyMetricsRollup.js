@@ -15,14 +15,15 @@
 //     signups: { total, free, lite, pro },
 //     subscriptions: { newLite, newPro, cancellations },
 //     tournaments: { created, totalPrizePoolCoins },
-//     revenue: {
-//       subscriptionEUR,        // newLite × 4.99 + newPro × 9.99
-//       tipPlatformFeeCoins,    // sum of platformFee from platform_commissions
-//       tournamentModCutCoins,  // sum of platform tournament transactions
-//       totalPlatformCoins,     // tipPlatformFee + tournamentModCut
-//     },
 //     rolledUpAt, source: 'cron' | 'backfill'
 //   }
+//
+// ⚠ REVENUE IS NOT ROLLED UP HERE ANY MORE (2026-09-21). The old `revenue` block
+// summed a 10% tip fee and a tournament mod cut, NEITHER OF WHICH EXISTS (tips
+// have no fee; tournaments are gone), plus subscriptions priced in EUR when the
+// charge is USD. It cost two queries a night to chart zeros. The chart now
+// reads the profit ledger (`platform_revenue_daily`, functions/platformRevenue.js),
+// which records what the business actually kept, in integer micro-USD.
 //
 // Rules — read public-but-admin-only via callable. No client write.
 // Idempotent: re-rolling a day overwrites the existing doc.
@@ -36,7 +37,37 @@ const db = getFirestore('vgrdb');
 const REGION = 'europe-west1';
 const HttpsError = functions.https.HttpsError;
 
-const PRICE_EUR = { lite: 4.99, pro: 9.99 };
+// The ledger's line kinds, grouped into what the chart shows. Every value is
+// USD (the ledger stores integer micro-USD; divided once, here).
+//   sales     what buyers paid us, including fees passed through to them
+//   fees      what the payment rails kept
+//   owed      revenue share and referral coins we now owe (a liability)
+//   released  coins spent on Vergr itself (plans, boosts): liability released
+//   net       the ledger's own running net for the day, never recomputed
+const MARGIN_FIELDS = ['net', 'sales', 'fees', 'owed', 'released'];
+const LEDGER_GROUPS = {
+  coin_sale_gross: 'sales',
+  buyer_fees_collected: 'sales',
+  processor_fee: 'fees',
+  payram_settlement_fee: 'fees',
+  payout_liability_accrued: 'owed',
+  referral_cost: 'owed',
+  platform_sink: 'released',
+};
+function marginFromLedger(snap) {
+  const out = Object.fromEntries(MARGIN_FIELDS.map((f) => [f, 0]));
+  if (!snap || !snap.exists) return out;
+  const d = snap.data() || {};
+  const usd = (micro) => (Number(micro) || 0) / 1_000_000;
+  out.net = usd(d.netMicroUsd);
+  for (const [kind, micro] of Object.entries(d.byKind || {})) {
+    // A kind added to the ledger later still counts in `net`; it just has no
+    // column until it is named here.
+    const g = LEDGER_GROUPS[kind];
+    if (g) out[g] += usd(micro);
+  }
+  return out;
+}
 
 // Format a Date as YYYY-MM-DD in UTC.
 function dayKey(d) {
@@ -108,51 +139,12 @@ async function rollupOneDay(targetDay, source = 'cron') {
     tournaments.totalPrizePoolCoins += Number(d.data().prizePool) || 0;
   });
 
-  // ── 4. Tip platform fees ──
-  const tipFeesSnap = await db.collection('platform_commissions')
-    .where('createdAt', '>=', dayStart)
-    .where('createdAt', '<',  dayEnd)
-    .limit(5000)
-    .get()
-    .catch(() => ({ docs: [] }));
-
-  let tipPlatformFeeCoins = 0;
-  tipFeesSnap.docs.forEach(d => {
-    const data = d.data();
-    if (data.type === 'tip_platform_fee') tipPlatformFeeCoins += Number(data.platformFee) || 0;
-  });
-
-  // ── 5. Tournament mod-cut platform coins (transactions where userId='__platform__') ──
-  // Indexed read on userId.
-  const modCutSnap = await db.collection('transactions')
-    .where('userId', '==', '__platform__')
-    .where('createdAt', '>=', dayStart)
-    .where('createdAt', '<',  dayEnd)
-    .limit(5000)
-    .get()
-    .catch(() => ({ docs: [] }));
-
-  let tournamentModCutCoins = 0;
-  modCutSnap.docs.forEach(d => {
-    const data = d.data();
-    if (data.type === 'tournament_mod_cut') tournamentModCutCoins += Number(data.amount) || 0;
-  });
-
-  const subscriptionEUR =
-    subscriptions.newLite * PRICE_EUR.lite +
-    subscriptions.newPro  * PRICE_EUR.pro;
-  const totalPlatformCoins = tipPlatformFeeCoins + tournamentModCutCoins;
-
+  // Steps 4 and 5 (tip fees, tournament mod cut) were deleted 2026-09-21: both
+  // revenue sources are gone, so the two queries only ever summed zeros.
   const data = {
     date: key,
     dayStartMs, dayEndMs,
     signups, subscriptions, tournaments,
-    revenue: {
-      subscriptionEUR,
-      tipPlatformFeeCoins,
-      tournamentModCutCoins,
-      totalPlatformCoins,
-    },
     source,
     rolledUpAt: FieldValue.serverTimestamp(),
   };
@@ -177,7 +169,6 @@ exports.rollupDailyMetrics = defer(
         signups: data.signups.total,
         newLite: data.subscriptions.newLite,
         newPro:  data.subscriptions.newPro,
-        platformCoins: data.revenue.totalPlatformCoins,
       }));
     } catch (err) {
       console.error('[rollupDailyMetrics] failed:', err);
@@ -217,25 +208,21 @@ exports.adminGetDashboardCharts = functions.https.onCall(
       ))));
     }
 
-    const snaps = await Promise.all(keys.map(k => db.collection('daily_metrics').doc(k).get().catch(() => null)));
+    // One read per day from each collection, admin-only, cached 5 minutes.
+    // The ledger rollup is written live by bookRevenue, so TODAY is real too.
+    const [snaps, ledger] = await Promise.all([
+      Promise.all(keys.map(k => db.collection('daily_metrics').doc(k).get().catch(() => null))),
+      Promise.all(keys.map(k => db.collection('platform_revenue_daily').doc(k).get().catch(() => null))),
+    ]);
     const points = keys.map((k, i) => {
       const s = snaps[i];
-      if (!s || !s.exists) {
-        return {
-          date: k,
-          signups: { total: 0, free: 0, lite: 0, pro: 0 },
-          subscriptions: { newLite: 0, newPro: 0, cancellations: 0 },
-          revenue: { subscriptionEUR: 0, tipPlatformFeeCoins: 0, tournamentModCutCoins: 0, totalPlatformCoins: 0 },
-          missing: true,
-        };
-      }
-      const data = s.data();
+      const data = s && s.exists ? s.data() : null;
       return {
-        date: data.date || k,
-        signups: data.signups || { total: 0, free: 0, lite: 0, pro: 0 },
-        subscriptions: data.subscriptions || { newLite: 0, newPro: 0, cancellations: 0 },
-        revenue: data.revenue || { subscriptionEUR: 0, tipPlatformFeeCoins: 0, tournamentModCutCoins: 0, totalPlatformCoins: 0 },
-        missing: false,
+        date: data?.date || k,
+        signups: data?.signups || { total: 0, free: 0, lite: 0, pro: 0 },
+        subscriptions: data?.subscriptions || { newLite: 0, newPro: 0, cancellations: 0 },
+        margin: marginFromLedger(ledger[i]),
+        missing: !data,
       };
     });
 
@@ -244,14 +231,11 @@ exports.adminGetDashboardCharts = functions.https.onCall(
       acc.signups += p.signups.total;
       acc.newLite += p.subscriptions.newLite;
       acc.newPro  += p.subscriptions.newPro;
-      acc.subscriptionEUR     += p.revenue.subscriptionEUR;
-      acc.tipPlatformFeeCoins += p.revenue.tipPlatformFeeCoins;
-      acc.tournamentModCutCoins += p.revenue.tournamentModCutCoins;
-      acc.totalPlatformCoins  += p.revenue.totalPlatformCoins;
+      for (const f of MARGIN_FIELDS) acc.margin[f] += p.margin[f];
       return acc;
     }, {
       signups: 0, newLite: 0, newPro: 0,
-      subscriptionEUR: 0, tipPlatformFeeCoins: 0, tournamentModCutCoins: 0, totalPlatformCoins: 0,
+      margin: Object.fromEntries(MARGIN_FIELDS.map((f) => [f, 0])),
     });
 
     const out = { points, totals, days: safeDays, asOf: now };
@@ -283,8 +267,7 @@ exports.adminBackfillDailyMetrics = functions.https.onCall(
         results.push({
           date: data.date,
           signups: data.signups.total,
-          coins: data.revenue.totalPlatformCoins,
-          eur: data.revenue.subscriptionEUR,
+          newPaid: data.subscriptions.newLite + data.subscriptions.newPro,
         });
       } catch (err) {
         results.push({ date: dayKey(d), error: err?.message || String(err) });

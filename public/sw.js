@@ -13,7 +13,7 @@
 // has re-encoded it: check with `awk 'length($0)>400' public/sw.js` and never
 // edit this file with a tool that rewrites its encoding.
 
-const CACHE_NAME = 'vergr-v206';
+const CACHE_NAME = 'vergr-v207';
 
 // Avatars: a dedicated, size-bounded cache so inbox + chat rows paint their
 // profile pictures instantly (and offline). Scoped to small IMAGE responses
@@ -70,18 +70,20 @@ const PRECACHE = [
   '/index.html', '/',
   // Plain-zero override for DM Mono (see index.html @font-face)
   '/fonts/dmmono-zero-v2.ttf',
-  '/backgrounds/static/bg_1.png', '/backgrounds/static/bg_2.png', '/backgrounds/static/bg_3.png',
-  '/backgrounds/static/bg_4.png', '/backgrounds/static/bg_5.png', '/backgrounds/static/bg_6.png',
-  '/backgrounds/static/bg_7.png',
-  '/backgrounds/static/bg_1_Desktop.webp', '/backgrounds/static/bg_2_Desktop.webp',
-  '/backgrounds/static/bg_3_Desktop.webp', '/backgrounds/static/bg_4_Desktop.webp',
-  '/backgrounds/static/bg_5_Desktop.webp', '/backgrounds/static/bg_6_Desktop.webp',
+  // ⚠ CHAT BACKGROUNDS ARE NOT PRECACHED (2026-09-29). All 13 (~22 MB) used to
+  // download on install, for every new browser, before anyone opened a chat.
+  // Ahrefs renders pages in a fresh headless Chrome, so every crawl installed
+  // this worker and pulled all of them: ~20 GB of billed Hosting egress in a
+  // day. They now load the first time a chat shows one and are served from the
+  // device after that (DEVICE_FIRST below).
   // Notification + ringtone sounds
   '/sounds/message.mp3', '/sounds/social.mp3', '/sounds/tournament.mp3', '/sounds/default.mp3',
   // Core icons + brand chrome
   '/icons/icon-192-v2.png', '/icons/icon-512-v2.png', '/icons/badge-v.png',
   '/icons/apple-touch-icon-v2.png', '/brand/logo.png', '/brand/loader-nebula.webp',
 ];
+
+const DEVICE_FIRST = ['/backgrounds/', '/sounds/', '/sfx/', '/fonts/', '/masks/', '/mediapipe/'];
 
 // Skip waiting immediately to replace an old broken SW + precache static media.
 // Resilient: one missing file must NOT fail the whole install, so we add each
@@ -216,6 +218,27 @@ self.addEventListener('fetch', (e) => {
   // right, needs no network, and does no cloning. A miss fetches once and stores it
   // in waitUntil — off the response path, so a slow put can never hold up the page.
   if (url.pathname.startsWith('/assets/')) {
+    e.respondWith((async () => {
+      const hit = await caches.match(e.request);
+      if (hit) return hit;
+      try {
+        const fresh = await fetch(e.request);
+        if (fresh && fresh.status === 200) {
+          const copy = fresh.clone();
+          e.waitUntil(caches.open(CACHE_NAME).then((c) => c.put(e.request, copy)));
+        }
+        return fresh;
+      } catch {
+        return cacheOrOffline(e.request);
+      }
+    })());
+    return;
+  }
+
+  // Static media that never changes at the same path: served from the device
+  // once it has been fetched, so a chat background or a sound is instant and
+  // never re-downloaded. Same shape as the /assets branch above.
+  if (DEVICE_FIRST.some((p) => url.pathname.startsWith(p))) {
     e.respondWith((async () => {
       const hit = await caches.match(e.request);
       if (hit) return hit;

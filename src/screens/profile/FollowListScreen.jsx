@@ -137,7 +137,7 @@ export default function FollowListScreen() {
                 ? (isSelf ? "No fans yet. Set up membership tiers so supporters can subscribe." : "No fans yet.")
                 : safeTab === 'followers'
                   ? "No followers yet. Share your content to grow your audience!"
-                  : "Not following anyone yet. Discover creators and gamers!"}
+                  : "Not following anyone yet. Discover people to follow!"}
             </p>
             {safeTab === 'fans' && isSelf && (
               <button onClick={() => navigate('/creator/membership')} className="mt-4 px-5 py-2.5 rounded-full bg-brand-violet-light text-white text-sm font-bold">

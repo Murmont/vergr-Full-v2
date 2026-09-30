@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo, lazy, Suspense } from 'react';
 import SuggestedPeopleBlock from '../../components/boost/SuggestedPeopleBlock';
+import { isShortFormat, sharesToFeed } from '../../utils/helpers';
+import ShortsShelf from '../../components/feed/ShortsShelf';
 // How often a people-to-follow block appears in the feed. Deliberately not the
 // same number as the ad interval, so the two never land together.
 const SUGGEST_EVERY = 14;
@@ -102,6 +104,23 @@ export default function HomeFeedScreen({ initialTab, nativeFullWidth = false }) 
   const [ads, setAds] = useState([]);
   const [adsLoading, setAdsLoading] = useState(false);
   const { profile, wallet } = useUser();
+
+  // ⚠ The Gaming News tab is shown only to people who said they are into
+  // games (an interest of Gaming or Esports, or games listed in Edit Profile).
+  // Vergr is not only for gamers, and a Gaming News tab on everyone's home feed
+  // told every creator who is not a gamer that this app was not for them. It
+  // reads the profile the screen already has, so it costs nothing.
+  const showGamingNews = useMemo(() => {
+    const tags = profile?.gameTags || [];
+    return tags.includes('Gaming') || tags.includes('Esports') || (profile?.games || []).length > 0;
+  }, [profile?.gameTags, profile?.games]);
+  const visibleTabs = useMemo(
+    () => FEED_TABS.filter((t) => t !== 'Gaming News' || showGamingNews),
+    [showGamingNews],
+  );
+  useEffect(() => {
+    if (!showGamingNews && activeTab === 'Gaming News') setActiveTab('For You');
+  }, [showGamingNews, activeTab]);
   // Remote kill switch for adult content on store builds. Defaults to false
   // while it loads, so the first frame is always the conservative one.
   const nsfwPlatformOk = useNsfwPlatformFlag();
@@ -801,11 +820,23 @@ export default function HomeFeedScreen({ initialTab, nativeFullWidth = false }) 
     const elements = [];
     elements.push(<SuggestionsCarousel key="carousel-top" />);
 
+    // A clip SHARED TO FEED sits inline, as Instagram shows a reel in the home
+    // feed. A clip that is not shared goes to the Clips shelf instead, so it is
+    // still discoverable here without being in the feed. Each clip renders in
+    // exactly one of the two, never both (utils/helpers.js sharesToFeed).
+    const shortForm = feedItems.filter((it) => !it.isAd && !sharesToFeed(it));
+    const longForm = feedItems.filter((it) => it.isAd || sharesToFeed(it));
+    void isShortFormat;
+    // A few posts down, the way YouTube places it: at the very top it competes
+    // with the suggestions carousel already sitting above.
+    const SHELF_AFTER = 3;
+
     // Track real-post index separately so PropellerAds slots are spaced
      // by *content posts seen*, not by mixed (post + user-ad) positions.
     let postsSinceAd = 0;
     let postsSinceSuggest = 0;
-    feedItems.forEach((item, index) => {
+    let realPosts = 0;
+    longForm.forEach((item, index) => {
       if (item.isAd) {
         elements.push(<AdCard key={`ad-${item.id || index}`} ad={item} />);
       } else {
@@ -817,6 +848,10 @@ export default function HomeFeedScreen({ initialTab, nativeFullWidth = false }) 
             onLikeUpdate={createLikeUpdateHandler(setForYouPosts)}
           />
         );
+        realPosts++;
+        if (realPosts === SHELF_AFTER && shortForm.length) {
+          elements.push(<ShortsShelf key="shorts-shelf" posts={shortForm} />);
+        }
         postsSinceAd++;
         if (postsSinceAd >= ADS_CONFIG.feedAdInterval) {
           elements.push(<VergrAd key={`vergrad-${index}`} zone="inpage" />);
@@ -834,12 +869,18 @@ export default function HomeFeedScreen({ initialTab, nativeFullWidth = false }) 
       }
     });
 
+    // Short feed: the loop never reached SHELF_AFTER, so the shelf would have
+    // been dropped precisely when short-form is most of what exists.
+    if (shortForm.length && !elements.some((e) => e?.key === 'shorts-shelf')) {
+      elements.push(<ShortsShelf key="shorts-shelf" posts={shortForm} />);
+    }
+
     if (elements.length <= 1) {
       elements.push(
         <div key="empty" className="text-center py-20 px-6">
           <div className="w-20 h-20 bg-surface-1 rounded-3xl flex items-center justify-center mx-auto mb-6 border border-white/[0.06]"><Icon name="dynamic_feed" size={40} className="text-text-muted/30" /></div>
           <h3 className="font-syne font-bold text-text-primary text-xl mb-2">Your feed is empty</h3>
-          <p className="text-text-muted max-w-xs mx-auto mb-6">Follow gamers and explore to see posts here.</p>
+          <p className="text-text-muted max-w-xs mx-auto mb-6">Follow people and explore to see posts here.</p>
           <button onClick={() => navigate('/explore')} className="px-6 py-2.5 rounded-full bg-brand-violet text-white font-bold text-sm">Explore</button>
         </div>
       );
@@ -853,11 +894,12 @@ export default function HomeFeedScreen({ initialTab, nativeFullWidth = false }) 
       return <FeedSkeleton count={3} />;
     }
     if (followingPosts.length === 0) {
-      return <div className="text-center py-20 px-6"><div className="w-20 h-20 bg-surface-1 rounded-3xl flex items-center justify-center mx-auto mb-6 border border-white/[0.06]"><Icon name="person_add" size={40} className="text-text-muted/30" /></div><h3 className="font-syne font-bold text-text-primary text-xl mb-2">No followed posts</h3><p className="text-text-muted max-w-xs mx-auto mb-6">Follow gamers to see their posts here.</p><button onClick={() => navigate('/explore')} className="px-6 py-2.5 rounded-full bg-brand-violet text-white font-bold text-sm">Explore</button></div>;
+      return <div className="text-center py-20 px-6"><div className="w-20 h-20 bg-surface-1 rounded-3xl flex items-center justify-center mx-auto mb-6 border border-white/[0.06]"><Icon name="person_add" size={40} className="text-text-muted/30" /></div><h3 className="font-syne font-bold text-text-primary text-xl mb-2">No followed posts</h3><p className="text-text-muted max-w-xs mx-auto mb-6">Follow people to see their posts here.</p><button onClick={() => navigate('/explore')} className="px-6 py-2.5 rounded-full bg-brand-violet text-white font-bold text-sm">Explore</button></div>;
     }
     const els = [];
     let sinceAd = 0;
-    followingPosts.forEach((post) => {
+    // A clip its creator did not share to feed belongs in Clips, not here.
+    followingPosts.filter(sharesToFeed).forEach((post) => {
       els.push(
         <PostCard
           key={post.id}
@@ -884,7 +926,7 @@ export default function HomeFeedScreen({ initialTab, nativeFullWidth = false }) 
     }
     const els = [];
     let sinceAd = 0;
-    trendingPosts.forEach((post) => {
+    trendingPosts.filter(sharesToFeed).forEach((post) => {
       els.push(
         <PostCard
           key={post.id}
@@ -916,7 +958,7 @@ export default function HomeFeedScreen({ initialTab, nativeFullWidth = false }) 
     <div className="min-h-screen pb-20 lg:pb-0">
       {isMobile && (
         <header className="sticky top-0 z-40 glass-header px-4 flex items-center justify-between" style={{ minHeight: IS_NATIVE_BUILD ? 'calc(60px + env(safe-area-inset-top, 0px))' : 'calc(52px + env(safe-area-inset-top, 0px))', paddingTop: IS_NATIVE_BUILD ? 'calc(env(safe-area-inset-top, 0px) + 8px)' : 'env(safe-area-inset-top, 0px)' }}>
-          <div className="flex items-center gap-3"><button onClick={() => window.dispatchEvent(new Event('vergr:open-nav-drawer'))} aria-label="Open menu" className="shrink-0"><CachedImg src={profile?.avatar || '/logo.png'} permanent alt="" className="w-8 h-8 rounded-full object-cover border border-white/[0.08]" /></button><h1 className="font-syne font-bold text-lg tracking-tight text-text-primary">VERGR</h1></div>
+          <div className="flex items-center gap-3"><button onClick={() => window.dispatchEvent(new Event('vergr:open-nav-drawer'))} aria-label="Open menu" className="shrink-0"><CachedImg src={profile?.avatar || '/logo.png'} permanent alt="" className="w-8 h-8 rounded-full object-cover" /></button><h1 className="font-syne font-bold text-lg tracking-tight text-text-primary">VERGR</h1></div>
           <div className="flex items-center gap-3"><CoinDisplay amount={wallet?.balance || 0} size="sm" /><button onClick={() => setNotificationsDrawerOpen(true)} className="relative"><Icon name="notifications" size={22} className="text-text-secondary" />{unreadNotifCount > 0 && <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-brand-ember text-[10px] flex items-center justify-center font-bold text-white border-2 border-bg-dark">{unreadNotifCount > 9 ? '9+' : unreadNotifCount}</span>}</button></div>
         </header>
       )}
@@ -931,12 +973,12 @@ export default function HomeFeedScreen({ initialTab, nativeFullWidth = false }) 
           <div className="max-w-[760px] mx-auto flex items-center gap-3">
             <button
               onClick={openCreate}
-              className="flex-1 flex items-center gap-3 p-3 rounded-2xl bg-white/[0.03] border border-white/[0.06] hover:bg-white/[0.05] text-left">
+              className="flex-1 flex items-center gap-3 p-3 rounded-2xl bg-[#15151F] hover:bg-[#1A1A26] text-left">
               <CachedImg
                 src={profile?.avatar || '/brand/logo.png'}
                 permanent
                 alt=""
-                className="w-9 h-9 rounded-full object-cover border border-white/[0.08] shrink-0"
+                className="w-9 h-9 rounded-full object-cover shrink-0"
               />
               <span className="flex-1 text-[13px] text-text-muted">Share something with the squad…</span>
             </button>
@@ -947,7 +989,7 @@ export default function HomeFeedScreen({ initialTab, nativeFullWidth = false }) 
             </button>
             <button
               onClick={() => setNotificationsDrawerOpen(true)}
-              className="relative w-11 h-11 rounded-2xl bg-white/[0.04] border border-white/[0.06] hover:bg-white/[0.07] flex items-center justify-center text-text-secondary"
+              className="relative w-11 h-11 rounded-2xl bg-[#15151F] hover:bg-[#1A1A26] flex items-center justify-center text-text-secondary"
               title="Notifications">
               <Icon name="notifications" size={18} />
               {unreadNotifCount > 0 && (
@@ -960,9 +1002,9 @@ export default function HomeFeedScreen({ initialTab, nativeFullWidth = false }) 
         </div>
       )}
 
-      <div className="sticky z-30 glass-header px-2" style={{ top: isDesktop ? 0 : (IS_NATIVE_BUILD ? 'calc(60px + env(safe-area-inset-top, 0px))' : 'calc(52px + env(safe-area-inset-top, 0px))'), borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+      <div className="sticky z-30 glass-header px-2" style={{ top: isDesktop ? 0 : (IS_NATIVE_BUILD ? 'calc(60px + env(safe-area-inset-top, 0px))' : 'calc(52px + env(safe-area-inset-top, 0px))') }}>
         <div className="flex items-center gap-1 overflow-x-auto no-scrollbar px-2 py-2">
-          {FEED_TABS.map((tab) => (
+          {visibleTabs.map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -991,13 +1033,13 @@ export default function HomeFeedScreen({ initialTab, nativeFullWidth = false }) 
           (utils/nsfw.js), because a topic is an interest and mixing the two
           would make "likes Gaming" start pulling NSFW through the same weight
           map the ranker uses. */}
-      <div className="sticky z-20 glass-header px-2" style={{ top: 'auto', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+      <div className="sticky z-20 glass-header px-2" style={{ top: 'auto' }}>
         <div className="flex items-center gap-1 overflow-x-auto no-scrollbar px-2 py-1.5">
           <button
             onClick={() => setActiveTopic(null)}
             className={`flex-none px-3 py-1 text-[11px] font-semibold whitespace-nowrap rounded-full transition-colors ${
               activeTopic === null
-                ? 'bg-white/[0.10] text-white'
+                ? 'bg-[#262634] text-white'
                 : 'text-text-muted hover:text-text-primary hover:bg-white/[0.04]'
             }`}
           >
@@ -1009,7 +1051,7 @@ export default function HomeFeedScreen({ initialTab, nativeFullWidth = false }) 
               onClick={() => setActiveTopic((prev) => (prev === t ? null : t))}
               className={`flex-none px-3 py-1 text-[11px] font-semibold whitespace-nowrap rounded-full transition-colors ${
                 activeTopic === t
-                  ? 'bg-white/[0.10] text-white'
+                  ? 'bg-[#262634] text-white'
                   : 'text-text-muted hover:text-text-primary hover:bg-white/[0.04]'
               }`}
             >
@@ -1062,7 +1104,7 @@ export default function HomeFeedScreen({ initialTab, nativeFullWidth = false }) 
           )}
         </div>
       )}
-      {isMobile && <button aria-label="Create post" onClick={() => setShowCreateModal(true)} style={{ bottom: 'calc(72px + env(safe-area-inset-bottom))' }} className="fixed right-4 w-14 h-14 rounded-full bg-brand-violet flex items-center justify-center z-40 shadow-lg shadow-black/40 hover:brightness-110 active:scale-95 transition-all"><Icon name="add" size={26} className="text-white" /></button>}
+      {isMobile && <button aria-label="Create post" onClick={() => setShowCreateModal(true)} style={{ bottom: 'calc(72px + var(--vg-safe-b, 0px))' }} className="fixed right-4 w-14 h-14 rounded-full bg-brand-violet flex items-center justify-center z-40 shadow-lg shadow-black/40 hover:brightness-110 active:scale-95 transition-all"><Icon name="add" size={26} className="text-white" /></button>}
       {showCreateModal && (
         <Suspense fallback={null}>
           <CreateComposer onClose={() => setShowCreateModal(false)} originRect={createOrigin} />
@@ -1096,11 +1138,13 @@ export default function HomeFeedScreen({ initialTab, nativeFullWidth = false }) 
     <div className="min-h-screen bg-bg-dark">
       <DesktopSidebar />
       <DesktopHomeShell>
-        <div className="flex-1 min-w-0 border-r border-white/[0.06]">
+        <div className="flex-1 min-w-0">
           {feedContent}
         </div>
-        <aside className="w-[300px] shrink-0 bg-[#0e0e1a] border-l border-white/[0.06] sticky top-0 h-screen overflow-y-auto no-scrollbar">
-          <HomeFeedRail />
+        {/* The rail is told which posts are already on screen, so its Clips and
+            fallback Trending cards cost no read. */}
+        <aside className="w-[300px] shrink-0 bg-[#0e0e1a] sticky top-0 h-screen overflow-y-auto no-scrollbar">
+          <HomeFeedRail posts={forYouVisible} />
         </aside>
       </DesktopHomeShell>
     </div>
@@ -1213,7 +1257,7 @@ export function HomeStoriesStrip({ onNavigate }) {
   };
 
   return (
-    <div className="px-4 py-3 border-b border-white/[0.04]">
+    <div className="px-4 py-3">
       <div className="flex items-start gap-3 overflow-x-auto no-scrollbar">
         {/* Your Story — always first */}
         <button onClick={handleSelf} className="flex flex-col items-center gap-1.5 shrink-0 w-[64px]">

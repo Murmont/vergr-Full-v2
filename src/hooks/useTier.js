@@ -1,5 +1,6 @@
 // src/hooks/useTier.js
 import { useCallback } from 'react';
+import { auth } from '../firebase/config';
 import { useUser } from '../context/UserContext';
 import { getTierConfig, checkFeatureAccess, checkFileSizeAccess, resolveTier } from '../utils/tierSystem';
 
@@ -12,13 +13,16 @@ import { getTierConfig, checkFeatureAccess, checkFileSizeAccess, resolveTier } f
  * whole app, so adding our own listener here was doubling read costs on
  * every profile/wallet update).
  */
-// Admins (founder + ops) bypass every paywall — effective tier is always 'pro'.
-const ADMIN_EMAILS = ['vergenerd@gmail.com'];
+// Staff bypass every paywall — effective tier is always 'pro'.
+//
+// ⚠ `staff` is a SERVER-ONLY field (firestore.rules lockedUserFields), which is
+// what makes it safe to trust here. It replaced a hardcoded founder email, and
+// that email was a backdoor: anyone who took the Gmail inherited it. Admin
+// POWER is a Firebase Auth custom claim on an account with no profile at all
+// (functions/operator.js); this flag is only perks.
 function isAdminProfile(profile) {
   if (!profile) return false;
-  if (profile.role === 'admin') return true;
-  const email = (profile.email || '').toLowerCase();
-  return ADMIN_EMAILS.includes(email);
+  return profile.staff === true || profile.role === 'admin';
 }
 
 export default function useTier() {

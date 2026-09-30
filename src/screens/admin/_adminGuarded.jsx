@@ -11,7 +11,7 @@ export const call = (name, data) =>
   httpsCallable(getFunctions(undefined, 'europe-west1'), name)(data).then(r => r.data);
 
 export const fmtNumber = (n) => (n ?? 0).toLocaleString();
-export const fmtMoney  = (n, cur = '€') => `${cur}${(n ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+export const fmtMoney  = (n, cur = '$') => `${cur}${(n ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 export const fmtDate   = (ms) => ms ? new Date(ms).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '—';
 export const fmtTime   = (ms) => ms ? new Date(ms).toLocaleString() : '—';
 export const fmtRelative = (ms) => {
@@ -204,4 +204,27 @@ export function Tabs({ tabs, active, onChange }) {
       ))}
     </div>
   );
+}
+
+// CSV of rows ALREADY LOADED on screen: costs no reads. Quotes every cell and
+// doubles embedded quotes, so commas, quotes and newlines in a report reason
+// cannot break a column. A leading = + - @ is prefixed with ' so a spreadsheet
+// never runs a cell as a formula (CSV injection).
+export function downloadCsv(filename, columns, rows) {
+  const cell = (v) => {
+    let s = v === null || v === undefined ? '' : String(v);
+    if (/^[=+\-@]/.test(s)) s = `'${s}`;
+    return `"${s.replace(/"/g, '""')}"`;
+  };
+  const lines = [columns.map((c) => cell(c.label)).join(',')];
+  for (const r of rows) lines.push(columns.map((c) => cell(c.get(r))).join(','));
+  const blob = new Blob([lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

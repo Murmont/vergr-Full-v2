@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useUI } from '../../context/UIContext';
 import { useAuth } from '../../context/AuthContext';
-import { createPoll } from '../../firebase/firestore';
+import { createFeedPoll } from '../../firebase/firestore';
 import Icon from '../../components/Icon';
 import { useLayout } from '../../context/LayoutContext';
 import useResponsive from '../../hooks/useResponsive';
@@ -48,7 +48,7 @@ export default function CreatePollScreen() {
     }
     setLoading(true);
     try {
-      await createPoll(currentUser.uid, {
+      await createFeedPoll(currentUser.uid, {
         question: question.trim(),
         options: options.filter(o => o.trim() !== ''),
         duration

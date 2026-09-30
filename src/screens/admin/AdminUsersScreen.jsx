@@ -10,11 +10,13 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { getFunctions, httpsCallable } from 'firebase/functions';
+import { useSearchParams } from 'react-router-dom';
 import { useUI } from '../../context/UIContext';
 import Icon from '../../components/Icon';
 import UserAvatar from '../../components/UserAvatar';
 import AdminShell, { ADMIN_COLORS as C } from './AdminShell';
 import { resolveTier } from '../../utils/tierSystem';
+import useAdminAccess from '../../hooks/useAdminAccess';
 
 const fnRegion = () => getFunctions(undefined, 'europe-west1');
 const call = (name, data) => httpsCallable(fnRegion(), name)(data).then(r => r.data);
@@ -320,6 +322,145 @@ function ActionRow({ icon, label, color = C.text, danger = false, onClick, disab
   );
 }
 
+// ─── Payout account (payout_accounts/{uid}) ─────────────────────────────
+// Until 2026-09-21 there was NO admin screen for this: the partner payee id and
+// the tax-form state, both of which gate a creator payout
+// (creatorPayouts.blockingReason), could only be set by calling a function by
+// hand, and strikes could not be seen or reversed at all. The three callables
+// (adminSetPayoutAccountState / adminRecordPayoutStrike /
+// adminReversePayoutStrike) were already deployed; this is their screen.
+const STRIKE_REASON_LABELS = {
+  moderation_upheld: 'Moderation decision upheld',
+  chargeback_rate: 'Chargeback rate above threshold',
+  fraud_review_upheld: 'Fraud review upheld',
+  payout_details_false: 'Payout details false or mismatched',
+  circumvention: 'Circumvention (RMT, off-platform, multi-accounting)',
+};
+
+function PayoutAccountPanel({ uid, account, guarded, onSaved }) {
+  const { showToast } = useUI();
+  // The three callables are operator-only (requireAdmin); a sub-admin with the
+  // Users screen sees the account but gets no buttons that would only refuse.
+  const { isFounder: canEdit } = useAdminAccess();
+  const [editing, setEditing] = useState(false);
+  const [striking, setStriking] = useState(false);
+  const [form, setForm] = useState({});
+  const [strike, setStrike] = useState({ reason: 'moderation_upheld', notes: '' });
+  const [busy, setBusy] = useState(false);
+  const a = account || {};
+  const now = Date.now();
+  const strikes = a.strikes || [];
+  const active = strikes.filter((s) => !s.reversed && (s.expiresAt || 0) > now);
+
+  const startEdit = () => {
+    setForm({
+      taxFormStatus: a.taxFormStatus || 'required',
+      taxFormType: a.taxFormType || 'W-8BEN',
+      partnerPayeeId: a.partnerPayeeId || '',
+      legalName: a.legalName || '',
+      country: a.country || '',
+    });
+    setEditing(true);
+  };
+  const run = async (fn, ok) => {
+    setBusy(true);
+    try { await guarded(fn); showToast(ok, 'success'); onSaved?.(); return true; }
+    catch { return false; }
+    finally { setBusy(false); }
+  };
+  const save = async () => {
+    const payload = { uid };
+    for (const [k, v] of Object.entries(form)) if (String(v || '').trim()) payload[k] = String(v).trim();
+    if (await run(() => call('adminSetPayoutAccountState', payload), 'Payout account saved')) setEditing(false);
+  };
+  const record = async () => {
+    if (await run(() => call('adminRecordPayoutStrike', { uid, reason: strike.reason, notes: strike.notes.trim() || null }), 'Strike recorded')) {
+      setStriking(false); setStrike({ reason: 'moderation_upheld', notes: '' });
+    }
+  };
+  const reverse = (s) => run(() => call('adminReversePayoutStrike', { uid, sourceId: s.sourceId, reason: 'Reversed in Vergr Admin' }), 'Strike reversed');
+
+  const input = { width: '100%', boxSizing: 'border-box', padding: '8px 10px', background: '#0a0a14', border: 0, borderRadius: 8, color: C.text, fontSize: 12 };
+  const btn = (primary) => ({ padding: '7px 12px', borderRadius: 8, border: 0, background: primary ? C.accent : '#2a2a3e', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' });
+
+  return (
+    <div style={{ background: C.card, borderRadius: 10, padding: 14, marginBottom: 14 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: C.textDim, textTransform: 'uppercase', letterSpacing: '0.05em', flex: 1 }}>Payout account</div>
+        {!editing && canEdit && <button type="button" style={btn(false)} onClick={startEdit}>{account ? 'Edit' : 'Set up'}</button>}
+      </div>
+      {!account && !editing && (
+        <div style={{ fontSize: 12, color: C.textDim }}>No payout account. A creator needs one before Vergr can pay them.</div>
+      )}
+      {account && !editing && (
+        <>
+          <KeyVal label="Status" value={a.frozen ? 'Frozen' : a.enrolled ? 'Enrolled' : 'Not enrolled'} />
+          <KeyVal label="Tax form" value={a.taxFormStatus ? `${a.taxFormType || ''} ${a.taxFormStatus.replace('_', ' ')}`.trim() : 'Not on file'} />
+          <KeyVal label="Payee id" value={a.partnerPayeeId || 'Not set'} />
+          {a.legalName && <KeyVal label="Legal name" value={a.legalName} />}
+          {a.country && <KeyVal label="Country" value={a.country} />}
+          <KeyVal label="Paid" value={`${fmtNumber(a.successfulPayouts)} payout${a.successfulPayouts === 1 ? '' : 's'}`} />
+        </>
+      )}
+      {editing && (
+        <div style={{ display: 'grid', gap: 8 }}>
+          <select value={form.taxFormStatus} onChange={(e) => setForm((f) => ({ ...f, taxFormStatus: e.target.value }))} style={input}>
+            <option value="required">Tax form required</option>
+            <option value="submitted">Tax form submitted</option>
+            <option value="on_file">Tax form on file</option>
+          </select>
+          <select value={form.taxFormType} onChange={(e) => setForm((f) => ({ ...f, taxFormType: e.target.value }))} style={input}>
+            <option value="W-9">W-9 (US person)</option>
+            <option value="W-8BEN">W-8BEN (individual, outside the US)</option>
+            <option value="W-8BEN-E">W-8BEN-E (entity, outside the US)</option>
+          </select>
+          <input placeholder="Payout partner payee id" value={form.partnerPayeeId} onChange={(e) => setForm((f) => ({ ...f, partnerPayeeId: e.target.value }))} style={input} />
+          <input placeholder="Legal name" value={form.legalName} onChange={(e) => setForm((f) => ({ ...f, legalName: e.target.value }))} style={input} />
+          <input placeholder="Country (ISO code, e.g. ZA)" maxLength={2} value={form.country} onChange={(e) => setForm((f) => ({ ...f, country: e.target.value.toUpperCase() }))} style={input} />
+          <div style={{ fontSize: 11, color: C.textMuted }}>Blank fields are left as they are.</div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button type="button" style={btn(false)} disabled={busy} onClick={() => setEditing(false)}>Cancel</button>
+            <button type="button" style={btn(true)} disabled={busy} onClick={save}>{busy ? 'Saving…' : 'Save'}</button>
+          </div>
+        </div>
+      )}
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '12px 0 6px' }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: C.textDim, flex: 1 }}>
+          Strikes: {active.length} active{active.length >= 3 ? ' (payouts suspended)' : ''}
+        </div>
+        {!striking && canEdit && <button type="button" style={btn(false)} onClick={() => setStriking(true)}>Record strike</button>}
+      </div>
+      {strikes.map((s) => {
+        const live = !s.reversed && (s.expiresAt || 0) > now;
+        return (
+          <div key={s.sourceId} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', fontSize: 12 }}>
+            <div style={{ flex: 1, minWidth: 0, color: live ? C.text : C.textMuted }}>
+              {STRIKE_REASON_LABELS[s.reason] || s.reason}
+              <span style={{ color: C.textMuted }}> · {fmtDate(s.at)}{s.reversed ? ' · reversed' : !live ? ' · expired' : ''}</span>
+              {s.notes && <div style={{ fontSize: 11, color: C.textMuted }}>{s.notes}</div>}
+            </div>
+            {live && canEdit && <button type="button" style={btn(false)} disabled={busy} onClick={() => reverse(s)}>Reverse</button>}
+          </div>
+        );
+      })}
+      {striking && (
+        <div style={{ display: 'grid', gap: 8, marginTop: 6 }}>
+          <select value={strike.reason} onChange={(e) => setStrike((x) => ({ ...x, reason: e.target.value }))} style={input}>
+            {Object.entries(STRIKE_REASON_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+          <input placeholder="Notes (optional)" value={strike.notes} onChange={(e) => setStrike((x) => ({ ...x, notes: e.target.value }))} style={input} />
+          <div style={{ fontSize: 11, color: C.textMuted }}>A strike slows payouts; three active strikes suspend them. Strikes expire after 180 days.</div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button type="button" style={btn(false)} disabled={busy} onClick={() => setStriking(false)}>Cancel</button>
+            <button type="button" style={{ ...btn(true), background: '#f04060' }} disabled={busy} onClick={record}>{busy ? 'Saving…' : 'Record strike'}</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function UserDrawer({ uid, onClose, onChanged }) {
   const { showToast } = useUI();
   const { guarded, overlay } = useGuardedCall();
@@ -345,7 +486,7 @@ function UserDrawer({ uid, onClose, onChanged }) {
     message: permanent
       ? 'This permanently bans the account and revokes all sessions. Reversible only by another unban.'
       : 'Choose duration and reason. Sessions will be revoked.',
-    extraField: !permanent ? { label: 'Duration (days)', type: 'number', defaultValue: '7', required: true, placeholder: '7' } : null,
+    extraField: !permanent ? { label: 'Duration (days)', type: 'number', defaultValue: String(detail?.moderationDefaults?.tempBanDays || 7), required: true, placeholder: '7' } : null,
     danger: true,
     onConfirm: async ({ reason, extra }) => {
       setPrompt(null);
@@ -382,7 +523,7 @@ function UserDrawer({ uid, onClose, onChanged }) {
   const doMute = () => setPrompt({
     title: 'Mute user',
     message: 'User cannot send chat / post messages until the mute expires.',
-    extraField: { label: 'Duration (hours)', type: 'number', defaultValue: '24', required: true, placeholder: '24' },
+    extraField: { label: 'Duration (hours)', type: 'number', defaultValue: String(detail?.moderationDefaults?.muteHours || 24), required: true, placeholder: '24' },
     danger: false,
     onConfirm: async ({ reason, extra }) => {
       setPrompt(null);
@@ -460,7 +601,8 @@ function UserDrawer({ uid, onClose, onChanged }) {
     }
   };
 
-  const isFounder = detail?.role === 'admin';
+  // role:'admin' is on no account since 2026-09-20; the owner is the staff flag.
+  const isFounder = detail?.role === 'admin' || detail?.staff === true;
   const isMuted = detail?.mutedUntil && detail.mutedUntil > Date.now();
 
   return (
@@ -538,6 +680,8 @@ function UserDrawer({ uid, onClose, onChanged }) {
               )}
               {isMuted && <KeyVal label="Muted until" value={fmtRelative(detail.mutedUntil)} />}
             </div>
+
+            <PayoutAccountPanel uid={uid} account={detail.payoutAccount} guarded={guarded} onSaved={reload} />
 
             {isFounder ? (
               <div style={{ padding: 14, background: '#f5c54215', border: '1px solid #f5c54240', borderRadius: 10, color: '#f5c542', fontSize: 12 }}>
@@ -659,7 +803,15 @@ export default function AdminUsersScreen() {
   const [nextCursor, setNextCursor] = useState(null);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState(null);
-  const [openUid, setOpenUid] = useState(null);
+  // ⚠ The Moderation Queue's 'Open user' links here as /admin/users?uid=<id>,
+  // and this screen never read the query, so it landed on the plain list and the
+  // moderator had to find the person again by hand. The drawer opens from it now.
+  const [params] = useSearchParams();
+  const [openUid, setOpenUid] = useState(() => params.get('uid'));
+  useEffect(() => {
+    const u = params.get('uid');
+    if (u) setOpenUid(u);
+  }, [params]);
   const searchDebounceRef = useRef(null);
   // Bumped on every filter change so a page that is already in flight cannot
   // append its rows onto a list that has since been reset.

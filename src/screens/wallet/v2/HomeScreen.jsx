@@ -18,7 +18,7 @@ import { useWalletUnlock } from '../../../context/WalletUnlockContext';
 import {
   WalletCard, WalletButton, SectionLabel, Pill, Callout,
   CoinGlyph, VPGlyph, AnimatedNumber, StatusPill,
-  WALLET_TOKENS, fmtNum, fmtEUR, fmtUsd, txUnit,
+  WALLET_TOKENS, fmtNum, fmtEUR, fmtUsd, txAmount,
 } from '../../../components/wallet/primitives';
 import Icon from '../../../components/Icon';
 import MyBoosts from '../../../components/wallet/MyBoosts';
@@ -50,6 +50,9 @@ export default function HomeScreen() {
   }, [profile?.uid]);
 
   const coins = wallet?.balance || 0;
+  // Boost coins: the monthly plan bonus, sale bonuses, ad rewards and some
+  // hype trains pay them. They buy boosts and VP packs only, never tips.
+  const boostCoins = Math.max(0, Math.floor(Number(wallet?.boostCoins) || 0));
 
   // A balance served from the on-device cache is not a balance we can vouch
   // for. With persistentLocalCache on, a stalled connection does not error, it
@@ -124,6 +127,11 @@ export default function HomeScreen() {
             value={coins}
             valueColor={WALLET_TOKENS.goldLight}
             fiat={fmtUsd(coins * COIN_VALUE_USD)}
+            below={boostCoins > 0 ? (
+              <div style={{ marginTop: 6, fontSize: 12, color: WALLET_TOKENS.textMuted }}>
+                + <span className="font-dmmono tabular-nums" style={{ color: WALLET_TOKENS.goldLight, fontWeight: 700 }}>{fmtNum(boostCoins)}</span> boost coins, for boosts and VP packs
+              </div>
+            ) : null}
             actions={
               <>
                 <WalletButton size="sm" variant="primary" onClick={() => navigate('/wallet/buy')}>Buy</WalletButton>
@@ -394,9 +402,8 @@ function TxRow({ tx }) {
     neutral: { bg: 'rgba(255,255,255,0.05)', fg: WALLET_TOKENS.textSecondary },
   };
   const c = colorMap[m.tone];
-  const amount = tx.amount || 0;
-  const credit = amount >= 0;
-  const currency = tx.currency || 'coins';
+  const shown = txAmount(tx);
+  const credit = shown.credit;
   const when = tx.createdAt
     ? new Date(tx.createdAt.seconds ? tx.createdAt.seconds * 1000 : tx.createdAt).toLocaleString()
     : '';
@@ -425,7 +432,7 @@ function TxRow({ tx }) {
         fontWeight: 600, fontSize: 14, textAlign: 'right',
         color: credit ? '#86EFAC' : WALLET_TOKENS.text,
       }}>
-        {credit ? '+' : ''}{fmtNum(amount)} {txUnit(currency)}
+        {shown.text}
       </div>
       {tx.status && tx.status !== 'settled' && tx.status !== 'completed'
         ? <StatusPill status={tx.status} />

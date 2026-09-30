@@ -345,7 +345,7 @@ exports.moderateNewPost = functions.firestore.onDocumentCreated(
           recipientId: creatorId,
           type: 'post_auto_hidden',
           title: 'Post hidden by AI review',
-          body: 'Your post was hidden because the AI detected a possible policy violation. A human moderator will review shortly — you can appeal in your post settings.',
+          body: 'Your post was hidden because the AI detected a possible policy violation. A moderator will review it. Only you can see it now. Open the post to appeal.',
           link: `/post/${postId}`,
           createdAt: FieldValue.serverTimestamp(),
           read: false,

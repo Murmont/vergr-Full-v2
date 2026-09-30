@@ -40,7 +40,7 @@ const ContactSubMenu = ({ isOpen, onClose, onShareVergrUser, onSharePhoneContact
       onClick={handleBackdropClick}
     >
       <div
-        className={`bg-surface-1 w-full max-w-md overflow-hidden animate-slide-up ${
+        className={`bg-surface-1 w-full max-w-md overflow-hidden animate-slide-up sheet-safe ${
           !isMobile ? 'rounded-2xl mb-8 max-w-sm' : 'rounded-t-2xl'
         }`}
       >

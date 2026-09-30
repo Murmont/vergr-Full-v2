@@ -14,14 +14,14 @@
 // functions/streaming.js + the Hetzner vergr-rtmp-auth relay.
 
 const functions = require('firebase-functions/v2');
-const { defineSecret } = require('firebase-functions/params');
+const { defineSecret, defineString } = require('firebase-functions/params');
 const { getFirestore, FieldValue, Timestamp } = require('firebase-admin/firestore');
 const axios = require('axios');
 
 const REGION = 'europe-west1';
 const db = getFirestore('vgrdb');
 
-const TWITCH_CLIENT_ID     = defineSecret('TWITCH_CLIENT_ID');
+const TWITCH_CLIENT_ID = defineString('TWITCH_CLIENT_ID');
 const TWITCH_CLIENT_SECRET = defineSecret('TWITCH_CLIENT_SECRET');
 
 // ── Twitch app access token (client-credentials), cached in app_config. ──
@@ -155,17 +155,16 @@ async function reconcile() {
 // Scheduled poll — every minute. Founder's friend going live on Twitch shows
 // on Vergr within ~60s. Cheap: 1 user query + ≤N/100 Helix calls + a couple
 // writes only on state change.
-exports.pollTwitchMirrors = functions.scheduler.onSchedule(
-  { schedule: 'every 1 minutes', region: REGION, timeZone: 'UTC', secrets: [TWITCH_CLIENT_ID, TWITCH_CLIENT_SECRET] },
-  async () => {
+// Runs inside a dispatcher cron in index.js (it was its own Cloud Scheduler
+// job, and every job past the first three is billed monthly).
+exports.pollTwitchMirrors = async function pollTwitchMirrors() {
     try {
       const r = await reconcile();
       console.log('pollTwitchMirrors', JSON.stringify(r));
     } catch (e) {
       console.error('pollTwitchMirrors error', e?.response?.data || e?.message || e);
     }
-  },
-);
+  };
 
 // ── Token refresh ──────────────────────────────────────────────────────────
 // The detection path (getAppToken) self-refreshes the APP token. This refreshes
@@ -232,17 +231,16 @@ async function refreshExpiringTokens() {
 }
 
 // Scheduled every 30 min — keeps user tokens valid well ahead of their ~4h life.
-exports.refreshTwitchMirrorTokens = functions.scheduler.onSchedule(
-  { schedule: 'every 30 minutes', region: REGION, timeZone: 'UTC', secrets: [TWITCH_CLIENT_ID, TWITCH_CLIENT_SECRET] },
-  async () => {
+// Runs inside a dispatcher cron in index.js (it was its own Cloud Scheduler
+// job, and every job past the first three is billed monthly).
+exports.refreshTwitchMirrorTokens = async function refreshTwitchMirrorTokens() {
     try {
       const r = await refreshExpiringTokens();
       console.log('refreshTwitchMirrorTokens', JSON.stringify(r));
     } catch (e) {
       console.error('refreshTwitchMirrorTokens error', e?.response?.data || e?.message || e);
     }
-  },
-);
+  };
 
 // Twitch import onboarding (14_GROWTH_MIGRATION §4.2): after linking Twitch,
 // one tap pulls the channel identity via Helix and sets the user up on Vergr:
@@ -254,7 +252,7 @@ exports.refreshTwitchMirrorTokens = functions.scheduler.onSchedule(
 //     a clip ON Vergr re-uploads their own file (user-authored-clips rule).
 // If a vergr.me page already exists it is left untouched.
 exports.twitchChannelImport = functions.https.onCall(
-  { region: REGION, secrets: [TWITCH_CLIENT_ID, TWITCH_CLIENT_SECRET] },
+  { region: REGION, secrets: [TWITCH_CLIENT_SECRET] },
   async (req) => {
     if (!req.auth) throw new functions.https.HttpsError('unauthenticated', 'Sign in required.');
     const uid = req.auth.uid;
@@ -348,7 +346,7 @@ exports.twitchChannelImport = functions.https.onCall(
 // summary can show "X on Vergr · Y on Twitch". Client-driven on purpose — no
 // cron, it only runs while a mirrored broadcast is actually up.
 exports.getTwitchMirrorViewers = functions.https.onCall(
-  { region: REGION, secrets: [TWITCH_CLIENT_ID, TWITCH_CLIENT_SECRET] },
+  { region: REGION, secrets: [TWITCH_CLIENT_SECRET] },
   async (req) => {
     if (!req.auth) throw new functions.https.HttpsError('unauthenticated', 'Sign in required.');
     const streamId = String(req.data?.streamId || '');
@@ -380,7 +378,7 @@ exports.getTwitchMirrorViewers = functions.https.onCall(
 // Manual trigger — lets the user (or founder) force an immediate sync instead
 // of waiting up to 60s for the next poll tick. Returns the reconcile summary.
 exports.syncTwitchMirrorNow = functions.https.onCall(
-  { region: REGION, secrets: [TWITCH_CLIENT_ID, TWITCH_CLIENT_SECRET] },
+  { region: REGION, secrets: [TWITCH_CLIENT_SECRET] },
   async (req) => {
     if (!req.auth) throw new functions.https.HttpsError('unauthenticated', 'Sign in required.');
     try {

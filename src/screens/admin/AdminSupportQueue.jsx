@@ -11,7 +11,7 @@
 // read state and moderation. This screen is the queue and the triage controls.
 
 import { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { openInVergr } from '../../admin/openExternal';
 import { useUI } from '../../context/UIContext';
 import Icon from '../../components/Icon';
 import UserAvatar from '../../components/UserAvatar';
@@ -26,7 +26,6 @@ const STATES = [
 
 export default function AdminSupportQueue({ channelId = null, myUid = null }) {
   const { showToast } = useUI();
-  const navigate = useNavigate();
   const guarded = useGuardedCall();
   const [state, setState] = useState('open');
   const [rows, setRows] = useState([]);
@@ -170,7 +169,7 @@ export default function AdminSupportQueue({ channelId = null, myUid = null }) {
                   {selected.state === 'closed' ? 'Closed' : (selected.waiting ? 'Waiting for a reply' : 'Answered')}
                 </div>
               </div>
-              <button onClick={() => navigate(`/profile/${selected.userId}`)} style={btn(C.border)}>
+              <button onClick={() => openInVergr(`/user/${selected.userId}`)} style={btn(C.border)}>
                 View profile
               </button>
             </div>
@@ -184,9 +183,9 @@ export default function AdminSupportQueue({ channelId = null, myUid = null }) {
             </div>
 
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <button onClick={() => navigate(`/messages/${selected.convoId}`)}
+              <button onClick={() => openInVergr(`/messages/${selected.convoId}`)}
                 style={{ ...btn(C.accent), padding: '10px 16px', fontSize: 13 }}>
-                Open and reply
+                Reply on vergr.app
               </button>
               {selected.claimedBy === myUid
                 ? <button onClick={() => act(selected, 'release')} style={btn(C.border)}>Release</button>
@@ -199,8 +198,9 @@ export default function AdminSupportQueue({ channelId = null, myUid = null }) {
             </div>
 
             <div style={{ marginTop: 12, fontSize: 11, color: C.textDim, lineHeight: 1.6 }}>
-              Replies show to the user as the channel, not as you. Your account is
-              recorded on the thread so it is always clear internally who answered.
+              Opens the thread in your browser. Reply from the Vergr account you
+              answer support with. Replies show to the user as the channel, not as
+              you, and your account is recorded on the thread internally.
             </div>
           </>
         )}

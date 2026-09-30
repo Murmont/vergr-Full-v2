@@ -134,10 +134,25 @@ export const SKIP_REENCODE_BYTES = 25 * 1024 * 1024;
 // Long-form gaming content (highlights, plays of the game, full-match recaps).
 // Resolution and bitrate only — see the note on SHORTS_LIMITS for why there is
 // no duration here.
+//
+// ⚠ THE LADDER MIRRORS THE STREAM LADDER, AND THAT IS THE POINT. Founder,
+// 2026-09-12, on free clips landing at 720p: *"no mobile can be 480p"*. Free
+// streams at 480p30 and Lite jumps to 720p as the intentional paywall lever
+// (see the locked source-upload bitrates), so a free CLIP arriving at 720p was
+// quietly handing away the thing the lever sells. Free clips now match free
+// streams.
+//
+// ⚠ 480p AT THE SAME 1.5 Mbps IS BETTER-LOOKING, NOT WORSE. The bitrate did not
+// move; the pixel count it has to cover did, by 2.25x. 1.5 Mbps across 720p is
+// thin for gaming motion, which is exactly where blocking shows.
+//
+// ⚠ THE PRO NUMBER IS THE FOUNDER'S (1080p @ 6 Mbps, 2026-09-12). THE LITE
+// BITRATE IS MINE. Lite's 720p follows the ladder, but 3 Mbps is my pick, not
+// his: it sits between the two ends and is one constant to change.
 export const CLIP_LIMITS = {
-  free: { maxShortSide: 720,  videoBitrate: 1_500_000 },
-  lite: { maxShortSide: 1080, videoBitrate: 2_500_000 },
-  pro:  { maxShortSide: 1080, videoBitrate: 3_500_000 },
+  free: { maxShortSide: 480,  videoBitrate: 1_500_000 },
+  lite: { maxShortSide: 720,  videoBitrate: 3_000_000 },
+  pro:  { maxShortSide: 1080, videoBitrate: 6_000_000 },
 };
 
 /**
@@ -185,15 +200,32 @@ export const compressVideo = async (file, tier = 'free', onProgress, kind = 'sho
   //
   // `opts.force` is how the send screen overrides this when the user has
   // deliberately picked a smaller size. Their choice always wins over ours.
+  //
+  // ⚠⚠ SMALL IS NOT THE SAME AS WITHIN THE PLAN'S RESOLUTION. A size-only skip
+  // made the tier cap a lie in BOTH directions: a 24 MiB 4K clip sailed through
+  // untouched while a 26 MiB 1080p one was crushed to the tier cap, so one extra
+  // megabyte made the RESULT WORSE. It also handed free accounts 1080p for free
+  // as long as they stayed under the line, which is the paywall lever the
+  // 480/720/1080 ladder exists to sell. So the skip now also requires the source
+  // to already be inside the plan's resolution.
+  //
+  // ⚠ AN UNREADABLE FILE STILL SKIPS. `getMediaDimensions` resolves `{}` on a
+  // codec the WebView cannot decode, and re-encoding something we could not even
+  // measure is how you burn minutes of a user's battery to produce a black
+  // video. Skipping keeps the old, safe behaviour for that case.
   if (!opts.force && !edited && file.size <= SKIP_REENCODE_BYTES) {
-    // Not re-encoding, but still worth moving the index to the front. The file
-    // is otherwise byte-identical to what the camera produced, index-at-the-end
-    // included — and that index is what a player must have before it can show a
-    // frame. Cheap structural rewrite, no quality change; a small-but-LONG video
-    // is exactly the case that suffers most without it.
-    const fs = await faststartOnly(file).catch(() => null);
-    onProgress?.(1);
-    return fs || file;
+    const dims = await getMediaDimensions(file).catch(() => ({}));
+    const shortSide = Math.min(dims?.width || 0, dims?.height || 0);
+    if (!shortSide || shortSide <= limits.maxShortSide) {
+      // Not re-encoding, but still worth moving the index to the front. The file
+      // is otherwise byte-identical to what the camera produced, index-at-the-end
+      // included — and that index is what a player must have before it can show a
+      // frame. Cheap structural rewrite, no quality change; a small-but-LONG video
+      // is exactly the case that suffers most without it.
+      const fs = await faststartOnly(file).catch(() => null);
+      onProgress?.(1);
+      return fs || file;
+    }
   }
 
   // HARDWARE PATH FIRST. The canvas encoder below is locked to playback speed,
@@ -233,6 +265,13 @@ export const compressVideo = async (file, tier = 'free', onProgress, kind = 'sho
       // ONLY when nothing was edited, though. With a cut or a mute the output is
       // the thing the user asked for; comparing sizes and handing back the
       // original would quietly undo their edit.
+      // NOTE: the output is ALREADY faststart and does not need touching here.
+      // MediaMuxer writes `moov` at the end of the file, but the Kotlin side
+      // fixes that before it ever reaches us: VideoTranscodeBridge.kt calls
+      // `MoovFaststart.apply(out)` on both transcode paths (lines 88 and 117).
+      // Do not add a `faststartOnly(hw)` call here — it would be a no-op anyway,
+      // because hardwareTranscode returns a plain File with no `_nativePath`
+      // and deletes its temp file on the way out.
       if (edited) return hw;
       return hw.size < file.size ? hw : file;
     }
@@ -324,12 +363,45 @@ export const compressVideo = async (file, tier = 'free', onProgress, kind = 'sho
       });
 
       const chunks = [];
+      // Counted in drawLoop, checked in recorder.onstop. Declared here so both
+      // closures share one counter rather than each holding a stale copy.
+      let framesDrawn = 0;
       recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
 
       recorder.onstop = () => {
         URL.revokeObjectURL(url);
         const blob = new Blob(chunks, { type: 'video/webm' });
         const name = (file.name || 'short').replace(/\.[^.]+$/, '.webm');
+
+        // ⚠⚠ THIS ENCODER CAN SILENTLY DESTROY THE CLIP, AND NOTHING USED TO
+        // CHECK. Measured end to end on the emulator 2026-09-12: a 22s 1080p
+        // source posted successfully and the file on R2 held TWO video frames
+        // across a 14.5s span — a still image with audio. It uploaded, the post
+        // published, and the user was told nothing.
+        //
+        // The cause is the draw loop: it paints canvas frames from
+        // requestAnimationFrame while the video plays, so anything that starves
+        // rAF (a slow device, thermal throttling, the app losing foreground)
+        // yields almost no frames while the recorder still emits a valid,
+        // playable, nearly-empty WebM. Bytes alone cannot catch it — a genuinely
+        // static scene also compresses tiny — so the check is the FRAME COUNT WE
+        // OURSELVES DREW, which is exact and cannot false-positive on content.
+        //
+        // Refusing is deliberate. Returning the untouched original instead would
+        // post the user's full-size file and spend storage nobody approved; a
+        // clear failure they can act on beats both a wrecked clip and a silent
+        // bill. The caller already surfaces the message.
+        const seconds = Math.max(0.001, span);
+        const fps = framesDrawn / seconds;
+        if (framesDrawn < 2 || fps < 5) {
+          reject(new Error(
+            `Could not process this video on your device: only ${framesDrawn} frame`
+            + `${framesDrawn === 1 ? '' : 's'} rendered in ${seconds.toFixed(1)}s. `
+            + 'Try a shorter clip, or keep the app in the foreground while it processes.',
+          ));
+          return;
+        }
+
         onProgress?.(1);
         resolve(new File([blob], name, { type: 'video/webm' }));
       };
@@ -373,6 +445,7 @@ export const compressVideo = async (file, tier = 'free', onProgress, kind = 'sho
           return;
         }
         ctx.drawImage(video, 0, 0, newW, newH);
+        framesDrawn += 1;     // read by the sanity check in recorder.onstop
         onProgress?.(Math.min(0.99, (video.currentTime - startT) / span));
         requestAnimationFrame(drawLoop);
       };
@@ -451,3 +524,65 @@ export const compressMedia = async (file, tier = 'free', preset = 'chat', opts =
   // worker for short clips if storage costs balloon again.
   return file;
 };
+
+// Grab a real first frame from a video File and return it as a JPEG File.
+//
+// THE GREY PLAY BUTTON. Founder, 2026-09-12: a clip in the feed showed "a grey
+// play button". That grey square is the Android WebView drawing its OWN
+// broken-media poster, because every surface that displays a clip reads
+// `post.thumbnailUrl` as the <video poster> (ShortsDeck lines 370/379, PostCard,
+// the Explore tiles) and NOTHING ever set it for an uploaded clip or short. The
+// embed branch sets it for YouTube (getThumbnailUrl), which is why links looked
+// finished and uploads did not.
+//
+// Seeks a little way in rather than to 0: the first frame of a real recording is
+// very often black or a fade, and a black cover tile looks just as broken as a
+// grey one.
+//
+// Resolves null on any failure and never throws. A missing poster must never be
+// the reason a post fails to publish.
+export const posterFromVideo = (file, { maxWidth = 720, quality = 0.72, at = 0.15 } = {}) =>
+  new Promise((resolve) => {
+    let url = null;
+    let settled = false;
+    const done = (v) => {
+      if (settled) return;
+      settled = true;
+      if (url) { try { URL.revokeObjectURL(url); } catch { /* ignore */ } }
+      resolve(v);
+    };
+    try {
+      const v = document.createElement('video');
+      v.muted = true;
+      v.playsInline = true;
+      v.preload = 'auto';
+      url = URL.createObjectURL(file);
+      // A seek that never completes would hang the post, so the whole thing is
+      // bounded and falls back to no poster.
+      const bail = setTimeout(() => done(null), 8000);
+      v.onerror = () => { clearTimeout(bail); done(null); };
+      v.onloadeddata = () => {
+        const target = Math.min(at, Math.max(0, (v.duration || 0) - 0.05));
+        const draw = () => {
+          try {
+            const w = v.videoWidth, h = v.videoHeight;
+            if (!w || !h) { clearTimeout(bail); done(null); return; }
+            const scale = w > maxWidth ? maxWidth / w : 1;
+            const c = document.createElement('canvas');
+            c.width = Math.round(w * scale);
+            c.height = Math.round(h * scale);
+            c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+            c.toBlob((blob) => {
+              clearTimeout(bail);
+              if (!blob) { done(null); return; }
+              done(new File([blob], 'poster.jpg', { type: 'image/jpeg' }));
+            }, 'image/jpeg', quality);
+          } catch { clearTimeout(bail); done(null); }
+        };
+        if (Math.abs((v.currentTime || 0) - target) < 0.01) { draw(); return; }
+        v.onseeked = draw;
+        try { v.currentTime = target; } catch { draw(); }
+      };
+      v.src = url;
+    } catch { done(null); }
+  });

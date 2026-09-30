@@ -173,7 +173,7 @@ exports.raidStream = functions.https.onCall({ region: REGION }, async (req) => {
   // SMALL ones, and it would make an inflated viewer count worth money.
   let vp = 0;
   try {
-    vp = await creditEngagementVp(uid, 'raid_sent', 1);
+    vp = await creditEngagementVp(db(), uid, 'raid_sent', 1);
   } catch (e) {
     // ⚠ A FAILED VP CREDIT MUST NOT UNDO THE RAID. The audience has already been
     // told they are moving; failing the call here would strand them.

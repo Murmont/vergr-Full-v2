@@ -19,6 +19,7 @@
 // Full design: docs/ENTRY_ANNOUNCEMENTS_SPEC.md. Palette: docs/ENTRY_BANNER_ART_SPEC.md.
 
 const functions = require('firebase-functions/v2');
+const { planOf } = require('./plan');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 
 const db = getFirestore('vgrdb');
@@ -65,8 +66,7 @@ const BURST_PER_MIN = 20;
 const JOIN_TTL_MS = 60 * 60 * 1000;
 
 const normalisePlan = (u) => {
-  const t = String(u?.subscription?.tier || u?.tier || u?.plan || 'free').toLowerCase();
-  return t === 'lite' || t === 'pro' ? t : 'free';
+  return planOf(u);
 };
 
 exports.announceStreamJoin = functions.https.onCall(

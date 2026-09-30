@@ -47,7 +47,7 @@ export default function ReactorsSheet({ reactions, activeEmoji, resolveUser, onC
           initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
           transition={{ type: 'spring', stiffness: 380, damping: 38 }}
           className="w-full sm:max-w-sm bg-surface-1 border border-white/[0.08] rounded-t-2xl sm:rounded-2xl overflow-hidden"
-          style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
+          style={{ paddingBottom: 'var(--vg-safe-b, 0px)' }}
         >
           <div className="flex items-center gap-2 px-4 pt-4 pb-2">
             <span className="text-sm font-bold text-white">Reactions</span>

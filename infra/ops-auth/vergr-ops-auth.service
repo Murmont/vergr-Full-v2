@@ -1,0 +1,18 @@
+[Unit]
+Description=VERGR ops-auth — download-ticket check for the Vergr Admin update channel (nginx auth_request)
+After=network-online.target
+
+[Service]
+ExecStart=/opt/vergr-ops-auth/vergr-ops-auth -listen 127.0.0.1:8099 -key /etc/vergr-ops-auth/key
+Restart=always
+RestartSec=3
+# Static system user; the key file is root:vergr-ops-auth 0640.
+User=vergr-ops-auth
+Group=vergr-ops-auth
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

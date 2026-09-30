@@ -114,7 +114,7 @@ const BLOCK_DESC = {
   divider: 'A line, dots or spacer',
   map: 'Show a location on a map',
   membership: 'Your paid membership tiers',
-  digital_product: 'Sell a product (digital or physical), keep 92% of every sale',
+  digital_product: 'Show a product from your Shopify store (checkout on Shopify)',
   shop_catalog: 'Link out to your Shopify/Woo store (no coin checkout)',
   socials: 'Row of social icons',
   image: 'A single image, optionally linked',
@@ -141,7 +141,7 @@ function AddBlockSheet({ isPro, onPick, onClose }) {
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" onClick={onClose}>
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-      <div className="relative w-full sm:max-w-md max-h-[80vh] overflow-y-auto bg-surface-1 border-t sm:border border-white/10 rounded-t-2xl sm:rounded-2xl p-4" onClick={(e) => e.stopPropagation()}>
+      <div className="relative w-full sm:max-w-md max-h-[80vh] overflow-y-auto bg-surface-1 border-t sm:border border-white/10 rounded-t-2xl sm:rounded-2xl p-4 sheet-safe" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-sm font-semibold">Add a block</h3>
           <button onClick={onClose} className="w-7 h-7 flex items-center justify-center rounded-full bg-surface-2"><Icon name="close" size={16} /></button>

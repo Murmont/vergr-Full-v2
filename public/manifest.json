@@ -1,7 +1,7 @@
 {
   "name": "VERGR — Play. Stream. Earn.",
   "short_name": "VERGR",
-  "description": "The gaming social platform. Compete, create, earn, and shop.",
+  "description": "The gaming social platform. Create, stream, earn, and shop.",
   "start_url": "/?source=pwa",
   "display": "standalone",
   "background_color": "#07080D",

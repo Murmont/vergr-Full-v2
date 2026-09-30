@@ -14,7 +14,7 @@ const FAQ = [
   { q: 'Can I get a refund on a coin purchase?',
     a: "Coins are delivered immediately, so purchases are non-refundable once they land. Erroneous, duplicate or unauthorised charges can be refunded: write to support@vergr.app within 30 days." },
   { q: 'I lost my PIN — what now?',
-    a: "PIN reset requires re-running KYC + a 7-day waiting period. We can't reset it from a password reset alone — that's by design, so an email compromise can't drain the wallet." },
+    a: "Write to support@vergr.app from the email on your account. A PIN is never reset by a password reset alone, so somebody who gets into your email still cannot take over your wallet." },
 ];
 
 export default function HelpScreen() {
@@ -35,10 +35,11 @@ export default function HelpScreen() {
           <WalletButton variant="primary" iconRight="arrow_forward" onClick={() => window.location.href = 'mailto:support@vergr.app'}>
             Open a ticket
           </WalletButton>
-          <WalletButton variant="secondary">Live chat</WalletButton>
+          {/* Was "Live chat", a button with no handler: there is no chat. */}
+          <WalletButton variant="secondary" onClick={() => { window.location.href = '/help'; }}>Help Center</WalletButton>
         </div>
         <div style={{ color: WALLET_TOKENS.textMuted, fontSize: 13, marginTop: 12 }}>
-          Average response under 4 hours. Faster for KYC L2+.
+          We answer at support@vergr.app.
         </div>
       </WalletCard>
 

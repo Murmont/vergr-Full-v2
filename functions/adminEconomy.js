@@ -25,6 +25,7 @@
 
 const functions = require('firebase-functions/v2');
 const { getFirestore, FieldValue, AggregateField } = require('firebase-admin/firestore');
+const { authEmailsFor } = require('./authEmails');
 const {
   requireFreshStepUp,
   adminRateLimit,
@@ -149,11 +150,21 @@ exports.adminListTopWallets = functions.https.onCall(
   }
 );
 
+// Also serves Admin → Economy → Payments through `op` (functions/paymentAdmin.js),
+// so the Payments tab needed no new Cloud Function. Runs as the appspot account
+// because the Payments actions call the Play Developer API (order lookup,
+// refunds), and that is the account Play Console authorises (see playBilling.js).
 exports.adminListTransactions = functions.https.onCall(
-  { region: REGION, cors: true },
+  { region: REGION, cors: true, serviceAccount: 'vergr-44494@appspot.gserviceaccount.com',
+    secrets: require('./receipts').RECEIPT_SECRETS },
   async (request) => {
     const uid = request.auth?.uid;
     await guardCaller(uid);
+    if (request.data?.op) {
+      return require('./paymentAdmin').handle(String(request.data.op), request, {
+        grantCurrency, authEmailsFor, requireFreshStepUp, adminRateLimit, auditAdminAction, extractRequestMeta,
+      });
+    }
     const { targetUid, type, currency, cursor, pageSize = 30 } = request.data || {};
     let q = db.collection('transactions');
     if (targetUid) q = q.where('userId', '==', targetUid);
@@ -220,6 +231,7 @@ exports.adminListPayoutRequests = functions.https.onCall(
     });
     const uids = [...new Set(rows.map(r => r.uid).filter(Boolean))];
     const users = {};
+    const emails = await authEmailsFor(uids);
     await Promise.all(uids.map(async (u) => {
       try {
         const us = await db.collection('users').doc(u).get();
@@ -227,7 +239,7 @@ exports.adminListPayoutRequests = functions.https.onCall(
           displayName: us.data().displayName || us.data().username || u.slice(0, 6),
           username: us.data().username || null,
           avatar: us.data().avatar || null,
-          email: us.data().email || null,
+          email: emails[u] || null,
         };
       } catch {}
     }));
@@ -240,7 +252,7 @@ exports.adminListPayoutRequests = functions.https.onCall(
 // WRITE — grants / deductions
 // ════════════════════════════════════════════════════════════════════
 
-async function grantCurrency({ callerUid, targetUid, amount, currency, reason, type, ip, userAgent }) {
+async function grantCurrency({ callerUid, targetUid, amount, currency, reason, type, ip, userAgent, allowNegative = false }) {
   if (!targetUid) throw new HttpsError('invalid-argument', 'targetUid required.');
   if (!Number.isFinite(amount) || amount === 0) {
     throw new HttpsError('invalid-argument', 'amount must be a non-zero number.');
@@ -263,7 +275,10 @@ async function grantCurrency({ callerUid, targetUid, amount, currency, reason, t
   await db.runTransaction(async (tx) => {
     const snap = await tx.get(walletRef);
     const cur = snap.exists ? (snap.data()[field] || 0) : 0;
-    if (cur + amount < 0) {
+    // allowNegative is ONLY passed by the Payments reversal (a refunded or
+    // charged-back purchase whose coins were already spent): the wallet goes
+    // negative and the next purchase repays it (founder, 2026-09-29).
+    if (cur + amount < 0 && !allowNegative) {
       throw new HttpsError('failed-precondition', `Insufficient ${currency}: balance would go negative.`);
     }
     const updates = {

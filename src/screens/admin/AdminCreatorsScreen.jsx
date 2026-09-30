@@ -11,12 +11,16 @@ import { useEffect, useState, useCallback } from 'react';
 import AdminShell from './AdminShell';
 import Icon from '../../components/Icon';
 import { callCreator } from '../creator/BecomeCreatorScreen';
+import AdminPayoutVerification from './AdminPayoutVerification';
 import '../../styles/surface.css';
 
 const TABS = [
   { key: 'pending',  label: 'Pending' },
   { key: 'active',   label: 'Approved' },
   { key: 'rejected', label: 'Rejected' },
+  // Level 2 / 3 document review. Its own panel (AdminPayoutVerification), same
+  // 'creators' grant, so no new admin permission is needed.
+  { key: 'verification', label: 'Payout verification' },
 ];
 
 // Hard reasons block reapplication entirely; everything else starts the 30-day
@@ -53,7 +57,7 @@ export default function AdminCreatorsScreen() {
     setLoading(false);
   }, []);
 
-  useEffect(() => { load(tab); }, [tab, load]);
+  useEffect(() => { if (tab !== 'verification') load(tab); }, [tab, load]);
 
   const decide = async (decision) => {
     if (!sel) return;
@@ -64,7 +68,9 @@ export default function AdminCreatorsScreen() {
       });
       if (decision === 'approve' && res?.converted) {
         // Worth surfacing: approving moves real money.
-        setError(`Approved. ${res.converted.coins} pending coins credited as ${res.converted.gems} gems.`);
+        // `gems` was deleted 2026-08-16; the server returns owedMicroUsd.
+        const owed = (Number(res.converted.owedMicroUsd) || 0) / 1e6;
+        setError(`Approved. ${res.converted.coins} pending coins now earn this creator $${owed.toFixed(owed > 0 && owed < 0.01 ? 4 : 2)} of revenue share.`);
       }
       setNotes('');
       await load(tab);
@@ -88,6 +94,7 @@ export default function AdminCreatorsScreen() {
         ))}
       </div>
 
+      {tab === 'verification' ? <AdminPayoutVerification /> : (<>
       {error && <div className="text-xs mb-3" style={{ color: '#F5C842' }}>{error}</div>}
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
@@ -215,6 +222,7 @@ export default function AdminCreatorsScreen() {
           </div>
         </div>
       </div>
+      </>)}
     </AdminShell>
   );
 }

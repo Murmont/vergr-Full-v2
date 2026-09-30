@@ -61,6 +61,16 @@ export const OPERATOR = {
   // Do not "correct" one from memory or from an older processor form.
   legalName:       'Vergr LLC',
 
+  // ⚠ TEMPORARY, AND THE ONLY PLACE MURMONT MAY APPEAR. The Google Play
+  // developer account is still registered to Murmont LLC, and Play checks that
+  // the Child Safety Standards page names the developer shown on the listing.
+  // Founder decision 2026-09-10: name it as the PUBLISHER on that page and in
+  // the privacy contact block, until the Vergr LLC payments profile replaces
+  // Murmont's (blocked on the EIN, see CLAUDE.md). The operator, controller and
+  // contracting party stay Vergr LLC. Delete this field and both uses the day
+  // the Play identity switches.
+  playPublisher:   'Murmont LLC',
+
   // ⚠ DO NOT reintroduce "trading as" / "d/b/a" wording anywhere.
   //
   // Vergr LLC has NO registered trade name (no DBA / fictitious business name
@@ -131,13 +141,13 @@ export const OPERATOR = {
 // three. The legal documents reference this list authoritatively.
 // ─────────────────────────────────────────────────────────────────────
 
-// 2026-07-08: trimmed after the ticketed-events pivot unblocked the countries/
-// states previously restricted only for skill-gaming-for-cash. Remaining =
-// sanctions / crypto-illegal + MENA. No US state is restricted.
+// SANCTIONED COUNTRIES ONLY (founder rule, 2026-09-18). China and the five MENA
+// countries were removed: none is sanctioned, and the server stopped blocking
+// the MENA five on 2026-08-12 while this list still named them. No US state is
+// restricted.
 export const BLOCKED_COUNTRIES_DISPLAY = [
-  'China', 'North Korea', 'Iran', 'Syria', 'Cuba',
+  'North Korea', 'Iran', 'Syria', 'Cuba',
   'Russia', 'Belarus', 'Venezuela',
-  'Saudi Arabia', 'United Arab Emirates', 'Qatar', 'Kuwait', 'Iraq',
 ];
 
 export const BLOCKED_US_STATES_DISPLAY = [];
@@ -158,7 +168,7 @@ export const TERMS_OF_SERVICE = {
   updated: `Last updated: ${LEGAL_UPDATED}`,
   effective: `Effective: ${LEGAL_EFFECTIVE}`,
   intro: [
-    `These Terms of Service ("Terms") constitute a legally binding agreement between you ("you", "your", "User") and ${OPERATOR.legalName}, a limited liability company formed in the ${OPERATOR.formationState} under registration number ${OPERATOR.registrationNumber}, with its registered address at ${OPERATOR.registeredAddress}, and the owner and operator of VERGR ("VERGR", "we", "us", or "our"), the operator of the website at ${OPERATOR.website} and any associated mobile, desktop, or other applications and services (collectively, the "Service"). The Service comprises a social and live streaming platform for gamers and creators that includes user profiles, social posts, clips and short-form video, direct and group messaging, live streaming (free and paid-access), squad communities, an internal virtual currency economy, creator monetisation features, and related functionality.`,
+    `These Terms of Service ("Terms") constitute a legally binding agreement between you ("you", "your", "User") and ${OPERATOR.legalName}, a limited liability company formed in the ${OPERATOR.formationState} under registration number ${OPERATOR.registrationNumber}, with its registered address at ${OPERATOR.registeredAddress}, and the owner and operator of VERGR ("VERGR", "we", "us", or "our"), the operator of the website at ${OPERATOR.website} and any associated mobile, desktop, or other applications and services (collectively, the "Service"). The Service comprises a live streaming and social app that includes user profiles, social posts, clips and short-form video, direct and group messaging, live streaming (free and paid-access), squad communities, an internal virtual currency economy, creator monetisation features, and related functionality.`,
     `By creating an account, accessing, or otherwise using the Service, you confirm that you have read, understood, and agree to be bound by these Terms, by our Privacy Policy (available at /privacy), by our Acceptable Use Policy (incorporated in Section 14 and published at /acceptable-use), by our Cookie Policy (published at /cookies), and by our Refund Policy (incorporated in Section 9). If you do not agree to all of the foregoing, you must not create an account or use the Service.`,
     `IMPORTANT — READ CAREFULLY: These Terms include (i) extensive disclaimers and limitations of liability that cap the maximum amount VERGR can ever owe you at one hundred euros (€100) or three months of fees paid, whichever is lower (Section 22); (ii) a broad indemnification by you in favour of VERGR (Section 23); (iii) a binding arbitration clause and class-action waiver that affect how disputes between you and VERGR are resolved (Section 26); (iv) a representation by you that your use of the Service is lawful in your own jurisdiction, with sole responsibility for that determination resting on you and not on VERGR (Section 4A); and (v) acknowledgement that you participate at your own risk. These provisions materially limit your legal recourse against VERGR. If you do not accept them, do not use the Service.`,
   ],
@@ -203,7 +213,7 @@ export const TERMS_OF_SERVICE = {
       id: 'service-description',
       title: '3. Description of the Service',
       body: [
-        '3.1 What VERGR is. The Service is a social and live streaming platform for gamers and creators that combines (a) social networking features (profiles, posts, comments, clips and short-form video, direct and group messaging, squads, follow relationships); (b) live and on-demand video and audio streaming, including Paid Streams; (c) an internal virtual-currency economy comprising Coins, VP, and Gems; (d) creator monetisation features including tipping, paid memberships, paid stream access, and platform-funded engagement amplifications ("Boosts"); and (e) related ancillary functionality. The Service does not offer betting, wagering, prediction markets, prize competitions, or games of chance of any kind.',
+        '3.1 What VERGR is. The Service is a live streaming and social app that combines (a) social networking features (profiles, posts, comments, clips and short-form video, direct and group messaging, squads, follow relationships); (b) live and on-demand video and audio streaming, including Paid Streams; (c) an internal virtual-currency economy comprising Coins, VP, and Gems; (d) creator monetisation features including tipping, paid memberships, paid stream access, and platform-funded engagement amplifications ("Boosts"); and (e) related ancillary functionality. The Service does not offer betting, wagering, prediction markets, prize competitions, or games of chance of any kind.',
         '3.2 What VERGR is not. The Service is not a gambling, sports-betting, casino, lottery, financial product, money-transmission, securities, banking, deposit-taking, or investment service. Coins, VP, and Gems are not legal tender, are not bank deposits, are not securities or investment contracts, and are not insured by any government or financial-regulator deposit-insurance scheme. The Service is not a means of transferring value between Users for general payment purposes outside of the in-Service features described in these Terms.',
         '3.3 No financial advice. Nothing in the Service constitutes financial, investment, legal, tax, or accounting advice. You are responsible for determining the tax treatment of your activity on the Service and for complying with the laws of your jurisdiction.',
         '3.4 Evolving Service. The Service is under active development. VERGR may add, remove, modify, or temporarily suspend features at any time without prior notice, except where these Terms or applicable law require prior notice.',
@@ -363,7 +373,7 @@ export const TERMS_OF_SERVICE = {
       body: [
         '13.1 Eligibility. Live streaming on public surfaces requires a minimum follower count (currently one hundred (100) followers) for free-tier users plus the Boost charge described in Section 11.3. Paid tiers may stream public without the follower gate. Squad-only voice and video streaming is available to all Users.',
         '13.2 Streaming quality. Maximum stream rendition is determined by your subscription tier (free: 480p at 30 frames per second; Lite: 720p at 60 frames per second; Pro: 1080p at 60 frames per second). VERGR may adjust these limits.',
-        '13.3 Content rules. Live streams are subject to all content rules in Section 12 and the Acceptable Use Policy. Sexual content, illegal content, content harmful to minors, hate speech, harassment, gambling promotion (other than information about VERGR\'s skill-based competitions), and other prohibited conduct are not permitted.',
+        '13.3 Content rules. Live streams are subject to all content rules in Section 12 and the Acceptable Use Policy. Sexual content, illegal content, content harmful to minors, hate speech, harassment, gambling promotion, and other prohibited conduct are not permitted.',
         '13.4 Moderation. VERGR may end, suspend, or restrict streams in real time where they violate these Terms, applicable law, or third-party rights, including in response to reports from Users, automated detection, or manual moderation. Severe or repeated violations may result in account suspension or termination.',
         '13.5 Recording and storage. Live streams may be recorded by VERGR for moderation, dispute, and platform purposes. Recordings of public streams may be retained and used in accordance with the licence in Section 12.2; private streams are retained only as required to operate the Service and per the Privacy Policy.',
       ],
@@ -377,11 +387,10 @@ export const TERMS_OF_SERVICE = {
           'violate any law, regulation, or third-party right;',
           'create, transmit, or store Content that is unlawful, fraudulent, threatening, defamatory, harassing, obscene, sexually explicit involving minors, hate speech, or that depicts or promotes graphic real-world violence, self-harm, or terrorism. Violence depicted in video games is not covered by this restriction;',
           'impersonate another person or misrepresent your affiliation with any person or entity;',
-          'use the Service to facilitate gambling, betting, lotteries, or chance-based prize draws outside of the skill-based competitions VERGR itself organises;',
+          'use the Service to facilitate gambling, betting, lotteries, or chance-based prize draws;',
           'use the Service to launder money, finance terrorism, evade sanctions, or otherwise process the proceeds of crime;',
           'exploit bugs, use unauthorised third-party software, scripts, bots, or automation to manipulate engagement metrics, the economy, or any other part of the Service;',
           'organise, advertise, solicit, or settle any gambling, betting, wagering, or staking arrangement through the Service, whether between Users or with third parties;',
-          'manipulate, falsify, or attempt to influence match-result reporting, including reporting false outcomes;',
           'engage in real-money trading of Coins, VP, Gems, Accounts, or in-Service items outside the in-Service mechanisms in these Terms;',
           'create or use multiple Accounts to evade restrictions, gain unfair advantages, manipulate the economy, abuse promotional offers, or evade fees;',
           'access another User\'s Account without authorisation, or share your Account credentials with another person;',
@@ -474,7 +483,7 @@ export const TERMS_OF_SERVICE = {
         '22.3 Statutory rights. Nothing in this Section 22 excludes or limits any liability that cannot be excluded or limited under applicable law (for example, liability for fraud, fraudulent misrepresentation, gross negligence, willful misconduct, death or personal injury caused by negligence, or any other liability whose exclusion is prohibited by mandatory consumer-protection law in your jurisdiction). To the extent any such law applies, the limitations in this Section 22 apply to the maximum extent permitted by that law.',
         '22.4 Allocation of risk. You acknowledge and agree that the limitations in this Section 22 are a fundamental basis of the bargain between you and VERGR, that VERGR would not provide the Service to you without these limitations, that the price you pay (if any) reflects this allocation of risk, and that you have had a reasonable opportunity to consult independent advice before accepting these Terms.',
         '22.5 No liability for third-party processors. The Service relies on third-party processors and infrastructure providers (including without limitation our payment processor, Didit, Google Firebase, Cloudflare, Hetzner Online GmbH, and any of their successors or replacements). VERGR is not responsible for, and the VERGR Parties shall have no liability arising from, any act, omission, decision, delay, freeze, reversal, decline, or termination by any such third party. Where such a third party affects your transaction or your access to the Service, your sole and exclusive remedy is to pursue any rights you may have against that third party directly.',
-        '22.6 No liability for regulatory action affecting you. If a regulator, court, or other authority in your jurisdiction takes any action affecting your ability to use the Service or affecting your funds, balances, or activity on the Service, that action is not VERGR\'s responsibility, and the VERGR Parties shall have no liability to you arising from it. You acknowledge that the regulatory landscape for competitive gaming, virtual currencies, and cryptocurrency varies by jurisdiction and is your responsibility to monitor.',
+        '22.6 No liability for regulatory action affecting you. If a regulator, court, or other authority in your jurisdiction takes any action affecting your ability to use the Service or affecting your funds, balances, or activity on the Service, that action is not VERGR\'s responsibility, and the VERGR Parties shall have no liability to you arising from it. You acknowledge that the regulatory landscape for live streaming, online platforms, virtual currencies, and cryptocurrency varies by jurisdiction and is your responsibility to monitor.',
       ],
     },
     {
@@ -573,7 +582,7 @@ export const PRIVACY_POLICY = {
   updated: `Last updated: ${LEGAL_UPDATED}`,
   effective: `Effective: ${LEGAL_EFFECTIVE}`,
   intro: [
-    `This Privacy Policy explains how ${OPERATOR.legalName}, a limited liability company formed in the ${OPERATOR.formationState} with its registered address at ${OPERATOR.registeredAddress}, the owner and operator of VERGR ("VERGR", "we", "us", "our"), and acting as the data controller for the personal information described below, collects, uses, discloses, retains, and protects personal information when you use the VERGR competitive gaming social platform at ${OPERATOR.website} and any associated applications (collectively, the "Service"). It also explains the rights you have in relation to your personal information.`,
+    `This Privacy Policy explains how ${OPERATOR.legalName}, a limited liability company formed in the ${OPERATOR.formationState} with its registered address at ${OPERATOR.registeredAddress}, the owner and operator of VERGR ("VERGR", "we", "us", "our"), and acting as the data controller for the personal information described below, collects, uses, discloses, retains, and protects personal information when you use the VERGR live streaming and social platform at ${OPERATOR.website} and any associated applications (collectively, the "Service"). It also explains the rights you have in relation to your personal information.`,
     `This Privacy Policy is incorporated into and forms part of our Terms of Service. By creating an Account or otherwise using the Service you confirm that you have read this Privacy Policy and that, where required by applicable law, you consent to the processing of your personal information as described here.`,
     `VERGR is the controller of personal information processed in connection with the Service. Contact details are in Section 14 below.`,
   ],
@@ -597,6 +606,7 @@ export const PRIVACY_POLICY = {
           'Linked-account information — username, user identifier, and any other identifiers exposed by third-party gaming and social platforms you choose to link (Steam, Discord, Twitch, YouTube, Battle.net, Riot Games, Epic Games Services, Xbox Live via OpenXBL).',
           'Payment information — card or wallet identifiers, billing address, transaction amounts, and other data required to process a purchase, as collected by our payment processors. We do not store full primary-account-number ("PAN") data; tokens or last-four digits may be stored to enable receipts and dispute investigations.',
           'Payout information — the payout account details you connect through our payments partner, your tax documentation, the legal name and country associated with it, and the amounts and metadata of payments made to you.',
+          'Payout-limit documents (creators only, and only if you choose to raise your monthly payout limit) — a proof-of-address document (such as a utility bill, bank statement or government letter) or source-of-funds documents (such as bank statements, payslips, a tax return or business records) that you upload. These are collected by VERGR directly, not by Didit, are seen only by the VERGR staff member who reviews them, and are deleted as soon as a decision is made.',
           'Phone number — if you choose to add one, your phone number in international format and a one-way cryptographic hash of it (used for friend matching and referral verification).',
           'Contact matching (optional) — if you use the "find friends" feature, the phone numbers of contacts you select are hashed on your device and only those one-way hashes are sent to our servers to check for matches against registered Users. Raw contact names and numbers are never uploaded, never stored, and are discarded from memory after the match check. The feature requires that you have first saved your own phone number, and it only runs when you actively invoke it.',
           'Content — posts, comments, messages, clips, livestream recordings, profile content, support messages, reports, appeals, and other content you submit.',
@@ -718,7 +728,7 @@ export const PRIVACY_POLICY = {
         '8.1 We retain personal information only as long as necessary for the purposes set out in this Privacy Policy or as required by applicable law. Specific retention periods are:',
         list([
           'Account profile data — for the lifetime of the Account. After Account closure, profile data is removed from public-facing surfaces within thirty (30) days; residual copies may persist in backups and logs for a reasonable period thereafter (typically up to ninety (90) days).',
-          'Identity Verification records: for as long as the Account is open and for a minimum of five (5) years after closure (to satisfy anti-money-laundering record-keeping obligations). Didit retains the raw documents under its own policy; we retain only the result, the verification reference, and limited derived attributes.',
+          'Identity Verification records: for as long as the Account is open and for a minimum of five (5) years after closure (to satisfy anti-money-laundering record-keeping obligations). Didit retains the raw documents under its own policy; we retain only the result, the verification reference, and limited derived attributes. Payout-limit documents you upload to VERGR are deleted as soon as they have been reviewed; we keep only the decision, the type of document, the date and who reviewed it.',
           'Financial records — Wallet movements, purchases, payouts, and tax-relevant records are retained for a minimum of seven (7) years from the date of the transaction, to satisfy tax and accounting obligations.',
           'Transaction records — purchases, Tips, paid stream access, and creator payouts are retained for at least five (5) years to support dispute resolution, accounting, and integrity investigations.',
           'Support communications — for as long as the Account is open and for a reasonable period thereafter (typically two (2) years).',
@@ -801,6 +811,7 @@ export const PRIVACY_POLICY = {
           'Email: ' + OPERATOR.privacyEmail,
           'Postal address: available on written request to ' + OPERATOR.privacyEmail,
           'Controller: ' + OPERATOR.legalName + ', ' + OPERATOR.jurisdiction,
+          'Google Play publisher of the Android app: ' + OPERATOR.playPublisher,
         ]),
         'We do not currently have a representative in the EEA or the United Kingdom under Article 27 GDPR / Article 27 UK GDPR. If we appoint one, this Privacy Policy will be updated with their details.',
       ],
@@ -834,7 +845,7 @@ export const ACCEPTABLE_USE_POLICY = {
       id: 'overview',
       title: '1. Overview',
       body: [
-        'You are responsible for everything that happens on your Account. Behaviour that harms other Users, damages the Service, breaks the law, or compromises competitive integrity is not allowed. This AUP is non-exhaustive — VERGR may take action against conduct that, in its reasonable judgment, violates the spirit of these rules even if not specifically enumerated.',
+        'You are responsible for everything that happens on your Account. Behaviour that harms other Users, damages the Service, breaks the law, or undermines the fairness of the Service is not allowed. This AUP is non-exhaustive — VERGR may take action against conduct that, in its reasonable judgment, violates the spirit of these rules even if not specifically enumerated.',
       ],
     },
     {
@@ -1017,7 +1028,7 @@ export const CHILD_SAFETY_STANDARDS = {
   version: LEGAL_VERSION,
   updated: `Last updated: ${LEGAL_UPDATED}`,
   intro: [
-    `VERGR is operated by ${OPERATOR.legalName}. These are our published standards against child sexual abuse and exploitation ("CSAE"), including child sexual abuse material ("CSAM"), as required by the Google Play Child Safety Standards policy.`,
+    `VERGR is operated by ${OPERATOR.legalName} and published on Google Play by ${OPERATOR.playPublisher}. These are our published standards against child sexual abuse and exploitation ("CSAE"), including child sexual abuse material ("CSAM"), as required by the Google Play Child Safety Standards policy.`,
     `VERGR is an adult-only service. Nobody under 18 is permitted to hold an account. We have zero tolerance for CSAE of any kind, and we act on it whether it is detected automatically, reported by a user, or referred to us by an authority.`,
     `If you came here looking for the limits of what you can get away with, there are none to find. There is no warning, no strike system, and no appeal. Accounts are terminated permanently, balances are forfeited, records are preserved, and reports go to law enforcement in your own country. Section 5 sets out what happens; Section 6 sets out what we and our providers hold about you when it does.`,
   ],

@@ -5,7 +5,7 @@
 // Top-level: summary (1-2 sentences, answer-first), updated (YYYY-MM-DD), body [].
 
 export default {
-  summary: "Open the Squads section and choose create. Pick a name and tag, add a logo and description, set how people join, and you are the squad owner. From there you can invite members, run hangouts, compete as a team, and build a shared treasury. Squads hold up to 100 members.",
+  summary: "Open the Squads section and choose create. Pick a name and tag, add a logo and description, set how people join, and you are the squad owner. From there you can invite members, run hangouts, stream together, and build a shared treasury. Squads hold up to 100 members.",
   updated: "2026-06-06",
   body: [
     {
@@ -38,7 +38,7 @@ export default {
       h2: "Growing it"
     },
     {
-      p: "Once it exists, invite members, set up roles, and start playing together. A squad can hold up to 100 people, and an active squad that competes well climbs the squad leaderboard and attracts new members."
+      p: "Once it exists, invite members, set up roles, and start playing together. A squad can hold up to 100 people, and an active squad climbs the squad leaderboard and attracts new members."
     },
     {
       cta: [

@@ -26,6 +26,17 @@
 const functions = require('firebase-functions/v2');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const { getAuth } = require('firebase-admin/auth');
+const { authEmailsFor, authEmailFor, uidForEmail } = require('./authEmails');
+const bans = require('./bans');
+const { isOperator } = require('./operator');
+const { isStaffDoc } = require('./staff');
+
+// Row emails come from Auth (the profile doc no longer carries one).
+async function withAuthEmails(rows) {
+  const map = await authEmailsFor(rows.map((r) => r.uid));
+  for (const r of rows) r.email = map[r.uid] || null;
+  return rows;
+}
 const {
   requireAdmin,
   requireFreshStepUp,
@@ -52,9 +63,23 @@ async function guardCaller(uid, screen, { requireStepUp = false } = {}) {
   if (requireStepUp) await requireFreshStepUp(uid);
 }
 
+// ⚠⚠ THIS GUARD PROTECTED NOBODY THE MOMENT role:'admin' CAME OFF @Vergr
+// (2026-09-20). It is the only thing standing between a sub-admin with the
+// Users screen and banning the founder's own account, and it was keyed to a
+// field that now exists on zero of the 53 user documents.
+//
+// It checks all three markers on purpose: the OPERATOR (an Auth claim, no
+// users doc at all), `staff` (the founder's own account, functions/staff.js),
+// and the legacy role, which costs nothing to keep and covers anything that
+// still carries it. `bans.assertBannable` does the same; this is the copy that
+// guards the four adminUsers paths.
 async function assertNotFounder(targetUid) {
+  if (await isOperator(targetUid)) {
+    throw new HttpsError('permission-denied', 'Cannot moderate an operator account.');
+  }
   const snap = await db.collection('users').doc(targetUid).get();
-  if (snap.exists && snap.data().role === 'admin') {
+  const d = snap.exists ? snap.data() : null;
+  if (d && (isStaffDoc(d) || d.role === 'admin')) {
     throw new HttpsError('permission-denied', 'Cannot moderate the platform owner.');
   }
 }
@@ -94,7 +119,7 @@ function shapeUserRow(uid, d) {
     usernameAutoAssigned: !!d.usernameAutoAssigned,
     displayName: d.displayName || d.username || '(no name)',
     username: d.username || null,
-    email: d.email || null,
+    email: null, // filled from Auth by withAuthEmails / adminGetUserDetail
     avatar: d.avatar || null,
     verified: !!d.verified,
     role: d.role || 'user',
@@ -169,6 +194,14 @@ exports.adminListUsers = functions.https.onCall(
         seen.add(id);
         rows.push(shapeUserRow(id, d));
       };
+      // An email search goes straight to Auth: the profile docs hold no email.
+      if (term.includes('@')) {
+        const hitUid = await uidForEmail(term);
+        if (hitUid) {
+          const hit = await db.collection('users').doc(hitUid).get();
+          if (hit.exists) push(hit.id, hit.data());
+        }
+      }
       try {
         // The upper bound needs the high-codepoint sentinel U+F8FF to make this
         // a PREFIX range. The old query passed an EMPTY string there, so it was
@@ -193,13 +226,13 @@ exports.adminListUsers = functions.https.onCall(
           for (const doc of scan.docs) {
             if (rows.length >= effPageSize) break;
             const d = doc.data();
-            const hay = [d.displayName, d.username, d.usernameLower, d.email]
+            const hay = [d.displayName, d.username, d.usernameLower]
               .filter(Boolean).join(' ').toLowerCase();
             if (hay.includes(term)) push(doc.id, d);
           }
         } catch { /* ignore */ }
       }
-      return { rows, nextCursor: null, count: rows.length, searched: true };
+      return { rows: await withAuthEmails(rows), nextCursor: null, count: rows.length, searched: true };
     }
 
     // Paged path. Bots and guests are filtered in memory, which means a raw page
@@ -235,7 +268,7 @@ exports.adminListUsers = functions.https.onCall(
     const nextCursor = hasMore && page.length
       ? toMs(page[page.length - 1].d[orderField])
       : null;
-    return { rows, nextCursor, count: rows.length, exhausted: exhausted && !hasMore };
+    return { rows: await withAuthEmails(rows), nextCursor, count: rows.length, exhausted: exhausted && !hasMore };
   }
 );
 
@@ -250,16 +283,23 @@ exports.adminGetUserDetail = functions.https.onCall(
     // The Auth record is the only authoritative answer to "is this an anonymous
     // browsing session or a real signup". A user doc alone cannot tell you: an
     // abandoned signup and a guest look identical on it.
-    const [userSnap, walletSnap, authUser] = await Promise.all([
+    // Also: the payout account (the drawer's payout panel; there was no admin
+    // screen for it at all) and the moderation defaults from Admin →
+    // Moderation → Settings, which pre-fill the mute and temp-ban durations.
+    // Nothing read those two settings before.
+    const [userSnap, walletSnap, authUser, payoutSnap, cfgSnap] = await Promise.all([
       db.collection('users').doc(targetUid).get(),
       db.collection('wallets').doc(targetUid).get(),
       getAuth().getUser(targetUid).catch(() => null),
+      db.collection('payout_accounts').doc(targetUid).get().catch(() => null),
+      db.collection('app_config').doc('general').get().catch(() => null),
     ]);
     if (!userSnap.exists) throw new HttpsError('not-found', 'User not found.');
     const d = userSnap.data();
     const providers = (authUser?.providerData || []).map(p => p.providerId);
     return {
       ...shapeUserRow(targetUid, d),
+      email: authUser?.email || null,
       // Empty providers on an existing Auth record means anonymous sign-in.
       signInProviders: providers,
       isAnonymousAuth: !!authUser && providers.length === 0,
@@ -275,9 +315,43 @@ exports.adminGetUserDetail = functions.https.onCall(
       kycStatus: d.kyc?.status || null,
       wallet: walletSnap.exists ? walletSnap.data() : { balance: 0, owedMicroUsd: 0, vp: 0 },
       vanguard: d.vanguard || null,
+      // The owner account (staff) cannot be moderated; the drawer hides the
+      // buttons instead of offering actions the server refuses.
+      staff: isStaffDoc(d),
+      payoutAccount: payoutSnap && payoutSnap.exists ? shapePayoutAccount(payoutSnap.data()) : null,
+      moderationDefaults: {
+        muteHours: Number(cfgSnap?.data()?.moderation?.defaultMuteHours) || 24,
+        tempBanDays: Number(cfgSnap?.data()?.moderation?.defaultTempBanDays) || 7,
+      },
     };
   }
 );
+
+// Timestamps to millis so the callable returns plain JSON; strike rows keep
+// what the admin needs to read and to reverse one (sourceId).
+function shapePayoutAccount(a) {
+  const ms = (t) => (t && typeof t.toMillis === 'function' ? t.toMillis() : (typeof t === 'number' ? t : null));
+  return {
+    enrolled: !!a.enrolled,
+    frozen: !!a.frozen,
+    taxFormStatus: a.taxFormStatus || null,
+    taxFormType: a.taxFormType || null,
+    partnerPayeeId: a.partnerPayeeId || null,
+    legalName: a.legalName || null,
+    country: a.country || null,
+    successfulPayouts: Number(a.successfulPayouts) || 0,
+    firstPayoutAt: ms(a.firstPayoutAt),
+    updatedAt: ms(a.updatedAt),
+    strikes: (Array.isArray(a.strikes) ? a.strikes : []).map((s) => ({
+      reason: s.reason || null,
+      sourceId: s.sourceId || null,
+      notes: s.notes || null,
+      at: ms(s.at) || ms(s.createdAt),
+      expiresAt: ms(s.expiresAt),
+      reversed: !!s.reversed,
+    })),
+  };
+}
 
 // Counts for the KPI strip. Uses Firestore aggregation count(), one read per
 // count regardless of how many docs match, so this is cheap.
@@ -356,31 +430,16 @@ exports.adminBanUser = functions.https.onCall(
       throw new HttpsError('invalid-argument', 'durationDays required for temp ban.');
     }
 
-    const userRef = db.collection('users').doc(targetUid);
-    const before = (await userRef.get()).data();
-
-    const banUntil = permanent ? null : new Date(Date.now() + durationDays * 24 * 3600 * 1000);
-    await userRef.update({
-      banned: true,
-      banUntil,
-      permabanned: !!permanent,
-      banReason: String(reason).slice(0, 400),
-      bannedBy: uid,
-      bannedAt: FieldValue.serverTimestamp(),
+    // ONE ban implementation for every path (functions/bans.js): it writes the
+    // flags, DISABLES the Firebase Auth account so they cannot sign back in,
+    // revokes live tokens and notifies. Before that module existed this wrote
+    // a flag nothing read.
+    const { before, banUntil, authDisabled } = await bans.applyBan(targetUid, {
+      byUid: uid,
+      permanent: !!permanent,
+      untilMs: permanent ? null : Date.now() + durationDays * 24 * 3600 * 1000,
+      reason,
     });
-
-    // Notify the user.
-    await db.collection('notifications').add({
-      recipientId: targetUid,
-      type: 'admin_ban',
-      title: permanent ? 'Your account has been permanently banned' : 'Your account has been banned',
-      body: reason || 'Contact support if you believe this is in error.',
-      read: false,
-      createdAt: FieldValue.serverTimestamp(),
-    });
-
-    // Revoke their sessions immediately.
-    try { await getAuth().revokeRefreshTokens(targetUid); } catch (e) { /* ignore */ }
 
     const meta = extractRequestMeta(request);
     await auditAdminAction({
@@ -392,8 +451,9 @@ exports.adminBanUser = functions.https.onCall(
       reason: String(reason).slice(0, 400),
       ip: meta.ip, userAgent: meta.userAgent,
       stepUpEnforced: true, stepUpFresh: true,
+      meta: { authDisabled },
     });
-    return { ok: true };
+    return { ok: true, authDisabled };
   }
 );
 
@@ -407,26 +467,9 @@ exports.adminUnbanUser = functions.https.onCall(
     const { targetUid, reason = '' } = request.data || {};
     if (!targetUid) throw new HttpsError('invalid-argument', 'targetUid required.');
 
-    const userRef = db.collection('users').doc(targetUid);
-    const before = (await userRef.get()).data();
-
-    await userRef.update({
-      banned: false,
-      banUntil: null,
-      permabanned: false,
-      banReason: null,
-      unbannedBy: uid,
-      unbannedAt: FieldValue.serverTimestamp(),
-    });
-
-    await db.collection('notifications').add({
-      recipientId: targetUid,
-      type: 'admin_unban',
-      title: 'Your account has been reinstated',
-      body: 'Welcome back to VERGR.',
-      read: false,
-      createdAt: FieldValue.serverTimestamp(),
-    });
+    // Clears the flags AND re-enables the Auth account. Clearing the flags
+    // alone would leave them permanently locked out of sign-in.
+    const { before } = await bans.liftBan(targetUid, { byUid: uid });
 
     const meta = extractRequestMeta(request);
     await auditAdminAction({
@@ -460,10 +503,11 @@ exports.adminMuteUser = functions.https.onCall(
     const until = new Date(Date.now() + hours * 3600 * 1000);
     await db.collection('users').doc(targetUid).update({
       mutedUntil: until,
-      mutedBy: uid,
       mutedAt: FieldValue.serverTimestamp(),
       muteReason: String(reason).slice(0, 400),
     });
+    // The field alone was decoration: the claim is what firestore.rules reads.
+    await bans.setMuteClaim(targetUid, until.getTime());
 
     const meta = extractRequestMeta(request);
     await auditAdminAction({
@@ -491,8 +535,9 @@ exports.adminUnmuteUser = functions.https.onCall(
 
     await db.collection('users').doc(targetUid).update({
       mutedUntil: null, muteReason: null,
-      unmutedBy: uid, unmutedAt: FieldValue.serverTimestamp(),
+      unmutedAt: FieldValue.serverTimestamp(),
     });
+    await bans.setMuteClaim(targetUid, 0);
 
     const meta = extractRequestMeta(request);
     await auditAdminAction({
@@ -561,15 +606,19 @@ exports.adminSetUserRole = functions.https.onCall(
     }
     if (targetUid === uid) throw new HttpsError('failed-precondition', 'Cannot change your own role.');
 
-    // Only the founder (role:'admin') can promote someone to admin.
+    // ⚠ `requireAdmin` IS THE OPERATOR NOW, which is what makes these two
+    // checks still mean something: role:'admin' is on no account, so "is the
+    // caller the founder" can no longer be answered from a users document.
     const caller = await requireAdmin(uid).catch(() => null);
     if (role === 'admin' && !caller) {
-      throw new HttpsError('permission-denied', 'Only the founder can grant admin role.');
+      throw new HttpsError('permission-denied', 'Only the operator can grant admin role.');
     }
-    // And only the founder can DEMOTE an existing admin.
+    // ⚠⚠ AND ONLY THE OPERATOR MAY CHANGE A PRIVILEGED ACCOUNT'S ROLE. The old
+    // test was `before.role === 'admin'`, which after the strip matched nobody,
+    // so a sub-admin holding the Users screen could rewrite the founder's role.
     const before = (await db.collection('users').doc(targetUid).get()).data();
-    if (before?.role === 'admin' && !caller) {
-      throw new HttpsError('permission-denied', 'Only the founder can change an admin\'s role.');
+    if ((before?.role === 'admin' || isStaffDoc(before)) && !caller) {
+      throw new HttpsError('permission-denied', 'Only the operator can change that account\'s role.');
     }
 
     await db.collection('users').doc(targetUid).update({
@@ -629,7 +678,7 @@ exports.adminSendPasswordReset = functions.https.onCall(
     if (!targetUid) throw new HttpsError('invalid-argument', 'targetUid required.');
     const userSnap = await db.collection('users').doc(targetUid).get();
     if (!userSnap.exists) throw new HttpsError('not-found', 'User not found.');
-    const email = userSnap.data().email;
+    const email = await authEmailFor(targetUid);
     if (!email) throw new HttpsError('failed-precondition', 'User has no email on file.');
 
     // generatePasswordResetLink returns a link we can show/send. Firebase
@@ -705,9 +754,6 @@ exports.adminDeleteGuestAccount = functions.https.onCall(
     if (d?.convertedFromGuestAt) {
       throw new HttpsError('failed-precondition',
         'This account converted from a guest to a real account. Ban it instead.');
-    }
-    if (d?.email) {
-      throw new HttpsError('failed-precondition', 'Account has an email on file. Ban it instead.');
     }
 
     const authUser = await getAuth().getUser(targetUid).catch(() => null);

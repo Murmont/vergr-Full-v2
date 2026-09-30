@@ -19,7 +19,7 @@ export default {
         "Sign up with email, Google, or your phone number.",
         "Pick a username. This is your handle, so choose something you want to keep.",
         "Add a profile photo and a short bio so people know who they are dealing with.",
-        "Link the gaming accounts you actually use. It puts your real stats on your profile."
+        "Pick your interests so your feed starts off with things you care about."
       ]
     },
     {

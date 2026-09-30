@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { motion } from 'framer-motion';
 import { doc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
 import { db, auth } from '../firebase/config';
+import { TRANSLATION_ENABLED } from '../utils/translationSwitch';
 import Icon from './Icon';
 import EmojiPicker from './EmojiPicker';
 import ReactionEmoji from './ReactionEmoji';
@@ -120,7 +121,7 @@ function QuickReactions({ chatId, messageId, onClose, onReact, onPickerToggle })
           On mobile the sheet is lifted clear of the phone/app bottom nav. */}
       {showPicker && createPortal(
         <div
-          className="fixed inset-0 z-[10001] bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center sm:p-4 pb-[calc(env(safe-area-inset-bottom)+4rem)] sm:pb-4"
+          className="fixed inset-0 z-[10001] bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center sm:p-4 pb-[calc(var(--vg-safe-b,0px)+4rem)] sm:pb-4"
           onPointerDown={(e) => e.stopPropagation()}
           onClick={(e) => { e.stopPropagation(); togglePicker(false); }}
         >
@@ -238,7 +239,7 @@ export function MessageContextMenu({ chatId, messageId, message, isMe, anchorX, 
     isMe && onEdit && { icon: 'edit', label: 'Edit', action: () => { onEdit?.(message); onClose?.(); } },
     onForward && { icon: 'forward', label: 'Forward', action: () => { onForward?.(message); onClose?.(); } },
     onSelect && { icon: 'check_circle', label: 'Select', action: () => { onSelect?.(message); onClose?.(); } },
-    onTranslate && message?.text && { icon: 'translate', label: 'Translate', action: () => { onTranslate?.(message); onClose?.(); } },
+    TRANSLATION_ENABLED && onTranslate && message?.text && { icon: 'translate', label: 'Translate', action: () => { onTranslate?.(message); onClose?.(); } },
     // Copy only when there's text to copy (media captions count; bare media
     // messages would copy an empty string).
     message?.text && { icon: 'content_copy', label: 'Copy', action: () => { navigator.clipboard?.writeText(message.text); onClose?.(); } },

@@ -29,7 +29,7 @@
 // with the counter; keep both.
 
 const functions = require('firebase-functions/v2');
-const { defineSecret } = require('firebase-functions/params');
+const { defineSecret, defineString } = require('firebase-functions/params');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const axios = require('axios');
 
@@ -37,7 +37,7 @@ const db = getFirestore('vgrdb');
 const REGION = 'europe-west1';
 
 const CIRCLE_API_KEY       = defineSecret('CIRCLE_API_KEY');
-const CIRCLE_HOT_WALLET_ID = defineSecret('CIRCLE_HOT_WALLET_ID');
+const CIRCLE_HOT_WALLET_ID = defineString('CIRCLE_HOT_WALLET_ID');
 
 /**
  * Read a secret with trailing whitespace stripped.
@@ -277,7 +277,7 @@ async function raiseAlert(status, payload) {
     ? `Cannot confirm we hold what we owe creators: ${why}. Currently owed $${((payload.creatorPayableMicroUsd || 0) / 1e6).toFixed(2)}.`
     : `Creator liabilities exceed held float by $${((payload.shortfallMicroUsd || 0) / 1e6).toFixed(2)}.`;
 
-  const admins = await db.collection('users').where('role', '==', 'admin').limit(20).get();
+  const admins = await db.collection('users').where('staff', '==', true).limit(20).get();
   const batch = db.batch();
   for (const a of admins.docs) {
     batch.set(db.collection('notifications').doc(), {
@@ -293,20 +293,16 @@ async function raiseAlert(status, payload) {
   await batch.commit();
 }
 
-exports.reconcileSolvency = functions.scheduler.onSchedule(
-  {
-    schedule: 'every day 05:00', timeZone: 'UTC', region: REGION,
-    secrets: [CIRCLE_API_KEY, CIRCLE_HOT_WALLET_ID],
-  },
-  async () => {
+// Runs inside a dispatcher cron in index.js (it was its own Cloud Scheduler
+// job, and every job past the first three is billed monthly).
+exports.reconcileSolvency = async function reconcileSolvency() {
     const out = await reconcile();
     console.log('reconcileSolvency', JSON.stringify({ ...out, checkedAt: undefined }));
-  },
-);
+  };
 
 /** Admin on-demand recompute, for the finance dashboard. */
 exports.getSolvencyLedger = functions.https.onCall(
-  { region: REGION, secrets: [CIRCLE_API_KEY, CIRCLE_HOT_WALLET_ID] },
+  { region: REGION, secrets: [CIRCLE_API_KEY] },
   async (request) => {
     const { requireAdmin } = require('./adminSecurity');
     await requireAdmin(request.auth?.uid);

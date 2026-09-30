@@ -162,7 +162,7 @@ export default function MobileNavDrawer({ open, onClose }) {
 
             {/* Nav groups. Bottom inset clears the Android gesture nav bar so the
                 Sign-out row isn't hidden behind it (edge-to-edge WebView). */}
-            <nav className="px-2 py-2" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 20px)' }}>
+            <nav className="px-2 py-2" style={{ paddingBottom: 'calc(var(--vg-safe-b, 0px) + 20px)' }}>
               {GROUPS.map((g, gi) => (
                 <div key={gi} className="mb-1.5">
                   {g.header && (

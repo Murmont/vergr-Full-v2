@@ -10,6 +10,7 @@ import { useLayout } from '../context/LayoutContext';
 import { useNotifications } from '../context/NotificationContext';
 import { useUI } from '../context/UIContext';
 import { getUserById } from '../firebase/firestore';
+import { publicUrl } from '../utils/publicUrl';
 
 // Shape a conversation doc into the rail's member rows. Owner/admins are
 // labeled so the rail's role buckets render; presence isn't tracked here so
@@ -118,7 +119,7 @@ export default function MessagesMasterDetail() {
   // private groups → recipient lands on a request-to-join screen.
   const inviteToGroup = async () => {
     if (!chatId) return;
-    const url = `${window.location.origin}/messages/g/${chatId}`;
+    const url = publicUrl(`/messages/g/${chatId}`);
     try {
       await navigator.clipboard.writeText(url);
       showToast('Invite link copied', 'success');

@@ -50,7 +50,7 @@ export default function NativeMessageRequestsScreen() {
   };
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--bg-dark)', paddingBottom: 'calc(88px + env(safe-area-inset-bottom, 0px))' }}
+    <div style={{ minHeight: '100vh', background: 'var(--bg-dark)', paddingBottom: 'calc(88px + var(--vg-safe-b, 0px))' }}
       className="flex flex-col">
       <TopBar title={`Requests (${requests.length})`} showBack />
       <main className="flex-1 p-4 space-y-3">

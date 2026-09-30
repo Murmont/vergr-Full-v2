@@ -14,6 +14,8 @@ const { RANK_BY_ID, RANK_IDS } = require('./vanguardRanks');
 // Used only when caller is `role === 'admin'` (founder); regular Vanguard
 // ranks go through the existing vanguard_actions audit path.
 const adminSecurity = require('./adminSecurity');
+const bans = require('./bans');
+const { isOperator, requireOperatorSession } = require('./operator');
 
 // Previous-month key in UTC. The 1st-of-month cron settles the JUST-CLOSED
 // month, not the running one. Format: "YYYY-MM".
@@ -204,11 +206,15 @@ const requireAdmin = async (uid) => {
   }
 };
 
-// True if caller has role === 'admin'. Used to conditionally apply admin
-// guards (step-up + admin_actions audit) on callables that can also be
-// invoked by lower-rank Vanguard mods.
+// True for the platform owner. Used to conditionally apply admin guards
+// (step-up + admin_actions audit) on callables that can also be invoked by
+// lower-rank Vanguard mods.
+//
+// ⚠ THE OPERATOR IS CHECKED FIRST AND HAS NO USERS DOCUMENT AT ALL
+// (functions/operator.js). A users-doc lookup can only ever answer "no" for it.
 const isFounderUid = async (uid) => {
   if (!uid) return false;
+  if (await isOperator(uid)) return true;
   const db = admin.firestore(undefined, DB);
   const snap = await db.collection('users').doc(uid).get();
   return snap.exists && snap.data().role === 'admin';
@@ -239,6 +245,18 @@ const getVanguardRank = async (db, uid) => {
 // but skip VP grant + monthly-action bump since founder isn't a moderator
 // earning treasury share.
 async function loadActor(db, uid) {
+  // ⚠⚠ THE OPERATOR MUST BE RESOLVED BEFORE THE DOCUMENT READ. It has no
+  // users/{uid} document by design, so the `not-found` throw below would
+  // refuse the platform owner every Vanguard action.
+  if (await isOperator(uid)) {
+    return {
+      uid,
+      isFounder: true,
+      rank: 'founder',
+      rankMeta: { ...RANK_BY_ID.overseer, label: 'Founder', actionVp: 0 },
+      auditRank: 'founder',
+    };
+  }
   const snap = await db.collection('users').doc(uid).get();
   if (!snap.exists) throw new HttpsError('not-found', 'Caller user not found.');
   const u = snap.data();
@@ -459,7 +477,7 @@ exports.changeVanguardRank = functions.https.onCall(
     ]);
     if (!targetSnap.exists) throw new HttpsError('not-found', 'Target user not found.');
 
-    const isFounder = callerSnap.exists && callerSnap.data().role === 'admin';
+    const isFounder = (await isOperator(callerUid)) || (callerSnap.exists && callerSnap.data().role === 'admin');
     const callerRank = callerSnap.exists ? callerSnap.data().vanguard?.rank : null;
     const targetRank = targetSnap.data().vanguard?.rank;
     if (!targetRank) throw new HttpsError('failed-precondition', 'Target is not Vanguard.');
@@ -593,7 +611,7 @@ exports.setVanguardStatus = functions.https.onCall(
     const db = admin.firestore(undefined, DB);
 
     const callerSnap = await db.collection('users').doc(callerUid).get();
-    const isFounder = callerSnap.exists && callerSnap.data().role === 'admin';
+    const isFounder = (await isOperator(callerUid)) || (callerSnap.exists && callerSnap.data().role === 'admin');
     const callerRank = callerSnap.exists ? callerSnap.data().vanguard?.rank : null;
     if (!isFounder && callerRank !== 'overseer') {
       throw new HttpsError('permission-denied', 'Founder or Overseer only.');
@@ -649,10 +667,25 @@ exports.setVanguardStatus = functions.https.onCall(
 // `actionType` is the string written to the vanguard_actions audit row.
 // `actionDetails` is a function returning extra fields to merge into
 // that row (target ids, durations, etc.).
+// How long one authenticator code keeps a moderator signed in to Vergr
+// Vanguard. Matches Vergr Admin's session (OperatorGate), so the app and the
+// server agree on when a code is due.
+const VANGUARD_SESSION_SEC = 12 * 60 * 60;
+
 async function runVanguardAction({ uid, requiredAuthority, actionType, mutator, actionDetails }) {
   const db = admin.firestore(undefined, DB);
   const actor = await loadActor(db, uid);
   const { isFounder, rankMeta, auditRank } = actor;
+
+  // ⚠⚠ NO AUTHENTICATOR, NO ACTION (2026-09-21). Every Vanguard action bans,
+  // mutes, hides or ends something that belongs to a real person, and until
+  // now an unenrolled moderator could do all of it. The operator is held to
+  // its own session; a moderator must have entered a code in the last 12h.
+  if (await isOperator(uid)) {
+    await requireOperatorSession(uid);
+  } else {
+    await adminSecurity.requireFreshStepUp(uid, VANGUARD_SESSION_SEC);
+  }
 
   // Authority check — founder bypasses entirely, mods checked against their rank's authority bits.
   if (!isFounder && requiredAuthority && !rankMeta.authority?.[requiredAuthority]) {
@@ -750,14 +783,26 @@ exports.vanguardResolveReport = functions.https.onCall(
           resolvedAt: FieldValue.serverTimestamp(),
           resolutionReason: String(reason).slice(0, 400),
         });
-        // If approving and the target is a post, hide it.
+        // Approving acts on what was reported. Until 2026-09-21 only a post
+        // was ever touched: a reported comment stayed up and a reported stream
+        // kept broadcasting. Accounts (user reports) are acted on with the
+        // mute and ban buttons beside this decision, which carry rank caps.
         if (decision === 'approve' && r.targetType === 'post' && r.targetId) {
-          await db.collection('posts').doc(r.targetId).update({
-            status: 'hidden',
-            hiddenReason: 'vanguard_approved_report',
-            hiddenAt: FieldValue.serverTimestamp(),
-            hiddenBy: callerUid,
-          }).catch(() => null);
+          const { hidePost } = require('./postModeration');
+          await hidePost({ postId: r.targetId, reasonCode: 'vanguard_approved_report', byUid: callerUid }).catch(() => null);
+        }
+        if (decision === 'approve' && r.targetType === 'comment' && r.targetId && r.postId) {
+          const { hideComment } = require('./postModeration');
+          await hideComment({ postId: r.postId, commentId: r.targetId, reasonCode: 'vanguard_approved_report', byUid: callerUid }).catch(() => null);
+        }
+        if (decision === 'approve' && r.targetType === 'stream' && r.targetId) {
+          const { takedownStream } = require('./streamTakedown');
+          await takedownStream({
+            streamId: r.targetId,
+            byUid: callerUid,
+            reason: `Upheld report: ${String(r.reason || 'breaks the rules').replace(/_/g, ' ')}`,
+            source: 'vanguard_report',
+          }).catch((e) => console.error('takedownStream (vanguard report) failed', r.targetId, e?.message || e));
         }
         return {
           reportId,
@@ -804,18 +849,18 @@ exports.vanguardReviewAiFlag = functions.https.onCall(
           // Ground truth for prompt tuning: was the AI flag right?
           aiReview: {
             verdict: verdict === 'violation' ? 'confirmed' : 'wrong',
-            by: callerUid,
+            // No `by`: posts are publicly readable (see vanguard_actions).
             at: FieldValue.serverTimestamp(),
             aiCategory: p.aiVerdict?.results?.find?.((r) => r.verdict === 'flag')?.category || null,
           },
         };
-        if (verdict === 'violation') {
-          patch.hidden = true;
-          patch.hiddenReason = 'vanguard_confirmed_ai_flag';
-          patch.hiddenAt = FieldValue.serverTimestamp();
-          patch.hiddenBy = callerUid;
-        }
         await ref.update(patch);
+        // Hide through postModeration so the author is TOLD and can appeal.
+        // This path used to set the hidden fields itself and say nothing.
+        if (verdict === 'violation') {
+          const { hidePost } = require('./postModeration');
+          await hidePost({ postId, reasonCode: 'vanguard_confirmed_ai_flag', byUid: callerUid }).catch(() => null);
+        }
         return { postId, verdict, targetType: 'post', targetId: postId };
       },
     });
@@ -844,10 +889,15 @@ exports.vanguardMuteUser = functions.https.onCall(
         if (cap !== null && hours > cap) {
           throw new HttpsError('permission-denied', `Your rank (${rankMeta.label}) can mute at most ${cap} hours. Request a Senior+ to extend.`);
         }
+        // A mute is moderation too: the operator and the founder's staff account
+        // are refused here exactly as a ban refuses them (functions/bans.js).
+        await bans.assertBannable(targetUid);
         const until = Date.now() + hours * 3600 * 1000;
+        // functions/bans.js — the claim is what firestore.rules enforces; the
+        // field on its own was read by nobody but two admin screens.
+        await bans.setMuteClaim(targetUid, until);
         await db.collection('users').doc(targetUid).update({
           mutedUntil: new Date(until),
-          mutedBy: callerUid,
           mutedAt: FieldValue.serverTimestamp(),
           muteReason: String(reason).slice(0, 400),
         });
@@ -879,12 +929,11 @@ exports.vanguardTempBanUser = functions.https.onCall(
           throw new HttpsError('permission-denied', `Your rank (${rankMeta.label}) can temp-ban for at most ${cap} days.`);
         }
         const until = Date.now() + days * 24 * 3600 * 1000;
-        await db.collection('users').doc(targetUid).update({
-          banned: true,
-          banUntil: new Date(until),
-          banReason: String(reason).slice(0, 400),
-          bannedBy: callerUid,
-          bannedAt: FieldValue.serverTimestamp(),
+        // functions/bans.js — the same path the admin ban uses, so a Vanguard
+        // ban disables the account too. This used to write flags and not even
+        // revoke a token.
+        await bans.applyBan(targetUid, {
+          byUid: callerUid, untilMs: until, reason,
         });
         return { targetUid, days, until, reason: String(reason).slice(0, 400) };
       },
@@ -909,385 +958,8 @@ exports.vanguardPermaBanUser = functions.https.onCall(
       requiredAuthority: 'canPermaBan',
       actionType: 'perma_ban_user',
       mutator: async (db, callerUid) => {
-        await db.collection('users').doc(targetUid).update({
-          banned: true,
-          banUntil: null,  // permanent
-          banReason: String(reason).slice(0, 400),
-          bannedBy: callerUid,
-          bannedAt: FieldValue.serverTimestamp(),
-          permabanned: true,
-        });
+        await bans.applyBan(targetUid, { byUid: callerUid, permanent: true, reason });
         return { targetUid, reason: String(reason).slice(0, 400) };
-      },
-    });
-  }
-);
-
-// ───────────────────────────────────────────────────────────
-// vanguardCallTournamentWinner — official moderator winner call for
-// tournaments without an API to auto-decide. The caller must be Vanguard
-// rank or above (Recruits are read-only). Effects:
-//   1. Records the match result through the shared internal helper
-//      (`_internal_recordMatchResult`) with source='vanguard' — that path
-//      treats this as authoritative (same trust as admin/gsi/gameapi) and
-//      advances the bracket if the match was the last open one.
-//   2. Sets `vanguardModerated: true` on the tournament doc + appends the
-//      caller's uid to `vanguardModerators[]`. The flag is what
-//      `finalizeTournamentSecure` later reads to route the 5% mod cut
-//      into the Vanguard treasury.
-//   3. Writes a `vanguard_actions/` audit entry.
-//   4. Bumps the caller's `users/{uid}.vanguard.monthlyActions[YYYY-MM]`
-//      + `totalActions` + `lastActionAt`. The monthly-actions count is
-//      what the treasury cron uses to weight the share.
-//   5. Grants the caller +rank-specific VP (Vanguard +50, Senior +100,
-//      Commander +200, Overseer +500).
-// ───────────────────────────────────────────────────────────
-exports.vanguardCallTournamentWinner = functions.https.onCall(
-  { region: 'europe-west1' },
-  async (req) => {
-    const uid = requireAuth(req);
-    const { tournamentId, matchId, winnerId, reason = '' } = req.data || {};
-    if (!tournamentId || !matchId || !winnerId) {
-      throw new HttpsError('invalid-argument', 'tournamentId + matchId + winnerId required.');
-    }
-
-    const db = admin.firestore(undefined, DB);
-
-    // Authorisation: founder OR active non-Recruit Vanguard.
-    const actor = await loadActor(db, uid);
-    const { isFounder, rankMeta, auditRank } = actor;
-
-    // Commander-override gate: if the auto-OCR cron stamped a HIGH confidence
-    // suggestion onto the match AND this Vanguard (below Commander, non-
-    // founder) is picking the opposite winner, route to Commander review
-    // instead of recording the result. The mod could still be correct
-    // (OCR can misread), but high-confidence disagreement = bias check.
-    const matchSnap = await db.collection('tournaments').doc(tournamentId)
-      .collection('matches').doc(matchId).get();
-    const matchData = matchSnap.exists ? matchSnap.data() : {};
-    const ai = matchData.aiSuggestion || null;
-    const isCommanderPlus = isFounder || ['commander', 'overseer'].includes(rankMeta?.id);
-    if (
-      ai &&
-      ai.confidence === 'high' &&
-      ai.suggestedWinnerId &&
-      ai.suggestedWinnerId !== winnerId &&
-      !isCommanderPlus
-    ) {
-      await db.collection('tournaments').doc(tournamentId)
-        .collection('matches').doc(matchId).set({
-          commanderReviewRequired: true,
-          modProposedWinnerId: winnerId,
-          modProposedBy: uid,
-          modProposedReason: String(reason).slice(0, 400),
-          modProposedAt: FieldValue.serverTimestamp(),
-        }, { merge: true });
-      await db.collection('vanguard_actions').add({
-        moderatorId: uid,
-        action: 'tournament_winner_call_review_required',
-        targetType: 'tournament_match',
-        targetId: `${tournamentId}/${matchId}`,
-        tournamentId,
-        matchId,
-        winnerId,
-        aiSuggestedWinnerId: ai.suggestedWinnerId,
-        rank: auditRank,
-        reason: `High-confidence AI disagreement — awaiting Commander review. ${String(reason).slice(0, 200)}`,
-        takenAt: FieldValue.serverTimestamp(),
-      });
-      return {
-        ok: false,
-        reviewRequired: true,
-        message: 'AI suggestion disagrees with your pick at high confidence. A Commander will review.',
-      };
-    }
-
-    // Delegate the actual match-result write to the existing internal
-    // helper. It validates the winner is a participant, ensures the
-    // tournament is active, and triggers `advanceBracketAfterMatch` on
-    // completion (which can auto-finalize the tournament).
-    const tournaments = require('./tournaments');
-    await tournaments._internal_recordMatchResult({
-      reporterUid: uid,
-      tournamentId,
-      matchId,
-      winnerId,
-      source: isFounder ? 'admin' : 'vanguard',
-      evidenceUrl: null,
-    });
-
-    const monthKey = (() => {
-      const d = new Date();
-      return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
-    })();
-    const now = FieldValue.serverTimestamp();
-    const batch = db.batch();
-
-    // Founder calls still flag the tournament as "moderated" so the 5%
-    // mod cut routes to the Vanguard treasury (founder is choosing to
-    // fund the mod program even when personally deciding the match).
-    batch.update(db.collection('tournaments').doc(tournamentId), {
-      vanguardModerated: true,
-      vanguardModerators: FieldValue.arrayUnion(uid),
-    });
-
-    batch.set(db.collection('vanguard_actions').doc(), {
-      moderatorId: uid,
-      action: 'tournament_winner_call',
-      targetType: 'tournament_match',
-      targetId: `${tournamentId}/${matchId}`,
-      tournamentId,
-      matchId,
-      winnerId,
-      rank: auditRank,
-      reason: String(reason).slice(0, 400),
-      takenAt: now,
-    });
-
-    // Mod stats + VP grant — skipped for founder (not a paid mod).
-    if (!isFounder) {
-      batch.update(db.collection('users').doc(uid), {
-        [`vanguard.monthlyActions.${monthKey}`]: FieldValue.increment(1),
-        'vanguard.totalActions': FieldValue.increment(1),
-        'vanguard.lastActionAt': now,
-      });
-
-      if (rankMeta.actionVp > 0) {
-        batch.set(db.collection('wallets').doc(uid), {
-          vp: FieldValue.increment(rankMeta.actionVp),
-          updatedAt: now,
-        }, { merge: true });
-        batch.set(db.collection('transactions').doc(), {
-          userId: uid,
-          type: 'vanguard_action_vp',
-          amount: rankMeta.actionVp,
-          currency: 'vp',
-          description: `Vanguard winner call — tournament match (${rankMeta.label})`,
-          tournamentId,
-          matchId,
-          createdAt: now,
-        });
-      }
-    }
-
-    await batch.commit();
-
-    return {
-      ok: true,
-      monthKey,
-      vpGranted: isFounder ? 0 : rankMeta.actionVp,
-      rank: auditRank,
-    };
-  }
-);
-
-// ───────────────────────────────────────────────────────────
-// vanguardResolveQueueItem — resolves a Vanguard Review Queue item
-// (AI Review / Anti-Cheat / Replay Request) with REAL consequences:
-// audit log, status update, target notification, and (when the action
-// warrants it) match forfeit + user flag bump.
-//
-// Authority: 'confirm' on Anti-Cheat RED requires canTempBan (Senior+)
-// because it forfeits the player. All other paths require canApproveReject
-// (Vanguard+). Recruits are blocked by loadActor.
-// ───────────────────────────────────────────────────────────
-exports.vanguardResolveQueueItem = functions.https.onCall(
-  { region: 'europe-west1' },
-  async (req) => {
-    const uid = requireAuth(req);
-    const { kind, itemId, action, notes = '' } = req.data || {};
-    if (!['ai', 'ac', 'rp'].includes(kind)) {
-      throw new HttpsError('invalid-argument', 'kind must be ai|ac|rp');
-    }
-    if (!itemId) throw new HttpsError('invalid-argument', 'itemId required');
-    if (!['confirm', 'clear'].includes(action)) {
-      throw new HttpsError('invalid-argument', 'action must be confirm|clear');
-    }
-
-    const COLLECTIONS = {
-      ai: 'tournament_review_queue',
-      ac: 'anti_cheat_alerts',
-      rp: 'replay_review_requests',
-    };
-    const collName = COLLECTIONS[kind];
-    const cleanNotes = String(notes || '').slice(0, 400);
-
-    // Pre-fetch the queue item so we can decide required authority.
-    const dbEarly = admin.firestore(undefined, DB);
-    const itemSnap = await dbEarly.collection(collName).doc(itemId).get();
-    if (!itemSnap.exists) throw new HttpsError('not-found', 'Queue item not found.');
-    const item = itemSnap.data();
-    if (item.status && item.status !== 'pending') {
-      throw new HttpsError('failed-precondition', `Item already ${item.status}.`);
-    }
-
-    // AC RED confirm = forfeit + flag. Needs canTempBan. Everything else
-    // is canApproveReject (Vanguard+).
-    const forfeitPath = kind === 'ac' && action === 'confirm' && item.severity === 'red';
-    const requiredAuthority = forfeitPath ? 'canTempBan' : 'canApproveReject';
-
-    return runVanguardAction({
-      uid,
-      requiredAuthority,
-      actionType: `queue_${kind}_${action}`,
-      mutator: async (db, callerUid) => {
-        const newStatus = action === 'confirm' ? 'confirmed' : 'cleared';
-        const itemRef = db.collection(collName).doc(itemId);
-        await itemRef.update({
-          status: newStatus,
-          resolverUid: callerUid,
-          resolvedAt: FieldValue.serverTimestamp(),
-          resolverNotes: cleanNotes,
-        });
-
-        const tournamentId = item.tournamentId || null;
-        const matchId = item.matchId || null;
-        const consequences = [];
-
-        // ─── AI Review ────────────────────────────────────────────────
-        if (kind === 'ai') {
-          // Subject = the flagged player. Try item.flaggedUid, fall back
-          // to the match's existing cheatFlag subject if any.
-          let subjectUid = item.flaggedUid || item.uid || null;
-          if (tournamentId && matchId) {
-            const mRef = db.collection('tournaments').doc(tournamentId)
-              .collection('matches').doc(matchId);
-            await mRef.set({
-              cheatFlag: {
-                [action === 'confirm' ? 'confirmed' : 'cleared']: true,
-                lastReviewAt: FieldValue.serverTimestamp(),
-                lastReviewBy: callerUid,
-                severity: item.severity || null,
-                flags: item.flags || [],
-                subjectUid: subjectUid || null,
-              },
-            }, { merge: true });
-            consequences.push('match_flag_updated');
-          }
-          if (subjectUid && action === 'confirm') {
-            await db.collection('users').doc(subjectUid).set({
-              tournamentTrust: {
-                confirmedFlags: FieldValue.increment(1),
-                lastFlagAt: FieldValue.serverTimestamp(),
-              },
-            }, { merge: true });
-            consequences.push('trust_flag_incremented');
-          }
-          if (subjectUid) {
-            await db.collection('notifications').add({
-              recipientId: subjectUid,
-              type: action === 'confirm' ? 'tournament_flag_confirmed' : 'tournament_flag_cleared',
-              title: action === 'confirm'
-                ? 'AI-flagged tournament moment confirmed by a moderator'
-                : 'Tournament review cleared',
-              body: action === 'confirm'
-                ? 'A Vanguard moderator reviewed flagged footage from your tournament match and confirmed an issue.'
-                : 'A Vanguard moderator reviewed flagged footage from your tournament match and found no issue.',
-              data: { tournamentId, matchId },
-              actionUrl: tournamentId && matchId ? `/tournaments/${tournamentId}/match/${matchId}` : '/tournaments',
-              read: false, createdAt: FieldValue.serverTimestamp(),
-            }).catch(() => null);
-            consequences.push('subject_notified');
-          }
-          return { kind, itemId, action, tournamentId, matchId, subjectUid, consequences };
-        }
-
-        // ─── Anti-Cheat ───────────────────────────────────────────────
-        if (kind === 'ac') {
-          const subjectUid = item.uid || null;
-          if (action === 'confirm') {
-            // RED severity = auto-forfeit current match + flag account.
-            if (item.severity === 'red' && tournamentId && matchId && subjectUid) {
-              const mSnap = await db.collection('tournaments').doc(tournamentId)
-                .collection('matches').doc(matchId).get();
-              if (mSnap.exists) {
-                const m = mSnap.data();
-                const opponentUid = m.player1 === subjectUid ? m.player2
-                                   : m.player2 === subjectUid ? m.player1 : null;
-                if (opponentUid && m.status !== 'completed') {
-                  try {
-                    const tournaments = require('./tournaments');
-                    await tournaments._internal_recordMatchResult({
-                      reporterUid: callerUid,
-                      tournamentId, matchId,
-                      winnerId: opponentUid,
-                      source: 'admin',
-                      evidenceUrl: null,
-                    });
-                    consequences.push('match_forfeited');
-                  } catch (err) {
-                    consequences.push(`forfeit_failed:${err?.code || 'unknown'}`);
-                  }
-                }
-              }
-            }
-            // Flag account regardless of severity.
-            await db.collection('users').doc(subjectUid).set({
-              tournamentTrust: {
-                confirmedCheatScans: FieldValue.increment(1),
-                lastCheatScanAt: FieldValue.serverTimestamp(),
-                lastCheatScanSeverity: item.severity || null,
-              },
-            }, { merge: true });
-            consequences.push('account_flagged');
-          }
-          if (subjectUid) {
-            await db.collection('notifications').add({
-              recipientId: subjectUid,
-              type: action === 'confirm' ? 'anti_cheat_confirmed' : 'anti_cheat_cleared',
-              title: action === 'confirm'
-                ? 'Anti-cheat alert confirmed'
-                : 'Anti-cheat alert cleared',
-              body: action === 'confirm'
-                ? (item.severity === 'red'
-                    ? 'A moderator confirmed a cheat-tool detection on your machine. The current match was forfeited.'
-                    : 'A moderator flagged suspicious software detected on your machine during a tournament match.')
-                : 'A moderator reviewed an anti-cheat alert on your account and dismissed it.',
-              data: { tournamentId, matchId, severity: item.severity || null },
-              actionUrl: tournamentId && matchId ? `/tournaments/${tournamentId}/match/${matchId}` : '/tournaments',
-              read: false, createdAt: FieldValue.serverTimestamp(),
-            }).catch(() => null);
-            consequences.push('subject_notified');
-          }
-          return { kind, itemId, action, tournamentId, matchId, subjectUid, severity: item.severity, consequences };
-        }
-
-        // ─── Replay Review ────────────────────────────────────────────
-        if (kind === 'rp') {
-          const requesterUid = item.requesterUid || null;
-          // On confirm, escalate the moment into the AI Review queue so
-          // it gets a deeper VOD pass. On clear, just notify the requester.
-          if (action === 'confirm' && tournamentId && matchId) {
-            await db.collection('tournament_review_queue').add({
-              status: 'pending',
-              tournamentId, matchId,
-              severity: 'medium',
-              source: 'replay_escalation',
-              originReplayId: itemId,
-              flags: [{ type: 'replay_flagged', tSec: item.timestampSec || 0, severity: 3, note: item.reason || '' }],
-              flaggedUid: item.targetUid || null,
-              createdAt: FieldValue.serverTimestamp(),
-            });
-            consequences.push('escalated_to_ai_review');
-          }
-          if (requesterUid) {
-            await db.collection('notifications').add({
-              recipientId: requesterUid,
-              type: action === 'confirm' ? 'replay_review_confirmed' : 'replay_review_cleared',
-              title: action === 'confirm' ? 'Replay request escalated' : 'Replay request reviewed',
-              body: action === 'confirm'
-                ? 'A Vanguard moderator agreed with your replay request and escalated it for deeper review.'
-                : 'A Vanguard moderator reviewed your replay request and found no violation.',
-              data: { tournamentId, matchId, timestampSec: item.timestampSec || 0 },
-              actionUrl: tournamentId && matchId ? `/tournaments/${tournamentId}/match/${matchId}` : '/tournaments',
-              read: false, createdAt: FieldValue.serverTimestamp(),
-            }).catch(() => null);
-            consequences.push('requester_notified');
-          }
-          return { kind, itemId, action, tournamentId, matchId, requesterUid, consequences };
-        }
-
-        return { kind, itemId, action, consequences };
       },
     });
   }
@@ -1344,3 +1016,6 @@ exports.adminTriggerVanguardDistribution = functions.https.onCall(
     return result;
   }
 );
+
+// Shared with streaming.js endStreamSession (a Vanguard takedown from Live now).
+exports.runVanguardAction = runVanguardAction;

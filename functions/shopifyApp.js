@@ -25,7 +25,7 @@ const shopifyApi = require('./shopifyGraphql');
 const REGION = 'europe-west1';
 const db = getFirestore('vgrdb');
 
-const CLIENT_ID = functions.params.defineSecret('SHOPIFY_APP_CLIENT_ID');
+const CLIENT_ID = functions.params.defineString('SHOPIFY_APP_CLIENT_ID');
 const CLIENT_SECRET = functions.params.defineSecret('SHOPIFY_APP_CLIENT_SECRET');
 
 // Quarterly. Bump deliberately — a stale version keeps working until Shopify
@@ -291,7 +291,7 @@ function planCardHtml(shop, plan, productCount) {
 
 // ── the single HTTP entry point ──────────────────────────────────────
 exports.shopifyApp = functions.https.onRequest(
-  { region: REGION, secrets: [CLIENT_ID, CLIENT_SECRET, shopifyBilling.PARTNER_API_TOKEN], cors: false },
+  { region: REGION, secrets: [CLIENT_SECRET, shopifyBilling.PARTNER_API_TOKEN], cors: false },
   async (req, res) => {
     if (!secretsReady()) {
       res.status(503).send('Shopify app is not configured.');

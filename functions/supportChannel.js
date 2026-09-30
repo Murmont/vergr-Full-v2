@@ -38,7 +38,7 @@ const toMs = (t) => (t && typeof t.toMillis === 'function' ? t.toMillis() : null
 /** Every account that may answer support: the founder plus anyone granted the screen. */
 async function listAgentUids() {
   const [admins, scoped] = await Promise.all([
-    db.collection('users').where('role', '==', 'admin').get(),
+    db.collection('users').where('staff', '==', true).get(),
     db.collection('admin_users').where('allowedScreens', 'array-contains', SCREEN).get(),
   ]);
   const set = new Set();

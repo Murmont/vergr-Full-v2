@@ -34,6 +34,7 @@ import { useUser } from '../../context/UserContext';
 import { applyVanguardMask } from '../../utils/vanguard';
 import VanguardBadge from '../../components/VanguardBadge';
 import TranslationSheet from '../../components/TranslationSheet';
+import { TRANSLATION_ENABLED } from '../../utils/translationSwitch';
 import { isTauri } from '../../utils/platform';
 import { useUI } from '../../context/UIContext';
 import { isGallerySaveSupported, saveMediaToGallery } from '../../utils/saveToGallery';
@@ -182,7 +183,7 @@ function TournamentEmbed({ data }) {
       <div style={{ padding: 14, display: 'flex', gap: 14, alignItems: 'center' }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-            <span className="material-symbols-outlined" style={{ fontSize: 16, color: 'var(--violet-light)' }}>emoji_events</span>
+            <span className="material-symbols-outlined" style={{ fontSize: 16, color: 'var(--violet-light)' }}>event</span>
             <span style={{ fontFamily: 'DM Mono', fontSize: 10, textTransform: 'uppercase', letterSpacing: '.12em', color: 'var(--violet-light)' }}>
               {data.game || 'Event'}
             </span>
@@ -718,7 +719,7 @@ export default function SquadChatThreadScreen() {
       const list = await getUserTournaments(myUid, 30);
       setMyTournaments(list || []);
     } catch (err) {
-      console.warn('Failed to load tournaments:', err);
+      console.warn('Failed to load events:', err);
     }
     setTournamentsLoading(false);
   };
@@ -1012,7 +1013,7 @@ export default function SquadChatThreadScreen() {
       const link = !yt && extractUrl(m.text);
       return (
         <>
-          <div className="msg-text" onClick={() => { if (isTauri() && m.text) setTranslateMsg(m); }}>
+          <div className="msg-text" onClick={() => { if (TRANSLATION_ENABLED && isTauri() && m.text) setTranslateMsg(m); }}>
             <SpoilerText text={m.text} />
             {m.editedAt && <span className="msg-edited">edited</span>}
           </div>
@@ -1251,7 +1252,7 @@ export default function SquadChatThreadScreen() {
                     onEdit={canEdit ? handleEdit : undefined}
                     onPin={handlePin}
                     onDelete={canDelete ? deleteMsg : undefined}
-                    onTranslate={m.text ? (msg) => setTranslateMsg(msg) : undefined}
+                    onTranslate={TRANSLATION_ENABLED && m.text ? (msg) => setTranslateMsg(msg) : undefined}
                     onSaveMedia={canSaveToGallery && m.contentUrl
                       ? () => saveSquadMedia(m.contentUrl, m.type === 'clip' || m.type === 'video')
                       : undefined}
@@ -1408,7 +1409,7 @@ export default function SquadChatThreadScreen() {
                   <span className="ai-tx"><b>Ticketed event</b><i>Share an event with tickets</i></span>
                 </button>
                 <button className="attach-item" role="menuitem" onClick={() => { setAttachOpen(false); openTournamentShare(); }}>
-                  <span className="ai-ic" style={{ background: 'rgba(240,165,0,.14)', color: '#F0A500' }}><span className="material-symbols-outlined">emoji_events</span></span>
+                  <span className="ai-ic" style={{ background: 'rgba(240,165,0,.14)', color: '#F0A500' }}><span className="material-symbols-outlined">event</span></span>
                   <span className="ai-tx"><b>My events</b><i>One you host or joined</i></span>
                 </button>
               </div>
@@ -1627,7 +1628,7 @@ export default function SquadChatThreadScreen() {
           <div style={{ textAlign: 'center', padding: 40, color: 'var(--t3)' }}>Loading…</div>
         ) : myTournaments.length === 0 ? (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, padding: '32px 24px', color: 'var(--t3)', textAlign: 'center' }}>
-            <span className="material-symbols-outlined" style={{ fontSize: 44, opacity: .45 }}>emoji_events</span>
+            <span className="material-symbols-outlined" style={{ fontSize: 44, opacity: .45 }}>event</span>
             <div style={{ fontFamily: 'Syne', fontWeight: 700, fontSize: 15, color: 'var(--t1)' }}>You aren't in any events</div>
             <div style={{ fontSize: 12.5, maxWidth: 320 }}>Host an event or get a ticket to one — then come back to share it with your squad.</div>
           </div>
@@ -1646,7 +1647,7 @@ export default function SquadChatThreadScreen() {
                 onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'rgba(255,255,255,.06)'; e.currentTarget.style.background = 'rgba(255,255,255,.03)'; }}
               >
                 <div style={{ width: 52, height: 52, borderRadius: 10, flexShrink: 0, background: t.bannerUrl ? `url(${t.bannerUrl}) center/cover` : 'linear-gradient(135deg,#2d0a5a,#7B1FFF)', display: 'grid', placeItems: 'center' }}>
-                  {!t.bannerUrl && <span className="material-symbols-outlined" style={{ color: '#fff', fontSize: 22 }}>emoji_events</span>}
+                  {!t.bannerUrl && <span className="material-symbols-outlined" style={{ color: '#fff', fontSize: 22 }}>event</span>}
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontFamily: 'Syne', fontWeight: 700, color: '#fff', fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>

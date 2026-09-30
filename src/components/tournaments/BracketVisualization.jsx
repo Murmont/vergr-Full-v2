@@ -438,7 +438,7 @@ export function BracketFullscreen({ title, onClose, children }) {
         onPointerUp={endDrag}
         onPointerLeave={endDrag}
         className="flex-1 overflow-auto p-6 cursor-grab active:cursor-grabbing"
-        style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 24px)' }}
+        style={{ paddingBottom: 'calc(var(--vg-safe-b, 0px) + 24px)' }}
       >
         {children}
       </div>

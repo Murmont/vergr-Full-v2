@@ -19,11 +19,13 @@ import { isDesktopApp } from './platform';
 // Returns the Tauri update handle if a newer signed build exists, else null.
 // Never throws (offline / endpoint down / not desktop → null) so it can never
 // block app boot.
-export async function checkDesktopUpdate() {
+// `options` goes straight to the plugin's check() (e.g. { headers }). Vergr
+// Admin passes a download ticket there; the consumer app passes nothing.
+export async function checkDesktopUpdate(options) {
   if (!isDesktopApp()) return null; // browser / PWA / native Android: nothing to do
   try {
     const { check } = await import('@tauri-apps/plugin-updater');
-    const update = await check();
+    const update = await check(options);
     return update?.available ? update : null;
   } catch (e) {
     console.warn('[updater] check skipped:', e?.message || e);
@@ -34,10 +36,12 @@ export async function checkDesktopUpdate() {
 // Download + install the signed build, reporting byte progress, then relaunch
 // into the new version. Throws on failure so the caller can recover (let the
 // user into the current build rather than trapping them on the splash).
-export async function applyDesktopUpdate(update, onProgress) {
+// `options` (e.g. { headers }) REPLACES the headers the check was made with,
+// which is how Vergr Admin sends a fresh ticket if the first one has expired.
+export async function applyDesktopUpdate(update, onProgress, options) {
   await update.downloadAndInstall((event) => {
     try { onProgress?.(event); } catch { /* progress UI is best-effort */ }
-  });
+  }, options);
   const { relaunch } = await import('@tauri-apps/plugin-process');
   await relaunch();
 }

@@ -99,7 +99,7 @@ function grossUp(net, pct, flat) {
  *
  * @param {object} p
  * @param {number} p.subtotalUsd  the ladder price, what we intend to net
- * @param {string} p.method       'card' | 'payram_card' | 'payram_crypto' | 'googlePlay'
+ * @param {string} p.method       'card' | 'payram_card' | 'payram_crypto' | 'coda_card' | 'googlePlay'
  * @param {string} [p.uid]        buyer, for the profile country
  * @returns {Promise<object>} lines the cart renders verbatim
  */
@@ -196,6 +196,28 @@ async function quoteCheckout({ subtotalUsd, method, uid }) {
       key: 'provider', label: 'Card provider fee', amount: null,
       detail: 'Shown by the payment provider before you confirm',
     });
+  } else if (rail === 'coda_card') {
+    // ⚠⚠ CODAPAY ADDS NOTHING TO THE BUYER, AND THAT IS A CONTRACT TERM, NOT A
+    // PRICING CHOICE. Coda Content Monetization Agreement clause 4.1 (signed
+    // 2026-09-22): "Except with Coda's prior written consent, the Publisher shall
+    // not charge any End-User a fee or a discriminatory price for using Coda
+    // Platform." So the founder's usual rule (a processor's cut is added at the
+    // checkout, as for PayRam and Google Play) CANNOT apply here: the buyer pays
+    // the shelf price and Coda's cut comes out of what Vergr is paid. Coda also
+    // takes any sales tax OUT of our price (it does not add it), so no tax line
+    // either. Do NOT add a fee line here without Coda's written consent.
+    const lines2 = [
+      { key: 'subtotal', label: 'Coins', amount: subtotal, detail: null },
+      { key: 'vergr', label: 'Vergr fee', amount: 0, detail: 'We add nothing' },
+    ];
+    return {
+      method, rail, currency: 'USD', country,
+      subtotal, processingFee: 0, tax: 0, total: subtotal,
+      taxEnabled: false, providerDisclosed: false,
+      feesIncludedInPrice: true,
+      note: 'Any local tax is included in this price.',
+      lines: lines2,
+    };
   } else if (rail === 'payram_crypto') {
     // Paying in USDC direct: no card rail, no partner. Only PayRam's own
     // settlement fee applies, and the network fee is the payer's wallet's

@@ -12,8 +12,27 @@ import UserAvatar from '../../components/UserAvatar';
 import AdminShell, { ADMIN_COLORS as C } from './AdminShell';
 import {
   call, fmtNumber, fmtDate, fmtRelative,
-  useGuardedCall, KpiCard, Tabs,
+  useGuardedCall, KpiCard, Tabs, downloadCsv,
 } from './_adminGuarded';
+
+const iso = (ms) => (ms ? new Date(ms).toISOString() : '');
+const csvButtonStyle = {
+  marginLeft: 'auto', padding: '8px 14px', borderRadius: 8, border: 0,
+  background: '#2a2a3e', color: C.text, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+};
+const REPORT_CSV_COLUMNS = [
+  { label: 'Resolved at', get: (r) => iso(r.resolvedAt) },
+  { label: 'Reported at', get: (r) => iso(r.createdAt) },
+  { label: 'Target type', get: (r) => r.targetType },
+  { label: 'Target id', get: (r) => r.targetId },
+  { label: 'Reason', get: (r) => r.reason },
+  { label: 'Priority', get: (r) => r.priority },
+  { label: 'Status', get: (r) => r.status },
+  { label: 'Moderator uid', get: (r) => r.resolvedBy },
+  { label: 'Moderator', get: (r) => r.moderator?.displayName || r.moderator?.username || '' },
+  { label: 'Resolution note', get: (r) => r.resolutionReason },
+  { label: 'Appealed', get: (r) => (r.hasAppeal ? 'yes' : 'no') },
+];
 
 const TABS = [
   { id: 'overview',  label: 'Overview' },
@@ -200,6 +219,10 @@ function ReportsTab() {
           <option value="stream">Streams</option>
           <option value="message">Messages</option>
         </select>
+        <button type="button" disabled={!rows.length} style={csvButtonStyle}
+          onClick={() => downloadCsv(`resolved-reports-${new Date().toISOString().slice(0, 10)}.csv`, REPORT_CSV_COLUMNS, rows)}>
+          Export CSV ({rows.length})
+        </button>
       </div>
 
       <Card>
@@ -341,11 +364,74 @@ function ActionsTab() {
               <div style={{ marginTop: 10, fontSize: 11, color: C.textDim }}>
                 Last action: {fmtRelative(selected.lastActionAt)}
               </div>
+              <ModeratorTimeline
+                uid={selected.uid}
+                name={selected.moderator?.displayName || selected.moderator?.username || selected.uid.slice(0, 10)}
+                sinceMs={Date.now() - windowDays * 24 * 3600 * 1000}
+              />
             </>
           )}
         </Card>
       </div>
     </>
+  );
+}
+
+// Every decision one moderator made in the window, newest first, from the same
+// resolved-reports query the Reports tab uses (filtered by resolvedBy). Loaded
+// only when a moderator is picked; paged 50 at a time.
+function ModeratorTimeline({ uid, name, sinceMs }) {
+  const { showToast } = useUI();
+  const [rows, setRows] = useState([]);
+  const [cursor, setCursor] = useState(null);
+  const [loading, setLoading] = useState(true);
+  // Rounded so the parent's Date.now() on every render does not refetch.
+  const since = Math.floor(sinceMs / 3_600_000) * 3_600_000;
+
+  const load = useCallback(async (from) => {
+    setLoading(true);
+    try {
+      const r = await call('adminListResolvedReports', {
+        filters: { moderatorUid: uid, sinceMs: since },
+        cursor: from || null,
+        pageSize: 50,
+      });
+      setRows((prev) => (from ? [...prev, ...(r.rows || [])] : (r.rows || [])));
+      setCursor(r.nextCursor || null);
+    } catch (e) { showToast(e?.message || 'Failed to load timeline', 'error'); }
+    setLoading(false);
+  }, [uid, since, showToast]);
+
+  useEffect(() => { setRows([]); setCursor(null); load(null); }, [load]);
+
+  return (
+    <div style={{ marginTop: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+        <div style={{ fontSize: 12, fontWeight: 600, color: C.text }}>Timeline</div>
+        <button type="button" disabled={!rows.length} style={{ ...csvButtonStyle, padding: '5px 10px', fontSize: 11 }}
+          onClick={() => downloadCsv(`moderator-${name.replace(/[^\w-]+/g, '_')}-${new Date().toISOString().slice(0, 10)}.csv`, REPORT_CSV_COLUMNS, rows)}>
+          Export CSV
+        </button>
+      </div>
+      {loading && rows.length === 0 && <Empty label="Loading…" />}
+      {!loading && rows.length === 0 && <Empty label="No decisions in this window." />}
+      {rows.map((r) => (
+        <div key={r.id} style={{ display: 'grid', gridTemplateColumns: '90px 80px 1fr 80px', gap: 8, alignItems: 'center', padding: '7px 0', fontSize: 12 }}>
+          <span style={{ fontSize: 11, color: C.textDim }}>{fmtRelative(r.resolvedAt)}</span>
+          <TypePill type={r.targetType} />
+          <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: C.text }}
+            title={r.resolutionReason || ''}>
+            {r.reason || '—'}{r.resolutionReason ? ` · "${r.resolutionReason}"` : ''}
+          </span>
+          <ReportStatusPill status={r.status} />
+        </div>
+      ))}
+      {cursor && (
+        <button type="button" onClick={() => load(cursor)} disabled={loading} style={{ ...csvButtonStyle, marginLeft: 0, marginTop: 8 }}>
+          {loading ? 'Loading…' : 'Load more'}
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -408,6 +494,19 @@ function AppealsTab({ guarded }) {
         <div style={{ fontSize: 11, color: C.textDim }}>
           {fmtNumber(rows.length)} loaded · {fmtNumber(pendingCount)} pending
         </div>
+        <button type="button" disabled={!rows.length} style={csvButtonStyle}
+          onClick={() => downloadCsv(`appeals-${new Date().toISOString().slice(0, 10)}.csv`, [
+            { label: 'Filed at', get: (a) => iso(a.createdAt) },
+            { label: 'Target type', get: (a) => a.targetType },
+            { label: 'Target id', get: (a) => a.targetId },
+            { label: 'User uid', get: (a) => a.userId },
+            { label: 'Appeal', get: (a) => a.appealText },
+            { label: 'Status', get: (a) => a.status },
+            { label: 'Resolved at', get: (a) => iso(a.resolvedAt) },
+            { label: 'Resolution note', get: (a) => a.resolutionReason },
+          ], rows)}>
+          Export CSV
+        </button>
       </div>
 
       <Card>
@@ -609,7 +708,7 @@ function SettingsTab({ guarded }) {
   return (
     <Card title="Moderation policy">
       <p style={{ margin: '0 0 16px', fontSize: 12, color: C.textDim }}>
-        Stored on <code>app_config/general.moderation</code>. Reads by every server-side moderation decision.
+        Stored on <code>app_config/general.moderation</code>. Each one is read: the threshold by report filing, the durations as the defaults in Users, the window by appeals, the handbook on /vanguard/handbook.
       </p>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
         <NumberField label="Auto-hide threshold (# reports, 1–100)" value={get('autoHideReportThreshold')}
@@ -624,7 +723,7 @@ function SettingsTab({ guarded }) {
 
       <div style={{ marginTop: 16 }}>
         <div style={{ fontSize: 11, fontWeight: 600, color: C.textDim, marginBottom: 6 }}>
-          Moderator handbook (markdown, ≤8000 chars — rendered on /vanguard/me)
+          Current guidance for moderators (markdown, up to 8000 characters, shown first in /vanguard/handbook)
         </div>
         <textarea rows={10} value={get('handbookMarkdown') || ''} onChange={e => set('handbookMarkdown', e.target.value)}
           style={{ width: '100%', padding: '10px 12px', background: '#0a0a14', border: `1px solid ${C.border}`, borderRadius: 8, color: C.text, fontSize: 12, resize: 'vertical', fontFamily: 'ui-monospace, monospace' }} />

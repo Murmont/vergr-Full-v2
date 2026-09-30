@@ -748,7 +748,7 @@ export default function CreateTournamentV2() {
 
   const plan = resolveTier(profile);
   const bracketCfg = getBracketType(type);
-  const isAdmin = profile?.role === 'admin' || currentUser?.email === 'vergenerd@gmail.com';
+  const isAdmin = profile?.staff === true || profile?.role === 'admin';
   const isTicketed = fundingModel === 'ticketed';
   const needsSquad = bracketCfg?.mode === 'squad';
   const finalGame = game;

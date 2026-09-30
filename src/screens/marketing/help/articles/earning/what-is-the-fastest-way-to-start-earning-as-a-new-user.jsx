@@ -2,12 +2,11 @@ export default {
   summary: "The fastest start is to post clips and go live: tips need no follower threshold on posts and clips, so your first Coins can arrive on day one. Referrals and squad earnings stack on top while your audience grows.",
   updated: "2026-06-07",
   body: [
-    { p: "You do not need followers to start earning on VERGR. Competition pays out on skill, not popularity." },
+    { p: "You do not need followers to start earning on VERGR. Anyone who sees what you post can tip it, from your first clip." },
     { h2: "Quickest paths" },
     { list: [
-      "Brawl quickplay: instant 1v1 matches — win the pot, no audience required.",
       "Clips and Shorts: the cheapest content to make and the easiest thing for a stranger to tip.",
-      "Champion Picks: predict match winners to earn from the prediction pool.",
+      "Referrals: invite people you know and earn a share of what they spend.",
     ]},
     { h2: "Build alongside it" },
     { list: [

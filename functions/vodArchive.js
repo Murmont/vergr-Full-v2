@@ -15,7 +15,7 @@
 
 const functions = require('firebase-functions/v2');
 const { onDocumentWritten } = require('firebase-functions/v2/firestore');
-const { defineSecret } = require('firebase-functions/params');
+const { defineSecret, defineString } = require('firebase-functions/params');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const { S3Client, ListObjectsV2Command, PutObjectCommand } = require('@aws-sdk/client-s3');
 
@@ -25,7 +25,7 @@ const db = getFirestore('vgrdb');
 const HOST_OPS_TOKEN = defineSecret('HOST_OPS_TOKEN');
 const R2_ACCESS_KEY_ID     = defineSecret('R2_ACCESS_KEY_ID');
 const R2_SECRET_ACCESS_KEY = defineSecret('R2_SECRET_ACCESS_KEY');
-const R2_ACCOUNT_ID        = defineSecret('R2_ACCOUNT_ID');
+const R2_ACCOUNT_ID = defineString('R2_ACCOUNT_ID');
 const VOD_LAUNCHER_BASE = process.env.VOD_LAUNCHER_BASE || 'https://archive.vergr.app';
 const R2_BUCKET = 'vergr-media';
 const CDN_BASE = 'https://cdn.vergr.app';
@@ -239,7 +239,7 @@ function isRestricted(s = {}) {
 exports.dispatchStreamVodArchive = onDocumentWritten(
   {
     region: REGION, document: 'streams/{streamId}', database: 'vgrdb',
-    secrets: [HOST_OPS_TOKEN, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_ACCOUNT_ID],
+    secrets: [HOST_OPS_TOKEN, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY],
   },
   async (event) => {
     const before = event.data?.before?.data();

@@ -1,4 +1,5 @@
 const { getFirestore } = require('firebase-admin/firestore');
+const { planOf } = require('./plan');
 const functions = require('firebase-functions/v2');
 const functionsV1 = require('firebase-functions/v1');
 const axios = require('axios');
@@ -15,9 +16,9 @@ const db = getFirestore('vgrdb');
 // push triggers below is safe. Any trigger that should reach Huawei users must
 // list these two secrets so v2 injects them into process.env.
 const { sendHuaweiPush } = require('./huaweiPush');
-const HUAWEI_PUSH_APP_ID = functions.params.defineSecret('HUAWEI_PUSH_APP_ID');
+const HUAWEI_PUSH_APP_ID = functions.params.defineString('HUAWEI_PUSH_APP_ID');
 const HUAWEI_PUSH_CLIENT_SECRET = functions.params.defineSecret('HUAWEI_PUSH_CLIENT_SECRET');
-const HUAWEI_PUSH_SECRETS = [HUAWEI_PUSH_APP_ID, HUAWEI_PUSH_CLIENT_SECRET];
+const HUAWEI_PUSH_SECRETS = [HUAWEI_PUSH_CLIENT_SECRET];
 
 // Cron consolidation shim: turns a former scheduled-function definition into a
 // plain async handler (drops the schedule, keeps the body). The handlers are
@@ -92,7 +93,7 @@ const economy = require('./economy');
 // payout partner wired into disbursePayout() before it can move money, and
 // functions/withdrawals.js is still the active rail. Two systems must never be
 // able to move the same gems at once, so the cutover is deliberate and separate.
-exports.runCreatorPayouts = require('./creatorPayouts').runCreatorPayouts;
+// runCreatorPayouts runs inside cronMoney (2026-09-29: standalone Scheduler jobs are billed).
 
 // Creator Program: anyone can use Vergr, only a creator can monetize.
 // Wallet-moving actions ported off the client so `wallets.balance` and
@@ -123,7 +124,7 @@ exports.adminSetPayoutAccountState = require('./creatorPayouts').adminSetPayoutA
 
 // Solvency: are creator liabilities covered by what we hold. Alarms on shortfall
 // AND on "cannot tell", because an unverifiable solvency figure is not solvency.
-exports.reconcileSolvency = require('./solvencyLedger').reconcileSolvency;
+// reconcileSolvency runs inside cronMoney (2026-09-29: standalone Scheduler jobs are billed).
 exports.getSolvencyLedger = require('./solvencyLedger').getSolvencyLedger;
 
 // buyCoinsWithGems REMOVED 2026-08-16. It turned accrued revenue share back
@@ -142,6 +143,8 @@ exports.getSolvencyLedger = require('./solvencyLedger').getSolvencyLedger;
 // Every privileged callable wraps through these helpers.
 // See CLAUDE.md "🚨 Security hardening" for full spec.
 const adminSecurity = require('./adminSecurity');
+// Module only, exports no function: see functions/operator.js.
+const { claimOperatorOnCreate } = require('./operator');
 exports.enrollAdminTotp              = adminSecurity.enrollAdminTotp;
 exports.confirmAdminTotpEnrollment   = adminSecurity.confirmAdminTotpEnrollment;
 exports.verifyAdminTotp              = adminSecurity.verifyAdminTotp;
@@ -322,16 +325,11 @@ exports.adminGetUpcomingRenewals          = adminSubscriptions.adminGetUpcomingR
 exports.adminListSubscriptions            = adminSubscriptions.adminListSubscriptions;
 exports.adminGetBillingStats              = adminSubscriptions.adminGetBillingStats;
 exports.adminListInvoices                 = adminSubscriptions.adminListInvoices;
-// Pass 2 — Plans & Pricing, Comp & Overrides, Settings, Logs, Bulk actions.
-exports.adminListPlans                       = adminSubscriptions.adminListPlans;
-exports.adminUpsertPlan                      = adminSubscriptions.adminUpsertPlan;
-exports.adminDeletePlan                      = adminSubscriptions.adminDeletePlan;
-exports.adminSchedulePriceChange             = adminSubscriptions.adminSchedulePriceChange;
-exports.adminCancelScheduledPriceChange      = adminSubscriptions.adminCancelScheduledPriceChange;
-// applyScheduledPriceChanges — folded into cronDaily dispatcher (see EOF).
+// Comp & Overrides, Settings, Logs, Bulk actions. The Plans editor callables,
+// applyScheduledPriceChanges and adminApplyOverride (discounts) were DELETED
+// 2026-09-21: they changed nothing a buyer paid. See adminSubscriptions.js.
 exports.adminListOverrides                   = adminSubscriptions.adminListOverrides;
 exports.adminCompUser                        = adminSubscriptions.adminCompUser;
-exports.adminApplyOverride                   = adminSubscriptions.adminApplyOverride;
 exports.adminRevokeOverride                  = adminSubscriptions.adminRevokeOverride;
 exports.adminGetSubscriptionSettings         = adminSubscriptions.adminGetSubscriptionSettings;
 exports.adminSetSubscriptionSettings         = adminSubscriptions.adminSetSubscriptionSettings;
@@ -354,12 +352,9 @@ exports.onAdminActionCreated        = adminAlerts.onAdminActionCreated;
 const r2 = require('./r2');
 exports.getR2UploadUrl      = r2.getR2UploadUrl;
 exports.getImportUploadUrl  = r2.getImportUploadUrl;
-exports.coldStorageDemotion = r2.coldStorageDemotion;
 exports.setR2CorsPolicy     = r2.setR2CorsPolicy;
-
-// Per-view tracker that powers the cold-tiering decision.
-const coldStorage = require('./coldStorage');
-exports.markMediaViewed = coldStorage.markMediaViewed;
+// coldStorageDemotion + markMediaViewed DELETED 2026-09-21. Cold tiering is
+// banned (it caused the $9.92 R2 bill); see the note at the end of r2.js.
 
 // User wallet — PIN + TOTP + whitelist + security status (Phase 0-2 of the
 // self-custody USDC plan). Circle Wallets integration + deposit detection +
@@ -402,7 +397,7 @@ exports.circleWalletsWebhook = circleWallets.circleWalletsWebhook;
 // Map thumbnail proxy (Google Static Maps, dark-styled) — see functions/mapThumbnail.js.
 const mapThumbnail = require('./mapThumbnail');
 exports.mapThumb = mapThumbnail.mapThumb;
-exports.pollCircleDeposits   = circleWallets.pollCircleDeposits;
+// pollCircleDeposits runs inside cron5Min (2026-09-29: standalone Scheduler jobs are billed).
 
 // AdMob Rewarded watch-to-earn — server-side-verified coin crediting.
 const admobReward = require('./admobReward');
@@ -426,13 +421,14 @@ exports.setVanguardStatus          = vanguard.setVanguardStatus;
 exports.setVanguardSquadConfig     = vanguard.setVanguardSquadConfig;
 // distributeVanguardTreasury — folded into cronMonthly dispatcher (see EOF).
 exports.adminTriggerVanguardDistribution = vanguard.adminTriggerVanguardDistribution;
-exports.vanguardCallTournamentWinner     = vanguard.vanguardCallTournamentWinner;
 exports.vanguardResolveReport            = vanguard.vanguardResolveReport;
 exports.vanguardReviewAiFlag             = vanguard.vanguardReviewAiFlag;
 exports.vanguardMuteUser                 = vanguard.vanguardMuteUser;
 exports.vanguardTempBanUser              = vanguard.vanguardTempBanUser;
 exports.vanguardPermaBanUser             = vanguard.vanguardPermaBanUser;
-exports.vanguardResolveQueueItem         = vanguard.vanguardResolveQueueItem;
+// vanguardCallTournamentWinner + vanguardResolveQueueItem (tournament review,
+// anti-cheat and replay queues) DELETED 2026-09-21 with the rest of the
+// tournament backend. Tournaments do not exist; nothing reachable called them.
 
 // Pay-per-minute stream quality boost (1 coin/min for 720p, 2 coin/min for 1080p).
 // ⚠ TWO DIFFERENT BOOSTS, DO NOT CONFUSE THEM. 'streamingBoost' is the
@@ -472,8 +468,10 @@ exports.clearTipCatalog = tipCatalog.clearTipCatalog;
 // Phase 8: cohost auto-trigger + R2 segment cleanup cron.
 const streamingCleanup = require('./streamingCleanup');
 exports.triggerCohostComposite      = streamingCleanup.triggerCohostComposite;
-exports.cleanupExpiredStreamSegments = streamingCleanup.cleanupExpiredStreamSegments;
-exports.cleanupExpiredProofChunks    = streamingCleanup.cleanupExpiredProofChunks;
+// cleanupExpiredStreamSegments runs inside cron15Min, once an hour (2026-09-29: standalone Scheduler jobs are billed).
+// cleanupExpiredProofChunks DELETED 2026-09-21: tournament proof-feed cleanup.
+// It ran on its own Cloud Scheduler job over a tournament-proof/ prefix that is
+// empty (checked on R2), i.e. a bill for sweeping nothing.
 
 // Per-stream chat moderation (host: mute/ban/banned-words).
 const streamChatMod = require('./streamChatMod');
@@ -522,12 +520,8 @@ exports.backfillUsernameIndex = usernameIndex.backfillUsernameIndex;
 
 // Same-lobby verification, the player-facing half (self-attest, OCR receiver,
 // reschedule, dispute evidence, follow-match, thank-mod) was REMOVED 2026-08-17.
-// modVerifyMatchPlayer + vanguardHeartbeat are KEPT: /vanguard/wall and
-// /vanguard/moderation-room are still routed and call them.
-
-const matchVerification = require('./matchVerification');
-exports.modVerifyMatchPlayer        = matchVerification.modVerifyMatchPlayer;
-exports.vanguardHeartbeat           = matchVerification.vanguardHeartbeat;
+// modVerifyMatchPlayer + vanguardHeartbeat DELETED 2026-09-21: /vanguard/wall
+// and /vanguard/moderation-room were unrouted in 1.0.208, so nothing called them.
 
 // AC7 cheat-signature staleness cron REMOVED 2026-08-17, it pushed admins at
 // /admin/cheat-signatures, which no longer exists.
@@ -580,10 +574,8 @@ exports.getTurnCredentials           = turnCredentials.getTurnCredentials;
 // detectMatchTimeouts — folded into cron5Min dispatcher (see EOF).
 
 // Tournament AI moderation, the overlay ingest + config callables were REMOVED
-// 2026-08-17. analyzeTournamentMatch is KEPT: /vanguard/moderation-room is
-// still routed and calls it.
-const tournamentAi = require('./tournamentAi');
-exports.analyzeTournamentMatch  = tournamentAi.analyzeTournamentMatch;
+// 2026-08-17. analyzeTournamentMatch DELETED 2026-09-21 (its only screen,
+// /vanguard/moderation-room, was unrouted in 1.0.208).
 
 // Content moderation Phase 2 — Gemini-powered chat + post + image + video.
 // Scope: CSAM (mandatory), nudity (platform policy), doxxing, scam links.
@@ -597,26 +589,10 @@ exports.moderateNewPost     = contentAi.moderateNewPost;
 exports.enqueueVideoTranscode = require('./transcodeQueue').enqueueVideoTranscode;
 exports.rescanPost          = contentAi.rescanPost;
 
-// Vanguard tournament-assignment system (claim-based). KEPT on purpose:
-// /vanguard/schedule, /vanguard/wall and /vanguard/queue are all still routed
-// and call these. They will have nothing to operate on now that tournaments are
-// gone, retiring those Vanguard screens is a separate founder decision.
-const vanguardAssignments = require('./vanguardAssignments');
-exports.onTournamentCreated                  = vanguardAssignments.onTournamentCreated;
-exports.vanguardClaimTournament              = vanguardAssignments.vanguardClaimTournament;
-exports.vanguardReleaseTournamentAssignment  = vanguardAssignments.vanguardReleaseTournamentAssignment;
-exports.vanguardCheckIn                      = vanguardAssignments.vanguardCheckIn;
-exports.vanguardCompleteAssignment           = vanguardAssignments.vanguardCompleteAssignment;
-// detectTournamentNoShows — folded into cron5Min dispatcher (see EOF).
-// notifyUpcomingAssignments — folded into cron15Min dispatcher (see EOF).
-
-// Per-match Vanguard claiming + auto-OCR suggestion cron + Commander review.
-const tournamentMatchClaims = require('./tournamentMatchClaims');
-exports.vanguardClaimMatch           = tournamentMatchClaims.vanguardClaimMatch;
-exports.vanguardReleaseMatchClaim    = tournamentMatchClaims.vanguardReleaseMatchClaim;
-// autoSuggestMatchWinners — folded into cronMinute dispatcher (see EOF).
-exports.commanderResolveMatchReview  = tournamentMatchClaims.commanderResolveMatchReview;
-// detectTournamentStreamDrops — folded into cronMinute dispatcher (see EOF).
+// Vanguard tournament assignments, per-match claims and Commander match review
+// DELETED 2026-09-21, callables AND their two cron jobs (detectTournamentNoShows
+// every 5 min, notifyUpcomingAssignments every 15 min, each a Firestore query
+// for tournaments that cannot exist). Their screens were unrouted in 1.0.208.
 
 // Live streaming — Oracle nginx-rtmp + R2 + Cloudflare CDN architecture.
 // Provisions stream keys, charges/refunds Stream Boost, ranks discovery feed.
@@ -648,9 +624,9 @@ exports.syncVpLevel              = vpLevel.syncVpLevel;
 // Twitch mirror (Twitch → Vergr): poll Twitch for linked users going live and
 // surface them as native Vergr streams (Twitch embed in our UI).
 const twitchMirror = require('./twitchMirror');
-exports.pollTwitchMirrors  = twitchMirror.pollTwitchMirrors;
+// pollTwitchMirrors runs inside cronMinute (2026-09-29: standalone Scheduler jobs are billed).
 exports.syncTwitchMirrorNow = twitchMirror.syncTwitchMirrorNow;
-exports.refreshTwitchMirrorTokens = twitchMirror.refreshTwitchMirrorTokens;
+// refreshTwitchMirrorTokens runs inside cron15Min, every 30 minutes (2026-09-29: standalone Scheduler jobs are billed).
 exports.getTwitchMirrorViewers = twitchMirror.getTwitchMirrorViewers;
 exports.twitchChannelImport = twitchMirror.twitchChannelImport;
 
@@ -662,12 +638,19 @@ exports.twitchChannelImport = twitchMirror.twitchChannelImport;
 // PAYRAM_NODE_URL are set with real values.
 const payram = require('./payram');
 exports.createPayramPayment   = payram.createPayramPayment;
-// The quote the buy screen renders. Same regional + FX maths as the payment,
-// so the figure shown is the figure billed.
-exports.getCoinPriceQuote    = payram.getCoinPriceQuote;
 exports.getPayramOrderStatus  = payram.getPayramOrderStatus;
 exports.payramWebhook         = payram.payramWebhook;
-exports.pollPayramOrders      = payram.pollPayramOrders;
+// pollPayramOrders runs inside cron5Min (2026-09-29: standalone Scheduler jobs are billed).
+
+// Vergr's own checkout through Coda (functions/checkout.js) and Codashop's
+// fulfilment calls (functions/codashop.js). Independent of PayRam, which is
+// removed once Coda is live. Shared order code: functions/orders.js.
+const checkout = require('./checkout');
+exports.createCheckout     = checkout.createCheckout;
+exports.getCheckoutStatus  = checkout.getCheckoutStatus;
+// The quote the buy screen renders, from the same catalogue the payment uses.
+exports.getCoinPriceQuote  = checkout.getCoinPriceQuote;
+exports.codashopFulfilment = require('./codashop').codashopFulfilment;
 
 // Subscriptions — Tier A (card via NOWPayments invoice → activated by IPN)
 // and Tier B (coins debited from VERGR wallet, instant). Daily cron handles
@@ -715,10 +698,8 @@ exports.createLockedPost   = lockedPosts.createLockedPost;
 // The same mechanism on a message (DMs, groups, squad chats). entitlements.js
 // has had the `message` resolver since M0; this is what finally writes a price
 // onto one. Unpriced private chat is untouched and still unscanned.
-// One-shot sweep returning every unsettled prediction stake. Predictions were
-// retired; this is the only path those coins have back to their owners.
-const refundPicks = require('./refundOutstandingPicks');
-exports.refundOutstandingPicks = refundPicks.refundOutstandingPicks;
+// refundOutstandingPicks DELETED 2026-09-21: the one-shot prediction-stake
+// refund. Checked first: zero picks exist in any collection group.
 
 const lockedMessages = require('./lockedMessages');
 exports.getLockedMessageUploadUrl = lockedMessages.getLockedMessageUploadUrl;
@@ -738,6 +719,15 @@ exports.sendMediaPack   = mediaPacks.sendMediaPack;
 const playBilling = require('./playBilling');
 exports.redeemPlayPurchase     = playBilling.redeemPlayPurchase;
 exports.redeemPlaySubscription = playBilling.redeemPlaySubscription;
+
+// HUAWEI IAP — coin and subscription purchases on the AppGallery build only.
+// Verifies Huawei's RSA signature over the purchase data against the IAP
+// public key (secret HUAWEI_IAP_PUBLIC_KEY) rather than calling an API, so it
+// adds no per-purchase network call. Shares the product catalogue and the
+// grant helpers with playBilling. See functions/huaweiBilling.js.
+const huaweiBilling = require('./huaweiBilling');
+exports.redeemHuaweiPurchase     = huaweiBilling.redeemHuaweiPurchase;
+exports.redeemHuaweiSubscription = huaweiBilling.redeemHuaweiSubscription;
 
 // Discord-server clone (Phase 1: structure → Vergr groups + voice channels).
 // See functions/discordClone.js. Needs the DISCORD_BOT_TOKEN secret + the bot
@@ -805,22 +795,12 @@ exports.shopifyApp = shopifyApp.shopifyApp;
 // deleting it with the legacy app would have silently killed that path.
 exports.linkShopifyStore = require('./vlinkAccountLink').linkShopifyStore;
 
-// Steam GSI — auto-result detection for CS2 and Dota 2 via Valve's
-// official Game State Integration. See functions/gsi.js for the contract.
-const gsi = require('./gsi');
-exports.linkSteamAccount   = gsi.linkSteamAccount;
-exports.unlinkSteamAccount = gsi.unlinkSteamAccount;
-exports.getSteamGsiConfig  = gsi.getSteamGsiConfig;
-
-// Tier B wrappers — community/unofficial integrations behind a health
-// monitor that alerts admins when one breaks. See functions/wrappers/.
-const wrapperMonitor = require('./wrapperMonitor');
-exports.wrapperHealthCheck       = wrapperMonitor.wrapperHealthCheck;
-exports.runWrapperHealthCheckNow = wrapperMonitor.runWrapperHealthCheckNow;
-
-// Per-match wrapper polling REMOVED 2026-08-17, it existed to auto-detect
-// tournament match winners. The wrapper HEALTH monitor above stays: it watches
-// the community APIs that Linked Accounts still depends on.
+// Steam GSI (CS2 / Dota 2 auto-results) and the Tier B game-API wrappers
+// (Apex, Overwatch) DELETED 2026-09-21: linkSteamAccount, unlinkSteamAccount,
+// getSteamGsiConfig, wrapperHealthCheck (its own Cloud Scheduler job) and
+// runWrapperHealthCheckNow. All existed to detect tournament results. Steam is
+// now a plain linked handle written by the client, exactly like Riot, EA,
+// PlayStation and Epic (see LinkedAccountsScreen), and nothing reads a wrapper.
 
 // OAuth — generic OAuth2 flow for Twitch, YouTube, Discord, Battle.net, Epic.
 // Steam (OpenID 2.0) and Xbox (OpenXBL) have bespoke flows and are not
@@ -2179,6 +2159,10 @@ const PUSHABLE_NOTIFICATION_TYPES = new Set([
   // 2026-08-22 during the messages audit. (If tips should NOT push, remove this
   // one line.)
   'tip',
+  // Payments (2026-09-29): a creator told a tip from refunded money was reversed
+  // (paymentRefunds.js), and staff told a payment needs attention (paymentRecords.js).
+  'tip_reversed',
+  'payment_attention',
   // Reaching a new level is the payoff of the whole VP ladder. Written by the
   // syncVpLevel trigger, which only fires when the level band actually changes,
   // so this cannot spam: at most 99 of these in an account's lifetime.
@@ -2828,10 +2812,20 @@ exports.createNewsBots = functions.https.onRequest(async (req, res) => {
 // ──────────────────────────────────────────────────────────────
 
 exports.onUserCreated = functionsV1.region('europe-west1').auth.user().onCreate(async (user) => {
-  const batch = db.batch();
-  batch.set(db.collection('users').doc(user.uid), {
+  // The Operator (functions/operator.js) is an admin, not a member: no profile,
+  // no wallet, no welcome notification, nothing for anyone browsing the app to
+  // find. This MUST stay the first statement — everything below creates a user.
+  if (await claimOperatorOnCreate(user)) {
+    console.log(`Operator claimed: ${user.uid}`);
+    return;
+  }
+  const userRef = db.collection('users').doc(user.uid);
+  const userDefaults = {
     uid: user.uid,
-    email: user.email || null,
+    // No email here. users/{uid} is publicly listable, so a copy of the sign-up
+    // email on it published every account's address. The address stays in
+    // Firebase Auth; server code reads it through functions/authEmails.js. A
+    // person who wants an email on their profile adds it as a contact link.
     displayName: user.displayName || null,
     username: null,
     avatar: user.photoURL || null,
@@ -2856,7 +2850,36 @@ exports.onUserCreated = functionsV1.region('europe-west1').auth.user().onCreate(
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     lastActiveAt: admin.firestore.FieldValue.serverTimestamp(),
+  };
+  // ⚠ NEVER OVERWRITE WHAT THE SIGN-UP ALREADY WROTE. This was a plain
+  // batch.set, which REPLACES the document: when the client's sign-up write
+  // (username, date of birth, Terms acceptance, referral) landed before this
+  // trigger ran, all of it was wiped, and username went back to null. A merge
+  // alone would not help, because these defaults (username: null,
+  // isOnboarded: false, bio: '') would still overwrite the client's values.
+  // So: create the doc when it is absent, otherwise fill ONLY the fields the
+  // client did not write. One extra read per new account.
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(userRef);
+    if (!snap.exists) {
+      tx.set(userRef, userDefaults);
+      return;
+    }
+    const cur = snap.data() || {};
+    const fill = {};
+    for (const [k, v] of Object.entries(userDefaults)) {
+      if (k === 'settings' && cur.settings && typeof cur.settings === 'object') {
+        const missing = {};
+        for (const [sk, sv] of Object.entries(v)) if (cur.settings[sk] === undefined) missing[sk] = sv;
+        if (Object.keys(missing).length) fill.settings = missing;
+      } else if (cur[k] === undefined) {
+        fill[k] = v;
+      }
+    }
+    // set + merge deep-merges maps, so a partial `settings` adds keys only.
+    if (Object.keys(fill).length) tx.set(userRef, fill, { merge: true });
   });
+  const batch = db.batch();
   batch.set(db.collection('wallets').doc(user.uid), {
     userId: user.uid,
     balance: 0,
@@ -2877,8 +2900,8 @@ exports.onUserCreated = functionsV1.region('europe-west1').auth.user().onCreate(
   batch.set(db.collection('notifications').doc(), {
     recipientId: user.uid,
     type: 'system',
-    title: 'Welcome to VERGR! 🎮',
-    body: 'Where Gamers Converge. Complete your profile to get started.',
+    title: 'Welcome to Vergr!',
+    body: 'Complete your profile to get started.',
     read: false,
     actionUrl: '/onboarding',
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -3107,7 +3130,8 @@ exports.onNewComment = functions.firestore
 
       const commenter = await db.collection('users').doc(comment.authorId).get();
       const commenterName = commenter.exists ? (commenter.data().displayName || 'Someone') : 'Someone';
-      const preview = (comment.content || '').substring(0, 100);
+      // Mention tokens read as @name, never as @[name](uid), in a push.
+      const preview = (comment.content || '').replace(/@\[([^\]]+)\]\([^)]+\)/g, '@$1').substring(0, 100);
 
       // B5: a reply (parentId set) notifies the PARENT COMMENT author. Resolve
       // them first so we can also avoid double-notifying the post author below.
@@ -3128,6 +3152,27 @@ exports.onNewComment = functions.firestore
           });
           await sendPushToUser(parentAuthorId, 'New reply', `${commenterName}: ${preview}`, { type: 'comment_reply', postId });
         }
+      }
+
+      // @mentions (founder, 2026-09-14: a mention "just highlights the user and
+      // notifies them"). The client sends the uids it picked, so this adds NO
+      // read: the name was loaded above. Never the commenter, never someone who
+      // already gets the reply or comment notice for this comment, at most five.
+      // The push looks up the device like every other push does.
+      const mentionIds = [...new Set((Array.isArray(comment.mentionedUids) ? comment.mentionedUids : [])
+        .filter((u) => typeof u === 'string' && u && u !== comment.authorId && u !== parentAuthorId && u !== authorId))].slice(0, 5);
+      for (const uid of mentionIds) {
+        await db.collection('notifications').add({
+          recipientId: uid,
+          type: 'mention',
+          title: 'You were mentioned',
+          body: `${commenterName} mentioned you in a comment`,
+          senderId: comment.authorId,
+          data: { postId, commentId: event.params.commentId },
+          read: false,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        await sendPushToUser(uid, 'You were mentioned', `${commenterName}: ${preview}`, { type: 'mention', postId });
       }
 
       // Post-author notification — skip when they authored the comment, or when
@@ -3842,7 +3887,7 @@ exports.sendTip = functions.https.onCall(async (request) => {
     // "why did I get this number", which is the question every support ticket
     // about earnings is.
     tx.set(db.collection('transactions').doc(), { userId: recipientId, type: 'tip_received', earning: true, currency: 'usd', amountMicroUsd: tipCredit.owedMicroUsd, amount: tipCredit.owedMicroUsd, senderId: uid, tipId: tipRef.id, meta: { grossCoins: recipientAmount, share: tipCredit.share, tipAmount: amount, platformFee }, description: `Earned ${microUsdToStr(tipCredit.owedMicroUsd)}, your ${Math.round(tipCredit.share * 100)}% share of a ${amount} coin tip`, createdAt: admin.firestore.FieldValue.serverTimestamp() });
-    tx.set(db.collection('notifications').doc(), { recipientId, type: 'tip', title: 'You received a tip!', body: `Someone tipped you ${amount} coins, you earned ${microUsdToStr(tipCredit.owedMicroUsd)}${message ? ': "' + message + '"' : ''}`, senderId: uid, read: false, data: { tipId: tipRef.id, amount: recipientAmount, owedMicroUsd: tipCredit.owedMicroUsd }, createdAt: admin.firestore.FieldValue.serverTimestamp() });
+    tx.set(db.collection('notifications').doc(), { recipientId, type: 'tip', title: `${senderName} sent you a tip`, body: `${senderName} tipped you ${amount} coins, you earned ${microUsdToStr(tipCredit.owedMicroUsd)}${message ? ': "' + message + '"' : ''}`, senderId: uid, read: false, data: { tipId: tipRef.id, amount: recipientAmount, owedMicroUsd: tipCredit.owedMicroUsd }, createdAt: admin.firestore.FieldValue.serverTimestamp() });
 
     // Top-gifters leaderboard: accumulate this sender's running coin total for
     // the stream they're watching (server-written so the board can't be faked).
@@ -3905,11 +3950,16 @@ exports.sendTip = functions.https.onCall(async (request) => {
           // rider, per viewer, per train.
           name: senderName, avatar: senderAvatar,
         });
-        if (train) patch.hypeTrain = train;
-        await streamRef.update(patch);
+        // ⚠⚠ SETTLE THE EXPIRED TRAIN BEFORE WRITING THE NEW ONE. settleAndGrant
+        // only pays the train that is still on the doc, so writing the new train
+        // first made every train closed by a later tip pay NOTHING (a train
+        // stays open only 30s after its last tip, so that was most of them).
+        // Fixed 2026-09-27.
         if (expired && !expired.settledAt) {
           await hypeTrain.settleAndGrant(streamId, recipientId, expired).catch(() => {});
         }
+        if (train) patch.hypeTrain = train;
+        await streamRef.update(patch);
       }
     } catch (e) { /* the tip landed; the alert is decoration */ }
   }
@@ -3971,10 +4021,15 @@ exports.submitReport = functions.https.onCall(async (request) => {
 
   const reportCount = await db.collection('reports').where('targetId', '==', targetId).where('status', 'in', ['pending', 'reviewing']).get();
   const config = await db.collection('app_config').doc('general').get();
-  const threshold = config.exists ? (config.data().reportThreshold || 5) : 5;
+  // Admin → Moderation → Settings writes `moderation.autoHideReportThreshold`.
+  // This read `reportThreshold`, a key nothing writes, so the admin setting
+  // never took effect. Same doc read as before; the old key stays a fallback.
+  const cfg = config.exists ? (config.data() || {}) : {};
+  const threshold = Number(cfg.moderation?.autoHideReportThreshold) || Number(cfg.reportThreshold) || 5;
 
   if (reportCount.size >= threshold && targetType === 'post') {
-    await db.collection('posts').doc(targetId).update({ status: 'hidden', hiddenReason: 'auto_mod_reports', hiddenAt: admin.firestore.FieldValue.serverTimestamp() });
+    const { hidePost } = require('./postModeration');
+    await hidePost({ postId: targetId, reasonCode: 'auto_mod_reports' });
     await db.collection('mod_actions').add({ action: 'auto_hide', targetType, targetId, reason: `Reached ${threshold} reports`, automated: true, createdAt: admin.firestore.FieldValue.serverTimestamp() });
   }
 
@@ -4188,7 +4243,7 @@ async function deleteExpiredR2ChatMedia() {
           let days = null;
           try {
             const u = await db.collection('users').doc(uid).get();
-            const plan = u.exists ? (u.data()?.subscription?.tier || 'free') : 'free';
+            const plan = u.exists ? planOf(u.data()) : 'free';
             const d = Number(retention[plan]);
             days = Number.isFinite(d) && d > 0 ? d : null;
           } catch { days = null; }     // fail CLOSED: unreadable user means keep the media
@@ -4279,8 +4334,8 @@ exports.shareLink = functions.https.onRequest(async (req, res) => {
   const canonicalUrl = `${APP_BASE}${APP_ROUTE_BASE}`;
   const fallbackImage = `${APP_BASE}/og/share-poster.jpg`;
 
-  let title = 'VERGR — Where Gamers Converge';
-  let description = 'Compete, create, earn and shop with the gaming community.';
+  let title = 'Vergr - Go Live. Hang Out. Share the Moment.';
+  let description = 'Vergr is where you go live, share clips and hang out with your people in voice chats and DMs, all in one app.';
   let image = fallbackImage;
   let videoEmbed = null;
 
@@ -4313,15 +4368,21 @@ exports.shareLink = functions.https.onRequest(async (req, res) => {
       if (postSnap.exists) {
         const post = postSnap.data();
         const author = post.authorId ? (await db.collection('users').doc(post.authorId).get()).data() : null;
-        const authorName = author?.displayName || author?.username || 'A gamer';
+        const authorName = author?.displayName || author?.username || 'Someone';
+        const isClip = ['clip', 'short', 'video'].includes(post.type);
         title = post.content
           ? `${authorName}: ${post.content.slice(0, 60)}${post.content.length > 60 ? '…' : ''}`
-          : `${authorName} on VERGR`;
-        description = (post.previewText || post.content || description).slice(0, 200);
+          : (isClip ? `${authorName}'s clip on VERGR` : `${authorName} on VERGR`);
+        description = (post.previewText || post.content || (isClip ? `Watch ${authorName}'s clip on VERGR.` : description)).slice(0, 200);
         const firstMedia = Array.isArray(post.mediaUrls) ? post.mediaUrls[0] : post.mediaUrl;
-        if (firstMedia) image = firstMedia;
-        else if (post.youtubeVideoId) {
-          image = `https://img.youtube.com/vi/${post.youtubeVideoId}/hqdefault.jpg`;
+        // ⚠ og:image must be an IMAGE. A clip's first media is its video file
+        // (.webm/.mp4), which WhatsApp, X and Discord cannot draw, so a shared
+        // clip had no preview picture (measured 2026-09-14). Its cover comes first.
+        const firstIsVideo = typeof firstMedia === 'string' && /\.(mp4|webm|mov|m4v|m3u8)(\?|#|$)/i.test(firstMedia);
+        if (post.thumbnailUrl) image = post.thumbnailUrl;
+        else if (firstMedia && !firstIsVideo) image = firstMedia;
+        if (!firstMedia && post.youtubeVideoId) {
+          if (!post.thumbnailUrl) image = `https://img.youtube.com/vi/${post.youtubeVideoId}/hqdefault.jpg`;
           videoEmbed = `https://www.youtube.com/embed/${post.youtubeVideoId}`;
         }
       }
@@ -4344,8 +4405,7 @@ exports.shareLink = functions.https.onRequest(async (req, res) => {
   <meta property="og:title" content="${escapeHtml(title)}" />
   <meta property="og:description" content="${escapeHtml(description)}" />
   <meta property="og:image" content="${escapeHtml(image)}" />
-  <meta property="og:image:width" content="1200" />
-  <meta property="og:image:height" content="630" />
+  ${image === fallbackImage ? '<meta property="og:image:width" content="1200" />\n  <meta property="og:image:height" content="630" />' : ''}
   <meta property="og:url" content="${escapeHtml(canonicalUrl)}" />
   ${videoEmbed ? `<meta property="og:video" content="${escapeHtml(videoEmbed)}" />\n  <meta property="og:video:url" content="${escapeHtml(videoEmbed)}" />\n  <meta property="og:video:secure_url" content="${escapeHtml(videoEmbed)}" />\n  <meta property="og:video:type" content="text/html" />` : ''}
   <meta name="twitter:card" content="${videoEmbed ? 'player' : 'summary_large_image'}" />
@@ -4446,76 +4506,39 @@ exports.serveMedia = functions.https.onRequest(async (req, res) => {
 });
 
 // ──────────────────────────────────────────────────────────────
-// MONTHLY PLAN BONUS — Lite/Pro subscribers get VP + coins on the 1st
+// MONTHLY PLAN BONUS: COMPED accounts only. Paid plans get their bonus the
+// moment each period is paid (functions/planBonus.js, called by every rail),
+// so a new subscriber no longer waits for the 1st. A comp has no renewal event,
+// so this job pays it once a month through the SAME helper (the period id is the
+// first of the month; the helper refuses anything within 20 days of the last one).
 // ──────────────────────────────────────────────────────────────
 const _payMonthlyPlanBonus = defer(
   { schedule: '0 6 1 * *', timeZone: 'UTC', region: 'europe-west1' },
   async () => {
-    const monthKey = new Date().toISOString().slice(0, 7); // YYYY-MM
-    const plans = ['lite', 'pro'];
+    const { grantPlanBonus } = require('./planBonus');
+    const d = new Date();
+    const monthStart = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1);
     let paid = 0;
-
-    for (const plan of plans) {
-      const vpBonus = MONTHLY_VP_BONUS[plan];
-      const coinBonus = MONTHLY_COIN_BONUS[plan];
-      if (!vpBonus && !coinBonus) continue;
-
+    for (const plan of ['lite', 'pro']) {
       let lastDoc = null;
       while (true) {
-        // Query the `subscription` field — that's what the purchase flows
-        // (payram.js / subscriptions.js) actually write. The old `tier` query
-        // matched nobody, so the monthly bonus never paid out.
         let q = db.collection('users').where('subscription', '==', plan).limit(400);
         if (lastDoc) q = q.startAfter(lastDoc);
         const batch = await q.get();
         if (batch.empty) break;
         lastDoc = batch.docs[batch.docs.length - 1];
-
-        await Promise.all(batch.docs.map(async (userDoc) => {
-          const uid = userDoc.id;
-          const claimId = `${uid}_plan_bonus_${monthKey}`;
-          const claimRef = db.collection('quest_claims').doc(claimId);
-          const claimSnap = await claimRef.get();
-          if (claimSnap.exists) return;
-
-          const walletRef = db.collection('wallets').doc(uid);
-          const now = new Date();
-          try {
-            await db.runTransaction(async (tx) => {
-              const ws = await tx.get(walletRef);
-              const cur = ws.exists ? ws.data() : {};
-              tx.set(walletRef, {
-                balance: (cur.balance || 0) + coinBonus,
-                totalEarned: (cur.totalEarned || 0) + coinBonus,
-                vp: (cur.vp || 0) + vpBonus,
-                tier: plan,
-                updatedAt: now,
-                ...(!ws.exists ? { createdAt: now, gems: 0, totalSpent: 0 } : {}),
-              }, { merge: true });
-              tx.set(claimRef, { userId: uid, questId: 'plan_bonus', month: monthKey, plan, coins: coinBonus, vp: vpBonus, claimedAt: now });
-              tx.set(db.collection('transactions').doc(), {
-                userId: uid, type: 'plan_bonus', amount: coinBonus,
-                description: `${plan.toUpperCase()} monthly: +${coinBonus} coins + ${vpBonus} VP`,
-                createdAt: now,
-              });
-              tx.set(db.collection('notifications').doc(), {
-                recipientId: uid, type: 'coins',
-                title: `+${coinBonus} coins + ${vpBonus} VP`,
-                body: `Your ${plan.toUpperCase()} monthly bonus has landed!`,
-                read: false, data: { type: 'plan_bonus', plan, coins: coinBonus, vp: vpBonus }, createdAt: now,
-              });
-            });
-            paid++;
-          } catch (e) {
-            console.error(`plan_bonus failed for ${uid}:`, e.message);
-          }
-        }));
-
+        for (const u of batch.docs) {
+          const x = u.data();
+          if (x.subscriptionPreferredMethod !== 'comp') continue;
+          const end = Number(x.subscriptionPeriodEnd) || 0;
+          if (end && end < Date.now()) continue; // comp already over
+          const r = await grantPlanBonus(db, u.id, plan, monthStart, 'comp_monthly');
+          if (r.paid) paid++;
+        }
         if (batch.docs.length < 400) break;
       }
     }
-
-    console.log(`payMonthlyPlanBonus ${monthKey}: paid ${paid} users`);
+    console.log(`payMonthlyPlanBonus (comps): paid ${paid}`);
     return null;
   }
 );
@@ -5189,8 +5212,14 @@ exports.cronDaily = functions.scheduler.onSchedule(
     // _cleanupExpiredMedia. Additive; the sweep is off until app_config says on.
     timeoutSeconds: 540,
     secrets: [
-      newsSeoRewrite.GEMINI_POST_TEXT_KEY,
-      'R2_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET',
+      newsSeoRewrite.GEMINI_POST_TEXT_KEY, 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY',
+      // HUAWEI_* added 2026-09-17 for syncHuaweiSubscriptions below. Without
+      // them declared HERE, .value() returns empty inside the cron and the
+      // sweep skips every user — which is the SAFE direction, but silent.
+      // (HUAWEI_CLIENT_ID is plain config in functions/.env since 2026-09-29.)
+      'HUAWEI_CLIENT_SECRET',
+      // SMTP_PASS: refund notices from syncVoidedPurchases (functions/receipts.js).
+      ...require('./receipts').RECEIPT_SECRETS,
     ],
   },
   async () => _runJobs('cronDaily', [
@@ -5203,7 +5232,6 @@ exports.cronDaily = functions.scheduler.onSchedule(
     ['cleanupExpiredTotpEnrollments', adminSecurity.cleanupExpiredTotpEnrollments],
     ['scheduledKycRetention', kyc.scheduledKycRetention],
     ['rollupDailyMetrics', dailyMetricsRollup.rollupDailyMetrics],
-    ['applyScheduledPriceChanges', adminSubscriptions.applyScheduledPriceChanges],
     ['renewExpiringSubscriptions', subs.renewExpiringSubscriptions],
     ['renewMemberSubscriptions', memberships.renewMemberSubscriptions],
     ['syncAllShopInventories', shopSync.syncAllShopInventories],
@@ -5211,6 +5239,13 @@ exports.cronDaily = functions.scheduler.onSchedule(
     // Play renews subscriptions on its own schedule and does not tell us, so a
     // tier granted once would outlive the payment without this reconcile.
     ['syncPlaySubscriptions', playBilling.syncPlaySubscriptions],
+    // Google Play refunds and chargebacks → wallets, buying block, creator notice
+    // (functions/paymentRefunds.js, founder rules 2026-09-29).
+    ['syncVoidedPurchases', require('./paymentRefunds').syncVoidedPurchases],
+    // Same reason for AppGallery: Huawei renews and cancels on its own
+    // schedule and never tells us. Fails SAFE — a missing secret or an API
+    // error skips the user rather than downgrading a paying customer.
+    ['syncHuaweiSubscriptions', huaweiBilling.syncHuaweiSubscriptions],
   ]),
 );
 
@@ -5227,6 +5262,10 @@ exports.cronEvery6h = functions.scheduler.onSchedule(
     // Rolls the RTDB view counters into posts.viewCount. Firestore writes
     // scale with ACTIVE POSTS x 4/day, never with how many times they were seen.
     ['aggregatePostViews', require('./postViews')._internal.aggregatePostViews],
+    // Releases temp bans whose time is up. A ban disables the Auth account, and
+    // a disabled account cannot let itself back in, so without this a "7 day"
+    // ban would be forever. One query over the banned accounts, 4x a day.
+    ['sweepExpiredBans', require('./bans').sweepExpiredBans],
   ]),
 );
 
@@ -5240,45 +5279,70 @@ exports.cronMonthly = functions.scheduler.onSchedule(
   ]),
 );
 
-// Every minute — tournament/stream live machinery. Each handler self-gates
+// Every minute — stream live machinery. Each handler self-gates
 // (queries for live/imminent work and returns fast when there is none), so
 // calling them sequentially from one Scheduler job is behaviour-identical to
 // the 5 former every-1-minute jobs, at 1/5th the Scheduler cost. 540s timeout
 // covers autoSuggestMatchWinners' worst case; handlers run in try/catch.
 exports.cronMinute = functions.scheduler.onSchedule(
-  { schedule: 'every 1 minutes', timeZone: 'UTC', region: 'europe-west1', timeoutSeconds: 540 },
+  { schedule: 'every 1 minutes', timeZone: 'UTC', region: 'europe-west1', timeoutSeconds: 540,
+    secrets: [ functions.params.defineSecret('TWITCH_CLIENT_SECRET')] },
   async () => _runJobs('cronMinute', [
+    ['pollTwitchMirrors', twitchMirror.pollTwitchMirrors],
     ['chargeStreamBoosts', streamingBoost.chargeStreamBoosts],
     ['reapStaleStreams', streaming.reapStaleStreams],
   ]),
 );
 
-// Every 5 minutes — tournament timeout/no-show sweeps, scheduled-post publish,
-// scheduled-stream reminders. All self-gate (query for due work, return fast
-// when none). detectMatchTimeouts was a 30-min job; running it every 5 min is
-// behaviour-safe (it just checks deadlines more often) and saves a Scheduler
-// job. Payment pollers + secret/money-out crons intentionally kept standalone.
+// Every 5 minutes — scheduled-post publish, scheduled-stream reminders and
+// campaign release. All self-gate (query for due work, return fast when none).
+// Payment pollers + secret/money-out crons intentionally kept standalone.
 exports.cron5Min = functions.scheduler.onSchedule(
-  { schedule: 'every 5 minutes', timeZone: 'UTC', region: 'europe-west1', timeoutSeconds: 300 },
+  { schedule: 'every 5 minutes', timeZone: 'UTC', region: 'europe-west1', timeoutSeconds: 300,
+    secrets: [functions.params.defineSecret('PAYRAM_API_KEY'), functions.params.defineSecret('CIRCLE_API_KEY'),
+      ...require('./receipts').RECEIPT_SECRETS] },
   async () => _runJobs('cron5Min', [
-    ['detectTournamentNoShows', vanguardAssignments.detectTournamentNoShows],
+    ['pollPayramOrders', payram.pollPayramOrders],
+    ['pollCircleDeposits', circleWallets.pollCircleDeposits],
     ['publishScheduledPosts', scheduledPosts.publishScheduledPosts],
     ['notifyScheduledStreams', _notifyScheduledStreams],
     // Self-gates to a single indexed query returning nothing when no campaign
     // is scheduled, so it is folded in here rather than earning its own
     // Cloud Scheduler job (a new schedule is a recurring bill).
     ['releaseScheduledCampaigns', campaigns.releaseScheduledCampaigns],
+    // Settles paid Coda / Codashop orders whose status call never came and
+    // expires dead ones. Rides this job rather than its own schedule (a bill).
+    ['pollCheckoutOrders', checkout.pollCheckoutOrders],
   ]),
 );
 
-// Every 15 minutes — assignment reminders + admin TOTP brute-force monitor.
-// Both self-gate and carry no secrets. (processReadyWithdrawals stays a
+// Every 15 minutes — admin TOTP brute-force monitor. Self-gates, no secrets. (processReadyWithdrawals stays a
 // standalone 512MB money-out job; payment pollers stay standalone too.)
 exports.cron15Min = functions.scheduler.onSchedule(
-  { schedule: 'every 15 minutes', timeZone: 'UTC', region: 'europe-west1' },
-  async () => _runJobs('cron15Min', [
-    ['notifyUpcomingAssignments', vanguardAssignments.notifyUpcomingAssignments],
-    ['adminTotpBruteForceMonitor', adminAlerts.adminTotpBruteForceMonitor],
+  { schedule: 'every 15 minutes', timeZone: 'UTC', region: 'europe-west1', timeoutSeconds: 540,
+    secrets: [ functions.params.defineSecret('TWITCH_CLIENT_SECRET'), functions.params.defineSecret('R2_ACCESS_KEY_ID'),
+      functions.params.defineSecret('R2_SECRET_ACCESS_KEY'), functions.params.defineSecret('HOST_OPS_TOKEN')] },
+  async () => {
+    const m = new Date().getUTCMinutes();
+    await _runJobs('cron15Min', [
+      ['adminTotpBruteForceMonitor', adminAlerts.adminTotpBruteForceMonitor],
+      // Was 'every 30 minutes': the :00 and :30 runs.
+      ...(m % 30 < 15 ? [['refreshTwitchMirrorTokens', twitchMirror.refreshTwitchMirrorTokens]] : []),
+      // Was 'every 60 minutes': the :00 run.
+      ...(m < 15 ? [['cleanupExpiredStreamSegments', streamingCleanup.cleanupExpiredStreamSegments]] : []),
+    ]);
+  },
+);
+
+// Daily money job: solvency check (was 05:00) then creator payouts (was 06:00),
+// kept apart from cronDaily on purpose so a slow maintenance task can never
+// time out the payout run. One Scheduler job instead of two.
+exports.cronMoney = functions.scheduler.onSchedule(
+  { schedule: '0 5 * * *', timeZone: 'UTC', region: 'europe-west1', timeoutSeconds: 540,
+    secrets: [functions.params.defineSecret('CIRCLE_API_KEY'),] },
+  async () => _runJobs('cronMoney', [
+    ['reconcileSolvency', require('./solvencyLedger').reconcileSolvency],
+    ['runCreatorPayouts', require('./creatorPayouts').runCreatorPayouts],
   ]),
 );
 exports.backfillNewsSeoQueue = newsSeoRewrite.backfillNewsSeoQueue;

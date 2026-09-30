@@ -4,7 +4,7 @@
 // `IS_NATIVE_BUILD ? <Native> : <existing>`; never render on web. The existing
 // src/screens/create/* + src/screens/home/CreatePollScreen are UNTOUCHED.
 //
-// Each reuses the EXACT same callables/payloads (createPost, uploadPostMedia,
+// Each reuses the EXACT same callables/payloads (createPost, uploadToR2,
 // createPoll, createQuotePost) + media compression as its web twin — only the
 // layout is rebuilt for a phone: a shared safe-area header shell (status-bar
 // breathing room, single concise title, big tap targets), full-width single
@@ -17,16 +17,21 @@ import { useUser } from '../../../context/UserContext';
 import { useUI } from '../../../context/UIContext';
 import { useAuth } from '../../../context/AuthContext';
 import { auth } from '../../../firebase/config';
-import { createPost, uploadPostMedia, createPoll, createQuotePost, getPostWithAuthor } from '../../../firebase/firestore';
+import { createPost, createFeedPoll, createQuotePost, getPostWithAuthor } from '../../../firebase/firestore';
 import { getTierConfig, checkFileSizeAccess, resolveTier } from '../../../utils/tierSystem';
-import { compressVideo, SHORTS_LIMITS, getMediaDimensions } from '../../../utils/mediaCompression';
-import { compressForTier, formatMB } from '../../../utils/videoCompress';
+import { compressVideo, SHORTS_LIMITS, getMediaDimensions, posterFromVideo } from '../../../utils/mediaCompression';
+
+import { uploadToR2 } from '../../../utils/r2Storage';
+import NativeVideoPicker from '../../../components/media/NativeVideoPicker';
 import EmbedVideoPlayer, { parseVideoUrl, getThumbnailUrl } from '../../../components/EmbedVideoPlayer';
 import { timeAgo } from '../../../utils/helpers';
 import UserAvatar from '../../../components/UserAvatar';
 import Icon from '../../../components/Icon';
 import InlineVideoPlayer from '../../../components/media/InlineVideoPlayer';
 import UserName from '../../../components/UserName';
+import { useSoundChoice } from '../../../components/clips/SoundPicker';
+import ClipPostForm from '../../../components/create/ClipPostForm';
+import { soundFieldsFor } from '../../../utils/sounds';
 
 // ───────────────────────────── shared native scaffold
 function Spinner() {
@@ -64,11 +69,11 @@ function NativeCreateShell({ title, subtitle, action, onBack, backIcon = 'arrow_
           </div>
         )}
       </header>
-      <div className="flex-1 overflow-y-auto px-4 py-5" style={footer ? undefined : { paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 28px)' }}>
+      <div className="flex-1 overflow-y-auto px-4 py-5" style={footer ? undefined : { paddingBottom: 'calc(var(--vg-safe-b, 0px) + 28px)' }}>
         {children}
       </div>
       {footer && (
-        <footer className="sticky bottom-0 bg-bg-dark/90 backdrop-blur-xl border-t border-white/[0.04] px-4 py-3" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 10px)' }}>
+        <footer className="sticky bottom-0 bg-bg-dark/90 backdrop-blur-xl border-t border-white/[0.04] px-4 py-3" style={{ paddingBottom: 'calc(var(--vg-safe-b, 0px) + 10px)' }}>
           {footer}
         </footer>
       )}
@@ -76,6 +81,8 @@ function NativeCreateShell({ title, subtitle, action, onBack, backIcon = 'arrow_
   );
 }
 const LABEL = 'text-text-secondary text-[10px] uppercase tracking-widest font-bold mb-2.5 block';
+const formatMB = (bytes) => (bytes / 1024 / 1024).toFixed(1) + 'MB';
+
 const INPUT = 'w-full bg-surface-2 border border-white/[0.06] rounded-xl p-3.5 text-text-primary text-[15px] placeholder:text-text-muted focus:border-brand-violet focus:outline-none';
 
 // ═══════════════════════════════════════ SELECTOR
@@ -83,7 +90,7 @@ const INPUT = 'w-full bg-surface-2 border border-white/[0.06] rounded-xl p-3.5 t
 const POST_TYPES = [
   { id: 'text', title: 'Text', desc: 'Quick thoughts', icon: 'edit_note', route: '/create/text', color: '#B44FFF' },
   { id: 'photo', title: 'Photo', desc: 'Screenshots & carousel', icon: 'photo_library', route: '/create/photo', color: '#B44FFF' },
-  { id: 'clip', title: 'Clip', desc: 'Longer video', icon: 'play_circle', route: '/create/clip', color: '#F04060' },
+  { id: 'clip', title: 'Clip', desc: 'Record & edit', icon: 'play_circle', route: '/create/clip', color: '#F04060' },
   { id: 'article', title: 'Article', desc: 'Guides & deep dives', icon: 'article', route: '/create/article', color: '#C87FFF' },
   { id: 'lfg', title: 'LFG', desc: 'Find players', icon: 'group_add', route: '/create/lfg', color: '#F0A500' },
   { id: 'tierlist', title: 'Tier List', desc: 'Rank & compare', icon: 'format_list_numbered', route: '/create/tierlist', color: '#B44FFF' },
@@ -96,7 +103,7 @@ export function NativeCreatePostSelectorScreen() {
   return (
     <NativeCreateShell title="Create" subtitle="What are you sharing?" onBack={() => navigate(-1)}>
       <motion.button
-        onClick={() => navigate('/create/short')}
+        onClick={() => navigate('/create/clip')}
         initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }} whileTap={{ scale: 0.98 }}
         className="w-full relative overflow-hidden rounded-2xl border border-brand-violet/20 bg-gradient-to-r from-brand-violet/[0.08] via-brand-violet/[0.06] to-brand-violet/[0.04] p-5 text-left mb-4"
       >
@@ -106,10 +113,10 @@ export function NativeCreatePostSelectorScreen() {
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-0.5">
-              <h3 className="font-syne font-bold text-white text-base">Create a Short</h3>
+              <h3 className="font-syne font-bold text-white text-base">Create a clip</h3>
               <span className="px-1.5 py-0.5 rounded-md bg-brand-violet/15 text-brand-violet-light text-[9px] font-black uppercase tracking-wider">New</span>
             </div>
-            <p className="text-text-muted text-xs">Record or upload a vertical video · auto-compressed</p>
+            <p className="text-text-muted text-xs">Record or upload, then trim, add text and sound</p>
           </div>
           <Icon name="arrow_forward" size={20} className="text-text-muted shrink-0" />
         </div>
@@ -167,7 +174,6 @@ export function NativeCreateTextPostScreen() {
       footer={
         <div className="flex items-center gap-1">
           <FooterIcon icon="image" onClick={() => navigate('/create/photo')} />
-          <FooterIcon icon="slow_motion_video" onClick={() => navigate('/create/short')} />
           <FooterIcon icon="videocam" onClick={() => navigate('/create/clip')} />
           <FooterIcon icon="bar_chart" onClick={() => navigate('/create-poll')} />
           <div className="flex-1" />
@@ -229,8 +235,23 @@ export function NativeCreatePhotoPostScreen() {
     if (mediaFiles.length === 0 || loading) return;
     setLoading(true); setUploadProgress(0);
     try {
-      const postId = await createPost(auth.currentUser.uid, { content: content.trim(), type: mediaFiles.length > 1 ? 'carousel' : 'photo', hashtags: (content.match(/#\w+/g) || []).map(t => t.slice(1).toLowerCase()) });
-      for (let i = 0; i < mediaFiles.length; i++) { await uploadPostMedia(postId, mediaFiles[i].file); setUploadProgress(Math.round(((i + 1) / mediaFiles.length) * 100)); }
+      // Upload FIRST, then create the post once with every URL. The old order
+      // created the post and then discarded what uploadPostMedia returned, so
+      // every photo and carousel published with an EMPTY mediaUrls while the
+      // bytes sat on R2 unreferenced. It also left a caption-only post behind
+      // whenever an upload failed partway.
+      const urls = [];
+      for (let i = 0; i < mediaFiles.length; i++) {
+        const { url } = await uploadToR2(mediaFiles[i].file, 'post');
+        urls.push(url);
+        setUploadProgress(Math.round(((i + 1) / mediaFiles.length) * 100));
+      }
+      await createPost(auth.currentUser.uid, {
+        content: content.trim(),
+        type: mediaFiles.length > 1 ? 'carousel' : 'photo',
+        hashtags: (content.match(/#\w+/g) || []).map(t => t.slice(1).toLowerCase()),
+        mediaUrls: urls,
+      });
       showToast('Posted!', 'success'); navigate(-1);
     } catch (err) { console.error(err); showToast('Failed to publish', 'error'); }
     setLoading(false); mediaFiles.forEach(m => URL.revokeObjectURL(m.preview));
@@ -273,6 +294,8 @@ export function NativeCreatePhotoPostScreen() {
 }
 
 // ═══════════════════════════════════════ CLIP
+// ⚠ UNROUTED since 2026-09-13. /create/clip renders screens/create/CreateClipFlow
+// on the phone and the web (record, edit, post). Kept on disk, not reachable.
 
 export function NativeCreateClipPostScreen() {
   const [content, setContent] = useState('');
@@ -292,19 +315,34 @@ export function NativeCreateClipPostScreen() {
   const userTier = resolveTier(profile);
   const tierConfig = getTierConfig(userTier);
   const nextTier = userTier === 'free' ? 'lite' : userTier === 'lite' ? 'pro' : null;
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const soundChoice = useSoundChoice();
   const fmt = (s) => `${Math.floor(s / 60)}:${Math.floor(s % 60).toString().padStart(2, '0')}`;
 
-  const handleFileSelect = (e) => {
-    const file = e.target.files?.[0]; if (!file) return;
+  // ONE acceptance path for both pickers. The gallery hands us a File that
+  // carries `_nativePath`, which is the only thing that lets compressVideo
+  // reach hardware MediaCodec; the system picker hands us one that does not.
+  // Nothing else differs between them, so nothing else is duplicated.
+  const acceptVideo = (file) => {
+    if (!file) return;
     const sizeCheck = checkFileSizeAccess(userTier, file.size);
     if (!sizeCheck.allowed) { showToast(sizeCheck.message, 'error'); return; }
     const url = URL.createObjectURL(file);
     const v = document.createElement('video'); v.preload = 'metadata';
+    v.onerror = () => {
+      URL.revokeObjectURL(url);
+      showToast('That video could not be read on this device.', 'error');
+    };
     v.onloadedmetadata = () => {
       // No length limit — the size cap checked above is the only ceiling.
       setVideoDuration(v.duration); setVideoFile({ file, preview: url });
     };
-    v.src = url; e.target.value = '';
+    v.src = url;
+  };
+  const handleFileSelect = (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    acceptVideo(file);
   };
   const handleEmbedUrlChange = (url) => { setEmbedUrl(url); setParsedEmbed(parseVideoUrl(url)); };
 
@@ -322,66 +360,131 @@ export function NativeCreateClipPostScreen() {
     setLoading(true); setUploadProgress(0); setCompressProgress(0);
     try {
       setCompressing(true);
-      const compressed = await compressForTier(videoFile.file, userTier, (p) => setCompressProgress(Math.round(p * 100)));
+      // compressVideo (mediaCompression.js), NOT compressForTier
+      // (videoCompress.js). Four reasons, worst first: videoCompress pulls a
+      // 25MB ffmpeg-core from unpkg and imports it as a script from a blob:
+      // URL, which the native CSP refuses, so posting a clip on the phone
+      // threw before it ever reached createPost. This path runs hardware
+      // MediaCodec whenever the file came from our own gallery; it honours
+      // CLIP_LIMITS (the founder's 480/720/1080 ladder) instead of a third
+      // contradictory table; and it carries the frame-count guard that
+      // refuses a silently destroyed video.
+      const out = await compressVideo(
+        videoFile.file, userTier,
+        (p) => setCompressProgress(Math.round(Math.min(1, Math.max(0, p || 0)) * 100)),
+        'clip',
+      );
       setCompressing(false);
-      const finalFile = new File([compressed], (videoFile.file.name || 'clip').replace(/\.\w+$/, '.mp4'), { type: 'video/mp4' });
-      const postId = await createPost(auth.currentUser.uid, { content: content.trim(), type: videoDuration <= 60 ? 'clip' : 'video', hashtags: (content.match(/#\w+/g) || []).map(t => t.slice(1).toLowerCase()) });
-      const iv = setInterval(() => setUploadProgress(p => Math.min(p + 3, 90)), 200);
-      await uploadPostMedia(postId, finalFile); clearInterval(iv); setUploadProgress(100);
-      showToast(`Clip posted! (${formatMB(videoFile.file.size)} → ${formatMB(finalFile.size)})`, 'success'); navigate(-1);
-    } catch (err) { console.error(err); showToast('Failed to upload', 'error'); }
+      const finalFile = out instanceof File ? out : new File(
+        [out],
+        (videoFile.file.name || 'clip').replace(/\.\w+$/, '') + '.mp4',
+        { type: out?.type || 'video/mp4' },
+      );
+    
+      // UPLOAD FIRST, THEN CREATE THE POST. The old order created the post and
+      // then THREW THE UPLOAD'S RETURN VALUE AWAY, so a clip published with an
+      // empty mediaUrls: the bytes reached R2 and nothing pointed at them. It
+      // also meant an upload failure left a published post carrying a caption
+      // and no video. This order removes both, and costs ONE Firestore write
+      // instead of the createPost + updatePostMediaUrl pair.
+      const { url } = await uploadToR2(finalFile, 'clip', (pct) => setUploadProgress(Math.min(100, Math.max(0, Math.round(pct)))));
+      // Cover frame. Without it every clip surface falls back to the
+      // WebView's own grey play-button placeholder.
+      const poster = await posterFromVideo(finalFile);
+      const thumbnailUrl = poster ? (await uploadToR2(poster, 'post')).url : null;
+      await createPost(auth.currentUser.uid, {
+        thumbnailUrl,
+        content: content.trim(),
+        type: videoDuration <= 60 ? 'clip' : 'video',
+        hashtags: (content.match(/#\w+/g) || []).map(t => t.slice(1).toLowerCase()),
+        mediaUrls: [url],
+        ...soundFieldsFor(soundChoice.sound, soundChoice.keepOriginal),
+      });
+      showToast('Clip posted! (' + formatMB(videoFile.file.size) + ' to ' + formatMB(finalFile.size) + ')', 'success');
+      navigate(-1);
+    } catch (err) {
+      console.error(err);
+      // Say WHY. A bare "Failed to upload" is what left this screen
+      // undebuggable from the outside for its entire life.
+      showToast(err?.message || 'Could not post your clip. Please try again.', 'error');
+    }
     setCompressing(false); setLoading(false); if (videoFile) URL.revokeObjectURL(videoFile.preview);
   };
   const canPost = mode === 'embed' ? !!parsedEmbed : !!videoFile;
 
+  const fmtSize = (mb) => (mb >= 1024 ? `${Math.round((mb / 1024) * 10) / 10}GB` : `${mb}MB`);
+  const removeVideo = () => { if (videoFile) URL.revokeObjectURL(videoFile.preview); setVideoFile(null); setVideoDuration(0); };
+  const busy = loading
+    ? (mode === 'embed' ? { label: 'Posting', pct: NaN } : compressing ? { label: 'Optimizing', pct: compressProgress } : { label: 'Posting', pct: uploadProgress })
+    : null;
+
   return (
-    <NativeCreateShell
-      title="Video Clip" subtitle={mode === 'embed' ? 'Paste a video URL' : `Any length · up to ${tierConfig.maxFileUploadMB}MB`} onBack={() => navigate(-1)}
-      progress={loading && mode === 'upload' ? (compressing ? compressProgress : uploadProgress) : null}
-      action={<PostBtn onClick={handlePost} disabled={loading || !canPost}>{loading ? <span className="flex items-center gap-2"><Spinner />{mode === 'upload' ? (compressing ? `${compressProgress}%` : `${uploadProgress}%`) : '...'}</span> : 'Post'}</PostBtn>}
-    >
-      <div className="flex gap-3 mb-4">
-        <UserAvatar src={profile?.avatar} size={40} />
-        <textarea value={content} onChange={e => setContent(e.target.value)} placeholder="Describe your clip..." className="flex-1 bg-transparent text-text-primary text-sm leading-relaxed placeholder:text-text-muted/40 outline-none resize-none min-h-[64px]" maxLength={500} />
-      </div>
-      <div className="flex rounded-xl overflow-hidden border border-white/[0.06] mb-4">
-        <button onClick={() => setMode('upload')} className={`flex-1 py-3 text-xs font-bold flex items-center justify-center gap-1.5 border-r border-white/[0.06] ${mode === 'upload' ? 'bg-brand-ember/10 text-brand-ember' : 'bg-surface-1 text-text-muted'}`}><Icon name="cloud_upload" size={14} /> Upload</button>
-        <button onClick={() => setMode('embed')} className={`flex-1 py-3 text-xs font-bold flex items-center justify-center gap-1.5 ${mode === 'embed' ? 'bg-brand-violet/10 text-brand-violet' : 'bg-surface-1 text-text-muted'}`}><Icon name="link" size={14} /> Paste URL</button>
-      </div>
-      {mode === 'upload' ? (
-        videoFile ? (
-          <div className="relative rounded-2xl overflow-hidden border border-white/[0.06] bg-black">
-            <InlineVideoPlayer src={videoFile.preview} maxHeightClass="max-h-[440px]" rounded={false} objectFit="contain" />
-            <span className="absolute top-3 left-3 px-2.5 py-1 rounded-lg bg-black/70 text-white text-xs font-dmmono font-bold">{fmt(videoDuration)}</span>
-            <button onClick={() => { URL.revokeObjectURL(videoFile.preview); setVideoFile(null); setVideoDuration(0); }} className="absolute top-3 right-3 w-9 h-9 rounded-lg bg-black/60 flex items-center justify-center text-white"><Icon name="close" size={16} /></button>
-          </div>
-        ) : (
-          <button onClick={() => fileInputRef.current?.click()} className="w-full aspect-[9/16] max-h-[460px] rounded-2xl border-2 border-dashed border-white/[0.08] flex flex-col items-center justify-center gap-4 active:bg-white/5">
-            <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-brand-ember/15 to-brand-gold/15 border border-white/[0.08] flex items-center justify-center"><Icon name="videocam" size={36} className="text-brand-ember" /></div>
-            <div className="text-center"><p className="text-text-primary font-syne font-bold">Upload a Clip</p><p className="text-text-muted text-xs mt-1">Any length · up to {tierConfig.maxFileUploadMB}MB</p></div>
+    <>
+      <ClipPostForm
+        title="New clip"
+        onBack={() => navigate(-1)}
+        video={mode === 'upload' && videoFile ? { ...videoFile, duration: videoDuration } : null}
+        onChoose={() => setPickerOpen(true)}
+        onRemove={removeVideo}
+        chooseHint={`Any length, up to ${fmtSize(tierConfig.maxFileUploadMB)}`}
+        pickerExtra={(
+          <button type="button" onClick={() => setMode('embed')} className="mt-3 h-10 px-4 text-[14px] font-semibold text-brand-violet-light">
+            Paste a YouTube or Twitch link instead
           </button>
-        )
-      ) : (
-        <div className="flex flex-col gap-4">
-          <input type="url" value={embedUrl} onChange={e => handleEmbedUrlChange(e.target.value)} placeholder="Paste YouTube or Twitch URL..." className={INPUT} />
-          {parsedEmbed ? (
-            <div className="relative rounded-2xl overflow-hidden border border-white/[0.06] bg-black">
-              <EmbedVideoPlayer videoId={parsedEmbed.videoId} platform={parsedEmbed.platform} autoplayOnView={false} />
-              <button onClick={() => { setEmbedUrl(''); setParsedEmbed(null); }} className="absolute top-3 right-3 w-9 h-9 rounded-lg bg-black/60 flex items-center justify-center text-white z-10"><Icon name="close" size={16} /></button>
-            </div>
-          ) : (
-            <div className="w-full aspect-video rounded-2xl border-2 border-dashed border-white/[0.08] flex flex-col items-center justify-center gap-3">
-              <Icon name="link" size={32} className="text-brand-violet" /><p className="text-text-muted text-xs">YouTube or Twitch · no storage needed</p>
-            </div>
-          )}
-        </div>
-      )}
+        )}
+        embed={mode === 'embed' ? (
+          <div className="space-y-3">
+            <input
+              type="url"
+              value={embedUrl}
+              onChange={e => handleEmbedUrlChange(e.target.value)}
+              placeholder="Paste a YouTube or Twitch link"
+              className="w-full h-12 px-4 rounded-[14px] bg-[#14141F] text-white text-[15px] placeholder:text-[#6B7280] outline-none focus:shadow-[inset_0_0_0_2px_#7B1FFF]"
+            />
+            {parsedEmbed ? (
+              <div className="relative rounded-[16px] overflow-hidden bg-black">
+                <EmbedVideoPlayer videoId={parsedEmbed.videoId} platform={parsedEmbed.platform} autoplayOnView={false} />
+                <button type="button" onClick={() => { setEmbedUrl(''); setParsedEmbed(null); }} aria-label="Remove link" className="absolute top-2 right-2 z-10 w-8 h-8 rounded-full grid place-items-center text-white" style={{ background: '#15151F' }}>
+                  <Icon name="close" size={16} />
+                </button>
+              </div>
+            ) : (
+              <p className="px-1 text-[13px] text-text-muted">It plays from YouTube or Twitch, so nothing is uploaded.</p>
+            )}
+            <button type="button" onClick={() => setMode('upload')} className="h-10 px-1 text-[14px] font-semibold text-brand-violet-light">
+              Upload a video instead
+            </button>
+          </div>
+        ) : null}
+        caption={content}
+        onCaption={setContent}
+        maxLength={500}
+        placeholder="Describe your clip"
+        soundChoice={mode === 'upload' ? soundChoice : null}
+        quality={mode === 'upload' ? {
+          label: 'Max file size',
+          value: fmtSize(tierConfig.maxFileUploadMB),
+          upgrade: nextTier ? `Get ${fmtSize(getTierConfig(nextTier).maxFileUploadMB)}` : null,
+          onUpgrade: () => navigate('/settings/subscription'),
+        } : null}
+        busy={busy}
+        canPost={canPost && !loading}
+        onPost={handlePost}
+      />
       <input type="file" ref={fileInputRef} onChange={handleFileSelect} className="hidden" accept="video/*" />
-    </NativeCreateShell>
+      <NativeVideoPicker
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        onPicked={acceptVideo}
+        onUseSystemPicker={() => fileInputRef.current?.click()}
+      />
+    </>
   );
 }
 
 // ═══════════════════════════════════════ SHORT
+// ⚠ UNROUTED since 2026-09-13. /create/short redirects to /create/clip
+// (screens/create/CreateClipFlow). Kept on disk, not reachable.
 
 export function NativeCreateShortScreen() {
   const [content, setContent] = useState('');
@@ -397,6 +500,9 @@ export function NativeCreateShortScreen() {
   const navigate = useNavigate();
   const userTier = resolveTier(profile);
   const limits = SHORTS_LIMITS[userTier] || SHORTS_LIMITS.free;
+  const nextTier = userTier === 'free' ? 'lite' : userTier === 'lite' ? 'pro' : null;
+  // "Use this sound" on a sound page arrives here as ?sound=<key>.
+  const soundChoice = useSoundChoice();
   const fmt = (s) => `${Math.floor(s / 60)}:${Math.floor(s % 60).toString().padStart(2, '0')}`;
 
   const handleFileSelect = async (e) => {
@@ -408,7 +514,6 @@ export function NativeCreateShortScreen() {
     try {
       const result = await compressVideo(file, userTier, (p) => setCompressProgress(p));
       setCompressedFile(result);
-      if (result !== file) { const savings = ((1 - result.size / file.size) * 100).toFixed(0); showToast(`Compressed to ${(result.size / (1024 * 1024)).toFixed(1)}MB (${savings}% smaller)`, 'success'); }
     } catch (err) { showToast(err.message || 'Compression failed', 'error'); setCompressedFile(file); }
     setCompressing(false);
   };
@@ -417,9 +522,20 @@ export function NativeCreateShortScreen() {
     if (!uploadFile || uploading) return;
     setUploading(true); setUploadProgress(0);
     try {
-      const postId = await createPost(auth.currentUser.uid, { content: content.trim(), type: 'short', hashtags: (content.match(/#\w+/g) || []).map(t => t.slice(1).toLowerCase()) });
-      const iv = setInterval(() => setUploadProgress(p => Math.min(p + 3, 90)), 200);
-      await uploadPostMedia(postId, uploadFile); clearInterval(iv); setUploadProgress(100);
+      // Same media-loss bug as the clip and photo screens, and the same fix:
+      // upload first, create once, with REAL progress rather than a timer that
+      // counted to 90 regardless of bytes sent.
+      const { url } = await uploadToR2(uploadFile, 'clip', (pct) => setUploadProgress(Math.min(100, Math.max(0, Math.round(pct)))));
+      const poster = await posterFromVideo(uploadFile);
+      const thumbnailUrl = poster ? (await uploadToR2(poster, 'post')).url : null;
+      await createPost(auth.currentUser.uid, {
+        thumbnailUrl,
+        content: content.trim(),
+        type: 'short',
+        hashtags: (content.match(/#\w+/g) || []).map(t => t.slice(1).toLowerCase()),
+        mediaUrls: [url],
+        ...soundFieldsFor(soundChoice.sound, soundChoice.keepOriginal),
+      });
       showToast('Short posted!', 'success'); navigate('/shorts');
     } catch (err) { console.error(err); showToast('Failed to upload', 'error'); }
     setUploading(false); if (videoFile) URL.revokeObjectURL(videoFile.preview);
@@ -428,33 +544,36 @@ export function NativeCreateShortScreen() {
   const canPost = !!compressedFile && !compressing && !uploading;
   const isWorking = compressing || uploading;
 
+  const busy = compressing
+    ? { label: 'Optimizing', pct: Math.round((compressProgress || 0) * 100) }
+    : uploading ? { label: 'Posting', pct: uploadProgress } : null;
+
   return (
-    <NativeCreateShell
-      title="Create Short" subtitle={`${limits.maxShortSide}p · any length`} onBack={() => navigate(-1)}
-      progress={compressing ? compressProgress * 100 : uploading ? uploadProgress : null}
-      action={<PostBtn onClick={handlePost} disabled={!canPost}>{uploading ? <span className="flex items-center gap-2"><Spinner />{uploadProgress}%</span> : 'Post'}</PostBtn>}
-    >
-      <div className="flex gap-3 mb-4">
-        <UserAvatar src={profile?.avatar} size={40} />
-        <textarea value={content} onChange={e => setContent(e.target.value)} placeholder="Describe your short..." className="flex-1 bg-transparent text-text-primary text-sm leading-relaxed placeholder:text-text-muted/50 outline-none resize-none min-h-[64px]" maxLength={300} />
-      </div>
-      {compressing && <div className="p-4 rounded-2xl bg-brand-violet/5 border border-brand-violet/20 mb-4 flex items-center gap-3"><span className="w-4 h-4 border-2 border-brand-violet/30 border-t-brand-violet rounded-full animate-spin" /><p className="text-brand-violet text-xs font-bold">Compressing to {limits.maxShortSide}p… {Math.round(compressProgress * 100)}%</p></div>}
-      <div className="flex items-start justify-center">
-        {videoFile ? (
-          <div className="relative w-full max-w-sm rounded-2xl overflow-hidden border border-white/[0.06] bg-black aspect-[9/16]">
-            <InlineVideoPlayer src={videoFile.preview} maxHeightClass="h-full" rounded={false} objectFit="contain" />
-            <span className="absolute top-3 left-3 px-2.5 py-1 rounded-lg bg-black/70 text-white text-xs font-dmmono font-bold">{fmt(videoFile.duration)}</span>
-            {!isWorking && <button onClick={clearVideo} className="absolute top-3 right-3 w-9 h-9 rounded-lg bg-black/60 flex items-center justify-center text-white"><Icon name="close" size={16} /></button>}
-          </div>
-        ) : (
-          <button onClick={() => fileInputRef.current?.click()} className="w-full max-w-sm aspect-[9/16] rounded-2xl border-2 border-dashed border-white/[0.08] flex flex-col items-center justify-center gap-5 active:bg-white/5">
-            <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-brand-violet/15 to-brand-violet/15 border border-white/[0.08] flex items-center justify-center"><Icon name="slow_motion_video" size={38} className="text-brand-violet-light" /></div>
-            <div className="text-center px-6"><p className="text-text-primary font-syne font-bold text-lg">Upload a Short</p><p className="text-text-muted text-xs mt-2">Any length · auto-compressed to {limits.maxShortSide}p</p></div>
-          </button>
-        )}
-      </div>
+    <>
+      <ClipPostForm
+        title="New short"
+        onBack={() => navigate(-1)}
+        video={videoFile}
+        onChoose={() => fileInputRef.current?.click()}
+        onRemove={isWorking ? null : clearVideo}
+        chooseHint={`Portrait fills the screen. Posts at ${limits.maxShortSide}p.`}
+        caption={content}
+        onCaption={setContent}
+        maxLength={300}
+        placeholder="Describe your short"
+        soundChoice={soundChoice}
+        quality={{
+          label: 'Quality',
+          value: `${limits.maxShortSide}p`,
+          upgrade: nextTier ? `Get ${SHORTS_LIMITS[nextTier].maxShortSide}p` : null,
+          onUpgrade: () => navigate('/settings/subscription'),
+        }}
+        busy={busy}
+        canPost={canPost}
+        onPost={handlePost}
+      />
       <input type="file" ref={fileInputRef} onChange={handleFileSelect} className="hidden" accept="video/*" />
-    </NativeCreateShell>
+    </>
   );
 }
 
@@ -476,8 +595,11 @@ export function NativeCreateArticleScreen() {
     if (!canPost || loading) return;
     setLoading(true);
     try {
-      const postId = await createPost(auth.currentUser.uid, { content: title.trim(), type: 'article', articleData: { title: title.trim(), body: body.trim(), readTime, wordCount: body.split(/\s+/).length }, hashtags: (body.match(/#\w+/g) || []).map(t => t.slice(1).toLowerCase()) });
-      if (coverImage) await uploadPostMedia(postId, coverImage.file);
+      // Upload the cover image BEFORE the post exists, then create once with the
+      // URL attached. The old order discarded uploadPostMedia's return value,
+      // so the image reached R2 and the post never referenced it.
+      const mediaUrls = coverImage?.file ? [(await uploadToR2(coverImage?.file, 'post')).url] : [];
+      await createPost(auth.currentUser.uid, { content: title.trim(), type: 'article', articleData: { title: title.trim(), body: body.trim(), readTime, wordCount: body.split(/\s+/).length }, hashtags: (body.match(/#\w+/g) || []).map(t => t.slice(1).toLowerCase()), mediaUrls });
       showToast('Article published!', 'success'); navigate(-1);
     } catch (err) { console.error(err); showToast('Failed to publish', 'error'); }
     setLoading(false); if (coverImage) URL.revokeObjectURL(coverImage.preview);
@@ -528,8 +650,11 @@ export function NativeCreateAchievementScreen() {
     if (!canPost || loading) return;
     setLoading(true);
     try {
-      const postId = await createPost(auth.currentUser.uid, { content: `${title.trim()}${game ? ` in ${game}` : ''}`, type: 'achievement', achievementData: { achievementType, game: game.trim() || null, title: title.trim(), description: description.trim() || null }, hashtags: ['achievement', ...(game ? [game.toLowerCase().replace(/\s+/g, '')] : [])] });
-      if (screenshot) await uploadPostMedia(postId, screenshot.file);
+      // Upload the screenshot BEFORE the post exists, then create once with the
+      // URL attached. The old order discarded uploadPostMedia's return value,
+      // so the image reached R2 and the post never referenced it.
+      const mediaUrls = screenshot?.file ? [(await uploadToR2(screenshot?.file, 'post')).url] : [];
+      await createPost(auth.currentUser.uid, { content: `${title.trim()}${game ? ` in ${game}` : ''}`, type: 'achievement', achievementData: { achievementType, game: game.trim() || null, title: title.trim(), description: description.trim() || null }, hashtags: ['achievement', ...(game ? [game.toLowerCase().replace(/\s+/g, '')] : [])], mediaUrls });
       showToast('Achievement shared!', 'success'); navigate(-1);
     } catch (err) { console.error(err); showToast('Failed to post', 'error'); }
     setLoading(false); if (screenshot) URL.revokeObjectURL(screenshot.preview);
@@ -764,7 +889,7 @@ export function NativeCreatePollScreen() {
     if (!question.trim() || options.some(o => !o.trim())) { showToast('Please fill in the question and all options', 'error'); return; }
     setLoading(true);
     try {
-      await createPoll(currentUser.uid, { question: question.trim(), options: options.filter(o => o.trim() !== ''), duration });
+      await createFeedPoll(currentUser.uid, { question: question.trim(), options: options.filter(o => o.trim() !== ''), duration });
       showToast('Poll created successfully!', 'success'); navigate(-1);
     } catch (err) { console.error(err); showToast('Failed to create poll', 'error'); }
     finally { setLoading(false); }

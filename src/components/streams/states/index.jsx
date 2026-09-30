@@ -16,7 +16,7 @@
 // share them, and it is deliberate: the five state components that DO read the
 // simulator (PlaybackState, HealthWarning, ComposerPill, AudioStage,
 // ModChannelSwitch) stay behind until their reads are lifted to props.
-import { useState, useRef, useLayoutEffect } from 'react';
+import { useState, useRef, useLayoutEffect, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import Icon from '../../Icon';
 import LevelUpCelebration from '../../engagement/LevelUpCelebration';
@@ -25,6 +25,8 @@ import { RANK_UNLOCKS } from '../../../utils/rankUnlocks';
 import { TTS_UNLOCK_ID } from '../../../utils/streamTts';
 import { StreamGoalBar } from '../StreamGoalAndAlerts';
 import { S, C } from './tokens';
+import UserAvatar from '../../UserAvatar';
+import { TRAIN_TOP_RIDERS } from '../../../utils/hypeTrain';
 
 // The spoken-chat gate, imported rather than restated. canUseStreamTts() passes
 // on level OR Pro (founder, 2026-08-26: "both, can be unlocked or by subscribing
@@ -847,8 +849,26 @@ const TRAIN_GOLD = 'linear-gradient(180deg, #FCEFB4 0%, #F5C842 38%, #E9A517 72%
 const TRAIN_HEAT = ['#8b3ff0', '#a34cf5', '#b44fff', '#c87fff', '#f0a500'];
 const trainClock = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 
+/** A train still taking tips: not paid out, window not closed. */
+export const trainIsLive = (train, now = Date.now()) =>
+  !!(train && train.received && !train.settledAt && (!train.endsAtMs || train.endsAtMs > now));
+
+// Re-renders once a second while a train runs, so the clock counts down and the
+// bar leaves when the window closes even if nothing else re-renders the screen.
+// Until 2026-09-27 a closed train sat on screen at 0:00 until the next tip.
+function useTrainClock(running) {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!running) return undefined;
+    const id = setInterval(() => setTick((n) => n + 1), 1000);
+    return () => clearInterval(id);
+  }, [running]);
+}
+
 export function HypeTrainView({ train, style }) {
-  if (!train || !train.received) return null;
+  const live = trainIsLive(train);
+  useTrainClock(live);
+  if (!live) return null;
   const { level = 1, into = 0, goal = 1, maxLevel = 5, endsAtMs = 0 } = train;
   const capped = level >= maxLevel;
   const pct = capped ? 100 : Math.max(3, Math.min(100, Math.round((into / goal) * 100)));
@@ -856,7 +876,16 @@ export function HypeTrainView({ train, style }) {
   const hot = TRAIN_HEAT[Math.min(level, TRAIN_HEAT.length) - 1];
   const urgent = !capped && left <= 30;
   const warm = !capped && left <= 60;
-  const others = Math.max(0, (train.riderCount || 0) - 1);
+  // The conductor is whoever the SERVER names as leader, not position 0 of
+  // `top`: a train that started before `top` existed carries the leader but not
+  // the riders who tipped before it. Every face was stamped by `sendTip` from
+  // that rider's own tip, so drawing them costs no read.
+  const riders = Array.isArray(train.top) ? train.top.filter((r) => r && r.uid) : [];
+  const conductor = train.topUid
+    ? { uid: train.topUid, name: train.topName, avatar: train.topAvatar }
+    : riders[0] || null;
+  const rest = riders.filter((r) => r.uid !== conductor?.uid).slice(0, TRAIN_TOP_RIDERS - 1);
+  const more = Math.max(0, (train.riderCount || 0) - (conductor ? 1 : 0) - rest.length);
 
   return (
     <div className="vg-material vg-grain" style={{
@@ -900,15 +929,19 @@ export function HypeTrainView({ train, style }) {
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        {train.topAvatar && (
+        {/* Conductor ringed in gold, then up to four riders, then the count of
+            everyone else: the bar the admin preview shows. */}
+        {conductor && (
           <span style={{ flexShrink: 0, borderRadius: 999, padding: 1, background: TRAIN_GOLD, display: 'flex' }}>
-            <img src={train.topAvatar} alt="" width={20} height={20}
-              style={{ width: 20, height: 20, borderRadius: 999, objectFit: 'cover', display: 'block' }} />
+            <UserAvatar src={conductor.avatar} size={20} showLiftRing={false} />
           </span>
         )}
-        <span style={{ flex: 1, minWidth: 0, fontSize: 11, fontWeight: 700, color: '#a0a0b8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {train.topName ? `${train.topName} leading` : ''}
-          {others > 0 ? ` · +${others}` : ''}
+        {rest.map((r) => <UserAvatar key={r.uid} src={r.avatar} size={18} showLiftRing={false} />)}
+        {more > 0 && (
+          <span className="vg-mono" style={{ flexShrink: 0, fontSize: 11, fontWeight: 800, color: C.textMuted }}>+{more}</span>
+        )}
+        <span style={{ flex: 1, minWidth: 0, fontSize: 11, fontWeight: 700, color: '#a0a0b8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginLeft: 2 }}>
+          {conductor?.name ? `${conductor.name} leading` : ''}
         </span>
         <span className="vg-mono" style={{ flexShrink: 0, fontSize: 11, fontWeight: 800, color: capped ? '#f5c842' : '#a0a0b8' }}>
           {capped ? 'top level' : `${into.toLocaleString()} / ${goal.toLocaleString()}`}
@@ -917,3 +950,91 @@ export function HypeTrainView({ train, style }) {
     </div>
   );
 }
+
+/**
+ * What a finished train paid the creator. ONE card for the live screens and the
+ * admin preview (moved here from previewStates.jsx 2026-09-27; until then only
+ * the preview drew it and a real host never saw what a train paid).
+ *
+ * ⚠ THE ROOM SEES IT: telling them what they earned the creator is what makes
+ * the next train more likely. Gold is a ramp on dark material, never a flat fill.
+ */
+export function TrainBonus({ bonus, hostName, onDone, offset = 0, style }) {
+  useEffect(() => {
+    if (!bonus) return undefined;
+    const id = setTimeout(() => onDone?.(), 6000);
+    return () => clearTimeout(id);
+  }, [bonus, onDone]);
+  if (!bonus) return null;
+  const isVp = bonus.kind === 'vp';
+  const isBoost = bonus.kind === 'boost';
+  const amount = (isVp ? bonus.vp : isBoost ? bonus.boostCoins : bonus.coins) || 0;
+  const unit = isVp ? 'VP' : isBoost ? 'boost coins' : 'coins';
+  return (
+    <div className="vg-material vg-grain" style={{
+      position: 'absolute', left: 10, right: 10, top: 56 + offset, zIndex: 27,
+      padding: 10, borderRadius: 16, pointerEvents: 'none', overflow: 'hidden',
+      boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.14), 0 8px 26px rgba(240,165,0,0.30)',
+      display: 'flex', alignItems: 'center', gap: 8,
+      ...style,
+    }}>
+      <span style={{
+        flexShrink: 0, width: 30, height: 30, borderRadius: 12,
+        background: TRAIN_GOLD, display: 'grid', placeItems: 'center', color: '#241a05',
+        boxShadow: '0 3px 12px rgba(240,165,0,0.45)',
+      }}>
+        <Icon name={isVp ? 'bolt' : isBoost ? 'rocket_launch' : 'toll'} size={16} />
+      </span>
+      <span style={{ flex: 1, minWidth: 0 }}>
+        <span style={{ display: 'block', fontSize: 11, fontWeight: 800, letterSpacing: '.06em', color: C.textMuted }}>
+          {`LEVEL ${bonus.level} TRAIN`}
+        </span>
+        <span style={{ display: 'block', fontSize: 13, fontWeight: 900, color: C.text, marginTop: 1 }}>
+          {`${amount.toLocaleString()} ${unit} to ${hostName || 'the host'}`}
+        </span>
+      </span>
+      <span className="vg-mono" style={{ flexShrink: 0, fontSize: 11, fontWeight: 800, color: '#f5c842' }}>
+        {`${(bonus.received || 0).toLocaleString()}c raised`}
+      </span>
+    </div>
+  );
+}
+
+/**
+ * The live screens' bonus card. Reads `streams/{id}.hypeTrainBonus` from the doc
+ * the screen already listens to, so it costs no read. Shows each payout once,
+ * for 6s, and never replays one that was already on the doc when the screen
+ * opened (that is history, not news). Steps below a train that is running.
+ */
+export function LiveTrainBonus({ bonus, train, hostName, style }) {
+  const [shown, setShown] = useState(null);
+  const lastAt = useRef(undefined);
+  const at = bonus?.at || 0;
+  useEffect(() => {
+    const first = lastAt.current === undefined;
+    if (!at || at === lastAt.current) { if (first) lastAt.current = at; return; }
+    lastAt.current = at;
+    if (first && Date.now() - at > 20000) return;
+    setShown(bonus);
+  // `bonus` is read only when `at` changes, which is the one event that matters.
+  }, [at]);
+  const done = useCallback(() => setShown(null), []);
+  return <TrainBonus bonus={shown} hostName={hostName} onDone={done} offset={trainIsLive(train) ? 86 : 0} style={style} />;
+}
+
+/** Totals of every train a stream paid, for the host's end-of-stream summary. */
+export function trainPayTotals(bonuses) {
+  const t = { coins: 0, boostCoins: 0, vp: 0, count: 0 };
+  for (const b of bonuses || []) {
+    if (!b) continue;
+    t.coins += b.coins || 0; t.boostCoins += b.boostCoins || 0; t.vp += b.vp || 0; t.count += 1;
+  }
+  return t;
+}
+
+/** "120 coins · 80 boost coins · 50 VP", skipping zeros. */
+export const trainPayLine = (t) => [
+  t.coins ? `${t.coins.toLocaleString()} coins` : '',
+  t.boostCoins ? `${t.boostCoins.toLocaleString()} boost coins` : '',
+  t.vp ? `${t.vp.toLocaleString()} VP` : '',
+].filter(Boolean).join(' · ');

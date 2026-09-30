@@ -1,3 +1,10 @@
+// ⚠ UNROUTED DEAD CODE. `/create/clip` renders the NATIVE screen
+// (NativeCreateScreens.jsx `NativeCreateClipPostScreen`); this file's web arm in
+// AppRouter is `<Navigate to="/" replace />`, so nothing mounts it. It is lazy-
+// imported, which makes it LOOK live. The real clip screen was fixed 2026-09-12
+// (gallery picker -> compressVideo -> uploadToR2 -> createPost with mediaUrls);
+// this copy still has the old ffmpeg.wasm compressor and still discards the
+// upload URL. Kept per the no-deletion rule. Fix the NATIVE file.
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useUser } from '../../context/UserContext';

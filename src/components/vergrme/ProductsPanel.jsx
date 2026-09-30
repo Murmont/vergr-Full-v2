@@ -5,6 +5,7 @@ import { useUI } from '../../context/UIContext';
 import useTier from '../../hooks/useTier';
 import { compressMedia } from '../../utils/mediaCompression';
 import { uploadToR2 } from '../../utils/r2Storage';
+import { isPermalinkProduct } from '../../utils/shopifyCart';
 import {
   getVergrMeProducts, saveVergrMeProduct, deleteVergrMeProduct,
   uploadVergrMeProductFile, getMyVergrMeSales,
@@ -64,6 +65,9 @@ export default function ProductsPanel({ uid, showOrders = true }) {
   };
   useEffect(() => { if (uid) load(); }, [uid]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Only products that can still be bought: synced from a store and checked
+  // out on it (the same rule the vergr.me editor and page use).
+  const storeProducts = products === null ? null : products.filter(isPermalinkProduct);
   const earnedMicroUsd = sales.reduce((s, r) => s + microOf(r), 0)
     + orders.filter((o) => o.status !== 'cancelled').reduce((s, o) => s + microOf(o), 0);
   const saleCount = sales.length + orders.filter((o) => o.status !== 'cancelled').length;
@@ -96,11 +100,15 @@ export default function ProductsPanel({ uid, showOrders = true }) {
             <Icon name="storefront" size={20} className="text-brand-violet-light" />
           </div>
           <div className="min-w-0">
-            <div className="font-syne font-bold text-sm">Sell downloads, keep 92%</div>
+            {/* ⚠ SELLING FOR COINS IS OFF (server: vergrMeShop.js
+                COIN_PRODUCT_SALES_ENABLED = false, 2026-09-22). The founder chose,
+                2026-09-27, to hide coin products here too: only products from a
+                connected store, which buyers check out ON that store, are shown. */}
+            <div className="font-syne font-bold text-sm">Your store's products</div>
             <p className="text-xs text-text-secondary mt-1 leading-relaxed">
-              One flat 8% fee. Your 92% is credited to your earnings
-              instantly, with <span className="text-white font-semibold">nothing else deducted</span> on
-              top. Linktree charges 12%, Beacons 9% — plus payout processing.
+              Products from your connected Shopify or WooCommerce store show on your
+              vergr.me. Buyers open them on your store and pay there. Selling for coins
+              on Vergr is switched off.
             </p>
             {earnedMicroUsd > 0 && (
               <div className="mt-2 text-xs font-dmmono font-bold tabular-nums text-gem-blue">
@@ -115,25 +123,18 @@ export default function ProductsPanel({ uid, showOrders = true }) {
       <div className="rounded-2xl bg-surface-1 border border-white/5 overflow-hidden">
         <div className="flex items-center justify-between px-4 py-3 border-b border-white/5">
           <div className="text-sm font-syne font-bold">Your products</div>
-          <button
-            onClick={() => setEditing('new')}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg text-white"
-            style={{ background: 'linear-gradient(135deg, #7B1FFF, #B44FFF)' }}
-          >
-            <Icon name="add" size={14} /> New product
-          </button>
         </div>
 
         {products === null && <div className="p-6 text-center text-xs text-text-muted">Loading…</div>}
-        {products?.length === 0 && (
+        {storeProducts?.length === 0 && (
           <div className="p-8 text-center">
-            <Icon name="download_for_offline" size={34} className="text-text-muted mb-2" />
-            <p className="text-sm text-text-secondary">No products yet.</p>
-            <p className="text-xs text-text-muted mt-1">Presets, guides, packs, wallpapers, project files — upload once, sell forever.</p>
+            <Icon name="storefront" size={34} className="text-text-muted mb-2" />
+            <p className="text-sm text-text-secondary">No store products yet.</p>
+            <p className="text-xs text-text-muted mt-1">Connect Shopify or WooCommerce in Integrations and your products appear here.</p>
           </div>
         )}
 
-        {products?.map((p) => (
+        {storeProducts?.map((p) => (
           <div key={p.id} className="flex items-center gap-3 px-4 py-3 border-b border-white/5 last:border-b-0">
             {p.coverUrl
               ? <img src={p.coverUrl} alt="" className="w-11 h-11 rounded-lg object-cover shrink-0" loading="lazy" />
@@ -155,7 +156,7 @@ export default function ProductsPanel({ uid, showOrders = true }) {
                 )}
               </div>
               <div className="text-[11px] text-text-muted truncate">
-                <span className="font-dmmono font-bold tabular-nums text-brand-gold">{Number(p.priceCoins || 0).toLocaleString()}c</span>
+                <span>Checks out on your store</span>
                 {p.kind === 'physical' ? (
                   <>
                     {Number(p.shippingCoins) > 0 ? <> +{Number(p.shippingCoins).toLocaleString()}c ship</> : null}
@@ -175,7 +176,6 @@ export default function ProductsPanel({ uid, showOrders = true }) {
             >
               {p.published !== false ? 'Live' : 'Hidden'}
             </button>
-            <button onClick={() => setEditing(p)} className="w-8 h-8 rounded-lg hover:bg-surface-2 flex items-center justify-center shrink-0"><Icon name="edit" size={16} className="text-text-secondary" /></button>
             <button onClick={() => remove(p)} disabled={busy} className="w-8 h-8 rounded-lg hover:bg-surface-2 flex items-center justify-center shrink-0"><Icon name="delete" size={16} className="text-brand-ember" /></button>
           </div>
         ))}
@@ -197,8 +197,8 @@ export default function ProductsPanel({ uid, showOrders = true }) {
       )}
 
       <p className="text-[11px] text-text-muted px-1">
-        Add a product to your page from <span className="text-text-secondary">Links → Add block → Sell a product</span>.
-        Buyers pay with Vergr coins; digital files download via a private, expiring link, physical orders land above with the buyer's address.
+        Add a product to your page from <span className="text-text-secondary">Links → Add block → Store product</span>.
+        Buyers check out on your store. Orders placed for coins before selling was switched off still show here, so you can ship or cancel them.
       </p>
 
       {editing && (
@@ -357,7 +357,7 @@ export function ProductEditor({ uid, tier, product, onClose, onSaved }) {
   return (
     <div className="fixed inset-0 z-[10002] flex items-end sm:items-center justify-center">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={saving ? undefined : onClose} />
-      <div className="relative w-full sm:max-w-md bg-surface-1 border border-white/10 rounded-t-2xl sm:rounded-2xl p-5 max-h-[88vh] overflow-y-auto">
+      <div className="relative w-full sm:max-w-md bg-surface-1 border border-white/10 rounded-t-2xl sm:rounded-2xl p-5 max-h-[88vh] overflow-y-auto sheet-safe">
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-syne font-bold text-base">{isNew ? 'New digital product' : 'Edit product'}</h3>
           <button onClick={onClose} disabled={saving} className="w-8 h-8 rounded-lg hover:bg-surface-2 flex items-center justify-center"><Icon name="close" size={18} /></button>

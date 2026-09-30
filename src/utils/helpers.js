@@ -37,6 +37,27 @@ export function formatCoins(amount) {
   return num.toString();
 }
 
+// Engagement count under a button: 0, 999, 1.2K, 12K, 1M. Zero is printed, not
+// hidden: a blank space under a heart reads as "no counter", which is exactly
+// what the clip rails showed on every new clip. 999,950 becomes 1M, where the
+// rails' own copies printed "1000.0K".
+export function compactCount(n) {
+  const v = Math.max(0, Math.floor(Number(n) || 0));
+  if (v < 1000) return String(v);
+  const units = [[1e9, 'B'], [1e6, 'M'], [1e3, 'K']];
+  for (let i = 0; i < units.length; i++) {
+    const [size, suffix] = units[i];
+    if (v < size) continue;
+    const r = Math.round((v / size) * 10) / 10;
+    if (r >= 1000 && i > 0) {
+      const [up, upSuffix] = units[i - 1];
+      return String(Math.round((v / up) * 10) / 10).replace(/\.0$/, '') + upSuffix;
+    }
+    return String(r).replace(/\.0$/, '') + suffix;
+  }
+  return String(v);
+}
+
 export function timeAgo(date) {
   if (!date) return '';
   // Handle Firestore Timestamp objects
@@ -55,3 +76,34 @@ export function timeAgo(date) {
   if (weeks < 4) return `${weeks}w`;
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
+// Is this post SHORT-FORM (the immersive, vertically scrolled format) rather
+// than a long-form video post?
+//
+// Founder, 2026-09-12: a YouTube Short and a YouTube video "are formatted and
+// sized differently, one gets a screen with the user info and coments and
+// related videos below it, and the other is a feed that gets scrolled like
+// tiktok". A clip had been falling through every surface as a video post.
+//
+// ONE definition on purpose: PostCard decides the feed SHAPE from this, the
+// Explore tiles decide the DESTINATION from it, and ShortsDeck queries the
+// same two types. Three copies of this test is how they drift apart.
+export const SHORT_FORMAT_TYPES = ['clip', 'short'];
+export const isShortFormat = (type) => SHORT_FORMAT_TYPES.includes(type);
+
+// Does this post belong in the FEED: the profile Posts tab and the home feeds?
+//
+// Instagram's model, founder 2026-09-14 ("keep it as close as possible to what
+// they are already familiar with"): every clip lives in the Clips tab and the
+// clips feed, and "Also share to feed" (on by default) ALSO puts it on the
+// profile Posts tab and in followers' home feeds. Turned off, the clip is in
+// Clips only. A clip with no field was posted before the choice existed and was
+// already in the feed, so absent means shared.
+//
+// ONE definition: every Posts tab and every home feed filters through this.
+export const sharesToFeed = (post) => !isShortFormat(post?.type) || post?.shareToFeed !== false;
+
+// The profile Media tab: photos and long-form video. Clips have their own tab.
+// ⚠ It used to test `imageUrl || videoUrl`, fields no current post writes
+// (media lives in `mediaUrls`), so the tab was empty for almost everyone.
+export const isMediaPost = (post) => !!post && !isShortFormat(post.type)
+  && !!(post.mediaUrls?.length || post.mediaUrl || post.imageUrl || post.videoUrl);

@@ -85,7 +85,10 @@ export default function ReportPrivate({
       await httpsCallable(functions, 'submitReport')({
         targetType,
         targetId,
-        reason: REASONS.find((r) => r.id === picked)?.label || picked,
+        // ⚠ THE MINOR OPTION FILES `underage`. submitReport marks a report
+        // critical only when reason === 'underage', so sending the sentence
+        // put a child-safety report from a private chat at normal priority.
+        reason: picked === 'minor' ? 'underage' : (REASONS.find((r) => r.id === picked)?.label || picked),
         // The pointer travels; the content does not. A moderator resolves the
         // material from these ids with credentials the reporter does not have.
         details: JSON.stringify({
@@ -111,7 +114,7 @@ export default function ReportPrivate({
   return (
     <div className="fixed inset-0 z-[130] flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm" onClick={onClose}>
       <div
-        className="w-full sm:max-w-md bg-surface-1 border border-white/10 rounded-t-3xl sm:rounded-3xl overflow-hidden"
+        className="w-full sm:max-w-md bg-surface-1 border border-white/10 rounded-t-3xl sm:rounded-3xl overflow-hidden sheet-safe"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="px-5 py-4 border-b border-white/[0.06] flex items-center justify-between">

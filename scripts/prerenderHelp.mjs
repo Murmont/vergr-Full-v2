@@ -258,9 +258,9 @@ async function main() {
   // clients and non-rendering crawlers see real content). The first ten mirror
   // the useSeo() calls in PublicMarketingScreens.jsx — keep them in sync.
   const MARKETING_PAGES = [
-    { path: '/platform', h1: 'Live Streaming for Gamers & Creators',
-      title: 'Vergr | Live Streaming for Gamers & Creators',
-      description: 'Connect with gamers, live stream in high quality, and share clips on Vergr. Build your squad, follow creators, and support them with tips and memberships.' },
+    { path: '/platform', h1: 'Go Live. Hang Out. Share the Moment.',
+      title: 'Vergr - Go Live. Hang Out. Share the Moment.',
+      description: 'Vergr is where you go live, share clips and hang out with your people in voice chats and DMs, all in one app.' },
     { path: '/platform/store', h1: 'Shop — Buy VC Coins',
       title: 'Shop — Buy VC Coins | VERGR',
       description: 'Buy VC Coins to tip streamers, join creator memberships, unlock paid streams, and boost your reach. Eight pack sizes from $0.99 to $249.99. Pay with card or cryptocurrency.' },
@@ -308,7 +308,7 @@ async function main() {
     // at runtime) — titles/descriptions authored here, self-canonical is the fix.
     { path: '/platform/streamer', h1: 'For Streamers',
       title: 'For Streamers — Go Live & Get Paid | VERGR',
-      description: 'Stream from your browser or OBS, earn tips and keep 50% to 80% of them, build channel memberships, and mirror to Twitch. Built for gamer monetisation.' },
+      description: 'Go live from your phone, your browser or OBS, build channel memberships, mirror to Twitch, and keep 50% to 80% of the revenue your streams generate.' },
     { path: '/platform/studio-tools', h1: 'Studio Tools',
       title: 'Studio Tools — Overlays, Clips & Creator Tools | VERGR',
       description: 'VERGR creator studio: stream overlays, clip tools, scheduling, analytics, and monetisation controls in one dashboard.' },
@@ -402,7 +402,7 @@ async function main() {
       bodyHtml: legalDocHtml(CHILD_SAFETY_STANDARDS) },
   ];
   // Short crumb label for a marketing page: the h1 is a full sentence
-  // ("Live Streaming for Gamers & Creators"), which reads badly in a
+  // ("Go Live. Hang Out. Share the Moment."), which reads badly in a
   // breadcrumb, so derive from the slug and override only where that loses
   // meaning.
   const CRUMB_OVERRIDES = {

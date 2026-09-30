@@ -38,7 +38,7 @@ export default {
       h2: "Who can watch your replay"
     },
     {
-      p: "A replay is protected exactly like the live stream was. A followers-only broadcast stays followers-only, and a ticketed event's replay is only for people who bought a ticket or competed. Nobody gets a paid event for free just because it ended."
+      p: "A replay is protected exactly like the live stream was. A followers-only broadcast stays followers-only, and a ticketed event's replay is only for people who bought a ticket. Nobody gets a paid event for free just because it ended."
     },
     {
       h2: "Keeping something forever"

@@ -49,7 +49,7 @@ export const VP_BONUS_PACKS = [
     priceUSD: 0.99,
     scope: 'all',
     art: 'flash-surge',
-    desc: 'Triple VP for six hours. Built for one long session.',
+    desc: 'Triple VP for six hours. Built for one long stretch of streaming or watching.',
   },
   {
     id: 'half_day',
@@ -71,7 +71,7 @@ export const VP_BONUS_PACKS = [
     priceUSD: 2.59,
     scope: 'all',
     art: 'day-surge',
-    desc: 'Double VP for a full day, whenever you play it.',
+    desc: 'Double VP for a full day of posting, streaming and watching.',
   },
   {
     id: 'weekend',

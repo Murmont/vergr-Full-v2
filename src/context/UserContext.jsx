@@ -9,8 +9,11 @@ import { prefetchCloseFriends } from '../utils/closeFriendsPrefetch';
 import { isGallerySaveSupported, isMediaSaved, saveMediaToGallery, ALBUM_MANUAL } from '../utils/saveToGallery';
 import { purgeClearedHistoryOnce } from '../utils/chatOps';
 import { restorePurchases, restoreSubscriptions } from '../utils/nativeBilling';
+import { ensureAccountCountry } from '../utils/geoBlocks';
 
-const UserContext = createContext(null);
+// Exported so Vergr Vanguard can hand its screens a stand-in profile for the
+// operator, who has no users document (src/vanguard/VanguardApp.jsx).
+export const UserContext = createContext(null);
 const DEFAULT_WALLET = { balance: 0, vp: 0, totalEarned: 0, totalSpent: 0, totalReceived: 0, totalTipped: 0, owedMicroUsd: 0, totalOwedMicroUsd: 0, totalPaidMicroUsd: 0, tier: 'free', dailyStreak: 0 };
 
 export function UserProvider({ children }) {
@@ -190,6 +193,14 @@ export function UserProvider({ children }) {
   // app regains focus while a listener is stuck on cache, which recovers every
   // listener at once because the stall is at the transport, not the query.
   useEffect(() => installResyncTriggers(), []);
+
+  // Every account has a country (founder, 2026-09-25): checkout depends on it.
+  // Fires only while the loaded profile has none, so it is once per account.
+  // A cache-seeded profile waits for the server copy, which may already have it.
+  const needsCountry = !!currentUser && !isGuest && !!profile && !profile._fromCache && !profile.geoCountry;
+  useEffect(() => {
+    if (needsCountry) ensureAccountCountry(currentUser, profile);
+  }, [needsCountry, currentUser, profile]);
 
   const value = { profile, wallet, loading, updateProfile, isGuest, fxVersion, walletUnverified };
   return <UserContext.Provider value={value}>{children}</UserContext.Provider>;

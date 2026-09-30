@@ -11,7 +11,7 @@ import useResponsive from '../../hooks/useResponsive';
 import {
   VP_LEVELS, RANK_TIERS, MAX_VP_LEVEL, TOTAL_VP_TO_MAX,
   getVPLevel, getVPProgress, getNextVPLevel,
-  PRESTIGE_REWARDS, PRESTIGE_MAX, PLAN_VP_MULTIPLIER,
+  PRESTIGE_REWARDS, PRESTIGE_MAX, PLAN_VP_MULTIPLIER, prestigeForVP,
 } from '../../utils/vpSystem';
 import { resolveTier } from '../../utils/tierSystem';
 import RankCrest from '../../components/prestige/RankCrest';
@@ -35,7 +35,7 @@ export default function VPRanksScreen() {
   const currentLevel = getVPLevel(totalVP);
   const nextLevel = getNextVPLevel(totalVP);
   const progress = getVPProgress(totalVP);
-  const prestige = profile?.prestige || 0;
+  const prestige = Math.max(profile?.prestige || 0, prestigeForVP(totalVP));
 
   // Group 100 levels by rank
   const groupedRanks = useMemo(() => {
@@ -112,7 +112,7 @@ export default function VPRanksScreen() {
             100 levels across 11 ranks. Each level costs 2,000 VP at the start, rising by 1,000 every 10 levels (11,000 per level from L91 to L100). Reaching L100 takes {fmt(TOTAL_VP_TO_MAX)} VP total. VP is a status ladder: it unlocks rings, badges and standing, and it never changes what a creator is paid.
           </p>
           <p className="mt-2">
-            Earn VP from daily logins, quests, likes received, streaming, referrals, and more. Pro/Lite plans multiply all VP earnings (1.5× / 2×) so you rank up faster.
+            Earn VP from daily logins, quests, likes received, streaming, referrals, and more. Lite and Pro plans multiply all VP earnings (1.5× and 2×) so you rank up faster.
           </p>
         </div>
         </div>
@@ -204,9 +204,9 @@ export default function VPRanksScreen() {
         {/* Prestige */}
         <p className="text-text-secondary text-xs uppercase tracking-wider font-bold mb-3">Prestige</p>
         <div className="mb-6 p-4 rounded-2xl border border-white/[0.06] bg-surface-1 text-xs text-text-secondary leading-relaxed">
-          <p className="text-white font-semibold text-sm mb-1">After L100 — optional</p>
+          <p className="text-white font-semibold text-sm mb-1">After L100</p>
           <p className="mb-3">
-            Hit Immortal (L100) and you can Prestige. Your displayed level resets to 1 with a prestige badge, while your lifetime VP and perks stay intact. Never forced, purely for bragging rights. Up to {PRESTIGE_MAX} prestiges.
+            The level stops at Immortal (L100). Keep earning and every further {fmt(TOTAL_VP_TO_MAX)} VP adds a prestige star, up to {PRESTIGE_MAX}. Nothing resets: your level, perks, crest and lifetime VP all stay. Purely for bragging rights.
           </p>
           <div className="space-y-1.5">
             {PRESTIGE_REWARDS.map((p) => {
@@ -215,7 +215,9 @@ export default function VPRanksScreen() {
                 <div key={p.prestige} className="flex items-center gap-3 py-1.5 border-t border-white/[0.04] first:border-t-0">
                   <span className="w-10 text-center text-base" style={{ color: isUnlocked ? '#F5C542' : '#ffffff33' }}>{p.badge}</span>
                   <span className={`flex-1 text-xs ${isUnlocked ? 'text-white' : 'text-text-muted'}`}>{p.title}</span>
-                  <span className="text-[10px] text-text-muted font-dmmono">+{fmt(p.coinReward)} coins</span>
+                  {/* No coin figure: PRESTIGE_REWARDS lists coins, but nothing grants
+                      them (audit A112), the same reason PrestigeShowcase dropped it. */}
+                  <span className="text-[10px] text-text-muted font-dmmono">P{p.prestige}</span>
                 </div>
               );
             })}

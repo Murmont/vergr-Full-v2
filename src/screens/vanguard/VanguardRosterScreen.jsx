@@ -7,6 +7,7 @@ import VanguardLayout, { VG_COLORS as C, VanguardPageHeader, VgCard } from '../.
 import Icon from '../../components/Icon';
 import { getAllVanguardMembers } from '../../firebase/firestore';
 import { rankMeta, VANGUARD_RANKS } from '../../utils/vanguardRanks';
+import { openInVergr } from '../../admin/openExternal';
 
 const tsMs = (t) => (t?.toDate ? t.toDate().getTime() : t?.seconds ? t.seconds * 1000 : (t instanceof Date ? t.getTime() : Number(t) || 0));
 const agoLabel = (ms) => {
@@ -113,7 +114,7 @@ export default function VanguardRosterScreen() {
                   style={{
                     width: '100%', display: 'grid', gridTemplateColumns: '40px 1fr 1fr 100px 100px 80px',
                     gap: 10, alignItems: 'center', padding: '10px 14px',
-                    background: isSel ? 'rgba(180,79,255,.08)' : 'transparent', border: 0,
+                    background: isSel ? C.violetSoftFill : 'transparent', border: 0,
                     borderBottom: `1px solid ${C.border}`, borderLeft: isSel ? `2px solid ${C.violetLt}` : '2px solid transparent',
                     color: C.text, cursor: 'pointer', textAlign: 'left', fontFamily: 'DM Sans',
                   }}
@@ -151,7 +152,7 @@ export default function VanguardRosterScreen() {
                 </div>
               </div>
 
-              <button onClick={() => navigate(`/messages?to=${selected.uid}`)} style={{ width: '100%', padding: '10px 14px', background: C.violet, border: 0, borderRadius: 8, color: C.text, fontFamily: 'DM Sans', fontWeight: 700, fontSize: 13, cursor: 'pointer', marginBottom: 8 }}>
+              <button onClick={() => openInVergr(`/messages?to=${selected.uid}`)} style={{ width: '100%', padding: '10px 14px', background: C.violet, border: 0, borderRadius: 8, color: C.text, fontFamily: 'DM Sans', fontWeight: 700, fontSize: 13, cursor: 'pointer', marginBottom: 8 }}>
                 Send DM
               </button>
             </VgCard>

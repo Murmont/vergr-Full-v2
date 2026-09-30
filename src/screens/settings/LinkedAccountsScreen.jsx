@@ -1,11 +1,11 @@
 // Redesigned Connected Accounts page — list of platforms with connect/disconnect.
 // Persists via updateLinkedAccount / removeLinkedAccount.
 //
-// Steam is the special case: it writes its own rich object via the secure
-// linkSteam callable (issues a per-user GSI token + reverse-lookup doc) and
-// shows extra CS2 / Dota 2 setup rows once the account is linked. Those
-// setup rows install Valve GSI .cfg files into the player's Steam folder —
-// see src/utils/gsiInstaller.js for the Tauri / FSA / download fallback.
+// Steam used to be a special case (a callable that minted a Valve GSI token,
+// plus CS2 / Dota 2 setup rows). All of that existed to auto-detect tournament
+// results and was DELETED 2026-09-21. Steam is now a plain typed handle like
+// every other display link. Accounts linked before then still carry the old
+// { steamId64, gsiToken } object, so every read accepts both shapes.
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useUser } from '../../context/UserContext';
@@ -13,10 +13,8 @@ import { useUI } from '../../context/UIContext';
 import { useLayout } from '../../context/LayoutContext';
 import {
   updateLinkedAccount, removeLinkedAccount,
-  linkSteam, unlinkSteam, getSteamGsiConfig,
   getOAuthStartUrl, twitchChannelImport,
 } from '../../firebase/firestore';
-import { installGsiConfig, detectGsiMethod, GSI_METHOD } from '../../utils/gsiInstaller';
 import TopBar from '../../components/TopBar';
 import useResponsive from '../../hooks/useResponsive';
 import { C, PageShell } from './_settingsUI';
@@ -77,22 +75,24 @@ function BrandLogo({ id, color, size = 22 }) {
 }
 
 const PLATFORMS = [
-  // These four used to sell "auto-result detection" for tournaments. Tournaments
-  // are gone and the ~70 Cloud Functions behind that detection were deleted on
-  // 2026-08-17, so linking could not produce a result for anything. The rows
-  // STAY (linkSteamAccount / unlinkSteamAccount / getSteamGsiConfig are still
-  // deployed and the screen is live) and now describe the benefit that survives:
-  // showing the handle on your profile.
-  { id: 'steam',       name: 'Steam',         color: '#1b2838', letter: 'S', textColor: '#c7d5e0', desc: 'Link Steam to show your Steam handle on your Vergr profile so people can find you in game.', placeholder: '7656119xxxxxxxxxx (your 17-digit Steam64 ID)' },
-  { id: 'riotgames',   name: 'Riot Games',    color: '#c6362f', letter: 'R', textColor: '#fff',    desc: 'Connect your Riot account to show your Riot ID on your Vergr profile.',  placeholder: 'Name#TAG' },
-  { id: 'battlenet',   name: 'Battle.net',    color: '#00aeff', letter: 'B', textColor: '#fff',    desc: 'Link your Battle.net BattleTag to show it on your Vergr profile.', placeholder: 'YourTag#1234' },
-  { id: 'origin',      name: 'EA / Origin',   color: '#ff5252', letter: 'O', textColor: '#fff',    desc: 'Connect your EA / Origin handle to show it on your Vergr profile.', placeholder: 'Your Origin or Steam handle' },
-  { id: 'openxbl',     name: 'Xbox',          color: '#107c10', letter: 'X', textColor: '#fff',    desc: 'Sign in with Xbox to connect your Gamertag and enable cross-platform squad matchmaking.', placeholder: 'Your Gamertag' },
-  { id: 'discord',     name: 'Discord',       color: '#5865f2', letter: 'D', textColor: '#fff',    desc: "Connect Discord to join our community and get role rewards.",                placeholder: 'Username#1234' },
-  { id: 'playstation', name: 'PlayStation™ Network', color: '#003087', letter: 'P', textColor: '#fff', desc: 'Connect your PlayStation account to track trophies and game progress.',     placeholder: 'Your PSN ID' },
-  { id: 'epicgames',   name: 'Epic Games',    color: '#2a2a2a', letter: 'E', textColor: '#fff',    desc: 'Connect your Epic Games account to access exclusive events and rewards.',    placeholder: 'Your Epic display name' },
-  { id: 'twitch',      name: 'Twitch',        color: '#9146FF', letter: 'T', textColor: '#fff',    desc: 'Connect once, then just go live on Twitch — your stream shows up live on VERGR automatically, with chat synced both ways. No OBS changes needed.', placeholder: 'Your Twitch username' },
-  { id: 'youtube',     name: 'YouTube',       color: '#FF0000', letter: 'Y', textColor: '#fff',    desc: 'Link your channel and share videos.',                                        placeholder: 'Your YouTube channel name' },
+  // These four used to sell "auto-result detection" for tournaments. The last
+  // of that backend (Steam GSI) was deleted 2026-09-21; every row except Twitch
+  // and Discord is now a handle the user types in.
+  // ⚠ Every "shows on your profile" below is TRUE since 2026-09-21: the handle
+  // renders under the bio on all four profile views (components/profile/
+  // LinkedHandles.jsx, list in utils/profileSocials.js linkedHandlesList). It
+  // was promised here for months while no profile showed any of them. Twitch
+  // and Discord are integrations and are deliberately NOT shown.
+  { id: 'twitch',      name: 'Twitch',        color: '#9146FF', letter: 'T', textColor: '#fff',    desc: 'Go live on Twitch as you normally do and your stream also shows live on Vergr, with chat synced both ways. No OBS changes.', placeholder: 'Your Twitch username' },
+  { id: 'discord',     name: 'Discord',       color: '#5865f2', letter: 'D', textColor: '#fff',    desc: 'Bring your Discord server over as a Vergr group and get community role rewards.', placeholder: 'Username' },
+  { id: 'youtube',     name: 'YouTube',       color: '#FF0000', letter: 'Y', textColor: '#fff',    desc: 'Shows on your profile and opens your channel.', placeholder: 'Your channel handle or link' },
+  { id: 'steam',       name: 'Steam',         color: '#1b2838', letter: 'S', textColor: '#c7d5e0', desc: 'Shows on your profile and opens your Steam page.', placeholder: 'Your Steam ID or custom URL name' },
+  { id: 'playstation', name: 'PlayStation Network', color: '#003087', letter: 'P', textColor: '#fff', desc: 'Your PSN ID shows on your profile so friends can add you.', placeholder: 'Your PSN ID' },
+  { id: 'openxbl',     name: 'Xbox',          color: '#107c10', letter: 'X', textColor: '#fff',    desc: 'Your Gamertag shows on your profile so friends can add you.', placeholder: 'Your Gamertag' },
+  { id: 'riotgames',   name: 'Riot Games',    color: '#c6362f', letter: 'R', textColor: '#fff',    desc: 'Your Riot ID shows on your profile so friends can add you.',  placeholder: 'Name#TAG' },
+  { id: 'battlenet',   name: 'Battle.net',    color: '#00aeff', letter: 'B', textColor: '#fff',    desc: 'Your BattleTag shows on your profile so friends can add you.', placeholder: 'YourTag#1234' },
+  { id: 'epicgames',   name: 'Epic Games',    color: '#2a2a2a', letter: 'E', textColor: '#fff',    desc: 'Your Epic display name shows on your profile so friends can add you.', placeholder: 'Your Epic display name' },
+  { id: 'origin',      name: 'EA',            color: '#ff5252', letter: 'O', textColor: '#fff',    desc: 'Your EA ID shows on your profile so friends can add you.', placeholder: 'Your EA ID' },
 ];
 
 export default function LinkedAccountsScreen() {
@@ -137,7 +137,6 @@ export default function LinkedAccountsScreen() {
   }, []); // eslint-disable-line
 
   const linked = profile?.linkedAccounts || {};
-  const steamLinked = !!linked.steam?.steamId64;
 
   // For OAuth providers we redirect the browser to the provider's authorize
   // URL instead of opening the manual-entry modal.
@@ -170,22 +169,8 @@ export default function LinkedAccountsScreen() {
     if (!inputValue.trim() || !connectModal || saving) return;
     setSaving(true);
     try {
-      if (connectModal.id === 'steam') {
-        // Steam goes through the secure callable so we generate a GSI token
-        // server-side. The user pastes their Steam64 ID; once we add Steam
-        // OpenID it'll be one click instead.
-        const trimmed = inputValue.trim();
-        if (!/^7656119\d{10}$/.test(trimmed)) {
-          showToast('Steam ID must be a 17-digit Steam64 (starts with 7656119)', 'error');
-          setSaving(false);
-          return;
-        }
-        await linkSteam({ steamId64: trimmed });
-        showToast('Steam connected — set up CS2 or Dota 2 below', 'success');
-      } else {
-        await updateLinkedAccount(currentUser.uid, connectModal.id, inputValue.trim());
-        showToast(`${connectModal.name} connected!`, 'success');
-      }
+      await updateLinkedAccount(currentUser.uid, connectModal.id, inputValue.trim());
+      showToast(`${connectModal.name} connected!`, 'success');
       setConnectModal(null); setInputValue('');
     } catch (err) {
       showToast(err?.message || 'Failed to connect', 'error');
@@ -198,36 +183,10 @@ export default function LinkedAccountsScreen() {
     if (busyId) return;
     setBusyId(p.id);
     try {
-      if (p.id === 'steam') {
-        await unlinkSteam();
-      } else {
-        await removeLinkedAccount(currentUser.uid, p.id);
-      }
+      await removeLinkedAccount(currentUser.uid, p.id);
       showToast(`${p.name} disconnected`, 'success');
     } catch (err) {
       showToast(err?.message || 'Failed to disconnect', 'error');
-    } finally {
-      setBusyId(null);
-    }
-  };
-
-  // Install a CS2 / Dota 2 GSI config file. game = 'cs2' | 'dota2'.
-  const handleInstallGsi = async (game) => {
-    setBusyId(`gsi:${game}`);
-    try {
-      const config = await getSteamGsiConfig({ game });
-      const result = await installGsiConfig(config);
-      if (result.needsManualInstall) {
-        showToast(`Downloaded — drop it into ${config.installPath}`, 'success');
-      } else {
-        showToast(`${game.toUpperCase()} configured — start the game to test`, 'success');
-      }
-    } catch (err) {
-      if (String(err?.message || '').toLowerCase().includes('cancel')) {
-        // User cancelled the picker — silent.
-      } else {
-        showToast(err?.message || 'Setup failed', 'error');
-      }
     } finally {
       setBusyId(null);
     }
@@ -295,7 +254,7 @@ export default function LinkedAccountsScreen() {
           <div>
             <div style={{ fontSize: 16, fontWeight: 700, color: C.text }}>Connected Accounts</div>
             <div style={{ fontSize: 12, color: C.textVeryDim, marginTop: 3 }}>
-              Connect your favorite platforms to unlock extra features, sync progress, and enhance your experience.
+              Twitch mirrors your streams and Discord brings your community over. Other handles you add show on your profile so people can find you there.
             </div>
           </div>
         </div>
@@ -304,11 +263,10 @@ export default function LinkedAccountsScreen() {
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: 'hidden' }}>
           {PLATFORMS.map(p => {
             const isConnected = !!linked[p.id];
-            // Steam stores a rich object; everything else stores a string or
-            // legacy {username} object.
-            const username = p.id === 'steam'
-              ? linked.steam?.steamId64
-              : (typeof linked[p.id] === 'string' ? linked[p.id] : linked[p.id]?.username);
+            // A string, or a legacy object: {username}, or Steam's pre-2026-09-21
+            // {steamId64, gsiToken}.
+            const raw = linked[p.id];
+            const username = typeof raw === 'string' ? raw : (raw?.username || raw?.steamId64);
             return (
               <div key={p.id}>
               <div style={{
@@ -364,18 +322,6 @@ export default function LinkedAccountsScreen() {
                 </div>
               </div>
 
-              {/* Steam-only: per-game GSI setup rows. Shown once Steam is
-                  linked. Each row downloads the per-user .cfg and either
-                  writes it directly (Tauri / FSA) or triggers a download. */}
-              {p.id === 'steam' && steamLinked && (
-                <SteamGsiRows
-                  busyId={busyId}
-                  onInstall={handleInstallGsi}
-                  cs2Linked={!!linked.steam?.cs2Linked}
-                  dota2Linked={!!linked.steam?.dota2Linked}
-                  isMobile={isMobile}
-                />
-              )}
               </div>
             );
           })}
@@ -444,69 +390,6 @@ export default function LinkedAccountsScreen() {
           </div>
         </div>
       )}
-
-      {/* Steam-specific connect modal override: replaces the generic input
-          hint with a "where to find your Steam64 ID" tip. We piggyback on
-          the same connectModal state above so the surrounding modal frame
-          still renders; this just appends a helper note. */}
     </div>
-  );
-}
-
-// ─── Steam GSI per-game setup rows ────────────────────────────────────
-function SteamGsiRows({ busyId, onInstall, cs2Linked, dota2Linked, isMobile }) {
-  const method = detectGsiMethod();
-  const methodLabel = method === GSI_METHOD.TAURI
-    ? 'Direct write (desktop app)'
-    : method === GSI_METHOD.FSA
-      ? 'One-click via folder picker'
-      : 'Download .cfg + manual install';
-
-  const Row = ({ id, name, color, letter, linked }) => {
-    const busy = busyId === `gsi:${id}`;
-    return (
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 16,
-        padding: '12px 20px 12px 56px',
-        borderBottom: `1px solid ${C.borderSoft}`,
-        background: 'rgba(124,58,237,0.03)',
-        flexWrap: isMobile ? 'wrap' : 'nowrap',
-      }}>
-        <div style={{
-          width: 32, height: 32, borderRadius: 9, background: color,
-          color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontWeight: 800, fontSize: 12, flexShrink: 0,
-        }}>{letter}</div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{name} auto-result detection</div>
-          <div style={{ fontSize: 11, color: C.textVeryDim, marginTop: 2 }}>
-            {linked ? 'Configured. Re-install to update the .cfg if you reinstalled the game.' : `Install Valve GSI config — ${methodLabel}.`}
-          </div>
-        </div>
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => onInstall(id)}
-          style={{
-            background: linked ? 'transparent' : `linear-gradient(135deg,${C.purple},${C.purpleDeep})`,
-            border: linked ? `1px solid ${C.borderHard}` : 'none',
-            color: linked ? C.textMuted : '#fff',
-            borderRadius: 8, padding: '6px 16px', fontSize: 12, fontWeight: 600,
-            cursor: busy ? 'wait' : 'pointer',
-            whiteSpace: 'nowrap', minWidth: 90,
-            opacity: busy ? 0.6 : 1,
-          }}
-        >
-          {busy ? '…' : (linked ? 'Re-install' : 'Set up')}
-        </button>
-      </div>
-    );
-  };
-
-  return (
-    <>
-      <Row id="cs2"   name="Counter-Strike 2" color="#cf6a32" letter="CS" linked={cs2Linked} />
-      <Row id="dota2" name="Dota 2"           color="#6c1212" letter="D2" linked={dota2Linked} />
-    </>
   );
 }

@@ -46,7 +46,7 @@ const { earnedCoinCredit, settleEarnedShare } = require('./coinLedger');
 const REGION = 'europe-west1';
 const db = getFirestore('vgrdb');
 
-const R2_SECRETS = ['R2_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET'];
+const R2_SECRETS = [ 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY'];
 
 /**
  * Platform fee on an unlock. LOCKED, plan section 6.1 and 6.5.

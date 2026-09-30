@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/crates/tauri-cli/schema.json",
   "productName": "VERGR",
-  "version": "1.0.206",
+  "version": "1.0.219",
   "identifier": "com.vergr.desktop",
   "build": {
     "frontendDist": "../dist",
@@ -49,7 +49,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self' asset: http://asset.localhost https://asset.localhost; script-src 'self' 'unsafe-inline' 'unsafe-eval' asset: http://asset.localhost https://asset.localhost https://pagead2.googlesyndication.com https://*.googlesyndication.com https://*.google.com https://*.doubleclick.net; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://api.klipy.com https://*.klipy.com https: wss: blob: data: http://localhost:* http://127.0.0.1:* asset: http://asset.localhost https://asset.localhost; img-src 'self' https://*.klipy.com https://media.klipy.com data: blob: https: asset: http://asset.localhost https://asset.localhost; media-src 'self' data: blob: https: asset: http://asset.localhost https://asset.localhost; frame-src 'self' https:;"
+      "csp": "default-src 'self' asset: http://asset.localhost https://asset.localhost; script-src 'self' 'unsafe-inline' 'unsafe-eval' asset: http://asset.localhost https://asset.localhost https://pagead2.googlesyndication.com https://*.googlesyndication.com https://*.google.com https://*.doubleclick.net https://js.codapayments.com https://hosted-component.codapayments.com; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://api.klipy.com https://*.klipy.com https: wss: blob: data: http://localhost:* http://127.0.0.1:* asset: http://asset.localhost https://asset.localhost; img-src 'self' https://*.klipy.com https://media.klipy.com data: blob: https: asset: http://asset.localhost https://asset.localhost; media-src 'self' data: blob: https: asset: http://asset.localhost https://asset.localhost; frame-src 'self' https:;"
     }
   },
   "plugins": {

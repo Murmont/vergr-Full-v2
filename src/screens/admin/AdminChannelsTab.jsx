@@ -11,7 +11,7 @@
 //     That is stated next to the composer so the person writing knows the reach.
 
 import { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { openInVergr } from '../../admin/openExternal';
 import { useUI } from '../../context/UIContext';
 import { auth } from '../../firebase/config';
 import AdminSupportQueue from './AdminSupportQueue';
@@ -705,7 +705,6 @@ function ChannelBubble({ m, accent, onDelete }) {
  * chat screen, which is where you read and post like any other member.
  */
 function CommunityRoomPanel({ channel, guarded, onChanged }) {
-  const navigate = useNavigate();
   const { showToast } = useUI();
   const [busy, setBusy] = useState(false);
 
@@ -715,7 +714,7 @@ function CommunityRoomPanel({ channel, guarded, onChanged }) {
       const r = await guarded(() => call('adminEnsureCommunityRoom', { channelId: channel.channelId }));
       showToast('Room ready', 'success');
       onChanged();
-      if (r?.convoId) navigate(`/messages/${r.convoId}`);
+      if (r?.convoId) openInVergr(`/messages/${r.convoId}`);
     } catch { /* guarded surfaces it */ }
     setBusy(false);
   };
@@ -725,15 +724,15 @@ function CommunityRoomPanel({ channel, guarded, onChanged }) {
       <div style={{ fontSize: 11.5, color: C.textDim, lineHeight: 1.6, marginBottom: 12 }}>
         Everyone in this channel can post here and sees everything posted. It is a
         group chat, so you read and write in it the same way members do rather than
-        broadcasting into it.
+        broadcasting into it. It opens on vergr.app in your browser.
       </div>
       {channel.roomConvoId ? (
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <button onClick={() => navigate(`/messages/${channel.roomConvoId}`)}
+          <button onClick={() => openInVergr(`/messages/${channel.roomConvoId}`)}
             style={{ ...miniBtn(C.accent), padding: '10px 16px', fontSize: 13 }}>
             Open the room
           </button>
-          <button onClick={() => navigate(`/messages/${channel.roomConvoId}/info`)} style={miniBtn(C.border)}>
+          <button onClick={() => openInVergr(`/messages/${channel.roomConvoId}/group`)} style={miniBtn(C.border)}>
             Room settings
           </button>
         </div>

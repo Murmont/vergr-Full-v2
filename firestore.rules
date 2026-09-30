@@ -31,6 +31,64 @@ service cloud.firestore {
       return isAuth() && !isAnonymousAuth();
     }
 
+    // ⚠⚠ A MUTE USED TO DO NOTHING EITHER. adminMuteUser / vanguardMuteUser
+    // wrote users/{uid}.mutedUntil and the ONLY readers were two admin screens
+    // that display it. A muted person kept posting.
+    //
+    // The mute now rides the ID TOKEN as a custom claim, which rules read for
+    // FREE. Reading users/{uid} here instead would be a billed document read on
+    // every post, comment and message anyone writes — see
+    // [[reference-firestore-rules-access-calls-are-billed]].
+    //
+    // ⚠ A token refresh takes up to an hour, so the client also gates the
+    // composer off the profile snapshot it already holds. The claim is what
+    // makes it real; the client gate is what makes it immediate.
+    function isMutedToken() {
+      return isAuth() && request.auth.token.get('mutedUntil', 0) > request.time.toMillis();
+    }
+
+    // Publishing: registered, and not muted. Deliberately NOT folded into
+    // isRegistered(), because a mute must stop someone SPEAKING, not stop them
+    // liking, following, or editing their own profile.
+    function canPublish() {
+      return isRegistered() && !isMutedToken() && emailVerifiedToken();
+    }
+
+    // Required email verification (founder, 2026-09-29): an account whose email
+    // is not verified may browse, like and follow, but may not post, comment,
+    // message or buy. Firebase Auth's own flag, carried on every ID token, so
+    // it costs NO document read. Set by functions/emailVerification.js
+    // (markVerified); Google sign-ins arrive verified. After verifying, the
+    // client refreshes its token so this passes at once.
+    function emailVerifiedToken() {
+      return request.auth.token.get('email_verified', false) == true;
+    }
+
+    // Scheduling posts and polls is a Lite/Pro feature. Mirrors planOf()
+    // (functions/plan.js): the top-level string first, then the legacy shapes.
+    // The plan fields are server-only (lockedUserFields), so they can be trusted.
+    // ⚠ This get() is a billed read, so it must only ever sit on the RIGHT of an
+    // `||` whose left side is "this write does not schedule anything": ordinary
+    // posts never reach it.
+    function hasPaidPlan() {
+      let u = get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+      let paid = ['lite', 'pro'];
+      return (u.get('subscription', '') is string && u.get('subscription', '') in paid)
+        || (u.get('subscription', '') is map && u.subscription.get('tier', '') in paid)
+        || u.get('tier', '') in paid
+        || u.get('plan', '') in paid;
+    }
+
+    // A write that leaves a post/poll scheduled: creating it scheduled, turning
+    // it scheduled, or moving an already scheduled time.
+    function schedulesSomething(isCreate) {
+      let n = request.resource.data;
+      return n.get('status', '') == 'scheduled'
+        && (isCreate
+            || resource.data.get('status', '') != 'scheduled'
+            || n.get('scheduledFor', null) != resource.data.get('scheduledFor', null));
+    }
+
     function isOwner(userId) {
       return isAuth() && request.auth.uid == userId;
     }
@@ -42,12 +100,79 @@ service cloud.firestore {
       return isRegistered() && request.auth.uid == userId;
     }
 
+    // The Operator (the Vergr Admin desktop app) is a Firebase Auth CUSTOM
+    // CLAIM and has NO users/{uid} document at all, so it is checked FIRST and
+    // short-circuits: get() on a missing doc errors, which denies the rule.
+    // Only the Admin SDK can set a custom claim, so unlike users/{uid}.role
+    // this can never be self-granted from a client.
+    function isOperatorClaim() {
+      return isAuth() && request.auth.token.get('operator', false) == true;
+    }
+
+    // ⚠ NO exists() GUARD ANYWHERE BELOW, DELIBERATELY. exists() is a billed
+    // document read (Firebase: "you will be billed for reading documents even
+    // if your rules reject the request", and caching is only "may be cached"),
+    // so guarding these with exists() would add a read for every ordinary user
+    // on every rule that reaches them. The claim is read from the TOKEN, which
+    // costs nothing, and it short-circuits before the get(), so the Operator
+    // never touches a users doc and nobody else's read count changes.
     function isAdmin() {
-      return isAuth() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      return isOperatorClaim() ||
+             (isAuth() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin');
     }
 
     function isModerator() {
-      return isAuth() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin', 'moderator'];
+      return isOperatorClaim() ||
+             (isAuth() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin', 'moderator']);
+    }
+
+    // ⚠⚠ AUTHORITY AND ENTITLEMENT FIELDS ON users/{uid} ARE SERVER-ONLY.
+    // Until 2026-09-19 every one of these was owner-writable, so any signed-in
+    // account, a guest included, could write role:'admin' on its own doc and
+    // pass isAdmin() here and requireAdmin() in every admin callable;
+    // vanguard.rank made anyone an Overseer who can ban; subscription/tier/plan
+    // gave Pro for free; isVerified gave a verified tick; and a banned or muted
+    // user could lift their own ban or mute. Only the Admin SDK (callables,
+    // triggers, billing) may write them. Nothing in src/ writes any of them
+    // except vanguard.onDuty, which vanguardEditOk() still allows.
+    function lockedUserFields() {
+      // ⚠ 'staff' lifts the upload cap, the geo block, stream and translate
+      // limits and the username policy (functions/staff.js). Owner-writable
+      // would let anyone grant themselves all of it.
+      // geoCountry is the account's country for checkout: methods, local prices,
+      // tax and the sanctions block (functions/geo.js stampAccountCountry).
+      return ['role', 'staff', 'geoCountry', 'geoRegion', 'geoAt',
+              'subscription', 'subscriptions', 'subscriptionPeriodStart', 'subscriptionPeriodEnd',
+              'subscriptionAutoRenew', 'subscriptionPreferredMethod', 'subscriptionTrialUntil',
+              'subscriptionStatus', 'subscriptionState', 'subscriptionMethod', 'tier', 'plan',
+              'isVerified', 'verified', 'verificationTier',
+              'banned', 'permabanned', 'banUntil', 'banReason', 'bannedBy', 'bannedAt',
+              'mutedUntil', 'muteReason', 'mutedBy', 'mutedAt',
+              // Payments: a buyer blocked from purchasing after a refund or
+              // chargeback (functions/paymentAdmin.js). Owner-writable = no ban.
+              'purchaseBanUntil', 'purchaseBanReason',
+              // Mirror of Firebase Auth's own flag (functions/emailVerification.js).
+              // Enforcement reads the TOKEN, but admin screens read this.
+              'emailVerified', 'emailVerifiedAt'];
+    }
+
+    // A Vanguard member may flip their OWN vanguard.onDuty (VanguardLayout) and
+    // nothing else on that map. Rank and status are set by callables only.
+    function vanguardEditOk() {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(['vanguard'])
+        || (resource.data.get('vanguard', null) != null
+            && request.resource.data.get('vanguard', null) != null
+            && request.resource.data.vanguard.diff(resource.data.vanguard).affectedKeys().hasOnly(['onDuty']));
+    }
+
+    // Follower counters may be written by anyone (the unfollow batch decrements
+    // the OTHER person's followerCount), but only one step at a time. Before
+    // 2026-09-19 any account could set anyone's count to any number, and
+    // Explore sorts by it. A missing or null count reads as 0.
+    function counterStep(f) {
+      let before = resource.data.get(f, 0) == null ? 0 : resource.data.get(f, 0);
+      let after = request.resource.data.get(f, 0) == null ? 0 : request.resource.data.get(f, 0);
+      return after - before >= -1 && after - before <= 1;
     }
 
     function isSquadMember(squadId) {
@@ -124,7 +249,12 @@ service cloud.firestore {
         : kind == 'nameFont'   ? 3
         : kind == 'nameColor'  ? 12
         : kind == 'audioClip'  ? 35
-        : kind == 'typingStyle' ? 32
+        // Per style, mirroring TYPING_STYLES in rankUnlocks.js (one ladder row
+        // each). It was a flat 32, which refused Wave (L9) and Levels (L23) to
+        // the people the ladder said had earned them.
+        : kind == 'typingStyle'
+        ? ({ 'dots': 1, 'wave': 9, 'bars': 23, 'orbit': 32, 'pixel': 49,
+            'comet': 64 }).get(id, 999)
         : kind == 'ambiance'   ? 81
         // Effect 11. Mirrors the squad_environment / squad_weather rows in
         // rankUnlocks.js (Champion LV2 = 52, Legend LV3 = 73).
@@ -264,7 +394,7 @@ service cloud.firestore {
           // the default everybody already has, so storing it is how you turn
           // the cosmetic OFF and must work at any level.
           && (c.get('typingStyle', null) == null || c.typingStyle == 'dots' || (
-                cosmeticMinLevel('typingStyle', 'x') <= lvl
+                cosmeticMinLevel('typingStyle', c.typingStyle) <= lvl
              && c.typingStyle in ['dots', 'wave', 'bars', 'orbit', 'pixel', 'comet']
           ))
           && (c.get('nameGradient', null) == null || (
@@ -314,7 +444,9 @@ service cloud.firestore {
       allow list: if true;
       allow create: if isOwner(userId)
         // Block self-referral on initial doc create
-        && (!('referredBy' in request.resource.data) || request.resource.data.referredBy != userId);
+        && (!('referredBy' in request.resource.data) || request.resource.data.referredBy != userId)
+        // No authority on a self-created doc. onUserCreated (Admin SDK) sets role:'user'.
+        && !request.resource.data.keys().hasAny(lockedUserFields().concat(['vanguard']));
       allow update: if (isOwner(userId) && (
           // referredBy is write-once: either it didn't exist before, or it's unchanged
           !('referredBy' in resource.data) || resource.data.referredBy == request.resource.data.get('referredBy', resource.data.referredBy)
@@ -332,8 +464,14 @@ service cloud.firestore {
           // the syncVpLevel trigger and it GATES REWARDS (the equippable
           // cosmetics below, the stream entry tier, the chat name colour), so an
           // owner-writable copy would be a one-line self-promotion to Immortal.
-          !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(lockedUserFields())
+          && vanguardEditOk()
+          && counterStep('followerCount') && counterStep('followingCount')
+          && !request.resource.data.diff(resource.data).affectedKeys().hasAny([
             'kycLevel', 'kyc', 'pendingCreatorCoins', 'vp', 'creator', 'vpLevel',
+            // Derived from wallets.vp by syncVpLevel, like vpLevel, and shown as
+            // stars beside the rank: owner-writable would be self-awarded status.
+            'prestige',
             // Milestone counter. Badges are evaluated CLIENT-side (free, zero
             // reads), so the badge a visitor sees is only as honest as the
             // counter it reads. Owner-writable would make every badge a claim
@@ -354,8 +492,12 @@ service cloud.firestore {
         ) && (
           cosmeticsAllowed()
         ))
-        || isModerator()
-        || (isAuth() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['followerCount', 'followingCount']));
+        // A moderator may not grant or strip authority, plans, ticks, bans or mutes
+        // from the client; those go through the audited callables.
+        || (isModerator()
+            && !request.resource.data.diff(resource.data).affectedKeys().hasAny(lockedUserFields().concat(['vanguard'])))
+        || (isAuth() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['followerCount', 'followingCount'])
+            && counterStep('followerCount') && counterStep('followingCount'));
       allow delete: if isAdmin();
 
       match /private/{docId} {
@@ -374,11 +516,24 @@ service cloud.firestore {
         // mediaPackFiles is the same hazard in a different shape: it is the key
         // list a saved Content Pack sends from, so a writable copy would let a
         // creator point their own pack at another creator's private objects.
-        allow read, write: if isOwner(userId)
+        //
+        // kyc holds the Didit-VERIFIED legal name and ID country, written only by
+        // diditWebhook. Creator payouts send that name to Mercury and require the
+        // bank account to match it, and the payout run checks that country against
+        // the sanctioned list. An owner-writable copy would let anyone type the name
+        // their bank account is in, or a clean country, and pass both checks. The
+        // owner can still READ it (CreatorVerificationScreen shows the country).
+        allow read: if isOwner(userId)
           && docId != 'shopIntegration'
           && docId != 'lockedPostFiles'
           && docId != 'lockedMessageFiles'
           && docId != 'mediaPackFiles';
+        allow write: if isOwner(userId)
+          && docId != 'shopIntegration'
+          && docId != 'lockedPostFiles'
+          && docId != 'lockedMessageFiles'
+          && docId != 'mediaPackFiles'
+          && docId != 'kyc';
       }
 
       // Content Packs — a creator's saved, priced sets.
@@ -490,12 +645,32 @@ service cloud.firestore {
     // POSTS
     // ============================================================
 
-    match /posts/{postId} {
+    // SOUNDS: audio people upload to use on their clips (src/utils/sounds.js).
+    // An ORIGINAL sound (a clip's own audio) has no document at all. An upload
+    // is immutable once written: other clips may already play it, so it can
+    // never be swapped for different audio. Only moderators change status.
+    match /sounds/{soundId} {
       allow read: if true;
-      // Posting requires a registered account, never a guest.
       allow create: if isRegistered()
         && request.resource.data.authorId == request.auth.uid
-        && validString('content', 5000);
+        && request.resource.data.keys().hasOnly(['title', 'authorId', 'authorName', 'authorAvatar', 'url', 'duration', 'status', 'createdAt'])
+        && request.resource.data.title is string
+        && request.resource.data.title.size() > 0 && request.resource.data.title.size() <= 80
+        && request.resource.data.authorName is string && request.resource.data.authorName.size() <= 100
+        && request.resource.data.url is string
+        && request.resource.data.url.matches('https://cdn[.]vergr[.]app/sound/.*')
+        && request.resource.data.status == 'active';
+      allow update: if isModerator();
+      allow delete: if isRegisteredOwner(resource.data.authorId) || isModerator();
+    }
+
+    match /posts/{postId} {
+      allow read: if true;
+      // Posting requires a registered account, never a guest, and not muted.
+      allow create: if canPublish()
+        && request.resource.data.authorId == request.auth.uid
+        && validString('content', 5000)
+        && (!schedulesSomething(true) || hasPaidPlan());
       // Author/moderator can edit the post freely. Any authenticated user may
       // touch ONLY the engagement counters (like/comment/save/share/view) so
       // that toggleLike/toggleBookmark/repost/impression batches — which bump a
@@ -508,7 +683,8 @@ service cloud.firestore {
       // purchaseBoost, after it has debited the coins.
       allow update: if ((isRegisteredOwner(resource.data.authorId) || isModerator())
           && !request.resource.data.diff(resource.data).affectedKeys()
-                .hasAny(['boostExpiresAt', 'boostedAt', 'boostImpressions', 'boostViews', 'boostEngagements']))
+                .hasAny(['boostExpiresAt', 'boostedAt', 'boostImpressions', 'boostViews', 'boostEngagements'])
+          && (!schedulesSomething(false) || hasPaidPlan()))
         || (isAuth() && request.resource.data.diff(resource.data).affectedKeys()
               // ⚠ `viewCount` REMOVED from this allowlist 2026-08-28. It let any
               // signed-in user write any post's view count — including someone
@@ -521,9 +697,12 @@ service cloud.firestore {
 
       match /comments/{commentId} {
         allow read: if true;
-        allow create: if isRegistered()
+        allow create: if canPublish()
           && request.resource.data.authorId == request.auth.uid
-          && validString('content', 2000);
+          && validString('content', 2000)
+          // @mentions notify people, so cap them: at most five, as a list.
+          && (!('mentionedUids' in request.resource.data)
+              || (request.resource.data.mentionedUids is list && request.resource.data.mentionedUids.size() <= 5));
         // Author/mod edit freely; any auth user may touch ONLY likeCount so a
         // comment-like batch (marker subdoc + counter bump) isn't denied. The
         // likes subcollection below still gates who can create a like record.
@@ -569,11 +748,29 @@ service cloud.firestore {
 
     match /polls/{pollId} {
       allow read: if true;
-      allow create: if isRegistered();
+      allow create: if isRegistered() && emailVerifiedToken() && (!schedulesSomething(true) || hasPaidPlan());
+      // ⚠ A VOTE. There was no update rule at all, so every vote (feed polls
+      // and live-stream polls, web and app) was refused. A vote may add
+      // exactly 1 to the total and 1 to the option named by the voter's own
+      // record, and only in the same write that creates that record, which
+      // can exist once per person. Two billed reads per vote (founder,
+      // 2026-09-29: rules over a function).
+      allow update: if isRegistered()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['votes', 'totalVotes'])
+        && request.resource.data.totalVotes == resource.data.get('totalVotes', 0) + 1
+        && !exists(/databases/$(database)/documents/polls/$(pollId)/votes/$(request.auth.uid))
+        && existsAfter(/databases/$(database)/documents/polls/$(pollId)/votes/$(request.auth.uid))
+        && request.resource.data.votes.diff(resource.data.get('votes', {})).affectedKeys().hasOnly([
+             string(getAfter(/databases/$(database)/documents/polls/$(pollId)/votes/$(request.auth.uid)).data.optionIndex)])
+        && request.resource.data.votes[string(getAfter(/databases/$(database)/documents/polls/$(pollId)/votes/$(request.auth.uid)).data.optionIndex)]
+             == resource.data.get('votes', {}).get(string(getAfter(/databases/$(database)/documents/polls/$(pollId)/votes/$(request.auth.uid)).data.optionIndex), 0) + 1;
 
       match /votes/{userId} {
         allow read: if true;
-        allow create: if isRegisteredOwner(userId);
+        allow create: if isRegisteredOwner(userId)
+          && request.resource.data.optionIndex is int
+          && request.resource.data.optionIndex >= 0
+          && request.resource.data.optionIndex < 10;
       }
     }
 
@@ -583,7 +780,7 @@ service cloud.firestore {
 
     match /stories/{storyId} {
       allow read: if true;
-      allow create: if isRegistered() && request.resource.data.authorId == request.auth.uid;
+      allow create: if isRegistered() && emailVerifiedToken() && request.resource.data.authorId == request.auth.uid;
       allow update: if isOwner(resource.data.authorId);
       allow delete: if isOwner(resource.data.authorId) || isModerator();
 
@@ -659,7 +856,7 @@ service cloud.firestore {
 
       match /messages/{messageId} {
         allow read: if isSquadMember(squadId);
-        allow create: if isSquadMember(squadId) && request.resource.data.senderId == request.auth.uid;
+        allow create: if isSquadMember(squadId) && !isMutedToken() && emailVerifiedToken() && request.resource.data.senderId == request.auth.uid;
         allow update: if isSquadMember(squadId);
         allow delete: if isAuth() && (resource.data.senderId == request.auth.uid || isSquadAdmin(squadId));
       }
@@ -774,12 +971,19 @@ service cloud.firestore {
     // with admin SDK). Below are the rules for the dedicated collections.
     // ============================================================
 
+    // ⚠ !isOperatorClaim() FIRST, and it is free (a token field, not a read).
+    // get() on a document that does not exist ERRORS, and an error denies the
+    // WHOLE rule, so without this the Operator (which has no users doc) is
+    // denied by "isVanguardMember() || isAdmin()" before isAdmin() is ever
+    // reached. The Operator is never a Vanguard member, so false is correct.
     function isVanguardMember() {
-      return isAuth() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.vanguard.rank in ['recruit', 'vanguard', 'senior', 'commander', 'overseer'];
+      return isAuth() && !isOperatorClaim() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.vanguard.rank in ['recruit', 'vanguard', 'senior', 'commander', 'overseer'];
     }
     function vanguardRankAtLeast(orderLevel) {
       // orderLevel: 1=recruit, 2=vanguard, 3=senior, 4=commander, 5=overseer
-      let rank = get(/databases/$(database)/documents/users/$(request.auth.uid)).data.vanguard.rank;
+      let rank = isOperatorClaim()
+        ? ''
+        : get(/databases/$(database)/documents/users/$(request.auth.uid)).data.vanguard.rank;
       return isAuth() && (
         (rank == 'recruit'   && orderLevel <= 1) ||
         (rank == 'vanguard'  && orderLevel <= 2) ||
@@ -933,6 +1137,18 @@ service cloud.firestore {
     // them via the Admin SDK. NEVER readable/writable by clients (the key would
     // let anyone hijack the user's Twitch broadcast). Written only by oauth.js.
     match /twitch_mirror_secrets/{uid} {
+      allow read, write: if false;
+    }
+
+    // OPERATOR (the super admin behind Vergr Admin). operator_pending holds a
+    // HASH of an armed email for one hour; operators/{uid} records who holds
+    // the claim. Both are written only by the Admin SDK (inviteAdmin with
+    // operator:true, and the onUserCreated trigger), and neither is readable
+    // by any client: the admin is meant to leave nothing to find.
+    match /operator_pending/{emailHash} {
+      allow read, write: if false;
+    }
+    match /operators/{uid} {
       allow read, write: if false;
     }
 
@@ -1304,6 +1520,8 @@ service cloud.firestore {
         // awaits its setDoc separately, so the parent doc always exists by the
         // time a message is written and this get() cannot spuriously fail.
         allow create: if isAuth()
+          && !isMutedToken()
+          && emailVerifiedToken()
           && request.resource.data.senderId == request.auth.uid
           && request.auth.uid in get(/databases/$(database)/documents/conversations/$(convoId)).data.participants;
         allow update: if isAuth() && (
@@ -1411,6 +1629,30 @@ service cloud.firestore {
     // NOTIFICATIONS
     // ============================================================
 
+    // Payments "who tried" (src/utils/paymentAttempts.js): a signed-in, non-guest
+    // account may CREATE a record of its OWN failed / cancelled / pending
+    // purchase attempt, with a fixed set of fields, never flagged for attention,
+    // and may never read, change or delete it. Everything else in this collection
+    // is written by the server (functions/paymentRecords.js) and client-denied.
+    match /payment_attempts/{attemptId} {
+      allow create: if request.auth != null
+        && request.auth.token.firebase.sign_in_provider != 'anonymous'
+        && attemptId.matches('client_' + request.auth.uid + '_[0-9]{10,16}')
+        && request.resource.data.keys().hasOnly(['attemptId', 'source', 'route', 'uid', 'productId',
+             'status', 'stage', 'needsAttention', 'lastError', 'events', 'appVersion', 'platform',
+             'createdAt', 'lastEventAt'])
+        && request.resource.data.attemptId == attemptId
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.source == 'client'
+        && request.resource.data.needsAttention == false
+        && request.resource.data.status in ['cancelled', 'pending', 'failed']
+        && request.resource.data.route in ['google_play', 'google_play_sub', 'appgallery', 'appgallery_sub', 'coda']
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.lastEventAt == request.time
+        && request.resource.data.events is list && request.resource.data.events.size() == 1;
+      allow read, update, delete: if false;
+    }
+
     match /notifications/{notifId} {
       allow read: if isAuth() && resource.data.recipientId == request.auth.uid;
       allow update: if isAuth() && resource.data.recipientId == request.auth.uid;
@@ -1456,6 +1698,11 @@ service cloud.firestore {
     match /email_templates/{templateId} {
       allow read, write: if false;
       match /versions/{v} { allow read, write: if false; }
+    }
+    // Admin email campaigns. Server-only: recipient rows hold email addresses.
+    match /email_campaigns/{campaignId} {
+      allow read, write: if false;
+      match /recipients/{uid} { allow read, write: if false; }
     }
     // Coin sale promos. Read by nobody directly: the store asks
     // getActiveCoinPromo, which is what stops a client from reading a promo
@@ -1593,7 +1840,8 @@ service cloud.firestore {
 
     match /wallets/{userId} {
       allow read: if isOwner(userId);
-      allow create: if isOwner(userId);
+      allow create: if isOwner(userId)
+        && !request.resource.data.keys().hasAny(['boostCoins', 'adProgress']);
       // Server-only fields cannot be written from the client.
       //
       // As of 2026-08-16 EVERY money field is on this list. What the owner may
@@ -1651,7 +1899,10 @@ service cloud.firestore {
           // revenue-share liability against Vergr, so leaving it writable was a
           // way to manufacture the payable indirectly.
           'balance', 'vp', 'totalEarned', 'totalSpent',
-          'totalReceived', 'totalTipped'
+          'totalReceived', 'totalTipped',
+          // Rewarded-ad boost coins and the 3-ad counter (functions/admobReward.js).
+          // Owner-writable would let anyone mint boosts and VP packs.
+          'boostCoins', 'adProgress'
         ]);
       allow delete: if false;
 
@@ -1746,7 +1997,7 @@ service cloud.firestore {
         resource.data.audience == 'public' ||
         exists(/databases/$(database)/documents/follows/$(request.auth.uid + '_' + resource.data.authorId))
       );
-      allow create: if isAuth() && request.resource.data.authorId == request.auth.uid;
+      allow create: if isAuth() && emailVerifiedToken() && request.resource.data.authorId == request.auth.uid;
       allow update: if isAuth() && (
         resource.data.authorId == request.auth.uid ||
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['viewerIds', 'viewCount'])
@@ -2112,7 +2363,7 @@ service cloud.firestore {
       // Same lock, same reasoning, as boostExpiresAt on posts and squads.
       allow update: if (isOwner(resource.data.streamerId) || isOwner(resource.data.hostUid) || isModerator())
         && !request.resource.data.diff(resource.data).affectedKeys()
-              .hasAny(['hypeTrain', 'peakViewers', 'viewerCount']);
+              .hasAny(['hypeTrain', 'hypeTrainBonus', 'peakViewers', 'viewerCount']);
       allow delete: if isOwner(resource.data.streamerId) || isOwner(resource.data.hostUid) || isModerator();
 
       match /chat/{messageId} {
@@ -2167,7 +2418,7 @@ service cloud.firestore {
           && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.vanguard.rank in ['recruit', 'vanguard', 'senior', 'commander', 'overseer'];
         allow delete: if isAuth() && (
           request.auth.uid == vanguardUid ||
-          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.vanguard.rank in ['commander', 'overseer'] ||
+          (!isOperatorClaim() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.vanguard.rank in ['commander', 'overseer']) ||
           isAdmin()
         );
       }
@@ -2294,7 +2545,7 @@ service cloud.firestore {
           && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.vanguard.rank in ['recruit', 'vanguard', 'senior', 'commander', 'overseer'];
         allow delete: if isAuth() && (
           request.auth.uid == vanguardUid ||
-          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.vanguard.rank in ['commander', 'overseer'] ||
+          (!isOperatorClaim() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.vanguard.rank in ['commander', 'overseer']) ||
           isAdmin()
         );
       }
@@ -2399,6 +2650,29 @@ service cloud.firestore {
         allow create: if isOwner(uid);
         allow read, update, delete: if isModerator();
       }
+    }
+
+    // Payout verification: a creator's request to move to identity Level 2
+    // (proof of address) or Level 3 (source of funds). functions/payoutVerification.js.
+    // The creator may submit, or resubmit after a decision, ONLY as 'pending' and
+    // only these fields. Every decision field (reviewedBy, rejectionReason, the
+    // level itself) is written by the reviewKyc/decideKyc callables, and the level
+    // lives on users/{uid}.kycLevel, which is server-only. A request under review
+    // cannot be swapped: a pending doc is not updatable by its owner.
+    match /kyc_upgrades/{uid} {
+      allow read: if isOwner(uid);
+      allow create, update: if isOwner(uid)
+        && (resource == null || resource.data.status in ['approved', 'rejected'])
+        && request.resource.data.keys().hasOnly(['uid', 'targetLevel', 'docType', 'files', 'status', 'submittedAt'])
+        && request.resource.data.uid == uid
+        && request.resource.data.status == 'pending'
+        && request.resource.data.targetLevel in [2, 3]
+        && request.resource.data.docType is string
+        && request.resource.data.files is list
+        && request.resource.data.files.size() >= 1
+        && request.resource.data.files.size() <= 3
+        && request.resource.data.submittedAt == request.time;
+      allow delete: if false;
     }
 
     // Short-lived desktop→mobile handoff sessions (30-min TTL)

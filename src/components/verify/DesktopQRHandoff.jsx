@@ -8,13 +8,16 @@ import { doc, setDoc, onSnapshot, serverTimestamp, Timestamp } from 'firebase/fi
 import { db } from '../../firebase/config';
 import { useAuth } from '../../context/AuthContext';
 import Icon from '../Icon';
+import { publicUrl } from '../../utils/publicUrl';
 
 export default function DesktopQRHandoff({ onContinueHere }) {
   const { currentUser } = useAuth();
   const [sid] = useState(() => Math.random().toString(36).slice(2) + Date.now().toString(36));
   const [status, setStatus] = useState('idle'); // idle | scanned | completed | expired
 
-  const mobileUrl = useMemo(() => `${window.location.origin}/verify/mobile/${sid}`, [sid]);
+  // The phone scanning this is never inside the desktop app, so the QR must
+  // carry vergr.app, not the app's own tauri.localhost origin.
+  const mobileUrl = useMemo(() => publicUrl(`/verify/mobile/${sid}`), [sid]);
 
   useEffect(() => {
     if (!currentUser) return;

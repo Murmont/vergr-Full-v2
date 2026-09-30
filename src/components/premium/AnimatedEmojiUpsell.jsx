@@ -44,7 +44,7 @@ export default function AnimatedEmojiUpsell({ emoji = '❤️', variant = 'emoji
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[10002] bg-black/70 backdrop-blur-md flex items-end sm:items-center justify-center sm:p-4 pb-[calc(env(safe-area-inset-bottom)+4rem)] sm:pb-4"
+      className="fixed inset-0 z-[10002] bg-black/70 backdrop-blur-md flex items-end sm:items-center justify-center sm:p-4 pb-[calc(var(--vg-safe-b,0px)+4rem)] sm:pb-4"
       onPointerDown={(e) => e.stopPropagation()}
       onClick={(e) => { e.stopPropagation(); onClose?.(); }}
     >

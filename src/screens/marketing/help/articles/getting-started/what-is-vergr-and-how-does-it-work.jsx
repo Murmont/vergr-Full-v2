@@ -5,36 +5,33 @@
 // Top-level: summary (1-2 sentences, answer-first), updated (YYYY-MM-DD), body [].
 
 export default {
-  summary: "VERGR is where gamers stream, post, and earn in one place. You play the games you already play, go live, get tipped and sell memberships, and Vergr pays you a share of the revenue that generates.",
-  updated: "2026-08-09",
+  summary: "Vergr is where you go live, share clips and hang out with your people in voice chats and DMs, all in one app. If your content brings in revenue, Vergr pays you a share of it.",
+  updated: "2026-09-19",
   body: [
     {
-      p: "VERGR is one place to do the three things gamers actually want to do: play, build an audience, and get paid for it. No grinding a side hustle. You play the games you already play."
+      p: "Most people use Vergr for three things: going live, posting clips and short videos, and hanging out with friends in squads, voice chats and DMs. One account covers all of it."
     },
     {
-      p: "Here is the short version. You go live and your viewers tip you. You post clips between streams so people find you. Your biggest fans buy a membership, or a pass to a stream you are charging for. Vergr then pays you a share of the revenue that generated, on a schedule. That is the whole loop."
-    },
-    {
-      h2: "The three things on VERGR"
+      h2: "The three things on Vergr"
     },
     {
       list: [
-        "Stream. Go live straight from your browser or OBS, with chat, tips, polls, co-streaming, and on-the-spot clipping. Free, or charge for access.",
-        "Create. Post clips, shorts, photos, articles, tier lists, polls, and looking-for-group posts. Everything lives on your profile and can earn you tips.",
-        "Earn. Coins power everything inside the app. Your rank increases the share you keep of what your content earns."
+        "Go live. Stream from your phone, your browser or OBS, with chat, polls, co-streaming and on-the-spot clipping. Free, or charge for access.",
+        "Post. Share clips, shorts, photos, articles, polls and tier lists. Everything lives on your profile.",
+        "Hang out. Join a squad of up to 100 people with chat and voice hangouts, and message or call your friends."
       ]
     },
     {
-      h2: "How do I actually make money?"
+      h2: "How do creators get paid?"
     },
     {
-      p: "A few ways, and most people mix them. Get tipped on your streams, posts, and clips. Charge for access to a stream, either a one-off pass or a creator membership. Share in your squad's treasury. Or moderate as part of the Vanguard and get paid for it. The full breakdown lives in the Making Money section."
+      p: "Viewers buy Coins from Vergr and spend them on features such as tips, creator memberships and passes to paid streams. Vergr then pays the creator a share of the revenue their content generated, on Vergr's own schedule, once they are verified. The full breakdown lives in the Making Money section."
     },
     {
       h2: "What does it cost?"
     },
     {
-      p: "Signing up is free. Playing is free. We make money by keeping a share of what creators earn, and the creator keeps the rest — 50% on tips and creator payments from day one, rising to 80%, with your rank improving your share further. That is it. No ads carving up your reach, no mystery cuts."
+      p: "Signing up and using Vergr is free. Vergr keeps part of the revenue a creator's content generates and pays the creator the rest: 50% to start, rising to 80% as their lifetime earnings grow. There are no other fees on that revenue."
     },
     {
       note: "VERGR is for ages 18 and up. There is no betting, wagering, or gambling of any kind on the platform."
@@ -43,15 +40,15 @@ export default {
       faq: [
         [
           "Is VERGR free?",
-          "Yes. Creating an account, playing, posting, watching, and streaming all cost nothing. You only spend Coins on optional things like tips, a pass to a paid stream, a creator membership, or a plan."
+          "Yes. Creating an account, posting, watching and streaming all cost nothing. You only spend Coins on optional things like tips, a pass to a paid stream, a creator membership, or a plan."
         ],
         [
-          "Do I need to be a pro to earn?",
-          "No. Tips on your posts and clips have no follower requirement at all. To go live on the free plan you need 100 followers (far below TikTok's 1,000), and paid plans let you stream from day one."
+          "Do I need a big following to go live?",
+          "No. On the free plan you can go live publicly once you have 100 followers, and paid plans let you stream from day one."
         ],
         [
-          "How do I get my money out?",
-          "Vergr pays your revenue share on a schedule once you are verified and over the minimum."
+          "How do creators get paid?",
+          "Vergr pays your revenue share on its own schedule once you are verified and over the minimum. There is no withdrawal button."
         ]
       ]
     }

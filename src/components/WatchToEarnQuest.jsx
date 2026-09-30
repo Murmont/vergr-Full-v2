@@ -4,6 +4,9 @@ import { ADS_CONFIG, isAdZoneReady } from '../config/ads';
 import { getAdQuestState, recordAdWatch } from '../firebase/firestore';
 import { isAdMobReady, showRewardedForCoins } from '../utils/admob';
 import useTier from '../hooks/useTier';
+import useAppGate from '../hooks/useAppGate';
+import { useUser } from '../context/UserContext';
+import { adRewardConfig, adProgressToday, nextResetLabel } from '../utils/adReward';
 import Icon from './Icon';
 
 // ────────────────────────────────────────────────────────────
@@ -30,77 +33,156 @@ import Icon from './Icon';
 const TIMER_KEY = (uid) => `vergr_ad_timer_${uid}`;
 
 // Dispatcher: ads are FREE-tier-only. On the native app (AdMob wired) we run a
-// rewarded ad that credits COINS via server-side verification; on web we keep
-// the Monetag Direct Link path that credits VP (no verified completion signal
-// on the web, so it can't safely pay cashable coins).
+// counter of rewarded ads that pays BOOST COINS via server-side verification;
+// on web we keep the Monetag Direct Link path that credits VP (no verified
+// completion signal on the web).
 export default function WatchToEarnQuest() {
   const { isFree } = useTier();
   if (!isFree) return null; // Lite/Pro never see ads anywhere.
-  if (isAdMobReady()) return <RewardedCoinQuest />;
+  if (isAdMobReady()) return <RewardedBoostQuest />;
   return <WebVpWatchQuest />;
 }
 
-// ── Native: AdMob rewarded → coins (credited server-side via SSV) ──────────
-function RewardedCoinQuest() {
+// ── Native: watch 3 AdMob rewarded ads → boost coins (server-verified) ────
+// Each finished ad is verified by Google's server-side callback
+// (functions/admobReward.js), which moves wallets/{uid}.adProgress on and pays
+// boost coins on the last ad of a set. This card only DRAWS that state: the
+// wallet is already live in UserContext, so the counter costs no reads.
+// AdMob requires a fixed-count reward to be disclosed before the first ad,
+// which is the card's title line.
+const AD_HEAT = ['#8b3ff0', '#b44fff', '#f0a500'];
+const AD_GOLD = 'linear-gradient(180deg, #FCEFB4 0%, #F5C842 38%, #E9A517 72%, #C97F12 100%)';
+
+function RewardedBoostQuest() {
   const { currentUser } = useAuth();
+  const { profile, wallet } = useUser();
+  const gate = useAppGate();
   const uid = currentUser?.uid;
+  const conf = adRewardConfig(gate.adReward);
+  const today = adProgressToday(wallet?.adProgress, conf);
+  const boostCoins = Math.max(0, Math.floor(Number(wallet?.boostCoins) || 0));
+
   const [busy, setBusy] = useState(false);
+  const [waiting, setWaiting] = useState(false); // ad finished, server not counted yet
   const [flash, setFlash] = useState(null);
+  const [celebrate, setCelebrate] = useState(false);
+  const lastRef = useRef({ watched: today.watched, rewards: today.rewardsToday });
+
+  // The server's count arriving ends the "counting" state; a completed set
+  // plays the short celebration.
+  useEffect(() => {
+    const prev = lastRef.current;
+    if (today.rewardsToday > prev.rewards) {
+      setCelebrate(true);
+      setTimeout(() => setCelebrate(false), 2200);
+    }
+    if (today.watched !== prev.watched || today.rewardsToday !== prev.rewards) setWaiting(false);
+    lastRef.current = { watched: today.watched, rewards: today.rewardsToday };
+  }, [today.watched, today.rewardsToday]);
+
+  const country = String(profile?.geoCountry || '').toUpperCase();
+  if (!uid || !conf.countries.includes(country)) return null;
+
+  const n = conf.adsPerReward;
+  const filled = celebrate ? n : today.watched;
+  const nextAd = Math.min(n, today.watched + 1);
 
   const handleClick = async () => {
-    if (!uid || busy) return;
+    if (busy || waiting || today.doneForToday) return;
     setBusy(true);
     setFlash(null);
     try {
       const { rewarded } = await showRewardedForCoins(uid);
       if (rewarded) {
-        setFlash({ ok: true });
+        setWaiting(true);
+        setTimeout(() => setWaiting(false), 20000); // never hang on a slow callback
       } else {
-        setFlash({ skipped: true });
+        setFlash('skipped');
       }
     } catch (err) {
-      const msg = (err && err.message) || 'admob_failed';
-      setFlash({ error: msg === 'admob_timeout' ? 'timeout' : 'failed' });
+      setFlash((err && err.message) === 'admob_timeout' ? 'timeout' : 'noad');
     } finally {
       setBusy(false);
       setTimeout(() => setFlash(null), 4500);
     }
   };
 
-  if (!uid) return null;
-
-  const flashTone = flash && flash.ok
-    ? 'bg-brand-gold/10 text-brand-gold border border-brand-gold/25'
-    : 'bg-surface-2/60 text-text-muted border border-white/[0.06]';
+  const pill = today.doneForToday ? 'DONE' : celebrate ? `+${conf.rewardCoins}` : `${today.watched} OF ${n}`;
+  const pillGold = celebrate || today.doneForToday;
+  const label = today.doneForToday
+    ? `All ${conf.rewardsPerDay} rewards collected today`
+    : busy ? 'Loading ad…'
+    : waiting ? 'Counting your ad…'
+    : `Watch ad ${nextAd} of ${n}`;
 
   return (
     <div className="mx-4 mt-3 mb-1">
-      <button
-        onClick={handleClick}
-        disabled={busy}
-        className="w-full flex items-center gap-3 p-3.5 rounded-xl bg-surface-1 border border-white/[0.06] hover:bg-surface-2/50 transition-colors group disabled:opacity-70"
-      >
-        <div className="w-9 h-9 rounded-lg bg-brand-gold/15 flex items-center justify-center shrink-0">
-          <Icon name={busy ? 'hourglass_top' : 'play_circle'} size={20} className="text-brand-gold" />
+      <div className="vg-material vg-grain" style={{
+        position: 'relative', padding: 12, borderRadius: 16, overflow: 'hidden',
+        boxShadow: celebrate
+          ? 'inset 0 1px 0 rgba(255,255,255,0.14), 0 8px 26px rgba(240,165,0,0.34)'
+          : 'inset 0 1px 0 rgba(255,255,255,0.08), 0 6px 22px rgba(139,63,240,0.2)',
+        transition: 'box-shadow 340ms ease',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span className="vg-mono" style={{
+            flexShrink: 0, padding: '3px 9px', borderRadius: 999,
+            background: pillGold ? AD_GOLD : '#2a1f45',
+            fontSize: 11, fontWeight: 900, letterSpacing: '0.02em',
+            color: pillGold ? '#241a05' : '#e8e8f0',
+          }}>{pill}</span>
+          <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 800, color: '#e8e8f0' }}>
+            Watch {n} ads, get {conf.rewardCoins} boost coins
+          </span>
+          <span className="vg-mono" style={{ flexShrink: 0, fontSize: 12, fontWeight: 800, color: '#f5c842' }}>
+            {boostCoins.toLocaleString()}
+          </span>
         </div>
-        <div className="flex-1 text-left">
-          <p className="text-text-primary font-semibold text-sm">
-            {busy ? 'Loading ad…' : 'Watch an ad, earn coins'}
-          </p>
-          <p className="text-text-muted text-[10px]">
-            Finish the ad to get coins added to your wallet
-          </p>
+
+        <div style={{ display: 'flex', gap: 5, margin: '10px 0 8px' }}>
+          {Array.from({ length: n }).map((_, i) => {
+            const lit = i < filled;
+            const heat = AD_HEAT[Math.min(i, AD_HEAT.length - 1)];
+            return (
+              <div key={i} style={{ flex: 1, height: 7, borderRadius: 999, background: '#20232a', overflow: 'hidden' }}>
+                <div style={{
+                  width: lit ? '100%' : '0%', height: '100%', borderRadius: 999,
+                  background: celebrate ? AD_GOLD : `linear-gradient(90deg, ${heat}, #f5c842)`,
+                  boxShadow: lit ? `0 0 10px ${heat}88` : 'none',
+                  transition: 'width 340ms cubic-bezier(0.2,0.6,0.25,1)',
+                }} />
+              </div>
+            );
+          })}
         </div>
-        {!busy && (
-          <Icon name="arrow_forward" size={16} className="text-text-muted group-hover:text-text-secondary transition-colors" />
-        )}
-      </button>
+
+        <p style={{ fontSize: 11, color: '#a0a0b8', margin: '0 0 10px' }}>
+          {today.doneForToday
+            ? `Back at ${nextResetLabel()}. Boost coins buy boosts and VP packs.`
+            : `Finish each ad to count it. Boost coins buy boosts and VP packs. ${today.rewardsToday} of ${conf.rewardsPerDay} today.`}
+        </p>
+
+        <button
+          onClick={handleClick}
+          disabled={busy || waiting || today.doneForToday}
+          style={{
+            width: '100%', height: 44, borderRadius: 12, border: 'none',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+            background: today.doneForToday ? '#1c1c28' : '#7B1FFF',
+            color: today.doneForToday ? '#6b7280' : '#fff',
+            fontSize: 14, fontWeight: 800, cursor: today.doneForToday ? 'default' : 'pointer',
+          }}
+        >
+          <Icon name={today.doneForToday ? 'check_circle' : busy || waiting ? 'hourglass_top' : 'play_circle'} size={18} />
+          {label}
+        </button>
+      </div>
       {flash && (
-        <div className={`mt-1.5 px-3 py-2 rounded-lg text-xs flex items-center gap-2 ${flashTone}`}>
-          {flash.ok && (<><Icon name="paid" size={14} /><span className="font-bold">Coins added to your wallet shortly!</span></>)}
-          {flash.skipped && (<><Icon name="timer_off" size={14} />Watch the full ad to earn coins.</>)}
-          {flash.error === 'timeout' && (<><Icon name="error_outline" size={14} />Ad took too long — try again.</>)}
-          {flash.error === 'failed' && (<><Icon name="error_outline" size={14} />No ad available right now — try again soon.</>)}
+        <div className="mt-1.5 px-3 py-2 rounded-lg text-xs flex items-center gap-2" style={{ background: '#1a1a2a', color: '#a0a0b8' }}>
+          <Icon name={flash === 'skipped' ? 'timer_off' : 'error_outline'} size={14} />
+          {flash === 'skipped' && 'Watch the whole ad for it to count.'}
+          {flash === 'timeout' && 'The ad took too long. Try again.'}
+          {flash === 'noad' && 'No ad available right now. Try again soon.'}
         </div>
       )}
     </div>

@@ -11,7 +11,7 @@ import { compactNum } from '../creator/charts';
 import {
   getVPLevel, getNextVPLevel, getVPProgress,
   VP_ACTIONS, PLAN_VP_MULTIPLIER, MONTHLY_VP_BONUS,
-  PRESTIGE_REWARDS, PRESTIGE_MAX, MAX_VP_LEVEL,
+  PRESTIGE_REWARDS, PRESTIGE_MAX, MAX_VP_LEVEL, TOTAL_VP_TO_MAX, prestigeForVP, nextPrestigeVP,
 } from '../../utils/vpSystem';
 import { getCurrentBadge, getCurrentRankProgress, getAllEarnedBadges } from '../../utils/badgeSystem';
 import { RANK_VIEWS, getRankView, TOTAL_BADGES, EARN_ITEMS } from './prestigeData';
@@ -49,7 +49,10 @@ const TABS = [
   { id: 'prestige', label: 'Prestige' },
 ];
 
-export default function PrestigeShowcase({ totalVP = 0, plan = 'free', prestige = 0, boostTokens = 0, navigate }) {
+export default function PrestigeShowcase({ totalVP = 0, plan = 'free', prestige: storedPrestige = 0, boostTokens = 0, navigate }) {
+  // Your own VP says it first; the stored copy (written by syncVpLevel) catches up.
+  const prestige = Math.max(Number(storedPrestige) || 0, prestigeForVP(totalVP));
+  const nextP = nextPrestigeVP(totalVP);
   const current = getVPLevel(totalVP);
   const next = getNextVPLevel(totalVP);
   const progress = getVPProgress(totalVP);
@@ -92,7 +95,7 @@ export default function PrestigeShowcase({ totalVP = 0, plan = 'free', prestige 
         <div className="prestige-aurora absolute -inset-1/4 pointer-events-none"
              style={{ background: `radial-gradient(circle at 30% 30%, ${accent}33, transparent 55%)` }} />
         <div className="relative flex flex-col items-center text-center">
-          <ProgressRing size={208} progress={isMax ? 100 : progress} color={accent}>
+          <ProgressRing size={208} progress={isMax ? (nextP ? ((totalVP - (nextP - TOTAL_VP_TO_MAX)) / TOTAL_VP_TO_MAX) * 100 : 100) : progress} color={accent}>
             <RankCrest art={heroBadge.art} ringColor={accent} size={150} animated={rankView.animated} />
           </ProgressRing>
 
@@ -117,7 +120,7 @@ export default function PrestigeShowcase({ totalVP = 0, plan = 'free', prestige 
           </div>
           <p className="text-xs text-text-secondary mt-1">
             {isMax
-              ? 'Max rank reached. You are Immortal.'
+              ? (nextP ? `${(nextP - totalVP).toLocaleString()} VP to Prestige ${prestige + 1}` : 'Max rank reached. You are Immortal.')
               : <>{(next.vpRequired - totalVP).toLocaleString()} VP to Level {next.level} ({RANK_VIEWS.find(r => next.level >= r.min && next.level <= r.max)?.name})</>}
           </p>
 
@@ -159,7 +162,7 @@ export default function PrestigeShowcase({ totalVP = 0, plan = 'free', prestige 
       <Section title="What is VP?" sub="Vergr Points are your reputation on Vergr, earned by being active." i={1}>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           {[
-            { icon: 'trending_up', title: 'Earned by playing', text: 'Posting, winning matches, streaming, quests and daily logins all award VP.' },
+            { icon: 'trending_up', title: 'Earned by playing', text: 'Posting, streaming, quests, gifting and daily logins all award VP.' },
             { icon: 'military_tech', title: 'Drives your rank', text: 'VP unlocks 100 levels across 11 ranks, each with its own badge to collect.' },
             { icon: 'workspace_premium', title: 'Ranks and badges', text: 'Higher ranks unlock rarer badges and animated crests that show your standing across Vergr.' },
           ].map((c) => (
@@ -197,7 +200,7 @@ export default function PrestigeShowcase({ totalVP = 0, plan = 'free', prestige 
           the page treated "badge" and "crest" as two different things. They are
           one thing, the rank mark, and this section is where you look at it. ── */}
       {tab === 'unlock' && (
-      <Section title="Crests by rank" sub="Your crest changes when your rank band changes. It shows in live chat and on your stream entrance, nowhere else." i={4}>
+      <Section title="Crests by rank" sub="Your crest changes when your rank band changes. From Contender (L11) it sits beside your name in live chat, posts and comments, and on your stream entrance." i={4}>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {RANK_VIEWS.map((r) => {
             const reached = current.level >= r.min;
@@ -313,13 +316,9 @@ export default function PrestigeShowcase({ totalVP = 0, plan = 'free', prestige 
 
       {/* ── PRESTIGE ── */}
       {tab === 'prestige' && (
-      <Section title="Prestige" sub={`Optional endgame after Level 100. Reset your displayed level for a permanent badge. Up to ${PRESTIGE_MAX} times.`} i={6}>
-        {/* The coin figures that used to sit on each tile are GONE (audit A112).
-            PRESTIGE_REWARDS advertises 500 to 5,000 coins, and there is no
-            server implementation of prestige at all: nothing lets anyone
-            prestige and nothing grants those coins. Showing a reward nobody can
-            obtain is the same defect as the dead commission ladder. The badges
-            are real art, so the tiles stay; the payout claim does not. */}
+      <Section title="Prestige" sub={`The endgame after Level 100. Every further ${TOTAL_VP_TO_MAX.toLocaleString()} VP adds a prestige star, up to ${PRESTIGE_MAX}. Nothing resets: your level, perks and crest stay Immortal.`} i={6}>
+        {/* No coin figures (audit A112): nothing grants them. Prestige itself is
+            real since 2026-09-30, derived from VP by syncVpLevel. */}
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
           {PRESTIGE_REWARDS.map((p) => {
             const unlocked = prestige >= p.prestige;

@@ -5,7 +5,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  WalletCard, WalletButton, Pill, Callout, SectionLabel, WALLET_TOKENS, fmtEUR,
+  WalletCard, WalletButton, Pill, Callout, SectionLabel, WALLET_TOKENS, fmtUsd,
 } from '../../../components/wallet/primitives';
 import Icon from '../../../components/Icon';
 import { getMyWalletSecurityStatus } from '../../../firebase/walletCallables';
@@ -30,11 +30,12 @@ const KYC_TIERS = [
     requires: ['Government ID', 'Selfie liveness'],
     unlocks:  ['VERGR can pay your creator revenue share', 'Paid up to $50 per month'] },
   { level: 2, name: 'Standard',   dailyEUR: 0,    monthlyEUR: 2500,
-    requires: ['L1 + proof of address (utility bill / bank statement)'],
+    requires: ['L1 + proof of address (bill, bank statement or government letter from the last 3 months)'],
     unlocks:  ['Paid up to $2,500 per month', 'Faster payout schedules unlock'] },
+  // "Priority support" was listed here and was never built.
   { level: 3, name: 'Premium',    dailyEUR: 0,    monthlyEUR: 15000,
-    requires: ['L2 + source-of-funds declaration'],
-    unlocks:  ['Paid up to $15,000 per month', 'Priority support'] },
+    requires: ['L2 + source-of-funds documents (bank statements, payslips, tax return or business records)'],
+    unlocks:  ['Paid up to $15,000 per month'] },
 ];
 
 export default function KycScreen() {
@@ -47,11 +48,12 @@ export default function KycScreen() {
       .catch(() => {});
   }, []);
 
-  // Existing Didit wizard route lives at /onboarding/identity per AppRouter.
-  // KycWizard is the underlying component; we deep-link with a return param
-  // that the wizard already respects.
-  const startVerification = () => {
-    navigate('/onboarding/identity?return=/wallet/kyc');
+  // Level 1 is the Didit check at /creator/verify. This used to go to
+  // /onboarding/identity, which is a profile form with no identity check in it,
+  // so nobody could get verified from here. Levels 2 and 3 are a document
+  // upload reviewed by Vergr staff, on the payout setup screen.
+  const startVerification = (level) => {
+    navigate(level <= 1 ? '/creator/verify' : '/creator/earnings/setup');
   };
 
   return (
@@ -133,7 +135,8 @@ export default function KycScreen() {
                         ))}
                         {t.monthlyEUR > 0 && (
                           <li className="font-dmmono" style={{ fontSize: 12, color: WALLET_TOKENS.textSecondary, marginTop: 4 }}>
-                            Paid up to {fmtEUR(t.monthlyEUR)} / month
+                            {/* USD: fmtEUR converted the figure as if it were euros. */}
+                            Paid up to {fmtUsd(t.monthlyEUR)} / month
                           </li>
                         )}
                       </ul>
@@ -142,8 +145,8 @@ export default function KycScreen() {
                 </div>
                 <div>
                   {next && (
-                    <WalletButton variant="primary" onClick={startVerification} iconRight="arrow_forward">
-                      Start verification
+                    <WalletButton variant="primary" onClick={() => startVerification(t.level)} iconRight="arrow_forward">
+                      {t.level <= 1 ? 'Start verification' : 'Upload document'}
                     </WalletButton>
                   )}
                 </div>
@@ -155,7 +158,7 @@ export default function KycScreen() {
 
       <div style={{ marginTop: 22 }}>
         <Callout tone="info" icon="info" title="Why we ask">
-          We verify identity before paying a creator their revenue share, as the regulations require. Your documents go straight to Didit. We see only the result.
+          We verify identity before paying a creator their revenue share, as the regulations require. Your ID and selfie go straight to Didit and we see only the result. For Levels 2 and 3 you upload a document that Vergr staff review; it is deleted as soon as it has been reviewed.
         </Callout>
       </div>
 

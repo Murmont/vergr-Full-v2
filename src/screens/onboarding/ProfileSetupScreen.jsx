@@ -91,7 +91,7 @@ export default function ProfileSetupScreen() {
           <label className="text-text-secondary text-sm mb-2 block">Bio</label>
           <textarea
             value={bio} onChange={e => setBio(e.target.value)} maxLength={150}
-            placeholder="Tell gamers about yourself..."
+            placeholder="Tell people about yourself..."
             className="w-full bg-surface-2 border border-white/[0.06] rounded-2xl p-4 text-text-primary placeholder:text-text-muted focus:border-brand-violet focus:ring-1 focus:ring-brand-violet focus:outline-none transition-all h-28 resize-none text-sm"
           />
           <p className="text-text-muted text-xs text-right mt-1">{bio.length}/150</p>
@@ -155,7 +155,7 @@ export default function ProfileSetupScreen() {
         </div>
       </div>
 
-      <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[480px] p-4 glass-header border-t border-white/[0.04]">
+      <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[480px] p-4 glass-header border-t border-white/[0.04]" style={{ paddingBottom: 'calc(16px + var(--vg-safe-b, 0px))' }}>
         <button 
           onClick={() => navigate('/setup/follow-suggestions')} 
           disabled={uploading}

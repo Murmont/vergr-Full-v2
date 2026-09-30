@@ -24,6 +24,7 @@ export const TRAIN_SOLO_CAP = 0.4;        // one person counts for <=40% of a le
 export const TRAIN_WINDOW_MS = 300_000;   // 5 min
 export const TRAIN_EXTEND_MS = 30_000;    // each contribution pushes it out
 export const TRAIN_MAX_MS = 900_000;      // and it can never run past 15 min
+export const TRAIN_TOP_RIDERS = 5;        // faces on the bar: the conductor + 4 riders
 
 export const trainBaseGoal = (viewers = 0) =>
   Math.round(TRAIN_GOAL_COEFF * Math.sqrt(Math.max(1, viewers)));
@@ -58,12 +59,14 @@ export const TRAIN_COIN_CAP = 5_000;          // founder-approved 2026-09-07
 // early level and a rounding error at L90.
 export const TRAIN_VP_PER_LEVEL = 50;         // founder-approved 2026-09-07
 
-// ⚠ FOUNDER-APPROVED 2026-09-07, 65/35 TOWARD VP, WHICH IS THE CHEAP BRANCH. VP costs the platform only
-// what it brings forward on the level ladder: 47 boost tokens at 50c plus 14 VP
-// packs across a full 648,000 VP run to L100 = 5,270 coins, i.e. 0.0081 coins
-// per VP. A 250 VP bonus therefore costs about 2 coins. Weighting the draw
-// toward it lowers expected cost without changing what a creator can win.
-export const TRAIN_VP_WEIGHT = 0.65;          // founder-approved 2026-09-07, 65/35
+// ⚠ THREE OUTCOMES, ONE PER TRAIN, AT RANDOM (founder, 2026-09-27): coins, VP
+// or boost coins, "cycled so that its random and not always real coins". Real
+// coins get whatever the other two leave (20%; odds 40/40/20, founder 2026-09-27). VP and boost coins are the
+// cheap branches: VP costs only what it brings forward on the level ladder
+// (about 0.0081 coins per VP), and boost coins buy boosts and VP packs only, so
+// neither can become revenue share Vergr owes. Was 65/35 VP/coins (2026-09-07).
+export const TRAIN_VP_WEIGHT = 0.40;
+export const TRAIN_BOOST_WEIGHT = 0.40;
 
 // ⚠ A COIN RESULT SMALLER THAN THIS PAYS VP INSTEAD. Landing on the coin branch
 // and being handed 4 coins reads as being fobbed off, and it is worth less to
@@ -168,18 +171,22 @@ export function trainRoll(seed = '') {
   return (h >>> 0) / 4294967296;
 }
 
-/** 'vp' or 'coins'. Never both, and never neither. */
-export function trainOutcome(seed = '', vpWeight = TRAIN_VP_WEIGHT) {
-  return trainRoll(seed) < vpWeight ? 'vp' : 'coins';
+/** 'vp', 'boost' or 'coins'. Exactly one. */
+export function trainOutcome(seed = '', vpWeight = TRAIN_VP_WEIGHT, boostWeight = TRAIN_BOOST_WEIGHT) {
+  const r = trainRoll(seed);
+  if (r < vpWeight) return 'vp';
+  if (r < vpWeight + boostWeight) return 'boost';
+  return 'coins';
 }
 
 // ── 5. THE ONE SETTLEMENT ────────────────────────────────────────────────────
 /**
  * What a completed train pays, as exactly one reward.
  *
- * ⚠⚠ IT IS ONE OR THE OTHER AND NEVER BOTH. Founder, 2026-09-07. The unused
- * branch is returned as 0 so a caller cannot read a stale figure off it, and
- * `npm run check` asserts the two can never both be positive.
+ * ⚠⚠ EXACTLY ONE OF COINS, BOOST COINS OR VP, NEVER TWO. Founder, 2026-09-07
+ * (one or the other) and 2026-09-27 (boost coins added). The unused branches
+ * are returned as 0 so a caller cannot read a stale figure off them, and
+ * `npm run check` asserts exactly one is positive.
  *
  * @param {number} received coins that actually landed in the train
  * @param {number} level    level the train reached
@@ -191,15 +198,18 @@ export function settleTrain({ received = 0, level = 1, seed = '', share = WORST_
   if (got <= 0) return null;
 
   const lvl = Math.max(1, Math.round(level));
+  // Boost coins pay the SAME amount the coin branch would, so the number never
+  // depends on which branch came up. A result too small to be worth having
+  // pays VP instead.
   const coins = coinBonusFor(got, share);
-  const kind = (trainOutcome(seed) === 'coins' && coins >= TRAIN_MIN_COIN_BONUS)
-    ? 'coins'
-    : 'vp';
+  const drawn = trainOutcome(seed);
+  const kind = (drawn !== 'vp' && coins >= TRAIN_MIN_COIN_BONUS) ? drawn : 'vp';
 
   const marginUsd = trainMarginUsd(got, share);
   return {
     kind,
     coins: kind === 'coins' ? coins : 0,
+    boostCoins: kind === 'boost' ? coins : 0,
     vp: kind === 'vp' ? vpBonusFor(lvl) : 0,
     level: lvl,
     received: got,

@@ -8,11 +8,11 @@ const COPY = [
   'counting your coins',
   'defragging your DMs',
   'tuning the squad frequency',
-  'restocking the trophy case',
+  'polishing the profile banners',
   'oiling the leaderboard',
   'rehydrating your wallet',
   'pulling fresh clips off the shelf',
-  'negotiating with the matchmaker',
+  'warming up the stream keys',
   'aligning the crosshair',
 ];
 
@@ -122,7 +122,7 @@ export default function LoadingScreen() {
           <span className="vl-tip-label">{TIPS[tipIdx].label}</span>
           <span className="vl-tip-body">{TIPS[tipIdx].body}</span>
         </div>
-        <div className="vl-tagline">Play. Stream. Earn.</div>
+        <div className="vl-tagline">Create. Watch. Earn.</div>
       </div>
     </div>
   );

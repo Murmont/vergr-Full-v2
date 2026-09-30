@@ -15,6 +15,7 @@ import { useLayout } from '../../context/LayoutContext';
 import useResponsive from '../../hooks/useResponsive';
 import useAdminAccess from '../../hooks/useAdminAccess';
 import Icon from '../../components/Icon';
+import { openInVergr } from '../../admin/openExternal';
 import UserAvatar from '../../components/UserAvatar';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../../firebase/config';
@@ -180,7 +181,7 @@ function Sidebar({ can, isFounder, activePath, navigate, onBackToApp, badges }) 
             display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8,
           }}
         >
-          <Icon name="arrow_back" size={14} /> Back to App
+          <Icon name="open_in_new" size={14} /> Open Vergr
         </button>
       </div>
     </aside>
@@ -235,7 +236,7 @@ export default function AdminShell({ screen, title, subtitle, topBarRight, child
   const { isMobile } = useResponsive();
   const { profile } = useUser();
   const { setRightPanel, setContentAlign } = useLayout();
-  const { loading, isAdmin, isFounder, can } = useAdminAccess();
+  const { loading, isAdmin, isFounder, isOperator, can } = useAdminAccess();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [badges, setBadges] = useState({});
 
@@ -294,7 +295,10 @@ export default function AdminShell({ screen, title, subtitle, topBarRight, child
       isFounder={isFounder}
       activePath={location.pathname}
       navigate={handleNavigate}
-      onBackToApp={() => navigate('/')}
+      // Vergr Admin has no consumer app inside it (MemoryRouter + AdminRoutes
+      // only), so navigate('/') just redirected to the dashboard. The product
+      // opens on vergr.app in the browser instead.
+      onBackToApp={() => openInVergr('/')}
       badges={badges}
     />
   );
@@ -340,7 +344,18 @@ export default function AdminShell({ screen, title, subtitle, topBarRight, child
           right={
             <>
               {topBarRight}
-              {!isMobile && profile && (
+              {!isMobile && isOperator && (
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  padding: '6px 12px',
+                  background: C.card, borderRadius: 999,
+                  fontSize: 12, fontWeight: 600, color: C.text,
+                }}>
+                  <Icon name="shield_person" size={16} />
+                  Operator
+                </div>
+              )}
+              {!isMobile && !isOperator && profile && (
                 <div style={{
                   display: 'flex', alignItems: 'center', gap: 10,
                   padding: '6px 10px 6px 6px',

@@ -19,6 +19,7 @@ const functions = require('firebase-functions/v2');
 const { HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
+const { planSpend, debitFields } = require('./boostCoins');
 
 const db = () => getFirestore('vgrdb');
 
@@ -96,14 +97,13 @@ exports.purchaseBoostPack = functions.https.onCall(
 
     await d.runTransaction(async (tx) => {
       const snap = await tx.get(walletRef);
-      const balance = Math.floor((snap.exists ? snap.data().balance : 0) || 0);
-      if (balance < cost) {
+      const plan = planSpend(snap.exists ? snap.data() : {}, cost);
+      if (!plan.ok) {
         throw new HttpsError('failed-precondition',
-          `Not enough coins. That costs ${cost} and you have ${balance}.`);
+          `Not enough coins. That costs ${cost} and you have ${plan.total}.`);
       }
       tx.set(walletRef, {
-        balance: FieldValue.increment(-cost),
-        totalSpent: FieldValue.increment(cost),
+        ...debitFields(plan),
         boosts: { [boost.id]: FieldValue.increment(qty) },
         updatedAt: FieldValue.serverTimestamp(),
       }, { merge: true });

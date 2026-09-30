@@ -20,6 +20,9 @@
 const functions = require('firebase-functions/v2');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const speakeasy = require('speakeasy');
+const crypto = require('crypto');
+const { isOperator, requireOperatorSession } = require('./operator');
+const { authEmailFor } = require('./authEmails');
 
 const db = getFirestore('vgrdb');
 const REGION = 'europe-west1';
@@ -28,18 +31,88 @@ const HttpsError = functions.https.HttpsError;
 const DEFAULT_STEP_UP_WINDOW_SEC = 300; // 5 minutes
 const TOTP_ISSUER = 'VERGR Admin';
 const ENROLLMENT_TTL_MS = 10 * 60 * 1000; // 10 minutes to finish setup
+const RECOVERY_CODES = 10; // same shape as accountSecurity.js: 10 hex chars, hashed, one use each
 
 // ════════════════════════════════════════════════════════════════════
 // REQUIREMENT GUARDS
 // ════════════════════════════════════════════════════════════════════
 
+// The admin is the OPERATOR (functions/operator.js): a Firebase Auth custom claim
+// on a sign-in with no Vergr profile, and every call needs a live authenticator
+// session. The users/{uid}.role === 'admin' path below is the TRANSITION path
+// for @Vergr while Vergr Admin is being set up, and is removed once the
+// Operator is verified end to end.
 async function requireAdmin(uid) {
   if (!uid) throw new HttpsError('unauthenticated', 'Must be logged in.');
+  if (await isOperator(uid)) {
+    await requireOperatorSession(uid);
+    return { operator: true };
+  }
   const snap = await db.collection('users').doc(uid).get();
   if (!snap.exists || snap.data()?.role !== 'admin') {
     throw new HttpsError('permission-denied', 'Admin only.');
   }
   return snap.data();
+}
+
+// Identity only, NO session requirement. Used by the authenticator callables
+// themselves, which are how a session is opened in the first place.
+// Who may touch the admin SECURITY surface at all (enroll an authenticator,
+// step up, read their own status). Deliberately wider than requireAdmin: a
+// sub-admin has to be able to set up 2FA BEFORE any guarded call will let them
+// through, or they can never satisfy the guard.
+//
+// ⚠⚠ THE SUB-ADMIN BRANCH IS NOT OPTIONAL. `users/{uid}.role` no longer exists
+// on any account (stripped 2026-09-20), so without it this function admits the
+// operator and nobody else, and an invited sub-admin cannot even enroll.
+//
+// ⚠ It does NOT read users/{uid}. A sub-admin may be a profile-less ops account
+// exactly like the operator, which is the whole point of Vergr Admin.
+async function requireAdminIdentity(uid) {
+  if (!uid) throw new HttpsError('unauthenticated', 'Must be logged in.');
+  if (await isOperator(uid)) return { operator: true };
+  const sub = await db.collection('admin_users').doc(uid).get();
+  // 'pending_2fa' is admitted HERE ONLY: it is an accepted sub-admin who has
+  // not finished authenticator setup, and enrolling is exactly what this
+  // function exists to allow. requireAdminScreen still refuses them.
+  const subStatus = sub.exists ? sub.data()?.status : null;
+  if (subStatus === 'active' || subStatus === 'pending_2fa') {
+    return { subAdmin: true, pending2fa: subStatus === 'pending_2fa', allowedScreens: sub.data().allowedScreens || [] };
+  }
+  const snap = await db.collection('users').doc(uid).get();
+  // A Vanguard moderator is admitted here, and HERE ONLY, so they can enroll
+  // and verify the authenticator Vergr Vanguard demands (2026-09-21). This
+  // function grants no admin power: every admin callable goes through
+  // requireAdmin / requireAdminScreen, which still refuse them.
+  const vg = vanguardOf(snap.exists ? snap.data() : null);
+  if (vg) return { vanguard: true, rank: vg.rank };
+  if (!snap.exists || snap.data()?.role !== 'admin') {
+    throw new HttpsError('permission-denied', 'Admin only.');
+  }
+  return snap.data();
+}
+
+// An ACTIVE Vanguard member's { rank, status }, or null. Mirrors isVanguard()
+// in src/utils/vanguard.js: a suspended or retired member is not one. A
+// recruit IS one (read-only, but they still see reports, so they need 2FA).
+function vanguardOf(u) {
+  const v = u?.vanguard;
+  if (!v?.rank || v.status === 'suspended' || v.status === 'retired') return null;
+  return { rank: v.rank, status: v.status || 'active' };
+}
+
+async function isActiveVanguard(uid) {
+  if (!uid) return false;
+  const snap = await db.collection('users').doc(uid).get();
+  return !!vanguardOf(snap.exists ? snap.data() : null);
+}
+
+// True for an accepted, still-active sub-admin. One read, and only ever reached
+// when the caller is not the operator.
+async function isActiveSubAdmin(uid) {
+  if (!uid) return false;
+  const snap = await db.collection('admin_users').doc(uid).get();
+  return snap.exists && snap.data()?.status === 'active';
 }
 
 // Reads admin_security/{uid} directly — never trusts a client-writable field.
@@ -49,7 +122,21 @@ async function requireAdmin(uid) {
 async function requireFreshStepUp(uid, maxAgeSec = DEFAULT_STEP_UP_WINDOW_SEC) {
   const secSnap = await db.collection('admin_security').doc(uid).get();
   if (!secSnap.exists || !secSnap.data()?.enrolled) {
-    // No TOTP enrolled yet — allow but flag in the audit row.
+    // ⚠ FAILS CLOSED for the operator AND for a sub-admin. A sub-admin can ban
+    // and mute real people on the screens they hold, so "no authenticator yet"
+    // must never be a way to skip the check. The only path that still passes
+    // unenrolled is the legacy users/{uid}.role one, which no account has.
+    if (await isOperator(uid) || await isActiveSubAdmin(uid)) {
+      throw new HttpsError('failed-precondition',
+        'Authenticator not set up. Finish setup in Vergr Admin first.',
+        { code: 'TOTP_ENROLL_REQUIRED' });
+    }
+    // Same for a Vanguard moderator: they ban and mute real people.
+    if (await isActiveVanguard(uid)) {
+      throw new HttpsError('failed-precondition',
+        'Authenticator not set up. Finish setup in Vergr Vanguard first.',
+        { code: 'TOTP_ENROLL_REQUIRED' });
+    }
     return { stepUpEnforced: false };
   }
   const last = secSnap.data().lastStepUpAt;
@@ -275,7 +362,7 @@ exports.enrollAdminTotp = functions.https.onCall(
   { region: REGION, cors: true },
   async (request) => {
     const uid = request.auth?.uid;
-    await requireAdmin(uid);
+    const who = await requireAdminIdentity(uid);
 
     // If already enrolled, you must disable first (which requires step-up).
     const cur = await db.collection('admin_security').doc(uid).get();
@@ -284,10 +371,13 @@ exports.enrollAdminTotp = functions.https.onCall(
         'TOTP already enrolled. Disable first if you need to re-enroll.');
     }
 
+    // The label the authenticator app shows. A Vanguard moderator's entry must
+    // not read "VERGR Admin": they hold no admin power.
+    const issuer = who?.vanguard ? 'Vergr Vanguard' : TOTP_ISSUER;
     const secret = speakeasy.generateSecret({
       length: 20,
-      name: `${TOTP_ISSUER} (${uid.slice(0, 6)})`,
-      issuer: TOTP_ISSUER,
+      name: `${issuer} (${uid.slice(0, 6)})`,
+      issuer,
     });
 
     await db.collection('admin_totp_enrollment').doc(uid).set({
@@ -310,7 +400,7 @@ exports.confirmAdminTotpEnrollment = functions.https.onCall(
   { region: REGION, cors: true },
   async (request) => {
     const uid = request.auth?.uid;
-    await requireAdmin(uid);
+    await requireAdminIdentity(uid);
     const { code } = request.data || {};
     if (!code || typeof code !== 'string') {
       throw new HttpsError('invalid-argument', 'code (string) required.');
@@ -339,15 +429,26 @@ exports.confirmAdminTotpEnrollment = functions.https.onCall(
       throw new HttpsError('permission-denied', 'Invalid code. Check your authenticator app.');
     }
 
-    // Promote pending → confirmed. Backup codes are NOT generated in v1;
-    // founder is expected to keep the secret printed in a safe.
+    // Promote pending → confirmed, with one-use recovery codes so a lost or
+    // broken phone does not lock the Operator out. Shown once, stored hashed.
+    const recoveryCodes = Array.from({ length: RECOVERY_CODES }, () =>
+      crypto.randomBytes(5).toString('hex').toUpperCase());
     await db.collection('admin_security').doc(uid).set({
       secret: data.secret,
       enrolled: true,
       enrolledAt: FieldValue.serverTimestamp(),
       lastStepUpAt: FieldValue.serverTimestamp(), // enrollment counts as a step-up
+      recoveryCodesHashed: recoveryCodes.map((c) => crypto.createHash('sha256').update(c).digest('hex')),
     }, { merge: true });
     await pendingRef.delete();
+
+    // A sub-admin becomes ACTIVE here, never on accepting the invite. See the
+    // note in adminAccess.acceptAdminInvite for why that ordering matters.
+    const subRef = db.collection('admin_users').doc(uid);
+    const sub = await subRef.get();
+    if (sub.exists && sub.data()?.status === 'pending_2fa') {
+      await subRef.set({ status: 'active', activatedAt: FieldValue.serverTimestamp() }, { merge: true });
+    }
 
     // Audit row — direct write since guardedAdmin would loop on requireStepUp.
     const meta = extractRequestMeta(request);
@@ -360,7 +461,7 @@ exports.confirmAdminTotpEnrollment = functions.https.onCall(
       stepUpFresh: true,
     });
 
-    return { ok: true, enrolled: true };
+    return { ok: true, enrolled: true, recoveryCodes };
   }
 );
 
@@ -368,11 +469,12 @@ exports.verifyAdminTotp = functions.https.onCall(
   { region: REGION, cors: true },
   async (request) => {
     const uid = request.auth?.uid;
-    await requireAdmin(uid);
+    await requireAdminIdentity(uid);
     const { code } = request.data || {};
     if (!code || typeof code !== 'string') {
       throw new HttpsError('invalid-argument', 'code (string) required.');
     }
+    const normalized = code.toUpperCase().replace(/\s/g, '');
 
     // Light rate limit on TOTP attempts — stops online brute force.
     await adminRateLimit(uid, 'totp_verify', { perHour: 20, perDay: 100 });
@@ -383,10 +485,31 @@ exports.verifyAdminTotp = functions.https.onCall(
       throw new HttpsError('failed-precondition', 'TOTP not enrolled. Enroll first.');
     }
 
+    // A recovery code (10 hex characters) is consumed once and opens a session
+    // exactly like an authenticator code.
+    if (/^[0-9A-F]{10}$/.test(normalized) && !/^\d{6}$/.test(normalized)) {
+      const candidate = crypto.createHash('sha256').update(normalized).digest('hex');
+      const used = await db.runTransaction(async (tx) => {
+        const s = await tx.get(secRef);
+        const codes = s.data()?.recoveryCodesHashed || [];
+        const idx = codes.indexOf(candidate);
+        if (idx === -1) return null;
+        const remaining = codes.slice(0, idx).concat(codes.slice(idx + 1));
+        tx.set(secRef, { recoveryCodesHashed: remaining, lastStepUpAt: FieldValue.serverTimestamp() }, { merge: true });
+        return remaining.length;
+      });
+      if (used !== null) {
+        const meta = extractRequestMeta(request);
+        await auditAdminAction({ actor: uid, action: 'totp_recovery_code_used', ip: meta.ip, userAgent: meta.userAgent,
+          stepUpEnforced: true, stepUpFresh: true, meta: { remaining: used } });
+        return { ok: true, usedRecovery: true, remainingCodes: used, lastStepUpAt: Date.now() };
+      }
+    }
+
     const verified = speakeasy.totp.verify({
       secret: sec.data().secret,
       encoding: 'base32',
-      token: code,
+      token: normalized,
       window: 1,
     });
     if (!verified) {
@@ -436,19 +559,98 @@ exports.disableAdminTotp = functions.https.onCall(
   }
 );
 
+// ── Vergr Admin update ticket ─────────────────────────────────────────
+// The admin installer and its update manifest are served from box 1 at
+// sfu.vergr.app/ops/, and nginx hands them only to a request carrying a live
+// ticket (infra/ops-auth). The ticket is minted HERE, for the operator or an
+// ACTIVE sub-admin, and nowhere else.
+//
+// ⚠ It is deliberately NOT the Firebase ID token. An ID token sent to the box
+// would be a live admin session sitting on a server that is not backed up and
+// runs a dozen other services. A ticket downloads a signed installer for 15
+// minutes and does nothing else.
+//
+// The HMAC key lives at ops_config/update_ticket. No firestore rule matches
+// ops_config, so every client read is denied; it is read here once per warm
+// instance.
+const UPDATE_TICKET_TTL_MS = 15 * 60 * 1000;
+let updateTicketKey = null;
+async function mintUpdateTicket(uid, scope = 'admin') {
+  try {
+    if (!updateTicketKey) {
+      const snap = await db.collection('ops_config').doc('update_ticket').get();
+      const hex = snap.exists ? String(snap.data()?.key || '') : '';
+      if (!/^[0-9a-f]{64,}$/.test(hex)) return null;
+      updateTicketKey = Buffer.from(hex, 'hex');
+    }
+    // v2 carries a SCOPE, and vergr-ops-auth only honours it under
+    // /ops/<scope>/. So a Vanguard ticket cannot fetch the admin console and an
+    // admin ticket cannot fetch Vergr Vanguard. v1 (no scope) is admin-only.
+    if (!/^(admin|vanguard)$/.test(scope)) return null;
+    const body = `v2.${scope}.${uid}.${Date.now() + UPDATE_TICKET_TTL_MS}`;
+    const sig = crypto.createHmac('sha256', updateTicketKey).update(body).digest('hex');
+    return `${body}.${sig}`;
+  } catch {
+    return null; // an update check must never break sign-in
+  }
+}
+
 exports.getMyAdminSecurityStatus = functions.https.onCall(
   { region: REGION, cors: true },
   async (request) => {
     const uid = request.auth?.uid;
-    await requireAdmin(uid);
+    if (!uid) throw new HttpsError('unauthenticated', 'Must be logged in.');
+
+    // ⚠ THIS ONE ANSWERS INSTEAD OF REFUSING, and it has to. Vergr Admin calls
+    // it to decide which screen to draw, including for someone who has been
+    // invited but has accepted nothing yet: refusing them would leave the app
+    // with no way to offer the Accept step. It discloses only facts about the
+    // CALLER'S OWN account, so there is nothing here to leak.
+    const operator = await isOperator(uid);
+    const subSnap = operator ? null : await db.collection('admin_users').doc(uid).get();
+    // pending_2fa counts as a sub-admin HERE so Vergr Admin draws the
+    // authenticator setup step; every guarded call still refuses them.
+    const subStatus = subSnap?.exists ? subSnap.data()?.status : null;
+    const subAdmin = subStatus === 'active' || subStatus === 'pending_2fa';
+    const allowedScreens = subAdmin ? (subSnap.data().allowedScreens || []) : (operator ? ['*'] : []);
+
+    // Vergr Vanguard asks the same question. One users read, only for a caller
+    // who is not the operator (the operator has no users document).
+    let vanguard = null;
+    if (!operator) {
+      const u = await db.collection('users').doc(uid).get();
+      vanguard = vanguardOf(u.exists ? u.data() : null);
+    }
+    // The operator gets a Vanguard ticket too: founder oversight opens Vergr
+    // Vanguard as a synthetic Overseer (functions/vanguard.js loadActor).
+    const vanguardTicket = (operator || vanguard) ? await mintUpdateTicket(uid, 'vanguard') : null;
+
+    let pendingInvite = false;
+    if (!operator && !subAdmin) {
+      const email = (await authEmailFor(uid) || '').toLowerCase();
+      if (email) {
+        const inv = await db.collection('admin_invites')
+          .where('email', '==', email).where('status', '==', 'pending').limit(1).get();
+        pendingInvite = !inv.empty
+          && Date.now() <= (inv.docs[0].data().expiresAt?.toMillis?.() || 0);
+      }
+      if (!pendingInvite && !vanguard) return { admin: false, operator: false, subAdmin: false, pendingInvite: false, vanguard: null };
+    }
+
+    // Only the operator and an ACTIVE sub-admin may download the console.
+    const updateTicket = (operator || subStatus === 'active') ? await mintUpdateTicket(uid, 'admin') : null;
+    const base = { admin: true, operator, subAdmin, subStatus, allowedScreens, pendingInvite, updateTicket, vanguard, vanguardTicket };
     const snap = await db.collection('admin_security').doc(uid).get();
-    if (!snap.exists) return { enrolled: false };
+    if (!snap.exists) return { ...base, admin: operator || subAdmin, enrolled: false };
     const d = snap.data();
     const toMs = (t) => (t && typeof t.toMillis === 'function') ? t.toMillis() : null;
     return {
+      ...base,
+      admin: operator || subAdmin,
       enrolled: !!d.enrolled,
       enrolledAt:    toMs(d.enrolledAt),
       lastStepUpAt:  toMs(d.lastStepUpAt),
+      recoveryCodesRemaining: (d.recoveryCodesHashed || []).length,
     };
   }
 );
@@ -475,6 +677,8 @@ exports.cleanupExpiredTotpEnrollments = defer(
 // ════════════════════════════════════════════════════════════════════
 
 module.exports.requireAdmin = requireAdmin;
+module.exports.requireAdminIdentity = requireAdminIdentity;
+module.exports.isActiveVanguard = isActiveVanguard;
 module.exports.requireFreshStepUp = requireFreshStepUp;
 module.exports.adminRateLimit = adminRateLimit;
 module.exports.auditAdminAction = auditAdminAction;

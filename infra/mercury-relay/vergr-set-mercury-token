@@ -1,0 +1,25 @@
+#!/bin/bash
+# Saves a payments secret to /etc/vergr-payouts/mercury.env (root only).
+# Usage: vergr-set-mercury-token A | B | CODA
+#   A, B  Mercury API tokens  -> MERCURY_TOKEN_A / MERCURY_TOKEN_B
+#   CODA  Codapay API key     -> CODA_API_KEY
+# Input is hidden; the value is never printed. Restart vergr-mercury-relay after.
+# Installed at /usr/local/bin/vergr-set-mercury-token (chmod 700).
+set -euo pipefail
+umask 077
+name="${1:-}"
+case "$name" in
+  A|B)  var="MERCURY_TOKEN_${name}"; label="Mercury token $name" ;;
+  CODA) var="CODA_API_KEY";          label="Coda API key" ;;
+  *) echo "Usage: vergr-set-mercury-token A|B|CODA"; exit 1 ;;
+esac
+install -d -m 700 /etc/vergr-payouts
+f=/etc/vergr-payouts/mercury.env
+read -rsp "Paste the $label, then press Enter: " T; echo
+T="$(printf %s "$T" | tr -d "[:space:]")"
+[ -n "$T" ] || { echo "Nothing pasted, nothing saved."; exit 1; }
+touch "$f"
+grep -v "^${var}=" "$f" > "$f.tmp" || true
+printf "%s=%s\n" "$var" "$T" >> "$f.tmp"
+mv "$f.tmp" "$f"; chmod 600 "$f"
+echo "Saved the $label (${#T} characters). It was not displayed."

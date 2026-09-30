@@ -67,7 +67,7 @@ export default function ShopLayout() {
         </aside>
       )}
 
-      <main className="flex-1 min-w-0 flex flex-col" style={{ paddingBottom: isDesktop ? 0 : 'env(safe-area-inset-bottom)' }}>
+      <main className="flex-1 min-w-0 flex flex-col" style={{ paddingBottom: isDesktop ? 0 : 'var(--vg-safe-b, 0px)' }}>
         {/* Mobile header + horizontal pill nav */}
         {!isDesktop && (
           <header className="sticky top-0 z-30 bg-[#07080D]/90 backdrop-blur-md border-b border-white/[0.06]"
@@ -108,7 +108,7 @@ function ShopGuestGate({ navigate }) {
           <Icon name="storefront" size={30} className="text-white" />
         </div>
         <h1 className="font-syne font-extrabold text-2xl mb-2.5">Open your Vergr Shop</h1>
-        <p className="text-sm text-text-secondary leading-relaxed mb-6">Sell digital and physical products, connect Shopify or WooCommerce, and keep 92% of every sale. Create a free account to start.</p>
+        <p className="text-sm text-text-secondary leading-relaxed mb-6">Connect Shopify or WooCommerce and show your store's products on your vergr.me. Buyers check out on your store. Create a free account to start.</p>
         <button onClick={() => navigate('/signup')} className="w-full h-12 rounded-xl font-bold text-white" style={{ background: 'linear-gradient(135deg,#7B1FFF,#B44FFF)' }}>Create free account</button>
         <button onClick={() => navigate('/home')} className="w-full h-11 mt-2.5 rounded-xl font-semibold text-sm text-text-secondary border border-white/10">Exit shop</button>
       </div>

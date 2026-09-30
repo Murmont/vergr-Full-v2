@@ -12,7 +12,14 @@ import useAdminAccess from '../../hooks/useAdminAccess';
 import Icon from '../../components/Icon';
 import AdminShell, { ADMIN_COLORS as C, ADMIN_NAV } from './AdminShell';
 
-const ALL_SCREEN_OPTIONS = ADMIN_NAV.map(n => ({ id: n.id, label: n.label }));
+// ⚠ 'support' is NOT a sidebar screen (the queue lives inside Announcements ->
+// Channels, and an agent answers from the ordinary app), so deriving this list
+// from ADMIN_NAV alone meant nobody could ever be made a support agent. It is
+// listed here because functions/adminAccess.js ADMIN_SCREENS grants it on its own.
+const ALL_SCREEN_OPTIONS = [
+  ...ADMIN_NAV.map(n => ({ id: n.id, label: n.label })),
+  { id: 'support', label: 'Support agent' },
+];
 
 function ScreenChips({ value, onChange }) {
   const has = (id) => value.includes(id) || value.includes('*');
@@ -56,6 +63,79 @@ function ScreenChips({ value, onChange }) {
           </button>
         ))}
       </div>
+    </div>
+  );
+}
+
+// ONE-TIME SETUP for Vergr Admin, the separate operator console.
+//
+// Founder, 2026-09-19: the admin must not be the public @Vergr account and must
+// not be reachable from the web — "then i will create a user with an email no
+// one knows and isnt subscribed to anything, this email shouldnt be a user
+// account ... so that if someone with bad intent looks there will actually be
+// nothing to find."
+//
+// This arms an email address for ONE HOUR. The next Firebase Auth account
+// created with it becomes the operator: a custom claim, no profile, no wallet,
+// no presence. The address is stored only as a sha256 hash, so this panel is
+// the last place it is ever written down.
+function OperatorSetup() {
+  const { showToast } = useUI();
+  const [email, setEmail] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [armedUntil, setArmedUntil] = useState(0);
+
+  const arm = async () => {
+    if (!email.trim()) return showToast('Email required', 'error');
+    setBusy(true);
+    try {
+      const fn = httpsCallable(getFunctions(undefined, 'europe-west1'), 'inviteAdmin');
+      const res = await fn({ email: email.trim(), operator: true });
+      setArmedUntil(res?.data?.expiresAt || Date.now() + 3600e3);
+      setEmail('');
+      showToast('Operator armed. Create the account in Vergr Admin within the hour.', 'success');
+    } catch (err) {
+      showToast(err?.message || 'Could not arm the operator', 'error');
+    }
+    setBusy(false);
+  };
+
+  return (
+    <div style={{ padding: 18, background: C.card, border: `1px solid ${C.border}`, borderRadius: 12 }}>
+      <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: C.text }}>Vergr Admin operator</h3>
+      <p style={{ margin: '6px 0 14px', fontSize: 12, color: C.textDim, lineHeight: 1.5 }}>
+        Arms an email for one hour. Open Vergr Admin (the desktop app), choose
+        &ldquo;First run&rdquo;, and create the account with that email and a password only
+        you know. It gets no profile and appears nowhere in the app.
+      </p>
+      <input
+        type="email"
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+        placeholder="operator email"
+        style={{
+          width: '100%', padding: '10px 12px', background: C.card2,
+          border: `1px solid ${C.border}`, borderRadius: 8, color: C.text,
+          fontSize: 13, outline: 'none', boxSizing: 'border-box',
+        }}
+      />
+      <button
+        type="button"
+        onClick={arm}
+        disabled={busy}
+        style={{
+          width: '100%', marginTop: 12, padding: '10px 12px', borderRadius: 8,
+          border: 'none', background: busy ? '#2a2a40' : C.accent, color: '#fff',
+          fontSize: 13, fontWeight: 700, cursor: busy ? 'default' : 'pointer',
+        }}
+      >
+        {busy ? 'Arming…' : 'Arm operator setup'}
+      </button>
+      {armedUntil > 0 && (
+        <p style={{ margin: '10px 0 0', fontSize: 12, color: C.textDim }}>
+          Armed until {new Date(armedUntil).toLocaleTimeString()}. After that it expires and you arm it again.
+        </p>
+      )}
     </div>
   );
 }
@@ -132,6 +212,14 @@ function InviteForm({ onInvited }) {
   );
 }
 
+// Solid pills (no translucent washes). pending_2fa = accepted the invite but has
+// not finished authenticator setup, so every admin call still refuses them.
+const STATUS_PILL = {
+  active:      { label: 'Active',          bg: '#123524', fg: '#4ade80' },
+  pending_2fa: { label: 'Setting up 2FA',  bg: '#3a2a08', fg: '#f5c842' },
+  revoked:     { label: 'Revoked',         bg: '#3a1420', fg: '#f04060' },
+};
+
 function AdminRow({ admin, onChanged }) {
   const { showToast } = useUI();
   const [editing, setEditing] = useState(false);
@@ -178,10 +266,10 @@ function AdminRow({ admin, onChanged }) {
             <span style={{
               marginLeft: 8,
               padding: '2px 6px', borderRadius: 4, fontSize: 9, fontWeight: 700,
-              background: admin.status === 'active' ? 'rgba(34,197,94,0.15)' : 'rgba(240,64,96,0.15)',
-              color:      admin.status === 'active' ? '#22c55e' : '#f04060',
+              background: STATUS_PILL[admin.status]?.bg || '#3a1420',
+              color:      STATUS_PILL[admin.status]?.fg || '#f04060',
               textTransform: 'uppercase', letterSpacing: '0.05em',
-            }}>{admin.status}</span>
+            }}>{STATUS_PILL[admin.status]?.label || admin.status}</span>
           </div>
           {!editing && (
             <div style={{ fontSize: 11, color: C.textDim, marginTop: 6, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
@@ -194,7 +282,7 @@ function AdminRow({ admin, onChanged }) {
             </div>
           )}
         </div>
-        {admin.status === 'active' && (
+        {(admin.status === 'active' || admin.status === 'pending_2fa') && (
           <div style={{ display: 'flex', gap: 6 }}>
             {!editing && (
               <button onClick={() => { setEditing(true); setScreens(admin.allowedScreens || []); }}
@@ -347,7 +435,10 @@ export default function AdminAccessScreen() {
             </section>
           </div>
 
-          <InviteForm onInvited={reload} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+            <OperatorSetup />
+            <InviteForm onInvited={reload} />
+          </div>
         </div>
       )}
     </AdminShell>

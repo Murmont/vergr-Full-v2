@@ -6,7 +6,7 @@ import { reportSnapshotSource } from './resync';
 import {
   collection, collectionGroup, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, addDoc,
   query, where, orderBy, limit, startAfter, startAt, endAt, documentId, onSnapshot, serverTimestamp,
-  increment, arrayUnion, arrayRemove, writeBatch, runTransaction, deleteField,
+  increment, arrayUnion, arrayRemove, writeBatch, runTransaction, deleteField, getCountFromServer,
 } from 'firebase/firestore';
 import { uploadToR2 } from '../utils/r2Storage';
 import { compressMedia, postPresetForTier, compressVideo } from '../utils/mediaCompression';
@@ -201,13 +201,21 @@ export const followUser = async (followerId, followingId) => {
     createdAt: serverTimestamp(),
   });
 
-  batch.update(doc(db, 'users', followerId), { 
-    followingCount: increment(1) 
-  });
-
-  batch.update(doc(db, 'users', followingId), {
-    followerCount: increment(1)
-  });
+  // ⚠⚠ THE COUNTERS ARE DELIBERATELY NOT INCREMENTED HERE. The server trigger
+  // `onNewFollower` (functions/index.js) already does both increments when this
+  // follow doc is created, so writing them here too counted EVERY FOLLOW TWICE,
+  // while `unfollowUser` below decrements only once. The field therefore drifted
+  // upward for good. Measured on the emulator 2026-09-11: @Vergr rendered
+  // "8 followers" on Explore (which reads this field) against a real
+  // `countFollowers` of 0 on the profile beside it.
+  //
+  // One writer per direction: the trigger increments, unfollowUser decrements.
+  // The decrement stays on the client on purpose, because the alternative is a
+  // new onDocumentDeleted Cloud Function, and a new function is a new Artifact
+  // Registry image, i.e. money.
+  //
+  // ⚠ Existing docs are still inflated. Nothing backfills them; the accurate
+  // number is `countFollowers`/`countFollowing`, which the profile screens use.
 
   await batch.commit();
   addFollowingCache(followingId); // keep the For You ranker's follow set in sync
@@ -255,6 +263,21 @@ export const getFollowing = async (uid) => {
   const q = query(collection(db, 'follows'), where('followerId', '==', uid));
   const snap = await getDocs(q);
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+};
+
+// COUNTS without downloading the list. The profiles used getFollowers() and
+// getFollowing() only to read `.length`, which pulls every follow doc: on a big
+// account (@vergr) that was the slow part of opening the profile, at one read
+// per follower. An aggregation query costs one read per 1,000 index entries.
+// Do NOT use users/{uid}.followerCount instead: onNewFollower increments it and
+// nothing decrements it on unfollow, so it only ever grows.
+export const countFollowers = async (uid) => {
+  const snap = await getCountFromServer(query(collection(db, 'follows'), where('followingId', '==', uid)));
+  return snap.data().count;
+};
+export const countFollowing = async (uid) => {
+  const snap = await getCountFromServer(query(collection(db, 'follows'), where('followerId', '==', uid)));
+  return snap.data().count;
 };
 
 export const getFollowers = async (uid) => {
@@ -481,6 +504,7 @@ export const createPost = async (authorId, {
   embedVideoUrl = null, youtubeVideoId = null, thumbnailUrl = null,
   visibility = 'public', scheduledFor = null, scheduleOptions = null,
   isAnnouncement = false, topic = null, game = null, contentRating = 'general',
+  soundId = null, sound = null, edits = null, shareToFeed = null,
 }) => {
   // Scheduled posts are parked with status 'scheduled' + a scheduledFor
   // timestamp. They stay out of the feed (which queries status=='published')
@@ -518,6 +542,15 @@ export const createPost = async (authorId, {
   if (embedVideoUrl) postData.embedVideoUrl = embedVideoUrl;
   if (youtubeVideoId) postData.youtubeVideoId = youtubeVideoId;
   if (thumbnailUrl) postData.thumbnailUrl = thumbnailUrl;
+  // A clip that uses a sound (utils/sounds.js soundFieldsFor). Absent means the
+  // clip's own audio is its sound, which costs no document at all.
+  if (soundId && sound) { postData.soundId = soundId; postData.sound = sound; }
+  // Text, stickers, speed and the sound mix from the clip editor, drawn by the
+  // player (utils/clipEdits.js editsForPost). Trim and mute are cut into the file.
+  if (edits && typeof edits === 'object') postData.edits = edits;
+  // Instagram's "Also share to feed" (utils/helpers.js sharesToFeed). Rides this
+  // same write, so the choice costs nothing.
+  if (typeof shareToFeed === 'boolean') postData.shareToFeed = shareToFeed;
   if (type === 'lfg') postData.expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
   if (isAnnouncement) postData.isAnnouncement = true; // @Vergr broadcast — pinned + push
   // Adult content marker. Written ONLY when set, so every existing post and
@@ -1033,23 +1066,40 @@ export const reportComment = async (reporterId, postId, commentId, reason) => {
 // COMMENTS
 // ═══════════════════════════════════════════
 
+// Change a clip's "Also share to feed" after posting. One write, only when used.
+export const setShareToFeed = async (postId, on) => {
+  await updateDoc(doc(db, 'posts', postId), { shareToFeed: !!on });
+};
+
 export const getComments = async (postId, limitCount = 20) => {
   const q = query(collection(db, 'posts', postId, 'comments'), orderBy('createdAt', 'desc'), limit(limitCount));
   const snap = await getDocs(q);
-  const comments = [];
-  for (const d of snap.docs) {
-    const comment = { id: d.id, ...d.data() };
-    comment.author = await getUser(comment.authorId);
-    comments.push(comment);
-  }
-  return comments;
+  // ONE read per AUTHOR, not per comment, and in parallel. Twenty comments from
+  // three people used to be twenty sequential user reads.
+  // A comment a moderator hid (functions/postModeration.js hideComment) stays
+  // visible to its author only, so they can see why and appeal.
+  const me = auth.currentUser?.uid || null;
+  const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+    .filter((c) => c.hidden !== true || (me && c.authorId === me));
+  const ids = [...new Set(rows.map((c) => c.authorId).filter(Boolean))];
+  const authors = new Map(await Promise.all(ids.map(async (id) => [id, await getUser(id).catch(() => null)])));
+  return rows.map((c) => ({ ...c, author: authors.get(c.authorId) || null }));
+};
+
+// Delete your own comment. The count comes down in the same batch; the rules let
+// any signed-in user touch ONLY commentCount on a post.
+export const deleteComment = async (postId, commentId) => {
+  const batch = writeBatch(db);
+  batch.delete(doc(db, 'posts', postId, 'comments', commentId));
+  batch.update(doc(db, 'posts', postId), { commentCount: increment(-1) });
+  await batch.commit();
 };
 
 // Thrown when the post owner's `commentContent` privacy setting forbids this
 // viewer. Callers surface `err.message`; the code lets the UI branch on it.
 export const COMMENT_BLOCKED = 'comment-blocked';
 
-export const addComment = async (postId, authorId, content, media = null, parentId = null) => {
+export const addComment = async (postId, authorId, content, media = null, parentId = null, mentionedUids = []) => {
   // Settings → Privacy → "Who can comment on my content" had ZERO callers, so
   // the user chose a value, the UI confirmed it saved, and nothing ever changed
   // (audit A18). This is the single choke point for every comment.
@@ -1093,6 +1143,11 @@ export const addComment = async (postId, authorId, content, media = null, parent
   // grouped client-side (getComments returns the flat list), so no reply-count
   // field or extra index is needed. parentId stays null on top-level comments.
   if (parentId) data.parentId = parentId;
+  // @mentions picked from the suggestion list, as uids. The uid is already known
+  // at pick time, so a mention costs NO read: onNewComment turns each one into a
+  // "mentioned you" notification with the name it has already loaded.
+  const mentions = [...new Set((mentionedUids || []).filter((u) => typeof u === 'string' && u && u !== authorId))].slice(0, 5);
+  if (mentions.length) data.mentionedUids = mentions;
   // media: { type: 'gif' | 'sticker' | 'clip' | 'image' | 'video', url, thumbnailUrl? }
   if (media?.url) {
     data.mediaUrl = media.url;
@@ -1130,26 +1185,31 @@ export const toggleCommentLike = async (postId, commentId, userId) => {
   return true;
 };
 
-// Which of these comment ids the viewer has already liked — one collectionGroup
-// read over the viewer's own comment-like markers (rules allow reading own).
-// Lets PostDetail paint filled hearts on load instead of only after a tap.
-export const getLikedCommentIds = async (postId, userId, commentIds = []) => {
-  if (!userId || !commentIds.length) return new Set();
-  try {
-    const snap = await getDocs(query(
-      collectionGroup(db, 'likes'),
-      where('userId', '==', userId),
-    ));
-    const wanted = new Set(commentIds);
-    const liked = new Set();
-    for (const d of snap.docs) {
-      // path: posts/{postId}/comments/{commentId}/likes/{uid}
-      const parts = d.ref.path.split('/');
-      const cIdx = parts.indexOf('comments');
-      if (cIdx > 0 && parts[cIdx + 1] && wanted.has(parts[cIdx + 1])) liked.add(parts[cIdx + 1]);
-    }
-    return liked;
-  } catch { return new Set(); }
+// Which of these comments the viewer has already liked, so hearts paint filled
+// on load instead of only after a tap.
+//
+// ⚠ COST (fixed 2026-09-28). This used to be ONE collectionGroup query over
+// `likes` where userId == me, which returns EVERY like the viewer has ever made
+// anywhere, post likes included (they carry userId too), on every comment-sheet
+// open: a heavy liker paid hundreds or thousands of reads to learn about 50
+// comments. Now it reads the viewer's own marker ONLY on comments that have at
+// least one like (a comment with likeCount 0 cannot be liked by anyone), so the
+// cost is bounded by the page and is usually a handful of reads.
+//
+// Takes the comment objects (so it can see likeCount); plain ids still work and
+// are all checked.
+export const getLikedCommentIds = async (postId, userId, comments = []) => {
+  if (!userId || !postId || !comments.length) return new Set();
+  const ids = comments
+    .filter((c) => (typeof c === 'string' ? true : (c?.likeCount || 0) > 0))
+    .map((c) => (typeof c === 'string' ? c : c.id))
+    .filter(Boolean);
+  if (!ids.length) return new Set();
+  const hits = await Promise.all(ids.map((cid) =>
+    getDoc(doc(db, 'posts', postId, 'comments', cid, 'likes', userId))
+      .then((s) => (s.exists() ? cid : null))
+      .catch(() => null)));
+  return new Set(hits.filter(Boolean));
 };
 
 // ═══════════════════════════════════════════
@@ -1230,6 +1290,48 @@ export const isBookmarked = async (postId, userId) => {
   const bmRef = doc(db, 'users', userId, 'bookmarks', postId);
   const snap = await getDoc(bmRef);
   return snap.exists();
+};
+
+// Set a like / save to the state the user SEES they are choosing, instead of
+// flipping whatever the server holds. The toggles above are right for PostCard,
+// which loads isPostLiked first. The immersive clip viewers do not, so a tap on
+// an empty heart over a clip you had already liked REMOVED the like while the
+// heart filled. Same reads as the toggles. Returns { on, changed } so the
+// caller can set the count exactly.
+export const setPostLiked = async (postId, userId, want) => {
+  const likeRef = doc(db, 'posts', postId, 'likes', userId);
+  const postRef = doc(db, 'posts', postId);
+  const snap = await getDoc(likeRef);
+  if (snap.exists() === !!want) return { on: !!want, changed: false };
+  const batch = writeBatch(db);
+  if (want) {
+    batch.set(likeRef, { userId, createdAt: serverTimestamp() });
+    batch.update(postRef, { likeCount: increment(1) });
+  } else {
+    batch.delete(likeRef);
+    batch.update(postRef, { likeCount: increment(-1) });
+  }
+  await batch.commit();
+  return { on: !!want, changed: true };
+};
+
+export const setPostBookmarked = async (postId, userId, want) => {
+  const bmRef = doc(db, 'users', userId, 'bookmarks', postId);
+  const postRef = doc(db, 'posts', postId);
+  return runTransaction(db, async (tx) => {
+    const bmSnap = await tx.get(bmRef);
+    const postSnap = await tx.get(postRef);
+    if (bmSnap.exists() === !!want) return { on: !!want, changed: false };
+    const currentCount = postSnap.exists() ? (postSnap.data().saveCount || 0) : 0;
+    if (want) {
+      tx.set(bmRef, { postId, createdAt: serverTimestamp() });
+      tx.update(postRef, { saveCount: currentCount + 1 });
+    } else {
+      tx.delete(bmRef);
+      tx.update(postRef, { saveCount: Math.max(0, currentCount - 1) });
+    }
+    return { on: !!want, changed: true };
+  });
 };
 
 export const getBookmarks = async (userId, limitCount = 50) => {
@@ -3283,8 +3385,8 @@ export const getUsersWithLinkedAccount = async (platform, { term = '', limitCoun
     .filter(u => {
       const linked = u.linkedAccounts?.[platform];
       if (!linked) return false;
-      if (platform === 'steam') return !!linked.steamId64;
-      return typeof linked === 'string' ? !!linked : !!linked.username;
+      // String, legacy {username}, or Steam's pre-2026-09-21 {steamId64}.
+      return typeof linked === 'string' ? !!linked : !!(linked.username || linked.steamId64);
     });
 };
 
@@ -4102,16 +4204,21 @@ export const createPayramPayment = (payload) =>
 export const getPayramOrderStatus = (referenceId) =>
   callTournamentFn('getPayramOrderStatus', { referenceId });
 
-// ─── Steam GSI (CS2 / Dota 2 auto-result detection) ──────────────────
-// Workflow:
-//   1) linkSteam({ steamId64 }) — generates a unique GSI token on the user.
-//   2) getSteamGsiConfig({ game }) — returns the .cfg content + install path.
-//   3) Frontend writes the file: Tauri (direct), File System Access API
-//      (Chrome/Edge), or download + manual instructions (other browsers).
-// Once installed, CS2/Dota 2 push match-end events directly to our webhook
-// (functions/gsi.js → cs2GsiHook / dota2GsiHook). No client app required.
-export const linkSteam = ({ steamId64 }) =>
-  callTournamentFn('linkSteamAccount', { steamId64 });
+// ─── Vergr checkout (Coda) — functions/checkout.js, independent of PayRam ───
+// The payment methods open to this buyer, each priced for this basket.
+export const getCheckoutOptions = (payload) =>
+  callTournamentFn('createCheckout', { ...(payload || {}), options: true });
+
+// Start an order for one method; returns { referenceId, clientSecret, sdk, ... }.
+export const createCheckout = (payload) =>
+  callTournamentFn('createCheckout', payload || {});
+
+export const getCheckoutStatus = (referenceId) =>
+  callTournamentFn('getCheckoutStatus', { referenceId });
+
+// linkSteam / unlinkSteam / getSteamGsiConfig DELETED 2026-09-21 with the
+// Steam GSI backend (it existed to auto-detect tournament results). Steam is a
+// plain display link now, written by updateLinkedAccount like every other row.
 
 // OAuth start URL fetcher — backend mints a state token and returns the
 // provider's authorize URL. Frontend then sets window.location.href = url.
@@ -4120,12 +4227,6 @@ export const linkSteam = ({ steamId64 }) =>
 // provider. Passing any other platform returns "Unsupported platform".
 export const getOAuthStartUrl = (platform) =>
   callTournamentFn('getOAuthStartUrl', { platform });
-
-export const unlinkSteam = () =>
-  callTournamentFn('unlinkSteamAccount', {});
-
-export const getSteamGsiConfig = ({ game }) =>
-  callTournamentFn('getSteamGsiConfig', { game });
 
 export const createTournament = async (adminId, squadId, payload) => {
   const {
@@ -4681,6 +4782,47 @@ export const createPoll = async (uid, pollData) => {
     status: pollData.status || 'active'
   });
   return pollRef.id;
+};
+
+/**
+ * A poll for the FEED. It used to be written only to `polls`, which no feed
+ * reads, so a poll made in the composer was seen by nobody. Now it is a post
+ * (`type: 'poll'`, what feeds show) and its vote store (`polls/{same id}`,
+ * what PollCard counts and votes into), in one batch, so they can never point
+ * at different ids. The Kotlin app writes the same shape.
+ */
+const POLL_HOURS = { '6h': 6, '12h': 12, '24h': 24, '48h': 48, '1w': 168 };
+export const createFeedPoll = async (uid, {
+  question, options, duration = '24h', multiSelect = false, anonymous = false,
+  caption = '', visibility = 'public', scheduledFor = null, scheduleOptions = null,
+}) => {
+  const postRef = doc(collection(db, 'posts'));
+  const start = scheduledFor ? new Date(scheduledFor).getTime() : Date.now();
+  const endsAt = new Date(start + (POLL_HOURS[duration] || 24) * 3600 * 1000);
+  const batch = writeBatch(db);
+  batch.set(postRef, {
+    authorId: uid,
+    type: 'poll',
+    content: (caption || '').trim() || question,
+    question, options, duration, endsAt, multiSelect, anonymous,
+    mediaUrls: [], hashtags: [], mentionedUids: [], visibility,
+    likeCount: 0, commentCount: 0, shareCount: 0, saveCount: 0, viewCount: 0,
+    status: scheduledFor ? 'scheduled' : 'published',
+    rankScore: 0,
+    createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+    ...(scheduledFor ? { scheduledFor, ...(scheduleOptions ? { scheduleOptions } : {}) } : {}),
+  });
+  batch.set(doc(db, 'polls', postRef.id), {
+    type: 'post', postId: postRef.id,
+    question, options, duration, endsAt, multiSelect, anonymous, visibility,
+    createdBy: uid, createdAt: serverTimestamp(),
+    votes: {}, totalVotes: 0,
+    status: scheduledFor ? 'scheduled' : 'active',
+    ...(scheduledFor ? { scheduledFor } : {}),
+  });
+  batch.update(doc(db, 'users', uid), { postCount: increment(1) });
+  await batch.commit();
+  return postRef.id;
 };
 
 export const voteOnPoll = async (pollId, optionIndex, uid) => {

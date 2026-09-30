@@ -11,10 +11,11 @@ import { useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import Icon from '../Icon';
 import { useUI } from '../../context/UIContext';
+import { publicUrl } from '../../utils/publicUrl';
 
+// Always vergr.app: inside the app window.location.origin is tauri.localhost.
 function shareUrlFor(tid) {
-  const origin = typeof window !== 'undefined' ? window.location.origin : 'https://vergr.app';
-  return `${origin}/e/${tid}`;
+  return publicUrl(`/e/${tid}`);
 }
 
 const SOCIALS = [
@@ -42,7 +43,7 @@ export function EventShareSheet({ tournament, onClose, onSendDm }) {
   return (
     <div className="fixed inset-0 z-[120] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-0 sm:p-4" onClick={onClose}>
       <div onClick={(e) => e.stopPropagation()}
-        className="w-full sm:max-w-md bg-surface-1 border border-white/[0.08] rounded-t-3xl sm:rounded-2xl p-5 space-y-4">
+        className="w-full sm:max-w-md bg-surface-1 border border-white/[0.08] rounded-t-3xl sm:rounded-2xl p-5 space-y-4 sheet-safe">
         <div className="flex items-center justify-between">
           <h3 className="font-syne text-lg font-bold text-white">Share this event</h3>
           <button onClick={onClose} className="text-text-muted hover:text-white"><Icon name="close" size={20} /></button>

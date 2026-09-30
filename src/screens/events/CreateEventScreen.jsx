@@ -231,11 +231,11 @@ export default function CreateEventScreen() {
       </div>
 
       {/* Save */}
-      <div className="fixed bottom-0 left-0 right-0 lg:static p-4 bg-bg-dark/95 backdrop-blur border-t border-white/[0.06] lg:bg-transparent lg:border-0">
+      <div className="fixed bottom-0 left-0 right-0 lg:static p-4 bg-bg-dark lg:bg-transparent" style={{ paddingBottom: 'calc(16px + var(--vg-safe-b, 0px))' }}>
         <div className={isDesktop ? 'max-w-2xl mx-auto' : ''}>
           <button onClick={save} disabled={!canSave}
             className={`w-full py-3.5 rounded-xl font-extrabold text-sm transition-all ${
-              canSave ? 'bg-brand-violet text-white hover:bg-brand-violet-light' : 'bg-white/[0.06] text-text-muted cursor-not-allowed'
+              canSave ? 'bg-brand-violet text-white hover:bg-brand-violet-light' : 'bg-[#1A1A26] text-text-muted cursor-not-allowed'
             }`}>
             {saving ? 'Creating…' : 'Create event'}
           </button>

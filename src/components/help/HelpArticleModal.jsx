@@ -122,7 +122,7 @@ export default function HelpArticleModal({ slug, onClose }) {
       onClick={onClose}
     >
       <div
-        className="relative w-full sm:max-w-2xl bg-surface-1 border border-white/[0.08] rounded-t-2xl sm:rounded-2xl shadow-2xl shadow-black/50 max-h-[88vh] sm:max-h-[82vh] flex flex-col overflow-hidden"
+        className="relative w-full sm:max-w-2xl bg-surface-1 border border-white/[0.08] rounded-t-2xl sm:rounded-2xl shadow-2xl shadow-black/50 max-h-[88vh] sm:max-h-[82vh] flex flex-col overflow-hidden sheet-safe"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-2 px-4 sm:px-5 py-3 border-b border-white/[0.06] shrink-0">

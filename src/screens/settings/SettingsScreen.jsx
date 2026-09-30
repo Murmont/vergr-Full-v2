@@ -8,6 +8,7 @@ import { useUser } from '../../context/UserContext';
 import { useLayout } from '../../context/LayoutContext';
 import { useUI } from '../../context/UIContext';
 import { openSupportPath } from '../../firebase/officialChannels';
+import { auth } from '../../firebase/config';
 import TopBar from '../../components/TopBar';
 import useResponsive from '../../hooks/useResponsive';
 import { C, PageShell } from './_settingsUI';
@@ -32,7 +33,8 @@ export function getSettingsCards({ navigate, profile, wallet, onContactSupport, 
     || (() => openSupportPath().then(navigate).catch(() => {}));
   const displayName = profile?.username || profile?.displayName || 'You';
   const handle = profile?.username ? `@${profile.username}` : '';
-  const email = profile?.email || '';
+  // Your own sign-up email, from Auth. It is not stored on the public profile.
+  const email = auth.currentUser?.email || '';
   const subTier = resolveTier(profile);
   const tierLabel = subTier === 'pro' ? 'PRO' : subTier === 'lite' ? 'LITE' : 'FREE';
   const verifyStatus = profile?.creatorVerification?.status || profile?.verifiedAt ? 'approved' : (profile?.kycSubmittedAt ? 'pending' : null);
@@ -77,7 +79,7 @@ export function getSettingsCards({ navigate, profile, wallet, onContactSupport, 
     },
     {
       id: 'language', icon: 'translate', color: C.purple, title: 'Language',
-      desc: 'Your language for translating posts and chats, and for content suggestions.',
+      desc: 'Your language, used to suggest posts, streams and people.',
       onClick: () => navigate('/settings/language'),
       right: <ManageBtn>Set</ManageBtn>,
     },
@@ -176,7 +178,7 @@ export function getSettingsCards({ navigate, profile, wallet, onContactSupport, 
     },
     {
       id: 'connected', icon: 'link', color: C.purple, title: 'Connected Accounts',
-      desc: 'Connect your gaming and social accounts to unlock more features.',
+      desc: 'Mirror your Twitch streams, bring your Discord over, and show your other handles on your profile.',
       onClick: () => navigate('/settings/linked-accounts'),
       right: (
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>

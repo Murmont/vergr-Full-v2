@@ -141,7 +141,7 @@ for (const id of Object.keys(web)) {
 //     RETAIL_COIN_USD = $0.99 / 78 = the ladder's WORST per-coin rate
 //
 // The anchor is what a buyer ACTUALLY PAYS for a coin, not what a coin nets.
-// functions/payram.js already uses the identical number as CUSTOM_COIN_PRICE_USD
+// functions/orders.js already uses the identical number as CUSTOM_COIN_PRICE_USD
 // so that a custom amount cannot undercut a pack; this is the mirror of it.
 //
 // A coin therefore has ONE value on both routes, which is the whole answer to
@@ -158,7 +158,7 @@ for (const id of Object.keys(web)) {
 // src/utils/{vpBonuses,boosts}.js   the shelf
 // functions/{vpBonuses,boosts}.js   what the COIN purchase charges
 // functions/playBilling.js          what the PLAY purchase grants
-// functions/payram.js               what the CARD purchase charges
+// functions/orders.js               what the CARD purchase charges
 //
 // functions/ cannot import from src/, which is exactly why they can drift, so
 // all six are read as TEXT and compared.
@@ -199,7 +199,7 @@ const shelfBoost  = readItems('src/utils/boosts.js', 'export const BOOSTS');
 const srvBonus    = readItems('functions/vpBonuses.js', 'const VP_BONUS_PACKS = [');
 const srvBoost    = readItems('functions/boosts.js', 'const BOOSTS = [');
 const playItems   = readItemMap('functions/playBilling.js', 'const PLAY_ITEM_PRODUCTS = {');
-const cardItems   = readItemMap('functions/payram.js', 'const STORE_ITEMS = {');
+const cardItems   = readItemMap('functions/orders.js', 'const STORE_ITEMS = {');
 
 check('bonus shelf parsed', shelfBonus && Object.keys(shelfBonus).length === 9,
   `${Object.keys(shelfBonus || {}).length} packs`);
@@ -303,6 +303,93 @@ for (const id of Object.keys(web)) {
   check(`coin SKU ${id} is not mistaken for a store item`, isStoreItemSku(id) === false,
     isStoreItemSku(id) ? 'isStoreItemSku said true' : 'correctly not an item');
 }
+
+
+// ── NO GAMING LANGUAGE IN THE PLAY CONSOLE DESCRIPTIONS ─────────────
+//
+// ⚠⚠ `desc` ON A BONUS PACK AND `short` ON A BOOST ARE RENDERED NOWHERE IN THE
+// APP. scripts/playPricing.mjs is their ONLY consumer, and it writes them into
+// docs/play/play-products.csv, which is what gets typed into Play Console and
+// what Google shows a buyer in its own purchase sheet. That makes them the
+// highest-risk copy in the repo and the least-read.
+//
+// It shipped `Double VP for a full day, whenever you play it.` Founder,
+// 2026-09-11: *"Play what? it seems like you are trying to make it sound like
+// its gaming again"*. The string had only become customer-facing the day before,
+// when the generator stopped synthesising descriptions from mult+hours and
+// started using the authored ones, so nothing had ever read it in that context.
+//
+// Vergr is a live streaming and creator platform. Google Play can pull the app
+// over anything tournament-shaped (founder, 2026-09-10) and the whole of 1.0.208
+// existed to strip that vocabulary out of the bundle. A product description is a
+// far shorter path to a reviewer than a bundle string is.
+//
+// Name the platform's own actions instead: posting, going live, streaming,
+// watching, commenting.
+{
+  const [{ VP_BONUS_PACKS: shelfB }, { BOOSTS: shelfBo }] = await Promise.all([
+    import('../src/utils/vpBonuses.js'),
+    import('../src/utils/boosts.js'),
+  ]);
+
+  const FORBIDDEN = [
+    'play', 'playing', 'player', 'players', 'played',
+    'game', 'games', 'gaming', 'gamer', 'gamers',
+    'match', 'matches', 'lobby', 'session', 'grind',
+    'quest', 'loot', 'esports', 'tournament', 'tournaments',
+    'compete', 'competition', 'prize', 'bracket', 'wager', 'betting',
+  ];
+  // Word boundaries, so `display`, `replay` and `gameplay` cannot trip `play`
+  // and a legitimate compound is not caught by a bare substring test.
+  const RE = new RegExp(`\\b(${FORBIDDEN.join('|')})\\b`, 'i');
+
+  const SHIPPED = [
+    ...shelfB.map((b) => [`vpb_${b.id}`, 'name', b.name]),
+    ...shelfB.map((b) => [`vpb_${b.id}`, 'desc', b.desc]),
+    ...shelfBo.map((b) => [`boost_${b.id}`, 'name', b.name]),
+    ...shelfBo.map((b) => [`boost_${b.id}`, 'short', b.short]),
+  ];
+
+  for (const [sku, field, text] of SHIPPED) {
+    const hit = String(text || '').match(RE);
+    check(`${sku}.${field} has no gaming language`, !hit,
+      hit ? `"${text}" contains "${hit[0]}"` : String(text));
+  }
+}
+
+
+// ── NO EARN-BY-COMPETING COPY IN THE HELP CENTRE ────────────────────
+//
+// ⚠⚠ The help articles ship INSIDE the Play build. 2026-09-13, while verifying
+// the 1.0.210 AAB, two earning articles still told users to "win the pot" in
+// Brawl 1v1s and "predict match winners to earn from the prediction pool", the
+// age article said Vergr "involves real-money skill competition", and a getting-
+// started article said Coins earned "by competing" could be cashed out. All of
+// it predates 1.0.208 and survived that sweep because it was help copy, not a
+// screen. This is wagering and prize-competition copy in a Play app.
+//
+// A bare `compete` ban cannot work here: the "Is VERGR gambling?" and "Is VERGR
+// legit?" articles must NAME what Vergr does not offer. So this bans the
+// AFFIRMATIVE phrases, and strips line comments first (one article documents
+// the removed Champion Picks copy in a comment).
+{
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const HELP = 'src/screens/marketing/help/articles';
+  const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) =>
+    e.isDirectory() ? walk(path.join(d, e.name)) : /\.(jsx?|mjs)$/.test(e.name) ? [path.join(d, e.name)] : []);
+  const FILES = [...walk(HELP), 'src/components/LoadingScreen.jsx'];
+  const EARN_BY_COMPETING = /\b(win the pot|for the pot|champion picks?|prediction pool|predict(?:ing)? match|real-money skill|compete to earn|by competing|you compete|competing is free|brawl|trophy|matchmaker|compete as a team|competes well|fix matches|result reporting|high-stakes competition|competition fair)\b/i;
+  let hits = 0;
+  for (const f of FILES) {
+    const code = fs.readFileSync(f, 'utf8').split(/\r?\n/).filter((l) => !/^\s*\/\//.test(l)).join('\n');
+    const hit = code.match(EARN_BY_COMPETING);
+    if (hit) { hits++; check(`${f} has no earn-by-competing copy`, false, `contains "${hit[0]}"`); }
+  }
+  check(`help centre (${FILES.length} files) has no earn-by-competing copy`, FILES.length > 100 && hits === 0,
+    FILES.length > 100 ? `${hits} file(s) hit` : `only ${FILES.length} files found, the walk is broken`);
+}
+
 
 const failed = results.filter((r) => !r.ok);
 if (LIST) for (const r of results) console.log(`${r.ok ? 'ok  ' : 'FAIL'} ${r.name}  — ${r.detail}`);

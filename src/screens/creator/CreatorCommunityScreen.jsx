@@ -1,17 +1,20 @@
 // src/screens/creator/CreatorCommunityScreen.jsx
 // Creator Studio — Community. Non-moderation: engagement stream, milestones,
 // replies needed, community announcements. Moderation belongs to mod/manager roles.
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, lazy, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { PanelListSkeleton } from '../../components/creator/StudioSkeletons';
 import { useUser } from '../../context/UserContext';
-import { getTransactions } from '../../firebase/firestore';
+import { getTransactions, createPost } from '../../firebase/firestore';
+import { useUI } from '../../context/UIContext';
 import CreatorLayout from '../../components/creator/CreatorLayout';
 import { Card, KpiCard, SectionHeader, InsightCard } from '../../components/creator/Widgets';
-import { DonutChart, PALETTE, compactNum } from '../../components/creator/charts';
+import { compactNum } from '../../components/creator/charts';
 import Icon from '../../components/Icon';
 import UserAvatar from '../../components/UserAvatar';
+
+const CreateComposer = lazy(() => import('../../components/composer/CreateComposer'));
 
 function tsMs(t) {
   if (!t) return 0;
@@ -36,6 +39,28 @@ export default function CreatorCommunityScreen() {
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [announcement, setAnnouncement] = useState('');
+  const [posting, setPosting] = useState(false);
+  const [composerOpen, setComposerOpen] = useState(false);
+  const { showToast } = useUI();
+
+  // "Post update" used to clear the box and do nothing else ("wire to post
+  // creation later"), so a creator's update was thrown away while the screen
+  // looked like it had been sent. It is an ordinary text post: one write, on tap.
+  const postUpdate = async () => {
+    const text = announcement.trim();
+    if (!text || !currentUser || posting) return;
+    setPosting(true);
+    try {
+      await createPost(currentUser.uid, { content: text, type: 'text' });
+      setAnnouncement('');
+      showToast?.('Update posted');
+    } catch (e) {
+      console.error(e);
+      showToast?.('Could not post your update. Try again.', 'error');
+    } finally {
+      setPosting(false);
+    }
+  };
 
   useEffect(() => {
     if (!currentUser) return;
@@ -109,7 +134,10 @@ export default function CreatorCommunityScreen() {
   const repliesNeeded = [];
 
   // Sentiment needs a classifier over real comment text. Not built, so not shown.
-  const sentiment = [];
+  // ⚠ It WAS still read as sentiment[0].value after the fake split was removed,
+  // which crashed this screen to the error boundary on every platform (found by
+  // rendering it, 2026-09-16). The KPI slot now shows a real number instead.
+  const coinsFromFans = useMemo(() => last30.reduce((sum, t) => sum + (t.amount || 0), 0), [last30]);
 
   const iconForKind = (k) => ({
     tip:     { name: 'paid',           color: 'text-amber-400',  bg: 'bg-amber-500/10' },
@@ -130,7 +158,7 @@ export default function CreatorCommunityScreen() {
             <KpiCard label="Active supporters" value={uniqueContributors} icon="favorite" iconColor="text-brand-pink" />
             <KpiCard label="New supporters" value={newContributors} icon="person_add" iconColor="text-emerald-400" deltaLabel="last 30d" />
             <KpiCard label="Replies needed" value={repliesNeeded.length} icon="mark_unread_chat_alt" iconColor="text-brand-violet-light" />
-            <KpiCard label="Sentiment" value={`${sentiment[0].value}%`} icon="mood" iconColor="text-emerald-400" deltaLabel="positive" />
+            <KpiCard label="Coins from fans" value={compactNum(coinsFromFans)} icon="paid" iconColor="text-amber-400" deltaLabel="last 30d" />
           </div>
 
           {/* Announcement composer */}
@@ -146,29 +174,32 @@ export default function CreatorCommunityScreen() {
                   onChange={(e) => setAnnouncement(e.target.value)}
                   placeholder="What's the word? Drop an update, plan a meetup, tease a stream…"
                   rows={3}
-                  className="w-full bg-white/[0.03] border border-white/[0.06] rounded-xl p-3 text-sm text-white placeholder:text-text-muted focus:outline-none focus:border-brand-violet/40 resize-none"
+                  className="w-full bg-[#12121B] rounded-xl p-3 text-sm text-white placeholder:text-text-muted focus:outline-none focus:bg-[#16161F] resize-none"
                 />
                 <div className="flex items-center justify-between mt-2">
                   <div className="flex items-center gap-1 text-text-muted">
-                    <button className="w-8 h-8 rounded-lg hover:bg-white/[0.05] flex items-center justify-center"><Icon name="image" size={18} /></button>
-                    <button className="w-8 h-8 rounded-lg hover:bg-white/[0.05] flex items-center justify-center"><Icon name="poll" size={18} /></button>
-                    <button className="w-8 h-8 rounded-lg hover:bg-white/[0.05] flex items-center justify-center"><Icon name="event" size={18} /></button>
+                    <button type="button" aria-label="Add photos or video" onClick={() => setComposerOpen(true)} className="w-8 h-8 rounded-lg hover:bg-white/[0.05] flex items-center justify-center"><Icon name="image" size={18} /></button>
+                    <button type="button" aria-label="Create a poll" onClick={() => setComposerOpen(true)} className="w-8 h-8 rounded-lg hover:bg-white/[0.05] flex items-center justify-center"><Icon name="poll" size={18} /></button>
+                    <button type="button" aria-label="Plan an event" onClick={() => navigate('/events/create')} className="w-8 h-8 rounded-lg hover:bg-white/[0.05] flex items-center justify-center"><Icon name="event" size={18} /></button>
                   </div>
                   <button
-                    disabled={!announcement.trim()}
-                    onClick={() => { /* wire to post creation later */ setAnnouncement(''); }}
-                    className="h-9 px-4 rounded-xl bg-gradient-to-r from-brand-violet to-brand-violet text-bg-dark font-extrabold text-xs hover:brightness-110 transition-all disabled:opacity-40 disabled:cursor-not-allowed">
-                    Post update
+                    disabled={!announcement.trim() || posting}
+                    onClick={postUpdate}
+                    className="h-9 px-4 rounded-xl bg-brand-violet text-white font-extrabold text-xs hover:brightness-110 transition-all disabled:bg-[#2A2438] disabled:text-text-muted disabled:cursor-not-allowed">
+                    {posting ? 'Posting…' : 'Post update'}
                   </button>
                 </div>
               </div>
             </div>
           </Card>
 
-          {/* Activity stream + sentiment donut */}
-          <div className="grid grid-cols-1 xl:grid-cols-3 gap-5 mb-6">
-            <Card className="p-4 md:p-5 xl:col-span-2">
+          {/* Activity stream */}
+          <div className="grid grid-cols-1 gap-5 mb-6">
+            <Card className="p-4 md:p-5">
               <SectionHeader title="Live activity" subtitle="Recent interactions with your profile" />
+              {activity.length === 0 && (
+                <p className="text-sm text-text-muted py-6 text-center">No tips from fans in the last 30 days yet.</p>
+              )}
               <div className="space-y-1">
                 {activity.map(a => {
                   const ic = iconForKind(a.kind);
@@ -185,23 +216,9 @@ export default function CreatorCommunityScreen() {
                   );
                 })}
               </div>
-            </Card>
-
-            <Card className="p-4 md:p-5">
-              <SectionHeader title="Community sentiment" subtitle="From recent comments" />
-              <DonutChart data={sentiment} height={200} centerValue={`${sentiment[0].value}%`} centerLabel="positive" />
-              <div className="mt-3 space-y-1">
-                {sentiment.map(s => (
-                  <div key={s.name} className="flex items-center gap-2 text-xs">
-                    <span className="w-2 h-2 rounded-sm" style={{ backgroundColor: s.color }} />
-                    <span className="flex-1 text-text-secondary">{s.name}</span>
-                    <span className="font-dmmono font-bold text-white tabular-nums">{s.value}%</span>
-                  </div>
-                ))}
-              </div>
-              <div className="mt-4 pt-4 border-t border-white/[0.05] text-[11px] text-text-muted leading-relaxed">
-                Concerned about harassment or spam? Those reports go to the Moderation team — you'll be notified if something tagged to you needs attention.
-              </div>
+              <p className="mt-4 text-[11px] text-text-muted leading-relaxed">
+                Concerned about harassment or spam? Those reports go to the Moderation team. You'll be notified if something tagged to you needs attention.
+              </p>
             </Card>
           </div>
 
@@ -269,6 +286,11 @@ export default function CreatorCommunityScreen() {
             icon="campaign"
           />
         </>
+      )}
+      {composerOpen && (
+        <Suspense fallback={null}>
+          <CreateComposer onClose={() => setComposerOpen(false)} />
+        </Suspense>
       )}
     </CreatorLayout>
   );

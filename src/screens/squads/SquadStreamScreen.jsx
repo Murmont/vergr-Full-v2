@@ -428,7 +428,7 @@ export default function SquadStreamScreen() {
           button never fires, and which has gone by the time anyone wonders why
           the control is dead. So the line lives under the row, permanently,
           whenever the cap is what is stopping you. */}
-      <div className="fixed bottom-0 left-0 right-0 bg-surface-1/95 backdrop-blur-md border-t border-white/[0.08] p-4 flex flex-col items-center gap-2">
+      <div className="fixed bottom-0 left-0 right-0 bg-surface-1/95 backdrop-blur-md border-t border-white/[0.08] p-4 flex flex-col items-center gap-2" style={{ paddingBottom: 'calc(16px + var(--vg-safe-b, 0px))' }}>
         {!camOn && activeVideoPublisherCount >= MAX_VIDEO_PUBLISHERS && (
           <p className="text-[11px] text-text-muted text-center">
             {MAX_VIDEO_PUBLISHERS} cameras are already live. Ask one of them to turn off, or wait.

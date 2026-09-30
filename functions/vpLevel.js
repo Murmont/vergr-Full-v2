@@ -77,6 +77,16 @@ function rankNameFor(level) {
   return name;
 }
 
+// ⚠ MIRROR of prestigeForVP() in src/utils/vpSystem.js (vp-mirror-check).
+// Past L100 every further full ladder of VP adds one prestige, capped. Status
+// only: nothing resets, nothing is paid.
+const TOTAL_VP_TO_MAX = (() => { let t = 0; for (let l = 2; l <= 100; l++) t += levelCost(l); return t; })();
+const PRESTIGE_MAX = 10;
+function prestigeForVp(totalVp) {
+  const vp = Math.max(0, Number(totalVp) || 0);
+  return Math.max(0, Math.min(PRESTIGE_MAX, Math.floor(vp / TOTAL_VP_TO_MAX) - 1));
+}
+
 function levelForVp(totalVp) {
   const vp = Math.max(0, Number(totalVp) || 0);
   let cumulative = 0;
@@ -98,7 +108,11 @@ exports.syncVpLevel = functions.firestore.onDocumentWritten(
     if (beforeVp === afterVp) return;         // balance-only write, do nothing
 
     const nextLevel = levelForVp(afterVp);
-    if (levelForVp(beforeVp) === nextLevel && before) return;  // same band
+    const nextPrestige = prestigeForVp(afterVp);
+    const prestigeMoved = nextPrestige !== prestigeForVp(beforeVp);
+    // Same band and same prestige: nothing to write. At L100 the band never
+    // moves again, so prestige is the only thing that can bring this past here.
+    if (levelForVp(beforeVp) === nextLevel && before && !prestigeMoved) return;
 
     const uid = event.params.uid;
     try {
@@ -134,7 +148,24 @@ exports.syncVpLevel = functions.firestore.onDocumentWritten(
         }
       }
 
-      await db.collection('users').doc(uid).set({ vpLevel: nextLevel }, { merge: true });
+      await db.collection('users').doc(uid).set(
+        prestigeMoved ? { vpLevel: nextLevel, prestige: nextPrestige } : { vpLevel: nextLevel },
+        { merge: true },
+      );
+
+      if (before && prestigeMoved && nextPrestige > prestigeForVp(beforeVp)) {
+        await db.collection('notifications').add({
+          recipientId: uid,
+          type: 'vp_level_up',
+          title: `Prestige ${nextPrestige}`,
+          body: `You reached prestige ${nextPrestige}. A new star sits beside your rank.`,
+          actionUrl: '/prestige',
+          rank: rankNameFor(nextLevel),
+          level: nextLevel,
+          read: false,
+          createdAt: new Date(),
+        });
+      }
 
       // Tell them. A level that changes silently is not a reward, and this is
       // the cheapest possible place to say so: the trigger has already run and
@@ -163,4 +194,4 @@ exports.syncVpLevel = functions.firestore.onDocumentWritten(
   },
 );
 
-module.exports._internal = { levelForVp };
+module.exports._internal = { levelForVp, prestigeForVp };

@@ -50,7 +50,7 @@ export default function SquadInfoRail({ squad, members = [] }) {
           {squad?.verified && <span className="material-symbols-outlined">verified</span>}
         </div>
         <div className="r-squad-tags">
-          <span>{squad?.game || 'Gaming'}</span>
+          <span>{squad?.game || 'Community'}</span>
           <span className="pip" />
           <span style={{ color: squad?.isPublic === false ? 'var(--t2)' : 'var(--ember)' }}>
             {squad?.isPublic === false ? 'Private' : 'Public'}

@@ -33,6 +33,9 @@ _*_tmp/
 
 # Demo/build output (105MB each) — never commit
 dist-demo/
+# Vergr Admin and Vergr Vanguard desktop builds (never deployed, never committed)
+dist-admin/
+dist-vanguard/
 dist-demo-native/
 
 # A live Google OAuth access token was sitting untracked in the repo root as
@@ -47,3 +50,9 @@ nw.html
 .preview/
 scripts/.gradient-lab/
 scripts/.gradient-lab.png
+
+# Service-account keys. scripts/playCreateProducts.mjs needs one via
+# GOOGLE_APPLICATION_CREDENTIALS; it must never be committed.
+*-service-account*.json
+*-adminsdk-*.json
+gcp-key*.json

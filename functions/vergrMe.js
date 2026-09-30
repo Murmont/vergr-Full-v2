@@ -11,8 +11,10 @@
 // are acceptable.
 
 const functions = require('firebase-functions/v2');
+const { planOf } = require('./plan');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const admin = require('firebase-admin');
+const { isStaffDoc } = require('./staff');
 
 if (admin.apps.length === 0) admin.initializeApp();
 const db = getFirestore('vgrdb');
@@ -100,8 +102,8 @@ exports.onVergrMeLead = functions.firestore.onDocumentCreated(
       if (!url || !/^https:\/\//i.test(url)) return;
       // Server-side Pro gate (the field is client-written).
       const u = userSnap.exists ? userSnap.data() : {};
-      const tier = u?.subscription?.tier || 'free';
-      const isAdmin = u?.role === 'admin' || u?.email === 'vergenerd@gmail.com';
+      const tier = planOf(u);
+      const isAdmin = isStaffDoc(u) || u?.role === 'admin';
       if (tier !== 'pro' && !isAdmin) return;
 
       const body = JSON.stringify({

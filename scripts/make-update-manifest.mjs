@@ -51,8 +51,12 @@ function newest(dir, predicate) {
     .sort((a, b) => b.mtime - a.mtime)[0]?.full || null;
 }
 
-const setupExe = newest(NSIS_DIR, (f) => f.toLowerCase().endsWith('-setup.exe'));
-const sigFile = newest(NSIS_DIR, (f) => f.toLowerCase().endsWith('-setup.exe.sig'));
+// ⚠ The NSIS folder is SHARED with Vergr Admin and Vergr Vanguard. "Newest
+// setup.exe" could publish the admin console as the public app, so match THIS
+// app's name and version exactly.
+const PREFIX = `VERGR_${version}_`;
+const setupExe = newest(NSIS_DIR, (f) => f.startsWith(PREFIX) && f.toLowerCase().endsWith('-setup.exe'));
+const sigFile = newest(NSIS_DIR, (f) => f.startsWith(PREFIX) && f.toLowerCase().endsWith('-setup.exe.sig'));
 
 if (!setupExe || !sigFile) {
   console.error('[make-update-manifest] Missing NSIS setup .exe or .sig in', NSIS_DIR);

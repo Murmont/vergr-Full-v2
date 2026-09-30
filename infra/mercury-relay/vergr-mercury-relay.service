@@ -1,0 +1,21 @@
+[Unit]
+Description=VERGR mercury-relay — every Mercury API call for creator payouts (whitelisted IP), Google-OIDC-authenticated callers only
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# systemd (PID 1, root) reads this file BEFORE dropping privileges, so it stays
+# root:root 0600 and the service user never needs read access to it.
+EnvironmentFile=/etc/vergr-payouts/mercury.env
+Environment=PORT=8098
+ExecStart=/usr/bin/node /opt/vergr-mercury-relay/server.cjs
+Restart=always
+RestartSec=3
+DynamicUser=yes
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

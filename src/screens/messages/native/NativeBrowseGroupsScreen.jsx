@@ -47,7 +47,7 @@ export default function NativeBrowseGroupsScreen() {
   };
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--bg-dark)', paddingBottom: 'calc(88px + env(safe-area-inset-bottom, 0px))' }}
+    <div style={{ minHeight: '100vh', background: 'var(--bg-dark)', paddingBottom: 'calc(88px + var(--vg-safe-b, 0px))' }}
       className="flex flex-col">
       <TopBar title="Browse Groups" showBack />
       <div className="px-4 pt-4 flex-1">

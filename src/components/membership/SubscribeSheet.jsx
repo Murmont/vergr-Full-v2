@@ -61,7 +61,7 @@ export default function SubscribeSheet({ creatorId, creatorName = 'this creator'
   };
 
   const panel = (
-    <div className={`bg-bg-dark border border-white/10 overflow-hidden flex flex-col ${isDesktop ? 'w-[440px] max-h-[86vh] rounded-3xl' : 'w-full rounded-t-3xl max-h-[88vh]'}`}>
+    <div className={`bg-bg-dark border border-white/10 overflow-hidden flex flex-col ${isDesktop ? 'w-[440px] max-h-[86vh] rounded-3xl' : 'w-full rounded-t-3xl max-h-[88vh] sheet-safe'}`}>
       {/* header */}
       <div className="relative px-6 pt-6 pb-4 shrink-0">
         {!isDesktop && <div className="w-10 h-1 rounded-full bg-white/20 mx-auto mb-4" />}

@@ -1,6 +1,7 @@
 // src/components/wallet/CartDrawer.jsx
 //
-// Desktop basket: slides in from the right, over the page, without navigating.
+// The basket: slides in from the right over whatever page you are on (desktop,
+// and in the app the buy screen and streams), without navigating.
 //
 // A drawer rather than a route on desktop because the buying flow is "add,
 // glance, keep browsing, add another". Sending someone to a separate URL after
@@ -14,7 +15,7 @@ import CartContents from './CartContents';
 import { useCart } from '../../context/CartContext';
 import { WALLET_TOKENS } from './primitives';
 
-export default function CartDrawer({ onCheckout, busy }) {
+export default function CartDrawer({ onCheckout, busy, onCodaSettled }) {
   const { open, setOpen, count } = useCart();
 
   // Escape closes. A panel that traps you is worse than no panel.
@@ -35,16 +36,18 @@ export default function CartDrawer({ onCheckout, busy }) {
       style={{ position: 'fixed', inset: 0, zIndex: 200, display: 'flex', justifyContent: 'flex-end' }}
       onClick={() => setOpen(false)}
     >
-      <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(3px)' }} />
+      {/* A plain dim behind the drawer. No blur: blurred glass is banned here. */}
+      <div style={{ position: 'absolute', inset: 0, background: 'rgba(5,5,10,0.72)' }} />
 
       <aside
         onClick={(e) => e.stopPropagation()}
         style={{
           position: 'relative', width: 'min(420px, 100vw)', height: '100%',
           background: WALLET_TOKENS.surface1,
-          borderLeft: `1px solid ${WALLET_TOKENS.hairline}`,
           display: 'flex', flexDirection: 'column',
-          padding: '18px 20px 20px',
+          // Full height, so on a phone it must clear the status bar and the
+          // gesture bar (the app draws edge to edge). Both are 0 on desktop.
+          padding: 'calc(18px + env(safe-area-inset-top, 0px)) 20px calc(20px + var(--vg-safe-b, 0px))',
           color: WALLET_TOKENS.text,
           animation: 'vgCartIn 180ms ease-out',
         }}
@@ -76,7 +79,7 @@ export default function CartDrawer({ onCheckout, busy }) {
           </button>
         </div>
 
-        <CartContents onCheckout={onCheckout} busy={busy} onClose={() => setOpen(false)} variant="drawer" />
+        <CartContents onCheckout={onCheckout} busy={busy} onClose={() => setOpen(false)} variant="drawer" onCodaSettled={onCodaSettled} />
       </aside>
     </div>,
     document.body,

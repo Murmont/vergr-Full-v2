@@ -658,6 +658,8 @@ func main() {
 	mux.HandleFunc("/ingest/seg/", handleSeg)
 
 	go idleSweeper()
+	// Vergr ending someone else's stream (takedown.go).
+	go watchTakedowns(ctx)
 
 	srv := &http.Server{
 		Addr:              *listenAddr,

@@ -50,6 +50,7 @@ import { RaidBanner } from '../../../components/streams/RaidControls';
 import {
   Centred, ChatStateBanner, TtsStrip, ZeroViewers, EmptyChat,
   VpEarnedChip, PreviewLevelUp, StreamPaywall, composerCopy, PlaybackStateView, HealthWarningView, AudioStageView,
+  TrainBonus,
 } from '../../../components/streams/states';
 import { S, C } from '../../../components/streams/states/tokens';
 export {
@@ -404,12 +405,15 @@ export function HypeTrain({ style }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
         {conductor && (
           <span style={{ flexShrink: 0, borderRadius: 999, padding: 1, background: GOLD_RAMP, display: 'flex' }}>
-            <UserAvatar user={conductor} avatar={faceOf(conductor)} size={20} showLiftRing={false} />
+            {/* ⚠ `src`, NEVER `avatar` OR `user`. UserAvatar reads only `src`, so the
+                other two were dropped silently and every rider drew the placeholder
+                disc: the train looked empty with faces uploaded. */}
+            <UserAvatar src={faceOf(conductor)} size={20} showLiftRing={false} />
           </span>
         )}
         {rest.map(([uid]) => {
           const u = castByUid(uid);
-          return <UserAvatar key={uid} user={u} avatar={faceOf(u)} size={18} showLiftRing={false} />;
+          return <UserAvatar key={uid} src={faceOf(u)} size={18} showLiftRing={false} />;
         })}
         {more > 0 && (
           <span className="vg-mono" style={{ flexShrink: 0, fontSize: 11, fontWeight: 800, color: C.textMuted }}>+{more}</span>
@@ -441,43 +445,9 @@ export function HypeTrain({ style }) {
  * on near-black, as a RAMP and never a flat fill, which is the same rule the
  * earnings gauge already records.
  */
-export function TrainBonus({ bonus, hostName, onDone, offset = 0 }) {
-  useEffect(() => {
-    if (!bonus) return undefined;
-    const id = setTimeout(() => onDone?.(), 6000);
-    return () => clearTimeout(id);
-  }, [bonus, onDone]);
-  if (!bonus) return null;
-  const isVp = bonus.kind === 'vp';
-  const amount = isVp ? bonus.vp : bonus.coins;
-  return (
-    <div className="vg-material vg-grain" style={{
-      position: 'absolute', left: 10, right: 10, top: 56 + offset, zIndex: 27,
-      padding: 10, borderRadius: 16, pointerEvents: 'none', overflow: 'hidden',
-      boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.14), 0 8px 26px rgba(240,165,0,0.30)',
-      display: 'flex', alignItems: 'center', gap: 8,
-    }}>
-      <span style={{
-        flexShrink: 0, width: 30, height: 30, borderRadius: 12,
-        background: GOLD_RAMP, display: 'grid', placeItems: 'center', color: '#241a05',
-        boxShadow: '0 3px 12px rgba(240,165,0,0.45)',
-      }}>
-        <Icon name={isVp ? 'bolt' : 'toll'} size={16} />
-      </span>
-      <span style={{ flex: 1, minWidth: 0 }}>
-        <span style={{ display: 'block', fontSize: 11, fontWeight: 800, letterSpacing: '.06em', color: C.textMuted }}>
-          {`LEVEL ${bonus.level} TRAIN`}
-        </span>
-        <span style={{ display: 'block', fontSize: 13, fontWeight: 900, color: C.text, marginTop: 1 }}>
-          {`${amount.toLocaleString()} ${isVp ? 'VP' : 'coins'} to ${hostName || 'the host'}`}
-        </span>
-      </span>
-      <span className="vg-mono" style={{ flexShrink: 0, fontSize: 11, fontWeight: 800, color: '#f5c842' }}>
-        {`${bonus.received.toLocaleString()}c raised`}
-      </span>
-    </div>
-  );
-}
+// TrainBonus now lives in components/streams/states (2026-09-27) so the live
+// screens and this preview draw ONE card. Imported above, re-exported below.
+export { TrainBonus };
 
 // Reads the sim so no call site has to remember to feed it, the same reason
 // HypeTrain does. Nine mount points; a prop would have to be right at all nine.

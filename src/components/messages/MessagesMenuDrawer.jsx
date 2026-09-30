@@ -113,7 +113,7 @@ export default function MessagesMenuDrawer({ open, onClose }) {
             );
           })}
         </nav>
-        <div className="p-2 border-t border-white/[0.04] space-y-0.5" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 8px)' }}>
+        <div className="p-2 border-t border-white/[0.04] space-y-0.5" style={{ paddingBottom: 'calc(var(--vg-safe-b, 0px) + 8px)' }}>
           <button
             onClick={() => setShowQr(true)}
             className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left text-text-secondary hover:bg-white/[0.04] transition-colors"

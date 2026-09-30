@@ -21,13 +21,14 @@ import ProductsPointer from '../components/vergrme/ProductsPointer';
 import SettingsPanel from '../components/vergrme/SettingsPanel';
 import { ProfileCard, PopupsCard } from '../components/vergrme/AppearanceExtras';
 import { StatTile } from '../components/vergrme/EditorUI';
+import { pageForPlan } from '../utils/vergrMeThemes';
 
 const META = {
   dashboard:    { title: 'Dashboard', sub: 'Your page at a glance' },
   appearance:   { title: 'Appearance', sub: 'Customize your page design and style' },
   links:        { title: 'Links & Blocks', sub: 'Add, edit and reorder your content' },
   media:        { title: 'Media', sub: 'Images, galleries and video' },
-  products:     { title: 'Products', sub: 'Sell digital downloads, keep 92% of every sale' },
+  products:     { title: 'Products', sub: 'Show products from your connected store' },
   analytics:    { title: 'Analytics', sub: 'See how your page performs' },
   integrations: { title: 'Integrations', sub: 'Socials and connected accounts' },
   settings:     { title: 'Settings', sub: 'Visibility, branding and domain' },
@@ -126,7 +127,8 @@ export default function VergrMeEditorScreen() {
   const setBlocks = (b) => up('blocks', b);
 
   const previewAvatar = form.useProfileAvatar ? (profile?.avatar || profile?.photoURL || null) : form.customAvatarUrl;
-  const previewData = { ...form, username: form.username || username, followerCount: profile?.followerCount || 0 };
+  // The preview shows what VISITORS see, so a lapsed plan is honest here too.
+  const previewData = pageForPlan({ ...form, username: form.username || username, followerCount: profile?.followerCount || 0 }, tier);
 
   const meta = META[section];
 
@@ -136,7 +138,7 @@ export default function VergrMeEditorScreen() {
 
       <div className="flex-1 flex flex-col min-w-0">
         {/* Header bar */}
-        <div className="flex items-center justify-between gap-3 px-4 sm:px-6 py-3.5 border-b border-white/5 shrink-0">
+        <div className="flex items-center justify-between gap-3 px-4 sm:px-6 pb-3.5 shrink-0" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 0.875rem)' }}>
           <div className="flex items-center gap-3 min-w-0">
             <button onClick={() => setNavOpen(true)} className="lg:hidden w-9 h-9 flex items-center justify-center rounded-lg hover:bg-surface-1 shrink-0"><Icon name="menu" size={20} /></button>
             <div className="min-w-0">
@@ -167,7 +169,7 @@ export default function VergrMeEditorScreen() {
 
         {/* Body */}
         <div className="flex-1 flex min-h-0 overflow-hidden">
-          <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-5">
+          <div className="flex-1 overflow-y-auto px-4 sm:px-6 pt-5" style={{ paddingBottom: 'calc(1.25rem + var(--vg-safe-b))' }}>
             <div className="max-w-2xl mx-auto w-full flex flex-col gap-4">
               {section === 'dashboard' && (
                 <DashboardPanel form={form} username={username} uid={auth.currentUser?.uid} isPro={isPro} onSelect={setSection} onCopy={copyUrl} copied={copied} onOpen={openPage} onShare={sharePage} onApplyTemplate={applyTemplate} />
@@ -210,10 +212,10 @@ export default function VergrMeEditorScreen() {
 
       {/* Mobile full-screen preview */}
       {showPreview && (
-        <div className="xl:hidden fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex flex-col items-center">
-          <div className="w-full max-w-md flex items-center justify-between px-4 py-3">
+        <div className="xl:hidden fixed inset-0 z-50 bg-[#07070D] flex flex-col items-center" style={{ paddingBottom: 'var(--vg-safe-b)' }}>
+          <div className="w-full max-w-md flex items-center justify-between px-4 pb-3" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 0.75rem)' }}>
             <span className="text-sm font-medium text-white">Live preview</span>
-            <button onClick={() => setShowPreview(false)} className="w-9 h-9 flex items-center justify-center rounded-full bg-white/10 text-white"><Icon name="close" size={18} /></button>
+            <button onClick={() => setShowPreview(false)} aria-label="Close preview" className="w-9 h-9 flex items-center justify-center rounded-full bg-[#1A1A26] text-white"><Icon name="close" size={18} /></button>
           </div>
           <div className="flex-1 flex items-start justify-center pt-2 overflow-y-auto">
             <PhonePreview data={previewData} avatarUrl={previewAvatar} floating={false} />
@@ -249,8 +251,8 @@ function FirstRunTour({ onGo }) {
     else setStep(step + 1);
   };
   return (
-    <div className="fixed inset-x-0 bottom-4 z-[60] flex justify-center px-4 pointer-events-none">
-      <div className="pointer-events-auto w-full max-w-sm rounded-2xl border border-white/10 bg-surface-1/95 backdrop-blur-xl p-4 shadow-2xl">
+    <div className="fixed inset-x-0 z-[60] flex justify-center px-4 pointer-events-none" style={{ bottom: 'calc(1rem + var(--vg-safe-b))' }}>
+      <div className="pointer-events-auto w-full max-w-sm rounded-2xl bg-[#1A1A26] p-4 shadow-2xl">
         <div className="flex items-start gap-3">
           <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 text-white" style={{ background: 'linear-gradient(135deg, #7B1FFF, #B44FFF)' }}>
             <Icon name={s.icon} size={18} />

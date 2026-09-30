@@ -1,0 +1,51 @@
+{
+  "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/crates/tauri-cli/schema.json",
+  "productName": "Vergr Admin",
+  "identifier": "com.vergr.admin",
+  "version": "1.0.227",
+  "build": {
+    "frontendDist": "../dist-admin",
+    "beforeBuildCommand": "npm run build:admin",
+    "beforeDevCommand": "npm run dev:admin",
+    "devUrl": "http://localhost:5174/admin.html"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Vergr Admin",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 1100,
+        "minHeight": 700,
+        "center": true,
+        "resizable": true,
+        "decorations": true,
+        "transparent": false,
+        "dragDropEnabled": false,
+        "theme": "Dark",
+        "devtools": false
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self' asset: http://asset.localhost https://asset.localhost; script-src 'self' 'unsafe-inline' 'unsafe-eval' asset: http://asset.localhost https://asset.localhost https://pagead2.googlesyndication.com https://*.googlesyndication.com https://*.google.com https://*.doubleclick.net; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://api.klipy.com https://*.klipy.com https: wss: blob: data: http://localhost:* http://127.0.0.1:* asset: http://asset.localhost https://asset.localhost; img-src 'self' https://*.klipy.com https://media.klipy.com data: blob: https: asset: http://asset.localhost https://asset.localhost; media-src 'self' data: blob: https: asset: http://asset.localhost https://asset.localhost; frame-src 'self' https: blob:;"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://sfu.vergr.app/ops/admin/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEREQ0IxMjkyRUU1RUQzREEKUldUYTAxN3VraExMM2NMVVpPd1VKRi85dGRoa3RXU2k5L3gxQWNlbm85ZDRXcSs4ckNqM0lLazgK"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "createUpdaterArtifacts": true,
+    "targets": ["nsis"],
+    "copyright": "© 2026 Vergr LLC",
+    "category": "DeveloperTool",
+    "shortDescription": "Vergr Admin",
+    "longDescription": "Operator console for Vergr. Not for distribution."
+  }
+}

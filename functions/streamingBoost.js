@@ -29,6 +29,7 @@ const functions = require('firebase-functions/v2');
 const defer = (_opts, fn) => fn;
 const admin = require('firebase-admin');
 const { FieldValue } = require('firebase-admin/firestore');
+const { planSpend, debitFields } = require('./boostCoins');
 
 const DB = 'vgrdb';
 const REGION = 'europe-west1';
@@ -78,13 +79,14 @@ exports.requestStreamQualityBoost = functions.https.onCall(
 
       const costPerMin = BOOST_COST_PER_MIN[targetTier];
       const walletSnap = await tx.get(walletRef);
-      const balance = Number(walletSnap.exists ? walletSnap.data().balance || 0 : 0);
-      if (balance < costPerMin) {
+      const plan = planSpend(walletSnap.exists ? walletSnap.data() : {}, costPerMin);
+      const balance = plan.total;
+      if (!plan.ok) {
         throw new HttpsError('failed-precondition', `Need at least ${costPerMin} coin${costPerMin > 1 ? 's' : ''} to start a ${targetTier} boost. You have ${balance}.`);
       }
 
       // Charge first minute.
-      tx.update(walletRef, { balance: FieldValue.increment(-costPerMin), updatedAt: FieldValue.serverTimestamp() });
+      tx.update(walletRef, { ...debitFields(plan), updatedAt: FieldValue.serverTimestamp() });
       tx.set(db.collection('transactions').doc(), {
         userId: uid,
         type: 'stream_quality_boost_minute',
@@ -186,8 +188,8 @@ exports.chargeStreamBoosts = defer(
       try {
         await db.runTransaction(async (tx) => {
           const w = await tx.get(walletRef);
-          const balance = Number(w.exists ? w.data().balance || 0 : 0);
-          if (balance < costPerMin) {
+          const plan = planSpend(w.exists ? w.data() : {}, costPerMin);
+          if (!plan.ok) {
             // Not enough — flip off + notify.
             tx.update(doc.ref, {
               'qualityBoost.active': false,
@@ -206,7 +208,7 @@ exports.chargeStreamBoosts = defer(
             return;
           }
           // Debit + bump counters.
-          tx.update(walletRef, { balance: FieldValue.increment(-costPerMin), updatedAt: FieldValue.serverTimestamp() });
+          tx.update(walletRef, { ...debitFields(plan), updatedAt: FieldValue.serverTimestamp() });
           tx.set(db.collection('transactions').doc(), {
             userId: uid,
             type: 'stream_quality_boost_minute',

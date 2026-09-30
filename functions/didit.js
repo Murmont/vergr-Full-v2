@@ -20,7 +20,7 @@
 //   DIDIT_WEBHOOK_SECRET     — webhook signing key from Didit dashboard
 
 const { onCall, onRequest, HttpsError } = require('firebase-functions/v2/https');
-const { defineSecret } = require('firebase-functions/params');
+const { defineSecret, defineString } = require('firebase-functions/params');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const admin = require('firebase-admin');
 const crypto = require('crypto');
@@ -30,7 +30,7 @@ if (admin.apps.length === 0) admin.initializeApp();
 const db = getFirestore('vgrdb');
 
 const DIDIT_API_KEY        = defineSecret('DIDIT_API_KEY');
-const DIDIT_WORKFLOW_ID    = defineSecret('DIDIT_WORKFLOW_ID');
+const DIDIT_WORKFLOW_ID = defineString('DIDIT_WORKFLOW_ID');
 const DIDIT_WEBHOOK_SECRET = defineSecret('DIDIT_WEBHOOK_SECRET');
 
 const DIDIT_BASE = 'https://verification.didit.me';
@@ -39,6 +39,7 @@ const MIN_AGE = 18;
 
 // Mirror geo blocklist for defense-in-depth.
 const { BLOCKED_COUNTRIES, evaluateBlock } = require('./geo');
+const { isStaffDoc } = require('./staff');
 
 // ── Identity fingerprint ────────────────────────────────────────────
 // Didit's field names differ per verification module, so we try the common
@@ -90,7 +91,7 @@ function computeAgeFromBirthdate(birthdate) {
 // ────────────────────────────────────────────────────────────────────────
 
 exports.startKycVerification = onCall(
-  { region: REGION, secrets: [DIDIT_API_KEY, DIDIT_WORKFLOW_ID] },
+  { region: REGION, secrets: [DIDIT_API_KEY] },
   async (request) => {
     const uid = request.auth && request.auth.uid;
     if (!uid) throw new HttpsError('unauthenticated', 'Sign in to verify.');
@@ -257,6 +258,17 @@ exports.diditWebhook = onRequest(
           age,
           country: countryCode,
         };
+        // The verified legal name. Creator payouts send it to Mercury as the
+        // recipient name and compare it with the name on the bank account the
+        // creator connects (functions/mercuryPayouts.js recipientVerdict), which
+        // is the AML check that a payout reaches the person who verified. It is
+        // PRIVATE (see PRIVATE_KYC_FIELDS below) and disclosed in the Privacy
+        // Policy as a derived attribute ("full name"). Same field paths
+        // buildIdentityHash already reads.
+        const legalName = [idv.full_name, idv.fullName,
+          [idv.first_name, idv.last_name].filter(Boolean).join(' ')]
+          .find((v) => typeof v === 'string' && v.trim().length > 1);
+        if (legalName) result.legalName = legalName.trim().replace(/\s+/g, ' ').slice(0, 140);
         // Stable per-PERSON fingerprint, salted and hashed — never the raw
         // document number. Two accounts that verify with the same government
         // ID produce the same hash, which is the only deterministic way to
@@ -300,7 +312,7 @@ exports.diditWebhook = onRequest(
     // `identityHash` and `age` have NO readers anywhere (identityHash's only
     // consumer, gemTransfer.js, was deleted). `country` is read by the owner's
     // own CreatorVerificationScreen, which now reads it from the private doc.
-    const PRIVATE_KYC_FIELDS = ['age', 'country', 'sessionId', 'identityHash'];
+    const PRIVATE_KYC_FIELDS = ['age', 'country', 'sessionId', 'identityHash', 'legalName'];
     const publicKyc = {};
     const privateKyc = {};
     for (const [k, v] of Object.entries(result)) {
@@ -339,7 +351,7 @@ exports.assertKycVerified = async function assertKycVerified(uid) {
   // Founder bypass — `role:'admin'` is the platform owner, not a user
   // subject to KYC. Lets the owner dogfood every gated flow without
   // re-verifying identity. Logged callers should never hit this in prod.
-  if (data?.role === 'admin' || (data?.email || '').toLowerCase() === 'vergenerd@gmail.com') return { verified: true, founder: true };
+  if (isStaffDoc(data) || data?.role === 'admin') return { verified: true, founder: true };
   const kyc = data?.kyc || null;
   if (!kyc || kyc.verified !== true) {
     throw new HttpsError('failed-precondition', 'Identity verification required for this action.');

@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { ADS_CONFIG, isAdZoneReady, TEST_NATIVE_UNIT_ID } from '../config/ads';
+import { ADS_CONFIG, isAdZoneReady, testNativeFeedUnit } from '../config/ads';
 import useTier from '../hooks/useTier';
 import useAdsTestMode from '../hooks/useAdsTestMode';
 import { IS_NATIVE_BUILD } from '../utils/platform';
@@ -87,7 +87,7 @@ export default function VergrAd({ zone = 'inpage' }) {
         console.warn('[VergrAd] native feed ad did not fill, AdMob code =', code);
         try { window.__vergrFeedAdLastCode = code; } catch { /* ignore */ }
       },
-      testAds ? TEST_NATIVE_UNIT_ID : undefined,
+      testAds ? testNativeFeedUnit() : undefined,
     );
   }, [nativeAdOn, testAds]);
 

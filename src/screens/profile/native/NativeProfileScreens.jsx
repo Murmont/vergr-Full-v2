@@ -12,13 +12,11 @@
 // so the banner already clears the status bar — the action buttons sit at the
 // normal top-3.5 with NO extra safe-area padding.
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import BoostSheet from '../../../components/boost/BoostSheet';
 import { themeTokens, fieldStyle, headerLightStyle } from '../../../utils/profileThemes';
 import { accentFor } from '../../../utils/rankUnlocks';
 import { Ambilight, ProfileAudio, useEffectEnabled } from '../../../components/effects';
-import { avatarRing, RING } from '../../../utils/avatarRing';
-import { isGroupSeen } from '../../../utils/statusSeen';
 import '../../../styles/surface.css';
 import { useNavigate, useParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
@@ -27,7 +25,7 @@ import { useUser } from '../../../context/UserContext';
 import { useUI } from '../../../context/UIContext';
 import { useLiveUsers } from '../../../context/LiveUsersContext';
 import {
-  getUserPosts, getBookmarks, getFollowers, getFollowing, getLikedPosts, getPost,
+  getUserPosts, getBookmarks, countFollowers, countFollowing, getLikedPosts, getPost,
   getUserById, getUserByUsername, getUserVP,
   followUser, unfollowUser, isFollowing as checkFollowing, createConversation, reportUser,
 } from '../../../firebase/firestore';
@@ -47,7 +45,7 @@ import MyQrModal from '../../../components/messages/MyQrModal';
 import CachedImg from '../../../components/CachedImg';
 import ProfileBanner from '../../../components/profile/ProfileBanner';
 import Icon from '../../../components/Icon';
-import PostCard from '../../../components/PostCard';
+import { ProfilePostList } from '../../../components/profile/ProfileGrid';
 import ProfileCompletionCard from '../../../components/profile/ProfileCompletionCard';
 import VanguardBadge from '../../../components/VanguardBadge';
 import { CoinIcon, VPIcon } from '../../../components/CoinIcon';
@@ -55,10 +53,14 @@ import { ProfileSkeleton } from '../../../components/skeletons/GlassSkeletons';
 import NameAudioButton from '../../../components/profile/NameAudioButton';
 import StreamScheduleCard from '../../../components/profile/StreamScheduleCard';
 import ReportSheet from '../../../components/ReportSheet';
+import SendCoinsModal from '../../../components/SendCoinsModal';
 import useHeaderCollapse from '../../../hooks/useHeaderCollapse';
-import { bannerGradient, MiniDockHeader } from '../../../components/profile/profilePolish';
+import { bannerGradient, MiniDockHeader, ACCENT_CHIP, SOLID_CHIP, TIP_CHIP } from '../../../components/profile/profilePolish';
 import UserName from '../../../components/UserName';
 import RankBadge from '../../../components/RankBadge';
+import { isShortFormat, sharesToFeed, isMediaPost } from '../../../utils/helpers';
+import { socialsToList, socialIcon, socialLabel, openSocialLink } from '../../../utils/profileSocials';
+import LinkedHandles from '../../../components/profile/LinkedHandles';
 
 const OWN_TABS = ['Posts', 'Media', 'Clips', 'Likes', 'Bookmarks'];
 // Likes are private (IG model): own profile only, never on someone else's.
@@ -72,25 +74,10 @@ function formatCount(n) {
   if (n >= 1e3) return (n / 1e3).toFixed(1).replace(/\.0$/, '') + 'K';
   return n.toLocaleString();
 }
-function socialsToList(socials, enabled = {}) {
-  if (!socials) return [];
-  if (Array.isArray(socials)) return socials.filter(s => s && s.url);
-  if (typeof socials === 'object') {
-    return Object.entries(socials)
-      .filter(([platform, url]) => url && enabled?.[platform] !== false)
-      .map(([platform, url]) => ({ platform, url }));
-  }
-  return [];
-}
-function socialIcon(platform) {
-  const map = { twitter: 'public', x: 'public', youtube: 'play_circle', instagram: 'photo_camera',
-                tiktok: 'music_note', discord: 'chat', twitch: 'live_tv', website: 'language' };
-  return map[(platform || '').toLowerCase()] || 'link';
-}
 // `themeId` is the equipped profile theme. It was missing here entirely, so the
 // native banner drew a hardcoded purple regardless of what the user equipped:
 // the same defect the web screen had, in a second component.
-function Banner({ children, banner, uid, parallaxRef, themeId = 'default' }) {
+function Banner({ children, banner, uid, parallaxRef, videoRef, themeId = 'default' }) {
   const themed = themeId !== 'default';
   return (
     <div className="relative h-[176px] overflow-hidden"
@@ -105,7 +92,7 @@ function Banner({ children, banner, uid, parallaxRef, themeId = 'default' }) {
           : bannerGradient(uid)) }}>
           <div className="absolute inset-0" style={{ background: themed ? 'none' : 'radial-gradient(ellipse at 70% 50%,rgba(123,31,255,0.25) 0%,transparent 65%), radial-gradient(ellipse at 90% 30%,rgba(61,127,255,0.15) 0%,transparent 50%)' }} />
         </div>
-        {banner && <ProfileBanner src={banner} className="absolute inset-0 w-full h-full object-cover" />}
+        {banner && <ProfileBanner src={banner} className="absolute inset-0 w-full h-full object-cover" videoRef={videoRef} />}
       </div>
       {children}
     </div>
@@ -115,7 +102,7 @@ function BannerBtn({ icon, onClick, label }) {
   return (
     <button onClick={onClick} aria-label={label}
       className="w-[34px] h-[34px] flex items-center justify-center rounded-lg text-white active:scale-95"
-      style={{ background: 'rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.15)', backdropFilter: 'blur(8px)' }}>
+      style={{ background: '#15151F' }}>
       <Icon name={icon} size={16} />
     </button>
   );
@@ -155,7 +142,7 @@ function VPCard({ vp, vpLevel, vpProgress, vpNext, vpToNext, onClick }) {
 }
 function Tabs({ tabs, active, onSelect }) {
   return (
-    <div className="flex overflow-x-auto no-scrollbar px-3 border-b" style={{ borderColor: '#1E1E2E' }}>
+    <div className="flex overflow-x-auto no-scrollbar px-3">
       {tabs.map(t => (
         <button key={t} onClick={() => onSelect(t)}
           className="shrink-0 px-4 py-3 text-[13px] font-semibold transition-colors"
@@ -166,7 +153,7 @@ function Tabs({ tabs, active, onSelect }) {
     </div>
   );
 }
-function PostsColumn({ posts, emptyLabel, onDeleted }) {
+function PostsColumn({ posts, emptyLabel, onDeleted, tab = 'Posts' }) {
   if (posts.length === 0) {
     return (
       <div className="text-center py-16">
@@ -175,12 +162,9 @@ function PostsColumn({ posts, emptyLabel, onDeleted }) {
       </div>
     );
   }
-  // Single full-width column of feed cards — clean + professional on a phone.
-  return (
-    <div className="flex flex-col divide-y divide-white/[0.04]">
-      {posts.map(p => <PostCard key={p.id} post={p} onDeleted={onDeleted} />)}
-    </div>
-  );
+  // Posts, Likes and Bookmarks are one full-width column of feed cards with no
+  // divider lines; Clips and Media are grids. Same component as the web views.
+  return <ProfilePostList tab={tab} posts={posts} onDeleted={onDeleted} />;
 }
 function MenuItem({ icon, label, onClick }) {
   return (
@@ -203,6 +187,16 @@ export function NativeProfileScreen() {
   const themeId   = profile?.cosmetics?.theme || 'default';
   const accentHex = accentFor(profile);
   const tokens    = themeTokens(themeId, accentHex);
+  // Ambilight on your OWN profile. The web own profile always had it; this
+  // screen never did, so an unlocked ambilight showed on every profile except
+  // the owner's (founder, 2026-09-11, on @vergr). Same props as the web.
+  const ambilightOn = useEffectEnabled('ambilight', profile);
+  // Live is the one ring an avatar carries, on your own profile too.
+  const { isUserLive: isOwnLive, liveStreamFor: ownStreamFor } = useLiveUsers();
+  const ownLive = !!(currentUser?.uid && isOwnLive?.(currentUser.uid));
+  // Shared with ProfileBanner so a VIDEO banner is sampled live. Ambilight's
+  // image path cannot load an .mp4, so without the ref a video banner gave no glow.
+  const bannerVideoRef = useRef(null);
 
   const [activeTab, setActiveTab] = useState('Posts');
   const [posts, setPosts] = useState([]);
@@ -226,8 +220,8 @@ export function NativeProfileScreen() {
     if (!currentUser?.uid) return;
     setLoadingPosts(true);
     getUserPosts(currentUser.uid, 30).then(setPosts).catch(console.error).finally(() => setLoadingPosts(false));
-    getFollowers(currentUser.uid).then(r => setFollowerCount(r?.length || 0)).catch(() => {});
-    getFollowing(currentUser.uid).then(r => setFollowingCount(r?.length || 0)).catch(() => {});
+    countFollowers(currentUser.uid).then(n => setFollowerCount(n || 0)).catch(() => {});
+    countFollowing(currentUser.uid).then(n => setFollowingCount(n || 0)).catch(() => {});
     getBookmarks(currentUser.uid).then(setBookmarks).catch(() => {});
     getLikedPosts(currentUser.uid, 40).then(setLikedPosts).catch(() => {});
   }, [currentUser?.uid]);
@@ -240,11 +234,11 @@ export function NativeProfileScreen() {
   }, [menuOpen]);
 
   const filteredPosts = useMemo(() => {
-    if (activeTab === 'Media') return posts.filter(p => p.imageUrl || p.videoUrl);
-    if (activeTab === 'Clips') return posts.filter(p => p.type === 'clip');
+    if (activeTab === 'Media') return posts.filter(isMediaPost);
+    if (activeTab === 'Clips') return posts.filter(p => isShortFormat(p.type));
     if (activeTab === 'Likes') return likedPosts;
     if (activeTab === 'Bookmarks') return bookmarks;
-    return posts;
+    return posts.filter(sharesToFeed);
   }, [activeTab, posts, bookmarks, likedPosts]);
 
   const displayName = profile?.displayName || profile?.username || 'You';
@@ -263,13 +257,22 @@ export function NativeProfileScreen() {
     <div className="pb-10 overflow-x-hidden vg-profile"
          style={{ ...tokens, ...fieldStyle() }}>
       <MiniDockHeader show={docked} avatar={profile?.avatar} name={displayName} user={profile} />
-      <Banner banner={profile?.banner} uid={currentUser?.uid} parallaxRef={bannerRef} themeId={themeId}>
+      {/* Ambilight fills banner + header + stats and fades out at the bottom of
+          that block (Ambilight `fade="bottom"`), so it can never end in a hard
+          line through the stats the way the fixed 340px box did. */}
+      <div className="relative">
+      {ambilightOn && profile?.banner && (
+        <div className="absolute inset-0 pointer-events-none" style={{ zIndex: -1 }}>
+          <Ambilight src={profile.banner} videoRef={bannerVideoRef} enabled intensity={0.72} fade="bottom" />
+        </div>
+      )}
+      <Banner banner={profile?.banner} uid={currentUser?.uid} parallaxRef={bannerRef} videoRef={bannerVideoRef} themeId={themeId}>
         <span className="absolute right-5 bottom-4 font-syne font-black tracking-widest uppercase select-none pointer-events-none leading-none" style={{ fontSize: 56, color: 'rgba(255,255,255,0.05)' }}>
           {(profile?.username || 'VERGR').toUpperCase()}
         </span>
         <div className="absolute right-3.5 flex items-center gap-2" style={{ top: 'calc(env(safe-area-inset-top, 0px) + 14px)' }}>
           <button onClick={onShare} className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-[12px] font-semibold text-white active:scale-95"
-            style={{ background: 'rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.15)', backdropFilter: 'blur(8px)' }}>
+            style={{ background: '#15151F' }}>
             <Icon name="share" size={13} /> Share
           </button>
           <BannerBtn icon="settings" label="Settings" onClick={() => navigate('/settings')} />
@@ -304,12 +307,19 @@ export function NativeProfileScreen() {
 
       {/* HEADER — relative z-10 paints avatar/name/rank ABOVE the banner. */}
       <div className="px-5 relative z-10">
-        <div className="flex items-end gap-4 -mt-11 mb-3">
-          <div className="w-[88px] h-[88px] rounded-full flex items-center justify-center font-syne font-black text-[30px] relative shrink-0"
-            style={{ background: 'linear-gradient(135deg,#7b1fff,#3b82f6)', border: '3px solid var(--vg-seam)', boxShadow: '0 0 0 3px #0B0B14, 0 0 20px var(--vg-accent-dim)' }}>
+        <div className="flex items-start gap-4 mb-3 pt-1">
+          <div className="w-[88px] h-[88px] -mt-11 rounded-full flex items-center justify-center font-syne font-black text-[30px] relative shrink-0"
+            style={{ background: profile?.avatar ? 'transparent' : 'linear-gradient(135deg,#7b1fff,#3b82f6)' }}>
             <div className="w-full h-full rounded-full overflow-hidden flex items-center justify-center">
               {profile?.avatar ? <CachedImg src={profile.avatar} permanent alt={displayName} className="w-full h-full object-cover" /> : initial}
             </div>
+            {ownLive && (
+              <>
+                <span className="absolute -inset-[3px] rounded-full pointer-events-none" style={{ boxShadow: '0 0 0 3px #F04060, 0 0 22px #F0406088' }} />
+                <button onClick={(e) => { e.stopPropagation(); const sid = ownStreamFor(currentUser.uid); if (sid) navigate(`/watch/${sid}`); }}
+                  className="absolute -bottom-2 left-1/2 -translate-x-1/2 z-30 bg-brand-ember px-2 py-0.5 rounded text-[9px] font-bold text-white uppercase tracking-wider" style={{ whiteSpace: 'nowrap' }}>Live</button>
+              </>
+            )}
             {presenceVisible(profile) && (
               <span className="absolute bottom-1 right-1 w-4 h-4 rounded-full" style={{ background: '#22D17E', border: '3px solid #0B0B14', boxShadow: '0 0 8px rgba(34,209,126,0.55)' }} title="Online" />
             )}
@@ -320,29 +330,31 @@ export function NativeProfileScreen() {
               <RankBadge level={profile?.vpLevel} role={profile?.role} isSelf size={17} style={{ verticalAlign: '-3px' }} />
               <NameAudioButton url={profile?.nameAudioUrl} />
               {profile?.verified && <div className="w-5 h-5 rounded-full flex items-center justify-center shrink-0" style={{ background: 'var(--vg-accent)' }}><Icon name="check" size={11} className="text-white" /></div>}
-              <span className="px-2 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase shrink-0" style={{ background: 'var(--vg-accent-chip)', color: 'var(--vg-accent)', border: '1px solid rgba(180,79,255,0.30)' }}>{vpLevel?.name || 'Rookie'}</span>
+              <span className="px-2 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase shrink-0" style={ACCENT_CHIP}>{vpLevel?.name || 'Rookie'}</span>
             </div>
             {handle && <div className="text-[12px] text-text-muted mb-1.5">{handle}</div>}
           </div>
         </div>
         {profile?.bio && <p className="text-[13px] text-text-secondary leading-relaxed mb-2 whitespace-pre-line">{profile.bio}</p>}
         <div className="flex items-center gap-2.5 flex-wrap mb-1">
-          {socialsToList(profile?.socials, profile?.socialEnabled).slice(0, 5).map((s, i) => (
-            <a key={i} href={s.url} target="_blank" rel="noreferrer" className="w-7 h-7 rounded-md flex items-center justify-center text-text-muted active:text-white"
-               style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)' }}><Icon name={socialIcon(s.platform)} size={13} /></a>
+          {socialsToList(profile?.socials, profile?.socialEnabled).map((s, i) => (
+            <a key={i} href={s.href} target="_blank" rel="noreferrer" aria-label={socialLabel(s.platform)} onClick={(e) => openSocialLink(e, s.href)} className="w-7 h-7 rounded-md flex items-center justify-center text-text-muted active:text-white"
+               style={SOLID_CHIP}><Icon name={socialIcon(s.platform)} size={13} /></a>
           ))}
           {joined && <span className="flex items-center gap-1 text-[11px] text-text-muted"><Icon name="event" size={12} /> Joined {joined}</span>}
         </div>
+        <LinkedHandles linkedAccounts={profile?.linkedAccounts} platforms={profile?.platforms} className="mt-1.5" />
       </div>
 
       {/* STATS */}
-      <div className="px-5 py-3 border-b" style={{ borderColor: '#1E1E2E' }}>
+      <div className="px-5 py-3">
         <div className="grid grid-cols-3">
           <StatCell label="Followers" value={formatCount(followerCount)} onClick={() => navigate(`/connections/${currentUser.uid}/followers`)} />
           <StatCell label="Following" value={formatCount(followingCount)} onClick={() => navigate(`/connections/${currentUser.uid}/following`)} />
           <StatCell label="Posts" value={formatCount(posts.length)} onClick={() => setActiveTab('Posts')} />
         </div>
         <VPCard vp={vp} vpLevel={vpLevel} vpProgress={vpProgress} vpNext={vpNext} vpToNext={vpToNext} onClick={() => navigate('/prestige')} />
+      </div>
       </div>
 
       {/* Complete-your-profile checklist (self-hides once done + claimed;
@@ -358,7 +370,7 @@ export function NativeProfileScreen() {
         {loadingPosts ? (
           <div className="flex justify-center py-16"><div className="w-6 h-6 border-2 border-surface-3 border-t-brand-violet-light rounded-full animate-spin" /></div>
         ) : (
-          <PostsColumn posts={filteredPosts} emptyLabel={`No ${activeTab.toLowerCase()} yet`} onDeleted={(id) => { setPosts(prev => prev.filter(p => p.id !== id)); setBookmarks(prev => prev.filter(p => p.id !== id)); }} />
+          <PostsColumn tab={activeTab} posts={filteredPosts} emptyLabel={`No ${activeTab.toLowerCase()} yet`} onDeleted={(id) => { setPosts(prev => prev.filter(p => p.id !== id)); setBookmarks(prev => prev.filter(p => p.id !== id)); }} />
         )}
       </div>
       <MyQrModal open={showQr} onClose={() => setShowQr(false)} />
@@ -385,7 +397,6 @@ export function NativePublicProfileScreen() {
   // calls useMemo, so a conditional call changes the hook count between renders
   // and React throws #310 — which is exactly what happened on the web screen.
   // The OWNER's profile decides, so this reads the VIEWED user.
-  const orbitUnlocked = useEffectEnabled('orbit', user);
   const ambilightOn = useEffectEnabled('ambilight', user);
   // Effect 09, same rule: above the early return, and it reads the VIEWED
   // user's unlock because the loop belongs to the profile's owner.
@@ -408,35 +419,72 @@ export function NativePublicProfileScreen() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [showBoost, setShowBoost] = useState(false);
   const [targetFollowsMe, setTargetFollowsMe] = useState(false);
+  const [loadingPosts, setLoadingPosts] = useState(false);
+  // Tip opens the tip sheet right here, like the web profile. It used to go to
+  // /wallet, which took you away from the person you meant to tip.
+  const [showTip, setShowTip] = useState(false);
+  const bannerVideoRef = useRef(null);
 
   useEffect(() => {
-    if (!id) return;
+    if (!id) return undefined;
+    let alive = true;
+    // PAINT THE PROFILE AS SOON AS THE USER DOC ARRIVES. This held the skeleton
+    // until FIVE requests finished: the posts, a Cloud Function call for VP (a
+    // cold start is seconds on its own) and the full follower and following
+    // lists, downloaded just to read their length. On @vergr that was the whole
+    // visible wait (founder, 2026-09-11). Everything below the header now loads
+    // behind it, and the counts are aggregation queries.
     const load = async () => {
       setLoading(true);
       try {
         let u = await getUserById(id);
         if (!u) u = await getUserByUsername(id);
-        if (u) {
-          setUser(u);
-          if (currentUser?.uid && u.id !== currentUser.uid) trackEvent('profile_visit', { authorId: u.id, target: 'user' });
-          const [userPosts, isFollow, vpData, followers, followingList] = await Promise.all([
-            getUserPosts(u.id, 30),
-            currentUser ? checkFollowing(currentUser.uid, u.id) : false,
-            getUserVP(u.id).catch(() => ({ vp: 0 })),
-            getFollowers(u.id).catch(() => []),
-            getFollowing(u.id).catch(() => []),
-          ]);
-          setPosts(userPosts || []);
-          setFollowing(!!isFollow);
-          setUserVP(vpData?.vp || 0);
-          setFollowerCount((followers?.length) ?? u.followerCount ?? 0);
-          setFollowingCount((followingList?.length) ?? u.followingCount ?? 0);
-          setTargetFollowsMe(currentUser?.uid ? (followingList || []).some(e => e.followingId === currentUser.uid) : false);
-        }
-      } catch (err) { console.error('Error loading profile:', err); }
-      finally { setLoading(false); }
+        if (!alive) return;
+        if (!u) { setUser(null); return; }
+        setUser(u);
+        if (currentUser?.uid && u.id !== currentUser.uid) trackEvent('profile_visit', { authorId: u.id, target: 'user' });
+
+        // The privacy gate reads "do we follow each other", so for a profile
+        // that is not public those two single-doc reads land BEFORE the first
+        // paint. Otherwise a follower would see the lock screen flash.
+        const vis = { ...PRIVACY_DEFAULTS, ...(u.settings?.privacy || {}) }.profileVis;
+        const gated = vis === 'Only me' || vis === 'Friends & Followers';
+        const followCheck = currentUser?.uid && u.id !== currentUser.uid
+          ? Promise.all([
+              checkFollowing(currentUser.uid, u.id).catch(() => false),
+              checkFollowing(u.id, currentUser.uid).catch(() => false),
+            ])
+          : Promise.resolve([false, false]);
+        const applyFollow = ([iFollow, theyFollow]) => {
+          if (!alive) return;
+          setFollowing(!!iFollow);
+          setTargetFollowsMe(!!theyFollow);
+        };
+        if (gated) applyFollow(await followCheck);
+        else followCheck.then(applyFollow);
+        if (!alive) return;
+        setLoading(false);
+
+        setLoadingPosts(true);
+        getUserPosts(u.id, 30)
+          .then((p) => { if (alive) setPosts(p || []); })
+          .catch(() => {})
+          .finally(() => { if (alive) setLoadingPosts(false); });
+        getUserVP(u.id).then((v) => { if (alive) setUserVP(v?.vp || 0); }).catch(() => {});
+        countFollowers(u.id)
+          .then((n) => { if (alive) setFollowerCount(n); })
+          .catch(() => { if (alive) setFollowerCount(u.followerCount || 0); });
+        countFollowing(u.id)
+          .then((n) => { if (alive) setFollowingCount(n); })
+          .catch(() => { if (alive) setFollowingCount(u.followingCount || 0); });
+      } catch (err) {
+        console.error('Error loading profile:', err);
+      } finally {
+        if (alive) setLoading(false);
+      }
     };
     load();
+    return () => { alive = false; };
   }, [id, currentUser]);
 
   useEffect(() => {
@@ -482,16 +530,6 @@ export function NativePublicProfileScreen() {
   };
 
   const masked = user ? applyVanguardMask(user, viewer) : null;
-  // ONE ring: LIVE > STATUS > ORBIT. Status costs nothing — `statusUntil` and
-  // `statusLastId` ride the user doc (markStatusPosted) and isGroupSeen is
-  // localStorage. See src/utils/avatarRing.js.
-  const ring = avatarRing({
-    live: !!(user?.id && isUserLive?.(user.id)),
-    unseenStatus: !!(user?.statusUntil > Date.now()
-      && !isGroupSeen(currentUser?.uid, user.id, user.statusLastId)),
-    orbit: orbitUnlocked,
-    masked: !!masked?.isVanguardPersona,
-  });
   const { bannerRef, docked } = useHeaderCollapse({ dockAt: 150 });
   const [showReport, setShowReport] = useState(false);
 
@@ -509,11 +547,11 @@ export function NativePublicProfileScreen() {
   const filteredPosts = useMemo(() => {
     if (!user) return [];
     const decorated = posts.map(p => ({ ...p, author: user }));
-    if (activeTab === 'Media') return decorated.filter(p => p.imageUrl || p.videoUrl);
-    if (activeTab === 'Clips') return decorated.filter(p => p.type === 'clip');
+    if (activeTab === 'Media') return decorated.filter(isMediaPost);
+    if (activeTab === 'Clips') return decorated.filter(p => isShortFormat(p.type));
     // Posts tab: pinned render above in their own row, so drop them here.
     const pinnedIds = new Set(pinnedPosts.map(p => p.id));
-    return decorated.filter(p => !pinnedIds.has(p.id));
+    return decorated.filter(p => !pinnedIds.has(p.id) && sharesToFeed(p));
   }, [activeTab, posts, user, pinnedPosts]);
 
   if (loading) return <ProfileSkeleton />;
@@ -564,17 +602,19 @@ export function NativePublicProfileScreen() {
          style={{ ...themeTokens(user?.cosmetics?.theme || 'default', accentHex),
                   background: '#0B0B14' }}>
       <MiniDockHeader show={docked} avatar={masked.avatar} name={displayName} user={masked} onBack={() => navigate(-1)} />
-      {/* Ambilight OUTSIDE the banner: the banner is overflow-hidden for the
-          parallax, so light drawn inside is clipped at the edge it must cross.
-          The native banner is 176px, not 220px, so the box is 340px. */}
+      {/* Ambilight fills banner + header + stats and fades out at the bottom of
+          that block. The old fixed 340px box ended in a black edge that cut
+          through the Followers / Following / Likes numbers (measured on the
+          phone, 2026-09-14). */}
+      <div className="relative">
       {ambilightOn && !masked.isVanguardPersona && user.banner && (
-        <div className="absolute inset-x-0 top-0 h-[340px] pointer-events-none" style={{ zIndex: -1 }}>
-          <Ambilight src={user.banner} enabled spread={150} intensity={0.72} feather="#000000" />
+        <div className="absolute inset-0 pointer-events-none" style={{ zIndex: -1 }}>
+          <Ambilight src={user.banner} videoRef={bannerVideoRef} enabled intensity={0.72} fade="bottom" />
         </div>
       )}
-      <Banner banner={!masked.isVanguardPersona ? user.banner : null} uid={user.id} parallaxRef={bannerRef}>
+      <Banner banner={!masked.isVanguardPersona ? user.banner : null} uid={user.id} parallaxRef={bannerRef} videoRef={bannerVideoRef}>
         <button onClick={() => navigate(-1)} className="absolute left-3.5 w-[34px] h-[34px] flex items-center justify-center rounded-lg text-white active:scale-95"
-          style={{ top: 'calc(env(safe-area-inset-top, 0px) + 14px)', background: 'rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.15)', backdropFilter: 'blur(8px)' }}>
+          style={{ top: 'calc(env(safe-area-inset-top, 0px) + 14px)', background: '#15151F' }}>
           <Icon name="arrow_back" size={16} />
         </button>
         <div className="absolute right-3.5 flex items-center gap-2" style={{ top: 'calc(env(safe-area-inset-top, 0px) + 14px)' }}>
@@ -596,20 +636,13 @@ export function NativePublicProfileScreen() {
 
       {/* HEADER — relative z-10 so username/rank paint ABOVE the banner. */}
       <div className="px-5 relative z-10">
-        <div className="flex items-end gap-4 -mt-11 mb-3">
-          {/* ⚠ ONE RING, same rule as the web public profile — see
-              src/utils/avatarRing.js. The rank-colour border is REMOVED: it
-              covered the accent orbit and contradicted the locked rule that
-              rank never touches the avatar ring. */}
-          <div className={`${ring === RING.ORBIT ? 'vg-orbit ' : ''}w-[88px] h-[88px] rounded-full flex items-center justify-center font-syne font-black text-[30px] relative shrink-0`}
-            style={{
-              background: 'linear-gradient(135deg,#7b1fff,#3b82f6)',
-              ...(ring === RING.LIVE
-                ? { boxShadow: '0 0 0 3px #0B0B14, 0 0 0 6px #F04060, 0 0 22px #F0406088' }
-                : ring === RING.STATUS
-                  ? { boxShadow: '0 0 0 3px #0B0B14, 0 0 0 6px #B44FFF, 0 0 18px #B44FFF66' }
-                  : { boxShadow: '0 0 0 3px #0B0B14' }),
-            }}>
+        <div className="flex items-start gap-4 mb-3 pt-1">
+          {/* ⚠ ONE RING, AND IT IS THE LIVE RING (founder, 2026-09-14), drawn
+              with its pill by the live block below. No orbit, no status ring,
+              no dark separator ring. The gradient paints only with no photo:
+              behind a photo its antialiased edge showed as a thin blue ring. */}
+          <div className="w-[88px] h-[88px] -mt-11 rounded-full flex items-center justify-center font-syne font-black text-[30px] relative shrink-0"
+            style={{ background: masked.avatar ? 'transparent' : 'linear-gradient(135deg,#7b1fff,#3b82f6)' }}>
             <div className="w-full h-full rounded-full overflow-hidden flex items-center justify-center">
               {masked.avatar ? <CachedImg src={masked.avatar} permanent alt={displayName} className="w-full h-full object-cover" /> : initial}
             </div>
@@ -630,23 +663,23 @@ export function NativePublicProfileScreen() {
               <RankBadge level={masked?.vpLevel} role={masked?.role} size={17} style={{ verticalAlign: '-3px' }} />
               {!masked.isVanguardPersona && <NameAudioButton url={user.nameAudioUrl} />}
               {user.isVerified && <div className="w-5 h-5 rounded-full flex items-center justify-center shrink-0" style={{ background: 'var(--vg-accent)' }}><Icon name="check" size={11} className="text-white" /></div>}
-              {!isBot && <span className="px-2 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase shrink-0" style={{ background: 'var(--vg-accent-chip)', color: 'var(--vg-accent)', border: '1px solid rgba(180,79,255,0.30)' }}>{vpLevel?.name || 'Rookie'}</span>}
+              {!isBot && <span className="px-2 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase shrink-0" style={ACCENT_CHIP}>{vpLevel?.name || 'Rookie'}</span>}
             </div>
             {!isMe && (
               <div className="flex items-center gap-2 mb-2 flex-wrap">
                 <motion.button onClick={handleFollowToggle} disabled={toggling} whileTap={{ scale: 0.92 }} className="px-5 py-2 rounded-full font-bold text-[13px] shrink-0"
-                  style={following ? { background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.10)', color: '#a0a0c0' } : { background: 'var(--vg-accent)', color: '#fff', boxShadow: '0 0 18px var(--vg-accent-dim)' }}>
+                  style={following ? { ...SOLID_CHIP, color: '#a0a0c0' } : { background: 'var(--vg-accent)', color: '#fff', boxShadow: '0 0 18px var(--vg-accent-dim)' }}>
                   {following ? 'Following' : 'Follow'}
                 </motion.button>
                 {!isBot && (
                   <>
-                    <button onClick={handleMessage} className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 text-white" style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.10)' }} title="Message"><Icon name="chat_bubble" size={16} /></button>
-                    <button onClick={() => navigate('/wallet')} className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: 'rgba(245,197,66,0.12)', border: '1px solid rgba(245,197,66,0.25)' }} title="Tip"><CoinIcon size={16} /></button>
+                    <button onClick={handleMessage} className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 text-white" style={SOLID_CHIP} title="Message"><Icon name="chat_bubble" size={16} /></button>
+                    <button onClick={() => setShowTip(true)} className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={TIP_CHIP} title="Tip"><CoinIcon size={16} /></button>
                   </>
                 )}
               </div>
             )}
-            {isMe && <button onClick={() => navigate('/edit-profile')} className="px-4 py-2 rounded-lg font-bold text-[12px] mb-2" style={{ background: 'var(--vg-accent-chip)', color: 'var(--vg-accent)', border: '1px solid rgba(180,79,255,0.40)' }}>Edit Profile</button>}
+            {isMe && <button onClick={() => navigate('/edit-profile')} className="px-4 py-2 rounded-lg font-bold text-[12px] mb-2" style={ACCENT_CHIP}>Edit Profile</button>}
             <div className="flex items-center gap-2 mb-1.5">
               <div className="text-[12px] text-text-muted">{handle}</div>
               {vanguardRank && <VanguardBadge rank={vanguardRank} size={16} title={`${rankMeta(vanguardRank).label} — Vergr Vanguard`} />}
@@ -658,25 +691,30 @@ export function NativePublicProfileScreen() {
         ) : (user.bio && <p className="text-[13px] text-text-secondary leading-relaxed mb-2 whitespace-pre-line">{user.bio}</p>)}
         {!masked.isVanguardPersona && (
           <div className="flex items-center gap-2.5 flex-wrap mb-1">
-            {socialsToList(user.socials, user.socialEnabled).slice(0, 5).map((s, i) => (
-              <a key={i} href={s.url} target="_blank" rel="noreferrer" className="w-7 h-7 rounded-md flex items-center justify-center text-text-muted active:text-white" style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)' }}><Icon name={socialIcon(s.platform)} size={13} /></a>
+            {socialsToList(user.socials, user.socialEnabled).map((s, i) => (
+              <a key={i} href={s.href} target="_blank" rel="noreferrer" aria-label={socialLabel(s.platform)} onClick={(e) => openSocialLink(e, s.href)} className="w-7 h-7 rounded-md flex items-center justify-center text-text-muted active:text-white" style={SOLID_CHIP}><Icon name={socialIcon(s.platform)} size={13} /></a>
             ))}
             {joined && <span className="flex items-center gap-1 text-[11px] text-text-muted"><Icon name="event" size={12} /> Joined {joined}</span>}
           </div>
         )}
+        {!masked.isVanguardPersona && <LinkedHandles linkedAccounts={user.linkedAccounts} platforms={user.platforms} className="mt-1.5" />}
         {!masked.isVanguardPersona && !isMe && (
           <div className="mt-3"><MembershipBlock creatorId={user.id} creatorName={displayName} /></div>
         )}
       </div>
 
-      {/* STATS */}
-      <div className="px-5 py-3 border-b" style={{ borderColor: '#1E1E2E' }}>
+      {/* STATS. Withheld for a masked Vanguard: the real account's counts are
+          enough to match the persona to a person. */}
+      {!masked.isVanguardPersona && (
+      <div className="px-5 py-3">
         <div className="grid grid-cols-3">
           <StatCell label="Followers" value={formatCount(followerCount)} onClick={() => navigate(`/connections/${user.id}/followers`)} />
           <StatCell label="Following" value={formatCount(followingCount)} onClick={() => navigate(`/connections/${user.id}/following`)} />
           <StatCell label="Likes" value={formatCount(user?.totalLikes || 0)} />
         </div>
         {!isBot && <VPCard vp={userVP} vpLevel={vpLevel} vpProgress={vpProgress} vpNext={vpNext} vpToNext={vpToNext} onClick={() => navigate('/prestige')} />}
+      </div>
+      )}
       </div>
 
       {masked.isVanguardPersona ? (
@@ -701,7 +739,8 @@ export function NativePublicProfileScreen() {
               profile keeps it (see NativeProfileScreen), same as the web.
               Re-add BOTH together once the art is redesigned and approved. */}
           <Tabs tabs={PUBLIC_TABS} active={activeTab} onSelect={setActiveTab} />
-          <div className="pt-1">
+          {/* Bottom padding keeps the last post clear of the floating music player. */}
+          <div className={`pt-1 ${!isMe && ambianceOn && user.cosmetics?.profileAudio ? 'pb-28' : ''}`}>
             {activeTab === 'Posts' && pinnedPosts.length > 0 && (
               <div className="px-4 pt-2">
                 <p className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-text-secondary mb-2">
@@ -712,8 +751,10 @@ export function NativePublicProfileScreen() {
             {activeTab === 'Posts' && pinnedPosts.length > 0 && (
               <PostsColumn posts={pinnedPosts.map(p => ({ ...p, author: user }))} emptyLabel="" />
             )}
-            {(filteredPosts.length > 0 || !(activeTab === 'Posts' && pinnedPosts.length > 0)) && (
-              <PostsColumn posts={filteredPosts} emptyLabel={`No ${activeTab.toLowerCase()} yet`} />
+            {loadingPosts ? (
+              <div className="flex justify-center py-16"><div className="w-6 h-6 border-2 border-surface-3 border-t-brand-violet-light rounded-full animate-spin" /></div>
+            ) : (filteredPosts.length > 0 || !(activeTab === 'Posts' && pinnedPosts.length > 0)) && (
+              <PostsColumn tab={activeTab} posts={filteredPosts} emptyLabel={`No ${activeTab.toLowerCase()} yet`} />
             )}
           </div>
         </>
@@ -736,6 +777,10 @@ export function NativePublicProfileScreen() {
       {showBoost && (
         <BoostSheet target="user" targetId={user?.id} targetLabel={`@${user?.username || 'this profile'}`}
           onClose={() => setShowBoost(false)} />
+      )}
+
+      {showTip && (
+        <SendCoinsModal isOpen={showTip} onClose={() => setShowTip(false)} recipient={user} />
       )}
 
       <ReportSheet open={showReport} title="Report User" onClose={() => setShowReport(false)}

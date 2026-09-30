@@ -39,14 +39,18 @@ async function getPrivateKey() {
 }
 
 // ── Admin check ────────────────────────────────────────────────────────
+// ⚠ This used to require users/{uid}.role to be 'admin' or 'moderator'. Since
+// 2026-09-20 no account carries role 'admin' and the operator has no users
+// document at all, so both callables refused EVERYONE. It is now the same guard
+// every Vergr Admin screen uses: the operator, or a sub-admin granted the
+// Creators screen, with the operator's 2FA session enforced.
+const { requireAdminScreen } = require('./adminAccess');
+const payoutVerification = require('./payoutVerification');
+
 async function assertAdmin(auth) {
   if (!auth?.uid) throw new functions.https.HttpsError('unauthenticated', 'Sign in required');
-  const snap = await db.collection('users').doc(auth.uid).get();
-  const role = snap.exists ? snap.data().role : null;
-  if (role !== 'admin' && role !== 'moderator') {
-    throw new functions.https.HttpsError('permission-denied', 'Admin role required');
-  }
-  return role;
+  const access = await requireAdminScreen(auth.uid, 'creators');
+  return access.isOperator ? 'operator' : 'admin';
 }
 
 // ── Crypto helpers ─────────────────────────────────────────────────────
@@ -85,6 +89,14 @@ async function writeAudit(actorUid, uid, action, meta = {}) {
 // ── reviewKyc ──────────────────────────────────────────────────────────
 exports.reviewKyc = functions.https.onCall({ region: 'europe-west1', memory: '1GiB', timeoutSeconds: 120 }, async (req) => {
   const role = await assertAdmin(req.auth);
+  // Payout limit (Level 2 / 3) review. See functions/payoutVerification.js.
+  if (req.data?.kind === 'payout_level') {
+    if (req.data.list) return payoutVerification.listRequests(req.data.status);
+    return payoutVerification.openRequest(req.auth.uid, req.data.uid, req.data.fileIndex);
+  }
+  // ⚠ LEGACY identity branch below. It needs the Secret Manager secret
+  // 'kyc-private-key', which does NOT exist (checked 2026-09-24: 404), so it
+  // cannot decrypt anything. Identity verification is Didit.
   const { uid } = req.data || {};
   if (!uid) throw new functions.https.HttpsError('invalid-argument', 'uid required');
 
@@ -128,6 +140,10 @@ exports.reviewKyc = functions.https.onCall({ region: 'europe-west1', memory: '1G
 // ── decideKyc ──────────────────────────────────────────────────────────
 exports.decideKyc = functions.https.onCall({ region: 'europe-west1' }, async (req) => {
   const role = await assertAdmin(req.auth);
+  if (req.data?.kind === 'payout_level') {
+    const { uid, decision, reason = null, note = null } = req.data;
+    return payoutVerification.decideRequest(req.auth.uid, uid, decision, reason, note);
+  }
   const { uid, decision, reason = null, note = null } = req.data || {};
   if (!uid || !['approved', 'rejected'].includes(decision)) {
     throw new functions.https.HttpsError('invalid-argument', 'uid + decision (approved|rejected) required');
@@ -166,6 +182,8 @@ exports.decideKyc = functions.https.onCall({ region: 'europe-west1' }, async (re
 // Called from the existing onUserDeleted auth trigger. Exported as a plain
 // function so index.js can call it inline after its own cleanup.
 async function purgeKycForUser(uid) {
+  // Payout-limit documents and the request go too (right to erasure).
+  await payoutVerification.purgeForUser(uid).catch(() => {});
   try {
     const appRef = db.collection('verification_applications').doc(uid);
     const piiRef = appRef.collection('private').doc('pii');

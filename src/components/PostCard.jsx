@@ -9,7 +9,7 @@ import { useAuth } from '../context/AuthContext';
 import { useUser } from '../context/UserContext';
 import { useUI } from '../context/UIContext';
 import { useLiveUsers } from '../context/LiveUsersContext';
-import { toggleLike, isPostLiked, toggleBookmark, isBookmarked, incrementShareCount, repost, undoRepost, isReposted, getPostWithAuthor, deletePost, reportPost } from '../firebase/firestore';
+import { toggleLike, isPostLiked, toggleBookmark, isBookmarked, incrementShareCount, repost, undoRepost, isReposted, getPostWithAuthor, deletePost, reportPost, setShareToFeed } from '../firebase/firestore';
 import { captureInterest } from '../utils/feedRank';
 import { addNegativeAuthor, addNegativeTopic } from '../utils/feedPrefs';
 import UserAvatar from './UserAvatar';
@@ -32,8 +32,10 @@ import { CoinIcon } from './CoinIcon';
 import BoostSheet from './boost/BoostSheet';
 import { isBoosted, boostRemainingMs, formatBoostRemaining } from '../utils/promoBoost';
 import LockedMedia from './monetization/LockedMedia';
-import { timeAgo } from '../utils/helpers';
+import PostTileStage, { tileStageShowsText } from './profile/PostTileStage';
+import { timeAgo, isShortFormat, sharesToFeed } from '../utils/helpers';
 import { withRef } from '../utils/shareRef';
+import { publicUrl } from '../utils/publicUrl';
 import { trackEvent } from '../utils/trackEvent';
 import { useImpressionTracker } from '../hooks/useImpressionTracker';
 
@@ -159,13 +161,25 @@ function MediaRow({ items, post, onImageClick, onDoubleTapLike }) {
 //
 // `isolation: isolate` makes this a stacking context so the z-index:-1 glow
 // paints above this wrapper and below the media (00-RULES R6).
-const MEDIA_GLOW_BLEED = 56;
+//
+// ⚠ BESIDE THE MEDIA ONLY, AND FADED TO ZERO BEFORE ITS OWN EDGE. Measured in
+// Chrome, 2026-09-14: a 56px bleed on every side washed the author name above
+// the media and the like row below it, and the card's overflow clip cut the
+// light off in a straight line at the card edge, on desktop and phone. Now there
+// is no vertical bleed, every edge fades through a mask, and the sideways bleed
+// ends inside the card: a clip tile has the avatar column's width to its left,
+// full-width media only the card's 14px padding.
+const GLOW_BLEED_TILE = 40;
+const GLOW_BLEED_WIDE = 14;
 
-function MediaGlow({ src, children }) {
+function MediaGlow({ src, children, fit = false }) {
   if (!src) return children;
   return (
-    <div className="relative" style={{ isolation: 'isolate' }}>
-      <Ambilight src={src} enabled bleed={MEDIA_GLOW_BLEED} intensity={0.45} feather={false} />
+    // `fit` hugs a clip's portrait tile, so its glow is the tile's own light and
+    // not a colour wash across the whole width of the card (founder, 2026-09-14:
+    // "on desktop view it really does not look professional").
+    <div className={fit ? 'relative w-fit max-w-full' : 'relative'} style={{ isolation: 'isolate' }}>
+      <Ambilight src={src} enabled bleedX={fit ? GLOW_BLEED_TILE : GLOW_BLEED_WIDE} bleedY={0} edgeFade intensity={0.45} feather={false} />
       {children}
     </div>
   );
@@ -173,6 +187,11 @@ function MediaGlow({ src, children }) {
 
 function MediaContent({ post, onImageClick, onDoubleTapLike }) {
   const { onTap, heartKey } = useMediaTap(onDoubleTapLike);
+  // Own hook, and it sits ABOVE every early return below. MediaContent is a
+  // SIBLING of the component that already holds a navigate, and a const in a
+  // sibling component is invisible here: that exact shape has crashed this app
+  // four times (myVpLevel, accentHex, tsMs, joinEvents).
+  const navigate = useNavigate();
   // A hotlink-protected source image (news bots hotlink gematsu.com etc., which
   // 403s off-origin) would render a broken big image with no way to recover.
   // Drop the whole media block on error so the post reads as a clean text card
@@ -227,6 +246,53 @@ function MediaContent({ post, onImageClick, onDoubleTapLike }) {
 
   if (items.length === 1) {
     const it = items[0];
+
+    // A CLIP IS A DIFFERENT FORMAT FROM A VIDEO POST, AND THE FEED MUST SAY SO.
+    //
+    // Founder, 2026-09-12: "is a youtube short the same thing as a youtube
+    // video? no it is not, they are formatted and sized differently, one gets a
+    // screen with the user info and coments and related videos below it, and the
+    // other is a feed that gets scrolled like tiktok ... the clip i told you to
+    // create is showing up as a reguar post with a video".
+    //
+    // He was right. A clip fell through to the SAME full-width 16:9
+    // InlineVideoPlayer as a video post, with a small "Clip" badge as the only
+    // difference, so it read as a video post in every way that matters: shape,
+    // size and behaviour. A clip now renders as a PORTRAIT COVER TILE that opens
+    // the immersive scroller, which is what a Short is; a `video` keeps the
+    // inline 16:9 player and its own detail screen, which is what a video is.
+    if (isShortFormat(post.type)) {
+      return (
+        // Left-aligned under the caption, the way X lays out a vertical video.
+        // Centred in a wide card it floated in empty space with the action bar
+        // stranded below nothing.
+        <div className="mt-3 flex" onClick={(e) => e.stopPropagation()}>
+          <button
+            onClick={() => navigate(`/clip/${post.id}`)}
+            aria-label="Open clip"
+            className="relative w-[260px] max-w-full aspect-[9/16] rounded-2xl overflow-hidden bg-surface-2 active:scale-[0.98] transition-transform"
+          >
+            {post.thumbnailUrl
+              ? <img src={post.thumbnailUrl} alt="" className="absolute inset-0 w-full h-full object-cover" loading="lazy" />
+              : <video src={it.url} muted playsInline preload="metadata" tabIndex={-1} aria-hidden className="absolute inset-0 w-full h-full object-cover pointer-events-none" />}
+            <div className="absolute inset-0" style={{ background: 'linear-gradient(180deg, rgba(0,0,0,0.10) 45%, rgba(0,0,0,0.72) 100%)' }} />
+            {/* One label for both types: a legacy `short` IS a clip. Solid, no
+                hairline, and the play glyph sits on a solid disc. The old one was
+                black/45 with a blur, measured half yellow and half blue over the
+                test clip's colour bars. */}
+            <span className="absolute top-2 left-2 px-2 py-0.5 rounded-lg bg-brand-ember text-white text-[9px] font-bold uppercase tracking-wider">
+              Clip
+            </span>
+            <span className="absolute inset-0 flex items-center justify-center">
+              <span className="w-12 h-12 rounded-full flex items-center justify-center" style={{ background: '#15151F' }}>
+                <Icon name="play_arrow" size={26} className="text-white" filled />
+              </span>
+            </span>
+          </button>
+        </div>
+      );
+    }
+
     if (it.video) {
       return (
         <div className="mt-3 rounded-2xl overflow-hidden border border-white/[0.06] relative aspect-video bg-black" onClick={(e) => e.stopPropagation()}>
@@ -456,7 +522,9 @@ function BoostedPill({ post }) {
   );
 }
 
-export default function PostCard({ post, onDeleted, onLikeUpdate }) {
+// variant: 'feed' (default) is the timeline card; 'tile' is the fixed-shape card a
+// profile grid uses on a wide screen (see the tile branch before the render).
+export default function PostCard({ post, onDeleted, onLikeUpdate, variant = 'feed' }) {
   const navigate = useNavigate();
   const { currentUser } = useAuth();
   const { isUserLive } = useLiveUsers();
@@ -628,8 +696,8 @@ export default function PostCard({ post, onDeleted, onLikeUpdate }) {
     // /share/post/:id is server-rendered with Open Graph tags so messengers
     // (WhatsApp, Discord, etc.) show a real preview card with title + image
     // instead of our SPA's default tags.
-    const shareKind = (post.type === 'clip' || post.type === 'video') ? 'clip' : 'post';
-    const postUrl = withRef(`${window.location.origin}/share/${shareKind}/${post.id}`);
+    const shareKind = (isShortFormat(post.type) || post.type === 'video') ? 'clip' : 'post';
+    const postUrl = withRef(publicUrl(`/share/${shareKind}/${post.id}`));
     if (navigator.share) {
       try {
         await navigator.share({ title: stripPostFormatting(post.content)?.slice(0, 50) || 'Check this out on VERGR', url: postUrl });
@@ -700,9 +768,25 @@ export default function PostCard({ post, onDeleted, onLikeUpdate }) {
   };
 
   const handleCopyLink = () => {
-    const shareKind = (post.type === 'clip' || post.type === 'video') ? 'clip' : 'post';
-    navigator.clipboard?.writeText(`${window.location.origin}/share/${shareKind}/${post.id}`);
+    const shareKind = (isShortFormat(post.type) || post.type === 'video') ? 'clip' : 'post';
+    navigator.clipboard?.writeText(withRef(publicUrl(`/share/${shareKind}/${post.id}`)));
     setShowMenu(false);
+  };
+
+  // "Also share to feed", changeable after posting, the way Instagram lets you
+  // remove a reel from your grid. The clip stays in Clips either way.
+  const [feedOverride, setFeedOverride] = useState(null);
+  const inFeed = feedOverride ?? sharesToFeed(post);
+  const handleToggleFeed = async () => {
+    setShowMenu(false);
+    const next = !inFeed;
+    try {
+      await setShareToFeed(post.id, next);
+      setFeedOverride(next);
+      showToast(next ? 'Shared to your profile and feed' : 'Removed from your profile and feed. It stays in Clips.', 'success');
+    } catch {
+      showToast('Could not update this clip. Please try again.', 'error');
+    }
   };
 
   const goToPost = () => {
@@ -710,8 +794,23 @@ export default function PostCard({ post, onDeleted, onLikeUpdate }) {
       postId: post.id, authorId: post.authorId,
       contentType: post.type, tags: post.tags?.slice?.(0, 5), gameId: post.gameId,
     });
-    if (post.type === 'clip' || post.type === 'video') navigate(`/clip/${post.id}`);
+    // Short-form opens the immersive scroller; a VIDEO post opens its own
+    // detail screen with the author, the comments and the rest below it. Sending
+    // a video post into the TikTok scroller was the same conflation as rendering
+    // a clip as a video card.
+    if (isShortFormat(post.type)) navigate(`/clip/${post.id}`);
     else navigate(`/post/${post.id}`);
+  };
+
+  // The comment button. On a clip it opens the clip WITH its comment sheet up,
+  // never a separate page (founder, 2026-09-12 and again 2026-09-13).
+  const goToComments = () => {
+    if (!isShortFormat(post.type)) { goToPost(); return; }
+    trackEvent('comment', {
+      postId: post.id, authorId: post.authorId,
+      contentType: post.type, tags: post.tags?.slice?.(0, 5), gameId: post.gameId,
+    });
+    navigate(`/clip/${post.id}?comments=1`);
   };
 
   // Base content post, with any just-edited media applied so the card reflects
@@ -754,6 +853,281 @@ export default function PostCard({ post, onDeleted, onLikeUpdate }) {
   const maskedAuthor = applyVanguardMask((contentPost || post)?.author, viewer);
   const isAuthorMasked = !!maskedAuthor?.isVanguardPersona;
 
+  // ── Shared pieces. The feed card and the profile tile render the SAME
+  // controls, menu and sheets from these, so the two can never drift apart. ──
+  const likeControl = (
+    <button onClick={handleLike} disabled={liking} aria-label={liked ? 'Unlike' : 'Like'}
+      className={`relative flex items-center gap-1.5 px-2 py-1.5 rounded-full transition-all ${liked ? 'text-brand-ember' : 'text-text-muted hover:text-brand-ember'}`}>
+      <span className="relative flex items-center justify-center">
+        <HeartBurst triggerKey={burstKey} />
+        <motion.div
+          animate={liked ? { scale: [1, 1.3, 1] } : { scale: 1 }}
+          transition={{ type: 'spring', stiffness: 600, damping: 15 }}>
+          <Icon name={liked ? 'favorite' : 'favorite_border'} filled={liked} size={20} />
+        </motion.div>
+      </span>
+      <AnimatedNumber value={likeCount} className="text-xs font-dmmono" />
+    </button>
+  );
+
+  const commentControl = (
+    <button onClick={goToComments} aria-label="Comments" className="flex items-center gap-1.5 px-2 py-1.5 rounded-full text-text-muted hover:text-brand-violet-light transition-colors">
+      <Icon name="chat_bubble_outline" size={20} />
+      <span className="text-xs font-dmmono">{post.commentCount || 0}</span>
+    </button>
+  );
+
+  const repostControl = (
+    <div className="relative">
+      <button onClick={(e) => { e.stopPropagation(); setShowRepostMenu(!showRepostMenu); }} disabled={reposting} aria-label="Repost or share"
+        className={`flex items-center gap-1.5 px-2 py-1.5 rounded-full transition-all ${reposted ? 'text-brand-violet' : 'text-text-muted hover:text-brand-violet'}`}>
+        <Icon name="repeat" size={20} />
+        <span className="text-xs font-dmmono">{shareCount}</span>
+      </button>
+      {showRepostMenu && (
+        <div className="absolute bottom-full left-0 mb-2 z-50 w-44 bg-surface-1 rounded-xl shadow-xl overflow-hidden" onClick={e => e.stopPropagation()}>
+          <button onClick={handleRepost}
+            className={`w-full px-4 py-3 text-left text-sm hover:bg-surface-2 transition-colors flex items-center gap-2.5 ${reposted ? 'text-brand-violet' : 'text-text-primary'}`}>
+            <Icon name="repeat" size={16} className={reposted ? 'text-brand-violet' : 'text-text-muted'} />
+            {reposted ? 'Undo repost' : 'Repost'}
+          </button>
+          <button onClick={handleQuote} className="w-full px-4 py-3 text-left text-sm text-text-primary hover:bg-surface-2 transition-colors flex items-center gap-2.5">
+            <Icon name="edit_note" size={16} className="text-text-muted" /> Quote
+          </button>
+          <button onClick={handleShareLink} className="w-full px-4 py-3 text-left text-sm text-text-primary hover:bg-surface-2 transition-colors flex items-center gap-2.5">
+            <Icon name="share" size={16} className="text-text-muted" /> Share link
+          </button>
+        </div>
+      )}
+    </div>
+  );
+
+  const bookmarkControl = (
+    <button onClick={handleBookmark} disabled={bookmarking} aria-label={bookmarked ? 'Remove bookmark' : 'Bookmark'}
+      className={`flex items-center gap-1.5 px-2 py-1.5 rounded-full transition-all ${bookmarked ? 'text-brand-gold' : 'text-text-muted hover:text-brand-gold'}`}>
+      <Icon name={bookmarked ? 'bookmark' : 'bookmark_border'} filled={bookmarked} size={20} />
+      {saveCount > 0 && <span className="text-xs font-dmmono">{saveCount}</span>}
+    </button>
+  );
+
+  // ⚠ ONLY THE AUTHOR SEES BOOST HERE. Founder, 2026-08-28: a boost button on
+  // your own post, while everyone else reaches it from the three-dot menu. It
+  // sits in the slot Tip uses on other people's posts, which is free here
+  // because you cannot tip yourself.
+  const boostOrTipControl = isOwnPost ? (
+    <button
+      onClick={(e) => { e.stopPropagation(); setShowBoost(true); }}
+      className="flex items-center gap-1.5 px-3 py-1 rounded-full text-brand-ember hover:brightness-125 transition"
+      style={{ background: '#2A1520' }}
+    >
+      <Icon name="rocket_launch" size={13} />
+      <span className="text-[11px] font-bold">Boost</span>
+    </button>
+  ) : (
+    <button
+      onClick={(e) => { e.stopPropagation(); setShowTipModal(true); }}
+      // Solid, no hairline: a tinted wash with a matching stroke is the cheap
+      // pill the founder has ruled out.
+      className="flex items-center gap-1.5 px-3 py-1 rounded-full text-brand-violet-light hover:brightness-125 transition"
+      style={{ background: '#1F1636' }}
+    >
+      <CoinIcon size={13} />
+      <span className="text-[11px] font-bold">Tip</span>
+    </button>
+  );
+
+  const moreMenu = (
+    <div className="relative shrink-0">
+      <button onClick={(e) => { e.stopPropagation(); setShowMenu(!showMenu); }} aria-label="More options" className="text-text-muted hover:text-text-secondary p-1">
+        <Icon name="more_horiz" size={20} />
+      </button>
+      {showMenu && (
+        <div className="absolute right-0 top-8 z-50 w-48 bg-surface-1 rounded-xl shadow-xl overflow-hidden" onClick={e => e.stopPropagation()}>
+          <button onClick={handleCopyLink} className="w-full px-4 py-3 text-left text-sm text-text-primary hover:bg-surface-2 transition-colors flex items-center gap-2.5">
+            <Icon name="link" size={16} className="text-text-muted" /> Copy link
+          </button>
+          <button onClick={() => { handleBookmark(); setShowMenu(false); }} className="w-full px-4 py-3 text-left text-sm text-text-primary hover:bg-surface-2 transition-colors flex items-center gap-2.5">
+            <Icon name={bookmarked ? 'bookmark' : 'bookmark_border'} size={16} className="text-text-muted" /> {bookmarked ? 'Remove bookmark' : 'Bookmark'}
+          </button>
+          <button onClick={() => { setShowBoost(true); setShowMenu(false); }} className="w-full px-4 py-3 text-left text-sm text-text-primary hover:bg-surface-2 transition-colors flex items-center gap-2.5">
+            <Icon name="rocket_launch" size={16} className="text-text-muted" /> Boost this post
+          </button>
+          {isOwnPost ? (
+            <>
+              <button onClick={handlePinToggle} className="w-full px-4 py-3 text-left text-sm text-text-primary hover:bg-surface-2 transition-colors flex items-center gap-2.5">
+                <Icon name="push_pin" size={16} className="text-text-muted" /> {isPinned ? 'Unpin from profile' : 'Pin to profile'}
+              </button>
+              {isShortFormat(post.type) && (
+                <button onClick={handleToggleFeed} className="w-full px-4 py-3 text-left text-sm text-text-primary hover:bg-surface-2 transition-colors flex items-center gap-2.5">
+                  <Icon name={inFeed ? 'grid_off' : 'dynamic_feed'} size={16} className="text-text-muted" /> {inFeed ? 'Remove from profile & feed' : 'Also share to feed'}
+                </button>
+              )}
+              <button onClick={openEdit} className="w-full px-4 py-3 text-left text-sm text-text-primary hover:bg-surface-2 transition-colors flex items-center gap-2.5">
+                <Icon name="edit" size={16} className="text-text-muted" /> Edit post
+              </button>
+              <button onClick={handleDelete} disabled={deleting} className="w-full px-4 py-3 text-left text-sm text-brand-ember hover:bg-brand-ember/10 transition-colors flex items-center gap-2.5">
+                <Icon name="delete" size={16} /> {deleting ? 'Deleting...' : 'Delete post'}
+              </button>
+            </>
+          ) : (
+            <>
+              <button onClick={() => handleNotInterested({ author: true })} className="w-full px-4 py-3 text-left text-sm text-text-primary hover:bg-surface-2 transition-colors flex items-center gap-2.5">
+                <Icon name="do_not_disturb_on" size={16} className="text-text-muted" /> Not interested
+              </button>
+              {primaryTag && (
+                <button onClick={() => handleNotInterested({ tag: true })} className="w-full px-4 py-3 text-left text-sm text-text-primary hover:bg-surface-2 transition-colors flex items-center gap-2.5">
+                  <Icon name="tag" size={16} className="text-text-muted" /> See less of #{String(primaryTag).replace(/^#/, '')}
+                </button>
+              )}
+              <button onClick={() => { navigate(`/user/${post.authorId}`); setShowMenu(false); }} className="w-full px-4 py-3 text-left text-sm text-text-primary hover:bg-surface-2 transition-colors flex items-center gap-2.5">
+                <Icon name="person" size={16} className="text-text-muted" /> View profile
+              </button>
+              <button onClick={() => { setShowReportModal(true); setShowMenu(false); }} className="w-full px-4 py-3 text-left text-sm text-brand-ember hover:bg-brand-ember/10 transition-colors flex items-center gap-2.5">
+                <Icon name="flag" size={16} /> Report post
+              </button>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+
+  const cardOverlays = (
+    <>
+      {showBoost && (
+        <BoostSheet
+          target="post"
+          targetId={post.id}
+          isLfg={post.type === 'lfg'}
+          targetLabel={isOwnPost ? 'your post' : 'this post'}
+          onClose={() => setShowBoost(false)}
+        />
+      )}
+
+      {lightbox && (
+        <ImageLightbox urls={lightbox.urls} startIndex={lightbox.index} onClose={() => setLightbox(null)} />
+      )}
+
+      {/* Report modal */}
+      {showReportModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setShowReportModal(false)}>
+          <div className="bg-surface-1 rounded-2xl w-full max-w-sm mx-4 overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="px-4 py-3 flex items-center justify-between">
+              <h3 className="font-syne font-bold text-sm">Report Post</h3>
+              <button onClick={() => setShowReportModal(false)} aria-label="Close" className="text-text-muted p-1"><Icon name="close" size={18} /></button>
+            </div>
+            <div className="py-1">
+              {['Spam or scam', 'Harassment or bullying', 'Hate speech', 'Inappropriate content', 'Cheating or exploiting', 'Impersonation', 'Other'].map(reason => (
+                <button key={reason} onClick={() => handleReport(reason)}
+                  className="w-full px-4 py-3 text-left text-sm text-text-primary hover:bg-surface-2 transition-colors">
+                  {reason}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit reuses the full create composer, prefilled with this post */}
+      {showEditModal && (
+        <CreateComposer
+          editingPost={post}
+          onEdited={handleEdited}
+          onClose={() => setShowEditModal(false)}
+        />
+      )}
+      <TipPostModal
+        isOpen={showTipModal}
+        onClose={() => setShowTipModal(false)}
+        post={post}
+      />
+    </>
+  );
+
+  // ── THE PROFILE TILE ─────────────────────────────────────────────────
+  //
+  // Founder, 2026-09-14, on the one-column fix: "your lazy as fuck solution on the
+  // profile screen was to make it one column". A profile grid needs a card whose
+  // SHAPE does not depend on its content. Every section here has a fixed height:
+  //   header 52 · stage 4:5 · caption 48 (two lines, always reserved) · actions 46
+  // so every tile in a row is the same height and every action row sits on the
+  // same line, whether the post is a clip with no caption, a photo or 300
+  // characters of text. The stage (PostTileStage) fills the same box for every
+  // post type. Clicking the stage opens the post, or the player for a clip.
+  if (variant === 'tile') {
+    const tilePost = contentPost || null;
+    const tileText = stripPostFormatting(isRepostType ? (tilePost?.content || '') : fullContent).trim();
+    const tileTags = (Array.isArray(tilePost?.hashtags) ? tilePost.hashtags : [])
+      .map((t) => `#${String(t).replace(/^#/, '')}`).join(' ');
+    const stageHasText = tileStageShowsText(tilePost);
+    const caption = stageHasText ? tileTags : (tileText || tileTags);
+    const authorId = tilePost?.authorId || post.authorId;
+    return (
+      <motion.article
+        ref={cardRef}
+        data-post-id={post.id}
+        data-vg-tile=""
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.2, ease: [0.25, 0.1, 0.25, 1] }}
+        className="relative flex flex-col h-full rounded-[14px] transition-colors hover:bg-[#191927]"
+        style={{ background: '#14141F' }}
+      >
+        <div className="flex items-center gap-2.5 pl-3 pr-1.5 h-[52px] shrink-0">
+          <button onClick={() => navigate(`/user/${authorId}`)} className="shrink-0" aria-label="Open profile">
+            <UserAvatar
+              src={maskedAuthor?.avatar}
+              size={30}
+              isVerified={!isAuthorMasked && tilePost?.author?.isVerified}
+              isLive={!isAuthorMasked && isUserLive(authorId)}
+            />
+          </button>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-1 min-w-0">
+              <button onClick={() => navigate(`/user/${authorId}`)} className="min-w-0 truncate text-[13px] font-semibold text-text-primary hover:underline text-left">
+                <UserName user={maskedAuthor} masked context="feed" />
+              </button>
+              <RankBadge level={maskedAuthor?.vpLevel} role={maskedAuthor?.role} size={12} style={{ verticalAlign: '-2px' }} />
+            </div>
+            <p className="flex items-center gap-1 text-[11px] text-text-muted truncate">
+              {isRepostType && <><Icon name="repeat" size={12} className="text-brand-violet" /> Reposted ·</>}
+              {timeAgo((tilePost || post).createdAt)}{isEdited ? ' · edited' : ''}
+            </p>
+          </div>
+          <BoostedPill post={post} />
+          {moreMenu}
+        </div>
+
+        <button
+          type="button"
+          onClick={goToPost}
+          aria-label={isShortFormat(tilePost?.type) ? 'Open clip' : 'Open post'}
+          className="relative block w-full aspect-[4/5] overflow-hidden shrink-0"
+          style={{ background: '#0E0E17' }}
+        >
+          <PostTileStage post={tilePost} text={tileText} />
+        </button>
+
+        <div className="px-3.5 pt-2.5 h-[48px] shrink-0">
+          <p className={`text-[13px] leading-[19px] line-clamp-2 break-words ${stageHasText ? 'text-brand-violet-light' : 'text-text-secondary'}`}>
+            {caption}
+          </p>
+        </div>
+
+        <div className="mt-auto flex items-center pl-1.5 pr-3 h-[46px] shrink-0">
+          {likeControl}
+          {commentControl}
+          {repostControl}
+          {bookmarkControl}
+          <div className="flex-1" />
+          {boostOrTipControl}
+        </div>
+
+        {cardOverlays}
+      </motion.article>
+    );
+  }
+
   return (
     <motion.article
       ref={cardRef}
@@ -762,7 +1136,9 @@ export default function PostCard({ post, onDeleted, onLikeUpdate }) {
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.25, ease: [0.25, 0.1, 0.25, 1] }}
-      className="w-full border-b border-white/[0.04] hover:bg-surface-1/30 transition-colors relative"
+      // No divider line between posts. Founder, 2026-09-14: the thin dividers had
+      // to go. Posts are separated by space (the py-5 below), not a hairline.
+      className="w-full hover:bg-surface-1/30 transition-colors relative"
       // `isolation: isolate` makes the card a stacking context, so the
       // z-index:-1 glow below paints ABOVE the card's own background and BELOW
       // every piece of card content. Without it the glow escapes to an ancestor
@@ -774,7 +1150,7 @@ export default function PostCard({ post, onDeleted, onLikeUpdate }) {
       // it reaching the card above or below.
       style={{ isolation: 'isolate', overflow: 'hidden' }}
     >
-      <div className="px-4 py-4">
+      <div className="px-4 py-5">
         {/* Repost header — masked author */}
         {isRepostType && (
           <div className="flex items-center gap-2 mb-2 ml-12">
@@ -851,8 +1227,12 @@ export default function PostCard({ post, onDeleted, onLikeUpdate }) {
 
             {!isRepostType && !(post.youtubeVideoId || post.embedVideoUrl) && (
               <>
-                {(contentPost?.type === 'photo' || contentPost?.type === 'carousel' || contentPost?.type === 'video' || contentPost?.type === 'clip' || contentPost?.type === 'media') && (
-                  <MediaGlow src={cardPosterUrl}><MediaContent post={contentPost} onImageClick={(urls, i) => setLightbox({ urls, index: i })} onDoubleTapLike={handleDoubleTapLike} /></MediaGlow>
+                {/* ⚠ `isShortFormat`, not a hand-listed 'clip'. A post of type
+                    'short' was missing from this list, so its video never
+                    rendered and it showed as a text-only card (both "Sound test"
+                    posts on @Vergr, 2026-09-14). */}
+                {(contentPost?.type === 'photo' || contentPost?.type === 'carousel' || contentPost?.type === 'video' || isShortFormat(contentPost?.type) || contentPost?.type === 'media') && (
+                  <MediaGlow src={cardPosterUrl} fit={isShortFormat(contentPost?.type) && !(contentPost?.locked?.priceCoins > 0)}><MediaContent post={contentPost} onImageClick={(urls, i) => setLightbox({ urls, index: i })} onDoubleTapLike={handleDoubleTapLike} /></MediaGlow>
                 )}
                 {contentPost?.type === 'text' && (contentPost?.mediaUrl || contentPost?.mediaUrls?.length > 0) && (
                   <MediaGlow src={cardPosterUrl}><MediaContent post={contentPost} onImageClick={(urls, i) => setLightbox({ urls, index: i })} onDoubleTapLike={handleDoubleTapLike} /></MediaGlow>
@@ -905,52 +1285,10 @@ export default function PostCard({ post, onDeleted, onLikeUpdate }) {
 
             {/* Engagement bar */}
             <div className="flex items-center justify-between mt-3 -ml-2">
-              <button onClick={handleLike} disabled={liking}
-                className={`relative flex items-center gap-1.5 px-2 py-1.5 rounded-full transition-all ${liked ? 'text-brand-ember' : 'text-text-muted hover:text-brand-ember'}`}>
-                <span className="relative flex items-center justify-center">
-                  <HeartBurst triggerKey={burstKey} />
-                  <motion.div
-                    animate={liked ? { scale: [1, 1.3, 1] } : { scale: 1 }}
-                    transition={{ type: 'spring', stiffness: 600, damping: 15 }}>
-                    <Icon name={liked ? 'favorite' : 'favorite_border'} filled={liked} size={20} />
-                  </motion.div>
-                </span>
-                <AnimatedNumber value={likeCount} className="text-xs font-dmmono" />
-              </button>
-
-              <button onClick={goToPost} className="flex items-center gap-1.5 px-2 py-1.5 rounded-full text-text-muted hover:text-brand-violet-light transition-colors">
-                <Icon name="chat_bubble_outline" size={20} />
-                <span className="text-xs font-dmmono">{post.commentCount || 0}</span>
-              </button>
-
-              <div className="relative">
-                <button onClick={(e) => { e.stopPropagation(); setShowRepostMenu(!showRepostMenu); }} disabled={reposting}
-                  className={`flex items-center gap-1.5 px-2 py-1.5 rounded-full transition-all ${reposted ? 'text-brand-violet' : 'text-text-muted hover:text-brand-violet'}`}>
-                  <Icon name="repeat" size={20} />
-                  <span className="text-xs font-dmmono">{shareCount}</span>
-                </button>
-                {showRepostMenu && (
-                  <div className="absolute bottom-full left-0 mb-2 z-50 w-44 bg-surface-1 border border-white/[0.06] rounded-xl shadow-xl overflow-hidden" onClick={e => e.stopPropagation()}>
-                    <button onClick={handleRepost}
-                      className={`w-full px-4 py-3 text-left text-sm hover:bg-surface-2 transition-colors flex items-center gap-2.5 ${reposted ? 'text-brand-violet' : 'text-text-primary'}`}>
-                      <Icon name="repeat" size={16} className={reposted ? 'text-brand-violet' : 'text-text-muted'} />
-                      {reposted ? 'Undo repost' : 'Repost'}
-                    </button>
-                    <button onClick={handleQuote} className="w-full px-4 py-3 text-left text-sm text-text-primary hover:bg-surface-2 transition-colors flex items-center gap-2.5">
-                      <Icon name="edit_note" size={16} className="text-text-muted" /> Quote
-                    </button>
-                    <button onClick={handleShareLink} className="w-full px-4 py-3 text-left text-sm text-text-primary hover:bg-surface-2 transition-colors flex items-center gap-2.5">
-                      <Icon name="share" size={16} className="text-text-muted" /> Share link
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              <button onClick={handleBookmark} disabled={bookmarking}
-                className={`flex items-center gap-1.5 px-2 py-1.5 rounded-full transition-all ${bookmarked ? 'text-brand-gold' : 'text-text-muted hover:text-brand-gold'}`}>
-                <Icon name={bookmarked ? 'bookmark' : 'bookmark_border'} filled={bookmarked} size={20} />
-                {saveCount > 0 && <span className="text-xs font-dmmono">{saveCount}</span>}
-              </button>
+              {likeControl}
+              {commentControl}
+              {repostControl}
+              {bookmarkControl}
 
               {/* ⚠ A DISPLAY FLOOR, NOT A ZERO CHECK. Founder, 2026-08-28: a
                   view counter was hidden originally because the first users would
@@ -972,130 +1310,15 @@ export default function PostCard({ post, onDeleted, onLikeUpdate }) {
               <BoostedPill post={post} />
               <div className="flex-1" />
 
-              {/* ⚠ ONLY THE AUTHOR SEES THIS. Founder, 2026-08-28: a boost button
-                  on your own post, while everyone else reaches it from the
-                  three-dot menu. It sits in the slot Tip uses on other people's
-                  posts, which is free here because you cannot tip yourself. */}
-              {isOwnPost ? (
-                <button
-                  onClick={(e) => { e.stopPropagation(); setShowBoost(true); }}
-                  className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-brand-ember/12 border border-brand-ember/30 text-brand-ember hover:bg-brand-ember/20 transition-colors"
-                >
-                  <Icon name="rocket_launch" size={13} />
-                  <span className="text-[11px] font-bold">Boost</span>
-                </button>
-              ) : (
-              <button
-                onClick={(e) => { e.stopPropagation(); setShowTipModal(true); }}
-                className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-brand-violet/12 border border-brand-violet/30 text-brand-violet hover:bg-brand-violet/20 transition-colors"
-              >
-                <CoinIcon size={13} />
-                <span className="text-[11px] font-bold">Tip</span>
-              </button>
-              )}
+              {boostOrTipControl}
             </div>
           </div>
 
-          {/* Three dots menu */}
-          <div className="relative">
-            <button onClick={(e) => { e.stopPropagation(); setShowMenu(!showMenu); }} className="text-text-muted hover:text-text-secondary p-1">
-              <Icon name="more_horiz" size={20} />
-            </button>
-            {showMenu && (
-              <div className="absolute right-0 top-8 z-50 w-48 bg-surface-1 border border-white/[0.06] rounded-xl shadow-xl overflow-hidden" onClick={e => e.stopPropagation()}>
-                <button onClick={handleCopyLink} className="w-full px-4 py-3 text-left text-sm text-text-primary hover:bg-surface-2 transition-colors flex items-center gap-2.5">
-                  <Icon name="link" size={16} className="text-text-muted" /> Copy link
-                </button>
-                <button onClick={() => { handleBookmark(); setShowMenu(false); }} className="w-full px-4 py-3 text-left text-sm text-text-primary hover:bg-surface-2 transition-colors flex items-center gap-2.5">
-                  <Icon name={bookmarked ? 'bookmark' : 'bookmark_border'} size={16} className="text-text-muted" /> {bookmarked ? 'Remove bookmark' : 'Bookmark'}
-                </button>
-                <button onClick={() => { setShowBoost(true); setShowMenu(false); }} className="w-full px-4 py-3 text-left text-sm text-text-primary hover:bg-surface-2 transition-colors flex items-center gap-2.5">
-                  <Icon name="rocket_launch" size={16} className="text-text-muted" /> Boost this post
-                </button>
-                {isOwnPost ? (
-                  <>
-                    <button onClick={handlePinToggle} className="w-full px-4 py-3 text-left text-sm text-text-primary hover:bg-surface-2 transition-colors flex items-center gap-2.5">
-                      <Icon name="push_pin" size={16} className="text-text-muted" /> {isPinned ? 'Unpin from profile' : 'Pin to profile'}
-                    </button>
-                    <button onClick={openEdit} className="w-full px-4 py-3 text-left text-sm text-text-primary hover:bg-surface-2 transition-colors flex items-center gap-2.5">
-                      <Icon name="edit" size={16} className="text-text-muted" /> Edit post
-                    </button>
-                    <button onClick={handleDelete} disabled={deleting} className="w-full px-4 py-3 text-left text-sm text-brand-ember hover:bg-brand-ember/10 transition-colors flex items-center gap-2.5">
-                      <Icon name="delete" size={16} /> {deleting ? 'Deleting...' : 'Delete post'}
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <button onClick={() => handleNotInterested({ author: true })} className="w-full px-4 py-3 text-left text-sm text-text-primary hover:bg-surface-2 transition-colors flex items-center gap-2.5">
-                      <Icon name="do_not_disturb_on" size={16} className="text-text-muted" /> Not interested
-                    </button>
-                    {primaryTag && (
-                      <button onClick={() => handleNotInterested({ tag: true })} className="w-full px-4 py-3 text-left text-sm text-text-primary hover:bg-surface-2 transition-colors flex items-center gap-2.5">
-                        <Icon name="tag" size={16} className="text-text-muted" /> See less of #{String(primaryTag).replace(/^#/, '')}
-                      </button>
-                    )}
-                    <button onClick={() => { navigate(`/user/${post.authorId}`); setShowMenu(false); }} className="w-full px-4 py-3 text-left text-sm text-text-primary hover:bg-surface-2 transition-colors flex items-center gap-2.5">
-                      <Icon name="person" size={16} className="text-text-muted" /> View profile
-                    </button>
-                    <button onClick={() => { setShowReportModal(true); setShowMenu(false); }} className="w-full px-4 py-3 text-left text-sm text-brand-ember hover:bg-brand-ember/10 transition-colors flex items-center gap-2.5">
-                      <Icon name="flag" size={16} /> Report post
-                    </button>
-                  </>
-                )}
-              </div>
-            )}
-          </div>
+          {moreMenu}
         </div>
-
-        {showBoost && (
-          <BoostSheet
-            target="post"
-            targetId={post.id}
-            isLfg={post.type === 'lfg'}
-            targetLabel={isOwnPost ? 'your post' : 'this post'}
-            onClose={() => setShowBoost(false)}
-          />
-        )}
-
-        {lightbox && (
-          <ImageLightbox urls={lightbox.urls} startIndex={lightbox.index} onClose={() => setLightbox(null)} />
-        )}
-
-        {/* Report modal */}
-        {showReportModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setShowReportModal(false)}>
-            <div className="bg-surface-1 border border-white/[0.06] rounded-2xl w-full max-w-sm mx-4 overflow-hidden" onClick={e => e.stopPropagation()}>
-              <div className="px-4 py-3 border-b border-white/[0.04] flex items-center justify-between">
-                <h3 className="font-syne font-bold text-sm">Report Post</h3>
-                <button onClick={() => setShowReportModal(false)} className="text-text-muted p-1"><Icon name="close" size={18} /></button>
-              </div>
-              <div className="py-1">
-                {['Spam or scam', 'Harassment or bullying', 'Hate speech', 'Inappropriate content', 'Cheating or exploiting', 'Impersonation', 'Other'].map(reason => (
-                  <button key={reason} onClick={() => handleReport(reason)}
-                    className="w-full px-4 py-3 text-left text-sm text-text-primary hover:bg-surface-2 transition-colors">
-                    {reason}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-
       </div>
 
-      {/* Edit reuses the full create composer, prefilled with this post */}
-      {showEditModal && (
-        <CreateComposer
-          editingPost={post}
-          onEdited={handleEdited}
-          onClose={() => setShowEditModal(false)}
-        />
-      )}
-      <TipPostModal
-        isOpen={showTipModal}
-        onClose={() => setShowTipModal(false)}
-        post={post}
-      />
+      {cardOverlays}
     </motion.article>
   );
 }

@@ -150,7 +150,7 @@ export default function ReactionsFloor({
               : { duration: f.dur, delay: f.delay, times: [0, 0.18, 0.62, 1], ease: 'easeOut' }}
             style={{
               position: 'absolute',
-              bottom: 'calc(env(safe-area-inset-bottom, 0px) + 96px)',
+              bottom: 'calc(var(--vg-safe-b, 0px) + 96px)',
               left: f.originX != null ? f.originX : (position === 'right' ? 'calc(100% - 44px)' : '50%'),
               marginLeft: -f.size / 2,
               // ⚠ NO `transform: translateX(-50%)` HERE. It is overwritten by

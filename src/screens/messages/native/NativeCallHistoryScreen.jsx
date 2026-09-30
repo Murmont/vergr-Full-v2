@@ -42,7 +42,7 @@ export default function NativeCallHistoryScreen() {
   }, [me]);
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--bg-dark)', paddingBottom: 'calc(88px + env(safe-area-inset-bottom, 0px))' }}>
+    <div style={{ minHeight: '100vh', background: 'var(--bg-dark)', paddingBottom: 'calc(88px + var(--vg-safe-b, 0px))' }}>
       <TopBar title="Calls" showBack />
       {rows === null ? (
         <ListSkeleton rows={6} />

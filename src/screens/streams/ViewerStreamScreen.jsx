@@ -50,11 +50,12 @@ import ChatPanel from '../../components/streams/ChatPanel';
 import { BoostTimer } from '../../components/streams/BoostStreamSheet';
 import BoostSheet from '../../components/boost/BoostSheet';
 import MobileLiveViewer, { ReconnectingOverlay, StreamLoadingCover, AppealSheet } from '../../components/streams/MobileLiveViewer';
-import { PlaybackStateView, AudioStageView, HypeTrainView } from '../../components/streams/states';
+import { PlaybackStateView, AudioStageView, HypeTrainView, LiveTrainBonus } from '../../components/streams/states';
 import TwitchMirrorPlayer from '../../components/streams/TwitchMirrorPlayer';
 import InStreamTicketWidget from '../../components/streams/InStreamTicketWidget';
 import EventTicketCard from '../../components/tournament/EventTicketCard';
-import { StreamGoalBar, TipAlertOverlay, SubAlertOverlay } from '../../components/streams/StreamGoalAndAlerts';
+import { StreamGoalBar, SubAlertOverlay } from '../../components/streams/StreamGoalAndAlerts';
+import { TipComboFeed, useLastTipCombo } from '../../components/streams/TipComboFeed';
 import InlineVideoPlayer from '../../components/media/InlineVideoPlayer';
 import ReactionsFloor from '../../components/streams/ReactionsFloor';
 import NowPlayingCard from '../../components/streams/NowPlayingCard';
@@ -435,12 +436,11 @@ function DesktopViewerStreamScreen() {
         ? `Tip · ${streamDoc.title || 'live'} · "${finalMessage}"`
         : `Tip · ${streamDoc.title || 'live'}`;
       await sendCoins(currentUser.uid, streamDoc.hostUid, amt, desc, { streamId: streamDoc.id });
-      // Feed the on-stream tip alert + tip goal (best-effort, mirrors mobile).
-      try {
-        const patch = { lastTip: { coins: amt, fromName: profile?.displayName || profile?.username || 'Someone', ts: Date.now() } };
-        if (streamDoc.goal?.active) patch['goal.currentCoins'] = fsIncrement(amt);
-        await updateDoc(doc(db, 'streams', streamDoc.id), patch);
-      } catch { /* alert/goal write must never fail the tip */ }
+      // ⚠ NO CLIENT WRITE OF `lastTip` OR THE GOAL. sendTip stamps both
+      // server-side, with the sender's uid and avatar. A viewer's write here was
+      // denied by the rules; an admin's or moderator's SUCCEEDED, overwrote the
+      // server's lastTip without the avatar and counted the tip toward the goal
+      // twice.
       haptic.success();
       showToast(`Tipped ${amt} coins`, 'success');
       setTipMessage('');
@@ -679,12 +679,16 @@ function DesktopViewerStreamScreen() {
   // ─────────────────────────────────────────────────────────────
   // Guard rails.
   // ─────────────────────────────────────────────────────────────
+  // Tips draw as the designed combo feed from the server-written lastTip.
+  // Declared above the early returns so the hook order never changes.
+  const { tips: tipDrops } = useLastTipCombo(streamDoc?.lastTip);
+
   if (loading) return <Centered label="Loading stream…" />;
   // "Browse live" went to the home FEED, which is not the live list. /streams
   // is, and it has a real empty state plus a working Go Live CTA.
   if (!streamDoc) return <Centered label="Stream not found." action={{ label: 'Browse live', onClick: () => navigate('/streams') }}/>;
   const isHost = !!currentUser?.uid && streamDoc.hostUid === currentUser.uid;
-  const isAdmin = profile?.role === 'admin' || currentUser?.email === 'vergenerd@gmail.com';
+  const isAdmin = profile?.staff === true || profile?.role === 'admin';
 
   if (streamDoc.status === 'ended') {
     // Replay parity with the mobile viewer: offer the archived VOD when it
@@ -982,7 +986,10 @@ function DesktopViewerStreamScreen() {
               </div>
             )}
             <HypeTrainView train={streamDoc.hypeTrain} />
-            <TipAlertOverlay lastTip={streamDoc.lastTip} anchor="top" />
+            <LiveTrainBonus bonus={streamDoc.hypeTrainBonus} train={streamDoc.hypeTrain} hostName={hostInfo?.displayName || hostInfo?.username || streamDoc.hostUsername} />
+            {/* The designed tip rows, bottom-left over the picture, lifted clear
+                of the goal card when one is showing. */}
+            <TipComboFeed tips={tipDrops} style={{ bottom: streamDoc.goal?.active ? 104 : 64 }} />
             <SubAlertOverlay lastSub={streamDoc.lastSub} anchor="bottom" />
             {/* ⚠ A RAID ARRIVES THROUGH THE STREAM DOC. `functions/raids.js` writes
                 `raid` onto the SOURCE stream, and this screen already holds an

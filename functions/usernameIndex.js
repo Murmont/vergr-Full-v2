@@ -16,6 +16,7 @@
 const functions = require('firebase-functions/v2');
 const { defineSecret } = require('firebase-functions/params');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
+const { isStaffDoc } = require('./staff');
 
 const REGION = 'europe-west1';
 const DB_NAME = 'vgrdb';
@@ -240,7 +241,7 @@ exports.maintainUsernameIndex = functions.firestore.onDocumentWritten(
     // policy is reverted before it ever reaches the index. Fires only on a
     // CHANGE so pre-existing holders (incl. the founder's own vergr accounts)
     // are never touched; admins and guest seeds are exempt.
-    const isAdminAccount = after.role === 'admin' || after.email === 'vergenerd@gmail.com';
+    const isAdminAccount = isStaffDoc(after) || after.role === 'admin';
     if (usernameChanged && !isAdminAccount && after.isGuest !== true && isDisallowedUsername(username)) {
       const prev = before?.username;
       if (prev && typeof prev === 'string' && prev.trim() && !isDisallowedUsername(prev)) {

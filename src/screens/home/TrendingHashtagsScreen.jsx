@@ -23,9 +23,11 @@ export default function TrendingHashtagsScreen() {
   useEffect(() => {
     const load = async () => {
       try {
-        const snap = await getDoc(doc(db, 'trending', 'daily'));
-        if (snap.exists() && snap.data().hashtags?.length > 0) {
-          setTags(snap.data().hashtags);
+        // trending/hashtags is what the _updateTrending cron writes. This read
+        // trending/daily, which nothing writes, so the list was always empty.
+        const snap = await getDoc(doc(db, 'trending', 'hashtags'));
+        if (snap.exists() && snap.data().tags?.length > 0) {
+          setTags(snap.data().tags);
         }
       } catch (err) { console.error(err); }
       setLoading(false);

@@ -24,10 +24,24 @@ export default function useAdminAccess() {
   const { currentUser } = useAuth();
   const { profile } = useUser();
   const [subAdminDoc, setSubAdminDoc] = useState(undefined); // undefined = not loaded
-  const isFounder = profile?.role === 'admin';
+  // The Operator (Vergr Admin) has NO users document, so it can never be
+  // recognised by a profile field. Its authority is a Firebase Auth custom
+  // claim, read straight off the ID token the client already holds — no
+  // network call, no Firestore read. Only the Admin SDK can set it.
+  const [isOperator, setIsOperator] = useState(false);
+  useEffect(() => {
+    let live = true;
+    if (!currentUser) { setIsOperator(false); return undefined; }
+    currentUser.getIdTokenResult()
+      .then((r) => { if (live) setIsOperator(r?.claims?.operator === true); })
+      .catch(() => { if (live) setIsOperator(false); });
+    return () => { live = false; };
+  }, [currentUser]);
+
+  const isFounder = isOperator || profile?.role === 'admin';
 
   useEffect(() => {
-    // Founders don't need the sub-admin doc.
+    // Founders and the Operator don't need the sub-admin doc.
     if (!currentUser?.uid || isFounder) {
       setSubAdminDoc(null);
       return;
@@ -56,5 +70,5 @@ export default function useAdminAccess() {
     return allowedScreens.includes(screen);
   }, [isAdmin, allowedScreens]);
 
-  return { loading, isAdmin, isFounder, allowedScreens, can };
+  return { loading, isAdmin, isFounder, isOperator, allowedScreens, can };
 }

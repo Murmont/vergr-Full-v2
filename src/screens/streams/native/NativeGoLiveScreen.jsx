@@ -13,7 +13,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { doc, updateDoc, serverTimestamp, addDoc, collection } from 'firebase/firestore';
-import { db } from '../../../firebase/config';
+import { db, auth } from '../../../firebase/config';
 import { useAuth } from '../../../context/AuthContext';
 import { useUser } from '../../../context/UserContext';
 import { useUI } from '../../../context/UIContext';
@@ -249,7 +249,7 @@ export default function NativeGoLiveScreen() {
   // bypass). Shown up front so new users aren't left guessing why Go Live is
   // disabled. Mirrors the desktop GoLiveSetupScreen + server gate.
   const STREAM_FOLLOWER_GATE = 100;
-  const isAdmin = profile?.role === 'admin' || (profile?.email || '').toLowerCase() === 'vergenerd@gmail.com';
+  const isAdmin = profile?.staff === true || profile?.role === 'admin';
   const followerCount = profile?.followerCount || 0;
   const followerGated = !isAdmin && streamTier === 'free' && followerCount < STREAM_FOLLOWER_GATE;
   const followersToGo = Math.max(0, STREAM_FOLLOWER_GATE - followerCount);
@@ -366,7 +366,7 @@ export default function NativeGoLiveScreen() {
         </button>
       </div>
 
-      <div style={{ padding: '14px 14px calc(env(safe-area-inset-bottom, 0px) + 96px)', display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ padding: '14px 14px calc(var(--vg-safe-b, 0px) + 96px)', display: 'flex', flexDirection: 'column', gap: 16 }}>
         {/* Preview */}
         <div style={{ position: 'relative', aspectRatio: '16/9', width: '100%', background: '#000', borderRadius: 16, overflow: 'hidden', border: `1px solid ${C.border}` }}>
           <video ref={videoRef} autoPlay muted playsInline style={{
@@ -620,7 +620,7 @@ export default function NativeGoLiveScreen() {
       </div>
 
       {/* Sticky CTA */}
-      <div style={{ position: 'fixed', left: 0, right: 0, bottom: 0, padding: '12px 14px calc(env(safe-area-inset-bottom, 0px) + 12px)', background: 'linear-gradient(to top, rgba(9,9,15,1) 65%, rgba(9,9,15,0))', zIndex: 40 }}>
+      <div style={{ position: 'fixed', left: 0, right: 0, bottom: 0, padding: '12px 14px calc(var(--vg-safe-b, 0px) + 12px)', background: 'linear-gradient(to top, rgba(9,9,15,1) 65%, rgba(9,9,15,0))', zIndex: 40 }}>
         {followerGated && (
           <div style={{ marginBottom: 10, padding: '11px 13px', borderRadius: 12, background: '#2A2008', borderLeft: '3px solid #f59e0b' }}>
             <div style={{ display: 'flex', gap: 9, alignItems: 'center' }}>

@@ -11,7 +11,7 @@
 // `gift` vocabulary in the preview is legacy naming. A row is avatar, name,
 // "Tipped", the coin, and a big xN that climbs while the same person keeps
 // sending. Do not build a gift catalogue off these names.
-import { useState, useEffect, useCallback, useLayoutEffect } from 'react';
+import { useState, useEffect, useCallback, useLayoutEffect, useMemo } from 'react';
 import UserAvatar from '../UserAvatar';
 import vcCoinIcon from '../../assets/stream/vc-coin.webp';
 
@@ -81,7 +81,9 @@ export function useTipCombo(event) {
     const avatar = g?.avatar || null;
     const uid = g?.uid || null;
     setTips((prev) => {
-      const i = prev.findIndex((t) => t.name === name);
+      // Keyed on the uid when both sides carry one, so two people who share a
+      // display name never climb one counter.
+      const i = prev.findIndex((t) => (uid && t.uid ? t.uid === uid : t.name === name));
       if (i >= 0) {
         const next = prev.slice();
         next[i] = { ...next[i], count: next[i].count + qty, ts: Date.now() };
@@ -113,6 +115,22 @@ export function useTipCombo(event) {
   }, [event, seenTs, push]);
 
   return { tips, push };
+}
+
+// The live screens' feed, from the server-written `streams/{id}.lastTip`.
+// `sendTip` stamps the sender's uid, name and avatar there (functions/index.js),
+// so every viewer draws the same face without a read of their own.
+export function useLastTipCombo(lastTip) {
+  const ts = lastTip?.ts || 0;
+  const fromUid = lastTip?.fromUid || null;
+  const fromName = lastTip?.fromName || 'Someone';
+  const fromAvatar = lastTip?.fromAvatar || null;
+  const coins = lastTip?.coins || 1;
+  const event = useMemo(
+    () => (ts ? { uid: fromUid, name: fromName, avatar: fromAvatar, qty: coins, ts } : null),
+    [ts, fromUid, fromName, fromAvatar, coins],
+  );
+  return useTipCombo(event);
 }
 
 // ── Where the feed sits ─────────────────────────────────────────────────────
@@ -160,8 +178,25 @@ export function useAboveChat(dep, gap = 8) {
     ro.observe(list);
     ro.observe(anchor);
     for (const child of list.children) ro.observe(child);
+    // ⚠ ROWS THAT ARRIVE LATER HAVE TO BE WATCHED TOO. The real chat's rows come
+    // over a socket, not through `dep`, and a bottom-anchored list does not change
+    // size when one lands, so without this the feed stayed where the first
+    // message put it.
+    const mo = typeof MutationObserver === 'undefined' ? null : new MutationObserver((recs) => {
+      for (const r of recs) r.addedNodes.forEach((node) => { if (node.nodeType === 1) ro.observe(node); });
+      measure();
+    });
+    if (mo) mo.observe(list, { childList: true });
+    // The keyboard lifts the viewer's dock with a TRANSFORM, which no resize
+    // observer sees. Re-measure when a transition inside the frame settles.
+    anchor.addEventListener('transitionend', measure);
     window.addEventListener('resize', measure);
-    return () => { ro.disconnect(); window.removeEventListener('resize', measure); };
+    return () => {
+      ro.disconnect();
+      if (mo) mo.disconnect();
+      anchor.removeEventListener('transitionend', measure);
+      window.removeEventListener('resize', measure);
+    };
   }, [list, anchor, dep, gap]);
 
   return { setList, setAnchor, bottom };

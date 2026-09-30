@@ -21,10 +21,12 @@
 // writes into the vergr-chat relay store, NOT here.
 
 const functions = require('firebase-functions/v2');
-const { defineSecret } = require('firebase-functions/params');
+const { planOf } = require('./plan');
+const { defineSecret, defineString } = require('firebase-functions/params');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const admin = require('firebase-admin');
 const axios = require('axios');
+const { isStaffDoc } = require('./staff');
 
 if (admin.apps.length === 0) admin.initializeApp();
 const db = getFirestore('vgrdb');
@@ -33,7 +35,7 @@ const HttpsError = functions.https.HttpsError;
 const REGION = 'europe-west1';
 
 const DISCORD_BOT_TOKEN = defineSecret('DISCORD_BOT_TOKEN');
-const DISCORD_CLIENT_ID = defineSecret('DISCORD_CLIENT_ID');
+const DISCORD_CLIENT_ID = defineString('DISCORD_CLIENT_ID');
 
 const DISCORD_API = 'https://discord.com/api/v10';
 // Bot install permissions: View Channels (1<<10) + Read Message History (1<<16)
@@ -75,7 +77,7 @@ async function botGet(path) {
 // Returns whether the bot is configured + the install URL the owner clicks to
 // add the bot to their server. Cheap, no Discord call.
 exports.getDiscordCloneSetup = functions.https.onCall(
-  { region: REGION, cors: true, secrets: [DISCORD_BOT_TOKEN, DISCORD_CLIENT_ID] },
+  { region: REGION, cors: true, secrets: [DISCORD_BOT_TOKEN] },
   async (request) => {
     requireAuth(request);
     const token = process.env.DISCORD_BOT_TOKEN;
@@ -89,7 +91,7 @@ exports.getDiscordCloneSetup = functions.https.onCall(
 
 // Clone a guild's structure. args: { guildId }
 exports.cloneDiscordServerStructure = functions.https.onCall(
-  { region: REGION, cors: true, secrets: [DISCORD_BOT_TOKEN, DISCORD_CLIENT_ID] },
+  { region: REGION, cors: true, secrets: [DISCORD_BOT_TOKEN] },
   async (request) => {
     const uid = requireAuth(request);
     const guildId = String(request.data?.guildId || '').trim();
@@ -211,7 +213,7 @@ exports.cloneDiscordServerStructure = functions.https.onCall(
 // args: { guildId, fullHistory?, gdprAck }
 // ============================================================
 exports.importDiscordMessages = functions.https.onCall(
-  { region: REGION, cors: true, secrets: [DISCORD_BOT_TOKEN, DISCORD_CLIENT_ID] },
+  { region: REGION, cors: true, secrets: [DISCORD_BOT_TOKEN] },
   async (request) => {
     const uid = requireAuth(request);
     const guildId = String(request.data?.guildId || '').trim();
@@ -244,8 +246,8 @@ exports.importDiscordMessages = functions.https.onCall(
 
     // Full history is a Pro perk (locked scope). Admin bypasses like every gate.
     const fullHistory = request.data?.fullHistory === true;
-    const isAdmin = userData.role === 'admin' || request.auth.token?.email === 'vergenerd@gmail.com';
-    const tier = userData.subscription?.tier || 'free';
+    const isAdmin = isStaffDoc(userData) || userData.role === 'admin';
+    const tier = planOf(userData);
     if (fullHistory && tier !== 'pro' && !isAdmin) {
       throw new HttpsError('permission-denied', 'full_history_pro_only');
     }
@@ -307,7 +309,7 @@ async function botPost(path, body) {
 // The bot posts a single rich embed (never DMs members — Discord ToS).
 // args: { guildId }
 exports.postDiscordMigrationNotice = functions.https.onCall(
-  { region: REGION, cors: true, secrets: [DISCORD_BOT_TOKEN, DISCORD_CLIENT_ID] },
+  { region: REGION, cors: true, secrets: [DISCORD_BOT_TOKEN] },
   async (request) => {
     const uid = requireAuth(request);
     const guildId = String(request.data?.guildId || '').trim();
@@ -381,7 +383,7 @@ exports.postDiscordMigrationNotice = functions.https.onCall(
 // they were a member of (bot confirms membership) and offer one-tap rejoin.
 // Negative lookups cached on users/{uid}/private/discordRejoin.
 exports.checkDiscordRejoin = functions.https.onCall(
-  { region: REGION, cors: true, secrets: [DISCORD_BOT_TOKEN, DISCORD_CLIENT_ID] },
+  { region: REGION, cors: true, secrets: [DISCORD_BOT_TOKEN] },
   async (request) => {
     const uid = requireAuth(request);
     const userSnap = await db.collection('users').doc(uid).get();
@@ -432,7 +434,7 @@ exports.checkDiscordRejoin = functions.https.onCall(
 // they're verifiably a member of, and queues the imported-message claim so
 // their Discord history reattaches to their Vergr account.
 exports.claimDiscordRejoin = functions.https.onCall(
-  { region: REGION, cors: true, secrets: [DISCORD_BOT_TOKEN, DISCORD_CLIENT_ID] },
+  { region: REGION, cors: true, secrets: [DISCORD_BOT_TOKEN] },
   async (request) => {
     const uid = requireAuth(request);
     const guildId = String(request.data?.guildId || '').trim();

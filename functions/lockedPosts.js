@@ -38,11 +38,12 @@ const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const { S3Client, PutObjectCommand, GetObjectCommand } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const crypto = require('crypto');
+const { isStaffDoc } = require('./staff');
 
 const REGION = 'europe-west1';
 const db = getFirestore('vgrdb');
 
-const R2_SECRETS = ['R2_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET', 'R2_PUBLIC_BASE'];
+const R2_SECRETS = [ 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY'];
 
 /** Mirrors entitlements.js. Same numbers, plan section 6.3. */
 const MIN_PRICE_COINS = 50;
@@ -86,7 +87,7 @@ function requireAuth(request) {
 async function planFor(uid) {
   const snap = await db.collection('users').doc(uid).get();
   const u = snap.exists ? snap.data() : {};
-  const isAdmin = u.role === 'admin' || (u.email || '').toLowerCase() === 'vergenerd@gmail.com';
+  const isAdmin = isStaffDoc(u) || u.role === 'admin';
   if (isAdmin) return 'pro';
   const tier = u.subscription?.tier || u.subscription || 'free';
   return ['free', 'lite', 'pro'].includes(tier) ? tier : 'free';

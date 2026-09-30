@@ -25,12 +25,19 @@ import Icon from '../Icon';
 import LocalPrice from '../LocalPrice';
 import { useCart } from '../../context/CartContext';
 import { useUser } from '../../context/UserContext';
+import useAppGate, { codaOfferedTo } from '../../hooks/useAppGate';
 import { getCoinPriceQuote } from '../../firebase/firestore';
 import { hasLocalEstimate } from '../../utils/currency';
 import { COIN_PACKS } from '../../utils/vpSystem';
 import { storeItemBySku, isStoreItemSku } from '../../utils/storeItems';
-import { isPlayBillingSupported, fetchPlayPrices, playProductIdFor } from '../../utils/nativeBilling';
-import PaymentMethodPicker from './PaymentMethodPicker';
+import {
+  isPlayBillingSupported, fetchPlayPrices, playProductIdFor,
+  billingChoiceSupported, getBillingChoiceMode, prepareAltBilling, buyWithChoice,
+} from '../../utils/nativeBilling';
+import { auth } from '../../firebase/config';
+import PaymentMethodPicker, { GooglePlayPrism } from './PaymentMethodPicker';
+import { CodaCheckoutBlock } from './CodaPay';
+import { IS_STORE_BUILD, IS_PLAY_BUILD, IS_HUAWEI_BUILD, STORE_NAME } from '../../utils/platform';
 import { WALLET_TOKENS, CoinGlyph, fmtNum } from './primitives';
 // The operating entity is named on a checkout disclosure, so it must come from
 // the one source of truth rather than be typed here. Costs no bundle weight:
@@ -63,7 +70,7 @@ function rowFor(sku) {
       name: pack.name,
       detail: `${fmtNum(pack.coins)} coins${pack.vpBonus > 0 ? ` · +${fmtNum(pack.vpBonus)} VP` : ''}`,
       unitUSD: pack.priceUSD,
-      tint: 'rgba(240,165,0,0.12)',
+      tint: '#2A2212',
       art: null,
     };
   }
@@ -73,7 +80,7 @@ function rowFor(sku) {
     name: item.name,
     detail: item.detail,
     unitUSD: item.priceUSD,
-    tint: item.kind === 'bonus' ? 'rgba(180,79,255,0.14)' : 'rgba(240,64,96,0.14)',
+    tint: item.kind === 'bonus' ? '#241838' : '#2E1620',
     art: item.art,
   };
 }
@@ -181,16 +188,59 @@ function TaxesAndFees({ checkout, method, playPrice }) {
   );
 }
 
-export default function CartContents({ onCheckout, busy, onClose, variant = 'drawer' }) {
+export default function CartContents({ onCheckout, busy, onClose, variant = 'drawer', onCodaSettled }) {
   const { lines, setQty, remove, clear, count } = useCart();
-  useUser(); // re-render when the local-currency table warms
+  const { profile } = useUser(); // also re-renders when the local-currency table warms
+  const gate = useAppGate();
+  const codaOffered = codaOfferedTo(gate, profile);
 
   // SAME COINS ON BOTH RAILS. Only the price differs, because Google takes a
   // store fee. See PaymentMethodPicker for why it is this way round and not the
   // other (a second coin quantity is a Play rejection risk, not a pricing
   // choice).
   const playAvailable = isPlayBillingSupported();
-  const [method, setMethod] = useState('card');
+
+  // CODA INSIDE THE GOOGLE PLAY APP (founder, 2026-09-27): the same Coda
+  // checkout as the website, with Google Play offered underneath. Which shape
+  // applies is Google's call per user (BillingBridge.kt), so until Google
+  // approves the enrolment the mode is 'none' and this is the Play-only basket.
+  //   developer / alternative: Coda methods drawn here, Play button under them
+  //   google / user_choice:    Google draws the choice on the Play button; if
+  //                            the buyer picks Vergr, the Coda form opens here
+  const [choice, setChoice] = useState({ mode: 'none' });
+  useEffect(() => {
+    if (!IS_PLAY_BUILD || !playAvailable || !codaOffered || !billingChoiceSupported()) return undefined;
+    let alive = true;
+    getBillingChoiceMode(gate.playUserChoice === true).then((c) => { if (alive) setChoice(c); });
+    return () => { alive = false; };
+  }, [playAvailable, codaOffered, gate.playUserChoice]);
+  const storeCoda = IS_PLAY_BUILD && codaOffered && (choice.mode === 'developer' || choice.mode === 'alternative');
+  const googleChoice = IS_PLAY_BUILD && codaOffered && (choice.mode === 'google' || choice.mode === 'user_choice');
+  // Google's token from its own choice screen, once the buyer picked Vergr there.
+  const [chosenPlay, setChosenPlay] = useState(null);
+  const [choiceBusy, setChoiceBusy] = useState(false);
+  const codaAvailable = IS_STORE_BUILD ? (codaOffered && (storeCoda || !!chosenPlay)) : codaOffered;
+  // A STORE build offers the store's own billing only, so it starts there.
+  // ⚠ IS_STORE_BUILD, not IS_PLAY_BUILD — Huawei sells through HUAWEI IAP too,
+  // and starting it on 'card' would open PayRam inside the AppGallery build.
+  const [method, setMethod] = useState(IS_STORE_BUILD ? 'googlePlay' : 'card');
+  // Coda switched off (or this viewer lost staff) while it was selected: fall
+  // back to the rail this build may always sell through. ⚠ On a store build that
+  // is the store's own billing, NEVER 'card': the card row is our own checkout,
+  // which the Play / AppGallery app must not open.
+  useEffect(() => {
+    if (method === 'coda' && !codaAvailable) setMethod(IS_STORE_BUILD ? 'googlePlay' : 'card');
+  }, [method, codaAvailable]);
+  // WEBSITE / DESKTOP CHECKOUT IS CODAPAY, EMBEDDED (founder, 2026-09-25).
+  // The methods for the buyer's country are listed right here with their full
+  // price; PayRam is hidden (its server stays) and there is no popup.
+  const codaMode = !IS_STORE_BUILD || storeCoda || !!chosenPlay;
+  // `inPlay` prices each method with Google's fee added on top (the order adds
+  // the same fee when it carries the token), so the price shown is the charge.
+  const codaPayload = useMemo(() => ({
+    cart: lines.map((l) => ({ sku: l.sku, qty: l.qty })),
+    ...(IS_STORE_BUILD ? { inPlay: true } : {}),
+  }), [lines]);
   const [quote, setQuote] = useState(null);
   const [quoting, setQuoting] = useState(false);
   const [err, setErr] = useState('');
@@ -200,6 +250,8 @@ export default function CartContents({ onCheckout, busy, onClose, variant = 'dra
   // the array identity, so a re-render that produces an equal cart does not
   // fire another call.
   const sig = useMemo(() => lines.map((l) => `${l.sku}:${l.qty}`).join(','), [lines]);
+  // Google's token belongs to the product it was issued for.
+  useEffect(() => { setChosenPlay(null); }, [sig]);
 
   useEffect(() => {
     if (!lines.length) { setQuote(null); setErr(''); return undefined; }
@@ -211,7 +263,7 @@ export default function CartContents({ onCheckout, busy, onClose, variant = 'dra
     // the rail changes is the point: fees differ per rail (a flat 30 cents on a
     // card, a percentage on crypto, nothing itemisable on Play), so a total
     // quoted for one rail is wrong for another.
-    getCoinPriceQuote({ cart: lines, method })
+    getCoinPriceQuote({ cart: lines, method: method === 'coda' ? 'coda_card' : method })
       .then((q) => { if (alive) { setQuote(q); setQuoting(false); } })
       .catch((e) => {
         if (!alive) return;
@@ -272,12 +324,65 @@ export default function CartContents({ onCheckout, busy, onClose, variant = 'dra
       ? 'Google Play takes one pack at a time'
       : '';
 
+  // Google draws the choice (google / user_choice): the Play button goes
+  // through buyWithChoice. A Play purchase finishes as normal; picking Vergr on
+  // Google's screen hands back its token and the Coda form opens right here.
+  const buyViaChoice = async () => {
+    setChoiceBusy(true);
+    setErr('');
+    try {
+      const r = await buyWithChoice(playIdForSku(lines[0].sku), auth.currentUser?.uid);
+      if (r?.choice) { setChosenPlay({ token: r.choice.token, program: r.choice.program }); return; }
+      onCodaSettled?.({ coins: Number(r?.coins) || 0 });
+    } catch (e) {
+      if (e?.code !== 'cancelled' && e?.code !== 'canceled') setErr(e?.message || 'Google Play could not complete that purchase.');
+    } finally {
+      setChoiceBusy(false);
+    }
+  };
+
+  // The Google Play option under the Coda form. Where Vergr draws the choice,
+  // Google requires its own artwork and loyalty line on the Play option.
+  const playOption = IS_PLAY_BUILD && codaMode ? (
+    <div style={{ marginTop: 12 }}>
+      <div style={{ fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase', color: WALLET_TOKENS.textMuted, fontWeight: 700, marginBottom: 8 }}>
+        Or pay with
+      </div>
+      <button
+        type="button"
+        onClick={() => onCheckout?.(lines, quote, 'googlePlay')}
+        disabled={busy || !playPrice}
+        aria-label="Pay with Google Play"
+        style={{
+          display: 'flex', alignItems: 'center', gap: 12, width: '100%', padding: '10px 14px', borderRadius: 12, border: 0,
+          background: '#FFFFFF', color: '#141018', font: 'inherit', textAlign: 'left',
+          cursor: busy || !playPrice ? 'default' : 'pointer', opacity: busy || !playPrice ? 0.55 : 1,
+        }}
+      >
+        {choice.playImage
+          ? <img src={choice.playImage} alt="Google Play" draggable={false} style={{ height: 32, width: 'auto', maxWidth: 128, objectFit: 'contain', display: 'block' }} />
+          : <GooglePlayPrism size={22} />}
+        <span style={{ flex: 1, minWidth: 0 }}>
+          <span style={{ display: 'block', fontWeight: 800, fontSize: 14 }}>Google Play</span>
+          {(choice.playLoyalty || playUnavailableReason) && (
+            <span style={{ display: 'block', fontSize: 11.5, color: '#4A4A5A', marginTop: 1 }}>
+              {playUnavailableReason || choice.playLoyalty}
+            </span>
+          )}
+        </span>
+        <span className="font-dmmono tabular-nums" style={{ fontWeight: 800, fontSize: 14, whiteSpace: 'nowrap' }}>
+          {playPrice || (playPriceLoading ? '…' : '')}
+        </span>
+      </button>
+    </div>
+  ) : null;
+
   if (!lines.length) {
     return (
       <div style={{ padding: '48px 24px', textAlign: 'center' }}>
         <div style={{
           width: 56, height: 56, borderRadius: '50%', margin: '0 auto 14px',
-          display: 'grid', placeItems: 'center', background: 'rgba(255,255,255,0.05)',
+          display: 'grid', placeItems: 'center', background: '#1C1C2B',
         }}>
           <Icon name="shopping_cart" size={26} className="text-text-muted" />
         </div>
@@ -290,7 +395,7 @@ export default function CartContents({ onCheckout, busy, onClose, variant = 'dra
             onClick={onClose}
             style={{
               marginTop: 18, padding: '10px 18px', borderRadius: 10, cursor: 'pointer',
-              background: 'rgba(255,255,255,0.06)', border: `1px solid ${WALLET_TOKENS.hairline}`,
+              background: '#1C1C2B', border: 0,
               color: WALLET_TOKENS.text, font: 'inherit', fontWeight: 600, fontSize: 13,
             }}
           >
@@ -342,7 +447,7 @@ export default function CartContents({ onCheckout, busy, onClose, variant = 'dra
               key={line.sku}
               style={{
                 display: 'flex', gap: 12, alignItems: 'flex-start',
-                padding: '14px 0', borderBottom: `1px solid ${WALLET_TOKENS.hairline}`,
+                padding: '12px 0',
               }}
             >
               <div style={{
@@ -376,7 +481,7 @@ export default function CartContents({ onCheckout, busy, onClose, variant = 'dra
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8 }}>
                   <div style={{
                     display: 'inline-flex', alignItems: 'center',
-                    border: `1px solid ${WALLET_TOKENS.hairline}`, borderRadius: 8, overflow: 'hidden',
+                    background: '#1C1C2B', borderRadius: 8, overflow: 'hidden',
                   }}>
                     <QtyBtn label="Decrease" icon="remove" onClick={() => setQty(line.sku, line.qty - 1)} />
                     <span
@@ -431,16 +536,39 @@ export default function CartContents({ onCheckout, busy, onClose, variant = 'dra
           `maxHeight` is viewport-relative so it adapts to any screen, and
           `flexShrink: 0` stops the lines list above from squeezing it away. */}
       <div style={{
-        borderTop: `1px solid ${WALLET_TOKENS.hairline}`,
-        paddingTop: 14,
+        paddingTop: 12,
         flexShrink: 0,
       }}>
+        {codaMode ? (
+          <CodaCheckoutBlock
+            payload={codaPayload}
+            enabled={codaAvailable && lines.length > 0}
+            profile={profile}
+            emptyText="Buying on the web is not open yet. You can buy coins in the Vergr Android app."
+            onSettled={onCodaSettled}
+            preparePlay={storeCoda && !chosenPlay ? prepareAltBilling : null}
+            presetPlay={chosenPlay}
+            alternative={playOption}
+            summary={(
+              <Row
+                label={coins > 0 ? `Coins (${count} item${count === 1 ? '' : 's'})` : `${count} item${count === 1 ? '' : 's'}`}
+                value={coins > 0 ? `${fmtNum(coins)} coins` : 'Applied on purchase'}
+              />
+            )}
+            legal={<CodaLegal />}
+          />
+        ) : (<>
         <PaymentMethodPicker
           value={method}
           onChange={setMethod}
           googlePlayAvailable={playAvailable}
           coins={coins}
-          cardPrice={quote ? `$${quote.amountUSD.toFixed(2)}` : ''}
+          cardPrice={quote && method !== 'coda' ? `$${quote.amountUSD.toFixed(2)}` : ''}
+          codaAvailable={codaAvailable}
+          // No USD price on the Coda row: Coda charges a LOCAL price per method,
+          // shown per method in the basket (CodaPay.jsx). A dollar figure here
+          // would contradict it.
+          codaPrice=""
           playPrice={playPrice}
           playPriceLoading={playPriceLoading}
           playUnavailableReason={playUnavailableReason}
@@ -465,7 +593,7 @@ export default function CartContents({ onCheckout, busy, onClose, variant = 'dra
             buyer is looking at the moment it matters. */}
         <div style={{
           display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
-          marginTop: 10, paddingTop: 10, borderTop: `1px solid ${WALLET_TOKENS.hairline}`,
+          marginTop: 10,
         }}>
           <span style={{ fontWeight: 700, fontSize: 14 }}>
             {count === 1 ? 'Price' : 'Packs'}
@@ -486,15 +614,19 @@ export default function CartContents({ onCheckout, busy, onClose, variant = 'dra
 
             The figures come from the SERVER, on the same call that priced the
             basket, so the breakdown and the total can never disagree. */}
-        <TaxesAndFees
-          checkout={quote?.checkout}
-          method={method}
-          playPrice={playPrice}
-        />
+        {method !== 'coda' && (
+          <TaxesAndFees
+            checkout={quote?.checkout}
+            method={method}
+            playPrice={playPrice}
+          />
+        )}
 
         <div style={{ fontSize: 11, color: WALLET_TOKENS.textMuted, marginTop: 3, textAlign: 'right' }}>
           {method === 'googlePlay' ? (
             <span>Charged by Google Play in your account currency</span>
+          ) : method === 'coda' ? (
+            <span>Charged in your currency. Each method shows its price next.</span>
           ) : (
             <>
               {/* The estimate is suppressed for a buyer already on USD (A3), so
@@ -519,11 +651,12 @@ export default function CartContents({ onCheckout, busy, onClose, variant = 'dra
           // The card rail needs a server quote; the Play rail needs a Play
           // price. Neither may proceed on the other's readiness.
           const payingWithPlay = method === 'googlePlay';
-          const blocked = busy
+          const blocked = busy || choiceBusy
             || (payingWithPlay ? !playPrice : (quoting || !quote));
+          const viaChoice = googleChoice && payingWithPlay && singleLine;
           return (
             <button
-              onClick={() => onCheckout?.(lines, quote, method)}
+              onClick={viaChoice ? buyViaChoice : () => onCheckout?.(lines, quote, method)}
               disabled={blocked}
               style={{
                 // PINNED. The pay control must be reachable at ANY window size,
@@ -537,7 +670,9 @@ export default function CartContents({ onCheckout, busy, onClose, variant = 'dra
                 width: '100%', marginTop: 14, padding: '13px 16px', borderRadius: 12,
                 border: 0, cursor: blocked ? 'not-allowed' : 'pointer',
                 opacity: blocked ? 0.55 : 1,
-                background: WALLET_TOKENS.gold, color: '#141018',
+                // Google asks for its prism on a NEUTRAL light or dark ground,
+                // and its yellow disappears on gold, so the Play button is white.
+                background: payingWithPlay ? '#FFFFFF' : WALLET_TOKENS.gold, color: '#141018',
                 font: 'inherit', fontWeight: 800, fontSize: 15,
                 // Content scrolling behind a sticky control looks like a bug
                 // unless the control is visibly on top of the surface.
@@ -549,10 +684,22 @@ export default function CartContents({ onCheckout, busy, onClose, variant = 'dra
                   contradicts the price on the shelf. Nothing is hidden: the
                   sticker is above, the charge is on the button, and the
                   breakdown is one tap away in Taxes / Fees. */}
-              {busy
+              {busy || choiceBusy
                 ? 'Opening checkout…'
                 : payingWithPlay
-                  ? 'Continue with Google Play'
+                  ? (
+                    // The store's own purchase sheet opens from here, so the
+                    // button says which store it is. ⚠ Google's prism is
+                    // GOOGLE's mark and is drawn ONLY on the Play build — using
+                    // it for a Huawei purchase misattributes who takes the money
+                    // and is a trademark we have no licence for there.
+                    <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                      {!IS_HUAWEI_BUILD && <GooglePlayPrism size={20} />}
+                      {`Buy with ${STORE_NAME || 'Google Play'}`}
+                    </span>
+                  )
+                  : method === 'coda'
+                    ? 'Choose how to pay'
                   : quote
                     ? `Pay $${(quote.checkout?.total ?? quote.amountUSD).toFixed(2)}`
                     : 'Checkout'}
@@ -579,6 +726,7 @@ export default function CartContents({ onCheckout, busy, onClose, variant = 'dra
           </Link>
           . Payment is handled by our payment provider on behalf of {OPERATOR.legalName}, the operator of Vergr.
         </p>
+        </>)}
       </div>
     </div>
   );
@@ -591,11 +739,26 @@ function QtyBtn({ icon, onClick, label }) {
       aria-label={label}
       style={{
         width: 30, height: 30, display: 'grid', placeItems: 'center', cursor: 'pointer',
-        background: 'rgba(255,255,255,0.04)', border: 0, color: WALLET_TOKENS.text,
+        background: '#1C1C2B', border: 0, color: WALLET_TOKENS.text,
       }}
     >
       <Icon name={icon} size={16} />
     </button>
+  );
+}
+
+/** Terms at the point of payment, for the Coda checkout. */
+function CodaLegal() {
+  return (
+    <p style={{ fontSize: 11, color: WALLET_TOKENS.textMuted, lineHeight: 1.55, marginTop: 10 }}>
+      Coins are digital credit for use inside Vergr. They are delivered to your wallet
+      immediately and are non-refundable once delivered, except as set out in our{' '}
+      <Link to="/platform/refunds" style={{ color: WALLET_TOKENS.textSecondary, textDecoration: 'underline' }}>Refund Policy</Link>
+      . By continuing you agree to our{' '}
+      <Link to="/platform/terms" style={{ color: WALLET_TOKENS.textSecondary, textDecoration: 'underline' }}>Terms</Link>{' '}and{' '}
+      <Link to="/platform/privacy" style={{ color: WALLET_TOKENS.textSecondary, textDecoration: 'underline' }}>Privacy Policy</Link>
+      . Payment is processed by Coda on behalf of {OPERATOR.legalName}, the operator of Vergr.
+    </p>
   );
 }
 

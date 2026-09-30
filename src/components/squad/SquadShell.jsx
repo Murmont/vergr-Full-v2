@@ -257,7 +257,7 @@ export default function SquadShell({
                 {profile?.avatar ? <CachedImg src={profile.avatar} permanent alt="" /> : (profile?.displayName?.[0] || 'V').toUpperCase()}
               </div>
               <div style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
-                <div className="user-name"><UserName user={profile} masked fallback={'Gamer'} /></div>
+                <div className="user-name"><UserName user={profile} masked fallback={'Member'} /></div>
                 <div className="user-role">VERGR {profile?.role === 'creator' ? 'Creator' : 'Member'}</div>
               </div>
             </button>

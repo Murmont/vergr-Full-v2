@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { APP_VERSION } from '../utils/appVersion';
+import OpenInAppSheet, { phonePlatform } from './OpenInAppSheet';
 
 // ──────────────────────────────────────────────────────────────
 // Global "Get the app" banner.
@@ -42,7 +43,15 @@ function detect() {
   return { isAndroid, isIOS, isDesktop: !isAndroid && !isIOS, inNativeShell };
 }
 
+// ⚠ PHONES GET THE X-STYLE SHEET, NOT THIS BANNER. Founder, 2026-09-14: "I don't
+// want a small banner like we had". The banner below now only ever renders on a
+// computer, where it offers the desktop installer.
 export default function InstallAppBanner() {
+  const [phone] = useState(() => !!phonePlatform());
+  return phone ? <OpenInAppSheet /> : <DesktopInstallBanner />;
+}
+
+function DesktopInstallBanner() {
   const [visible, setVisible] = useState(false);
   const [plat, setPlat] = useState({ isAndroid: false, isIOS: false, isDesktop: false });
 
@@ -91,7 +100,7 @@ export default function InstallAppBanner() {
   return (
     <div
       className="fixed inset-x-0 z-[120] px-3 safe-bottom"
-      style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 76px)' }}
+      style={{ bottom: 'calc(var(--vg-safe-b, 0px) + 76px)' }}
     >
       {/* Rotating conic-gradient ring draws the eye. */}
       <style>{'@keyframes vergrBannerSpin{to{transform:translate(-50%,-50%) rotate(360deg)}}'}</style>

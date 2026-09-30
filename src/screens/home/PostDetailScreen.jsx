@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, Fragment } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useUser } from '../../context/UserContext';
 import { applyVanguardMask } from '../../utils/vanguard';
@@ -21,12 +21,14 @@ import MediaPanel from '../../components/MediaPanel';
 import EmojiPicker from '../../components/EmojiPicker';
 import VergrAd from '../../components/VergrAd';
 import { ADS_CONFIG } from '../../config/ads';
-import { timeAgo } from '../../utils/helpers';
+import { timeAgo, isShortFormat } from '../../utils/helpers';
 import UserName from '../../components/UserName';
 import RankBadge from '../../components/RankBadge';
+import { AppealSheet, HiddenPostNotice } from '../../components/moderation/Appeal';
 
 export default function PostDetailScreen() {
   const { postId } = useParams();
+  const location = useLocation();
   const { currentUser } = useAuth();
   const { showToast } = useUI();
   const { profile } = useUser();
@@ -51,6 +53,7 @@ export default function PostDetailScreen() {
   const [expandedReplies, setExpandedReplies] = useState(() => new Set()); // parentIds shown
   const [likedComments, setLikedComments] = useState(() => new Set());
   const [likeBusy, setLikeBusy] = useState(() => new Set());
+  const [appealOpen, setAppealOpen] = useState(false);
   const inputRef = useRef(null);
 
   // Group the flat comment list into top-level + nested replies (1 level).
@@ -84,6 +87,9 @@ export default function PostDetailScreen() {
       setLoading(true);
       try {
         const postData = await getPostByIdOrSlug(postId);
+        // A clip is not a post page: it redirects into the clip player (the early
+        // return below), with comments in a sheet. Skip the author and comment reads.
+        if (postData && isShortFormat(postData.type)) { setPost(postData); setLoading(false); return; }
         if (postData) {
           postData.author = await getUser(postData.authorId);
           setPost(postData);
@@ -93,7 +99,7 @@ export default function PostDetailScreen() {
         const cmts = await getComments(resolvedId, 50);
         setComments(cmts);
         if (currentUser?.uid && cmts.length) {
-          getLikedCommentIds(resolvedId, currentUser.uid, cmts.map(c => c.id))
+          getLikedCommentIds(resolvedId, currentUser.uid, cmts)
             .then(setLikedComments).catch(() => {});
         }
       } catch (err) {
@@ -270,12 +276,34 @@ export default function PostDetailScreen() {
     </div>
   );
 
+  // A clip opens in the clip player, never as a post page. Every /post link to a
+  // clip (notifications, search, profile, old shares) lands here and is sent on,
+  // keeping ?comments=1 so a comment link opens the comment sheet.
+  if (post && isShortFormat(post.type)) {
+    return <Navigate to={`/clip/${post.id}${location.search || ''}`} replace />;
+  }
+
   if (!post) return (
     <div className="min-h-screen">
       <TopBar title="Post" showBack />
       <div className="flex flex-col items-center py-20">
         <Icon name="error_outline" size={48} className="text-text-muted/30 mb-3" />
         <p className="text-text-muted text-sm">Post not found</p>
+      </div>
+    </div>
+  );
+
+  // A hidden post (moderation) is for its author only. It used to stay readable
+  // by anyone holding the link, so hiding it hid it from the feed and nowhere
+  // else. The author sees it with the reason and a way to appeal.
+  const hidden = post.status === 'hidden' || post.hidden === true;
+  const isAuthor = !!currentUser && (post.userId === currentUser.uid || post.authorId === currentUser.uid);
+  if (hidden && !isAuthor && profile?.staff !== true) return (
+    <div className="min-h-screen">
+      <TopBar title="Post" showBack />
+      <div className="flex flex-col items-center py-20">
+        <Icon name="visibility_off" size={48} className="text-text-muted/30 mb-3" />
+        <p className="text-text-muted text-sm">This post is not available</p>
       </div>
     </div>
   );
@@ -288,6 +316,12 @@ export default function PostDetailScreen() {
       <TopBar title="Post" showBack />
 
       <div className="flex-1 overflow-y-auto overflow-x-hidden">
+        {hidden && isAuthor && (
+          <HiddenPostNotice post={post} onAppeal={() => setAppealOpen(true)} />
+        )}
+        {appealOpen && (
+          <AppealSheet targetType="post" targetId={post.id} onClose={() => setAppealOpen(false)} />
+        )}
         <PostCard post={post} onDeleted={() => navigate(-1)} />
 
         <div className="px-4 py-3 border-t border-white/[0.03]">
@@ -346,7 +380,7 @@ export default function PostDetailScreen() {
 
       {/* Input bar — pinned at the bottom of the fixed column (only the
           post→comments area above scrolls), above the home indicator. */}
-      <div className="shrink-0 glass-header border-t border-white/[0.04] px-2 pt-2 overflow-x-hidden" style={{ paddingBottom: 'calc(8px + env(safe-area-inset-bottom, 0px))' }}>
+      <div className="shrink-0 glass-header border-t border-white/[0.04] px-2 pt-2 overflow-x-hidden" style={{ paddingBottom: 'calc(8px + var(--vg-safe-b, 0px))' }}>
         {/* Replying-to bar (B5) */}
         {replyingTo && (
           <div className="flex items-center justify-between gap-2 mb-2 px-3 py-1.5 rounded-lg bg-surface-2 border border-white/[0.06]">

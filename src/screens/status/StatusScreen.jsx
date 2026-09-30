@@ -514,7 +514,7 @@ function CreateStatusModal({ onClose, currentUser, profile, onCreated }) {
     <div className="fixed inset-0 z-[100] bg-bg-dark" onClick={e => e.stopPropagation()}>
       <div
         className="flex flex-col h-full px-3 pt-3"
-        style={{ height: '100dvh', paddingBottom: 'calc(env(safe-area-inset-bottom) + 0.75rem)' }}
+        style={{ height: '100dvh', paddingBottom: 'calc(var(--vg-safe-b, 0px) + 0.75rem)' }}
       >
         {/* Close + media source. Everything else lives ON the canvas. */}
         <div className="flex items-center justify-between mb-2 shrink-0">

@@ -391,7 +391,7 @@ function UpdateSplash({
             <img src="/brand/logo.png" alt="" style={{ width: 52, height: 52, borderRadius: 14, animation: 'vg-logoglow 4s ease-in-out infinite', flex: 'none' }} />
             <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
               <div style={{ fontFamily: "'Syne',sans-serif", fontWeight: 800, fontSize: 20, color: '#fff', lineHeight: 1 }}>VERGR</div>
-              <div style={{ fontSize: 12.5, color: V.text2 }}>Social gaming platform</div>
+              <div style={{ fontSize: 12.5, color: V.text2 }}>Live streaming and social</div>
             </div>
             <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 7, padding: '6px 11px', borderRadius: 999, background: 'rgba(255,255,255,.04)', border: '1px solid rgba(255,255,255,.07)' }}>
               <span style={{ width: 6, height: 6, borderRadius: '50%', background: V.violetLight, boxShadow: `0 0 8px ${V.violetLight}` }} />

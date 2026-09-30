@@ -1,62 +1,52 @@
 // Help center article: How do I manage my linked accounts?
+// Rewritten 2026-09-21: it claimed linking helped "confirm you are a real
+// player", supported verification and used each platform's sign-in for every
+// account. Only Twitch and Discord sign in; every other row is a typed handle.
 // Block model: { p } | { h2 } | { list:[] } | { steps:[] } | { faq:[[q,a]] } | { note } | { cta:[{to,label}] }
 
 export default {
-  summary: "Go to Settings then Linked accounts to connect or disconnect your gaming and streaming accounts (like Steam, Twitch, YouTube, Discord, and Xbox). Linking shows them on your profile and helps with verification and discovery. You can disconnect any of them at any time, and doing so removes that connection from your profile.",
-  updated: "2026-06-18",
+  summary: "Go to Settings, then Connected accounts. Connect Twitch or Discord through their sign-in, add or remove any other handle, and handles you add show on your profile.",
+  updated: "2026-09-21",
   body: [
     {
-      p: "Linked accounts connect your gaming and streaming identities to your VERGR profile. They make you easier to recognise, help confirm you are a real player, and let people find you across platforms. You manage all of them from one place in Settings."
+      p: "Connected accounts is one screen for two kinds of thing: real connections (Twitch and Discord) that do something on VERGR, and handles (YouTube, Steam, PlayStation, Xbox and others) that show on your profile so people can find you there."
     },
     {
-      h2: "Connect or disconnect an account"
+      h2: "Connect, change or remove an account"
     },
     {
       steps: [
-        "Open Settings, then Linked accounts.",
-        "To link one, pick the platform and sign in to authorise the connection.",
-        "To remove one, choose it and disconnect.",
-        "Your profile updates to reflect what is connected."
+        "Open Settings, then Connected accounts.",
+        "To connect Twitch or Discord, tap Connect and sign in to that platform.",
+        "To add a handle, tap Connect next to the platform and type it in.",
+        "To remove any of them, tap Disconnect. The change is immediate."
       ]
-    },
-    {
-      h2: "Which accounts you can link"
-    },
-    {
-      list: [
-        "Gaming and streaming platforms such as Steam, Twitch, YouTube, Discord, and Xbox.",
-        "Linked accounts can appear on your profile so people see where else to find you.",
-        "Connecting can support verification and better recommendations."
-      ]
-    },
-    {
-      note: "Disconnecting a linked account removes the connection and anything tied to it on your profile. It does not delete your account on that other platform, just the link to VERGR.",
     },
     {
       faq: [
         [
-          "Why should I link my accounts?",
-          "It builds trust (you are a real player), surfaces you to the right people, and ties your gaming presence together. It is optional, but it helps."
+          "I added the wrong handle. How do I fix it?",
+          "Disconnect it, then add the right one. Your profile updates straight away."
         ],
         [
-          "I linked the wrong account. How do I fix it?",
-          "Disconnect it from Linked accounts, then link the correct one. The change is immediate."
+          "Does connecting share my password?",
+          "No. Twitch and Discord use their own sign-in, so VERGR never sees your password. Other handles are only text you type, with no sign-in at all."
         ],
         [
-          "Does linking share my password?",
-          "No. Linking uses each platform's secure sign-in to authorise the connection. VERGR never sees your password for those accounts."
+          "Will connecting Twitch or Discord show them on my profile?",
+          "No. Those two are connected for what they do. To show them on your profile, add them in Edit Profile, Social Links."
         ]
       ]
     },
     {
       cta: [
         {
-          to: "/platform/help/which-gaming-accounts-can-i-link",
-          label: "Which accounts can I link?"
+          to: "/platform/help/which-accounts-can-i-connect",
+          label: "Which accounts can I connect?"
         },
         {
-          to: "/platform/help/why-should-i-link-my-gaming-accounts",
-          label: "Why link my accounts?"
+          to: "/platform/help/why-connect-my-accounts",
+          label: "Why connect my accounts?"
         }
       ]
     }

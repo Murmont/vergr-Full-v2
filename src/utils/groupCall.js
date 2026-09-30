@@ -45,6 +45,19 @@ let audioHost = null;
 let audioCtx = null;
 let analysers = new Map();
 let speakTimer = null;
+// Cameras announced before the session object exists (the room-state arrives
+// inside connectSFU, before it resolves). Subscribed the moment it does.
+let pendingVideoSubs = new Set();
+
+// ⚠ THE SFU FORWARDS A CAMERA ONLY TO PEERS THAT ASK FOR IT. Audio is
+// auto-subscribed server-side; video waits for an explicit `subscribe`
+// (infra/sfu/src/main.go, OnTrack). This module never sent one, so every
+// member of a group VIDEO call saw everyone else as an avatar.
+function subscribeVideo(peerId) {
+  if (!peerId) return;
+  if (session) { try { session.subscribe(peerId, 'video'); } catch {/* ignore */} }
+  else pendingVideoSubs.add(peerId);
+}
 
 function emit() {
   const snap = {
@@ -170,11 +183,15 @@ export async function joinGroupCall(callId, currentUser, opts = {}) {
             audio: m.tracks?.includes('audio') || false,
             video: m.tracks?.includes('video') || false,
           });
+          if (m.tracks?.includes('video')) subscribeVideo(m.peerId);
         }
       },
       onPeerJoined: (peerId, uid) => upsertPeer(peerId, { uid }),
       onPeerLeft: (peerId) => removePeer(peerId),
-      onTrackPublished: (peerId, uid, kind) => upsertPeer(peerId, { uid, [kind]: true }),
+      onTrackPublished: (peerId, uid, kind) => {
+        upsertPeer(peerId, { uid, [kind]: true });
+        if (kind === 'video') subscribeVideo(peerId);
+      },
       onTrackUnpublished: (peerId, kind) => {
         upsertPeer(peerId, { [kind]: false, ...(kind === 'video' ? { stream: null } : {}) });
       },
@@ -203,6 +220,8 @@ export async function joinGroupCall(callId, currentUser, opts = {}) {
     });
     if (state.callId !== callId) { try { await s.disconnect(); } catch {/* ignore */} return; }
     session = s;
+    for (const peerId of pendingVideoSubs) { try { s.subscribe(peerId, 'video'); } catch {/* ignore */} }
+    pendingVideoSubs = new Set();
 
     if (micTrack) await session.publish('audio', micTrack);
     if (camTrack) {
@@ -231,6 +250,7 @@ export async function joinGroupCall(callId, currentUser, opts = {}) {
 }
 
 export async function leaveGroupCall() {
+  pendingVideoSubs = new Set();
   stopSpeakingLoop();
   try { await session?.disconnect(); } catch {/* ignore */}
   session = null;

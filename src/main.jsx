@@ -5,11 +5,19 @@ import DesktopUpdateGate from './components/DesktopUpdateGate';
 import ErrorBoundary from './components/ErrorBoundary';
 import { runMobileOtaUpdate } from './utils/otaUpdate';
 import { installClientTelemetry } from './utils/clientTelemetry';
-import { isTauri } from './utils/platform';
+import { isTauri, IS_NATIVE_BUILD } from './utils/platform';
 import { initNativeShare } from './utils/nativeShare';
 import { seedSelfAvatar } from './utils/selfProfileCache';
 import { initFileCache, runCacheEviction } from './utils/fileMediaCache';
 import './index.css';
+
+// The native shell is tagged `vergr-native` by index.html's <head> script. Tag it
+// again from the compile-time flag, in case the Tauri globals were not injected
+// yet when that script ran: every `.vergr-native` rule (squad composer inset,
+// header insets, hiding the web boot splash) depends on this one class.
+if (IS_NATIVE_BUILD) {
+  try { document.documentElement.classList.add('vergr-native'); } catch { /* no DOM */ }
+}
 
 // Read the on-device media manifest into memory BEFORE React renders anything.
 // This is what lets a render decide what to paint without awaiting: by the time

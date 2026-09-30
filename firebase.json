@@ -119,6 +119,26 @@
         "source": "/learn/coins",
         "destination": "/platform/learn/coins",
         "type": 301
+      },
+      {
+        "source": "/platform/help/how-do-i-connect-my-gaming-accounts",
+        "destination": "/platform/help/how-do-i-connect-my-accounts",
+        "type": 301
+      },
+      {
+        "source": "/platform/help/which-gaming-accounts-can-i-link",
+        "destination": "/platform/help/which-accounts-can-i-connect",
+        "type": 301
+      },
+      {
+        "source": "/platform/help/why-should-i-link-my-gaming-accounts",
+        "destination": "/platform/help/why-connect-my-accounts",
+        "type": 301
+      },
+      {
+        "source": "/platform/help/what-is-an-esports-team-profile-and-how-do-i-set-one-up",
+        "destination": "/platform/help/can-a-team-or-club-have-a-page-on-vergr",
+        "type": 301
       }
     ],
     "rewrites": [
@@ -641,6 +661,15 @@
       },
       {
         "source": "/brand/**",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public, max-age=604800, s-maxage=2592000"
+          }
+        ]
+      },
+      {
+        "source": "/@(backgrounds|mediapipe|models|masks|fonts|sounds|sfx|icons|notif-icons|og|vanguard|whats-new|linkinbio)/**",
         "headers": [
           {
             "key": "Cache-Control",

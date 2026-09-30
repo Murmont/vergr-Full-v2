@@ -16,6 +16,7 @@
 const functions = require('firebase-functions/v2');
 const { getFirestore } = require('firebase-admin/firestore');
 const { getMessaging } = require('firebase-admin/messaging');
+const { isStaffDoc } = require('./staff');
 
 const REGION = 'europe-west1';
 const db = getFirestore('vgrdb');
@@ -89,8 +90,7 @@ exports.postAnnouncement = functions.https.onCall(
     const userSnap = await db.collection('users').doc(uid).get();
     const u = userSnap.exists ? userSnap.data() : {};
     const isVergr = String(u.username || '').toLowerCase() === 'vergr';
-    const isAdmin = u.role === 'admin' ||
-      String(request.auth?.token?.email || '').toLowerCase() === 'vergenerd@gmail.com';
+    const isAdmin = isStaffDoc(u) || u.role === 'admin';
     if (!isVergr && !isAdmin) {
       throw new functions.https.HttpsError('permission-denied', 'Announcements are restricted to VERGR.');
     }

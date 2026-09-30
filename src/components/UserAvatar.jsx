@@ -1,6 +1,4 @@
 import { useState } from 'react';
-import { getTier } from '../utils/helpers';
-import { RANK_TIERS } from '../utils/vpSystem';
 import { IS_NATIVE_BUILD } from '../utils/platform';
 import { useCachedImage, reportImageError } from '../utils/deviceMediaCache';
 import Icon from './Icon';
@@ -11,29 +9,6 @@ import Icon from './Icon';
 // disc with the brand-cyan person glyph, matching the avatar background.
 const PLACEHOLDER_AVATAR =
   "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='32' fill='%231A1A1A'/%3E%3Cpath d='M32 33c5 0 9-4 9-9s-4-9-9-9-9 4-9 9 4 9 9 9zm0 5c-7 0-18 3-18 10v3h36v-3c0-7-11-10-18-10z' fill='%23B44FFF' fill-opacity='0.35'/%3E%3C/svg%3E";
-
-// Legacy ring colors (coinsSpent-based getTier). Kept so old callers passing
-// a tier name string still render their old ring.
-const LEGACY_TIER_RING_COLORS = {
-  Bronze: '#CD7F32',
-  Silver: '#C0C0C0',
-  Gold: '#F5C542',
-  Platinum: '#B44FFF',
-  'Diamond Apex Elite': null, // animated rainbow ring below
-};
-
-// Map a VP level (1-100) → ring color from RANK_TIERS. Returns null if the
-// user has no earned ring (Rookie = L1-10 in our system; the source of
-// truth flags this with ring:null).
-function ringForVpLevel(level) {
-  if (!level || level < 1) return { color: null, name: 'Rookie' };
-  const t = RANK_TIERS.find(r => level >= r.min && level <= r.max) || RANK_TIERS[0];
-  return {
-    color: t.ring ? t.ringColor : null, // ring:null in Rookie → no ring rendered
-    name: t.name,
-    isImmortal: t.name === 'Immortal',
-  };
-}
 
 export default function UserAvatar({
   src: srcProp,
@@ -76,44 +51,25 @@ export default function UserAvatar({
     ? size
     : ({ xs: 24, sm: 32, md: 40, lg: 56, xl: 72 }[size] ?? 40);
 
-  const championActive = championFrame || (championUntilMs != null && championUntilMs > Date.now());
-  // Pick ring color.
-  let ringColor = null;
-  let isImmortal = false;
-  if (showTierRing) {
-    if (vpLevel != null) {
-      const r = ringForVpLevel(vpLevel);
-      ringColor = r.color;
-      isImmortal = r.isImmortal;
-    } else if (tier != null) {
-      if (typeof tier === 'string') {
-        // Legacy named tiers
-        ringColor = LEGACY_TIER_RING_COLORS[tier] || null;
-        isImmortal = tier === 'Diamond Apex Elite';
-      } else {
-        // tier as coinsSpent number — preserve legacy getTier behavior.
-        const tierData = getTier(tier);
-        ringColor = LEGACY_TIER_RING_COLORS[tierData?.name] || null;
-        isImmortal = tierData?.name === 'Diamond Apex Elite';
-      }
-    }
-  }
-
-  // Live overrides everything else — red ring + LIVE chip below. An unseen
-  // status ring comes next. Failing both, every avatar gets the same neutral
-  // hairline: a couple of tones lighter than the surface it sits on, which
-  // lifts the circle off the background without claiming anything about it.
+  // ⚠⚠ THE ONLY RING IS THE LIVE RING, AND IT ALWAYS COMES WITH ITS PILL.
+  // Founder, 2026-09-14: "The only ring that should be visible is the live ring
+  // with the pill", and yes to removing the orbit and the unseen-status ring too,
+  // with live taking precedence over everything.
+  //
+  // Gone, all on purpose: the neutral "lift ring" every avatar used to get (the
+  // grey ring measured on post avatars, the comment box and the bottom nav), the
+  // unseen-status ring (`hasStory`), the opt-in rank ring (`showTierRing`), the
+  // Immortal rainbow and the featured-creator frame. Their props are still
+  // ACCEPTED so no caller breaks; they draw nothing. Do not bring a ring back for
+  // anything but live.
   //
   // A PREMIUM live (paid entry) rings violet and reads PREMIUM rather than LIVE.
   // It is public and discoverable on purpose, so the ring is the first place a
   // viewer can be told it costs coins — telling them only at the paywall, after
   // they have tapped, is the version that feels like a trick.
-  const showLiveRing = !!isLive;
+  void vpLevel; void tier; void hasStory; void showTierRing; void championFrame; void championUntilMs; void showLiftRing;
   const livePremium = !!isLive && !!isPremiumLive;
-  const LIFT_RING = 'rgba(255,255,255,0.10)';
-  const finalRing = showLiveRing
-    ? (livePremium ? '#B44FFF' : '#F04060')
-    : (hasStory ? '#B44FFF' : (ringColor || (showLiftRing ? LIFT_RING : null)));
+  const finalRing = isLive ? (livePremium ? '#B44FFF' : '#F04060') : null;
 
   // Resolve through the on-device media cache: the first sighting shows the
   // remote url + persists the bytes on the phone (hidden app dir); every later
@@ -150,27 +106,18 @@ export default function UserAvatar({
     if (e.target.src !== PLACEHOLDER_AVATAR) e.target.src = PLACEHOLDER_AVATAR;
   };
 
+  // rounded-full on the WRAPPER, not just the <img>.
+  // Measured on the device 2026-09-12: the Shorts rail passes
+  // className="border-2 border-white" and got a white SQUARE around a circular
+  // avatar, because the border lands on this wrapper while the radius only ever
+  // lived on the <img> below. The wrapper has no background, so rounding it is
+  // invisible everywhere else and makes any border, ring or shadow a caller
+  // passes follow the avatar's real shape.
   return (
     <div
-      className={`relative inline-flex shrink-0 ${className}`}
+      className={`relative inline-flex shrink-0 rounded-full ${className}`}
       style={{ width: px, height: px }}
     >
-      {/* Featured creator: gold animated ring + crown badge. This started life
-          as a tournament-champion frame; tournaments are retired and the flag
-          is now a featured-creator marker, matching PublicProfileScreen. */}
-      {championActive && !showLiveRing && (
-        <div
-          className="absolute -inset-[3px] rounded-full animate-spin-slow bg-gradient-to-tr from-[#F0A500] via-[#F5C842] to-[#F0A500] opacity-90 blur-[1px]"
-        />
-      )}
-
-      {/* Immortal: animated rainbow ring */}
-      {isImmortal && !showLiveRing && (
-        <div
-          className="absolute -inset-[3px] rounded-full animate-spin-slow bg-gradient-to-tr from-[#00f2ff] via-[#0062ff] to-[#7000ff] opacity-75 blur-[1px]"
-        />
-      )}
-
       <img
         // If the image is already cached, it can finish before onLoad binds —
         // detect `complete` on attach so it isn't stuck at opacity 0.
@@ -210,16 +157,6 @@ export default function UserAvatar({
           }}
         >
           {livePremium ? 'PREMIUM' : 'LIVE'}
-        </div>
-      )}
-
-      {championActive && !isLive && (
-        <div
-          className="absolute -top-1.5 left-1/2 -translate-x-1/2 z-20"
-          style={{ fontSize: Math.max(10, px * 0.3), lineHeight: 1 }}
-          title="Featured creator"
-        >
-          <Icon name="workspace_premium" size={Math.max(12, px * 0.32)} className="text-brand-gold-light" />
         </div>
       )}
 

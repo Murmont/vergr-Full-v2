@@ -399,8 +399,22 @@ for (const s of TYPING_STYLES) {
 check('typing style "orbit" animates', /@keyframes vg-typing-spin\b/.test(typingCss));
 check('typing enum size matches rules', (rulesSrc.match(/c\.typingStyle in \[([^\]]+)\]/)?.[1].split(',').length || 0) === TYPING_STYLE_IDS.length,
   `client has ${TYPING_STYLE_IDS.length}`);
-check('typing unlock level mirrored in firestore.rules',
-  rulesSrc.includes(`kind == 'typingStyle' ? ${TYPING_STYLE_LEVEL}`), `expected ${TYPING_STYLE_LEVEL}`);
+// Per style since 2026-09-30: every style's level must be the one rules enforce.
+for (const s of TYPING_STYLES) {
+  check(`typing style "${s.id}" level mirrored in firestore.rules`,
+    rulesSrc.includes(`'${s.id}': ${s.level}`), `expected '${s.id}': ${s.level}`);
+}
+check('the typing picker opens at the first styled unlock',
+  TYPING_STYLE_LEVEL === Math.min(...TYPING_STYLES.filter((s) => s.level > 1).map((s) => s.level)));
+// Prestige: the client derives it for its own screen, the trigger writes it.
+{
+  const { PRESTIGE_MAX, TOTAL_VP_TO_MAX, prestigeForVP } = await import(`file://${repo}/src/utils/vpSystem.js`);
+  const lvlSrcP = read('functions/vpLevel.js');
+  check('prestige cap mirrored in vpLevel.js', lvlSrcP.includes(`PRESTIGE_MAX = ${PRESTIGE_MAX}`));
+  check('prestige steps every full ladder', prestigeForVP(TOTAL_VP_TO_MAX) === 0
+    && prestigeForVP(TOTAL_VP_TO_MAX * 2) === 1 && prestigeForVP(TOTAL_VP_TO_MAX * 99) === PRESTIGE_MAX);
+  check('vpLevel.js writes prestige', lvlSrcP.includes('prestige: nextPrestige'));
+}
 // ⚠ ONE ROW PER STYLE SINCE 2026-08-27, not one row granting all six. This
 // asserted a single `typing_style` row and would have gone green forever while
 // the drip-feed silently granted nothing.

@@ -12,7 +12,7 @@ export default {
       "VP rank badge and rank tier.",
       "Social links you have added.",
       "Posts, clips, and articles set to Public.",
-      "Your linked gaming accounts and their stats, if you have made them public.",
+      "Handles you added in Connected accounts, like YouTube, Steam or your PlayStation ID.",
       "Squad memberships."
     ]},
     { h2: "What is never shown publicly" },

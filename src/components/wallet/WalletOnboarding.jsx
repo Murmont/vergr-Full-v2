@@ -10,6 +10,7 @@ import {
   Modal, PinPad, WALLET_TOKENS, WalletButton, Callout, fmtNum,
 } from './primitives';
 import Icon from '../Icon';
+import { QRCodeSVG } from 'qrcode.react';
 import { useWalletUnlock } from '../../context/WalletUnlockContext';
 import {
   setupWalletPin, verifyWalletPin,
@@ -183,7 +184,7 @@ export default function WalletOnboarding({ open, onComplete }) {
         <div style={{ textAlign: 'center' }}>
           <Eyebrow>Step 1 · PIN</Eyebrow>
           <Headline>Set a 6-digit PIN</Headline>
-          <Sub>You'll enter this before buying Coins or changing wallet settings. Not the same as your account password.</Sub>
+          <Sub>You'll enter it to change wallet security, such as 2FA. Not the same as your account password.</Sub>
           <PinPad value={pin} onChange={setPin} onComplete={handlePinComplete} error={!!error} disabled={submitting} />
           {error && <ErrorLine>{error}</ErrorLine>}
         </div>
@@ -209,7 +210,7 @@ export default function WalletOnboarding({ open, onComplete }) {
         <div style={{ textAlign: 'center' }}>
           <Eyebrow>Step 2 · Two-factor</Eyebrow>
           <Headline>Add 2FA (recommended)</Headline>
-          <Sub>Required for large Coin purchases, changing your PIN, and disabling 2FA itself. Takes about 60 seconds.</Sub>
+          <Sub>Asked for when you change your PIN or turn 2FA off. Takes about 60 seconds.</Sub>
           <div style={{
             display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12,
             maxWidth: 460, margin: '0 auto',
@@ -233,11 +234,9 @@ export default function WalletOnboarding({ open, onComplete }) {
             {/* Lightweight QR via Google Chart API (no extra dep). otpauthUrl is short,
                 won't hit URL limits. */}
             {otpauthUrl ? (
-              <img
-                src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(otpauthUrl)}`}
-                alt="2FA QR code" width="180" height="180"
-                style={{ display: 'block' }}
-              />
+              // Drawn locally: the otpauth URL carries the 2FA secret, and it
+              // used to be sent to api.qrserver.com to be turned into an image.
+              <QRCodeSVG value={otpauthUrl} size={180} />
             ) : <span style={{ color: '#000', fontSize: 12 }}>Loading…</span>}
           </div>
           <div style={{ fontSize: 11, color: WALLET_TOKENS.textMuted, textAlign: 'center', marginBottom: 6 }}>

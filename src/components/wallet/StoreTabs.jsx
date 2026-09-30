@@ -30,7 +30,7 @@
 // `playPriceFor(its coin count)` put a 75-coin bonus at $1.09, exactly what a
 // 78-coin pack costs. Nobody buys that, and it says a coin is worth nothing. The
 // rule lives in src/utils/storeItems.js and the numbers are mirrored server-side.
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 
 import { useUser } from '../../context/UserContext';
@@ -40,10 +40,12 @@ import { useAuth } from '../../context/AuthContext';
 import { VP_BONUS_PACKS, formatDuration, bonusArt } from '../../utils/vpBonuses';
 import { BOOSTS, boostInventory, formatBoostDuration, boostArt } from '../../utils/boosts';
 import { bonusSku, boostSku, usd } from '../../utils/storeItems';
-import { isPlayBillingSupported, buyStoreItem } from '../../utils/nativeBilling';
+import { isPlayBillingSupported, buyStoreItem, fetchPlayPrices } from '../../utils/nativeBilling';
 import StorePackCard from './StorePackCard';
 import { CoinIcon } from '../CoinIcon';
-import { WALLET_TOKENS } from './primitives';
+import { WALLET_TOKENS, Modal } from './primitives';
+import Icon from '../Icon';
+import { GooglePlayPrism } from './PaymentMethodPicker';
 
 const call = (name) => httpsCallable(getFunctions(undefined, 'europe-west1'), name);
 
@@ -81,26 +83,60 @@ function Note({ children }) {
  * One buy decision, shared by both tabs, because the rule must not be able to
  * differ between a bonus and a boost.
  *
- * Returns everything a card needs to render and act, so neither tab decides
- * anything about payment for itself.
+ * ⚠⚠ THE BUYER CHOOSES THE RAIL. THIS HOOK DOES NOT. Founder, 2026-09-11:
+ * *"the user should be able to choose to buy with the coins they have, or with
+ * money."*
+ *
+ * The previous version decided for them and offered no way back: a wallet that
+ * covered the price spent coins and never showed Play, and a wallet that did not
+ * went to Play and never showed coins. Neither branch was reachable from the
+ * other. The card printed both prices, which made it LOOK like a choice, so the
+ * one thing it taught the buyer was wrong.
+ *
+ * Tapping a card now opens `PayChoice`. `pay()` below is the only thing that
+ * moves money, and it takes the rail as an argument.
  */
-function useStoreBuy({ coinBuy, skuFor, labelFor }) {
+function useStoreBuy({ coinBuy, skuFor, labelFor, entries = [] }) {
   const { wallet } = useUser();
   const { currentUser } = useAuth();
   const { showToast } = useUI();
   const { add, setOpen } = useCart();
   const [busy, setBusy] = useState(null);
-  const coins = Number(wallet?.balance) || 0;
+  const [choosing, setChoosing] = useState(null);
+  // Boost coins (rewarded ads) spend here first, server-side: functions/boostCoins.js.
+  const coins = (Number(wallet?.balance) || 0) + (Number(wallet?.boostCoins) || 0);
   const playAvailable = isPlayBillingSupported();
 
-  const buy = async (entry) => {
+  // On the Play build the cash price is GOOGLE's localised string, fetched once
+  // per tab. Printing our own USD figure beside "Pay with Google Play" shows a
+  // number that can differ from Google's sheet, which is the mismatch the Play
+  // coin packs already avoid.
+  const [playPrices, setPlayPrices] = useState({});
+  const skuKey = entries.map(skuFor).join(',');
+  useEffect(() => {
+    if (!playAvailable || !skuKey) return undefined;
+    let alive = true;
+    fetchPlayPrices(skuKey.split(',')).then((m) => { if (alive) setPlayPrices(m || {}); }).catch(() => {});
+    return () => { alive = false; };
+  }, [playAvailable, skuKey]);
+  // ⚠ On the Play app never fall back to our USD: Google charges its own (higher)
+  // price, so our figure would show less than the sheet charges. Blank until it loads.
+  const cashFor = (entry) => (playAvailable
+    ? (playPrices[skuFor(entry)]?.price || '')
+    : usd(entry.priceUSD));
+
+  /** Open the chooser. Nothing is charged here. */
+  const buy = (entry) => { if (!busy) setChoosing(entry); };
+
+  const pay = async (entry, method) => {
     if (busy) return;
     setBusy(entry.id);
+    setChoosing(null);
     try {
       // ── COINS ─────────────────────────────────────────────────────
-      // The wallet covers it, so spend it. Cheapest for the buyer and it is the
-      // reason to hold coins at all.
-      if (coins >= entry.coins) {
+      // Cheapest for the buyer, and the reason to hold coins at all. The
+      // server re-checks the balance, so a stale wallet read cannot overdraw.
+      if (method === 'coins') {
         await coinBuy(entry);
         return;
       }
@@ -108,8 +144,8 @@ function useStoreBuy({ coinBuy, skuFor, labelFor }) {
       const sku = skuFor(entry);
 
       // ── CASH, PLAY BUILD ──────────────────────────────────────────
-      // Straight to the Play sheet: Google collects, the server verifies the
-      // token and grants the item through the same helper the coin path uses.
+      // Google collects, the server verifies the token and grants the item
+      // through the same helper the coin path uses.
       if (playAvailable) {
         await buyStoreItem(sku, currentUser?.uid);
         showToast(`${entry.name} is yours.`, 'success');
@@ -135,30 +171,110 @@ function useStoreBuy({ coinBuy, skuFor, labelFor }) {
   };
 
   /**
-   * Which price is the big one, and what the quiet line underneath says.
-   *
-   * Both are always shown. A shelf that prints one price and charges in a
-   * currency the buyer did not expect is exactly the surprise this avoids.
+   * The shelf shows the price the buyer is most likely to pay, with the other
+   * one under it. Both are always present: a shelf that prints one price and
+   * charges in a currency the buyer did not expect is the surprise this avoids.
    */
   const priceProps = (entry) => {
     const affordable = coins >= entry.coins;
     return {
       price: affordable
         ? <><CoinIcon size={15} />{entry.coins}</>
-        : <>{usd(entry.priceUSD)}</>,
+        : <>{cashFor(entry)}</>,
       secondary: affordable
-        ? <>or {usd(entry.priceUSD)}</>
+        ? (cashFor(entry) ? <>or {cashFor(entry)}</> : null)
         : <>or <CoinIcon size={12} />{entry.coins}</>,
-      note: affordable
-        ? undefined
-        : (playAvailable ? 'Pay with Google Play' : 'Adds to your basket'),
-      ariaLabel: affordable
-        ? `Buy ${entry.name} for ${entry.coins} coins`
-        : `Buy ${entry.name} for ${usd(entry.priceUSD)}`,
+      note: 'Choose how to pay',
+      ariaLabel: cashFor(entry)
+        ? `Buy ${entry.name}, ${entry.coins} coins or ${cashFor(entry)}`
+        : `Buy ${entry.name}, ${entry.coins} coins`,
     };
   };
 
-  return { buy, busy, priceProps, coins };
+  const chooser = (
+    <PayChoice
+      entry={choosing}
+      cash={choosing ? cashFor(choosing) : ''}
+      coins={coins}
+      playAvailable={playAvailable}
+      onPick={pay}
+      onClose={() => setChoosing(null)}
+    />
+  );
+
+  return { buy, busy, priceProps, coins, chooser };
+}
+
+/**
+ * How do you want to pay. Two rails, both always visible, so the buyer can see
+ * the one they are not taking and why.
+ *
+ * ⚠ THE COINS ROW IS SHOWN EVEN WHEN THE WALLET IS SHORT, disabled, naming the
+ * shortfall. Hiding it is what made the old flow feel like it had decided for
+ * you, and the shortfall is the one number that tells a buyer coins are worth
+ * topping up.
+ *
+ * Solid fills only. No hairline-on-transparent "glass" rows: see the Appearance
+ * panel ruling in CLAUDE.md.
+ */
+function PayChoice({ entry, cash, coins, playAvailable, onPick, onClose }) {
+  if (!entry) return null;
+  const short = Math.max(0, entry.coins - coins);
+  const canCoins = short === 0;
+
+  const Row = ({ disabled, onClick, icon, title, sub, amount }) => (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      style={{
+        display: 'grid', gridTemplateColumns: '34px minmax(0,1fr) auto',
+        gap: 12, alignItems: 'center', width: '100%', textAlign: 'left',
+        padding: '13px 14px', borderRadius: 12, border: 0,
+        background: disabled ? WALLET_TOKENS.surface2 : '#20203A',
+        color: disabled ? WALLET_TOKENS.textMuted : WALLET_TOKENS.text,
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.6 : 1, font: 'inherit',
+      }}
+    >
+      <span style={{
+        width: 34, height: 34, borderRadius: 9, display: 'grid', placeItems: 'center',
+        background: disabled ? 'transparent' : WALLET_TOKENS.surface1,
+      }}>{icon}</span>
+      <span style={{ minWidth: 0 }}>
+        <span style={{ display: 'block', fontWeight: 700, fontSize: 14 }}>{title}</span>
+        <span style={{ display: 'block', fontSize: 11.5, color: WALLET_TOKENS.textSecondary }}>{sub}</span>
+      </span>
+      <span style={{
+        fontFamily: 'DM Mono, monospace', fontWeight: 500, fontSize: 15,
+        fontVariantNumeric: 'tabular-nums', display: 'flex', alignItems: 'center', gap: 4,
+      }}>{amount}</span>
+    </button>
+  );
+
+  return (
+    <Modal open onClose={onClose} width={420} title={entry.name}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <Row
+          disabled={!canCoins}
+          onClick={() => onPick(entry, 'coins')}
+          icon={<CoinIcon size={19} />}
+          title="Pay with coins"
+          sub={canCoins
+            ? `You have ${coins.toLocaleString()}`
+            : `You need ${short.toLocaleString()} more`}
+          amount={<><CoinIcon size={14} />{entry.coins.toLocaleString()}</>}
+        />
+        <Row
+          onClick={() => onPick(entry, 'cash')}
+          icon={playAvailable ? <GooglePlayPrism size={19} /> : <Icon name="shopping_bag" size={19} />}
+          title={playAvailable ? 'Pay with Google Play' : 'Pay with money'}
+          sub={playAvailable ? 'Card or whatever Play has on file' : 'Adds it to your basket'}
+          amount={cash}
+        />
+      </div>
+    </Modal>
+  );
 }
 
 /**
@@ -173,8 +289,9 @@ function useStoreBuy({ coinBuy, skuFor, labelFor }) {
 export function BonusPacksTab({ compact = false }) {
   const { showToast } = useUI();
 
-  const { buy, busy, priceProps } = useStoreBuy({
+  const { buy, busy, priceProps, chooser } = useStoreBuy({
     skuFor: (p) => bonusSku(p.id),
+    entries: VP_BONUS_PACKS,
     labelFor: () => 'Could not start that bonus.',
     coinBuy: async (p) => {
       await call('purchaseVpBonus')({ packId: p.id });
@@ -202,12 +319,13 @@ export function BonusPacksTab({ compact = false }) {
           />
         ))}
       </Grid>
+      {chooser}
       <Note>
         A bonus starts the moment you buy it and runs down in real time, so start one
-        when you are about to play. Bonuses add up on top of each other to a maximum
+        when you are about to post, stream or watch. Bonuses add up on top of each other to a maximum
         of 3x, and your plan and rank multiply on top of that. Fourteen levels on the
-        VP ladder hand you one free. Pay with coins if you have them; the price in
-        coins is always the cheaper of the two.
+        VP ladder hand you one free. Tap a pack and pick how to pay: coins if you
+        have them, or money. Coins are the cheaper of the two.
       </Note>
     </>
   );
@@ -231,8 +349,9 @@ export function BoostsTab({ compact = false }) {
   const { showToast } = useUI();
   const inv = boostInventory(wallet);
 
-  const { buy, busy, priceProps } = useStoreBuy({
+  const { buy, busy, priceProps, chooser } = useStoreBuy({
     skuFor: (b) => boostSku(b.id),
+    entries: BOOSTS,
     labelFor: () => 'Could not buy that boost.',
     coinBuy: async (b) => {
       await call('purchaseBoostPack')({ boostId: b.id, qty: 1 });
@@ -263,11 +382,12 @@ export function BoostsTab({ compact = false }) {
           );
         })}
       </Grid>
+      {chooser}
       <Note>
         Boosts are kept in your wallet until you use them. Apply one from the post,
         profile, squad or live stream you want to boost — your own or anyone
-        else’s. Boosts on the same thing add up and extend each other. Pay with
-        coins if you have them; the price in coins is always the cheaper of the two.
+        else’s. Boosts on the same thing add up and extend each other. Tap a boost
+        and pick how to pay: coins if you have them, or money. Coins are cheaper.
       </Note>
     </>
   );
